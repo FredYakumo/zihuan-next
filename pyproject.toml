@@ -27,7 +27,7 @@ dependencies = [
     "torchaudio>=2.7.0; sys_platform != 'darwin'",
     "torch; sys_platform == 'darwin'",
     "ipython>=9.3.0",
-    "langchain"
+    "websockets>=15.0.1"
 ]
 
 [tool.uv]
@@ -35,5 +35,5 @@ managed = true
 
 [[tool.uv.index]]
 name = "pytorch-cuda"
-url = "https://download.pytorch.org/whl/cu128"
+url = "https://download.pytorch.org/whl/cu130"
 explicit = true
