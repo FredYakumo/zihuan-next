@@ -2,20 +2,77 @@
 
 # Copilot Instructions for zihuan-next_aibot-800b
 
-> **Note:** This document is a brief overview of the project. For detailed development guidelines, architecture, and module usage, please refer to the per-module documentation below.
+> **Documentation Principle:** Keep this file concise. Detailed descriptions are distributed in module-specific documentation.
 
-> **Project Management:** This project uses [uv](https://github.com/astral-sh/uv) for dependency management and running. It is recommended to use `uv` for environment management and execution.
+> **Project Management:** This project uses [uv](https://github.com/astral-sh/uv) for dependency management.
 
 ---
 
-## Overview
-This file provides a concise summary of the zihuan-next_aibot-800b project. For detailed development conventions, architecture, and module usage, see the following per-module documentation:
+## Quick Start
 
-- [bot_adapter/adapter.py Instructions](./copilot-instructions-adapter.md)
-- [bot_adapter/event.py Instructions](./copilot-instructions-event.md)
-- [models/ Instructions](./copilot-instructions-models.md)
-- [utils/ Instructions](./copilot-instructions-utils.md)
+```bash
+# Setup
+uv sync
+cp config.yaml.example config.yaml  # Edit: BOT_SERVER_URL, REDIS_*, MYSQL_*
+cd docker/redis && docker-compose up -d
+uv run alembic upgrade head
+uv run python main.py
+```
 
-For overall architecture, development workflow, and integration points, see the `README.md` and the module instruction files above.
+---
 
-If you have questions or notice missing information, please provide feedback for improvement.
+## Architecture
+
+**Hybrid RAG chatbot** with event-driven design:
+- **Event flow**: WebSocket → `BotAdapter` → `MessageEvent` → Platform handlers
+- **Storage**: Redis (cache) + MySQL (persistent history)
+- **Platforms**: QQ (primary), web, edge devices
+
+---
+
+## Key Conventions
+
+### Configuration
+- Pydantic-based config in `utils/config_loader.py`
+- `config.SQLALCHEMY_DATABASE_URL` auto-generated from `MYSQL_*` fields
+- Graceful fallbacks: Missing Redis → memory cache (dev only)
+
+### Message Models
+- All inherit from `MessageBase`: `PlainTextMessage`, `AtTargetMessage`, `ReplayMessage`
+- Deserialization: `convert_message_from_json()` in `bot_adapter/models/message.py`
+
+### Event Processing
+```python
+# BotAdapter dispatch pattern
+self.event_process_func = {
+    "private": event.process_friend_message,
+    "group": event.process_group_message
+}
+```
+
+### Database
+- Alembic loads DB URL from `config.yaml` (see `migrations/env.py`)
+- Never hardcode URLs in `alembic.ini`
+- Migrations: `uv run alembic revision --autogenerate -m "msg"`
+
+### Logging
+- Priority: `LOG_LEVEL` env → `config.yaml:log_level` → `DEBUG`
+- Log dir: `ZIHUAN_LOG_DIR` env → `config.yaml:loger_path` → `./logs`
+
+---
+
+## Module References
+
+Detailed patterns and examples:
+- [adapter.py](./copilot-instructions-adapter.md): Event loop, platform dispatch
+- [event.py](./copilot-instructions-event.md): Handler implementations
+- [models/](./copilot-instructions-models.md): Event and message schemas
+- [utils/](./copilot-instructions-utils.md): Config and logging setup
+
+---
+
+## Common Tasks
+
+**Add message type**: Subclass `MessageBase` → Update `convert_message_from_json()` → Handle in events  
+**Add platform**: Extend `event_process_func` → Implement handler in `event.py`  
+**Modify schema**: Edit `database/models/` → `uv run alembic revision --autogenerate -m "..."` → `uv run alembic upgrade head`
