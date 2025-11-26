@@ -27,7 +27,8 @@ dependencies = [
     "torchaudio>=2.7.0; sys_platform != 'darwin'",
     "torch; sys_platform == 'darwin'",
     "ipython>=9.3.0",
-    "websockets>=15.0.1"
+    "websockets>=15.0.1",
+    "redis"
 ]
 
 [tool.uv]

@@ -11,6 +11,10 @@ class Config(BaseModel):
     
     BOT_SERVER_URL: str = Field(default="ws://localhost:3001", description="Bot server WebSocket URL")
     BOT_SERVER_TOKEN: Optional[str] = Field(default=None, description="Bot server authentication token")
+    REDIS_HOST: str = Field(default="127.0.0.1", description="Redis server host")
+    REDIS_PORT: int = Field(default=6379, description="Redis server port")
+    REDIS_DB: int = Field(default=0, description="Redis database number")
+    REDIS_PASSWORD: Optional[str] = Field(default=None, description="Redis password (optional)")
     
     class Config:
         extra = "allow"  # Allow additional fields from YAML

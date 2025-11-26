@@ -1,1 +1,6 @@
 BOT_SERVER_URL: ws://127.0.0.1:3001
+# BOT_SERVER_TOKEN: your bot server connect token.  # Uncomment and set if needed
+REDIS_HOST: redis
+REDIS_PORT: 6379
+REDIS_DB: 0
+# REDIS_PASSWORD: yourpassword  # Uncomment and set if needed
