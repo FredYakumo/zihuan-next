@@ -2,3 +2,5 @@ uv.lock
 logs/
 **/__pycache__/
 config.yaml
+docker/redis/data/
+docker/redis/redis.conf/

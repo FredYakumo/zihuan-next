@@ -29,6 +29,9 @@ dependencies = [
     "ipython>=9.3.0",
     "websockets>=15.0.1",
     "redis"
+    ,"sqlalchemy>=2.0.0"
+    ,"pymysql>=1.1.0"
+    ,"alembic>=1.13.1"
 ]
 
 [tool.uv]

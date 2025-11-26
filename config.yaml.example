@@ -4,3 +4,10 @@ REDIS_HOST: redis
 REDIS_PORT: 6379
 REDIS_DB: 0
 # REDIS_PASSWORD: yourpassword  # Uncomment and set if needed
+
+# MySQL Database Configuration Example
+MYSQL_HOST: 127.0.0.1
+MYSQL_PORT: 3306
+MYSQL_USER: zihuan_user
+MYSQL_PASSWORD: your_mysql_password
+MYSQL_DB: zihuan_aibot
