@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 use futures_util::StreamExt;
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
-use tracing::{debug, error, info, warn};
+use log::{debug, error, info, warn};
 
 use super::event::{self, EventHandler};
 use super::models::{

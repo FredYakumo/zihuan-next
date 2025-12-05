@@ -1,4 +1,4 @@
-use tracing::info;
+use log::info;
 
 use super::models::MessageEvent;
 
