@@ -1,6 +1,5 @@
 services:
   redis:
-    container_name: zihuan-redis
     image: redis:7
     restart: unless-stopped
     ports:
