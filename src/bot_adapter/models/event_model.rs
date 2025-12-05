@@ -48,8 +48,9 @@ pub struct MessageEvent {
     pub message_list: Vec<Message>,
 }
 
-/// Raw message event structure for deserialization
-#[derive(Debug, Clone, Deserialize)]
+
+/// Raw message event structure for deserialization and serialization
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RawMessageEvent {
     pub message_id: i64,
     pub message_type: MessageType,

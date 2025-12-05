@@ -16,3 +16,5 @@ log_util = { git = "https://github.com/FredYakumo/LogUtil" }
 lazy_static = "1.4"
 futures-util = "0.3"
 http = "1.0"
+
+redis = { version = "0.24", features = ["tokio-comp"] }

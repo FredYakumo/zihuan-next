@@ -106,7 +106,7 @@ impl MessageBase for ReplyMessage {
 }
 
 /// Raw message data structure from JSON
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RawMessageData {
     #[serde(rename = "type")]
     pub msg_type: String,

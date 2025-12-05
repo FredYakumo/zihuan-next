@@ -8,25 +8,35 @@ use super::event::{self, EventHandler};
 use super::models::{
     convert_message_from_json, MessageEvent, MessageType, RawMessageEvent,
 };
+use crate::util::message_store::MessageStore;
+use std::env;
+use tokio::sync::Mutex as TokioMutex;
+use std::sync::Arc;
 
 /// BotAdapter connects to the QQ bot server via WebSocket and processes events
 pub struct BotAdapter {
     url: String,
     token: String,
     event_handlers: HashMap<MessageType, EventHandler>,
+    message_store: Arc<TokioMutex<MessageStore>>,
 }
 
 impl BotAdapter {
     /// Create a new BotAdapter with the given WebSocket URL and authentication token
-    pub fn new(url: impl Into<String>, token: impl Into<String>) -> Self {
+    pub async fn new(url: impl Into<String>, token: impl Into<String>) -> Self {
         let mut event_handlers: HashMap<MessageType, EventHandler> = HashMap::new();
         event_handlers.insert(MessageType::Private, event::process_friend_message);
         event_handlers.insert(MessageType::Group, event::process_group_message);
+
+        // Get Redis URL from env or use None
+        let redis_url = env::var("REDIS_URL").ok();
+        let message_store = Arc::new(TokioMutex::new(MessageStore::new(redis_url.as_deref()).await));
 
         Self {
             url: url.into(),
             token: token.into(),
             event_handlers,
+            message_store,
         }
     }
 
@@ -132,11 +142,20 @@ impl BotAdapter {
 
         // Create the MessageEvent
         let event = MessageEvent {
-            message_id: raw_event.message_id,
+            message_id: raw_event.message_id.clone(),
             message_type: raw_event.message_type,
-            sender: raw_event.sender,
-            message_list,
+            sender: raw_event.sender.clone(),
+            message_list: message_list.clone(),
         };
+
+        // Store the message in the message store (async spawn)
+        let store = self.message_store.clone();
+        let msg_id = raw_event.message_id.to_string();
+        let msg_str = serde_json::to_string(&raw_event).unwrap_or_default();
+        tokio::spawn(async move {
+            let mut store = store.lock().await;
+            store.store_message(&msg_id, &msg_str).await;
+        });
 
         // Dispatch to the appropriate handler
         if let Some(handler) = self.event_handlers.get(&event.message_type) {

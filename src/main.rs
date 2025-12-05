@@ -1,4 +1,5 @@
 mod bot_adapter;
+mod util;
 
 use std::fs;
 use serde::Deserialize;
@@ -67,10 +68,8 @@ async fn main() {
         .unwrap_or_default();
 
     // Create and start the bot adapter
-    let adapter = BotAdapter::new(bot_server_url, bot_server_token);
-    
+    let adapter = BotAdapter::new(bot_server_url, bot_server_token).await;
     info!("Bot adapter initialized, connecting to server...");
-    
     if let Err(e) = adapter.start().await {
         error!("Bot adapter error: {}", e);
     }
