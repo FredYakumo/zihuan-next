@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use log::warn;
+use serde::de::Deserializer;
+
 use super::message::Message;
 
 /// Message type enum (private or group chat)
@@ -56,5 +59,25 @@ pub struct RawMessageEvent {
     pub message_type: MessageType,
     pub sender: Sender,
     #[serde(default)]
-    pub message: Vec<super::message::RawMessageData>,
+    #[serde(deserialize_with = "deserialize_message_vec_lenient")]
+    pub message: Vec<Message>,
+}
+
+fn deserialize_message_vec_lenient<'de, D>(deserializer: D) -> Result<Vec<Message>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw_values = Vec::<serde_json::Value>::deserialize(deserializer)?;
+
+    let mut out = Vec::with_capacity(raw_values.len());
+    for v in raw_values {
+        match serde_json::from_value::<Message>(v) {
+            Ok(m) => out.push(m),
+            Err(e) => {
+                // Do not fail the whole event when a single element is unsupported.
+                warn!("Skipping unsupported message element: {}", e);
+            }
+        }
+    }
+    Ok(out)
 }

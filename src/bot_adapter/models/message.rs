@@ -1,5 +1,44 @@
 use serde::{Deserialize, Serialize};
+use serde::de::{self, Deserializer};
 use std::fmt;
+
+fn deserialize_i64_from_string_or_number<'de, D>(deserializer: D) -> Result<i64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let v = serde_json::Value::deserialize(deserializer)?;
+    match v {
+        serde_json::Value::Number(n) => n
+            .as_i64()
+            .ok_or_else(|| de::Error::custom("numeric value is not an i64")),
+        serde_json::Value::String(s) => s
+            .parse::<i64>()
+            .map_err(|e| de::Error::custom(format!("failed to parse i64 from string: {e}"))),
+        other => Err(de::Error::custom(format!(
+            "expected string or number for i64, got {other}" 
+        ))),
+    }
+}
+
+fn deserialize_option_i64_from_string_or_number<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt = Option::<serde_json::Value>::deserialize(deserializer)?;
+    match opt {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::Number(n)) => Ok(n.as_i64()),
+        Some(serde_json::Value::String(s)) => {
+            let parsed = s
+                .parse::<i64>()
+                .map_err(|e| de::Error::custom(format!("failed to parse i64 from string: {e}")))?;
+            Ok(Some(parsed))
+        }
+        Some(other) => Err(de::Error::custom(format!(
+            "expected null/string/number for Option<i64>, got {other}"
+        ))),
+    }
+}
 
 /// Base trait for all message types
 pub trait MessageBase: fmt::Display + fmt::Debug + Send + Sync {
@@ -14,7 +53,7 @@ pub enum Message {
     PlainText(PlainTextMessage),
     #[serde(rename = "at")]
     At(AtTargetMessage),
-    #[serde(rename = "reply")]
+    #[serde(rename = "reply", alias = "replay")]
     Reply(ReplyMessage),
 }
 
@@ -60,6 +99,7 @@ impl MessageBase for PlainTextMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AtTargetMessage {
     #[serde(alias = "qq")]
+    #[serde(default, deserialize_with = "deserialize_option_i64_from_string_or_number")]
     pub target: Option<i64>,
 }
 
@@ -84,6 +124,7 @@ impl MessageBase for AtTargetMessage {
 /// Reply message (references another message)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReplyMessage {
+    #[serde(deserialize_with = "deserialize_i64_from_string_or_number")]
     pub id: i64,
     #[serde(skip)]
     pub message_source: Option<Box<Message>>,
@@ -105,46 +146,10 @@ impl MessageBase for ReplyMessage {
     }
 }
 
-/// Raw message data structure from JSON
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RawMessageData {
-    #[serde(rename = "type")]
-    pub msg_type: String,
-    pub data: serde_json::Value,
-}
-
-/// Convert raw JSON message to typed Message
-pub fn convert_message_from_json(raw: &RawMessageData) -> Result<Message, String> {
-    match raw.msg_type.as_str() {
-        "text" => {
-            let text = raw.data.get("text")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            Ok(Message::PlainText(PlainTextMessage { text }))
-        }
-        "at" => {
-            let target = raw.data.get("target")
-                .or_else(|| raw.data.get("qq"))
-                .and_then(|v| v.as_i64());
-            Ok(Message::At(AtTargetMessage { target }))
-        }
-        "reply" | "replay" => {
-            let id = raw.data.get("id")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0);
-            Ok(Message::Reply(ReplyMessage {
-                id,
-                message_source: None,
-            }))
-        }
-        _ => Err(format!("Unsupported message type: {}", raw.msg_type)),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_plain_text_message() {
@@ -161,9 +166,32 @@ mod tests {
     }
 
     #[test]
+    fn test_at_target_message_deserialize_string() {
+        let v = json!({"qq": "24968"});
+        let msg: AtTargetMessage = serde_json::from_value(v).unwrap();
+        assert_eq!(msg.target_id(), 24968);
+    }
+
+    #[test]
     fn test_reply_message() {
         let msg = ReplyMessage { id: 123, message_source: None };
         assert_eq!(msg.to_string(), "[Reply of message ID 123]");
         assert_eq!(msg.get_type(), "reply");
+    }
+
+    #[test]
+    fn test_reply_message_deserialize_string() {
+        let v = json!({"id": "985732927"});
+        let msg: ReplyMessage = serde_json::from_value(v).unwrap();
+        assert_eq!(msg.id, 985732927);
+    }
+
+    #[test]
+    fn test_message_deserialize_from_message_array_element() {
+        // Matches the shape inside the top-level `message` array: {"type": "at", "data": {"qq": "..."}}
+        let v = json!({"type": "at", "data": {"qq": "2496875785"}});
+        let msg: Message = serde_json::from_value(v).unwrap();
+        assert_eq!(msg.get_type(), "at");
+        assert_eq!(msg.to_string(), "@2496875785");
     }
 }
