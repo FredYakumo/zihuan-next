@@ -5,9 +5,8 @@ use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 use log::{debug, error, info, warn};
 
 use super::event::{self, EventHandler};
-use super::models::{
-    convert_message_from_json, MessageEvent, MessageType, RawMessageEvent,
-};
+use super::models::{MessageEvent, MessageType, RawMessageEvent};
+use crate::util::url_utils::extract_host;
 use crate::util::message_store::MessageStore;
 use std::env;
 use tokio::sync::Mutex as TokioMutex;
@@ -126,26 +125,12 @@ impl BotAdapter {
             }
         };
 
-        // Convert raw messages to typed messages
-        let message_list: Vec<_> = raw_event.message
-            .iter()
-            .filter_map(|raw| {
-                match convert_message_from_json(raw) {
-                    Ok(msg) => Some(msg),
-                    Err(e) => {
-                        warn!("Failed to convert message: {}", e);
-                        None
-                    }
-                }
-            })
-            .collect();
-
-        // Create the MessageEvent
+        // Create the MessageEvent (messages are already deserialized in RawMessageEvent)
         let event = MessageEvent {
-            message_id: raw_event.message_id.clone(),
+            message_id: raw_event.message_id,
             message_type: raw_event.message_type,
             sender: raw_event.sender.clone(),
-            message_list: message_list.clone(),
+            message_list: raw_event.message.clone(),
         };
 
         // Store the message in the message store (async spawn)
@@ -163,25 +148,5 @@ impl BotAdapter {
         } else {
             warn!("No handler registered for message type: {}", event.message_type);
         }
-    }
-}
-
-/// Extract host from URL for WebSocket handshake
-fn extract_host(url: &str) -> Option<&str> {
-    url.strip_prefix("ws://")
-        .or_else(|| url.strip_prefix("wss://"))
-        .and_then(|s| s.split('/').next())
-        .and_then(|s| s.split(':').next())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_extract_host() {
-        assert_eq!(extract_host("ws://localhost:3001"), Some("localhost"));
-        assert_eq!(extract_host("wss://example.com/path"), Some("example.com"));
-        assert_eq!(extract_host("ws://192.168.1.1:8080/ws"), Some("192.168.1.1"));
     }
 }
