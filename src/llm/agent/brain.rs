@@ -15,19 +15,19 @@ pub enum BrainPlan {
 	Ignore { reason: Option<String> },
 	/// Reply with content.
 	Reply { content: String },
-	/// Ask runtime to execute a tool.
-	ToolCall { name: String, arguments: Value },
+	/// Delegate to a specific agent.
+	UseAgent { agent_name: String, context: Value },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BrainOutcome {
 	Ignored { reason: Option<String> },
 	ReplyText { content: String },
-	/// Tool executed (and optionally a follow-up reply was generated).
-	ToolExecuted {
-		tool_name: String,
-		tool_args: Value,
-		tool_output: Value,
+	/// Agent executed (and optionally a follow-up reply was generated).
+	AgentExecuted {
+		agent_name: String,
+		context: Value,
+		agent_output: Value,
 		final_reply: Option<String>,
 	},
 	Error { message: String, raw: String },
@@ -86,8 +86,8 @@ impl BrainAgent {
 		let prompt = format!(
 			"You will receive a chat event. Decide what to do next.\n\n\
 Event:\n{event_summary}\n\n\
-If you need to use a function tool, call it via tool-calling.\n\
-If no tool is needed, return STRICT JSON only (no markdown, no extra text).\n\
+If you need to delegate to a specific agent, use tool-calling with agent details.\n\
+If no agent is needed, return STRICT JSON only (no markdown, no extra text).\n\
 It MUST match one of:\n\
 1) {{\"type\":\"ignore\",\"reason\":\"...optional...\"}}\n\
 2) {{\"type\":\"reply\",\"content\":\"...\"}}\n",
@@ -121,11 +121,11 @@ It MUST match one of:\n\
 			.llm
 			.inference(&param);
 
-		// Prefer tool calls when available.
+		// Prefer tool calls when available (interpret as agent delegation).
 		if let Some(tc) = resp.tool_calls.first() {
-			return Ok(BrainPlan::ToolCall {
-				name: tc.function.name.clone(),
-				arguments: tc.function.arguments.clone(),
+			return Ok(BrainPlan::UseAgent {
+				agent_name: tc.function.name.clone(),
+				context: tc.function.arguments.clone(),
 			});
 		}
 
@@ -151,11 +151,11 @@ It MUST match one of:\n\
 		match plan {
 			BrainPlan::Ignore { reason } => BrainOutcome::Ignored { reason },
 			BrainPlan::Reply { content } => BrainOutcome::ReplyText { content },
-			BrainPlan::ToolCall { name, arguments } => {
+			BrainPlan::UseAgent { agent_name, context } => {
 				if self.max_tool_rounds == 0 {
 					return BrainOutcome::Error {
-						message: "tool execution disabled (max_tool_rounds=0)".to_string(),
-						raw: serde_json::to_string(&BrainPlan::ToolCall { name, arguments })
+						message: "agent execution disabled (max_tool_rounds=0)".to_string(),
+						raw: serde_json::to_string(&BrainPlan::UseAgent { agent_name, context })
 							.unwrap_or_default(),
 					};
 				}
@@ -163,41 +163,41 @@ It MUST match one of:\n\
 			let tool = self
 				.tools
 				.iter()
-				.find(|t| t.name() == name)
+				.find(|t| t.name() == agent_name)
 				.cloned();
 
 			let tool = match tool {
 				Some(t) => t,
 				None => {
 					return BrainOutcome::Error {
-						message: format!("unknown tool: {name}"),
+						message: format!("unknown agent: {agent_name}"),
 						raw: "".to_string(),
 					};
 				}
 			};
 
-			let tool_args = arguments;
-			let tool_output = match tool.call(tool_args.clone()) {
+			let agent_context = context;
+			let agent_output = match tool.call(agent_context.clone()) {
 				Ok(v) => v,
 				Err(e) => {
 					return BrainOutcome::Error {
-						message: format!("tool {name} failed: {e}"),
+						message: format!("agent {agent_name} failed: {e}"),
 						raw: "".to_string(),
 					}
 				},
 			};
 
-			// Second-stage: ask LLM to produce a user-facing reply given tool output.
+			// Second-stage: ask LLM to produce a user-facing reply given agent output.
 			let event_summary = format_event(event);
 			let prompt = format!(
-				"You executed a tool for a chat event. Produce the final user reply.\n\n\
+				"You delegated to an agent for a chat event. Produce the final user reply.\n\n\
 Event:\n{event_summary}\n\n\
-Tool name: {name}\n\
-Tool args (JSON): {}\n\
-Tool output (JSON): {}\n\n\
+Agent name: {agent_name}\n\
+Agent context (JSON): {}\n\
+Agent output (JSON): {}\n\n\
 Return STRICT JSON only: {{\"type\":\"reply\",\"content\":\"...\"}}\n",
-				serde_json::to_string_pretty(&tool_args).unwrap_or_default(),
-				serde_json::to_string_pretty(&tool_output).unwrap_or_default(),
+				serde_json::to_string_pretty(&agent_context).unwrap_or_default(),
+				serde_json::to_string_pretty(&agent_output).unwrap_or_default(),
 			);
 
 			let messages = vec![
@@ -236,10 +236,10 @@ Return STRICT JSON only: {{\"type\":\"reply\",\"content\":\"...\"}}\n",
 					}
 				};
 
-				BrainOutcome::ToolExecuted {
-					tool_name: name,
-					tool_args,
-					tool_output,
+				BrainOutcome::AgentExecuted {
+					agent_name,
+					context: agent_context,
+					agent_output,
 					final_reply,
 				}
 			}
