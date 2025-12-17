@@ -1,7 +1,7 @@
 use crate::bot_adapter::models::MessageEvent;
-use crate::llm::LLMBase;
+use crate::llm::{LLMBase, InferenceParam, Message, MessageRole};
 use crate::llm::agent::Agent;
-use crate::llm::function_tools::{FunctionTool, ToolRegistry};
+use crate::llm::function_tools::FunctionTool;
 
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
@@ -41,7 +41,7 @@ pub enum BrainOutcome {
 /// - "Function tools" are implemented via a strict JSON protocol in the prompt.
 pub struct BrainAgent {
 	llm: Arc<dyn LLMBase + Send + Sync>,
-	tools: ToolRegistry,
+	tools: Vec<Arc<dyn FunctionTool>>,
 	system_prompt: String,
 	max_tool_rounds: usize,
 }
@@ -50,7 +50,7 @@ impl BrainAgent {
 	pub fn new(llm: Arc<dyn LLMBase + Send + Sync>) -> Self {
 		Self {
 			llm,
-			tools: ToolRegistry::new(),
+			tools: Vec::new(),
 			system_prompt: default_system_prompt(),
 			max_tool_rounds: 1,
 		}
@@ -72,17 +72,15 @@ impl BrainAgent {
 	}
 
 	pub fn register_tool(&mut self, tool: Arc<dyn FunctionTool>) {
-		self.tools.register(tool);
+		self.tools.push(tool);
 	}
 
 	pub fn list_tools(&self) -> Vec<String> {
-		self.tools.list()
+		self.tools.iter().map(|t| t.name().to_string()).collect()
 	}
 
 	/// Make a plan from an incoming event.
 	pub fn plan(&self, event: &MessageEvent) -> Result<BrainPlan, String> {
-		let tool_specs = self.tools.specs();
-
 		let event_summary = format_event(event);
 
 		let prompt = format!(
@@ -95,15 +93,39 @@ It MUST match one of:\n\
 2) {{\"type\":\"reply\",\"content\":\"...\"}}\n",
 		);
 
+		let messages = vec![
+			Message {
+				role: MessageRole::System,
+				content: Some(self.system_prompt.clone()),
+				tool_calls: Vec::new(),
+			},
+			Message {
+				role: MessageRole::User,
+				content: Some(prompt),
+				tool_calls: Vec::new(),
+			},
+		];
+
+		let tools: Option<Vec<Arc<dyn FunctionTool>>> = if !self.tools.is_empty() {
+			Some(self.tools.clone())
+		} else {
+			None
+		};
+
+		let param = InferenceParam {
+			messages,
+			tools,
+		};
+
 		let resp = self
 			.llm
-			.inference(&prompt, &self.system_prompt, Some(tool_specs.as_slice()));
+			.inference(&param);
 
 		// Prefer tool calls when available.
 		if let Some(tc) = resp.tool_calls.first() {
 			return Ok(BrainPlan::ToolCall {
-				name: tc.name.clone(),
-				arguments: tc.arguments.clone(),
+				name: tc.function.name.clone(),
+				arguments: tc.function.arguments.clone(),
 			});
 		}
 
@@ -138,45 +160,69 @@ It MUST match one of:\n\
 					};
 				}
 
-				let tool = match self.tools.get(&name) {
-					Some(t) => t,
-					None => {
-						return BrainOutcome::Error {
-							message: format!("unknown tool: {name}"),
-							raw: "".to_string(),
-						};
+			let tool = self
+				.tools
+				.iter()
+				.find(|t| t.name() == name)
+				.cloned();
+
+			let tool = match tool {
+				Some(t) => t,
+				None => {
+					return BrainOutcome::Error {
+						message: format!("unknown tool: {name}"),
+						raw: "".to_string(),
+					};
+				}
+			};
+
+			let tool_args = arguments;
+			let tool_output = match tool.call(tool_args.clone()) {
+				Ok(v) => v,
+				Err(e) => {
+					return BrainOutcome::Error {
+						message: format!("tool {name} failed: {e}"),
+						raw: "".to_string(),
 					}
-				};
+				},
+			};
 
-				let tool_args = arguments;
-				let tool_output = match tool.call(tool_args.clone()) {
-					Ok(v) => v,
-					Err(e) => {
-						return BrainOutcome::Error {
-							message: format!("tool {name} failed: {e}"),
-							raw: "".to_string(),
-						}
-					},
-				};
-
-				// Second-stage: ask LLM to produce a user-facing reply given tool output.
-				let event_summary = format_event(event);
-				let prompt = format!(
-					"You executed a tool for a chat event. Produce the final user reply.\n\n\
+			// Second-stage: ask LLM to produce a user-facing reply given tool output.
+			let event_summary = format_event(event);
+			let prompt = format!(
+				"You executed a tool for a chat event. Produce the final user reply.\n\n\
 Event:\n{event_summary}\n\n\
 Tool name: {name}\n\
 Tool args (JSON): {}\n\
 Tool output (JSON): {}\n\n\
 Return STRICT JSON only: {{\"type\":\"reply\",\"content\":\"...\"}}\n",
-					serde_json::to_string_pretty(&tool_args).unwrap_or_default(),
-					serde_json::to_string_pretty(&tool_output).unwrap_or_default(),
-				);
+				serde_json::to_string_pretty(&tool_args).unwrap_or_default(),
+				serde_json::to_string_pretty(&tool_output).unwrap_or_default(),
+			);
 
-				let raw = self
-					.llm
-					.inference(&prompt, &self.system_prompt, None)
-					.content
-					.unwrap_or_default();
+			let messages = vec![
+				Message {
+					role: MessageRole::System,
+					content: Some(self.system_prompt.clone()),
+					tool_calls: Vec::new(),
+				},
+				Message {
+					role: MessageRole::User,
+					content: Some(prompt),
+					tool_calls: Vec::new(),
+				},
+			];
+
+			let param = InferenceParam {
+				messages,
+				tools: None,
+			};
+
+			let raw = self
+				.llm
+				.inference(&param)
+				.content
+				.unwrap_or_default();
 				debug!("[BrainAgent] raw final: {}", raw);
 				let final_reply = match parse_json_lenient::<BrainPlan>(&raw) {
 					Ok(BrainPlan::Reply { content }) => Some(content),

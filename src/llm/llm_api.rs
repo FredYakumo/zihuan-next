@@ -189,7 +189,13 @@ impl LLMBase for LLMAPI {
 
         // Add authorization header if API key is provided
         if let Some(ref api_key) = self.api_key {
-            request = request.header("Authorization", format!("Bearer {}", api_key));
+            // Check if api_key already contains "Bearer " prefix
+            let auth_header = if api_key.starts_with("Bearer ") {
+                api_key.to_string()
+            } else {
+                format!("Bearer {}", api_key)
+            };
+            request = request.header("Authorization", auth_header);
         }
 
         // Make the request and handle response
@@ -339,6 +345,12 @@ mod tests {
         let response = api.inference(&param);
         let response_text = response.content.unwrap_or_else(|| "No response".to_string());
         
+        println!("\n========== LLM RESPONSE ==========");
+        println!("Role: {:?}", response.role);
+        println!("Content: {}", response_text);
+        println!("Tool Calls: {:?}", response.tool_calls);
+        println!("================================\n");
+        
         // Verify response is not empty and not an error message
         assert!(!response_text.is_empty(), "LLM response should not be empty");
         assert!(!response_text.starts_with("Error:"), "LLM should return successful response, got: {}", response_text);
@@ -409,6 +421,12 @@ mod tests {
         };
         let response = agent_api.inference(&param);
         let response_text = response.content.unwrap_or_else(|| "No response".to_string());
+        
+        println!("\n========== AGENT MODEL RESPONSE ==========");
+        println!("Role: {:?}", response.role);
+        println!("Content: {}", response_text);
+        println!("Tool Calls: {:?}", response.tool_calls);
+        println!("==========================================\n");
         
         // Verify response is not empty and not an error message
         assert!(!response_text.is_empty(), "Agent model response should not be empty");

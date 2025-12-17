@@ -2,9 +2,10 @@ pub mod agent;
 pub mod llm_api;
 pub mod function_tools;
 
-pub use llm_api::LLMAPI;
 use crate::llm::function_tools::{FunctionTool, ToolCalls};
+use std::sync::Arc;
 
+#[derive(Debug)]
 pub enum MessageRole {
     System,
     User,
@@ -19,7 +20,7 @@ pub struct Message {
 
 pub struct InferenceParam {
     pub messages: Vec<Message>,
-    pub tools: Option<Vec<Box<dyn FunctionTool>>>,
+    pub tools: Option<Vec<Arc<dyn FunctionTool>>>,
 }
 
 pub trait LLMBase {

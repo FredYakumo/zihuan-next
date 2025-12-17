@@ -1,4 +1,3 @@
-use serde::Serialize;
 use serde_json::{Value, json};
 
 pub trait FunctionTool: Send + Sync {
@@ -23,11 +22,13 @@ pub trait FunctionTool: Send + Sync {
     fn call(&self, arguments: Value) -> Result<Value, String>;
 }
 
+#[derive(Debug)]
 pub struct ToolCallsFuncSpec {
     pub name: String,
     pub arguments: Value
 }
 
+#[derive(Debug)]
 pub struct ToolCalls {
     pub id: String,
     pub type_name: String,
