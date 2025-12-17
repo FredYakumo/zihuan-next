@@ -10,6 +10,7 @@ from database.db import engine
 from database.base import Base
 from alembic.config import Config as AlembicConfig
 from alembic.command import upgrade as alembic_upgrade
+from sqlalchemy import text
 
 
 def init_database():
@@ -36,7 +37,7 @@ def verify_database():
     logger.info("Verifying database connection...")
     try:
         with engine.connect() as conn:
-            result = conn.execute("SELECT 1")
+            result = conn.execute(text("SELECT 1"))
             logger.info("Database connection verified successfully.")
             return True
     except Exception as e:
@@ -54,10 +55,8 @@ def main():
             logger.error("Cannot proceed without database connection.")
             sys.exit(1)
         
-        # Run migrations
         run_migrations()
         
-        # Initialize database if needed
         init_database()
         
         logger.info("All maintenance tasks completed successfully.")
