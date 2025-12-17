@@ -1,101 +1,37 @@
-
-
 # Copilot Instructions for zihuan-next_aibot-800b
 
-> **Documentation Principle:** Keep this file concise. Detailed descriptions are distributed in module-specific documentation.
+> Keep this concise. Details live in code, tests, and the module notes under `.github/`.
 
-> **Project Management:** This project uses [uv](https://github.com/astral-sh/uv) for dependency management.
+## Architecture (big picture)
+- Event-driven bot pipeline built in Rust.
+    - Inbound: WebSocket to external QQ bot server using Authorization: Bearer token.
+    - Dispatch: route by `message_type` → handlers in `src/bot_adapter/event.rs`.
+    - Messages: deserialized into typed models (`PlainTextMessage`, `AtTargetMessage`, `ReplayMessage`). See `src/bot_adapter/models/`.
+    - State: recent raw messages cached via Redis (fallback to in-memory) for reply/context (`src/util/message_store.rs`).
+    - LLM: `src/llm/*` provides HTTP-based chat API wrapper and agent scaffolding; integration tests are ignored by default and read `config.yaml`.
 
+## Critical workflows
+- Rust
+    - cp config.yaml.example config.yaml (set BOT_SERVER_URL, REDIS_*, and LLM keys if used)
+    - docker compose -f docker/docker-compose.yaml up -d  # starts Redis only
+    - cargo build | cargo run
+    - cargo test
+    - cargo test -- --ignored  # runs LLM integration tests using config.yaml fields: natural_language_model_* and agent_model_*
 
-## Quick Start
+## Project-specific conventions
+- Single source of truth: `config.yaml`. Config is loaded in `src/main.rs` and Redis URL is constructed dynamically.
+- Always init the message store early (see `BotAdapter::new()` in `src/bot_adapter/adapter.rs`). Redis is preferred; memory fallback logs a warning.
+- Deserialization: serde-based enums with lenient parsing that skips unsupported message elements instead of failing the whole event.
+- Special chars in Redis passwords are percent-encoded (see `pct_encode()` in `src/main.rs`).
+- Logging: logs to `./logs` via `LogUtil` (`log_util` crate).
 
-```bash
-# Setup
-uv sync
-cp config.yaml.example config.yaml  # Edit: BOT_SERVER_URL, REDIS_*, MYSQL_*
-cd docker/redis && docker-compose up -d
-uv run alembic upgrade head
-uv run python main.py
-```
+## Extending the bot (pattern excerpts)
+- New platform/type: add handler in `src/bot_adapter/event.rs` and register in `BotAdapter::new()`. Extend `MessageType` enum in `src/bot_adapter/models/event_model.rs`.
+- Reply context: use `MessageStore::get_message()` to load the original referenced message before LLM/crafting a response.
+- Message persistence: currently messages are stored in Redis cache; add database layer if needed for long-term analytics.
 
+## References (start here)
+- README.md (feature overview)
+- .github/copilot-instructions-*.md (focused module notes): adapter, event, models, utils
+- Key files: `src/main.rs`, `src/bot_adapter/adapter.rs`, `src/bot_adapter/event.rs`, `src/util/message_store.rs`, `src/llm/llm_api.rs`
 
-## Architecture
-
-**Hybrid RAG chatbot** with event-driven design:
-
-
-## Key Conventions
-
-### Configuration
-
-### Message Models
-
-### Event Processing
-```python
-# BotAdapter dispatch pattern
-self.event_process_func = {
-    "private": event.process_friend_message,
-    "group": event.process_group_message
-}
-```
-
-### Database
-
-### Logging
-
-
-## Module References
-
-Detailed patterns and examples:
-
-
-## Common Tasks
-
-**Add message type**: Subclass `MessageBase` → Update `convert_message_from_json()` → Handle in events  
-**Add platform**: Extend `event_process_func` → Implement handler in `event.py`  
-**Modify schema**: Edit `database/models/` → `uv run alembic revision --autogenerate -m "..."` → `uv run alembic upgrade head`
-
-# Copilot Instructions for zihuan-next_aibot-800b
-
-> **Keep concise. For details, see module docs and code.**
-
-## Quick Start
-```bash
-# Setup (Python)
-uv sync
-cp config.yaml.example config.yaml  # Edit: BOT_SERVER_URL, REDIS_*, MYSQL_*
-cd docker/redis && docker-compose up -d
-uv run alembic upgrade head
-uv run python main.py
-# Setup (Rust)
-cargo run
-```
-
-## Architecture & Data Flow
-- **Hybrid RAG chatbot**: Combines vector DB knowledge graphs with real-time chat context (see README for RAG details)
-- **Event-driven**: WebSocket → BotAdapter (Python: `bot_adapter/adapter.py`, Rust: `src/bot_adapter/adapter.rs`) → MessageEvent → platform handler
-- **Storage**: Redis (cache), MySQL (history)
-- **Platforms**: QQ (primary), web, edge
-- **Cross-language**: Python and Rust implementations mirror each other; config and event flow are analogous
-
-## Key Conventions & Patterns
-- **Config**: Python: `utils/config_loader.py` (Pydantic), Rust: `src/main.rs` loads YAML/env. DB URL auto-built from `MYSQL_*`.
-- **Logging**: Python: `utils/logging_config.py`, Rust: `LogUtil` (`src/main.rs`). Priority: env → config → default.
-- **Message Models**: All inherit/implement `MessageBase` (see `bot_adapter/models/message.py` and `src/bot_adapter/models/message.rs`). Add new types by subclassing/enum variant + update deserialization.
-- **Event Dispatch**: Handlers mapped by message type (see `event_process_func` in Python, `event_handlers` in Rust). Add platforms by extending handler map and implementing handler.
-- **Database**: Alembic loads DB URL from config. Never hardcode in `alembic.ini`. Migrate: `uv run alembic revision --autogenerate -m "..."` → `uv run alembic upgrade head`.
-- **MCP-inspired tools**: Implements tool-like patterns (see README, not full MCP server).
-
-## Common Tasks
-- **Add message type**: Subclass/enum `MessageBase` → update `convert_message_from_json` → handle in event logic
-- **Add platform**: Extend handler map → implement handler in event module
-- **Modify schema**: Edit `database/models/` → migrate with Alembic
-
-## Key Files & Examples
-- Python: `main.py`, `bot_adapter/`, `utils/`, `database/`
-- Rust: `src/main.rs`, `src/bot_adapter/`
-
-## Tips
-- For RAG, see README for dual-source retrieval logic
-- For config/logging, always check env > config > default
-- For cross-language, keep Python/Rust logic in sync for event flow and models

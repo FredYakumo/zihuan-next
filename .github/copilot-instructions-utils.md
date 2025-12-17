@@ -1,181 +1,248 @@
-# Copilot Instructions: utils/
+# Copilot Instructions: src/util/ and src/main.rs
 
 ## Purpose
-Shared utilities for configuration loading, logging setup, and message storage.
+Configuration loading, logging setup, and message storage utilities.
 
 ---
 
-## utils/config_loader.py
+## src/main.rs: Configuration Loading
 
-### Pydantic Configuration Model
+### Configuration Structure
 
-```python
-class Config(BaseModel):
-    # Bot connection
-    BOT_SERVER_URL: str = "ws://localhost:3001"
-    BOT_SERVER_TOKEN: Optional[str] = None
-    
-    # Redis cache
-    REDIS_HOST: str = "127.0.0.1"
-    REDIS_PORT: int = 6379
-    REDIS_DB: int = 0
-    REDIS_PASSWORD: Optional[str] = None
-    
-    # MySQL persistent storage
-    MYSQL_HOST: str = "127.0.0.1"
-    MYSQL_PORT: int = 3306
-    MYSQL_USER: str = "zihuan_user"
-    MYSQL_PASSWORD: str = "your_mysql_password"
-    MYSQL_DB: str = "zihuan_db"
-    
-    @property
-    def SQLALCHEMY_DATABASE_URL(self) -> str:
-        """Auto-generated from MYSQL_* fields"""
-        return (
-            f"mysql+pymysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}"
-            f"@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DB}"
-        )
+```rust
+#[derive(Debug, Deserialize)]
+struct Config {
+    #[serde(rename = "BOT_SERVER_URL")]
+    bot_server_url: Option<String>,
+    #[serde(rename = "BOT_SERVER_TOKEN")]
+    bot_server_token: Option<String>,
+    #[serde(rename = "REDIS_HOST")]
+    redis_host: Option<String>,
+    #[serde(rename = "REDIS_PORT")]
+    redis_port: Option<u16>,
+    #[serde(rename = "REDIS_DB")]
+    redis_db: Option<u8>,
+    #[serde(rename = "REDIS_PASSWORD")]
+    redis_password: Option<String>,
+    #[serde(rename = "REDIS_URL")]
+    redis_url: Option<String>,
+}
 ```
 
-### Usage Pattern
-```python
-from utils.config_loader import config
+### Loading Pattern
+```rust
+fn load_config() -> Config {
+    match fs::read_to_string("config.yaml") {
+        Ok(content) => serde_yaml::from_str(&content).unwrap_or_default(),
+        Err(_) => Config { /* defaults */ },
+    }
+}
+```
 
-# Access directly
-print(config.BOT_SERVER_URL)
-print(config.SQLALCHEMY_DATABASE_URL)  # Auto-generated property
+### Redis URL Construction with Password Encoding
+```rust
+fn pct_encode(input: &str) -> String {
+    // Percent-encode everything except unreserved characters: ALPHA / DIGIT / '-' / '.' / '_' / '~'
+    let mut out = String::new();
+    for &b in input.as_bytes() {
+        let c = b as char;
+        if c.is_ascii_alphanumeric() || c == '-' || c == '.' || c == '_' || c == '~' {
+            out.push(c);
+        } else {
+            out.push_str(&format!("%{:02X}", b));
+        }
+    }
+    out
+}
+
+let redis_url = if let (Some(host), Some(port)) = (config.redis_host, config.redis_port) {
+    let db = config.redis_db.unwrap_or(0);
+    let password = config.redis_password.as_deref().unwrap_or("");
+    if !password.is_empty() {
+        let enc = pct_encode(password);
+        Some(format!("redis://:{}@{}:{}/{}", enc, host, port, db))
+    } else {
+        Some(format!("redis://{}:{}/{}", host, port, db))
+    }
+} else {
+    None
+};
 ```
 
 ### Initialization Flow
 1. Looks for `config.yaml` in project root
-2. If missing → Warning + uses defaults from `Config` model
-3. Loads YAML into Pydantic model (validates types, applies defaults)
-4. Global singleton: `config = ConfigLoader("config.yaml")`
+2. If missing or parse error → Uses defaults and fallback to environment variables
+3. Constructs Redis URL with percent-encoded password for special characters
+4. Passes configuration to `BotAdapter::new()`
 
-**Key insight**: Never modify `alembic.ini` database URL. Use `config.yaml` instead (loaded dynamically in `migrations/env.py`).
+**Key insight**: Special characters in passwords (like `@`, `#`) must be percent-encoded for Redis URLs.
 
 ---
 
-## utils/logging_config.py
+## Logging via LogUtil
 
-### Discovery Priority Chain
+### Initialization
 
-#### Log Level
-1. `LOG_LEVEL` environment variable
-2. `config.yaml:log_level` field
-3. Default: `logging.DEBUG`
+```rust
+use log_util::log_util::LogUtil;
+use lazy_static::lazy_static;
 
-#### Log Directory
-1. `ZIHUAN_LOG_DIR` environment variable
-2. `LOG_DIR` / `LOGGER_PATH` / `LOGER_PATH` env variables
-3. `config.yaml:loger_path` (or `logger_path`)
-4. Default: `./logs` (project root)
+lazy_static! {
+    static ref BASE_LOG: LogUtil = LogUtil::new_with_path("zihuan_next_aibot", "logs");
+}
+
+#[tokio::main]
+async fn main() {
+    LogUtil::init_with_logger(&BASE_LOG).expect("Failed to initialize logger");
+    info!("Application starting...");
+}
+```
 
 ### Features
-- **Daily rotation**: Uses `TimedRotatingFileHandler`
-- **Fallback handling**: If target directory fails → creates `./logs`
-- **Global singleton**: Import as `from utils.logging_config import logger`
+- **File logging**: Logs to `./logs` directory
+- **Console output**: Logs to stdout/stderr
+- **Standard log levels**: Uses `log` crate macros
 
 ### Usage Pattern
-```python
-from utils.logging_config import logger
+```rust
+use log::{debug, info, warn, error};
 
-logger.debug("Detailed diagnostic info")
-logger.info("Normal operation")
-logger.warning("Non-critical issue")
-logger.error("Operation failed")
+debug!("Detailed diagnostic info");
+info!("Normal operation");
+warn!("Non-critical issue");
+error!("Operation failed");
 ```
 
-### Configuration Examples
-
-**Via environment**:
-```bash
-# Windows PowerShell
-$env:LOG_LEVEL = "INFO"
-$env:ZIHUAN_LOG_DIR = "C:\logs\zihuan"
-
-# Linux/macOS
-export LOG_LEVEL=INFO
-export ZIHUAN_LOG_DIR=/var/log/zihuan
-```
-
-**Via config.yaml**:
-```yaml
-log_level: INFO
-loger_path: /var/log/zihuan  # Note: typo "loger" is intentional (backward compat)
+### Log Macros
+```rust
+info!("Connecting to server at {}", url);
+warn!("Redis connection failed: {}", e);
+error!("Failed to parse message: {}", err);
+debug!("Received message: {:?}", message);
 ```
 
 ---
 
-## utils/message_store.py
+## src/util/message_store.rs
 
 ### Storage Strategy
 
 **Dual backend**:
 - **Production**: Redis (persistent, shared across processes)
-- **Development fallback**: In-memory dict (single process only)
+- **Development fallback**: In-memory HashMap (single process only)
 
 ### Initialization
 
-```python
-def init_message_store(config, logger):
-    """
-    Call early in BotAdapter.__init__().
-    Attempts Redis connection, falls back to memory on failure.
-    """
-    global _redis_client, _use_global_store
-    
-    # Check if Redis config exists
-    if not all([config.REDIS_HOST, config.REDIS_PORT, config.REDIS_DB]):
-        logger.warning("No Redis config. Using MEMORY Cache (NOT for production!)")
-        _use_global_store = True
-        return
-    
-    # Try connecting
-    try:
-        _redis_client = redis.Redis(
-            host=config.REDIS_HOST,
-            port=config.REDIS_PORT,
-            db=config.REDIS_DB,
-            password=config.REDIS_PASSWORD  # Optional
-        )
-        _redis_client.ping()
-        logger.info("Connected to Redis")
-        _use_global_store = False
-    except Exception as e:
-        logger.error(f"Redis connection failed: {e}")
-        logger.warning("Falling back to MEMORY Cache")
-        _use_global_store = True
+```rust
+use redis::Client;
+use std::collections::HashMap;
+
+pub struct MessageStore {
+    redis_client: Option<Client>,
+    memory_store: HashMap<String, String>,
+}
+
+impl MessageStore {
+    pub async fn new(redis_url: Option<&str>) -> Self {
+        let redis_client = if let Some(url) = redis_url {
+            match Client::open(url) {
+                Ok(client) => {
+                    // Test connection
+                    match client.get_connection() {
+                        Ok(_) => {
+                            info!("Connected to Redis");
+                            Some(client)
+                        }
+                        Err(e) => {
+                            warn!("Failed to connect to Redis: {}. Using memory cache.", e);
+                            None
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to open Redis client: {}. Using memory cache.", e);
+                    None
+                }
+            }
+        } else {
+            warn!("No Redis URL provided. Using memory cache (NOT for production!)");
+            None
+        };
+
+        Self {
+            redis_client,
+            memory_store: HashMap::new(),
+        }
+    }
+}
 ```
 
 ### API
 
-#### store_message(message_id, message, logger=None)
-```python
-# Store message (auto-detects Redis vs memory)
-store_message(msg_id, json_string, logger=logger)
+#### store_message
+```rust
+pub async fn store_message(&mut self, message_id: &str, message: &str) {
+    if let Some(client) = &self.redis_client {
+        match client.get_connection() {
+            Ok(mut conn) => {
+                if let Err(e) = redis::cmd("SET")
+                    .arg(message_id)
+                    .arg(message)
+                    .query::<()>(&mut conn)
+                {
+                    warn!("Failed to store in Redis: {}. Storing in memory.", e);
+                    self.memory_store.insert(message_id.to_string(), message.to_string());
+                }
+            }
+            Err(e) => {
+                warn!("Redis connection error: {}. Storing in memory.", e);
+                self.memory_store.insert(message_id.to_string(), message.to_string());
+            }
+        }
+    } else {
+        self.memory_store.insert(message_id.to_string(), message.to_string());
+    }
+}
 ```
 
-#### get_message(message_id)
-```python
-# Retrieve message (returns bytes from Redis, str from memory, or None)
-original = get_message(reply_msg.message_id)
+#### get_message
+```rust
+pub async fn get_message(&self, message_id: &str) -> Option<String> {
+    if let Some(client) = &self.redis_client {
+        match client.get_connection() {
+            Ok(mut conn) => {
+                match redis::cmd("GET").arg(message_id).query::<String>(&mut conn) {
+                    Ok(value) => return Some(value),
+                    Err(_) => {}
+                }
+            }
+            Err(_) => {}
+        }
+    }
+    self.memory_store.get(message_id).cloned()
+}
 ```
 
 ### Usage Pattern
 
-```python
-# In BotAdapter initialization
-init_message_store(config, logger)  # MUST be first
+```rust
+// In BotAdapter initialization
+let message_store = Arc::new(TokioMutex::new(MessageStore::new(redis_url.as_deref()).await));
 
-# In event processing
-store_message(message_id, raw_json, logger=logger)
+// In event processing (async spawn to avoid blocking)
+let store = self.message_store.clone();
+let msg_id = message_id.to_string();
+let msg_str = serde_json::to_string(&raw_event).unwrap_or_default();
+tokio::spawn(async move {
+    let mut store = store.lock().await;
+    store.store_message(&msg_id, &msg_str).await;
+});
 
-# In handlers (e.g., processing replies)
-from utils.message_store import get_message
-original = get_message(reply_message_id)
-if original:
-    # Process original message context
+// In handlers (retrieving context)
+let store = message_store.lock().await;
+if let Some(original) = store.get_message(&reply_message_id).await {
+    // Process original JSON string
+}
 ```
 
 ### Production Considerations
@@ -190,13 +257,13 @@ if original:
 - Single-process testing
 - Short-lived sessions
 
-**Warning**: Memory cache logs `NOT suitable for production!` — ensure Redis is configured before deploying.
+**Warning**: Memory cache logs warning `NOT suitable for production!` — ensure Redis is configured before deploying.
 
 ---
 
 ## Integration Points
 
-- **Config**: Loaded once at startup, accessed globally via `utils.config_loader.config`
-- **Logger**: Configured once at import, accessed globally via `utils.logging_config.logger`
-- **Message Store**: Initialized in `BotAdapter.__init__()`, used in `adapter.py` and `event.py`
-- **Database**: `config.SQLALCHEMY_DATABASE_URL` consumed by `database/db.py` and `migrations/env.py`
+- **Config**: Loaded in `src/main.rs` from `config.yaml`
+- **Logger**: `LogUtil` initialized in `src/main.rs`, accessed via `log` crate macros
+- **Message Store**: Created in `BotAdapter::new()`, wrapped in `Arc<TokioMutex<>>` for async access
+- **Redis URL**: Constructed in `src/main.rs` with percent-encoded password, passed to `MessageStore::new()`
