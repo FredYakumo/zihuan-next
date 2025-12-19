@@ -49,6 +49,8 @@ pub struct MessageEvent {
     pub message_type: MessageType,
     pub sender: Sender,
     pub message_list: Vec<Message>,
+    pub group_id: Option<i64>,
+    pub group_name: Option<String>,
 }
 
 
@@ -61,6 +63,10 @@ pub struct RawMessageEvent {
     #[serde(default)]
     #[serde(deserialize_with = "deserialize_message_vec_lenient")]
     pub message: Vec<Message>,
+    #[serde(default)]
+    pub group_id: Option<i64>,
+    #[serde(default)]
+    pub group_name: Option<String>,
 }
 
 fn deserialize_message_vec_lenient<'de, D>(deserializer: D) -> Result<Vec<Message>, D::Error>

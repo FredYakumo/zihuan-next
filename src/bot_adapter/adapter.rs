@@ -132,6 +132,8 @@ impl BotAdapter {
             message_type: raw_event.message_type,
             sender: raw_event.sender.clone(),
             message_list: raw_event.message.clone(),
+            group_id: raw_event.group_id,
+            group_name: raw_event.group_name.clone(),
         };
 
         // Store the message in the message store (async spawn)

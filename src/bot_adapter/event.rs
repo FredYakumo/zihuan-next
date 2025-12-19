@@ -73,8 +73,8 @@ pub async fn process_group_message(event: &MessageEvent, store: Arc<TokioMutex<M
             event.sender.nickname.clone()
         },
         send_time: Local::now().naive_local(),
-        group_id: None,  // TODO: Extract group_id from event if available
-        group_name: None,  // TODO: Extract group_name from event if available
+        group_id: event.group_id.map(|id| id.to_string()),
+        group_name: event.group_name.clone(),
         content: messages.join(" "),
         at_target_list: if at_target_list.is_empty() {
             None
