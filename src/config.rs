@@ -1,0 +1,112 @@
+use std::fs;
+use serde::Deserialize;
+use log::{info, error};
+
+#[derive(Debug, Deserialize)]
+pub struct Config {
+    #[serde(rename = "BOT_SERVER_URL")]
+    pub bot_server_url: String,
+    #[serde(rename = "BOT_SERVER_TOKEN")]
+    pub bot_server_token: String,
+    #[serde(rename = "REDIS_HOST")]
+    pub redis_host: Option<String>,
+    #[serde(rename = "REDIS_PORT")]
+    pub redis_port: Option<u16>,
+    #[serde(rename = "REDIS_DB")]
+    pub redis_db: Option<u8>,
+    #[serde(rename = "REDIS_PASSWORD")]
+    pub redis_password: Option<String>,
+    #[serde(rename = "REDIS_URL")]
+    pub redis_url: Option<String>,
+}
+
+/// Load configuration from config.yaml file
+pub fn load_config() -> Config {
+    // Try to load from config.yaml
+    let mut config = match fs::read_to_string("config.yaml") {
+        Ok(content) => {
+            match serde_yaml::from_str(&content) {
+                Ok(config) => {
+                    info!("Loaded configuration from config.yaml");
+                    config
+                }
+                Err(e) => {
+                    error!("Failed to parse config.yaml: {}", e);
+                    Config {
+                        bot_server_url: String::new(),
+                        bot_server_token: String::new(),
+                        redis_host: None,
+                        redis_port: None,
+                        redis_db: None,
+                        redis_password: None,
+                        redis_url: None,
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            info!("Could not read config.yaml ({}), using environment variables", e);
+            Config {
+                bot_server_url: String::new(),
+                bot_server_token: String::new(),
+                redis_host: None,
+                redis_port: None,
+                redis_db: None,
+                redis_password: None,
+                redis_url: None,
+            }
+        }
+    };
+
+    // Apply defaults and environment variable overrides
+    if config.bot_server_url.is_empty() {
+        config.bot_server_url = std::env::var("BOT_SERVER_URL")
+            .unwrap_or_else(|_| "ws://localhost:3001".to_string());
+    }
+    
+    if config.bot_server_token.is_empty() {
+        config.bot_server_token = std::env::var("BOT_SERVER_TOKEN").unwrap_or_default();
+    }
+    
+    config
+}
+
+/// Percent-encode a password for safe inclusion in a URL
+pub fn pct_encode(input: &str) -> String {
+    // Encode everything except unreserved characters per RFC 3986: ALPHA / DIGIT / '-' / '.' / '_' / '~'
+    let mut out = String::new();
+    for &b in input.as_bytes() {
+        let c = b as char;
+        if c.is_ascii_alphanumeric() || c == '-' || c == '.' || c == '_' || c == '~' {
+            out.push(c);
+        } else {
+            out.push_str(&format!("%{:02X}", b));
+        }
+    }
+    out
+}
+
+/// Build Redis URL from configuration
+pub fn build_redis_url(config: &Config) -> Option<String> {
+    if let Some(url) = config.redis_url.clone() {
+        return Some(url);
+    }
+    
+    if std::env::var("REDIS_URL").is_ok() {
+        return std::env::var("REDIS_URL").ok();
+    }
+    
+    if let (Some(host), Some(port)) = (config.redis_host.as_ref(), config.redis_port) {
+        let db = config.redis_db.unwrap_or(0);
+        let password = config.redis_password.as_deref().unwrap_or("");
+        if !password.is_empty() {
+            // Percent-encode password to safely include special characters like @ and #
+            let enc = pct_encode(password);
+            return Some(format!("redis://:{}@{}:{}/{}", enc, host, port, db));
+        } else {
+            return Some(format!("redis://{}:{}/{}", host, port, db));
+        }
+    }
+    
+    None
+}
