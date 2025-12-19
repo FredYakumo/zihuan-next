@@ -29,7 +29,7 @@ pub async fn process_friend_message(event: &MessageEvent, store: Arc<TokioMutex<
         group_id: None,
         group_name: None,
         content: messages.join(" "),
-        at_target_list: String::new(),
+        at_target_list: None,  // Private messages don't have @mentions
     };
 
     let store_guard = store.lock().await;
@@ -76,7 +76,11 @@ pub async fn process_group_message(event: &MessageEvent, store: Arc<TokioMutex<M
         group_id: None,  // TODO: Extract group_id from event if available
         group_name: None,  // TODO: Extract group_name from event if available
         content: messages.join(" "),
-        at_target_list: at_target_list.join(","),
+        at_target_list: if at_target_list.is_empty() {
+            None
+        } else {
+            Some(at_target_list.join(","))
+        },
     };
 
     let store_guard = store.lock().await;

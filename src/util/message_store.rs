@@ -25,7 +25,7 @@ pub struct MessageRecord {
     pub group_id: Option<String>,
     pub group_name: Option<String>,
     pub content: String,
-    pub at_target_list: String,
+    pub at_target_list: Option<String>,
 }
 
 impl MessageStore {
@@ -301,7 +301,7 @@ mod tests {
             group_id: Some("group_456".to_string()),
             group_name: Some("Test Group".to_string()),
             content: "Hello, this is a test message".to_string(),
-            at_target_list: "@user1,@user2".to_string(),
+            at_target_list: Some("@user1,@user2".to_string()),
         };
         
         let result = store.store_message_record(&record).await;
