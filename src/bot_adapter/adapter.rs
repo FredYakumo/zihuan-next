@@ -1,15 +1,14 @@
-
 use futures_util::StreamExt;
-use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 use log::{debug, error, info, warn};
+use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 
 use super::event;
-use super::models::{MessageEvent, MessageType, RawMessageEvent, Profile};
-use crate::util::url_utils::extract_host;
+use super::models::{MessageEvent, MessageType, Profile, RawMessageEvent};
 use crate::util::message_store::MessageStore;
+use crate::util::url_utils::extract_host;
 use std::env;
-use tokio::sync::Mutex as TokioMutex;
 use std::sync::Arc;
+use tokio::sync::Mutex as TokioMutex;
 
 /// BotAdapter connects to the QQ bot server via WebSocket and processes events
 pub struct BotAdapter {
@@ -19,8 +18,10 @@ pub struct BotAdapter {
     bot_profile: Option<Profile>,
 }
 
-impl BotAdapter {
+/// Shared handle for BotAdapter that allows mutation inside async tasks
+pub type SharedBotAdapter = Arc<TokioMutex<BotAdapter>>;
 
+impl BotAdapter {
     pub async fn new(
         url: impl Into<String>,
         token: impl Into<String>,
@@ -34,22 +35,25 @@ impl BotAdapter {
     ) -> Self {
         // Use provided redis_url, fallback to env var
         let redis_url = redis_url.or_else(|| env::var("REDIS_URL").ok());
-        
+
         // Use provided database_url, fallback to env var
         let database_url = if database_url.is_some() {
             database_url
         } else {
             env::var("DATABASE_URL").ok()
         };
-        
-        let message_store = Arc::new(TokioMutex::new(MessageStore::new(
-            redis_url.as_deref(),
-            database_url.as_deref(),
-            redis_reconnect_max_attempts,
-            redis_reconnect_interval_secs,
-            mysql_reconnect_max_attempts,
-            mysql_reconnect_interval_secs,
-        ).await));
+
+        let message_store = Arc::new(TokioMutex::new(
+            MessageStore::new(
+                redis_url.as_deref(),
+                database_url.as_deref(),
+                redis_reconnect_max_attempts,
+                redis_reconnect_interval_secs,
+                mysql_reconnect_max_attempts,
+                mysql_reconnect_interval_secs,
+            )
+            .await,
+        ));
 
         Self {
             url: url.into(),
@@ -62,19 +66,42 @@ impl BotAdapter {
         }
     }
 
-    /// Start the WebSocket connection and begin processing events
-    pub async fn start(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        info!("Connecting to bot server at {}", self.url);
+    /// Convert this adapter into a shared, mutex-protected handle
+    pub fn into_shared(self) -> SharedBotAdapter {
+        Arc::new(TokioMutex::new(self))
+    }
+
+    pub fn get_bot_id(&self) -> &str {
+        self.bot_profile
+            .as_ref()
+            .expect("BotProfile must be initialized before accessing bot_id")
+            .qq_id
+            .as_str()
+    }
+
+    /// Start the WebSocket connection and begin processing events using a shared handle
+    pub async fn start(
+        adapter: SharedBotAdapter,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let (url, token) = {
+            let guard = adapter.lock().await;
+            (guard.url.clone(), guard.token.clone())
+        };
+
+        info!("Connecting to bot server at {}", url);
 
         // Build the WebSocket request with authorization header
         let request = http::Request::builder()
-            .uri(&self.url)
-            .header("Authorization", format!("Bearer {}", self.token))
-            .header("Host", extract_host(&self.url).unwrap_or("localhost"))
+            .uri(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Host", extract_host(&url).unwrap_or("localhost"))
             .header("Connection", "Upgrade")
             .header("Upgrade", "websocket")
             .header("Sec-WebSocket-Version", "13")
-            .header("Sec-WebSocket-Key", tokio_tungstenite::tungstenite::handshake::client::generate_key())
+            .header(
+                "Sec-WebSocket-Key",
+                tokio_tungstenite::tungstenite::handshake::client::generate_key(),
+            )
             .body(())?;
 
         let (ws_stream, _) = connect_async(request).await?;
@@ -86,11 +113,13 @@ impl BotAdapter {
         while let Some(msg_result) = read.next().await {
             match msg_result {
                 Ok(WsMessage::Text(text)) => {
-                    self.process_event(&text);
+                    let adapter_clone = adapter.clone();
+                    BotAdapter::process_event(adapter_clone, text).await;
                 }
                 Ok(WsMessage::Binary(data)) => {
                     if let Ok(text) = String::from_utf8(data) {
-                        self.process_event(&text);
+                        let adapter_clone = adapter.clone();
+                        BotAdapter::process_event(adapter_clone, text).await;
                     } else {
                         warn!("Received binary message that is not valid UTF-8");
                     }
@@ -116,11 +145,11 @@ impl BotAdapter {
     }
 
     /// Process a single event message
-    fn process_event(&self, message: &str) {
+    async fn process_event(adapter: SharedBotAdapter, message: String) {
         debug!("Received message: {}", message);
 
         // Parse the JSON message
-        let message_json: serde_json::Value = match serde_json::from_str(message) {
+        let message_json: serde_json::Value = match serde_json::from_str(&message) {
             Ok(v) => v,
             Err(e) => {
                 error!("Failed to parse message as JSON: {}", e);
@@ -154,25 +183,32 @@ impl BotAdapter {
         };
 
         // Store the message in the message store (async spawn)
-        let store = self.message_store.clone();
+        let store = {
+            let guard = adapter.lock().await;
+            guard.message_store.clone()
+        };
         let msg_id = raw_event.message_id.to_string();
         let msg_str = serde_json::to_string(&raw_event).unwrap_or_default();
+        let store_for_spawn = store.clone();
         tokio::spawn(async move {
-            let store = store.lock().await;
+            let store = store_for_spawn.lock().await;
             store.store_message(&msg_id, &msg_str).await;
         });
 
         // Dispatch to the appropriate handler based on message type
-        let store = self.message_store.clone();
+        let store = store.clone();
         match event.message_type {
             MessageType::Private => {
+                let adapter_clone = adapter.clone();
+                let event_clone = event.clone();
                 tokio::spawn(async move {
-                    event::process_friend_message(&event, store).await;
+                    event::process_friend_message(adapter_clone, event_clone, store).await;
                 });
             }
             MessageType::Group => {
+                let adapter_clone = adapter.clone();
                 tokio::spawn(async move {
-                    event::process_group_message(&event, store).await;
+                    event::process_group_message(adapter_clone, event, store).await;
                 });
             }
         }

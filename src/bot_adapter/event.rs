@@ -6,10 +6,13 @@ use std::pin::Pin;
 use chrono::Local;
 
 use super::models::MessageEvent;
-use crate::util::message_store::{MessageStore, MessageRecord};
+use crate::{bot_adapter::adapter::SharedBotAdapter, util::message_store::{MessageRecord, MessageStore}};
 
 /// Process private (friend) messages
-pub async fn process_friend_message(event: &MessageEvent, store: Arc<TokioMutex<MessageStore>>) {
+pub async fn process_friend_message(bot_adapter: SharedBotAdapter, event: MessageEvent, store: Arc<TokioMutex<MessageStore>>) {
+    // Acquire mutable access to the adapter if needed by downstream logic
+    let mut _bot_adapter_guard = bot_adapter.lock().await;
+
     let messages: Vec<String> = event.message_list.iter()
         .map(|m| m.to_string())
         .collect();
@@ -29,7 +32,7 @@ pub async fn process_friend_message(event: &MessageEvent, store: Arc<TokioMutex<
         group_id: None,
         group_name: None,
         content: messages.join(" "),
-        at_target_list: None,  // Private messages don't have @mentions
+        at_target_list: bot_adapter.lock()
     };
 
     let store_guard = store.lock().await;
@@ -41,7 +44,10 @@ pub async fn process_friend_message(event: &MessageEvent, store: Arc<TokioMutex<
 }
 
 /// Process group messages
-pub async fn process_group_message(event: &MessageEvent, store: Arc<TokioMutex<MessageStore>>) {
+pub async fn process_group_message(bot_adapter: SharedBotAdapter, event: MessageEvent, store: Arc<TokioMutex<MessageStore>>) {
+    // Acquire mutable access to the adapter if needed by downstream logic
+    let mut _bot_adapter_guard = bot_adapter.lock().await;
+
     let messages: Vec<String> = event.message_list.iter()
         .map(|m| m.to_string())
         .collect();

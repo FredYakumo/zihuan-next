@@ -69,8 +69,9 @@ async fn main() {
         config.mysql_reconnect_interval_secs,
         args.qq_id,
     ).await;
+    let adapter = adapter.into_shared();
     info!("Bot adapter initialized, connecting to server...");
-    if let Err(e) = adapter.start().await {
+    if let Err(e) = BotAdapter::start(adapter).await {
         error!("Bot adapter error: {}", e);
     }
 }
