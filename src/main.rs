@@ -65,6 +65,8 @@ async fn main() {
         database_url,
         config.redis_reconnect_max_attempts,
         config.redis_reconnect_interval_secs,
+        config.mysql_reconnect_max_attempts,
+        config.mysql_reconnect_interval_secs,
         args.qq_id,
     ).await;
     info!("Bot adapter initialized, connecting to server...");

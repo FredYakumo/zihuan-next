@@ -28,6 +28,8 @@ impl BotAdapter {
         database_url: Option<String>,
         redis_reconnect_max_attempts: Option<u32>,
         redis_reconnect_interval_secs: Option<u64>,
+        mysql_reconnect_max_attempts: Option<u32>,
+        mysql_reconnect_interval_secs: Option<u64>,
         qq_id: String,
     ) -> Self {
         // Use provided redis_url, fallback to env var
@@ -45,6 +47,8 @@ impl BotAdapter {
             database_url.as_deref(),
             redis_reconnect_max_attempts,
             redis_reconnect_interval_secs,
+            mysql_reconnect_max_attempts,
+            mysql_reconnect_interval_secs,
         ).await));
 
         Self {

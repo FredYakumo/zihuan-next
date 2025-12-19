@@ -34,6 +34,10 @@ pub struct Config {
     pub mysql_database: Option<String>,
     #[serde(rename = "DATABASE_URL")]
     pub database_url: Option<String>,
+    #[serde(rename = "MYSQL_RECONNECT_MAX_ATTEMPTS")]
+    pub mysql_reconnect_max_attempts: Option<u32>,
+    #[serde(rename = "MYSQL_RECONNECT_INTERVAL_SECS")]
+    pub mysql_reconnect_interval_secs: Option<u64>,
 }
 
 /// Load configuration from config.yaml file
@@ -64,6 +68,8 @@ pub fn load_config() -> Config {
                         mysql_password: None,
                         mysql_database: None,
                         database_url: None,
+                        mysql_reconnect_max_attempts: None,
+                        mysql_reconnect_interval_secs: None,
                     }
                 }
             }
@@ -86,6 +92,8 @@ pub fn load_config() -> Config {
                 mysql_password: None,
                 mysql_database: None,
                 database_url: None,
+                mysql_reconnect_max_attempts: None,
+                mysql_reconnect_interval_secs: None,
             }
         }
     };
@@ -124,6 +132,33 @@ pub fn load_config() -> Config {
 
     if config.redis_reconnect_interval_secs.is_none() {
         config.redis_reconnect_interval_secs = Some(60);
+    }
+
+    // MySQL reconnect configs
+    if config.mysql_reconnect_max_attempts.is_none() {
+        if let Ok(val) = std::env::var("MYSQL_RECONNECT_MAX_ATTEMPTS") {
+            match val.parse() {
+                Ok(parsed) => config.mysql_reconnect_max_attempts = Some(parsed),
+                Err(e) => warn!("Failed to parse MYSQL_RECONNECT_MAX_ATTEMPTS ({}), using default 3", e),
+            }
+        }
+    }
+
+    if config.mysql_reconnect_interval_secs.is_none() {
+        if let Ok(val) = std::env::var("MYSQL_RECONNECT_INTERVAL_SECS") {
+            match val.parse() {
+                Ok(parsed) => config.mysql_reconnect_interval_secs = Some(parsed),
+                Err(e) => warn!("Failed to parse MYSQL_RECONNECT_INTERVAL_SECS ({}), using default 60s", e),
+            }
+        }
+    }
+
+    if config.mysql_reconnect_max_attempts.is_none() {
+        config.mysql_reconnect_max_attempts = Some(3);
+    }
+
+    if config.mysql_reconnect_interval_secs.is_none() {
+        config.mysql_reconnect_interval_secs = Some(60);
     }
     
     config

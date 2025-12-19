@@ -15,14 +15,24 @@ struct RedisState {
     reconnect_in_progress: bool,
 }
 
+struct MySqlState {
+    pool: Option<MySqlPool>,
+    use_memory: bool,
+    reconnect_in_progress: bool,
+}
+
 /// MessageStore provides Redis-backed message storage with MySQL persistence and in-memory fallback
 pub struct MessageStore {
     redis_state: Arc<Mutex<RedisState>>,
     redis_url: Option<String>,
     reconnect_max_attempts: u32,
     reconnect_interval_secs: u64,
-    mysql_pool: Option<MySqlPool>,
+    mysql_state: Arc<Mutex<MySqlState>>,
+    mysql_url: Option<String>,
+    mysql_reconnect_max_attempts: u32,
+    mysql_reconnect_interval_secs: u64,
     memory_store: Arc<Mutex<HashMap<String, String>>>,
+    mysql_memory_store: Arc<Mutex<HashMap<String, MessageRecord>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -44,32 +54,43 @@ impl MessageStore {
         mysql_url: Option<&str>,
         max_reconnect_attempts: Option<u32>,
         reconnect_interval_secs: Option<u64>,
+        mysql_max_reconnect_attempts: Option<u32>,
+        mysql_reconnect_interval_secs: Option<u64>,
     ) -> Self {
         let memory_store = Arc::new(Mutex::new(HashMap::new()));
+        let mysql_memory_store = Arc::new(Mutex::new(HashMap::new()));
         let reconnect_max_attempts = max_reconnect_attempts.unwrap_or(3);
         let reconnect_interval_secs = reconnect_interval_secs.unwrap_or(60);
+        let mysql_reconnect_max_attempts = mysql_max_reconnect_attempts.unwrap_or(3);
+        let mysql_reconnect_interval_secs = mysql_reconnect_interval_secs.unwrap_or(60);
         let redis_url_owned = redis_url.map(|u| u.to_string());
+        let mysql_url_owned = mysql_url.map(|u| u.to_string());
         let mut redis_state = RedisState {
             conn: None,
             use_memory: true,
             reconnect_in_progress: false,
         };
+        let mut mysql_state = MySqlState {
+            pool: None,
+            use_memory: true,
+            reconnect_in_progress: false,
+        };
         
-        let mysql_pool = if let Some(url) = mysql_url {
+        if let Some(url) = mysql_url {
             match MySqlPool::connect(url).await {
                 Ok(pool) => {
                     info!("[MessageStore] Connected to MySQL at {}", url);
-                    Some(pool)
+                    mysql_state.pool = Some(pool);
+                    mysql_state.use_memory = false;
                 }
                 Err(e) => {
-                    error!("[MessageStore] Failed to connect to MySQL: {}", e);
-                    None
+                    error!("[MessageStore] Failed to connect to MySQL {}: {}", url, e);
+                    warn!("[MessageStore] Falling back to in-memory message record store due to MySQL connection error.");
                 }
             }
         } else {
             warn!("[MessageStore] No MySQL URL provided. Persistent storage disabled.");
-            None
-        };
+        }
 
         if let Some(url) = redis_url {
             match redis::Client::open(url) {
@@ -98,8 +119,12 @@ impl MessageStore {
             redis_url: redis_url_owned,
             reconnect_max_attempts,
             reconnect_interval_secs,
-            mysql_pool,
+            mysql_state: Arc::new(Mutex::new(mysql_state)),
+            mysql_url: mysql_url_owned,
+            mysql_reconnect_max_attempts,
+            mysql_reconnect_interval_secs,
             memory_store,
+            mysql_memory_store,
         }
     }
 
@@ -202,6 +227,118 @@ impl MessageStore {
         });
     }
 
+    async fn schedule_mysql_reconnect(&self) {
+        let mysql_url = match &self.mysql_url {
+            Some(url) => url.clone(),
+            None => {
+                warn!("[MessageStore] No MySQL URL available for reconnection attempts.");
+                return;
+            }
+        };
+
+        {
+            let mut state = self.mysql_state.lock().await;
+            if state.reconnect_in_progress {
+                debug!("[MessageStore] MySQL reconnection already in progress, skipping new attempt.");
+                return;
+            }
+            state.reconnect_in_progress = true;
+        }
+
+        let state = self.mysql_state.clone();
+        let memory_records = self.mysql_memory_store.clone();
+        let max_attempts = self.mysql_reconnect_max_attempts;
+        let interval_secs = self.mysql_reconnect_interval_secs;
+
+        tokio::spawn(async move {
+            for attempt in 1..=max_attempts {
+                match MySqlPool::connect(mysql_url.as_str()).await {
+                    Ok(pool) => {
+                        info!("[MessageStore] MySQL reconnection succeeded on attempt {}", attempt);
+
+                        // Migrate in-memory records to MySQL
+                        let records_map = {
+                            let store = memory_records.lock().await;
+                            store.clone()
+                        };
+
+                        let mut migrated_count = 0;
+                        let mut failed_count = 0;
+
+                        for (_, record) in records_map.iter() {
+                            let result = sqlx::query(
+                                r#"
+                                INSERT INTO message_record 
+                                (message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                "#
+                            )
+                            .bind(&record.message_id)
+                            .bind(&record.sender_id)
+                            .bind(&record.sender_name)
+                            .bind(record.send_time)
+                            .bind(&record.group_id)
+                            .bind(&record.group_name)
+                            .bind(&record.content)
+                            .bind(&record.at_target_list)
+                            .execute(&pool)
+                            .await;
+
+                            match result {
+                                Ok(_) => {
+                                    migrated_count += 1;
+                                    debug!("[MessageStore] Migrated record {} from memory to MySQL", record.message_id);
+                                }
+                                Err(e) => {
+                                    failed_count += 1;
+                                    error!("[MessageStore] Failed to migrate record {} to MySQL: {}", record.message_id, e);
+                                }
+                            }
+                        }
+
+                        if migrated_count > 0 {
+                            info!("[MessageStore] Successfully migrated {} records from memory to MySQL", migrated_count);
+                        }
+                        if failed_count > 0 {
+                            warn!("[MessageStore] Failed to migrate {} records to MySQL", failed_count);
+                        }
+
+                        // Clear memory after successful migration attempt
+                        {
+                            let mut store = memory_records.lock().await;
+                            store.clear();
+                            info!("[MessageStore] Cleared in-memory MySQL record cache after reconnection");
+                        }
+
+                        // Update state
+                        let mut guard = state.lock().await;
+                        guard.pool = Some(pool);
+                        guard.use_memory = false;
+                        guard.reconnect_in_progress = false;
+                        return;
+                    }
+                    Err(e) => {
+                        error!(
+                            "[MessageStore] MySQL reconnection attempt {} failed: {}",
+                            attempt, e
+                        );
+                    }
+                }
+
+                if attempt < max_attempts {
+                    sleep(Duration::from_secs(interval_secs)).await;
+                }
+            }
+
+            let mut guard = state.lock().await;
+            guard.reconnect_in_progress = false;
+            warn!(
+                "[MessageStore] Exhausted MySQL reconnection attempts ({} tries). Continuing with in-memory records.",
+                max_attempts
+            );
+        });
+    }
+
     /// Store a message by ID
     pub async fn store_message(&self, message_id: &str, message: &str) {
         let mut need_reconnect = false;
@@ -246,8 +383,12 @@ impl MessageStore {
 
     /// Store a full message record to MySQL
     pub async fn store_message_record(&self, record: &MessageRecord) -> Result<(), String> {
-        if let Some(pool) = &self.mysql_pool {
-            let result = sqlx::query(
+        let mut need_reconnect = false;
+        {
+            let mut state = self.mysql_state.lock().await;
+            if !state.use_memory {
+                if let Some(pool) = &state.pool {
+                    let result = sqlx::query(
                 r#"
                 INSERT INTO message_record 
                 (message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list)
@@ -264,27 +405,44 @@ impl MessageStore {
             .bind(&record.at_target_list)
             .execute(pool)
             .await;
-
-            match result {
-                Ok(_) => {
-                    debug!("[MessageStore] Message record persisted to MySQL: {}", record.message_id);
-                    Ok(())
-                }
-                Err(e) => {
-                    error!("[MessageStore] Failed to store message record in MySQL: {}", e);
-                    Err(format!("MySQL storage failed: {}", e))
+                    match result {
+                        Ok(_) => {
+                            debug!("[MessageStore] Message record persisted to MySQL: {}", record.message_id);
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            error!("[MessageStore] Failed to store message record in MySQL: {}", e);
+                            state.use_memory = true;
+                            state.pool = None;
+                            need_reconnect = true;
+                            warn!("[MessageStore] Switching to in-memory message record store due to MySQL error.");
+                        }
+                    }
+                } else {
+                    state.use_memory = true;
+                    need_reconnect = true;
+                    warn!("[MessageStore] MySQL pool missing, switching to in-memory record store.");
                 }
             }
-        } else {
-            warn!("[MessageStore] MySQL pool not available for persistence");
-            Err("MySQL pool not configured".to_string())
         }
+
+        if need_reconnect {
+            self.schedule_mysql_reconnect().await;
+        }
+
+        // Store record in memory buffer
+        let mut mem = self.mysql_memory_store.lock().await;
+        mem.insert(record.message_id.clone(), record.clone());
+        debug!("[MessageStore] Message record stored in memory buffer: {}", record.message_id);
+        Ok(())
     }
 
     /// Retrieve a message record from MySQL by message_id
     pub async fn get_message_record(&self, message_id: &str) -> Result<Option<MessageRecord>, String> {
-        if let Some(pool) = &self.mysql_pool {
-            let result = sqlx::query(
+        {
+            let state = self.mysql_state.lock().await;
+            if let Some(pool) = &state.pool {
+                let result = sqlx::query(
                 r#"
                 SELECT message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list
                 FROM message_record
@@ -294,34 +452,36 @@ impl MessageStore {
             .bind(message_id)
             .fetch_optional(pool)
             .await;
-
-            match result {
-                Ok(Some(row)) => {
-                    let record = MessageRecord {
-                        message_id: row.get("message_id"),
-                        sender_id: row.get("sender_id"),
-                        sender_name: row.get("sender_name"),
-                        send_time: row.get("send_time"),
-                        group_id: row.get("group_id"),
-                        group_name: row.get("group_name"),
-                        content: row.get("content"),
-                        at_target_list: row.get("at_target_list"),
-                    };
-                    debug!("[MessageStore] Message record retrieved from MySQL: {}", message_id);
-                    Ok(Some(record))
-                }
-                Ok(None) => {
-                    debug!("[MessageStore] Message record not found in MySQL: {}", message_id);
-                    Ok(None)
-                }
-                Err(e) => {
-                    error!("[MessageStore] Failed to retrieve message record from MySQL: {}", e);
-                    Err(format!("MySQL retrieval failed: {}", e))
+                match result {
+                    Ok(Some(row)) => {
+                        let record = MessageRecord {
+                            message_id: row.get("message_id"),
+                            sender_id: row.get("sender_id"),
+                            sender_name: row.get("sender_name"),
+                            send_time: row.get("send_time"),
+                            group_id: row.get("group_id"),
+                            group_name: row.get("group_name"),
+                            content: row.get("content"),
+                            at_target_list: row.get("at_target_list"),
+                        };
+                        debug!("[MessageStore] Message record retrieved from MySQL: {}", message_id);
+                        return Ok(Some(record))
+                    }
+                    Ok(None) => {
+                        debug!("[MessageStore] Message record not found in MySQL: {}", message_id);
+                        // Fall through to memory buffer lookup below
+                    }
+                    Err(e) => {
+                        error!("[MessageStore] Failed to retrieve message record from MySQL: {}", e);
+                        // Fall through to memory buffer lookup below
+                    }
                 }
             }
-        } else {
-            Err("MySQL pool not configured".to_string())
         }
+
+        // Fallback to memory buffer
+        let mem = self.mysql_memory_store.lock().await;
+        Ok(mem.get(message_id).cloned())
     }
 
     /// Get a message by ID
@@ -399,17 +559,26 @@ impl MessageStore {
         }
 
         // Try MySQL as fallback
-        if let Some(pool) = &self.mysql_pool {
-            if let Ok(Some(record)) = sqlx::query_as::<_, (String,)>(
-                "SELECT content FROM message_record WHERE message_id = ? LIMIT 1"
-            )
-            .bind(message_id)
-            .fetch_optional(pool)
-            .await
-            {
-                debug!("[MessageStore] Message retrieved from MySQL: {}", message_id);
-                return Some(record.0);
+        {
+            let state = self.mysql_state.lock().await;
+            if let Some(pool) = state.pool.as_ref() {
+                if let Ok(Some(record)) = sqlx::query_as::<_, (String,)>(
+                    "SELECT content FROM message_record WHERE message_id = ? LIMIT 1"
+                )
+                .bind(message_id)
+                .fetch_optional(pool)
+                .await
+                {
+                    debug!("[MessageStore] Message retrieved from MySQL: {}", message_id);
+                    return Some(record.0);
+                }
             }
+        }
+
+        // Try memory buffer for MySQL records
+        let mem = self.mysql_memory_store.lock().await;
+        if let Some(rec) = mem.get(message_id) {
+            return Some(rec.content.clone());
         }
 
         // Fallback to memory
@@ -425,7 +594,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_memory_store() {
-        let store = MessageStore::new(None, None, None, None).await;
+        let store = MessageStore::new(None, None, None, None, None, None).await;
         store.store_message("id1", "hello").await;
         let val = store.get_message("id1").await;
         assert_eq!(val, Some("hello".to_string()));
@@ -433,7 +602,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_memory_store_overwrite() {
-        let store = MessageStore::new(None, None, None, None).await;
+        let store = MessageStore::new(None, None, None, None, None, None).await;
         store.store_message("id2", "foo").await;
         store.store_message("id2", "bar").await;
         let val = store.get_message("id2").await;
@@ -448,7 +617,7 @@ mod tests {
             // Skip if no Redis URL
             return;
         }
-        let store = MessageStore::new(redis_url.as_deref(), None, Some(3), Some(1)).await;
+        let store = MessageStore::new(redis_url.as_deref(), None, Some(3), Some(1), None, None).await;
         store.store_message("id3", "redis_test").await;
         let val = store.get_message("id3").await;
         assert_eq!(val, Some("redis_test".to_string()));
@@ -462,7 +631,7 @@ mod tests {
             // Skip if no MySQL URL
             return;
         }
-        let store = MessageStore::new(None, mysql_url.as_deref(), None, None).await;
+        let store = MessageStore::new(None, mysql_url.as_deref(), None, None, Some(3), Some(1)).await;
         let record = MessageRecord {
             message_id: "test_msg_001".to_string(),
             sender_id: "user_123".to_string(),

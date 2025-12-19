@@ -13,6 +13,8 @@ MYSQL_PORT: 3306
 MYSQL_USER: zihuan_user
 MYSQL_PASSWORD: your_mysql_password
 MYSQL_DATABASE: zihuan_aibot
+MYSQL_RECONNECT_MAX_ATTEMPTS: 3
+MYSQL_RECONNECT_INTERVAL_SECS: 60
 
 natural_language_model_api: http://api.your_llm_api.com/completion
 natural_language_model_api_key: sk-your-api-key
