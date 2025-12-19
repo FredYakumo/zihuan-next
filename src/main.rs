@@ -21,8 +21,8 @@ lazy_static! {
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(short = 'l', long = "login-qq")]
-    qq_id: Option<String>,
+    #[arg(short = 'l', long = "login-qq", help = "登录的QQ号（必填）")]
+    qq_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -105,9 +105,7 @@ async fn main() {
     let args = Args::parse();
 
     info!("zihuan_next_aibot-800b starting...");
-    if let Some(ref qq) = args.qq_id {
-        info!("登录的QQ号: {}", qq);
-    }
+    info!("登录的QQ号: {}", args.qq_id);
 
     // Load configuration from config.yaml, fallback to environment variables
     let config = load_config();
@@ -146,7 +144,7 @@ async fn main() {
         .unwrap_or_default();
 
     // Create and start the bot adapter
-    let adapter = BotAdapter::new(bot_server_url, bot_server_token, redis_url).await;
+    let adapter = BotAdapter::new(bot_server_url, bot_server_token, redis_url, args.qq_id).await;
     info!("Bot adapter initialized, connecting to server...");
     if let Err(e) = adapter.start().await {
         error!("Bot adapter error: {}", e);

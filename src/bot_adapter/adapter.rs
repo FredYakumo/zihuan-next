@@ -5,7 +5,7 @@ use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 use log::{debug, error, info, warn};
 
 use super::event::{self, EventHandler};
-use super::models::{MessageEvent, MessageType, RawMessageEvent};
+use super::models::{MessageEvent, MessageType, RawMessageEvent, Profile};
 use crate::util::url_utils::extract_host;
 use crate::util::message_store::MessageStore;
 use std::env;
@@ -18,11 +18,12 @@ pub struct BotAdapter {
     token: String,
     event_handlers: HashMap<MessageType, EventHandler>,
     message_store: Arc<TokioMutex<MessageStore>>,
+    bot_profile: Option<Profile>,
 }
 
 impl BotAdapter {
-    /// Create a new BotAdapter with the given WebSocket URL, authentication token, and optional Redis URL
-    pub async fn new(url: impl Into<String>, token: impl Into<String>, redis_url: Option<String>) -> Self {
+
+    pub async fn new(url: impl Into<String>, token: impl Into<String>, redis_url: Option<String>, qq_id: String) -> Self {
         let mut event_handlers: HashMap<MessageType, EventHandler> = HashMap::new();
         event_handlers.insert(MessageType::Private, event::process_friend_message);
         event_handlers.insert(MessageType::Group, event::process_group_message);
@@ -36,6 +37,10 @@ impl BotAdapter {
             token: token.into(),
             event_handlers,
             message_store,
+            bot_profile: Some(Profile {
+                qq_id,
+                ..Default::default()
+            }),
         }
     }
 
