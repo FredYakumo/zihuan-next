@@ -10,9 +10,6 @@ use crate::{bot_adapter::adapter::SharedBotAdapter, util::message_store::{Messag
 
 /// Process private (friend) messages
 pub async fn process_friend_message(bot_adapter: SharedBotAdapter, event: MessageEvent, store: Arc<TokioMutex<MessageStore>>) {
-    // Acquire mutable access to the adapter if needed by downstream logic
-    let mut _bot_adapter_guard = bot_adapter.lock().await;
-
     let messages: Vec<String> = event.message_list.iter()
         .map(|m| m.to_string())
         .collect();
@@ -23,6 +20,12 @@ pub async fn process_friend_message(bot_adapter: SharedBotAdapter, event: Messag
         messages
     );
 
+
+    let bot_id = {
+        let bot_adapter_guard = bot_adapter.lock().await;
+        bot_adapter_guard.get_bot_id().to_string()
+    };
+
     // Store full message record to MySQL
     let record = MessageRecord {
         message_id: event.message_id.to_string(),
@@ -32,7 +35,7 @@ pub async fn process_friend_message(bot_adapter: SharedBotAdapter, event: Messag
         group_id: None,
         group_name: None,
         content: messages.join(" "),
-        at_target_list: bot_adapter.lock()
+        at_target_list: Some(bot_id),
     };
 
     let store_guard = store.lock().await;
@@ -44,10 +47,7 @@ pub async fn process_friend_message(bot_adapter: SharedBotAdapter, event: Messag
 }
 
 /// Process group messages
-pub async fn process_group_message(bot_adapter: SharedBotAdapter, event: MessageEvent, store: Arc<TokioMutex<MessageStore>>) {
-    // Acquire mutable access to the adapter if needed by downstream logic
-    let mut _bot_adapter_guard = bot_adapter.lock().await;
-
+pub async fn process_group_message(_bot_adapter: SharedBotAdapter, event: MessageEvent, store: Arc<TokioMutex<MessageStore>>) {
     let messages: Vec<String> = event.message_list.iter()
         .map(|m| m.to_string())
         .collect();
