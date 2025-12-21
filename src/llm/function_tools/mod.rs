@@ -1,6 +1,4 @@
 use serde_json::{Value, json};
-use std::sync::Arc;
-use crate::llm::LLMBase;
 
 pub trait FunctionTool: Send + Sync {
     fn name(&self) -> & str;

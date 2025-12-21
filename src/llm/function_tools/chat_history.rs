@@ -67,3 +67,4 @@ impl FunctionTool for ChatHistoryTool {
         }
     }
 }
+

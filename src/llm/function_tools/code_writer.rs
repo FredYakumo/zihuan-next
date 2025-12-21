@@ -64,3 +64,5 @@ impl FunctionTool for CodeWriterTool {
         Ok(json!({ "code": content }))
     }
 }
+
+// Agent implementation moved to llm::agent::function_tool_agents

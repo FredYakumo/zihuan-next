@@ -1,4 +1,4 @@
-use super::{InferenceParam, LLMBase, Message, MessageRole};
+use super::{InferenceParam, LLMBase, Message, MessageRole, role_to_str, str_to_role};
 use super::function_tools::{ToolCalls, ToolCallsFuncSpec};
 use reqwest::blocking::Client;
 use serde_json::{Value, json};
@@ -98,11 +98,7 @@ impl LLMAPI {
         let msg = choice.get("message")?;
 
         let role_str = msg.get("role")?.as_str().unwrap_or("assistant");
-        let role = match role_str {
-            "system" => MessageRole::System,
-            "user" => MessageRole::User,
-            _ => MessageRole::Assistant,
-        };
+        let role = str_to_role(role_str);
 
         let content = msg.get("content")?.as_str().map(|s| s.to_string());
         let tool_calls = msg
@@ -134,11 +130,7 @@ impl LLMBase for LLMAPI {
             .messages
             .iter()
             .map(|msg| {
-                let role_str = match msg.role {
-                    MessageRole::System => "system",
-                    MessageRole::User => "user",
-                    MessageRole::Assistant => "assistant",
-                };
+                let role_str = role_to_str(&msg.role);
 
                 let mut msg_obj = json!({
                     "role": role_str,

@@ -10,6 +10,27 @@ pub enum MessageRole {
     System,
     User,
     Assistant,
+    Tool,
+}
+
+/// Convert a MessageRole to the string expected by chat APIs
+pub fn role_to_str(role: &MessageRole) -> &'static str {
+    match role {
+        MessageRole::System => "system",
+        MessageRole::User => "user",
+        MessageRole::Assistant => "assistant",
+        MessageRole::Tool => "tool",
+    }
+}
+
+/// Parse a role string from chat APIs into MessageRole
+pub fn str_to_role(s: &str) -> MessageRole {
+    match s {
+        "system" => MessageRole::System,
+        "user" => MessageRole::User,
+        "tool" => MessageRole::Tool,
+        _ => MessageRole::Assistant,
+    }
 }
 
 pub struct Message {

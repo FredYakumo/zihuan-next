@@ -52,3 +52,4 @@ impl FunctionTool for MathTool {
         }))
     }
 }
+

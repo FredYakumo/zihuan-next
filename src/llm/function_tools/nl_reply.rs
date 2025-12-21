@@ -53,3 +53,5 @@ impl FunctionTool for NaturalLanguageReplyTool {
         Ok(json!({ "reply": content }))
     }
 }
+
+// Agent implementation moved to llm::agent::function_tool_agents

@@ -1,343 +1,118 @@
-use crate::bot_adapter::models::MessageEvent;
-use crate::llm::{LLMBase, InferenceParam, Message, MessageRole};
-use crate::llm::agent::Agent;
-use crate::llm::function_tools::{
-    FunctionTool, ChatHistoryTool, NaturalLanguageReplyTool, CodeWriterTool, MathTool
-};
-
-use log::{debug, warn};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::sync::Arc;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum BrainPlan {
-	/// Do nothing.
-	Ignore { reason: Option<String> },
-	/// Reply with content.
-	Reply { content: String },
-	/// Delegate to a specific agent.
-	UseAgent { agent_name: String, context: Value },
-}
+use crate::bot_adapter::models::{MessageEvent, message::{Message as MsgEnum, PlainTextMessage, ReplyMessage}};
+use crate::llm::{LLMBase, Message, MessageRole};
+use crate::llm::agent::Agent;
+use crate::llm::agent::{
+	chat_history_agent::ChatHistoryAgent,
+	code_writer_agent::CodeWriterAgent,
+	math_agent::MathAgent,
+	nl_reply_agent::NaturalLanguageReplyAgent,
+};
+use serde_json::json;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum BrainOutcome {
-	Ignored { reason: Option<String> },
-	ReplyText { content: String },
-	/// Agent executed (and optionally a follow-up reply was generated).
-	AgentExecuted {
-		agent_name: String,
-		context: Value,
-		agent_output: Value,
-		final_reply: Option<String>,
-	},
-	Error { message: String, raw: String },
-}
-
-/// Returns the default set of built-in tools for the BrainAgent
-pub fn brain_agent_list(llm: Arc<dyn LLMBase + Send + Sync>) -> Vec<Arc<dyn FunctionTool>> {
-    vec![
-        Arc::new(ChatHistoryTool::new()),
-        Arc::new(NaturalLanguageReplyTool::new(llm.clone())),
-        Arc::new(CodeWriterTool::new(llm)),
-        Arc::new(MathTool::new()),
-    ]
-}
-
-/// Brain agent: receives events and makes a decision.
-///
-/// Note:
-/// - We use `LLMBase::inference()` for both planning and (optionally) a second stage
-///   to turn tool results into a user-facing reply.
-/// - "Function tools" are implemented via a strict JSON protocol in the prompt.
+/// BrainAgent: a reasoning agent that routes incoming events to specialized agents
+/// based on intent heuristics. It uses an LLM for NL tasks and simple rules for
+/// other tool selection.
 pub struct BrainAgent {
+	/// Reasoning-capable LLM (can be the same as chat LLM)
 	llm: Arc<dyn LLMBase + Send + Sync>,
-	tools: Vec<Arc<dyn FunctionTool>>,
-	system_prompt: String,
-	max_tool_rounds: usize,
+	/// Tools wrapped as agents
+	nl_reply: NaturalLanguageReplyAgent,
+	code_writer: CodeWriterAgent,
+	chat_history: ChatHistoryAgent,
+	math: MathAgent,
 }
 
 impl BrainAgent {
+	/// Construct a BrainAgent. The provided `llm` will be used for tools that
+	/// require an LLM (NL reply, code writer).
 	pub fn new(llm: Arc<dyn LLMBase + Send + Sync>) -> Self {
-		let tools = brain_agent_list(llm.clone());
 		Self {
-			llm: llm.clone(),
-			tools,
-			system_prompt: default_system_prompt(),
-			max_tool_rounds: 1,
+			nl_reply: NaturalLanguageReplyAgent::new(llm.clone()),
+			code_writer: CodeWriterAgent::new(llm.clone()),
+			chat_history: ChatHistoryAgent::new(),
+			math: MathAgent::new(),
+			llm,
 		}
 	}
 
-	/// Override the system prompt.
-	pub fn with_system_prompt(mut self, system_prompt: impl Into<String>) -> Self {
-		self.system_prompt = system_prompt.into();
-		self
+	fn aggregate_text(event: &MessageEvent) -> String {
+		let mut parts: Vec<String> = Vec::new();
+		for m in &event.message_list {
+			match m {
+				MsgEnum::PlainText(PlainTextMessage { text }) => parts.push(text.clone()),
+				MsgEnum::At(_) => {
+					// Ignore explicit @ content from text aggregation; routing leverages it elsewhere
+				}
+				MsgEnum::Reply(ReplyMessage { id, .. }) => {
+					parts.push(format!("[reply:{}]", id));
+				}
+			}
+		}
+		parts.join(" ")
 	}
 
-	/// Control maximum tool execution rounds.
-	///
-	/// - 0: no tool execution, only planning
-	/// - 1: one tool call max (default)
-	pub fn with_max_tool_rounds(mut self, n: usize) -> Self {
-		self.max_tool_rounds = n;
-		self
+	fn has_reply(event: &MessageEvent) -> Option<i64> {
+		for m in &event.message_list {
+			if let MsgEnum::Reply(ReplyMessage { id, .. }) = m { return Some(*id); }
+		}
+		None
 	}
 
-	pub fn register_tool(&mut self, tool: Arc<dyn FunctionTool>) {
-		self.tools.push(tool);
+	fn looks_like_math(expr: &str) -> bool {
+		// crude signal: contains digits and arithmetic operators
+		let has_digit = expr.chars().any(|c| c.is_ascii_digit());
+		let has_op = expr.contains('+') || expr.contains('-') || expr.contains('*') || expr.contains('/') || expr.contains('×') || expr.contains('÷');
+		let keywords = ["计算", "加", "减", "乘", "除", "sum", "add", "minus", "multiply", "divide"]; // zh/en
+		has_digit && has_op || keywords.iter().any(|k| expr.contains(k))
 	}
 
-	pub fn list_tools(&self) -> Vec<String> {
-		self.tools.iter().map(|t| t.name().to_string()).collect()
-	}
-
-	/// Make a plan from an incoming event.
-	pub fn plan(&self, event: &MessageEvent) -> Result<BrainPlan, String> {
-		let event_summary = format_event(event);
-
-		let prompt = format!(
-			"You will receive a chat event. Decide what to do next.\n\n\
-Event:\n{event_summary}\n\n\
-If you need to delegate to a specific agent, use tool-calling with agent details.\n\
-If no agent is needed, return STRICT JSON only (no markdown, no extra text).\n\
-It MUST match one of:\n\
-1) {{\"type\":\"ignore\",\"reason\":\"...optional...\"}}\n\
-2) {{\"type\":\"reply\",\"content\":\"...\"}}\n",
-		);
-
-		let messages = vec![
-			Message {
-				role: MessageRole::System,
-				content: Some(self.system_prompt.clone()),
-				tool_calls: Vec::new(),
-			},
-			Message {
-				role: MessageRole::User,
-				content: Some(prompt),
-				tool_calls: Vec::new(),
-			},
+	fn looks_like_code(text: &str) -> bool {
+		let keywords = [
+			"写代码", "实现", "函数", "脚本", "代码", "generate code", "implement", "class", "function",
 		];
-
-		let tools: Option<Vec<Arc<dyn FunctionTool>>> = if !self.tools.is_empty() {
-			Some(self.tools.clone())
-		} else {
-			None
-		};
-
-		let param = InferenceParam {
-			messages,
-			tools,
-		};
-
-		let resp = self
-			.llm
-			.inference(&param);
-
-		// Prefer tool calls when available (interpret as agent delegation).
-		if let Some(tc) = resp.tool_calls.first() {
-			return Ok(BrainPlan::UseAgent {
-				agent_name: tc.function.name.clone(),
-				context: tc.function.arguments.clone(),
-			});
-		}
-
-		let raw = resp.content.unwrap_or_default();
-		debug!("[BrainAgent] raw plan: {}", raw);
-		parse_json_lenient::<BrainPlan>(&raw)
-			.map_err(|e| format!("failed to parse BrainPlan: {e}; raw={raw}"))
-	}
-
-	/// Run the agent end-to-end: plan -> (optional tool) -> (optional final reply)
-	pub fn run(&self, event: &MessageEvent) -> BrainOutcome {
-		let plan = match self.plan(event) {
-			Ok(p) => p,
-			Err(e) => {
-				warn!("[BrainAgent] planning error: {}", e);
-				return BrainOutcome::Error {
-					message: e,
-					raw: "".to_string(),
-				};
-			}
-		};
-
-		match plan {
-			BrainPlan::Ignore { reason } => BrainOutcome::Ignored { reason },
-			BrainPlan::Reply { content } => BrainOutcome::ReplyText { content },
-			BrainPlan::UseAgent { agent_name, context } => {
-				if self.max_tool_rounds == 0 {
-					return BrainOutcome::Error {
-						message: "agent execution disabled (max_tool_rounds=0)".to_string(),
-						raw: serde_json::to_string(&BrainPlan::UseAgent { agent_name, context })
-							.unwrap_or_default(),
-					};
-				}
-
-			let tool = self
-				.tools
-				.iter()
-				.find(|t| t.name() == agent_name)
-				.cloned();
-
-			let tool = match tool {
-				Some(t) => t,
-				None => {
-					return BrainOutcome::Error {
-						message: format!("unknown agent: {agent_name}"),
-						raw: "".to_string(),
-					};
-				}
-			};
-
-			let agent_context = context;
-			let agent_output = match tool.call(agent_context.clone()) {
-				Ok(v) => v,
-				Err(e) => {
-					return BrainOutcome::Error {
-						message: format!("agent {agent_name} failed: {e}"),
-						raw: "".to_string(),
-					}
-				},
-			};
-
-			// Second-stage: ask LLM to produce a user-facing reply given agent output.
-			let event_summary = format_event(event);
-			let prompt = format!(
-				"You delegated to an agent for a chat event. Produce the final user reply.\n\n\
-Event:\n{event_summary}\n\n\
-Agent name: {agent_name}\n\
-Agent context (JSON): {}\n\
-Agent output (JSON): {}\n\n\
-Return STRICT JSON only: {{\"type\":\"reply\",\"content\":\"...\"}}\n",
-				serde_json::to_string_pretty(&agent_context).unwrap_or_default(),
-				serde_json::to_string_pretty(&agent_output).unwrap_or_default(),
-			);
-
-			let messages = vec![
-				Message {
-					role: MessageRole::System,
-					content: Some(self.system_prompt.clone()),
-					tool_calls: Vec::new(),
-				},
-				Message {
-					role: MessageRole::User,
-					content: Some(prompt),
-					tool_calls: Vec::new(),
-				},
-			];
-
-			let param = InferenceParam {
-				messages,
-				tools: None,
-			};
-
-			let raw = self
-				.llm
-				.inference(&param)
-				.content
-				.unwrap_or_default();
-				debug!("[BrainAgent] raw final: {}", raw);
-				let final_reply = match parse_json_lenient::<BrainPlan>(&raw) {
-					Ok(BrainPlan::Reply { content }) => Some(content),
-					Ok(other) => {
-						warn!("[BrainAgent] unexpected final plan: {:?}", other);
-						None
-					}
-					Err(e) => {
-						warn!("[BrainAgent] failed to parse final reply: {}", e);
-						None
-					}
-				};
-
-				BrainOutcome::AgentExecuted {
-					agent_name,
-					context: agent_context,
-					agent_output,
-					final_reply,
-				}
-			}
-		}
+		let fenced = text.contains("```");
+		fenced || keywords.iter().any(|k| text.to_lowercase().contains(&k.to_lowercase()))
 	}
 }
 
 impl Agent for BrainAgent {
-	type Output = BrainOutcome;
+	type Output = Message;
 
-	fn name(&self) -> &'static str {
-		"brain"
-	}
+	fn name(&self) -> &'static str { "brain_agent" }
 
 	fn on_event(&self, event: &MessageEvent) -> Self::Output {
-		self.run(event)
+		let text = Self::aggregate_text(event);
+
+		// Prioritize explicit reply -> chat history
+		if let Some(reply_id) = Self::has_reply(event) {
+			// Use chat_history agent to fetch context, then provide a NL reply summarizing it
+			let hist_msg = self.chat_history.on_agent_input(json!({"message_id": reply_id.to_string()}));
+			let summary = hist_msg.content.unwrap_or_else(|| "No history found.".to_string());
+			return Message { role: MessageRole::Assistant, content: Some(format!("引用消息({reply_id})的记录: {summary}")), tool_calls: Vec::new() };
+		}
+
+		// Math intent
+		if Self::looks_like_math(&text) {
+			return self.math.on_agent_input(json!({"text": text}));
+		}
+
+		// Code generation intent
+		if Self::looks_like_code(&text) {
+			return self.code_writer.on_agent_input(json!({"task": text}));
+		}
+
+		// Default: NL reply
+		self.nl_reply.on_agent_input(json!({"prompt": text}))
+	}
+
+	fn on_agent_input(&self, input: serde_json::Value) -> Self::Output {
+		let text = input.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+		let prompt = if text.is_empty() {
+			input.get("prompt").and_then(|v| v.as_str()).unwrap_or("").to_string()
+		} else { text };
+		self.nl_reply.on_agent_input(json!({"prompt": prompt}))
 	}
 }
 
-fn default_system_prompt() -> String {
-	// Tools are provided out-of-band via the LLM API (when supported), not via prompts.
-	// Keep the system prompt empty by default to avoid coupling behavior to system prompts.
-	"".to_string()
-}
-
-fn format_event(event: &MessageEvent) -> String {
-	let messages: Vec<String> = event.message_list.iter().map(|m| m.to_string()).collect();
-	format!(
-		"message_id: {}\nmessage_type: {}\nsender_user_id: {}\nsender_nickname: {}\nmessage: {:?}",
-		event.message_id,
-		event.message_type,
-		event.sender.user_id,
-		event.sender.nickname,
-		messages
-	)
-}
-
-fn parse_json_lenient<T: for<'de> Deserialize<'de>>(raw: &str) -> Result<T, String> {
-	// 1) Direct parse.
-	if let Ok(v) = serde_json::from_str::<T>(raw) {
-		return Ok(v);
-	}
-
-	// 2) Try to extract the first JSON object/array substring.
-	let trimmed = raw.trim();
-	let (start_idx, open_char) = trimmed
-		.char_indices()
-		.find(|(_, c)| *c == '{' || *c == '[')
-		.ok_or_else(|| "no JSON object/array start found".to_string())?;
-	let close_char = if open_char == '{' { '}' } else { ']' };
-	let end_idx = trimmed
-		.char_indices()
-		.rfind(|(_, c)| *c == close_char)
-		.map(|(i, _)| i)
-		.ok_or_else(|| "no JSON object/array end found".to_string())?;
-
-	if end_idx <= start_idx {
-		return Err("invalid JSON bounds".to_string());
-	}
-
-	let candidate = &trimmed[start_idx..=end_idx];
-	serde_json::from_str::<T>(candidate)
-		.map_err(|e| format!("JSON parse failed: {e}; candidate={candidate}"))
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn test_parse_json_lenient_direct() {
-		let raw = r#"{"type":"reply","content":"hi"}"#;
-		let plan: BrainPlan = parse_json_lenient(raw).unwrap();
-		assert_eq!(plan, BrainPlan::Reply { content: "hi".to_string() });
-	}
-
-	#[test]
-	fn test_parse_json_lenient_embedded() {
-		let raw = "some text... {\"type\":\"ignore\",\"reason\":\"no trigger\"} ...tail";
-		let plan: BrainPlan = parse_json_lenient(raw).unwrap();
-		assert_eq!(
-			plan,
-			BrainPlan::Ignore {
-				reason: Some("no trigger".to_string())
-			}
-		);
-	}
-}
