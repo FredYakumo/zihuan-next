@@ -1,10 +1,18 @@
+use std::sync::Arc;
+
 use crate::bot_adapter::models::MessageEvent;
 use crate::llm::agent::Agent;
-use crate::llm::Message;
+use crate::llm::{LLMBase, Message};
 use crate::error::Result;
 
 pub struct BrainAgent {
+    llm: Arc<dyn LLMBase + Send + Sync>,
+}
 
+impl BrainAgent {
+    pub fn new(llm: Arc<dyn LLMBase + Send + Sync>) -> Self {
+        Self { llm }
+    }
 }
 
 impl Agent for BrainAgent {

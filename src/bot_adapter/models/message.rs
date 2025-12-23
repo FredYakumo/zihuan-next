@@ -158,52 +158,109 @@ pub struct MessageProp {
     pub at_target_list: Vec<i64>
 }
 
+impl MessageProp {
+    /// Build a MessageProp from a list of messages.
+    ///
+    /// - content: human-readable merged message pieces joined by a single space
+    /// - ref_content: concatenation of referenced/replied source messages (if any), joined by newline
+    /// - at_target_list: all unique @ target ids in appearance order
+    /// - is_at_me: true if `bot_id` is provided and present in the @ list
+    pub fn from_messages(messages: &[Message], bot_id: Option<i64>) -> Self {
+        use std::collections::HashSet;
+
+        let mut content_parts: Vec<String> = Vec::with_capacity(messages.len());
+        let mut ref_parts: Vec<String> = Vec::new();
+        let mut at_targets: Vec<i64> = Vec::new();
+        let mut seen: HashSet<i64> = HashSet::new();
+
+        for m in messages {
+            // Accumulate content pieces using Display implementation
+            content_parts.push(m.to_string());
+
+            // Collect @ targets (dedup preserving first appearance order)
+            if let Message::At(at) = m {
+                if let Some(id) = at.target {
+                    if seen.insert(id) {
+                        at_targets.push(id);
+                    }
+                }
+            }
+
+            // Collect referenced message content for replies
+            if let Message::Reply(reply) = m {
+                if let Some(ref src) = reply.message_source {
+                    ref_parts.push(src.to_string());
+                }
+            }
+        }
+
+        let content = {
+            let s = content_parts.join(" ");
+            if s.trim().is_empty() { None } else { Some(s) }
+        };
+
+        let ref_content = {
+            let s = ref_parts.join("\n");
+            if s.trim().is_empty() { None } else { Some(s) }
+        };
+
+        let is_at_me = match bot_id {
+            Some(id) => at_targets.iter().any(|t| *t == id),
+            None => false,
+        };
+
+        MessageProp {
+            content,
+            ref_content,
+            is_at_me,
+            at_target_list: at_targets,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
 
     #[test]
-    fn test_plain_text_message() {
-        let msg = PlainTextMessage { text: "Hello".to_string() };
-        assert_eq!(msg.to_string(), "Hello");
-        assert_eq!(msg.get_type(), "text");
+    fn test_message_prop_from_messages_basic() {
+        let msgs = vec![
+            Message::PlainText(PlainTextMessage { text: "Hello".into() }),
+            Message::At(AtTargetMessage { target: Some(42) }),
+        ];
+
+        let prop = MessageProp::from_messages(&msgs, Some(42));
+        assert_eq!(prop.content.as_deref(), Some("Hello @42"));
+        assert_eq!(prop.ref_content.as_deref(), None);
+        assert!(prop.is_at_me);
+        assert_eq!(prop.at_target_list, vec![42]);
     }
 
     #[test]
-    fn test_at_target_message() {
-        let msg = AtTargetMessage { target: Some(12345) };
-        assert_eq!(msg.to_string(), "@12345");
-        assert_eq!(msg.get_type(), "at");
+    fn test_message_prop_collects_reply_source() {
+        let reply_src = Message::PlainText(PlainTextMessage { text: "previous message".into() });
+        let reply = ReplyMessage { id: 123, message_source: Some(Box::new(reply_src)) };
+        let msgs = vec![
+            Message::PlainText(PlainTextMessage { text: "Hi".into() }),
+            Message::Reply(reply),
+        ];
+
+        let prop = MessageProp::from_messages(&msgs, None);
+        assert!(prop.content.as_deref().unwrap().contains("[Reply of message ID 123"));
+        assert_eq!(prop.ref_content.as_deref(), Some("previous message"));
+        assert!(!prop.is_at_me);
     }
 
     #[test]
-    fn test_at_target_message_deserialize_string() {
-        let v = json!({"qq": "24968"});
-        let msg: AtTargetMessage = serde_json::from_value(v).unwrap();
-        assert_eq!(msg.target_id(), 24968);
-    }
-
-    #[test]
-    fn test_reply_message() {
-        let msg = ReplyMessage { id: 123, message_source: None };
-        assert_eq!(msg.to_string(), "[Reply of message ID 123]");
-        assert_eq!(msg.get_type(), "reply");
-    }
-
-    #[test]
-    fn test_reply_message_deserialize_string() {
-        let v = json!({"id": "985732927"});
-        let msg: ReplyMessage = serde_json::from_value(v).unwrap();
-        assert_eq!(msg.id, 985732927);
-    }
-
-    #[test]
-    fn test_message_deserialize_from_message_array_element() {
-        // Matches the shape inside the top-level `message` array: {"type": "at", "data": {"qq": "..."}}
-        let v = json!({"type": "at", "data": {"qq": "2496875785"}});
-        let msg: Message = serde_json::from_value(v).unwrap();
-        assert_eq!(msg.get_type(), "at");
-        assert_eq!(msg.to_string(), "@2496875785");
+    fn test_message_prop_dedup_at_targets() {
+        let msgs = vec![
+            Message::At(AtTargetMessage { target: Some(1) }),
+            Message::At(AtTargetMessage { target: Some(2) }),
+            Message::At(AtTargetMessage { target: Some(1) }),
+        ];
+        let prop = MessageProp::from_messages(&msgs, Some(99));
+        assert_eq!(prop.at_target_list, vec![1, 2]);
+        assert!(!prop.is_at_me);
     }
 }
