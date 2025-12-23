@@ -69,9 +69,9 @@ pub fn UserMessage<S: Into<String>>(content: S) -> Message {
     Message::user(content)
 }
 
-pub struct InferenceParam {
-    pub messages: Vec<Message>,
-    pub tools: Option<Vec<Arc<dyn FunctionTool>>>,
+pub struct InferenceParam<'a> {
+    pub messages: &'a Vec<Message>,
+    pub tools: Option<&'a Vec<Arc<dyn FunctionTool>>>,
 }
 
 pub trait LLMBase {

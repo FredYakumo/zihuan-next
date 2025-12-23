@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use log::info;
+
 use crate::bot_adapter::adapter::BotAdapter;
 use crate::bot_adapter::models::MessageEvent;
 use crate::bot_adapter::models::message::MessageProp;
@@ -79,11 +81,33 @@ impl Agent for BrainAgent {
             Arc::new(CodeWriterTool::new(self.llm.clone())),
         ];
 
-        // First round of inference with tools available
-        let _response = self.llm.inference(&InferenceParam {
-            messages: vec![system_msg, UserMessage(user_text)],
-            tools: Some(tools),
-        });
+        let brain_message_list = vec![system_msg, UserMessage(user_text)];
+
+        info!("[BrainAgent] llm [{}] inference...", self.llm.get_model_name());   
+        while let response = self.llm.inference(&InferenceParam {
+            messages: &brain_message_list,
+            tools: Some(&tools),
+        }) {
+
+            for tool_call in response.tool_calls {
+                info!("[BrainAgent] executing tool: {}", tool_call.id);
+                if let Some(tool) = tools.iter().find(|t| t.get_name() == tool_call.name) {
+                    match tool.execute(&tool_call.arguments) {
+                        Ok(tool_response) => {
+                            info!("[BrainAgent] tool [{}] executed successfully", tool_call.name);
+                            // Here you can handle the tool response, e.g., send it back to the user
+                        }
+                        Err(e) => {
+                            info!("[BrainAgent] tool [{}] execution failed: {}", tool_call.name, e);
+                        }
+                    }
+                } else {
+                    info!("[BrainAgent] tool [{}] not found", tool_call.name);
+                }
+            }
+        }
+
+        
 
         Ok(())
     }
