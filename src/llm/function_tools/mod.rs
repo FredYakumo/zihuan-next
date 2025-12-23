@@ -1,4 +1,5 @@
 use serde_json::{Value, json};
+use crate::error::Result;
 
 pub trait FunctionTool: Send + Sync {
     fn name(&self) -> & str;
@@ -19,7 +20,7 @@ pub trait FunctionTool: Send + Sync {
     }
 
     /// Tool execute function
-    fn call(&self, arguments: Value) -> Result<Value, String>;
+    fn call(&self, arguments: Value) -> Result<Value>;
 }
 
 #[derive(Debug)]

@@ -2,6 +2,7 @@ mod bot_adapter;
 mod util;
 mod llm;
 mod config;
+mod error;
 
 use log::{info, error, warn};
 use log_util::log_util::LogUtil;

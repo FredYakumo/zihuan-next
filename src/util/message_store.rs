@@ -3,12 +3,13 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
 use redis::aio::Connection;
-use redis::{AsyncCommands, RedisError};
+use redis::{AsyncCommands};
 use log::{info, warn, error, debug};
 use sqlx::mysql::MySqlPool;
 use sqlx::Row;
 use chrono::NaiveDateTime;
 use crate::util::mask_url_credentials;
+use crate::error::Result;
 
 
 struct RedisState {
@@ -352,8 +353,7 @@ impl MessageStore {
             let mut state = self.redis_state.lock().await;
             if !state.use_memory {
                 if let Some(conn) = state.conn.as_mut() {
-                    let result: Result<(), RedisError> = conn.set(message_id, message).await;
-                    match result {
+                    match conn.set::<_, _, ()>(message_id, message).await {
                         Ok(_) => {
                             debug!("[MessageStore] Message stored in Redis: {}", message_id);
                             return;
@@ -387,7 +387,7 @@ impl MessageStore {
     }
 
     /// Store a full message record to MySQL
-    pub async fn store_message_record(&self, record: &MessageRecord) -> Result<(), String> {
+    pub async fn store_message_record(&self, record: &MessageRecord) -> Result<()> {
         let mut need_reconnect = false;
         {
             let mut state = self.mysql_state.lock().await;
@@ -443,7 +443,7 @@ impl MessageStore {
     }
 
     /// Retrieve a message record from MySQL by message_id
-    pub async fn get_message_record(&self, message_id: &str) -> Result<Option<MessageRecord>, String> {
+    pub async fn get_message_record(&self, message_id: &str) -> Result<Option<MessageRecord>> {
         {
             let state = self.mysql_state.lock().await;
             if let Some(pool) = &state.pool {
@@ -497,8 +497,7 @@ impl MessageStore {
             let mut state = self.redis_state.lock().await;
             if !state.use_memory {
                 if let Some(conn) = state.conn.as_mut() {
-                    let result: Result<Option<String>, RedisError> = conn.get(message_id).await;
-                    match result {
+                    match conn.get::<_, Option<String>>(message_id).await {
                         Ok(val) => return val,
                         Err(e) => {
                             error!("[MessageStore] Failed to get message from Redis: {}", e);
@@ -534,8 +533,7 @@ impl MessageStore {
             let mut state = self.redis_state.lock().await;
             if !state.use_memory {
                 if let Some(conn) = state.conn.as_mut() {
-                    let result: Result<Option<String>, RedisError> = conn.get(message_id).await;
-                    match result {
+                    match conn.get::<_, Option<String>>(message_id).await {
                         Ok(val) => {
                             if val.is_some() {
                                 return val;

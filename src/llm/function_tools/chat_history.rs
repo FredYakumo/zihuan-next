@@ -1,4 +1,5 @@
 use super::FunctionTool;
+use crate::error::Result;
 use serde_json::{json, Value};
 use std::env;
 
@@ -32,27 +33,27 @@ impl FunctionTool for ChatHistoryTool {
         })
     }
 
-    fn call(&self, arguments: Value) -> Result<Value, String> {
+    fn call(&self, arguments: Value) -> Result<Value> {
         let message_id = arguments
             .get("message_id")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "missing required parameter: message_id".to_string())?;
+            .ok_or_else(|| crate::string_error!("missing required parameter: message_id"))?;
 
         let redis_url = env::var("REDIS_URL").ok();
         if redis_url.is_none() {
-            return Err("REDIS_URL not set; chat history unavailable without Redis".to_string());
+            return Err(crate::string_error!("REDIS_URL not set; chat history unavailable without Redis"));
         }
         let redis_url = redis_url.unwrap();
 
         // Use blocking Redis client to fetch stored JSON string
         let client = redis::Client::open(redis_url)
-            .map_err(|e| format!("invalid REDIS_URL: {e}"))?;
+            .map_err(|e| crate::string_error!("invalid REDIS_URL: {}", e))?;
         let mut conn = client
             .get_connection()
-            .map_err(|e| format!("failed to connect to Redis: {e}"))?;
+            .map_err(|e| crate::string_error!("failed to connect to Redis: {}", e))?;
 
         let val: Option<String> = redis::Commands::get(&mut conn, message_id)
-            .map_err(|e| format!("Redis GET failed: {e}"))?;
+            .map_err(|e| crate::string_error!("Redis GET failed: {}", e))?;
 
         match val {
             Some(s) => {
@@ -63,7 +64,7 @@ impl FunctionTool for ChatHistoryTool {
                     "event": parsed
                 }))
             }
-            None => Err(format!("no record found for message_id={message_id}")),
+            None => Err(crate::string_error!("no record found for message_id={}", message_id)),
         }
     }
 }

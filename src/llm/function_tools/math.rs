@@ -1,4 +1,5 @@
 use super::FunctionTool;
+use crate::error::Result;
 use serde_json::{json, Value};
 
 #[derive(Debug, Default)]
@@ -28,9 +29,9 @@ impl FunctionTool for MathTool {
         })
     }
 
-    fn call(&self, arguments: Value) -> Result<Value, String> {
-        let a = arguments.get("a").and_then(|v| v.as_f64()).ok_or_else(|| "missing number 'a'".to_string())?;
-        let b = arguments.get("b").and_then(|v| v.as_f64()).ok_or_else(|| "missing number 'b'".to_string())?;
+    fn call(&self, arguments: Value) -> Result<Value> {
+        let a = arguments.get("a").and_then(|v| v.as_f64()).ok_or_else(|| crate::string_error!("missing number 'a'"))?;
+        let b = arguments.get("b").and_then(|v| v.as_f64()).ok_or_else(|| crate::string_error!("missing number 'b'"))?;
         let op = arguments.get("op").and_then(|v| v.as_str()).unwrap_or("add");
 
         let result = match op {
@@ -38,10 +39,10 @@ impl FunctionTool for MathTool {
             "sub" => a - b,
             "mul" => a * b,
             "div" => {
-                if b == 0.0 { return Err("division by zero".to_string()); }
+                if b == 0.0 { return Err(crate::string_error!("division by zero")); }
                 a / b
             },
-            _ => return Err(format!("unsupported op: {}", op)),
+            _ => return Err(crate::string_error!("unsupported op: {}", op)),
         };
 
         Ok(json!({

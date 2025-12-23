@@ -1,5 +1,4 @@
 use serde_json::json;
-use serde_json::Value;
 use std::sync::Arc;
 
 use crate::bot_adapter::models::MessageEvent;
@@ -35,13 +34,18 @@ impl Agent for CodeWriterAgent {
 
     fn on_event(&self, event: &MessageEvent) -> Self::Output {
         let task = Self::aggregate_text(event);
-        self.on_agent_input(json!({"task": task}))
+        self.on_agent_input(Message {
+            role: MessageRole::User,
+            content: Some(task),
+            tool_calls: Vec::new(),
+        })
     }
 
-    fn on_agent_input(&self, input: Value) -> Self::Output {
-        let task = input.get("task").cloned().unwrap_or_else(|| json!("Write a small example function."));
-        let language = input.get("language").cloned().unwrap_or_else(|| json!(""));
-        let constraints = input.get("constraints").cloned().unwrap_or_else(|| json!(""));
+    fn on_agent_input(&self, input: Message) -> Self::Output {
+        let content = input.content.unwrap_or_else(|| "Write a small example function.".to_string());
+        let task = json!(content);
+        let language = json!("");
+        let constraints = json!("");
         let args = json!({ "task": task, "language": language, "constraints": constraints });
         let result = self.tool.call(args)
             .map(|v| v.to_string())

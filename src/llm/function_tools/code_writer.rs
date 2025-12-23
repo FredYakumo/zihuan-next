@@ -1,5 +1,6 @@
 use super::FunctionTool;
 use crate::llm::{LLMBase, InferenceParam, Message, MessageRole};
+use crate::error::Result;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
@@ -38,11 +39,11 @@ impl FunctionTool for CodeWriterTool {
         })
     }
 
-    fn call(&self, arguments: Value) -> Result<Value, String> {
+    fn call(&self, arguments: Value) -> Result<Value> {
         let task = arguments
             .get("task")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "missing required parameter: task".to_string())?;
+            .ok_or_else(|| crate::string_error!("missing required parameter: task"))?;
         let language = arguments.get("language").and_then(|v| v.as_str()).unwrap_or("");
         let constraints = arguments.get("constraints").and_then(|v| v.as_str()).unwrap_or("");
 

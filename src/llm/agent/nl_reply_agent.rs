@@ -1,5 +1,4 @@
 use serde_json::json;
-use serde_json::Value;
 use std::sync::Arc;
 
 use crate::bot_adapter::models::MessageEvent;
@@ -35,12 +34,17 @@ impl Agent for NaturalLanguageReplyAgent {
 
     fn on_event(&self, event: &MessageEvent) -> Self::Output {
         let prompt = Self::aggregate_text(event);
-        self.on_agent_input(json!({"prompt": prompt}))
+        self.on_agent_input(Message {
+            role: MessageRole::User,
+            content: Some(prompt),
+            tool_calls: Vec::new(),
+        })
     }
 
-    fn on_agent_input(&self, input: Value) -> Self::Output {
-        let prompt = input.get("prompt").cloned().unwrap_or_else(|| json!(""));
-        let system = input.get("system").cloned().unwrap_or_else(|| json!("You are a helpful assistant. Reply clearly and concisely."));
+    fn on_agent_input(&self, input: Message) -> Self::Output {
+        let content = input.content.unwrap_or_default();
+        let prompt = json!(content);
+        let system = json!("You are a helpful assistant. Reply clearly and concisely.");
         let args = json!({ "prompt": prompt, "system": system });
         let result = self.tool.call(args)
             .map(|v| v.to_string())

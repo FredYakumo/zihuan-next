@@ -1,5 +1,4 @@
 use serde_json::json;
-use serde_json::Value;
 
 use crate::bot_adapter::models::MessageEvent;
 use crate::bot_adapter::models::message::{Message as MsgEnum, PlainTextMessage};
@@ -50,16 +49,25 @@ impl Agent for MathAgent {
 
     fn on_event(&self, event: &MessageEvent) -> Self::Output {
         let text = Self::aggregate_text(event);
-        self.on_agent_input(json!({"text": text}))
+        self.on_agent_input(Message {
+            role: MessageRole::User,
+            content: Some(text),
+            tool_calls: Vec::new(),
+        })
     }
 
-    fn on_agent_input(&self, input: Value) -> Self::Output {
-        let content = if input.get("a").is_some() && input.get("b").is_some() {
-            match self.tool.call(input) {
+    fn on_agent_input(&self, input: Message) -> Self::Output {
+        let input_json = if let Some(content) = input.content {
+            serde_json::json!({"text": content})
+        } else {
+            serde_json::json!({})
+        };
+        let content = if input_json.get("a").is_some() && input_json.get("b").is_some() {
+            match self.tool.call(input_json) {
                 Ok(v) => v.to_string(),
                 Err(e) => format!("Math error: {e}"),
             }
-        } else if let Some(text) = input.get("text").and_then(|v| v.as_str()) {
+        } else if let Some(text) = input_json.get("text").and_then(|v| v.as_str()) {
             if let Some((a, op, b)) = Self::parse_simple_expr(text) {
                 let args = json!({"a": a, "b": b, "op": op});
                 match self.tool.call(args) {

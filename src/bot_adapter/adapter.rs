@@ -6,6 +6,7 @@ use super::event;
 use super::models::{MessageEvent, MessageType, Profile, RawMessageEvent};
 use crate::util::message_store::MessageStore;
 use crate::util::url_utils::extract_host;
+use crate::error::Result;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
@@ -82,7 +83,7 @@ impl BotAdapter {
     /// Start the WebSocket connection and begin processing events using a shared handle
     pub async fn start(
         adapter: SharedBotAdapter,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<()> {
         let (url, token) = {
             let guard = adapter.lock().await;
             (guard.url.clone(), guard.token.clone())

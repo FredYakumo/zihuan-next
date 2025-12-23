@@ -1,5 +1,6 @@
 use super::FunctionTool;
 use crate::llm::{LLMBase, InferenceParam, Message, MessageRole};
+use crate::error::Result;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
@@ -36,11 +37,11 @@ impl FunctionTool for NaturalLanguageReplyTool {
         })
     }
 
-    fn call(&self, arguments: Value) -> Result<Value, String> {
+    fn call(&self, arguments: Value) -> Result<Value> {
         let prompt = arguments
             .get("prompt")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "missing required parameter: prompt".to_string())?;
+            .ok_or_else(|| crate::string_error!("missing required parameter: prompt"))?;
         let system = arguments.get("system").and_then(|v| v.as_str()).unwrap_or("You are a helpful assistant.");
 
         let messages = vec![

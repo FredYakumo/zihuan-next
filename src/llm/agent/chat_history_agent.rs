@@ -1,6 +1,3 @@
-use serde_json::json;
-use serde_json::Value;
-
 use crate::bot_adapter::models::MessageEvent;
 use crate::bot_adapter::models::message::{Message as MsgEnum, ReplyMessage};
 use crate::llm::agent::Agent;
@@ -28,11 +25,16 @@ impl Agent for ChatHistoryAgent {
                 break;
             }
         }
-        self.on_agent_input(json!({"message_id": target_id}))
+        self.on_agent_input(Message {
+            role: MessageRole::User,
+            content: Some(target_id),
+            tool_calls: Vec::new(),
+        })
     }
 
-    fn on_agent_input(&self, input: Value) -> Self::Output {
-        let result = self.tool.call(input)
+    fn on_agent_input(&self, input: Message) -> Self::Output {
+        let input_json = serde_json::json!({"message_id": input.content.unwrap_or_default()});
+        let result = self.tool.call(input_json)
             .map(|v| v.to_string())
             .unwrap_or_else(|e| format!("Error fetching history: {e}"));
         Message { role: MessageRole::Tool, content: Some(result), tool_calls: Vec::new() }
