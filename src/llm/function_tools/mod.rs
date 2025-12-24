@@ -23,13 +23,13 @@ pub trait FunctionTool: Send + Sync {
     fn call(&self, arguments: Value) -> Result<Value>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ToolCallsFuncSpec {
     pub name: String,
     pub arguments: Value
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ToolCalls {
     pub id: String,
     pub type_name: String,

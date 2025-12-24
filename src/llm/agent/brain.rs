@@ -12,11 +12,12 @@ use crate::llm::function_tools::{MathTool, ChatHistoryTool, NaturalLanguageReply
 
 pub struct BrainAgent {
     llm: Arc<dyn LLMBase + Send + Sync>,
+    tools: Vec<Arc<dyn FunctionTool>>,
 }
 
 impl BrainAgent {
-    pub fn new(llm: Arc<dyn LLMBase + Send + Sync>) -> Self {
-        Self { llm }
+    pub fn new(llm: Arc<dyn LLMBase + Send + Sync>, tools: Vec<Arc<dyn FunctionTool>>) -> Self {
+        Self { llm, tools }
     }
 }
 
@@ -36,8 +37,8 @@ fn build_system_message(bot_adapter: &BotAdapter, event: &MessageEvent) -> Messa
             ))
         } else {
             SystemMessage(format!(
-                "你是\"{}\"，QQ号是\"{}\"。你需要根据消息内容决定做出反应或者无反应，其中你做出的反应需要委派给相应的Agent智能体(通过function tools)来完成",
-                profile.nickname, profile.qq_id
+                "你是\"{}\"，QQ号是\"{}\"。你的好友\"{}\"(QQ号: \"{}\")给你发送了一条消息。你需要根据消息内容决定做出反应或者无反应，其中你做出的反应需要委派给相应的Agent智能体(通过function tools)来完成",
+                profile.nickname, profile.qq_id, event.sender.nickname, event.sender.user_id
             ))
         }
     } else {
@@ -73,41 +74,93 @@ impl Agent for BrainAgent {
             user_text = "(无文本内容，可能是仅@或回复)".to_string();
         }
 
-        // Register function tools that the LLM can delegate to
-        let tools: Vec<Arc<dyn FunctionTool>> = vec![
-            Arc::new(MathTool::new()),
-            Arc::new(ChatHistoryTool::new()),
-            Arc::new(NaturalLanguageReplyTool::new(self.llm.clone())),
-            Arc::new(CodeWriterTool::new(self.llm.clone())),
-        ];
+        let mut brain_message_list = vec![system_msg, UserMessage(user_text)];
 
-        let brain_message_list = vec![system_msg, UserMessage(user_text)];
+        info!("[BrainAgent] llm [{}] inference...", self.llm.get_model_name());
+        
+        // Tool calling loop: continue until LLM returns a response without tool calls
+        let max_iterations = 5;
+        let mut iteration = 0;
+        
+        loop {
+            iteration += 1;
+            if iteration > max_iterations {
+                info!("[BrainAgent] reached max iterations ({}), stopping tool calling loop", max_iterations);
+                break;
+            }
 
-        info!("[BrainAgent] llm [{}] inference...", self.llm.get_model_name());   
-        while let response = self.llm.inference(&InferenceParam {
-            messages: &brain_message_list,
-            tools: Some(&tools),
-        }) {
+            let response = self.llm.inference(&InferenceParam {
+                messages: &brain_message_list,
+                tools: Some(&self.tools),
+            });
 
-            for tool_call in response.tool_calls {
-                info!("[BrainAgent] executing tool: {}", tool_call.id);
-                if let Some(tool) = tools.iter().find(|t| t.get_name() == tool_call.name) {
-                    match tool.execute(&tool_call.arguments) {
+            // If no tool calls, LLM has finished processing
+            if response.tool_calls.is_empty() {
+                info!("[BrainAgent] no tool calls in response, conversation complete");
+                if let Some(content) = response.content {
+                    info!("[BrainAgent] final response: {}", content);
+                }
+                break;
+            }
+
+            // Execute each tool call and collect results
+            info!("[BrainAgent] processing {} tool call(s)", response.tool_calls.len());
+            
+            // Add assistant's response with tool calls to message history
+            brain_message_list.push(response);
+
+            // Clone tool_calls to avoid borrow checker issues when mutating message list
+            let tool_calls_to_execute = brain_message_list.last().unwrap().tool_calls.clone();
+            
+            // Execute tools and collect their results
+            for tool_call in &tool_calls_to_execute {
+                info!("[BrainAgent] executing tool: {}({}) [{}]", 
+                    tool_call.function.name, 
+                    tool_call.function.arguments.to_string().as_str(),
+                    tool_call.id);
+                
+                if let Some(tool) = self.tools.iter().find(|t| t.name() == tool_call.function.name) {
+                    match tool.call(tool_call.function.arguments.clone()) {
                         Ok(tool_response) => {
-                            info!("[BrainAgent] tool [{}] executed successfully", tool_call.name);
-                            // Here you can handle the tool response, e.g., send it back to the user
+                            info!("[BrainAgent] tool [{}] executed successfully", tool_call.function.name);
+                            
+                            // Add tool result as a tool message
+                            let tool_msg = Message {
+                                role: crate::llm::MessageRole::Tool,
+                                content: Some(tool_response.to_string()),
+                                tool_calls: Vec::new(),
+                            };
+                            brain_message_list.push(tool_msg);
                         }
                         Err(e) => {
-                            info!("[BrainAgent] tool [{}] execution failed: {}", tool_call.name, e);
+                            info!("[BrainAgent] tool [{}] execution failed: {}", tool_call.function.name, e);
+                            
+                            // Add error message as tool result
+                            let error_msg = Message {
+                                role: crate::llm::MessageRole::Tool,
+                                content: Some(format!("Error executing tool: {}", e)),
+                                tool_calls: Vec::new(),
+                            };
+                            brain_message_list.push(error_msg);
                         }
                     }
                 } else {
-                    info!("[BrainAgent] tool [{}] not found", tool_call.name);
+                    info!("[BrainAgent] tool [{}] not found", tool_call.function.name);
+                    
+                    // Add error message for missing tool
+                    let error_msg = Message {
+                        role: crate::llm::MessageRole::Tool,
+                        content: Some(format!("Tool '{}' not found", tool_call.function.name)),
+                        tool_calls: Vec::new(),
+                    };
+                    brain_message_list.push(error_msg);
                 }
             }
+            
+            // Continue loop to get next LLM response with tool results
+            info!("[BrainAgent] iteration {} complete, continuing with {} messages", 
+                iteration, brain_message_list.len());
         }
-
-        
 
         Ok(())
     }
