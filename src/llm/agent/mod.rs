@@ -1,5 +1,7 @@
 pub mod brain;
 
+use std::sync::Arc;
+
 /// Base trait for all event-driven agents.
 ///
 /// An agent consumes an event and produces an output/decision.
@@ -20,7 +22,9 @@ pub trait Agent: Send + Sync {
 	fn on_agent_input(&self, input: Message) -> Self::Output;
 }
 
-pub mod chat_history_agent;
-pub mod math_agent;
-pub mod nl_reply_agent;
-pub mod code_writer_agent;
+pub trait FunctionToolsAgent: Send + Sync {
+    fn get_tools(&self) -> Vec<&dyn crate::llm::function_tools::FunctionTool>;
+}
+
+pub mod chat;
+pub mod code_gen;
