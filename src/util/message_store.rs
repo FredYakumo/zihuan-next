@@ -38,6 +38,19 @@ pub struct MessageStore {
     mysql_memory_store: Arc<Mutex<HashMap<String, MessageRecord>>>,
 }
 
+impl std::fmt::Debug for MessageStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MessageStore")
+            .field("redis_url", &self.redis_url)
+            .field("reconnect_max_attempts", &self.reconnect_max_attempts)
+            .field("reconnect_interval_secs", &self.reconnect_interval_secs)
+            .field("mysql_url", &self.mysql_url)
+            .field("mysql_reconnect_max_attempts", &self.mysql_reconnect_max_attempts)
+            .field("mysql_reconnect_interval_secs", &self.mysql_reconnect_interval_secs)
+            .finish_non_exhaustive()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct MessageRecord {
     pub message_id: String,

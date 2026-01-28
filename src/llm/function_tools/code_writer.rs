@@ -10,7 +10,7 @@ use std::sync::Arc;
 /// - task (string, required): description of the code to write
 /// - language (string, optional): preferred language (e.g., "python", "rust", "javascript")
 /// - constraints (string, optional): any constraints or requirements
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CodeWriterTool {
     llm: Arc<dyn LLMBase + Send + Sync>,
 }

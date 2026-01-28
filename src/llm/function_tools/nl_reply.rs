@@ -9,7 +9,7 @@ use std::sync::Arc;
 /// Parameters:
 /// - prompt (string, required): user input to respond to
 /// - system (string, optional): system prompt to steer style/behavior
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct NaturalLanguageReplyTool {
     llm: Arc<dyn LLMBase + Send + Sync>,
 }

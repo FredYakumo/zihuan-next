@@ -1,38 +1,12 @@
 use serde_json::{json, Value};
 use serde::Serialize;
 use std::collections::HashMap;
-use std::fmt;
 use crate::error::Result;
 
+pub mod data_value;
 pub mod util_nodes;
 
-/// Dataflow datatype. Use for checking compatibility between ports.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
-pub enum DataType {
-    String,
-    Integer,
-    Float,
-    Boolean,
-    Json,
-    Binary,
-    List(Box<DataType>),
-    Custom(String),
-}
-
-impl fmt::Display for DataType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DataType::String => write!(f, "String"),
-            DataType::Integer => write!(f, "Integer"),
-            DataType::Float => write!(f, "Float"),
-            DataType::Boolean => write!(f, "Boolean"),
-            DataType::Json => write!(f, "Json"),
-            DataType::Binary => write!(f, "Binary"),
-            DataType::List(inner) => write!(f, "List<{}>", inner),
-            DataType::Custom(name) => write!(f, "Custom({})", name),
-        }
-    }
-}
+pub use data_value::{DataType, DataValue};
 
 /// Node input/output ports
 #[derive(Debug, Clone, Serialize)]
@@ -67,42 +41,6 @@ impl Port {
     pub fn optional(mut self) -> Self {
         self.required = false;
         self
-    }
-}
-
-/// Actual data flowing through the dataflow graph
-#[derive(Debug, Clone, Serialize)]
-pub enum DataValue {
-    String(String),
-    Integer(i64),
-    Float(f64),
-    Boolean(bool),
-    Json(Value),
-    Binary(Vec<u8>),
-    List(Vec<DataValue>),
-}
-
-impl DataValue {
-    pub fn data_type(&self) -> DataType {
-        match self {
-            DataValue::String(_) => DataType::String,
-            DataValue::Integer(_) => DataType::Integer,
-            DataValue::Float(_) => DataType::Float,
-            DataValue::Boolean(_) => DataType::Boolean,
-            DataValue::Json(_) => DataType::Json,
-            DataValue::Binary(_) => DataType::Binary,
-            DataValue::List(items) => {
-                if let Some(first) = items.first() {
-                    DataType::List(Box::new(first.data_type()))
-                } else {
-                    DataType::List(Box::new(DataType::String))
-                }
-            }
-        }
-    }
-
-    pub fn to_json(&self) -> Value {
-        serde_json::to_value(self).unwrap_or(Value::Null)
     }
 }
 

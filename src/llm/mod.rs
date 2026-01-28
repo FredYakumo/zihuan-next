@@ -7,7 +7,7 @@ pub mod node_impl;
 use crate::llm::function_tools::{FunctionTool, ToolCalls};
 use std::sync::Arc;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum MessageRole {
     System,
     User,
@@ -35,6 +35,7 @@ pub fn str_to_role(s: &str) -> MessageRole {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Message {
     pub role: MessageRole,
     pub content: Option<String>,
@@ -76,7 +77,7 @@ pub struct InferenceParam<'a> {
     pub tools: Option<&'a Vec<Arc<dyn FunctionTool>>>,
 }
 
-pub trait LLMBase {
+pub trait LLMBase: std::fmt::Debug {
     fn get_model_name(&self) -> &str;
 
     fn inference(&self, param: &InferenceParam) -> Message;

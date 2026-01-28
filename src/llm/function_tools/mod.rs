@@ -1,7 +1,7 @@
 use serde_json::{Value, json};
 use crate::error::Result;
 
-pub trait FunctionTool: Send + Sync {
+pub trait FunctionTool: Send + Sync + std::fmt::Debug {
     fn name(&self) -> & str;
     fn description(&self) -> & str;
 
@@ -23,13 +23,13 @@ pub trait FunctionTool: Send + Sync {
     fn call(&self, arguments: Value) -> Result<Value>;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ToolCallsFuncSpec {
     pub name: String,
     pub arguments: Value
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ToolCalls {
     pub id: String,
     pub type_name: String,

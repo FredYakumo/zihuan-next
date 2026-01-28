@@ -12,7 +12,7 @@ use tokio::runtime::Handle;
 /// - Requires MessageStore to be provided at construction.
 /// - Retrieves historical messages from MySQL via MessageStore.
 /// - Uses blocking runtime to call async MessageStore methods from sync trait.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ChatHistoryTool {
     message_store: Arc<TokioMutex<MessageStore>>,
 }
