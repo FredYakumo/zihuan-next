@@ -11,35 +11,104 @@ use std::env;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 
+/// Trait for brain agents that handle event processing
+pub trait BrainAgentTrait: Send + Sync {
+    fn on_event(&self, bot_adapter: &mut BotAdapter, event: &super::models::MessageEvent) -> Result<()>;
+    fn name(&self) -> &'static str;
+    fn clone_box(&self) -> AgentBox;
+}
+
+/// Type alias for a boxed brain agent
+pub type AgentBox = Box<dyn BrainAgentTrait>;
+
+impl Clone for AgentBox {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}
+
+/// Configuration for BotAdapter initialization
+pub struct BotAdapterConfig {
+    pub url: String,
+    pub token: String,
+    pub redis_url: Option<String>,
+    pub database_url: Option<String>,
+    pub redis_reconnect_max_attempts: Option<u32>,
+    pub redis_reconnect_interval_secs: Option<u64>,
+    pub mysql_reconnect_max_attempts: Option<u32>,
+    pub mysql_reconnect_interval_secs: Option<u64>,
+    pub qq_id: String,
+    pub brain_agent: Option<AgentBox>,
+}
+
+impl BotAdapterConfig {
+    pub fn new(
+        url: impl Into<String>,
+        token: impl Into<String>,
+        qq_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            url: url.into(),
+            token: token.into(),
+            redis_url: None,
+            database_url: None,
+            redis_reconnect_max_attempts: None,
+            redis_reconnect_interval_secs: None,
+            mysql_reconnect_max_attempts: None,
+            mysql_reconnect_interval_secs: None,
+            qq_id: qq_id.into(),
+            brain_agent: None,
+        }
+    }
+
+    pub fn with_redis_url(mut self, url: Option<String>) -> Self {
+        self.redis_url = url;
+        self
+    }
+
+    pub fn with_database_url(mut self, url: Option<String>) -> Self {
+        self.database_url = url;
+        self
+    }
+
+    pub fn with_redis_reconnect(mut self, max_attempts: Option<u32>, interval_secs: Option<u64>) -> Self {
+        self.redis_reconnect_max_attempts = max_attempts;
+        self.redis_reconnect_interval_secs = interval_secs;
+        self
+    }
+
+    pub fn with_mysql_reconnect(mut self, max_attempts: Option<u32>, interval_secs: Option<u64>) -> Self {
+        self.mysql_reconnect_max_attempts = max_attempts;
+        self.mysql_reconnect_interval_secs = interval_secs;
+        self
+    }
+
+    pub fn with_brain_agent(mut self, agent: Option<AgentBox>) -> Self {
+        self.brain_agent = agent;
+        self
+    }
+}
+
 /// BotAdapter connects to the QQ bot server via WebSocket and processes events
 pub struct BotAdapter {
     url: String,
     token: String,
     message_store: Arc<TokioMutex<MessageStore>>,
     bot_profile: Option<Profile>,
+    brain_agent: Option<AgentBox>,
 }
 
 /// Shared handle for BotAdapter that allows mutation inside async tasks
 pub type SharedBotAdapter = Arc<TokioMutex<BotAdapter>>;
 
 impl BotAdapter {
-    pub async fn new(
-        url: impl Into<String>,
-        token: impl Into<String>,
-        redis_url: Option<String>,
-        database_url: Option<String>,
-        redis_reconnect_max_attempts: Option<u32>,
-        redis_reconnect_interval_secs: Option<u64>,
-        mysql_reconnect_max_attempts: Option<u32>,
-        mysql_reconnect_interval_secs: Option<u64>,
-        qq_id: String,
-    ) -> Self {
+    pub async fn new(config: BotAdapterConfig) -> Self {
         // Use provided redis_url, fallback to env var
-        let redis_url = redis_url.or_else(|| env::var("REDIS_URL").ok());
+        let redis_url = config.redis_url.or_else(|| env::var("REDIS_URL").ok());
 
         // Use provided database_url, fallback to env var
-        let database_url = if database_url.is_some() {
-            database_url
+        let database_url = if config.database_url.is_some() {
+            config.database_url
         } else {
             env::var("DATABASE_URL").ok()
         };
@@ -48,10 +117,10 @@ impl BotAdapter {
             MessageStore::new(
                 redis_url.as_deref(),
                 database_url.as_deref(),
-                redis_reconnect_max_attempts,
-                redis_reconnect_interval_secs,
-                mysql_reconnect_max_attempts,
-                mysql_reconnect_interval_secs,
+                config.redis_reconnect_max_attempts,
+                config.redis_reconnect_interval_secs,
+                config.mysql_reconnect_max_attempts,
+                config.mysql_reconnect_interval_secs,
             )
             .await,
         ));
@@ -66,13 +135,14 @@ impl BotAdapter {
         }
 
         Self {
-            url: url.into(),
-            token: token.into(),
+            url: config.url,
+            token: config.token,
             message_store,
             bot_profile: Some(Profile {
-                qq_id,
+                qq_id: config.qq_id,
                 ..Default::default()
             }),
+            brain_agent: config.brain_agent,
         }
     }
 
@@ -95,6 +165,10 @@ impl BotAdapter {
 
     pub fn get_message_store(&self) -> Arc<TokioMutex<MessageStore>> {
         self.message_store.clone()
+    }
+
+    pub fn get_brain_agent(&self) -> Option<&AgentBox> {
+        self.brain_agent.as_ref()
     }
 
     /// Start the WebSocket connection and begin processing events using a shared handle
@@ -214,22 +288,11 @@ impl BotAdapter {
             store.store_message(&msg_id, &msg_str).await;
         });
 
-        // Dispatch to the appropriate handler based on message type
+        // Dispatch to the unified message handler
         let store = store.clone();
-        match event.message_type {
-            MessageType::Private => {
-                let adapter_clone = adapter.clone();
-                let event_clone = event.clone();
-                tokio::spawn(async move {
-                    event::process_friend_message(adapter_clone, event_clone, store).await;
-                });
-            }
-            MessageType::Group => {
-                let adapter_clone = adapter.clone();
-                tokio::spawn(async move {
-                    event::process_group_message(adapter_clone, event, store).await;
-                });
-            }
-        }
+        let adapter_clone = adapter.clone();
+        tokio::spawn(async move {
+            event::process_message(adapter_clone, event, store).await;
+        });
     }
 }

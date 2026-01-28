@@ -15,7 +15,7 @@ pub trait Agent: Send + Sync {
 
 	/// Invoke this agent using structured input (for agent-to-agent calls).
 	/// Default implementation falls back to panic to surface unimplemented usage.
-	fn on_agent_input(&self, messages: Vec<Message>) -> Self::Output;
+	fn on_agent_input(&self, bot_adapter: &mut BotAdapter, event: &MessageEvent, messages: Vec<Message>) -> Self::Output;
 }
 
 pub trait FunctionToolsAgent: Send + Sync {

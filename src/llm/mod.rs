@@ -1,6 +1,8 @@
 pub mod agent;
 pub mod llm_api;
 pub mod function_tools;
+pub mod prompt;
+pub mod node_impl;
 
 use crate::llm::function_tools::{FunctionTool, ToolCalls};
 use std::sync::Arc;

@@ -38,6 +38,18 @@ pub struct Config {
     pub mysql_reconnect_max_attempts: Option<u32>,
     #[serde(rename = "MYSQL_RECONNECT_INTERVAL_SECS")]
     pub mysql_reconnect_interval_secs: Option<u64>,
+    #[serde(rename = "natural_language_model_api")]
+    pub natural_language_model_api: Option<String>,
+    #[serde(rename = "natural_language_model_api_key")]
+    pub natural_language_model_api_key: Option<String>,
+    #[serde(rename = "natural_language_model_name")]
+    pub natural_language_model_name: Option<String>,
+    #[serde(rename = "agent_model_api")]
+    pub agent_model_api: Option<String>,
+    #[serde(rename = "agent_model_api_key")]
+    pub agent_model_api_key: Option<String>,
+    #[serde(rename = "agent_model_name")]
+    pub agent_model_name: Option<String>,
 }
 
 /// Load configuration from config.yaml file
@@ -70,6 +82,12 @@ pub fn load_config() -> Config {
                         database_url: None,
                         mysql_reconnect_max_attempts: None,
                         mysql_reconnect_interval_secs: None,
+                        natural_language_model_api: None,
+                        natural_language_model_api_key: None,
+                        natural_language_model_name: None,
+                        agent_model_api: None,
+                        agent_model_api_key: None,
+                        agent_model_name: None,
                     }
                 }
             }
@@ -94,6 +112,12 @@ pub fn load_config() -> Config {
                 database_url: None,
                 mysql_reconnect_max_attempts: None,
                 mysql_reconnect_interval_secs: None,
+                natural_language_model_api: None,
+                natural_language_model_api_key: None,
+                natural_language_model_name: None,
+                agent_model_api: None,
+                agent_model_api_key: None,
+                agent_model_name: None,
             }
         }
     };
@@ -159,6 +183,31 @@ pub fn load_config() -> Config {
 
     if config.mysql_reconnect_interval_secs.is_none() {
         config.mysql_reconnect_interval_secs = Some(60);
+    }
+
+    // LLM configs - apply environment variable overrides
+    if config.natural_language_model_api.is_none() {
+        config.natural_language_model_api = std::env::var("natural_language_model_api").ok();
+    }
+
+    if config.natural_language_model_api_key.is_none() {
+        config.natural_language_model_api_key = std::env::var("natural_language_model_api_key").ok();
+    }
+
+    if config.natural_language_model_name.is_none() {
+        config.natural_language_model_name = std::env::var("natural_language_model_name").ok();
+    }
+
+    if config.agent_model_api.is_none() {
+        config.agent_model_api = std::env::var("agent_model_api").ok();
+    }
+
+    if config.agent_model_api_key.is_none() {
+        config.agent_model_api_key = std::env::var("agent_model_api_key").ok();
+    }
+
+    if config.agent_model_name.is_none() {
+        config.agent_model_name = std::env::var("agent_model_name").ok();
     }
     
     config

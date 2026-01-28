@@ -6,46 +6,45 @@ use crate::bot_adapter::adapter::BotAdapter;
 use crate::bot_adapter::models::MessageEvent;
 use crate::bot_adapter::models::message::MessageProp;
 use crate::llm::agent::Agent;
+use crate::llm::agent::chat::ChatAgent;
 use crate::llm::{InferenceParam, LLMBase, Message, SystemMessage, UserMessage};
 use crate::error::Result;
 use crate::llm::function_tools::FunctionTool;
 
+#[derive(Clone)]
 pub struct BrainAgent {
     llm: Arc<dyn LLMBase + Send + Sync>,
     tools: Vec<Arc<dyn FunctionTool>>,
+    persona: String,
 }
 
 impl BrainAgent {
-    pub fn new(llm: Arc<dyn LLMBase + Send + Sync>, tools: Vec<Arc<dyn FunctionTool>>) -> Self {
-        Self { llm, tools }
+    pub fn new(llm: Arc<dyn LLMBase + Send + Sync>, tools: Vec<Arc<dyn FunctionTool>>, persona: String) -> Self {
+        Self { llm, tools, persona }
     }
 }
 
-/// Build system message based on bot profile and event context
-fn build_system_message(bot_adapter: &BotAdapter, event: &MessageEvent) -> Message {
-    let bot_profile = bot_adapter.get_bot_profile();
-    
-    if let Some(profile) = bot_profile {
-        if event.is_group_message {
-            SystemMessage(format!(
-                "你是\"{}\"，QQ号是\"{}\"。群\"{}\"里的一个叫\"{}\"(QQ号: \"{}\")的人给你发送了一条消息。你需要根据消息内容决定做出反应或者无反应，其中你做出的反应需要委派给相应的Agent智能体(通过function tools)来完成",
-                profile.nickname,
-                profile.qq_id,
-                event.group_name.clone().unwrap_or_default(),
-                if !event.sender.card.is_empty() { event.sender.card.clone() } else { event.sender.nickname.clone() },
-                event.sender.user_id
-            ))
-        } else {
-            SystemMessage(format!(
-                "你是\"{}\"，QQ号是\"{}\"。你的好友\"{}\"(QQ号: \"{}\")给你发送了一条消息。你需要根据消息内容决定做出反应或者无反应，其中你做出的反应需要委派给相应的Agent智能体(通过function tools)来完成",
-                profile.nickname, profile.qq_id, event.sender.nickname, event.sender.user_id
-            ))
+
+
+fn should_reply(response_content: Option<&str>, msg_prop: &MessageProp, event: &MessageEvent) -> bool {
+    let content = response_content.unwrap_or("").trim();
+    if !content.is_empty() {
+        let negative_markers = ["无反应", "不回复", "无需回复", "不用回复", "无需回应", "不需要回复"];
+        if negative_markers.iter().any(|m| content.contains(m)) {
+            return false;
         }
+
+        let content_lower = content.to_lowercase();
+        let positive_markers = ["回复", "回应", "答复", "reply", "respond"];
+        if positive_markers.iter().any(|m| content_lower.contains(m)) {
+            return true;
+        }
+    }
+
+    if event.is_group_message {
+        msg_prop.is_at_me
     } else {
-        SystemMessage(format!(
-            "你是\"紫幻\", QQ号是\"{}\"。你需要根据消息内容决定做出反应或者无反应，其中你做出的反应需要委派给相应的Agent智能体(通过function tools)来完成", 
-            bot_adapter.get_bot_id()
-        ))
+        true
     }
 }
 
@@ -56,17 +55,17 @@ impl Agent for BrainAgent {
         let msg_prop = MessageProp::from_messages(&event.message_list, Some(bot_adapter.get_bot_id()));
 
         // Build system prompt with conversation context
-        let system_msg = build_system_message(bot_adapter, event);
+        let system_msg = crate::llm::prompt::brain::build_system_message(bot_adapter, event, self.persona.as_str());
 
         // Build user message from incoming MessageEvent
-        let mut user_text = msg_prop.content.unwrap_or_default();
-        if let Some(ref_cnt) = msg_prop.ref_content {
+        let mut user_text = msg_prop.content.clone().unwrap_or_default();
+        if let Some(ref_cnt) = msg_prop.ref_content.as_deref() {
             if !ref_cnt.is_empty() {
                 if !user_text.is_empty() {
                     user_text.push_str("\n\n");
                 }
                 user_text.push_str("[引用内容]\n");
-                user_text.push_str(&ref_cnt);
+                user_text.push_str(ref_cnt);
             }
         }
         if user_text.trim().is_empty() {
@@ -74,6 +73,7 @@ impl Agent for BrainAgent {
             user_text = "(无文本内容，可能是仅@或回复)".to_string();
         }
 
+        let user_text_for_reply = user_text.clone();
         let mut brain_message_list = vec![system_msg, UserMessage(user_text)];
 
         info!("[BrainAgent] llm [{}] inference...", self.llm.get_model_name());
@@ -97,8 +97,25 @@ impl Agent for BrainAgent {
             // If no tool calls, LLM has finished processing
             if response.tool_calls.is_empty() {
                 info!("[BrainAgent] no tool calls in response, conversation complete");
-                if let Some(content) = response.content {
+                let response_content = response.content.clone();
+                if let Some(content) = response_content.as_deref() {
                     info!("[BrainAgent] final response: {}", content);
+                }
+
+                if should_reply(response_content.as_deref(), &msg_prop, event) {
+                    let chat_agent = ChatAgent::new(self.llm.clone(), bot_adapter.get_message_store(), self.persona.clone());
+                    match chat_agent.on_agent_input(bot_adapter, event, vec![UserMessage(user_text_for_reply.clone())]) {
+                        Ok(reply) => {
+                            if reply.trim().is_empty() {
+                                info!("[BrainAgent] chat agent reply is empty");
+                            } else {
+                                info!("[BrainAgent] chat agent reply: {}", reply);
+                            }
+                        }
+                        Err(e) => {
+                            info!("[BrainAgent] chat agent failed: {}", e);
+                        }
+                    }
                 }
                 break;
             }
@@ -165,11 +182,25 @@ impl Agent for BrainAgent {
         Ok(())
     }
 
-    fn on_agent_input(&self, _messages: Vec<Message>) -> Self::Output {
+    fn on_agent_input(&self, _adapter: &mut BotAdapter, _event: &MessageEvent, _messages: Vec<Message>) -> Self::Output {
         Ok(())
     }
     
     fn name(&self) -> &'static str {
         "BrainAgent"
+    }
+}
+
+impl crate::bot_adapter::adapter::BrainAgentTrait for BrainAgent {
+    fn on_event(&self, bot_adapter: &mut BotAdapter, event: &MessageEvent) -> Result<()> {
+        Agent::on_event(self, bot_adapter, event)
+    }
+
+    fn name(&self) -> &'static str {
+        "BrainAgent"
+    }
+
+    fn clone_box(&self) -> crate::bot_adapter::adapter::AgentBox {
+        Box::new(self.clone())
     }
 }

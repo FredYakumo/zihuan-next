@@ -2,9 +2,11 @@ use std::sync::Arc;
 use log::info;
 
 use crate::bot_adapter::adapter::BotAdapter;
+use crate::bot_adapter::event;
 use crate::bot_adapter::models::MessageEvent;
 use crate::bot_adapter::models::message::MessageProp;
 use crate::llm::agent::{Agent, FunctionToolsAgent};
+use crate::llm::prompt::chat::build_chat_system_message;
 use crate::llm::{InferenceParam, LLMBase, Message, SystemMessage, UserMessage};
 use crate::error::Result;
 use crate::llm::function_tools::{ChatHistoryTool, NaturalLanguageReplyTool, FunctionTool};
@@ -19,53 +21,21 @@ use tokio::sync::Mutex as TokioMutex;
 pub struct ChatAgent {
     llm: Arc<dyn LLMBase + Send + Sync>,
     tools: Vec<Arc<dyn FunctionTool>>,
+    persona: String,
 }
 
 impl ChatAgent {
-    pub fn new(llm: Arc<dyn LLMBase + Send + Sync>, message_store: Arc<TokioMutex<MessageStore>>) -> Self {
+    pub fn new(llm: Arc<dyn LLMBase + Send + Sync>, message_store: Arc<TokioMutex<MessageStore>>, persona: String) -> Self {
         let tools: Vec<Arc<dyn FunctionTool>> = vec![
             Arc::new(ChatHistoryTool::new(message_store)),
             Arc::new(NaturalLanguageReplyTool::new(llm.clone())),
         ];
         
-        Self { llm, tools }
+        Self { llm, tools, persona }
     }
-}
 
-/// Build system message for chat agent based on bot profile and event context
-fn build_chat_system_message(bot_adapter: &BotAdapter, event: &MessageEvent) -> Message {
-    let bot_profile = bot_adapter.get_bot_profile();
-    
-    if let Some(profile) = bot_profile {
-        if event.is_group_message {
-            SystemMessage(format!(
-                "你是\"{}\"（QQ号: {}）。在群\"{}\"中，用户\"{}\"（QQ号: {}）向你发送了消息。\n\
-                你的职责是进行自然对话。可以使用chat_history工具查询历史消息上下文，使用nl_reply工具生成回复。\n\
-                请保持友好、有趣且符合角色设定的对话风格。",
-                profile.nickname,
-                profile.qq_id,
-                event.group_name.clone().unwrap_or_default(),
-                if !event.sender.card.is_empty() { event.sender.card.clone() } else { event.sender.nickname.clone() },
-                event.sender.user_id
-            ))
-        } else {
-            SystemMessage(format!(
-                "你是\"{}\"（QQ号: {}）。你的好友\"{}\"（QQ号: {}）向你发送了消息。\n\
-                你的职责是进行自然对话。可以使用chat_history工具查询历史消息上下文，使用nl_reply工具生成回复。\n\
-                请保持友好、有趣且符合角色设定的对话风格。",
-                profile.nickname,
-                profile.qq_id,
-                event.sender.nickname,
-                event.sender.user_id
-            ))
-        }
-    } else {
-        SystemMessage(format!(
-            "你是\"紫幻\"（QQ号: {}）。你的职责是进行自然对话。\n\
-            可以使用chat_history工具查询历史消息上下文，使用nl_reply工具生成回复。\n\
-            请保持友好、有趣且符合角色设定的对话风格。",
-            bot_adapter.get_bot_id()
-        ))
+    pub fn set_persona(&mut self, persona: String) {
+        self.persona = persona;
     }
 }
 
@@ -80,7 +50,7 @@ impl Agent for ChatAgent {
         let msg_prop = MessageProp::from_messages(&event.message_list, Some(bot_adapter.get_bot_id()));
 
         // Build system prompt with conversation context
-        let system_msg = build_chat_system_message(bot_adapter, event);
+        let system_msg = crate::llm::prompt::chat::build_chat_system_message(bot_adapter, event, self.persona.as_str());
 
         // Build user message from incoming MessageEvent
         let mut user_text = msg_prop.content.unwrap_or_default();
@@ -197,16 +167,14 @@ impl Agent for ChatAgent {
         Ok(final_response)
     }
 
-    fn on_agent_input(&self, messages: Vec<Message>) -> Self::Output {
+    fn on_agent_input(&self, bot_adapter: &mut BotAdapter, event: &MessageEvent, messages: Vec<Message>) -> Self::Output {
         info!("[ChatAgent] processing agent input with {} message(s)", messages.len());
+
+        let system_msg = crate::llm::prompt::chat::build_chat_system_message(bot_adapter, event, self.persona.as_str());
         
         if messages.is_empty() {
             return Ok("(无输入内容)".to_string());
         }
-
-        let system_msg = SystemMessage(
-            "你是一个聊天助手。请根据用户输入生成合适的回复。保持友好、自然的对话风格。".to_string()
-        );
         
         let mut chat_message_list = vec![system_msg];
         chat_message_list.extend(messages);

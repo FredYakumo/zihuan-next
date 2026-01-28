@@ -331,7 +331,7 @@ mod tests {
         ];
         
         let param = InferenceParam {
-            messages,
+            messages: &messages,
             tools: None,
         };
         let response = api.inference(&param);
@@ -408,7 +408,7 @@ mod tests {
         ];
         
         let param = InferenceParam {
-            messages,
+            messages: &messages,
             tools: None,
         };
         let response = agent_api.inference(&param);

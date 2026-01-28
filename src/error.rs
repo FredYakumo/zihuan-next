@@ -36,6 +36,9 @@ pub enum Error {
     
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
+    
+    #[error("Validation error: {0}")]
+    ValidationError(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
