@@ -2,66 +2,6 @@ use crate::error::Result;
 use crate::node::{DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 
-/// 数据转换节点
-pub struct DataTransformNode {
-    id: String,
-    name: String,
-}
-
-impl DataTransformNode {
-    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
-        Self {
-            id: id.into(),
-            name: name.into(),
-        }
-    }
-}
-
-impl Node for DataTransformNode {
-    fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn description(&self) -> Option<&str> {
-        Some("Transform data between different formats")
-    }
-
-    fn input_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("input", DataType::Json)
-                .with_description("Input data in any format"),
-        ]
-    }
-
-    fn output_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("output", DataType::Json)
-                .with_description("Transformed data"),
-        ]
-    }
-
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
-        self.validate_inputs(&inputs)?;
-
-        let mut outputs = HashMap::new();
-
-        if let Some(input_data) = inputs.get("input") {
-            outputs.insert(
-                "output".to_string(),
-                input_data.clone(),
-            );
-        }
-
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
-    }
-}
-
-/// 条件分支节点
 pub struct ConditionalNode {
     id: String,
     name: String,
@@ -136,7 +76,6 @@ impl Node for ConditionalNode {
     }
 }
 
-/// JSON 解析节点
 pub struct JsonParserNode {
     id: String,
     name: String,
@@ -196,132 +135,6 @@ impl Node for JsonParserNode {
                     outputs.insert("success".to_string(), DataValue::Boolean(false));
                 }
             }
-        }
-
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
-    }
-}
-
-/// 数据聚合节点
-pub struct AggregatorNode {
-    id: String,
-    name: String,
-}
-
-impl AggregatorNode {
-    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
-        Self {
-            id: id.into(),
-            name: name.into(),
-        }
-    }
-}
-
-impl Node for AggregatorNode {
-    fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn description(&self) -> Option<&str> {
-        Some("Aggregate multiple inputs into a single output")
-    }
-
-    fn input_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("input1", DataType::Json)
-                .with_description("First input"),
-            Port::new("input2", DataType::Json)
-                .with_description("Second input"),
-            Port::new("input3", DataType::Json)
-                .with_description("Third input (optional)"),
-        ]
-    }
-
-    fn output_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("aggregated", DataType::Json)
-                .with_description("Aggregated result"),
-        ]
-    }
-
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
-        self.validate_inputs(&inputs)?;
-
-        let mut outputs = HashMap::new();
-        let mut result = serde_json::Map::new();
-
-        for (key, value) in inputs.iter() {
-            result.insert(key.clone(), value.to_json());
-        }
-
-        outputs.insert(
-            "aggregated".to_string(),
-            DataValue::Json(serde_json::Value::Object(result)),
-        );
-
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
-    }
-}
-
-/// 延迟节点
-pub struct DelayNode {
-    id: String,
-    name: String,
-}
-
-impl DelayNode {
-    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
-        Self {
-            id: id.into(),
-            name: name.into(),
-        }
-    }
-}
-
-impl Node for DelayNode {
-    fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn description(&self) -> Option<&str> {
-        Some("Delay data flow by specified duration")
-    }
-
-    fn input_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("data", DataType::Json)
-                .with_description("Data to pass through"),
-            Port::new("delay_ms", DataType::Integer)
-                .with_description("Delay in milliseconds"),
-        ]
-    }
-
-    fn output_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("output", DataType::Json)
-                .with_description("Data after delay"),
-        ]
-    }
-
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
-        self.validate_inputs(&inputs)?;
-
-        let mut outputs = HashMap::new();
-
-        if let Some(data) = inputs.get("data") {
-            // 注意：实际的延迟需要异步实现
-            // 这里只是简单地传递数据
-            outputs.insert("output".to_string(), data.clone());
         }
 
         self.validate_outputs(&outputs)?;
