@@ -88,6 +88,15 @@ pub async fn process_message(bot_adapter: SharedBotAdapter, event: MessageEvent,
         debug!("[Event] Message record persisted: {}", record.message_id);
     }
 
+    let handlers = {
+        let bot_adapter_guard = bot_adapter.lock().await;
+        bot_adapter_guard.get_event_handlers()
+    };
+
+    for handler in handlers {
+        handler(&event, store.clone()).await;
+    }
+
     let brain_agent = {
         let bot_adapter_guard = bot_adapter.lock().await;
         bot_adapter_guard.get_brain_agent().cloned()

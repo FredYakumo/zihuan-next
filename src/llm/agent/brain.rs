@@ -6,8 +6,7 @@ use crate::bot_adapter::adapter::BotAdapter;
 use crate::bot_adapter::models::MessageEvent;
 use crate::bot_adapter::models::message::MessageProp;
 use crate::llm::agent::Agent;
-use crate::llm::agent::chat::ChatAgent;
-use crate::llm::{InferenceParam, LLMBase, Message, SystemMessage, UserMessage};
+use crate::llm::{InferenceParam, LLMBase, Message, UserMessage};
 use crate::error::Result;
 use crate::llm::function_tools::FunctionTool;
 
@@ -103,19 +102,21 @@ impl Agent for BrainAgent {
                 }
 
                 if should_reply(response_content.as_deref(), &msg_prop, event) {
-                    let chat_agent = ChatAgent::new(self.llm.clone(), bot_adapter.get_message_store(), self.persona.clone());
-                    match chat_agent.on_agent_input(bot_adapter, event, vec![UserMessage(user_text_for_reply.clone())]) {
-                        Ok(reply) => {
-                            if reply.trim().is_empty() {
-                                info!("[BrainAgent] chat agent reply is empty");
-                            } else {
-                                info!("[BrainAgent] chat agent reply: {}", reply);
-                            }
-                        }
-                        Err(e) => {
-                            info!("[BrainAgent] chat agent failed: {}", e);
-                        }
-                    }
+                    // TODO: Implement ChatAgent for direct replies
+                    info!("[BrainAgent] should reply but ChatAgent not yet implemented");
+                    // let chat_agent = ChatAgent::new(self.llm.clone(), bot_adapter.get_message_store(), self.persona.clone());
+                    // match chat_agent.on_agent_input(bot_adapter, event, vec![UserMessage(user_text_for_reply.clone())]) {
+                    //     Ok(reply) => {
+                    //         if reply.trim().is_empty() {
+                    //             info!("[BrainAgent] chat agent reply is empty");
+                    //         } else {
+                    //             info!("[BrainAgent] chat agent reply: {}", reply);
+                    //         }
+                    //     }
+                    //     Err(e) => {
+                    //         info!("[BrainAgent] chat agent failed: {}", e);
+                    //     }
+                    // }
                 }
                 break;
             }

@@ -96,6 +96,7 @@ pub struct BotAdapter {
     message_store: Arc<TokioMutex<MessageStore>>,
     bot_profile: Option<Profile>,
     brain_agent: Option<AgentBox>,
+    event_handlers: Vec<event::EventHandler>,
 }
 
 /// Shared handle for BotAdapter that allows mutation inside async tasks
@@ -143,6 +144,7 @@ impl BotAdapter {
                 ..Default::default()
             }),
             brain_agent: config.brain_agent,
+            event_handlers: Vec::new(),
         }
     }
 
@@ -169,6 +171,14 @@ impl BotAdapter {
 
     pub fn get_brain_agent(&self) -> Option<&AgentBox> {
         self.brain_agent.as_ref()
+    }
+
+    pub fn register_event_handler(&mut self, handler: event::EventHandler) {
+        self.event_handlers.push(handler);
+    }
+
+    pub fn get_event_handlers(&self) -> Vec<event::EventHandler> {
+        self.event_handlers.clone()
     }
 
     /// Start the WebSocket connection and begin processing events using a shared handle

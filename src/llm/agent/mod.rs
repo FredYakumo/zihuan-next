@@ -21,6 +21,3 @@ pub trait Agent: Send + Sync {
 pub trait FunctionToolsAgent: Send + Sync {
     fn get_tools(&self) -> Vec<&dyn crate::llm::function_tools::FunctionTool>;
 }
-
-pub mod chat;
-pub mod code_gen;

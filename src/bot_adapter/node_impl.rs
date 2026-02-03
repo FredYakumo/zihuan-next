@@ -1,5 +1,8 @@
+use crate::bot_adapter::adapter::{BotAdapter, BotAdapterConfig};
+use crate::config::{build_mysql_url, build_redis_url, load_config};
 use crate::error::Result;
 use crate::node::{DataType, DataValue, Node, Port};
+use log::{error, info};
 use std::collections::HashMap;
 
 pub struct BotAdapterNode {
@@ -33,12 +36,15 @@ impl Node for BotAdapterNode {
         vec![
             Port::new("trigger", DataType::Boolean)
                 .with_description("Trigger to start receiving messages"),
+            Port::new("qq_id", DataType::String)
+                .with_description("QQ ID to login")
+                .optional(),
         ]
     }
 
     fn output_ports(&self) -> Vec<Port> {
         vec![
-            Port::new("message", DataType::Json)
+            Port::new("message", DataType::MessageEvent)
                 .with_description("Raw message event from QQ server"),
             Port::new("message_type", DataType::String)
                 .with_description("Type of the message"),
@@ -52,29 +58,52 @@ impl Node for BotAdapterNode {
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
-        let mut outputs = HashMap::new();
+        let qq_id = inputs
+            .get("qq_id")
+            .and_then(|value| match value {
+                DataValue::String(s) => Some(s.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| std::env::var("QQ_ID").unwrap_or_default());
 
+        let config = load_config();
+        let redis_url = build_redis_url(&config);
+        let database_url = build_mysql_url(&config);
 
-        outputs.insert(
-            "message".to_string(),
-            DataValue::Json(serde_json::json!({
-                "message_type": "text",
-                "content": "example message"
-            })),
-        );
-        outputs.insert(
-            "message_type".to_string(),
-            DataValue::String("text".to_string()),
-        );
-        outputs.insert(
-            "user_id".to_string(),
-            DataValue::String("12345".to_string()),
-        );
-        outputs.insert(
-            "content".to_string(),
-            DataValue::String("example message".to_string()),
-        );
+        let adapter_config = BotAdapterConfig::new(
+            config.bot_server_url,
+            config.bot_server_token,
+            qq_id,
+        )
+        .with_redis_url(redis_url)
+        .with_database_url(database_url)
+        .with_redis_reconnect(
+            config.redis_reconnect_max_attempts,
+            config.redis_reconnect_interval_secs,
+        )
+        .with_mysql_reconnect(
+            config.mysql_reconnect_max_attempts,
+            config.mysql_reconnect_interval_secs,
+        )
+        .with_brain_agent(None);
 
+        let run_adapter = async move {
+            let adapter = BotAdapter::new(adapter_config).await;
+            let adapter = adapter.into_shared();
+            info!("Bot adapter initialized, connecting to server...");
+            if let Err(e) = BotAdapter::start(adapter).await {
+                error!("Bot adapter error: {}", e);
+            }
+        };
+
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(run_adapter);
+        } else {
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(run_adapter);
+        }
+
+        let outputs = HashMap::new();
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
