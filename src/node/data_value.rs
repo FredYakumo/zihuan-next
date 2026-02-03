@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::fmt;
 use std::sync::Arc;
 use crate::llm::{Message, function_tools::FunctionTool};
+use crate::bot_adapter::models::event_model::MessageEvent;
 
 /// Dataflow datatype. Use for checking compatibility between ports.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
@@ -15,7 +16,9 @@ pub enum DataType {
     Binary,
     List(Box<DataType>),
     MessageList,
+    MessageEvent,
     FunctionTools,
+    
     Custom(String),
 }
 
@@ -30,6 +33,7 @@ impl fmt::Display for DataType {
             DataType::Binary => write!(f, "Binary"),
             DataType::List(inner) => write!(f, "List<{}>", inner),
             DataType::MessageList => write!(f, "MessageList"),
+            DataType::MessageEvent => write!(f, "MessageEvent"),
             DataType::FunctionTools => write!(f, "FunctionTools"),
             DataType::Custom(name) => write!(f, "Custom({})", name),
         }
@@ -47,6 +51,7 @@ pub enum DataValue {
     Binary(Vec<u8>),
     List(Vec<DataValue>),
     MessageList(Vec<Message>),
+    MessageEvent(MessageEvent),
     FunctionTools(Vec<Arc<dyn FunctionTool>>),
 }
 
@@ -67,6 +72,7 @@ impl DataValue {
                 }
             }
             DataValue::MessageList(_) => DataType::MessageList,
+            DataValue::MessageEvent(_) => DataType::MessageEvent,
             DataValue::FunctionTools(_) => DataType::FunctionTools,
         }
     }
@@ -91,6 +97,21 @@ impl DataValue {
                     })
                 }).collect();
                 Value::Array(msgs)
+            }
+            DataValue::MessageEvent(event) => {
+                serde_json::json!({
+                    "message_id": event.message_id,
+                    "message_type": event.message_type.as_str(),
+                    "sender": {
+                        "user_id": event.sender.user_id,
+                        "nickname": event.sender.nickname,
+                        "card": event.sender.card,
+                        "role": event.sender.role,
+                    },
+                    "group_id": event.group_id,
+                    "group_name": event.group_name,
+                    "is_group_message": event.is_group_message,
+                })
             }
             DataValue::FunctionTools(tools) => {
                 let tool_defs: Vec<Value> = tools.iter()

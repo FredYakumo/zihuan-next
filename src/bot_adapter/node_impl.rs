@@ -54,8 +54,7 @@ impl Node for BotAdapterNode {
 
         let mut outputs = HashMap::new();
 
-        // 在实际实现中，这里应该触发 BotAdapter 的消息接收
-        // 这里提供一个示例输出
+
         outputs.insert(
             "message".to_string(),
             DataValue::Json(serde_json::json!({
@@ -81,7 +80,6 @@ impl Node for BotAdapterNode {
     }
 }
 
-/// 消息发送节点
 pub struct MessageSenderNode {
     id: String,
     name: String,
@@ -134,8 +132,6 @@ impl Node for MessageSenderNode {
 
         let mut outputs = HashMap::new();
 
-        // 在实际实现中，这里应该调用 BotAdapter 发送消息
-        // 这里提供一个示例输出
         outputs.insert(
             "success".to_string(),
             DataValue::Boolean(true),
