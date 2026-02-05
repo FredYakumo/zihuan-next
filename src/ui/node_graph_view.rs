@@ -184,59 +184,20 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     let selection_state_clone = Rc::clone(&selection_state);
     ui.on_node_moved(move |node_id: SharedString, x: f32, y: f32| {
         let mut graph = graph_state_clone.borrow_mut();
-        let snapped_x = snap_to_grid(x);
-        let snapped_y = snap_to_grid(y);
         if let Some(node) = graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
             if let Some(pos) = &mut node.position {
-                pos.x = snapped_x;
-                pos.y = snapped_y;
+                pos.x = x;
+                pos.y = y;
             } else {
-                node.position = Some(crate::node::graph_io::GraphPosition {
-                    x: snapped_x,
-                    y: snapped_y,
-                });
+                node.position = Some(crate::node::graph_io::GraphPosition { x, y });
             }
         }
         
-        // Update edges based on new node positions during drag
+        // Update edges based on new node positions during drag (no snapping for smoothness)
         if let Some(ui) = ui_handle.upgrade() {
             let selection = selection_state_clone.borrow();
-            let selected_edge_from_node = &selection.selected_edge_from_node;
-            let selected_edge_from_port = &selection.selected_edge_from_port;
-            let selected_edge_to_node = &selection.selected_edge_to_node;
-            let selected_edge_to_port = &selection.selected_edge_to_port;
-            
-            let edges: Vec<EdgeVm> = graph
-                .edges
-                .iter()
-                .filter_map(|edge| {
-                    let from_node = graph.nodes.iter().find(|n| n.id == edge.from_node_id)?;
-                    let to_node = graph.nodes.iter().find(|n| n.id == edge.to_node_id)?;
-
-                    let (from_x, from_y) = get_port_center_for_node(from_node, &edge.from_port, false)?;
-                    let (to_x, to_y) = get_port_center_for_node(to_node, &edge.to_port, true)?;
-                    
-                    let is_selected = !selected_edge_from_node.is_empty()
-                        && edge.from_node_id == selected_edge_from_node.as_str()
-                        && edge.from_port == selected_edge_from_port.as_str()
-                        && edge.to_node_id == selected_edge_to_node.as_str()
-                        && edge.to_port == selected_edge_to_port.as_str();
-                    
-                    Some(EdgeVm {
-                        from_node_id: edge.from_node_id.clone().into(),
-                        from_port: edge.from_port.clone().into(),
-                        to_node_id: edge.to_node_id.clone().into(),
-                        to_port: edge.to_port.clone().into(),
-                        from_x: from_x.into(),
-                        from_y: from_y.into(),
-                        to_x: to_x.into(),
-                        to_y: to_y.into(),
-                        is_selected,
-                    })
-                })
-                .collect();
-
-            let (edge_segments, edge_corners, edge_labels) = build_edge_segments(&graph);
+            let edges = build_edges(&graph, &selection, false);
+            let (edge_segments, edge_corners, edge_labels) = build_edge_segments(&graph, false);
             
             ui.set_edges(ModelRc::new(VecModel::from(edges)));
             ui.set_edge_segments(ModelRc::new(VecModel::from(edge_segments)));
@@ -514,11 +475,6 @@ fn apply_graph_to_ui(
         }
     }
     
-    let selected_edge_from_node = &selection_state.selected_edge_from_node;
-    let selected_edge_from_port = &selection_state.selected_edge_from_port;
-    let selected_edge_to_node = &selection_state.selected_edge_to_node;
-    let selected_edge_to_port = &selection_state.selected_edge_to_port;
-
     let nodes: Vec<NodeVm> = graph
         .nodes
         .iter()
@@ -572,36 +528,8 @@ fn apply_graph_to_ui(
         .collect();
 
     // Calculate edge visual positions based on node positions
-    let edges: Vec<EdgeVm> = graph
-        .edges
-        .iter()
-        .filter_map(|edge| {
-            let from_node = graph.nodes.iter().find(|n| n.id == edge.from_node_id)?;
-            let to_node = graph.nodes.iter().find(|n| n.id == edge.to_node_id)?;
-
-            let (from_x, from_y) = get_port_center_for_node(from_node, &edge.from_port, false)?;
-            let (to_x, to_y) = get_port_center_for_node(to_node, &edge.to_port, true)?;
-            
-            let is_selected = !selected_edge_from_node.is_empty()
-                && edge.from_node_id == selected_edge_from_node.as_str()
-                && edge.from_port == selected_edge_from_port.as_str()
-                && edge.to_node_id == selected_edge_to_node.as_str()
-                && edge.to_port == selected_edge_to_port.as_str();
-            
-            Some(EdgeVm {
-                from_node_id: edge.from_node_id.clone().into(),
-                from_port: edge.from_port.clone().into(),
-                to_node_id: edge.to_node_id.clone().into(),
-                to_port: edge.to_port.clone().into(),
-                from_x: from_x.into(),
-                from_y: from_y.into(),
-                to_x: to_x.into(),
-                to_y: to_y.into(),
-                is_selected,
-            })
-        })
-        .collect();
-    let (edge_segments, edge_corners, edge_labels) = build_edge_segments(&graph);
+    let edges = build_edges(&graph, selection_state, true);
+    let (edge_segments, edge_corners, edge_labels) = build_edge_segments(&graph, true);
 
     let label = current_file.unwrap_or_else(|| "已加载 JSON".to_string());
     let grid_lines = build_grid_lines(CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE);
@@ -749,6 +677,7 @@ fn snap_to_grid_center(value: f32) -> f32 {
 
 fn build_edge_segments(
     graph: &NodeGraphDefinition,
+    snap: bool,
 ) -> (Vec<EdgeSegmentVm>, Vec<EdgeCornerVm>, Vec<EdgeLabelVm>) {
     let mut segments = Vec::new();
     let mut corners = Vec::new();
@@ -774,12 +703,22 @@ fn build_edge_segments(
             None => continue,
         };
 
-        let from_x = snap_to_grid_center(from_x);
-        let from_y = snap_to_grid_center(from_y);
-        let to_x = snap_to_grid_center(to_x);
-        let to_y = snap_to_grid_center(to_y);
+        let (from_x, from_y, to_x, to_y) = if snap {
+            (
+                snap_to_grid_center(from_x),
+                snap_to_grid_center(from_y),
+                snap_to_grid_center(to_x),
+                snap_to_grid_center(to_y),
+            )
+        } else {
+            (from_x, from_y, to_x, to_y)
+        };
 
-        let mid_x = snap_to_grid_center((from_x + to_x) / 2.0);
+        let mid_x = if snap {
+            snap_to_grid_center((from_x + to_x) / 2.0)
+        } else {
+            (from_x + to_x) / 2.0
+        };
 
         push_segment(&mut segments, from_x, from_y, mid_x, from_y, thickness);
         push_segment(&mut segments, mid_x, from_y, mid_x, to_y, thickness);
@@ -801,6 +740,58 @@ fn build_edge_segments(
     }
 
     (segments, corners, labels)
+}
+
+fn build_edges(
+    graph: &NodeGraphDefinition,
+    selection_state: &crate::ui::selection::SelectionState,
+    snap: bool,
+) -> Vec<EdgeVm> {
+    let selected_edge_from_node = &selection_state.selected_edge_from_node;
+    let selected_edge_from_port = &selection_state.selected_edge_from_port;
+    let selected_edge_to_node = &selection_state.selected_edge_to_node;
+    let selected_edge_to_port = &selection_state.selected_edge_to_port;
+
+    graph
+        .edges
+        .iter()
+        .filter_map(|edge| {
+            let from_node = graph.nodes.iter().find(|n| n.id == edge.from_node_id)?;
+            let to_node = graph.nodes.iter().find(|n| n.id == edge.to_node_id)?;
+
+            let (from_x, from_y) = get_port_center_for_node(from_node, &edge.from_port, false)?;
+            let (to_x, to_y) = get_port_center_for_node(to_node, &edge.to_port, true)?;
+
+            let (from_x, from_y, to_x, to_y) = if snap {
+                (
+                    snap_to_grid_center(from_x),
+                    snap_to_grid_center(from_y),
+                    snap_to_grid_center(to_x),
+                    snap_to_grid_center(to_y),
+                )
+            } else {
+                (from_x, from_y, to_x, to_y)
+            };
+
+            let is_selected = !selected_edge_from_node.is_empty()
+                && edge.from_node_id == selected_edge_from_node.as_str()
+                && edge.from_port == selected_edge_from_port.as_str()
+                && edge.to_node_id == selected_edge_to_node.as_str()
+                && edge.to_port == selected_edge_to_port.as_str();
+
+            Some(EdgeVm {
+                from_node_id: edge.from_node_id.clone().into(),
+                from_port: edge.from_port.clone().into(),
+                to_node_id: edge.to_node_id.clone().into(),
+                to_port: edge.to_port.clone().into(),
+                from_x: from_x.into(),
+                from_y: from_y.into(),
+                to_x: to_x.into(),
+                to_y: to_y.into(),
+                is_selected,
+            })
+        })
+        .collect()
 }
 
 fn push_segment(

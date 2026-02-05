@@ -136,8 +136,10 @@ component NodeItem inherits Rectangle {
 
     property <float> offset-x: 0;
     property <float> offset-y: 0;
-    property <float> drag-start-x: 0;
-    property <float> drag-start-y: 0;
+    property <float> drag-start-pointer-x: 0;
+    property <float> drag-start-pointer-y: 0;
+    property <float> drag-start-node-x: 0;
+    property <float> drag-start-node-y: 0;
     property <bool> is-dragging: false;
 
     x: (x_pos + offset-x) * 1px;
@@ -157,12 +159,18 @@ component NodeItem inherits Rectangle {
         pointer-event(event) => {
             if (event.kind == PointerEventKind.down) {
                 is-dragging = true;
-                drag-start-x = self.mouse-x / 1px;
-                drag-start-y = self.mouse-y / 1px;
+                drag-start-pointer-x = (self.mouse-x / 1px) + root.x / 1px;
+                drag-start-pointer-y = (self.mouse-y / 1px) + root.y / 1px;
+                drag-start-node-x = root.x / 1px;
+                drag-start-node-y = root.y / 1px;
             } else if (event.kind == PointerEventKind.up) {
                 is-dragging = false;
-                offset-x = (self.mouse-x / 1px - drag-start-x);
-                offset-y = (self.mouse-y / 1px - drag-start-y);
+                let pointer-x = (self.mouse-x / 1px) + root.x / 1px;
+                let pointer-y = (self.mouse-y / 1px) + root.y / 1px;
+                let new-x = drag-start-node-x + (pointer-x - drag-start-pointer-x);
+                let new-y = drag-start-node-y + (pointer-y - drag-start-pointer-y);
+                offset-x = new-x - root.x_pos;
+                offset-y = new-y - root.y_pos;
                 root.node_moved(root.x_pos + offset-x, root.y_pos + offset-y);
                 root.node_move_finished(root.x_pos + offset-x, root.y_pos + offset-y);
             }
@@ -170,9 +178,12 @@ component NodeItem inherits Rectangle {
         
         moved => {
             if (self.pressed && is-dragging) {
-                // Calculate offset and move node directly to follow mouse
-                offset-x = (self.mouse-x / 1px - drag-start-x);
-                offset-y = (self.mouse-y / 1px - drag-start-y);
+                let pointer-x = (self.mouse-x / 1px) + root.x / 1px;
+                let pointer-y = (self.mouse-y / 1px) + root.y / 1px;
+                let new-x = drag-start-node-x + (pointer-x - drag-start-pointer-x);
+                let new-y = drag-start-node-y + (pointer-y - drag-start-pointer-y);
+                offset-x = new-x - root.x_pos;
+                offset-y = new-y - root.y_pos;
                 root.node_moved(root.x_pos + offset-x, root.y_pos + offset-y);
             }
         }
