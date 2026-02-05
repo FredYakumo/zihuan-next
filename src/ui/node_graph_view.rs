@@ -208,6 +208,74 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
 
     let ui_handle = ui.as_weak();
     let graph_state_clone = Rc::clone(&graph_state);
+    ui.on_drag_start_at(move |node_id: SharedString, port_name: SharedString, is_input: bool| {
+        let graph = graph_state_clone.borrow();
+        let (from_x, from_y) = match get_port_center(
+            &graph,
+            node_id.as_str(),
+            port_name.as_str(),
+            is_input,
+        ) {
+            Some(pos) => pos,
+            None => return,
+        };
+
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_drag_line_visible(true);
+            ui.set_drag_line_from_x(from_x);
+            ui.set_drag_line_from_y(from_y);
+            ui.set_drag_line_to_x(from_x);
+            ui.set_drag_line_to_y(from_y);
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    let graph_state_clone = Rc::clone(&graph_state);
+    ui.on_drag_pointer_down(move |x: f32, y: f32| {
+        let graph = graph_state_clone.borrow();
+        let Some((node_id, port_name, is_input)) = find_port_at(&graph, x, y) else {
+            if let Some(ui) = ui_handle.upgrade() {
+                ui.set_dragging(false);
+            }
+            return;
+        };
+
+        let (from_x, from_y) = match get_port_center(&graph, &node_id, &port_name, is_input) {
+            Some(pos) => pos,
+            None => return,
+        };
+
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_dragging(true);
+            ui.set_drag_from_node_id(node_id.clone().into());
+            ui.set_drag_from_port(port_name.clone().into());
+            ui.set_drag_from_is_input(is_input);
+            ui.set_drag_line_visible(true);
+            ui.set_drag_line_from_x(from_x);
+            ui.set_drag_line_from_y(from_y);
+            ui.set_drag_line_to_x(from_x);
+            ui.set_drag_line_to_y(from_y);
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    ui.on_drag_move_at(move |x: f32, y: f32| {
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_drag_line_to_x(x);
+            ui.set_drag_line_to_y(y);
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    ui.on_port_drag_move(move |x: f32, y: f32| {
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_drag_line_to_x(x);
+            ui.set_drag_line_to_y(y);
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    let graph_state_clone = Rc::clone(&graph_state);
     let current_file_clone = Rc::clone(&current_file);
     ui.on_drag_end_at(move |from_node: SharedString,
                             from_port: SharedString,
@@ -216,6 +284,11 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                             y: f32| {
         let from_node_str = from_node.to_string();
         let from_port_str = from_port.to_string();
+
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_drag_line_visible(false);
+            ui.set_dragging(false);
+        }
 
         let mut graph = graph_state_clone.borrow_mut();
 
@@ -478,4 +551,38 @@ fn find_port_at(
     }
 
     None
+}
+
+fn get_port_center(
+    graph: &NodeGraphDefinition,
+    node_id: &str,
+    port_name: &str,
+    is_input: bool,
+) -> Option<(f32, f32)> {
+    const NODE_WIDTH: f32 = 180.0;
+    const PADDING: f32 = 10.0;
+    const TITLE_HEIGHT: f32 = 22.0;
+    const TITLE_SPACING: f32 = 6.0;
+    const ROW_HEIGHT: f32 = 20.0;
+    const ROW_SPACING: f32 = 4.0;
+
+    let input_x = PADDING + 5.0;
+    let output_x = NODE_WIDTH - PADDING - 5.0;
+    let base_y_offset = PADDING + TITLE_HEIGHT + TITLE_SPACING;
+
+    let node = graph.nodes.iter().find(|n| n.id == node_id)?;
+    let position = node.position.as_ref()?;
+
+    let ports = if is_input {
+        &node.input_ports
+    } else {
+        &node.output_ports
+    };
+
+    let index = ports.iter().position(|p| p.name == port_name)? as f32;
+
+    let center_x = position.x + if is_input { input_x } else { output_x };
+    let center_y = position.y + base_y_offset + index * (ROW_HEIGHT + ROW_SPACING) + ROW_HEIGHT / 2.0;
+
+    Some((center_x, center_y))
 }
