@@ -11,7 +11,17 @@ use crate::node::graph_io::{
 };
 use crate::node::registry::NODE_REGISTRY;
 
-use crate::ui::graph_window::{NodeGraphWindow, NodeTypeVm, NodeVm, EdgeVm, PortVm};
+use crate::ui::graph_window::{
+    EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm, NodeGraphWindow, NodeTypeVm,
+    NodeVm, PortVm,
+};
+
+const GRID_SIZE: f32 = 20.0;
+const NODE_WIDTH_CELLS: f32 = 6.0;
+const NODE_HEADER_ROWS: f32 = 2.0;
+const CANVAS_WIDTH: f32 = 860.0;
+const CANVAS_HEIGHT: f32 = 760.0;
+const EDGE_THICKNESS_RATIO: f32 = 0.3;
 
 pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     register_cjk_fonts();
@@ -41,6 +51,8 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         .collect();
     
     ui.set_available_node_types(ModelRc::new(VecModel::from(node_types)));
+    ui.set_grid_size(GRID_SIZE);
+    ui.set_edge_thickness(GRID_SIZE * EDGE_THICKNESS_RATIO);
 
     apply_graph_to_ui(
         &ui,
@@ -102,12 +114,17 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     let graph_state_clone = Rc::clone(&graph_state);
     ui.on_node_moved(move |node_id: SharedString, x: f32, y: f32| {
         let mut graph = graph_state_clone.borrow_mut();
+        let snapped_x = snap_to_grid(x);
+        let snapped_y = snap_to_grid(y);
         if let Some(node) = graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
             if let Some(pos) = &mut node.position {
-                pos.x = x;
-                pos.y = y;
+                pos.x = snapped_x;
+                pos.y = snapped_y;
             } else {
-                node.position = Some(crate::node::graph_io::GraphPosition { x, y });
+                node.position = Some(crate::node::graph_io::GraphPosition {
+                    x: snapped_x,
+                    y: snapped_y,
+                });
             }
         }
         
@@ -119,15 +136,9 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                 .filter_map(|edge| {
                     let from_node = graph.nodes.iter().find(|n| n.id == edge.from_node_id)?;
                     let to_node = graph.nodes.iter().find(|n| n.id == edge.to_node_id)?;
-                    
-                    let from_pos = from_node.position.as_ref()?;
-                    let to_pos = to_node.position.as_ref()?;
-                    
-                    let from_x = from_pos.x + 180.0;
-                    let from_y = from_pos.y + 50.0;
-                    
-                    let to_x = to_pos.x;
-                    let to_y = to_pos.y + 50.0;
+
+                    let (from_x, from_y) = get_port_center_for_node(from_node, &edge.from_port, false)?;
+                    let (to_x, to_y) = get_port_center_for_node(to_node, &edge.to_port, true)?;
                     
                     Some(EdgeVm {
                         from_node_id: edge.from_node_id.clone().into(),
@@ -141,8 +152,13 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                     })
                 })
                 .collect();
+
+            let (edge_segments, edge_corners, edge_labels) = build_edge_segments(&graph);
             
             ui.set_edges(ModelRc::new(VecModel::from(edges)));
+            ui.set_edge_segments(ModelRc::new(VecModel::from(edge_segments)));
+            ui.set_edge_corners(ModelRc::new(VecModel::from(edge_corners)));
+            ui.set_edge_labels(ModelRc::new(VecModel::from(edge_labels)));
         }
     });
 
@@ -151,12 +167,17 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     let current_file_clone = Rc::clone(&current_file);
     ui.on_node_move_finished(move |node_id: SharedString, x: f32, y: f32| {
         let mut graph = graph_state_clone.borrow_mut();
+        let snapped_x = snap_to_grid(x);
+        let snapped_y = snap_to_grid(y);
         if let Some(node) = graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
             if let Some(pos) = &mut node.position {
-                pos.x = x;
-                pos.y = y;
+                pos.x = snapped_x;
+                pos.y = snapped_y;
             } else {
-                node.position = Some(crate::node::graph_io::GraphPosition { x, y });
+                node.position = Some(crate::node::graph_io::GraphPosition {
+                    x: snapped_x,
+                    y: snapped_y,
+                });
             }
         }
 
@@ -166,163 +187,89 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         }
     });
 
-    let ui_handle = ui.as_weak();
     let graph_state_clone = Rc::clone(&graph_state);
+    let current_file_clone = Rc::clone(&current_file);
     let port_selection = Rc::new(RefCell::new(None::<(String, String, bool)>));
+    let port_selection_for_click = Rc::clone(&port_selection);
+    let port_selection_for_move = Rc::clone(&port_selection);
+    let port_selection_for_cancel = Rc::clone(&port_selection);
+    let ui_handle_for_click = ui.as_weak();
+    let ui_handle_for_move = ui.as_weak();
+    let ui_handle_for_cancel = ui.as_weak();
+
     ui.on_port_clicked(move |node_id: SharedString, port_name: SharedString, is_input: bool| {
         let node_id_str = node_id.to_string();
         let port_name_str = port_name.to_string();
-        
-        let mut selection = port_selection.borrow_mut();
-        
+
+        let mut selection = port_selection_for_click.borrow_mut();
+
         if let Some((prev_node, prev_port, prev_is_input)) = selection.take() {
-            // Second click - create edge if valid
             if prev_is_input != is_input {
                 let mut graph = graph_state_clone.borrow_mut();
-                
-                // Determine direction: output -> input
+
                 let (from_node, from_port, to_node, to_port) = if is_input {
                     (prev_node, prev_port, node_id_str, port_name_str)
                 } else {
                     (node_id_str, port_name_str, prev_node, prev_port)
                 };
-                
-                // Add edge
+
                 graph.edges.push(crate::node::graph_io::EdgeDefinition {
                     from_node_id: from_node,
                     from_port,
                     to_node_id: to_node,
                     to_port,
                 });
-                
-                // Update UI
-                if let Some(ui) = ui_handle.upgrade() {
-                    apply_graph_to_ui(&ui, &graph, Some("已修改(未保存)".to_string()));
+
+                let label = "已修改(未保存)".to_string();
+                *current_file_clone.borrow_mut() = label.clone();
+
+                if let Some(ui) = ui_handle_for_click.upgrade() {
+                    ui.set_drag_line_visible(false);
+                    ui.set_connection_status("".into());
+                    apply_graph_to_ui(&ui, &graph, Some(label));
+                }
+            } else {
+                *selection = Some((prev_node, prev_port, prev_is_input));
+            }
+        } else {
+            *selection = Some((node_id_str.clone(), port_name_str.clone(), is_input));
+            if let Some(ui) = ui_handle_for_click.upgrade() {
+                let graph = graph_state_clone.borrow();
+                if let Some((from_x, from_y)) =
+                    get_port_center(&graph, node_id_str.as_str(), port_name_str.as_str(), is_input)
+                {
+                    ui.set_drag_line_visible(true);
+                    ui.set_drag_line_from_x(from_x);
+                    ui.set_drag_line_from_y(from_y);
+                    ui.set_drag_line_to_x(from_x);
+                    ui.set_drag_line_to_y(from_y);
+                }
+
+                if is_input {
+                    ui.set_connection_status("连接到输出port,按右键取消".into());
+                } else {
+                    ui.set_connection_status("连接到输入port,按右键取消".into());
                 }
             }
-        } else {
-            // First click - store selection
-            *selection = Some((node_id_str, port_name_str, is_input));
         }
     });
 
-    let ui_handle = ui.as_weak();
-    let graph_state_clone = Rc::clone(&graph_state);
-    ui.on_drag_start_at(move |node_id: SharedString, port_name: SharedString, is_input: bool| {
-        let graph = graph_state_clone.borrow();
-        let (from_x, from_y) = match get_port_center(
-            &graph,
-            node_id.as_str(),
-            port_name.as_str(),
-            is_input,
-        ) {
-            Some(pos) => pos,
-            None => return,
-        };
-
-        if let Some(ui) = ui_handle.upgrade() {
-            ui.set_drag_line_visible(true);
-            ui.set_drag_line_from_x(from_x);
-            ui.set_drag_line_from_y(from_y);
-            ui.set_drag_line_to_x(from_x);
-            ui.set_drag_line_to_y(from_y);
-        }
-    });
-
-    let ui_handle = ui.as_weak();
-    let graph_state_clone = Rc::clone(&graph_state);
-    ui.on_drag_pointer_down(move |x: f32, y: f32| {
-        let graph = graph_state_clone.borrow();
-        let Some((node_id, port_name, is_input)) = find_port_at(&graph, x, y) else {
-            if let Some(ui) = ui_handle.upgrade() {
-                ui.set_dragging(false);
-            }
+    ui.on_pointer_moved(move |x: f32, y: f32| {
+        if port_selection_for_move.borrow().is_none() {
             return;
-        };
+        }
 
-        let (from_x, from_y) = match get_port_center(&graph, &node_id, &port_name, is_input) {
-            Some(pos) => pos,
-            None => return,
-        };
-
-        if let Some(ui) = ui_handle.upgrade() {
-            ui.set_dragging(true);
-            ui.set_drag_from_node_id(node_id.clone().into());
-            ui.set_drag_from_port(port_name.clone().into());
-            ui.set_drag_from_is_input(is_input);
-            ui.set_drag_line_visible(true);
-            ui.set_drag_line_from_x(from_x);
-            ui.set_drag_line_from_y(from_y);
-            ui.set_drag_line_to_x(from_x);
-            ui.set_drag_line_to_y(from_y);
+        if let Some(ui) = ui_handle_for_move.upgrade() {
+            ui.set_drag_line_to_x(snap_to_grid_center(x));
+            ui.set_drag_line_to_y(snap_to_grid_center(y));
         }
     });
 
-    let ui_handle = ui.as_weak();
-    ui.on_drag_move_at(move |x: f32, y: f32| {
-        if let Some(ui) = ui_handle.upgrade() {
-            ui.set_drag_line_to_x(x);
-            ui.set_drag_line_to_y(y);
-        }
-    });
-
-    let ui_handle = ui.as_weak();
-    ui.on_port_drag_move(move |x: f32, y: f32| {
-        if let Some(ui) = ui_handle.upgrade() {
-            ui.set_drag_line_to_x(x);
-            ui.set_drag_line_to_y(y);
-        }
-    });
-
-    let ui_handle = ui.as_weak();
-    let graph_state_clone = Rc::clone(&graph_state);
-    let current_file_clone = Rc::clone(&current_file);
-    ui.on_drag_end_at(move |from_node: SharedString,
-                            from_port: SharedString,
-                            from_is_input: bool,
-                            x: f32,
-                            y: f32| {
-        let from_node_str = from_node.to_string();
-        let from_port_str = from_port.to_string();
-
-        if let Some(ui) = ui_handle.upgrade() {
+    ui.on_cancel_connect(move || {
+        *port_selection_for_cancel.borrow_mut() = None;
+        if let Some(ui) = ui_handle_for_cancel.upgrade() {
             ui.set_drag_line_visible(false);
-            ui.set_dragging(false);
-        }
-
-        let mut graph = graph_state_clone.borrow_mut();
-
-        let target = find_port_at(&graph, x, y);
-        let Some((to_node_str, to_port_str, to_is_input)) = target else {
-            return;
-        };
-
-        if from_is_input == to_is_input {
-            return;
-        }
-
-        if from_node_str == to_node_str && from_port_str == to_port_str {
-            return;
-        }
-
-        let (edge_from_node, edge_from_port, edge_to_node, edge_to_port) = if from_is_input {
-            (to_node_str, to_port_str, from_node_str, from_port_str)
-        } else {
-            (from_node_str, from_port_str, to_node_str, to_port_str)
-        };
-
-        graph.edges.push(crate::node::graph_io::EdgeDefinition {
-            from_node_id: edge_from_node,
-            from_port: edge_from_port,
-            to_node_id: edge_to_node,
-            to_port: edge_to_port,
-        });
-
-        let label = "已修改(未保存)".to_string();
-        *current_file_clone.borrow_mut() = label.clone();
-
-        if let Some(ui) = ui_handle.upgrade() {
-            apply_graph_to_ui(&ui, &graph, Some(label));
+            ui.set_connection_status("".into());
         }
     });
 
@@ -381,6 +328,13 @@ fn apply_graph_to_ui(
     let mut graph = graph.clone();
     ensure_positions(&mut graph);
 
+    for node in &mut graph.nodes {
+        if let Some(pos) = &mut node.position {
+            pos.x = snap_to_grid(pos.x);
+            pos.y = snap_to_grid(pos.y);
+        }
+    }
+
     let nodes: Vec<NodeVm> = graph
         .nodes
         .iter()
@@ -409,8 +363,8 @@ fn apply_graph_to_ui(
             NodeVm {
                 id: node.id.clone().into(),
                 label: label.into(),
-                x: position.map(|p| p.x).unwrap_or(0.0),
-                y: position.map(|p| p.y).unwrap_or(0.0),
+                x: position.map(|p| snap_to_grid(p.x)).unwrap_or(0.0),
+                y: position.map(|p| snap_to_grid(p.y)).unwrap_or(0.0),
                 input_ports: ModelRc::new(VecModel::from(input_ports)),
                 output_ports: ModelRc::new(VecModel::from(output_ports)),
             }
@@ -424,16 +378,9 @@ fn apply_graph_to_ui(
         .filter_map(|edge| {
             let from_node = graph.nodes.iter().find(|n| n.id == edge.from_node_id)?;
             let to_node = graph.nodes.iter().find(|n| n.id == edge.to_node_id)?;
-            
-            let from_pos = from_node.position.as_ref()?;
-            let to_pos = to_node.position.as_ref()?;
-            
-            // Calculate port offset (right side for output, left side for input)
-            let from_x = from_pos.x + 180.0; // Right edge of node
-            let from_y = from_pos.y + 50.0; // Approximate port Y position
-            
-            let to_x = to_pos.x; // Left edge of node
-            let to_y = to_pos.y + 50.0; // Approximate port Y position
+
+            let (from_x, from_y) = get_port_center_for_node(from_node, &edge.from_port, false)?;
+            let (to_x, to_y) = get_port_center_for_node(to_node, &edge.to_port, true)?;
             
             Some(EdgeVm {
                 from_node_id: edge.from_node_id.clone().into(),
@@ -447,11 +394,17 @@ fn apply_graph_to_ui(
             })
         })
         .collect();
+    let (edge_segments, edge_corners, edge_labels) = build_edge_segments(&graph);
 
     let label = current_file.unwrap_or_else(|| "已加载 JSON".to_string());
+    let grid_lines = build_grid_lines(CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE);
 
     ui.set_nodes(ModelRc::new(VecModel::from(nodes)));
     ui.set_edges(ModelRc::new(VecModel::from(edges)));
+    ui.set_edge_segments(ModelRc::new(VecModel::from(edge_segments)));
+    ui.set_edge_corners(ModelRc::new(VecModel::from(edge_corners)));
+    ui.set_edge_labels(ModelRc::new(VecModel::from(edge_labels)));
+    ui.set_grid_lines(ModelRc::new(VecModel::from(grid_lines)));
     ui.set_current_file(label.into());
 }
 
@@ -498,19 +451,13 @@ fn find_port_at(
     x: f32,
     y: f32,
 ) -> Option<(String, String, bool)> {
-    const NODE_WIDTH: f32 = 180.0;
-    const PADDING: f32 = 10.0;
-    const TITLE_HEIGHT: f32 = 22.0;
-    const TITLE_SPACING: f32 = 6.0;
-    const ROW_HEIGHT: f32 = 20.0;
-    const ROW_SPACING: f32 = 4.0;
-    const PORT_RADIUS: f32 = 8.0;
+    let port_size = GRID_SIZE;
+    let radius = port_size / 2.0;
+    let radius_sq = radius * radius;
 
-    let input_x = PADDING + 5.0;
-    let output_x = NODE_WIDTH - PADDING - 5.0;
-    let base_y_offset = PADDING + TITLE_HEIGHT + TITLE_SPACING;
-
-    let radius_sq = PORT_RADIUS * PORT_RADIUS;
+    let input_x = 0.0;
+    let output_x = GRID_SIZE * (NODE_WIDTH_CELLS - 1.0);
+    let base_y_offset = GRID_SIZE * NODE_HEADER_ROWS;
 
     for node in &graph.nodes {
         let position = match node.position.as_ref() {
@@ -522,11 +469,8 @@ fn find_port_at(
         let node_y = position.y;
 
         for (index, port) in node.input_ports.iter().enumerate() {
-            let center_x = node_x + input_x;
-            let center_y = node_y
-                + base_y_offset
-                + index as f32 * (ROW_HEIGHT + ROW_SPACING)
-                + ROW_HEIGHT / 2.0;
+            let center_x = node_x + input_x + radius;
+            let center_y = node_y + base_y_offset + index as f32 * GRID_SIZE + radius;
 
             let dx = x - center_x;
             let dy = y - center_y;
@@ -536,11 +480,8 @@ fn find_port_at(
         }
 
         for (index, port) in node.output_ports.iter().enumerate() {
-            let center_x = node_x + output_x;
-            let center_y = node_y
-                + base_y_offset
-                + index as f32 * (ROW_HEIGHT + ROW_SPACING)
-                + ROW_HEIGHT / 2.0;
+            let center_x = node_x + output_x + radius;
+            let center_y = node_y + base_y_offset + index as f32 * GRID_SIZE + radius;
 
             let dx = x - center_x;
             let dy = y - center_y;
@@ -559,18 +500,15 @@ fn get_port_center(
     port_name: &str,
     is_input: bool,
 ) -> Option<(f32, f32)> {
-    const NODE_WIDTH: f32 = 180.0;
-    const PADDING: f32 = 10.0;
-    const TITLE_HEIGHT: f32 = 22.0;
-    const TITLE_SPACING: f32 = 6.0;
-    const ROW_HEIGHT: f32 = 20.0;
-    const ROW_SPACING: f32 = 4.0;
-
-    let input_x = PADDING + 5.0;
-    let output_x = NODE_WIDTH - PADDING - 5.0;
-    let base_y_offset = PADDING + TITLE_HEIGHT + TITLE_SPACING;
-
     let node = graph.nodes.iter().find(|n| n.id == node_id)?;
+    get_port_center_for_node(node, port_name, is_input)
+}
+
+fn get_port_center_for_node(
+    node: &crate::node::graph_io::NodeDefinition,
+    port_name: &str,
+    is_input: bool,
+) -> Option<(f32, f32)> {
     let position = node.position.as_ref()?;
 
     let ports = if is_input {
@@ -580,9 +518,147 @@ fn get_port_center(
     };
 
     let index = ports.iter().position(|p| p.name == port_name)? as f32;
+    let radius = GRID_SIZE / 2.0;
+    let base_y_offset = GRID_SIZE * NODE_HEADER_ROWS;
+    let x_offset = if is_input {
+        0.0
+    } else {
+        GRID_SIZE * (NODE_WIDTH_CELLS - 1.0)
+    };
 
-    let center_x = position.x + if is_input { input_x } else { output_x };
-    let center_y = position.y + base_y_offset + index * (ROW_HEIGHT + ROW_SPACING) + ROW_HEIGHT / 2.0;
+    let center_x = position.x + x_offset + radius;
+    let center_y = position.y + base_y_offset + index * GRID_SIZE + radius;
 
     Some((center_x, center_y))
+}
+
+fn snap_to_grid(value: f32) -> f32 {
+    (value / GRID_SIZE).round() * GRID_SIZE
+}
+
+fn snap_to_grid_center(value: f32) -> f32 {
+    snap_to_grid(value - GRID_SIZE / 2.0) + GRID_SIZE / 2.0
+}
+
+fn build_edge_segments(
+    graph: &NodeGraphDefinition,
+) -> (Vec<EdgeSegmentVm>, Vec<EdgeCornerVm>, Vec<EdgeLabelVm>) {
+    let mut segments = Vec::new();
+    let mut corners = Vec::new();
+    let mut labels = Vec::new();
+    let thickness = GRID_SIZE * EDGE_THICKNESS_RATIO;
+
+    for edge in &graph.edges {
+        let from_node = match graph.nodes.iter().find(|n| n.id == edge.from_node_id) {
+            Some(node) => node,
+            None => continue,
+        };
+        let to_node = match graph.nodes.iter().find(|n| n.id == edge.to_node_id) {
+            Some(node) => node,
+            None => continue,
+        };
+
+        let (from_x, from_y) = match get_port_center_for_node(from_node, &edge.from_port, false) {
+            Some(pos) => pos,
+            None => continue,
+        };
+        let (to_x, to_y) = match get_port_center_for_node(to_node, &edge.to_port, true) {
+            Some(pos) => pos,
+            None => continue,
+        };
+
+        let from_x = snap_to_grid_center(from_x);
+        let from_y = snap_to_grid_center(from_y);
+        let to_x = snap_to_grid_center(to_x);
+        let to_y = snap_to_grid_center(to_y);
+
+        let mid_x = snap_to_grid_center((from_x + to_x) / 2.0);
+
+        push_segment(&mut segments, from_x, from_y, mid_x, from_y, thickness);
+        push_segment(&mut segments, mid_x, from_y, mid_x, to_y, thickness);
+        push_segment(&mut segments, mid_x, to_y, to_x, to_y, thickness);
+        corners.push(EdgeCornerVm { x: mid_x, y: from_y });
+        corners.push(EdgeCornerVm { x: mid_x, y: to_y });
+
+        let label_text = get_edge_data_type_label(from_node, &edge.from_port)
+            .unwrap_or_else(|| "Unknown".to_string());
+        let label_width = (label_text.len() as f32 * 7.0).max(GRID_SIZE * 2.0);
+        let label_height = GRID_SIZE * 0.8;
+        labels.push(EdgeLabelVm {
+            text: label_text.into(),
+            x: mid_x,
+            y: (from_y + to_y) / 2.0,
+            width: label_width,
+            height: label_height,
+        });
+    }
+
+    (segments, corners, labels)
+}
+
+fn push_segment(
+    segments: &mut Vec<EdgeSegmentVm>,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    thickness: f32,
+) {
+    if (x1 - x2).abs() < f32::EPSILON && (y1 - y2).abs() < f32::EPSILON {
+        return;
+    }
+
+    let (x, y, width, height) = if (y1 - y2).abs() < f32::EPSILON {
+        let min_x = x1.min(x2);
+        let length = (x1 - x2).abs() + thickness;
+        (min_x - thickness / 2.0, y1 - thickness / 2.0, length, thickness)
+    } else {
+        let min_y = y1.min(y2);
+        let length = (y1 - y2).abs() + thickness;
+        (x1 - thickness / 2.0, min_y - thickness / 2.0, thickness, length)
+    };
+
+    segments.push(EdgeSegmentVm {
+        x,
+        y,
+        width,
+        height,
+    });
+}
+
+fn get_edge_data_type_label(
+    node: &crate::node::graph_io::NodeDefinition,
+    port_name: &str,
+) -> Option<String> {
+    node.output_ports
+        .iter()
+        .find(|p| p.name == port_name)
+        .map(|p| p.data_type.to_string())
+}
+
+fn build_grid_lines(width: f32, height: f32, grid_size: f32) -> Vec<GridLineVm> {
+    let mut lines = Vec::new();
+    let mut x = 0.0;
+    while x <= width {
+        lines.push(GridLineVm {
+            x1: x,
+            y1: 0.0,
+            x2: x,
+            y2: height,
+        });
+        x += grid_size;
+    }
+
+    let mut y = 0.0;
+    while y <= height {
+        lines.push(GridLineVm {
+            x1: 0.0,
+            y1: y,
+            x2: width,
+            y2: y,
+        });
+        y += grid_size;
+    }
+
+    lines
 }

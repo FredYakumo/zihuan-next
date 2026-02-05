@@ -25,6 +25,33 @@ export struct EdgeVm {
     to_y: float,
 }
 
+export struct EdgeSegmentVm {
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+}
+
+export struct EdgeCornerVm {
+    x: float,
+    y: float,
+}
+
+export struct EdgeLabelVm {
+    text: string,
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+}
+
+export struct GridLineVm {
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+}
+
 export struct NodeTypeVm {
     type_id: string,
     display_name: string,
@@ -67,12 +94,14 @@ component NodeItem inherits Rectangle {
     in property <float> y_pos;
     in property <[PortVm]> input_ports;
     in property <[PortVm]> output_ports;
+    in property <float> grid_size;
+    in property <float> node_width_cells;
+    in property <float> header_rows;
+    in property <float> min_rows;
     
     callback node_moved(float, float);
     callback node_move_finished(float, float);
     callback port_clicked(string, string, bool);
-    callback port_drag_start(string, string, bool);
-    callback port_drag_move(float, float);
 
     property <float> offset-x: 0;
     property <float> offset-y: 0;
@@ -82,8 +111,8 @@ component NodeItem inherits Rectangle {
 
     x: (x_pos + offset-x) * 1px;
     y: (y_pos + offset-y) * 1px;
-    width: 180px;
-    height: 80px + max(input_ports.length, output_ports.length) * 20px;
+    width: (grid_size * node_width_cells) * 1px;
+    height: (grid_size * max(min_rows, header_rows + max(input_ports.length, output_ports.length))) * 1px;
     background: touch.pressed ? #3a3a3a : #2b2b2b;
     border-radius: 8px;
     border-width: 1px;
@@ -114,109 +143,89 @@ component NodeItem inherits Rectangle {
         }
     }
 
-    VerticalLayout {
-        padding: 10px;
-        spacing: 6px;
+    CjkText {
+        text: root.label;
+        color: #f0f0f0;
+        horizontal-alignment: center;
+        font-size: 14px;
+        font-weight: 700;
+        height: (grid_size * header_rows) * 1px;
+        width: parent.width;
+        x: 0px;
+        y: 0px;
+    }
 
-        CjkText {
-            text: root.label;
-            color: #f0f0f0;
-            horizontal-alignment: center;
-            font-size: 14px;
-            font-weight: 700;
-            height: 22px;
-        }
+    for port[i] in input_ports: Rectangle {
+        x: (grid_size * 0.2) * 1px;
+        y: (grid_size * header_rows + i * grid_size + grid_size * 0.2) * 1px;
+        width: (grid_size * 0.6) * 1px;
+        height: (grid_size * 0.6) * 1px;
+        border-radius: (grid_size * 0.3) * 1px;
+        background: #7a5a1f;
+        border-width: 1px;
+        border-color: #b58a3b;
 
-        HorizontalLayout {
-            spacing: 10px;
-
-            VerticalLayout {
-                spacing: 4px;
-                alignment: start;
-                
-                for port in input_ports: HorizontalLayout {
-                    spacing: 4px;
-                    height: 20px;
-                    
-                    Rectangle {
-                        width: 10px;
-                        height: 10px;
-                        border-radius: 5px;
-                        background: #4a90e2;
-                        border-width: 1px;
-                        border-color: #ffffff;
-
-                        TouchArea {
-                            pointer-event(event) => {
-                                if (event.kind == PointerEventKind.down) {
-                                    root.port_drag_start(root.node_id, port.name, true);
-                                    root.port_drag_move(root.x / 1px + self.mouse-x / 1px, root.y / 1px + self.mouse-y / 1px);
-                                }
-                            }
-
-                            moved => {
-                                root.port_drag_move(root.x / 1px + self.mouse-x / 1px, root.y / 1px + self.mouse-y / 1px);
-                            }
-                        }
-                    }
-                    
-                    CjkText {
-                        text: port.name;
-                        color: #cccccc;
-                        font-size: 10px;
-                        vertical-alignment: center;
-                    }
-                }
-            }
-
-            Rectangle { }
-
-            VerticalLayout {
-                spacing: 4px;
-                alignment: start;
-                
-                for port in output_ports: HorizontalLayout {
-                    spacing: 4px;
-                    height: 20px;
-                    
-                    CjkText {
-                        text: port.name;
-                        color: #cccccc;
-                        font-size: 10px;
-                        vertical-alignment: center;
-                        horizontal-alignment: right;
-                    }
-                    
-                    Rectangle {
-                        width: 10px;
-                        height: 10px;
-                        border-radius: 5px;
-                        background: #e24a4a;
-                        border-width: 1px;
-                        border-color: #ffffff;
-
-                        TouchArea {
-                            pointer-event(event) => {
-                                if (event.kind == PointerEventKind.down) {
-                                    root.port_drag_start(root.node_id, port.name, false);
-                                    root.port_drag_move(root.x / 1px + self.mouse-x / 1px, root.y / 1px + self.mouse-y / 1px);
-                                }
-                            }
-
-                            moved => {
-                                root.port_drag_move(root.x / 1px + self.mouse-x / 1px, root.y / 1px + self.mouse-y / 1px);
-                            }
-                        }
-                    }
+        TouchArea {
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down) {
+                    root.port_clicked(root.node_id, port.name, true);
                 }
             }
         }
+    }
+
+    for port[i] in input_ports: CjkText {
+        text: port.name;
+        color: #cccccc;
+        font-size: 10px;
+        vertical-alignment: center;
+        x: (grid_size) * 1px;
+        y: (grid_size * header_rows + i * grid_size) * 1px;
+        width: (grid_size * (node_width_cells - 2)) * 1px;
+        height: (grid_size) * 1px;
+    }
+
+    for port[i] in output_ports: Rectangle {
+        x: (grid_size * (node_width_cells - 1) + grid_size * 0.2) * 1px;
+        y: (grid_size * header_rows + i * grid_size + grid_size * 0.2) * 1px;
+        width: (grid_size * 0.6) * 1px;
+        height: (grid_size * 0.6) * 1px;
+        border-radius: (grid_size * 0.3) * 1px;
+        background: #7a5a1f;
+        border-width: 1px;
+        border-color: #b58a3b;
+
+        TouchArea {
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down) {
+                    root.port_clicked(root.node_id, port.name, false);
+                }
+            }
+        }
+    }
+
+    for port[i] in output_ports: CjkText {
+        text: port.name;
+        color: #cccccc;
+        font-size: 10px;
+        vertical-alignment: center;
+        horizontal-alignment: right;
+        x: (grid_size) * 1px;
+        y: (grid_size * header_rows + i * grid_size) * 1px;
+        width: (grid_size * (node_width_cells - 2)) * 1px;
+        height: (grid_size) * 1px;
     }
 }
 
 component GraphCanvas inherits Rectangle {
     in property <[NodeVm]> nodes;
     in property <[EdgeVm]> edges;
+    in property <[EdgeSegmentVm]> edge_segments;
+    in property <[EdgeCornerVm]> edge_corners;
+    in property <[EdgeLabelVm]> edge_labels;
+    in property <[GridLineVm]> grid_lines;
+    in property <float> grid_size;
+    in property <float> edge_thickness;
     in property <bool> drag_line_visible;
     in property <float> drag_line_from_x;
     in property <float> drag_line_from_y;
@@ -226,11 +235,8 @@ component GraphCanvas inherits Rectangle {
     callback node_moved(string, float, float);
     callback node_move_finished(string, float, float);
     callback port_clicked(string, string, bool);
-    callback drag_start_at(string, string, bool);
-    callback drag_pointer_down(float, float);
-    callback drag_move_at(float, float);
-    callback drag_end_at(string, string, bool, float, float);
-    callback port_drag_move(float, float);
+    callback pointer_moved(float, float);
+    callback cancel_connect();
 
     in-out property <bool> dragging: false;
     in-out property <string> drag_from_node_id: "";
@@ -239,56 +245,77 @@ component GraphCanvas inherits Rectangle {
 
     background: #1e1e1e;
 
-    drag_area := TouchArea {
-        pointer-event(event) => {
-            if (event.kind == PointerEventKind.down) {
-                root.drag_pointer_down(self.mouse-x / 1px, self.mouse-y / 1px);
-            }
-            if (event.kind == PointerEventKind.up && root.dragging) {
-                root.drag_end_at(
-                    root.drag_from_node_id,
-                    root.drag_from_port,
-                    root.drag_from_is_input,
-                    self.mouse-x / 1px,
-                    self.mouse-y / 1px
-                );
-                root.dragging = false;
-            }
-        }
-
-        moved => {
-            if (root.dragging) {
-                root.drag_move_at(self.mouse-x / 1px, self.mouse-y / 1px);
-            }
-        }
-    }
-
-    for edge in edges: Path {
+    for line in grid_lines: Path {
         width: parent.width;
         height: parent.height;
         x: 0px;
         y: 0px;
         fill: transparent;
-        stroke: #666666;
-        stroke-width: 2px;
+        stroke: #2a2a2a;
+        stroke-width: 1px;
         clip: false;
         viewbox-x: 0;
         viewbox-y: 0;
         viewbox-width: parent.width / 1px;
         viewbox-height: parent.height / 1px;
-        
+
         MoveTo {
-            x: edge.from_x;
-            y: edge.from_y;
+            x: line.x1;
+            y: line.y1;
         }
-        
-        CubicTo {
-            x: edge.to_x;
-            y: edge.to_y;
-            control-1-x: edge.from_x + 50;
-            control-1-y: edge.from_y;
-            control-2-x: edge.to_x - 50;
-            control-2-y: edge.to_y;
+
+        LineTo {
+            x: line.x2;
+            y: line.y2;
+        }
+    }
+
+    drag_area := TouchArea {
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down && event.button == PointerEventButton.right) {
+                root.cancel_connect();
+            }
+        }
+
+        moved => {
+            root.pointer_moved(self.mouse-x / 1px, self.mouse-y / 1px);
+        }
+    }
+
+    for segment in edge_segments: Rectangle {
+        x: segment.x * 1px;
+        y: segment.y * 1px;
+        width: segment.width * 1px;
+        height: segment.height * 1px;
+        background: #ffffff;
+        border-radius: (root.edge_thickness / 2) * 1px;
+    }
+
+    for corner in edge_corners: Rectangle {
+        x: (corner.x - root.edge_thickness / 2) * 1px;
+        y: (corner.y - root.edge_thickness / 2) * 1px;
+        width: root.edge_thickness * 1px;
+        height: root.edge_thickness * 1px;
+        background: #ffffff;
+        border-radius: (root.edge_thickness / 2) * 1px;
+    }
+
+    for label in edge_labels: Rectangle {
+        x: (label.x - label.width / 2) * 1px;
+        y: (label.y - label.height / 2) * 1px;
+        width: label.width * 1px;
+        height: label.height * 1px;
+        background: #1e1e1ecc;
+        border-radius: 4px;
+        border-width: 1px;
+        border-color: #444444;
+
+        CjkText {
+            text: label.text;
+            color: #ffffff;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            font-size: 10px;
         }
     }
 
@@ -298,9 +325,8 @@ component GraphCanvas inherits Rectangle {
         x: 0px;
         y: 0px;
         fill: transparent;
-        stroke: #9aa0a6;
-        stroke-width: 2px;
-        clip: false;
+        stroke: #ffffff;
+        stroke-width: root.edge_thickness * 1px;
         viewbox-x: 0;
         viewbox-y: 0;
         viewbox-width: parent.width / 1px;
@@ -311,13 +337,19 @@ component GraphCanvas inherits Rectangle {
             y: root.drag_line_from_y;
         }
 
-        CubicTo {
+        LineTo {
+            x: (root.drag_line_from_x + root.drag_line_to_x) / 2;
+            y: root.drag_line_from_y;
+        }
+
+        LineTo {
+            x: (root.drag_line_from_x + root.drag_line_to_x) / 2;
+            y: root.drag_line_to_y;
+        }
+
+        LineTo {
             x: root.drag_line_to_x;
             y: root.drag_line_to_y;
-            control-1-x: root.drag_line_from_x + 50;
-            control-1-y: root.drag_line_from_y;
-            control-2-x: root.drag_line_to_x - 50;
-            control-2-y: root.drag_line_to_y;
         }
     }
 
@@ -328,6 +360,10 @@ component GraphCanvas inherits Rectangle {
         y_pos: node.y;
         input_ports: node.input_ports;
         output_ports: node.output_ports;
+        grid_size: root.grid_size;
+        node_width_cells: 6;
+        header_rows: 2;
+        min_rows: 3;
         
         node_moved(x, y) => {
             root.node_moved(node.id, x, y);
@@ -340,24 +376,19 @@ component GraphCanvas inherits Rectangle {
         port_clicked(node_id, port_name, is_input) => {
             root.port_clicked(node_id, port_name, is_input);
         }
-
-        port_drag_start(node_id, port_name, is_input) => {
-            root.dragging = true;
-            root.drag_from_node_id = node_id;
-            root.drag_from_port = port_name;
-            root.drag_from_is_input = is_input;
-            root.drag_start_at(node_id, port_name, is_input);
-        }
-
-        port_drag_move(x, y) => {
-            root.port_drag_move(x, y);
-        }
     }
 }
 
 export component NodeGraphWindow inherits Window {
     in property <[NodeVm]> nodes;
     in property <[EdgeVm]> edges;
+    in property <[EdgeSegmentVm]> edge_segments;
+    in property <[EdgeCornerVm]> edge_corners;
+    in property <[EdgeLabelVm]> edge_labels;
+    in property <[GridLineVm]> grid_lines;
+    in property <float> grid_size: 20;
+    in property <float> edge_thickness: 6;
+    in property <string> connection_status: "";
     in property <string> current_file;
     in property <bool> show_node_selector: false;
     in property <[NodeTypeVm]> available_node_types;
@@ -378,11 +409,8 @@ export component NodeGraphWindow inherits Window {
     callback node_moved(string, float, float);
     callback node_move_finished(string, float, float);
     callback port_clicked(string, string, bool);
-    callback drag_start_at(string, string, bool);
-    callback drag_pointer_down(float, float);
-    callback drag_move_at(float, float);
-    callback drag_end_at(string, string, bool, float, float);
-    callback port_drag_move(float, float);
+    callback pointer_moved(float, float);
+    callback cancel_connect();
 
     title: "Zihuan Node Graph Viewer";
     width: 1200px;
@@ -397,6 +425,12 @@ export component NodeGraphWindow inherits Window {
             height: 760px;
             nodes: root.nodes;
             edges: root.edges;
+            edge_segments: root.edge_segments;
+            edge_corners: root.edge_corners;
+            edge_labels: root.edge_labels;
+            grid_lines: root.grid_lines;
+            grid_size: root.grid_size;
+            edge_thickness: root.edge_thickness;
             drag_line_visible: root.drag_line_visible;
             drag_line_from_x: root.drag_line_from_x;
             drag_line_from_y: root.drag_line_from_y;
@@ -418,20 +452,11 @@ export component NodeGraphWindow inherits Window {
             port_clicked(node_id, port_name, is_input) => {
                 root.port_clicked(node_id, port_name, is_input);
             }
-            drag_start_at(node_id, port_name, is_input) => {
-                root.drag_start_at(node_id, port_name, is_input);
+            pointer_moved(x, y) => {
+                root.pointer_moved(x, y);
             }
-            drag_pointer_down(x, y) => {
-                root.drag_pointer_down(x, y);
-            }
-            drag_move_at(x, y) => {
-                root.drag_move_at(x, y);
-            }
-            drag_end_at(from_node_id, from_port, from_is_input, x, y) => {
-                root.drag_end_at(from_node_id, from_port, from_is_input, x, y);
-            }
-            port_drag_move(x, y) => {
-                root.port_drag_move(x, y);
+            cancel_connect() => {
+                root.cancel_connect();
             }
         }
 
@@ -454,6 +479,13 @@ export component NodeGraphWindow inherits Window {
                 text: root.current_file;
                 font-size: 12px;
                 color: #555555;
+                wrap: word-wrap;
+            }
+
+            CjkText {
+                text: root.connection_status;
+                font-size: 12px;
+                color: #8ab4f8;
                 wrap: word-wrap;
             }
 
