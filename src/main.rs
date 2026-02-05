@@ -44,6 +44,13 @@ async fn main() {
     // Initialize logging using LogUtil
     LogUtil::init_with_logger(&BASE_LOG).expect("Failed to initialize logger");
 
+    // Initialize node registry
+    if let Err(e) = node::registry::init_node_registry() {
+        error!("Failed to initialize node registry: {}", e);
+    } else {
+        info!("Node registry initialized");
+    }
+
     // Parse command line arguments
     let args = Args::parse();
 

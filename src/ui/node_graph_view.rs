@@ -1,5 +1,7 @@
 use slint::{ModelRc, VecModel};
+use std::cell::RefCell;
 use std::path::Path;
+use std::rc::Rc;
 
 use crate::error::Result;
 use crate::node::graph_io::{
@@ -7,134 +9,10 @@ use crate::node::graph_io::{
     load_graph_definition_from_json,
     NodeGraphDefinition,
 };
+use crate::node::registry::NODE_REGISTRY;
 
-slint::slint! {
-    import { HorizontalBox, VerticalBox } from "std-widgets.slint";
-
-    export struct NodeVm {
-        label: string,
-        x: float,
-        y: float,
-    }
-
-    export struct EdgeVm {
-        label: string,
-    }
-
-    component CjkText inherits Text {
-    }
-
-    component CjkButton inherits Rectangle {
-        in property <string> text;
-        callback clicked();
-
-        width: 120px;
-        height: 32px;
-        background: #2f2f2f;
-        border-radius: 6px;
-        border-width: 1px;
-        border-color: #4a4a4a;
-
-        TouchArea {
-            clicked => { root.clicked(); }
-        }
-
-        CjkText {
-            text: root.text;
-            color: #f0f0f0;
-            vertical-alignment: center;
-            horizontal-alignment: center;
-            font-size: 12px;
-        }
-    }
-
-    component NodeItem inherits Rectangle {
-        in property <string> label;
-        in property <float> x_pos;
-        in property <float> y_pos;
-
-        x: x_pos * 1px;
-        y: y_pos * 1px;
-        width: 160px;
-        height: 56px;
-        background: #2b2b2b;
-        border-radius: 8px;
-        border-width: 1px;
-        border-color: #4a4a4a;
-
-        CjkText {
-            text: label;
-            color: #f0f0f0;
-            vertical-alignment: center;
-            horizontal-alignment: center;
-            font-size: 14px;
-        }
-    }
-
-    component GraphCanvas inherits Rectangle {
-        in property <[NodeVm]> nodes;
-        background: #1e1e1e;
-
-        for node in nodes: NodeItem {
-            label: node.label;
-            x_pos: node.x;
-            y_pos: node.y;
-        }
-    }
-
-    export component NodeGraphWindow inherits Window {
-        in property <[NodeVm]> nodes;
-        in property <[EdgeVm]> edges;
-        in property <string> current_file;
-
-        callback open_json();
-
-        title: "Zihuan Node Graph Viewer";
-        width: 1200px;
-        height: 800px;
-
-        HorizontalBox {
-            spacing: 12px;
-            padding: 12px;
-
-            GraphCanvas {
-                width: 860px;
-                height: 760px;
-                nodes: root.nodes;
-            }
-
-            VerticalBox {
-                width: 300px;
-                height: 760px;
-                spacing: 8px;
-
-                CjkButton {
-                    text: "读取节点图文件";
-                    clicked => { root.open_json(); }
-                }
-
-                CjkText {
-                    text: root.current_file;
-                    font-size: 12px;
-                    color: #555555;
-                    wrap: word-wrap;
-                }
-
-                CjkText {
-                    text: "Edges";
-                    font-size: 16px;
-                    color: #222222;
-                }
-
-                for edge in edges: CjkText {
-                    text: edge.label;
-                    font-size: 12px;
-                    color: #444444;
-                }
-            }
-        }
-    }
-}
+// 引入分离的 UI 定义
+use crate::ui::graph_window::*;
 
 pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     register_cjk_fonts();
@@ -142,13 +20,38 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     let ui = NodeGraphWindow::new()
         .map_err(|e| crate::error::Error::StringError(format!("UI error: {e}")))?;
 
-    if let Some(graph) = initial_graph {
-        apply_graph_to_ui(&ui, &graph, Some("已加载 节点图".to_string()));
-    } else {
-        ui.set_current_file("未加载 节点图".into());
-    }
+    let graph_state = Rc::new(RefCell::new(initial_graph.unwrap_or_default()));
+    let current_file = Rc::new(RefCell::new(
+        if graph_state.borrow().nodes.is_empty() && graph_state.borrow().edges.is_empty() {
+            "未加载 节点图".to_string()
+        } else {
+            "已加载 节点图".to_string()
+        },
+    ));
+
+    // Load available node types from registry
+    let node_types: Vec<NodeTypeVm> = NODE_REGISTRY
+        .get_all_types()
+        .iter()
+        .map(|meta| NodeTypeVm {
+            type_id: meta.type_id.clone().into(),
+            display_name: meta.display_name.clone().into(),
+            category: meta.category.clone().into(),
+            description: meta.description.clone().into(),
+        })
+        .collect();
+    
+    ui.set_available_node_types(ModelRc::new(VecModel::from(node_types)));
+
+    apply_graph_to_ui(
+        &ui,
+        &graph_state.borrow(),
+        Some(current_file.borrow().clone()),
+    );
 
     let ui_handle = ui.as_weak();
+    let graph_state_clone = Rc::clone(&graph_state);
+    let current_file_clone = Rc::clone(&current_file);
     ui.on_open_json(move || {
         if let Some(path) = rfd::FileDialog::new()
             .add_filter("Node Graph", &["json"])
@@ -156,9 +59,43 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         {
             if let Ok(graph) = load_graph_definition_from_json(&path) {
                 if let Some(ui) = ui_handle.upgrade() {
-                    apply_graph_to_ui(&ui, &graph, Some(path.display().to_string()));
+                    *graph_state_clone.borrow_mut() = graph;
+                    let label = path.display().to_string();
+                    *current_file_clone.borrow_mut() = label.clone();
+                    apply_graph_to_ui(&ui, &graph_state_clone.borrow(), Some(label));
                 }
             }
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    let graph_state_clone = Rc::clone(&graph_state);
+    let current_file_clone = Rc::clone(&current_file);
+    ui.on_add_node(move |type_id| {
+        let type_id_str = type_id.as_str();
+        let mut graph = graph_state_clone.borrow_mut();
+        if let Err(e) = add_node_to_graph(&mut graph, type_id_str) {
+            eprintln!("Failed to add node: {}", e);
+            return;
+        }
+        let label = "已修改(未保存)".to_string();
+        *current_file_clone.borrow_mut() = label.clone();
+        if let Some(ui) = ui_handle.upgrade() {
+            apply_graph_to_ui(&ui, &graph, Some(label));
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    ui.on_show_node_type_menu(move || {
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_show_node_selector(true);
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    ui.on_hide_node_type_menu(move || {
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_show_node_selector(false);
         }
     });
 
@@ -248,4 +185,42 @@ fn apply_graph_to_ui(
     ui.set_nodes(ModelRc::new(VecModel::from(nodes)));
     ui.set_edges(ModelRc::new(VecModel::from(edges)));
     ui.set_current_file(label.into());
+}
+
+fn add_node_to_graph(graph: &mut NodeGraphDefinition, type_id: &str) -> Result<()> {
+    let id = next_node_id(graph);
+    
+    // Get metadata from registry
+    let all_types = NODE_REGISTRY.get_all_types();
+    let metadata = all_types.iter().find(|meta| meta.type_id == type_id);
+    
+    let display_name = metadata
+        .map(|m| m.display_name.clone())
+        .unwrap_or_else(|| "NewNode".to_string());
+
+    // Create a dummy node instance to get port information
+    let dummy_node = NODE_REGISTRY.create_node(type_id, &id, &display_name)?;
+    
+    graph.nodes.push(crate::node::graph_io::NodeDefinition {
+        id,
+        name: display_name,
+        description: dummy_node.description().map(|s| s.to_string()),
+        node_type: type_id.to_string(),
+        input_ports: dummy_node.input_ports(),
+        output_ports: dummy_node.output_ports(),
+        position: None,
+    });
+    
+    Ok(())
+}
+
+fn next_node_id(graph: &NodeGraphDefinition) -> String {
+    let mut index = 1usize;
+    loop {
+        let candidate = format!("node_{index}");
+        if !graph.nodes.iter().any(|node| node.id == candidate) {
+            return candidate;
+        }
+        index += 1;
+    }
 }
