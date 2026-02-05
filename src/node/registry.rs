@@ -145,7 +145,7 @@ pub fn init_node_registry() -> Result<()> {
     // LLM nodes
     NODE_REGISTRY.register(
         "llm",
-        "LLM节点",
+        "大语言模型",
         "AI",
         "调用大语言模型处理文本",
         Arc::new(|id: String, name: String| {
@@ -155,7 +155,7 @@ pub fn init_node_registry() -> Result<()> {
 
     NODE_REGISTRY.register(
         "agent",
-        "AI代理",
+        "AI Agent",
         "AI",
         "具有工具调用能力的智能代理",
         Arc::new(|id: String, name: String| {
@@ -177,7 +177,7 @@ pub fn init_node_registry() -> Result<()> {
     register_node!(
         "bot_adapter",
         "QQ机器人适配器",
-        "Bot适配器",
+        "适配器",
         "接收来自QQ服务器的消息事件",
         BotAdapterNode
     );
