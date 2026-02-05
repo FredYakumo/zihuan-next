@@ -1,0 +1,486 @@
+import { HorizontalBox, VerticalBox, ScrollView } from "std-widgets.slint";
+
+export struct PortVm {
+    name: string,
+    is_input: bool,
+}
+
+export struct NodeVm {
+    id: string,
+    label: string,
+    x: float,
+    y: float,
+    input_ports: [PortVm],
+    output_ports: [PortVm],
+}
+
+export struct EdgeVm {
+    from_node_id: string,
+    from_port: string,
+    to_node_id: string,
+    to_port: string,
+    from_x: float,
+    from_y: float,
+    to_x: float,
+    to_y: float,
+}
+
+export struct NodeTypeVm {
+    type_id: string,
+    display_name: string,
+    category: string,
+    description: string,
+}
+
+component CjkText inherits Text {
+    font-family: "Heiti SC";
+}
+
+component CjkButton inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+
+    width: 120px;
+    height: 32px;
+    background: #2f2f2f;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: #4a4a4a;
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    CjkText {
+        text: root.text;
+        color: #f0f0f0;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+        font-size: 12px;
+    }
+}
+
+component NodeItem inherits Rectangle {
+    in property <string> node_id;
+    in property <string> label;
+    in property <float> x_pos;
+    in property <float> y_pos;
+    in property <[PortVm]> input_ports;
+    in property <[PortVm]> output_ports;
+    
+    callback node_moved(float, float);
+    callback port_clicked(string, string, bool);
+    callback port_drag_start(string, string, bool);
+    callback port_drag_end(string, string, bool);
+
+    x: x_pos * 1px;
+    y: y_pos * 1px;
+    width: 180px;
+    height: 80px + max(input_ports.length, output_ports.length) * 20px;
+    background: touch.pressed ? #3a3a3a : #2b2b2b;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: #4a4a4a;
+
+    touch := TouchArea {
+        moved => {
+            if (self.pressed) {
+                root.node_moved(
+                    (root.x_pos * 1px + self.mouse-x - self.pressed-x) / 1px,
+                    (root.y_pos * 1px + self.mouse-y - self.pressed-y) / 1px
+                );
+            }
+        }
+    }
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 6px;
+
+        CjkText {
+            text: root.label;
+            color: #f0f0f0;
+            horizontal-alignment: center;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        HorizontalLayout {
+            spacing: 10px;
+
+            VerticalLayout {
+                spacing: 4px;
+                alignment: start;
+                
+                for port in input_ports: HorizontalLayout {
+                    spacing: 4px;
+                    height: 20px;
+                    
+                    Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        border-radius: 5px;
+                        background: #4a90e2;
+                        border-width: 1px;
+                        border-color: #ffffff;
+
+                        TouchArea {
+                            clicked => {
+                                root.port_clicked(root.node_id, port.name, true);
+                            }
+                                pointer-event(event) => {
+                                    if (event.kind == PointerEventKind.down) {
+                                        root.port_drag_start(root.node_id, port.name, true);
+                                    }
+                                    if (event.kind == PointerEventKind.up) {
+                                        root.port_drag_end(root.node_id, port.name, true);
+                                    }
+                                }
+                        }
+                    }
+                    
+                    CjkText {
+                        text: port.name;
+                        color: #cccccc;
+                        font-size: 10px;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            Rectangle { }
+
+            VerticalLayout {
+                spacing: 4px;
+                alignment: start;
+                
+                for port in output_ports: HorizontalLayout {
+                    spacing: 4px;
+                    height: 20px;
+                    
+                    CjkText {
+                        text: port.name;
+                        color: #cccccc;
+                        font-size: 10px;
+                        vertical-alignment: center;
+                        horizontal-alignment: right;
+                    }
+                    
+                    Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        border-radius: 5px;
+                        background: #e24a4a;
+                        border-width: 1px;
+                        border-color: #ffffff;
+
+                        TouchArea {
+                            clicked => {
+                                root.port_clicked(root.node_id, port.name, false);
+                            }
+                                pointer-event(event) => {
+                                    if (event.kind == PointerEventKind.down) {
+                                        root.port_drag_start(root.node_id, port.name, false);
+                                    }
+                                    if (event.kind == PointerEventKind.up) {
+                                        root.port_drag_end(root.node_id, port.name, false);
+                                    }
+                                }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component GraphCanvas inherits Rectangle {
+    in property <[NodeVm]> nodes;
+    in property <[EdgeVm]> edges;
+    
+    callback node_moved(string, float, float);
+    callback port_clicked(string, string, bool);
+    callback connect_ports(string, string, bool, string, string, bool);
+
+    property <bool> dragging: false;
+    property <string> drag_from_node_id: "";
+    property <string> drag_from_port: "";
+    property <bool> drag_from_is_input: false;
+
+    background: #1e1e1e;
+
+    for edge in edges: Path {
+        stroke: #666666;
+        stroke-width: 2px;
+        viewbox-width: 10000;
+        viewbox-height: 10000;
+        
+        MoveTo {
+            x: edge.from_x;
+            y: edge.from_y;
+        }
+        
+        CubicTo {
+            x: edge.to_x;
+            y: edge.to_y;
+            control-1-x: edge.from_x + 50;
+            control-1-y: edge.from_y;
+            control-2-x: edge.to_x - 50;
+            control-2-y: edge.to_y;
+        }
+    }
+
+    for node in nodes: NodeItem {
+        node_id: node.id;
+        label: node.label;
+        x_pos: node.x;
+        y_pos: node.y;
+        input_ports: node.input_ports;
+        output_ports: node.output_ports;
+        
+        node_moved(x, y) => {
+            root.node_moved(node.id, x, y);
+        }
+        
+        port_clicked(node_id, port_name, is_input) => {
+            root.port_clicked(node_id, port_name, is_input);
+        }
+
+        port_drag_start(node_id, port_name, is_input) => {
+            root.dragging = true;
+            root.drag_from_node_id = node_id;
+            root.drag_from_port = port_name;
+            root.drag_from_is_input = is_input;
+        }
+
+        port_drag_end(node_id, port_name, is_input) => {
+            if (root.dragging) {
+                if (!(root.drag_from_node_id == node_id && root.drag_from_port == port_name && root.drag_from_is_input == is_input)) {
+                    if (root.drag_from_is_input != is_input) {
+                        root.connect_ports(
+                            root.drag_from_node_id,
+                            root.drag_from_port,
+                            root.drag_from_is_input,
+                            node_id,
+                            port_name,
+                            is_input
+                        );
+                    }
+                }
+            }
+            root.dragging = false;
+        }
+    }
+}
+
+export component NodeGraphWindow inherits Window {
+    in property <[NodeVm]> nodes;
+    in property <[EdgeVm]> edges;
+    in property <string> current_file;
+    in property <bool> show_node_selector: false;
+    in property <[NodeTypeVm]> available_node_types;
+
+    callback open_json();
+    callback add_node(string);
+    callback show_node_type_menu();
+    callback hide_node_type_menu();
+    callback node_moved(string, float, float);
+    callback port_clicked(string, string, bool);
+    callback connect_ports(string, string, bool, string, string, bool);
+
+    title: "Zihuan Node Graph Viewer";
+    width: 1200px;
+    height: 800px;
+
+    HorizontalBox {
+        spacing: 12px;
+        padding: 12px;
+
+        GraphCanvas {
+            width: 860px;
+            height: 760px;
+            nodes: root.nodes;
+            edges: root.edges;
+            
+            node_moved(node_id, x, y) => {
+                root.node_moved(node_id, x, y);
+            }
+            
+            port_clicked(node_id, port_name, is_input) => {
+                root.port_clicked(node_id, port_name, is_input);
+            }
+
+            connect_ports(from_node_id, from_port, from_is_input, to_node_id, to_port, to_is_input) => {
+                root.connect_ports(from_node_id, from_port, from_is_input, to_node_id, to_port, to_is_input);
+            }
+        }
+
+        VerticalBox {
+            width: 300px;
+            height: 760px;
+            spacing: 8px;
+
+            CjkButton {
+                text: "读取节点图文件";
+                clicked => { root.open_json(); }
+            }
+
+            CjkButton {
+                text: "新增节点";
+                clicked => { root.show_node_type_menu(); }
+            }
+
+            CjkText {
+                text: root.current_file;
+                font-size: 12px;
+                color: #555555;
+                wrap: word-wrap;
+            }
+
+            CjkText {
+                text: "Edges";
+                font-size: 16px;
+                color: #f0f0f0;
+            }
+
+            Rectangle {
+                background: #2b2b2b;
+                border-radius: 4px;
+                height: 200px;
+                
+                ScrollView {
+                    VerticalBox {
+                        padding: 4px;
+                        spacing: 2px;
+                        
+                        for edge in edges: CjkText {
+                            text: edge.from_node_id + ":" + edge.from_port + " → " + edge.to_node_id + ":" + edge.to_port;
+                            font-size: 10px;
+                            color: #aaaaaa;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.show_node_selector: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #00000080;
+
+        TouchArea {
+            clicked => { root.hide_node_type_menu(); }
+        }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 600px;
+            height: 500px;
+            background: #2b2b2b;
+            border-radius: 12px;
+            border-width: 2px;
+            border-color: #4a4a4a;
+
+            TouchArea {}
+
+            VerticalBox {
+                padding: 16px;
+                spacing: 12px;
+
+                CjkText {
+                    text: "选择节点类型";
+                    font-size: 18px;
+                    color: #f0f0f0;
+                    horizontal-alignment: center;
+                    height: 30px;
+                }
+
+                Rectangle {
+                    background: #1e1e1e;
+                    border-radius: 6px;
+                    border-color: #333333;
+                    border-width: 1px;
+                    
+                    ScrollView {
+                        viewport-width: parent.width;
+                        viewport-height: root.available_node_types.length * 85px; 
+
+                        VerticalBox {
+                            padding: 8px;
+                            spacing: 8px;
+                            alignment: start;
+
+                            for node_type in root.available_node_types: Rectangle {
+                                height: 80px;
+                                background: #2f2f2f;
+                                border-radius: 6px;
+                                border-width: 1px;
+                                border-color: #4a4a4a;
+
+                                TouchArea {
+                                    clicked => { 
+                                        root.add_node(node_type.type_id);
+                                        root.hide_node_type_menu();
+                                    }
+                                }
+
+                                VerticalLayout {
+                                    padding: 10px;
+                                    spacing: 6px;
+
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        CjkText {
+                                            text: node_type.display_name;
+                                            font-size: 16px;
+                                            color: #ffffff;
+                                            font-weight: 700;
+                                            vertical-alignment: center;
+                                        }
+
+                                        Rectangle {
+                                            background: #3a3a3a;
+                                            border-radius: 4px;
+                                            width: self.height * 2.5; 
+                                            
+                                            HorizontalLayout {
+                                                padding-left: 6px;
+                                                padding-right: 6px;
+                                                CjkText {
+                                                    text: node_type.category;
+                                                    font-size: 11px;
+                                                    color: #aaaaaa;
+                                                    vertical-alignment: center;
+                                                    horizontal-alignment: center;
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    CjkText {
+                                        text: node_type.description;
+                                        font-size: 13px;
+                                        color: #bbbbbb;
+                                        wrap: word-wrap;
+                                        vertical-alignment: top;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalBox {
+                    alignment: center;
+                    CjkButton {
+                        text: "取消";
+                        clicked => { root.hide_node_type_menu(); }
+                    }
+                }
+            }
+        }
+    }
+}

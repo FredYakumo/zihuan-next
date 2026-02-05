@@ -1,4 +1,4 @@
-use slint::{ModelRc, VecModel};
+use slint::{ModelRc, VecModel, SharedString, ComponentHandle};
 use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
@@ -11,8 +11,7 @@ use crate::node::graph_io::{
 };
 use crate::node::registry::NODE_REGISTRY;
 
-// 引入分离的 UI 定义
-use crate::ui::graph_window::*;
+use crate::ui::graph_window::{NodeGraphWindow, NodeTypeVm, NodeVm, EdgeVm, PortVm};
 
 pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     register_cjk_fonts();
@@ -71,7 +70,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     let ui_handle = ui.as_weak();
     let graph_state_clone = Rc::clone(&graph_state);
     let current_file_clone = Rc::clone(&current_file);
-    ui.on_add_node(move |type_id| {
+    ui.on_add_node(move |type_id: SharedString| {
         let type_id_str = type_id.as_str();
         let mut graph = graph_state_clone.borrow_mut();
         if let Err(e) = add_node_to_graph(&mut graph, type_id_str) {
@@ -96,6 +95,109 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     ui.on_hide_node_type_menu(move || {
         if let Some(ui) = ui_handle.upgrade() {
             ui.set_show_node_selector(false);
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    let graph_state_clone = Rc::clone(&graph_state);
+    ui.on_node_moved(move |node_id: SharedString, x: f32, y: f32| {
+        let mut graph = graph_state_clone.borrow_mut();
+        if let Some(node) = graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
+            if let Some(pos) = &mut node.position {
+                pos.x = x;
+                pos.y = y;
+            } else {
+                node.position = Some(crate::node::graph_io::GraphPosition { x, y });
+            }
+        }
+        
+        // Update UI to redraw edges
+        if let Some(ui) = ui_handle.upgrade() {
+            apply_graph_to_ui(&ui, &graph, None);
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    let graph_state_clone = Rc::clone(&graph_state);
+    let port_selection = Rc::new(RefCell::new(None::<(String, String, bool)>));
+    ui.on_port_clicked(move |node_id: SharedString, port_name: SharedString, is_input: bool| {
+        let node_id_str = node_id.to_string();
+        let port_name_str = port_name.to_string();
+        
+        let mut selection = port_selection.borrow_mut();
+        
+        if let Some((prev_node, prev_port, prev_is_input)) = selection.take() {
+            // Second click - create edge if valid
+            if prev_is_input != is_input {
+                let mut graph = graph_state_clone.borrow_mut();
+                
+                // Determine direction: output -> input
+                let (from_node, from_port, to_node, to_port) = if is_input {
+                    (prev_node, prev_port, node_id_str, port_name_str)
+                } else {
+                    (node_id_str, port_name_str, prev_node, prev_port)
+                };
+                
+                // Add edge
+                graph.edges.push(crate::node::graph_io::EdgeDefinition {
+                    from_node_id: from_node,
+                    from_port,
+                    to_node_id: to_node,
+                    to_port,
+                });
+                
+                // Update UI
+                if let Some(ui) = ui_handle.upgrade() {
+                    apply_graph_to_ui(&ui, &graph, Some("已修改(未保存)".to_string()));
+                }
+            }
+        } else {
+            // First click - store selection
+            *selection = Some((node_id_str, port_name_str, is_input));
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    let graph_state_clone = Rc::clone(&graph_state);
+    let current_file_clone = Rc::clone(&current_file);
+    ui.on_connect_ports(move |from_node: SharedString,
+                               from_port: SharedString,
+                               from_is_input: bool,
+                               to_node: SharedString,
+                               to_port: SharedString,
+                               to_is_input: bool| {
+        if from_is_input == to_is_input {
+            return;
+        }
+
+        let from_node_str = from_node.to_string();
+        let from_port_str = from_port.to_string();
+        let to_node_str = to_node.to_string();
+        let to_port_str = to_port.to_string();
+
+        if from_node_str == to_node_str && from_port_str == to_port_str {
+            return;
+        }
+
+        let (edge_from_node, edge_from_port, edge_to_node, edge_to_port) = if from_is_input {
+            (to_node_str, to_port_str, from_node_str, from_port_str)
+        } else {
+            (from_node_str, from_port_str, to_node_str, to_port_str)
+        };
+
+        let mut graph = graph_state_clone.borrow_mut();
+        graph.edges.push(crate::node::graph_io::EdgeDefinition {
+            from_node_id: edge_from_node,
+            from_port: edge_from_port,
+            to_node_id: edge_to_node,
+            to_port: edge_to_port,
+        });
+
+        let label = "已修改(未保存)".to_string();
+        *current_file_clone.borrow_mut() = label.clone();
+
+        if let Some(ui) = ui_handle.upgrade() {
+            apply_graph_to_ui(&ui, &graph, Some(label));
         }
     });
 
@@ -159,24 +261,65 @@ fn apply_graph_to_ui(
         .iter()
         .map(|node| {
             let position = node.position.as_ref();
-            let label = format!("{} ({})", node.name, node.id);
+            let label = format!("{}", node.name);
+            
+            let input_ports: Vec<PortVm> = node
+                .input_ports
+                .iter()
+                .map(|p| PortVm {
+                    name: p.name.clone().into(),
+                    is_input: true,
+                })
+                .collect();
+            
+            let output_ports: Vec<PortVm> = node
+                .output_ports
+                .iter()
+                .map(|p| PortVm {
+                    name: p.name.clone().into(),
+                    is_input: false,
+                })
+                .collect();
+
             NodeVm {
+                id: node.id.clone().into(),
                 label: label.into(),
                 x: position.map(|p| p.x).unwrap_or(0.0),
                 y: position.map(|p| p.y).unwrap_or(0.0),
+                input_ports: ModelRc::new(VecModel::from(input_ports)),
+                output_ports: ModelRc::new(VecModel::from(output_ports)),
             }
         })
         .collect();
 
+    // Calculate edge visual positions based on node positions
     let edges: Vec<EdgeVm> = graph
         .edges
         .iter()
-        .map(|edge| EdgeVm {
-            label: format!(
-                "{}:{} → {}:{}",
-                edge.from_node_id, edge.from_port, edge.to_node_id, edge.to_port
-            )
-            .into(),
+        .filter_map(|edge| {
+            let from_node = graph.nodes.iter().find(|n| n.id == edge.from_node_id)?;
+            let to_node = graph.nodes.iter().find(|n| n.id == edge.to_node_id)?;
+            
+            let from_pos = from_node.position.as_ref()?;
+            let to_pos = to_node.position.as_ref()?;
+            
+            // Calculate port offset (right side for output, left side for input)
+            let from_x = from_pos.x + 180.0; // Right edge of node
+            let from_y = from_pos.y + 50.0; // Approximate port Y position
+            
+            let to_x = to_pos.x; // Left edge of node
+            let to_y = to_pos.y + 50.0; // Approximate port Y position
+            
+            Some(EdgeVm {
+                from_node_id: edge.from_node_id.clone().into(),
+                from_port: edge.from_port.clone().into(),
+                to_node_id: edge.to_node_id.clone().into(),
+                to_port: edge.to_port.clone().into(),
+                from_x: from_x.into(),
+                from_y: from_y.into(),
+                to_x: to_x.into(),
+                to_y: to_y.into(),
+            })
         })
         .collect();
 
