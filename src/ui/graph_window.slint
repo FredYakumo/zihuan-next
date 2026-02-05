@@ -71,7 +71,6 @@ component NodeItem inherits Rectangle {
     callback node_moved(float, float);
     callback port_clicked(string, string, bool);
     callback port_drag_start(string, string, bool);
-    callback port_drag_end(string, string, bool);
 
     x: x_pos * 1px;
     y: y_pos * 1px;
@@ -103,6 +102,7 @@ component NodeItem inherits Rectangle {
             horizontal-alignment: center;
             font-size: 14px;
             font-weight: 700;
+            height: 22px;
         }
 
         HorizontalLayout {
@@ -131,9 +131,6 @@ component NodeItem inherits Rectangle {
                                 pointer-event(event) => {
                                     if (event.kind == PointerEventKind.down) {
                                         root.port_drag_start(root.node_id, port.name, true);
-                                    }
-                                    if (event.kind == PointerEventKind.up) {
-                                        root.port_drag_end(root.node_id, port.name, true);
                                     }
                                 }
                         }
@@ -182,9 +179,6 @@ component NodeItem inherits Rectangle {
                                     if (event.kind == PointerEventKind.down) {
                                         root.port_drag_start(root.node_id, port.name, false);
                                     }
-                                    if (event.kind == PointerEventKind.up) {
-                                        root.port_drag_end(root.node_id, port.name, false);
-                                    }
                                 }
                         }
                     }
@@ -200,7 +194,7 @@ component GraphCanvas inherits Rectangle {
     
     callback node_moved(string, float, float);
     callback port_clicked(string, string, bool);
-    callback connect_ports(string, string, bool, string, string, bool);
+    callback drag_end_at(string, string, bool, float, float);
 
     property <bool> dragging: false;
     property <string> drag_from_node_id: "";
@@ -209,11 +203,34 @@ component GraphCanvas inherits Rectangle {
 
     background: #1e1e1e;
 
+    drag_area := TouchArea {
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.up && root.dragging) {
+                root.drag_end_at(
+                    root.drag_from_node_id,
+                    root.drag_from_port,
+                    root.drag_from_is_input,
+                    self.mouse_x / 1px,
+                    self.mouse_y / 1px
+                );
+                root.dragging = false;
+            }
+        }
+    }
+
     for edge in edges: Path {
+        width: parent.width;
+        height: parent.height;
+        x: 0px;
+        y: 0px;
+        fill: transparent;
         stroke: #666666;
         stroke-width: 2px;
-        viewbox-width: 10000;
-        viewbox-height: 10000;
+        clip: false;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: parent.width / 1px;
+        viewbox-height: parent.height / 1px;
         
         MoveTo {
             x: edge.from_x;
@@ -252,24 +269,6 @@ component GraphCanvas inherits Rectangle {
             root.drag_from_port = port_name;
             root.drag_from_is_input = is_input;
         }
-
-        port_drag_end(node_id, port_name, is_input) => {
-            if (root.dragging) {
-                if (!(root.drag_from_node_id == node_id && root.drag_from_port == port_name && root.drag_from_is_input == is_input)) {
-                    if (root.drag_from_is_input != is_input) {
-                        root.connect_ports(
-                            root.drag_from_node_id,
-                            root.drag_from_port,
-                            root.drag_from_is_input,
-                            node_id,
-                            port_name,
-                            is_input
-                        );
-                    }
-                }
-            }
-            root.dragging = false;
-        }
     }
 }
 
@@ -286,7 +285,7 @@ export component NodeGraphWindow inherits Window {
     callback hide_node_type_menu();
     callback node_moved(string, float, float);
     callback port_clicked(string, string, bool);
-    callback connect_ports(string, string, bool, string, string, bool);
+    callback drag_end_at(string, string, bool, float, float);
 
     title: "Zihuan Node Graph Viewer";
     width: 1200px;
@@ -309,9 +308,8 @@ export component NodeGraphWindow inherits Window {
             port_clicked(node_id, port_name, is_input) => {
                 root.port_clicked(node_id, port_name, is_input);
             }
-
-            connect_ports(from_node_id, from_port, from_is_input, to_node_id, to_port, to_is_input) => {
-                root.connect_ports(from_node_id, from_port, from_is_input, to_node_id, to_port, to_is_input);
+            drag_end_at(from_node_id, from_port, from_is_input, x, y) => {
+                root.drag_end_at(from_node_id, from_port, from_is_input, x, y);
             }
         }
 

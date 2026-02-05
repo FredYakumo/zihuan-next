@@ -160,20 +160,24 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     let ui_handle = ui.as_weak();
     let graph_state_clone = Rc::clone(&graph_state);
     let current_file_clone = Rc::clone(&current_file);
-    ui.on_connect_ports(move |from_node: SharedString,
-                               from_port: SharedString,
-                               from_is_input: bool,
-                               to_node: SharedString,
-                               to_port: SharedString,
-                               to_is_input: bool| {
+    ui.on_drag_end_at(move |from_node: SharedString,
+                            from_port: SharedString,
+                            from_is_input: bool,
+                            x: f32,
+                            y: f32| {
+        let from_node_str = from_node.to_string();
+        let from_port_str = from_port.to_string();
+
+        let mut graph = graph_state_clone.borrow_mut();
+
+        let target = find_port_at(&graph, x, y);
+        let Some((to_node_str, to_port_str, to_is_input)) = target else {
+            return;
+        };
+
         if from_is_input == to_is_input {
             return;
         }
-
-        let from_node_str = from_node.to_string();
-        let from_port_str = from_port.to_string();
-        let to_node_str = to_node.to_string();
-        let to_port_str = to_port.to_string();
 
         if from_node_str == to_node_str && from_port_str == to_port_str {
             return;
@@ -185,7 +189,6 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
             (from_node_str, from_port_str, to_node_str, to_port_str)
         };
 
-        let mut graph = graph_state_clone.borrow_mut();
         graph.edges.push(crate::node::graph_io::EdgeDefinition {
             from_node_id: edge_from_node,
             from_port: edge_from_port,
@@ -366,4 +369,64 @@ fn next_node_id(graph: &NodeGraphDefinition) -> String {
         }
         index += 1;
     }
+}
+
+fn find_port_at(
+    graph: &NodeGraphDefinition,
+    x: f32,
+    y: f32,
+) -> Option<(String, String, bool)> {
+    const NODE_WIDTH: f32 = 180.0;
+    const PADDING: f32 = 10.0;
+    const TITLE_HEIGHT: f32 = 22.0;
+    const TITLE_SPACING: f32 = 6.0;
+    const ROW_HEIGHT: f32 = 20.0;
+    const ROW_SPACING: f32 = 4.0;
+    const PORT_RADIUS: f32 = 8.0;
+
+    let input_x = PADDING + 5.0;
+    let output_x = NODE_WIDTH - PADDING - 5.0;
+    let base_y_offset = PADDING + TITLE_HEIGHT + TITLE_SPACING;
+
+    let radius_sq = PORT_RADIUS * PORT_RADIUS;
+
+    for node in &graph.nodes {
+        let position = match node.position.as_ref() {
+            Some(pos) => pos,
+            None => continue,
+        };
+
+        let node_x = position.x;
+        let node_y = position.y;
+
+        for (index, port) in node.input_ports.iter().enumerate() {
+            let center_x = node_x + input_x;
+            let center_y = node_y
+                + base_y_offset
+                + index as f32 * (ROW_HEIGHT + ROW_SPACING)
+                + ROW_HEIGHT / 2.0;
+
+            let dx = x - center_x;
+            let dy = y - center_y;
+            if dx * dx + dy * dy <= radius_sq {
+                return Some((node.id.clone(), port.name.clone(), true));
+            }
+        }
+
+        for (index, port) in node.output_ports.iter().enumerate() {
+            let center_x = node_x + output_x;
+            let center_y = node_y
+                + base_y_offset
+                + index as f32 * (ROW_HEIGHT + ROW_SPACING)
+                + ROW_HEIGHT / 2.0;
+
+            let dx = x - center_x;
+            let dy = y - center_y;
+            if dx * dx + dy * dy <= radius_sq {
+                return Some((node.id.clone(), port.name.clone(), false));
+            }
+        }
+    }
+
+    None
 }
