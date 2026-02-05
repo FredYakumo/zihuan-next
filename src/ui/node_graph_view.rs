@@ -24,8 +24,8 @@ const NODE_WIDTH_CELLS: f32 = 10.0;
 const NODE_HEADER_ROWS: f32 = 2.0;
 const NODE_MIN_ROWS: f32 = 3.0;
 const NODE_PADDING_BOTTOM: f32 = 0.8;
-const CANVAS_WIDTH: f32 = 860.0;
-const CANVAS_HEIGHT: f32 = 760.0;
+const CANVAS_WIDTH: f32 = 1200.0;
+const CANVAS_HEIGHT: f32 = 800.0;
 const EDGE_THICKNESS_RATIO: f32 = 0.3;
 
 #[derive(Debug, Clone)]
@@ -373,7 +373,8 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
 
                 if let Some(ui) = ui_handle_for_click.upgrade() {
                     ui.set_drag_line_visible(false);
-                    ui.set_connection_status("".into());
+                    ui.set_show_port_hint(false);
+                    ui.set_port_hint_text("".into());
                     apply_graph_to_ui(
                         &ui,
                         &graph,
@@ -401,10 +402,11 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                 }
 
                 if is_input {
-                    ui.set_connection_status("连接到输出port,按右键取消".into());
+                    ui.set_port_hint_text("连接到输出port,按右键取消".into());
                 } else {
-                    ui.set_connection_status("连接到输入port,按右键取消".into());
+                    ui.set_port_hint_text("连接到输入port,按右键取消".into());
                 }
+                ui.set_show_port_hint(true);
             }
         }
     });
@@ -424,7 +426,8 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         *port_selection_for_cancel.borrow_mut() = None;
         if let Some(ui) = ui_handle_for_cancel.upgrade() {
             ui.set_drag_line_visible(false);
-            ui.set_connection_status("".into());
+            ui.set_show_port_hint(false);
+            ui.set_port_hint_text("".into());
         }
     });
 

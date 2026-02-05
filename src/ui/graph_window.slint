@@ -388,6 +388,8 @@ component GraphCanvas inherits Rectangle {
     in-out property <bool> drag_from_is_input: false;
 
     background: #1e1e1e;
+    width: 100%;
+    height: 100%;
 
     for line in grid_lines: Path {
         width: parent.width;
@@ -860,6 +862,10 @@ export component NodeGraphWindow inherits Window {
     in property <float> box_selection_y: 0;
     in property <float> box_selection_width: 0;
     in property <float> box_selection_height: 0;
+    in property <string> port_hint_text: "";
+    in property <float> port_hint_x: 0;
+    in property <float> port_hint_y: 0;
+    in property <bool> show_port_hint: false;
 
     callback open_json();
     callback save_json();
@@ -887,13 +893,46 @@ export component NodeGraphWindow inherits Window {
     width: 1200px;
     height: 800px;
 
-    HorizontalBox {
-        spacing: 12px;
-        padding: 12px;
+    VerticalBox {
+        // Menu bar area
+        Rectangle {
+            height: 40px;
+            background: #2b2b2b;
+            border-width: 1px;
+            border-color: #4a4a4a;
+
+            HorizontalBox {
+                padding: 6px;
+                spacing: 8px;
+                alignment: start;
+
+                CjkText {
+                    text: "节点图";
+                    color: #f0f0f0;
+                    font-size: 14px;
+                    vertical-alignment: center;
+                    width: 80px;
+                }
+
+                CjkButton {
+                    text: "打开";
+                    width: 80px;
+                    height: 28px;
+                    clicked => { root.open_json(); }
+                }
+
+                CjkButton {
+                    text: "保存";
+                    width: 80px;
+                    height: 28px;
+                    clicked => { root.save_json(); }
+                }
+            }
+        }
 
         GraphCanvas {
-            width: 860px;
-            height: 760px;
+            width: root.width;
+            height: root.height - 100px;
             nodes: root.nodes;
             edges: root.edges;
             edge_segments: root.edge_segments;
@@ -976,71 +1015,51 @@ export component NodeGraphWindow inherits Window {
             }
         }
 
-        VerticalBox {
-            width: 300px;
-            height: 760px;
-            spacing: 8px;
+        // Bottom control bar
+        Rectangle {
+            height: 50px;
+            background: transparent;
 
-            CjkButton {
-                text: "读取节点图文件";
-                clicked => { root.open_json(); }
-            }
+            HorizontalBox {
+                padding: 8px;
+                spacing: 8px;
+                alignment: start;
 
-            CjkButton {
-                text: "保存节点图文件";
-                clicked => { root.save_json(); }
-            }
-
-            CjkButton {
-                text: "新增节点";
-                clicked => { root.show_node_type_menu(); }
-            }
-            
-            if root.selected_node_count > 0 || root.selected_edge_from_node != "": CjkDeleteButton {
-                text: root.selected_node_count > 1 ? "删除选中节点" : "删除选中";
-                clicked => { root.delete_selected(); }
-            }
-
-            CjkText {
-                text: root.current_file;
-                font-size: 12px;
-                color: #555555;
-                wrap: word-wrap;
-            }
-
-            CjkText {
-                text: root.connection_status;
-                font-size: 12px;
-                color: #8ab4f8;
-                wrap: word-wrap;
-            }
-
-            CjkText {
-                text: "Edges";
-                font-size: 16px;
-                color: #f0f0f0;
-            }
-
-            Rectangle {
-                background: #2b2b2b;
-                border-radius: 4px;
-                height: 200px;
+                CjkButton {
+                    text: "新增节点";
+                    clicked => { root.show_node_type_menu(); }
+                }
                 
-                ScrollView {
-                    VerticalBox {
-                        padding: 4px;
-                        spacing: 2px;
-                        
-                        for edge in edges: CjkText {
-                            text: edge.from_node_id + ":" + edge.from_port + " → " + edge.to_node_id + ":" + edge.to_port;
-                            font-size: 10px;
-                            color: #aaaaaa;
-                        }
-                    }
+                if root.selected_node_count > 0 || root.selected_edge_from_node != "": CjkDeleteButton {
+                    text: root.selected_node_count > 1 ? "删除选中节点" : "删除选中";
+                    clicked => { root.delete_selected(); }
+                }
+            }
+
+            // Port hint - centered at bottom with transparent background
+            if root.show_port_hint: Rectangle {
+                width: 300px;
+                height: 30px;
+                background: #00000060;
+                border-radius: 4px;
+                border-width: 1px;
+                border-color: #4a4a4a;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+
+                CjkText {
+                    text: root.port_hint_text;
+                    color: #ffffff;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    font-size: 12px;
+                    width: 100%;
+                    height: 100%;
                 }
             }
         }
     }
+
 
     if root.show_node_selector: NodeSelector {
         node_types: root.available_node_types;
