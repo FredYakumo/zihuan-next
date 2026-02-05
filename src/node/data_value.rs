@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::fmt;
 use std::sync::Arc;
 use crate::llm::{Message, function_tools::FunctionTool};
+use crate::bot_adapter::adapter::SharedBotAdapter;
 use crate::bot_adapter::models::event_model::MessageEvent;
 
 /// Dataflow datatype. Use for checking compatibility between ports.
@@ -18,6 +19,7 @@ pub enum DataType {
     MessageList,
     MessageEvent,
     FunctionTools,
+    BotAdapterRef,
     
     Custom(String),
 }
@@ -35,13 +37,14 @@ impl fmt::Display for DataType {
             DataType::MessageList => write!(f, "MessageList"),
             DataType::MessageEvent => write!(f, "MessageEvent"),
             DataType::FunctionTools => write!(f, "FunctionTools"),
+            DataType::BotAdapterRef => write!(f, "BotAdapterRef"),
             DataType::Custom(name) => write!(f, "Custom({})", name),
         }
     }
 }
 
 /// Actual data flowing through the dataflow graph
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum DataValue {
     String(String),
     Integer(i64),
@@ -53,6 +56,7 @@ pub enum DataValue {
     MessageList(Vec<Message>),
     MessageEvent(MessageEvent),
     FunctionTools(Vec<Arc<dyn FunctionTool>>),
+    BotAdapterRef(SharedBotAdapter),
 }
 
 impl DataValue {
@@ -74,6 +78,7 @@ impl DataValue {
             DataValue::MessageList(_) => DataType::MessageList,
             DataValue::MessageEvent(_) => DataType::MessageEvent,
             DataValue::FunctionTools(_) => DataType::FunctionTools,
+            DataValue::BotAdapterRef(_) => DataType::BotAdapterRef,
         }
     }
 
@@ -119,6 +124,25 @@ impl DataValue {
                     .collect();
                 Value::Array(tool_defs)
             }
+            DataValue::BotAdapterRef(_) => Value::String("BotAdapterRef".to_string()),
+        }
+    }
+}
+
+impl fmt::Debug for DataValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DataValue::String(value) => f.debug_tuple("String").field(value).finish(),
+            DataValue::Integer(value) => f.debug_tuple("Integer").field(value).finish(),
+            DataValue::Float(value) => f.debug_tuple("Float").field(value).finish(),
+            DataValue::Boolean(value) => f.debug_tuple("Boolean").field(value).finish(),
+            DataValue::Json(value) => f.debug_tuple("Json").field(value).finish(),
+            DataValue::Binary(value) => f.debug_tuple("Binary").field(value).finish(),
+            DataValue::List(value) => f.debug_tuple("List").field(value).finish(),
+            DataValue::MessageList(value) => f.debug_tuple("MessageList").field(value).finish(),
+            DataValue::MessageEvent(value) => f.debug_tuple("MessageEvent").field(value).finish(),
+            DataValue::FunctionTools(value) => f.debug_tuple("FunctionTools").field(value).finish(),
+            DataValue::BotAdapterRef(_) => f.debug_tuple("BotAdapterRef").finish(),
         }
     }
 }

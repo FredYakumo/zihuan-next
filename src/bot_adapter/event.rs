@@ -94,7 +94,7 @@ pub async fn process_message(bot_adapter: SharedBotAdapter, event: MessageEvent,
     };
 
     for handler in handlers {
-        handler(&event, store.clone()).await;
+        (handler)(&event, store.clone()).await;
     }
 
     let brain_agent = {
@@ -114,4 +114,8 @@ pub async fn process_message(bot_adapter: SharedBotAdapter, event: MessageEvent,
 }
 
 /// Event handler type alias
-pub type EventHandler = for<'a> fn(&'a MessageEvent, Arc<TokioMutex<MessageStore>>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
+pub type EventHandler = Arc<
+    dyn for<'a> Fn(&'a MessageEvent, Arc<TokioMutex<MessageStore>>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
+        + Send
+        + Sync,
+>;
