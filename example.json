@@ -57,7 +57,14 @@
           "required": true
         }
       ],
-      "position": null
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "size": {
+        "width": 320.0,
+        "height": 200.0
+      }
     },
     {
       "id": "node_2",
@@ -81,8 +88,66 @@
         }
       ],
       "position": {
-        "x": 320.0,
-        "y": 100.0
+        "x": 420.0,
+        "y": 20.0
+      },
+      "size": {
+        "width": 260.0,
+        "height": 100.0
+      }
+    },
+    {
+      "id": "node_3",
+      "name": "大语言模型",
+      "description": "LLM API Node - processes text with language model",
+      "node_type": "llm",
+      "input_ports": [
+        {
+          "name": "prompt",
+          "data_type": "String",
+          "description": "User prompt to send to LLM",
+          "required": true
+        },
+        {
+          "name": "messages",
+          "data_type": "Json",
+          "description": "Full message history (optional)",
+          "required": true
+        },
+        {
+          "name": "max_tokens",
+          "data_type": "Integer",
+          "description": "Maximum tokens in response (optional)",
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "response",
+          "data_type": "String",
+          "description": "LLM response text",
+          "required": true
+        },
+        {
+          "name": "full_message",
+          "data_type": "Json",
+          "description": "Complete message object from LLM",
+          "required": true
+        },
+        {
+          "name": "token_usage",
+          "data_type": "Json",
+          "description": "Token usage information",
+          "required": true
+        }
+      ],
+      "position": {
+        "x": 420.0,
+        "y": 200.0
+      },
+      "size": {
+        "width": 280.0,
+        "height": 140.0
       }
     }
   ],
@@ -92,6 +157,12 @@
       "from_port": "message_event",
       "to_node_id": "node_2",
       "to_port": "message_event"
+    },
+    {
+      "from_node_id": "node_2",
+      "from_port": "prompt",
+      "to_node_id": "node_3",
+      "to_port": "prompt"
     }
   ]
 }
