@@ -1,6 +1,11 @@
 import { HorizontalBox, VerticalBox, ScrollView, LineEdit, CheckBox, Palette } from "std-widgets.slint";
 import { AppTheme } from "theme.slint";
 
+export struct MessageItemVm {
+    role: string,
+    content: string,
+}
+
 export struct PortVm {
     name: string,
     is_input: bool,
@@ -18,6 +23,7 @@ export struct NodeVm {
     preview_text: string,
     node_type: string,
     string_data_text: string,
+    message_list: [MessageItemVm],
     x: float,
     y: float,
     width: float,
@@ -161,6 +167,7 @@ component NodeItem inherits Rectangle {
     in property <string> preview_text;
     in property <string> node_type;
     in property <string> string_data_text;
+    in property <[MessageItemVm]> message_list;
     in property <float> x_pos;
     in property <float> y_pos;
     in-out property <float> node_width;
@@ -270,6 +277,58 @@ component NodeItem inherits Rectangle {
         y: (grid_size * 1.0) * 1px;
         wrap: word-wrap;
         overflow: elide;
+    }
+
+    // Special UI for preview_message_list nodes: scrollable message cards
+    if root.node_type == "preview_message_list" && root.message_list.length > 0: ScrollView {
+        x: (grid_size * 0.5) * 1px;
+        y: (grid_size * 1.2) * 1px;
+        width: root.width - (grid_size * 1.0) * 1px;
+        height: min((grid_size * 6.0) * 1px, root.height - (grid_size * 2.0) * 1px);
+
+        VerticalBox {
+            spacing: 4px;
+            padding: 4px;
+
+            for msg[idx] in root.message_list: Rectangle {
+                height: max((grid_size * 2.0) * 1px, 40px);
+                border-radius: 6px;
+                background: msg.role == "system" ? #2C3E50 :
+                           msg.role == "user" ? #3498DB :
+                           msg.role == "assistant" ? #27AE60 :
+                           #E67E22;
+                border-width: 1px;
+                border-color: msg.role == "system" ? #34495E :
+                             msg.role == "user" ? #2980B9 :
+                             msg.role == "assistant" ? #229954 :
+                             #D35400;
+
+                VerticalLayout {
+                    padding: 6px;
+                    spacing: 2px;
+
+                    CjkText {
+                        text: msg.role == "system" ? "系统" :
+                              msg.role == "user" ? "用户" :
+                              msg.role == "assistant" ? "助手" :
+                              "工具";
+                        color: #FFFFFF;
+                        font-size: 9px;
+                        font-weight: 700;
+                        horizontal-alignment: left;
+                    }
+
+                    CjkText {
+                        text: msg.content;
+                        color: #FFFFFF;
+                        font-size: 10px;
+                        horizontal-alignment: left;
+                        wrap: word-wrap;
+                        overflow: elide;
+                    }
+                }
+            }
+        }
     }
 
     for port[i] in input_ports: Rectangle {
@@ -653,6 +712,7 @@ component GraphCanvas inherits Rectangle {
         preview_text: node.preview_text;
         node_type: node.node_type;
         string_data_text: node.string_data_text;
+        message_list: node.message_list;
         x_pos: node.x;
         y_pos: node.y;
         node_width: node.width;

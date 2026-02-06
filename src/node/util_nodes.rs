@@ -97,6 +97,11 @@ pub struct StringDataNode {
     name: String,
 }
 
+pub struct PreviewMessageListNode {
+    id: String,
+    name: String,
+}
+
 impl JsonParserNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
@@ -116,6 +121,15 @@ impl PreviewStringNode {
 }
 
 impl StringDataNode {
+    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+        }
+    }
+}
+
+impl PreviewMessageListNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -251,6 +265,42 @@ impl Node for StringDataNode {
         };
         outputs.insert("text".to_string(), DataValue::String(value));
         
+        self.validate_outputs(&outputs)?;
+        Ok(outputs)
+    }
+}impl Node for PreviewMessageListNode {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("Preview MessageList inside the node card with scrollable message items")
+    }
+
+    fn input_ports(&self) -> Vec<Port> {
+        vec![
+            Port::new("messages", DataType::MessageList)
+                .with_description("MessageList to preview inside the node")
+                .optional(),
+        ]
+    }
+
+    fn output_ports(&self) -> Vec<Port> {
+        vec![]
+    }
+
+    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+        self.validate_inputs(&inputs)?;
+
+        let mut outputs = HashMap::new();
+        if let Some(value) = inputs.get("messages") {
+            outputs.insert("messages".to_string(), value.clone());
+        }
+
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }

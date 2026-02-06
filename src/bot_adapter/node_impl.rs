@@ -66,6 +66,8 @@ impl Node for BotAdapterNode {
         vec![
             Port::new("message_event", DataType::MessageEvent)
                 .with_description("Raw message event from QQ server"),
+            Port::new("bot_adapter", DataType::BotAdapterRef)
+                .with_description("Shared reference to the bot adapter instance")
         ]
     }
 
@@ -230,6 +232,7 @@ impl Node for BotAdapterNode {
 
         let mut outputs = HashMap::new();
         outputs.insert("message_event".to_string(), DataValue::MessageEvent(event.clone()));
+        outputs.insert("bot_adapter".to_string(), DataValue::BotAdapterRef(self.adapter_handle.clone().unwrap()));
         self.validate_outputs(&outputs)?;
 
         Ok(Some(outputs))

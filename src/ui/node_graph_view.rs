@@ -14,7 +14,7 @@ use crate::node::registry::NODE_REGISTRY;
 
 use crate::ui::graph_window::{
     EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm, NodeGraphWindow, NodeTypeVm,
-    NodeVm, PortVm,
+    NodeVm, PortVm, MessageItemVm,
 };
 use crate::ui::selection::{setup_selection_callbacks, BoxSelection};
 use crate::ui::window_state::{apply_window_state, load_window_state, save_window_state, WindowState};
@@ -1042,12 +1042,27 @@ fn apply_graph_to_ui(
                 String::new()
             };
 
+            // Get message list for preview_message_list nodes
+            let message_list = if node.node_type == "preview_message_list" {
+                use crate::ui::node_render::preview_message_list::get_message_list_data;
+                get_message_list_data(&node.id, &graph)
+                    .into_iter()
+                    .map(|msg| MessageItemVm {
+                        role: msg.role.into(),
+                        content: msg.content.into(),
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+
             NodeVm {
                 id: node.id.clone().into(),
                 label: label.into(),
                 preview_text: preview_text.into(),
                 node_type: node.node_type.clone().into(),
                 string_data_text: string_data_text.into(),
+                message_list: ModelRc::new(VecModel::from(message_list)),
                 x: position.map(|p| snap_to_grid(p.x)).unwrap_or(0.0),
                 y: position.map(|p| snap_to_grid(p.y)).unwrap_or(0.0),
                 width: node_width,
