@@ -31,7 +31,6 @@ This guide covers the full lifecycle of creating, registering, and distributing 
     - [Unit test example](#unit-test-example)
     - [Integration test with NodeGraph](#integration-test-with-nodegraph)
   - [Source Code References](#source-code-references)
-  - [Next Steps](#next-steps)
 
 ---
 
@@ -467,13 +466,3 @@ fn test_node_in_graph() {
 | EventProducer example | `src/bot_adapter/node_impl.rs` (`BotAdapterNode`) |
 | LLM-based nodes | `src/llm/node_impl.rs` |
 | JSON format | [node-graph-json.md](./node-graph-json.md) |
-
----
-
-## Next Steps
-
-1. Study existing nodes in `src/node/util_nodes.rs`
-2. Create your node in a new module or existing category file
-3. Register it in `init_node_registry()`
-4. Test with a JSON graph file
-5. Use the GUI to visually connect and execute your node
