@@ -119,38 +119,24 @@ AgentNode.execute(prompt) -> LLM API call -> Response with tool_calls
 
 ### Startup Sequence
 
-```rust
-main() {
-    1. Initialize logging (LogUtil -> ./logs)
-    2. Load config (config.yaml -> env vars -> defaults)
-    3. Initialize node registry (register all built-in node types)
-    4. Parse CLI args (--graph-json, --no-gui)
-    
-    if --no-gui {
-        5a. Load graph JSON -> NodeGraphDefinition
-        5b. Build NodeGraph from definition
-        5c. Execute synchronously (blocking)
-    } else {
-        5d. Load graph JSON (optional)
-        5e. Launch Slint GUI (ui::node_graph_view::show_graph)
-        5f. User interacts -> graph edits -> save/execute
-    }
-}
+```mermaid
+flowchart TD
+    A[Start] --> B[Initialize logging]
+    B --> C[Load config]
+    C --> D[Initialize node registry]
+    D --> E[Parse CLI args]
+    E --> F{--no-gui flag?}
+    F -->|Yes| G[Load graph JSON]
+    G --> H[Build NodeGraph]
+    H --> I[Execute synchronously]
+    I --> J[Exit]
+    F -->|No| K[Load graph JSON optional]
+    K --> L[Launch Slint GUI]
+    L --> M[User interaction loop]
+    M --> N[Graph edits / Execute]
+    N --> M
 ```
 
-### GUI Mode Flow
-
-```
-User Action         ->  Event Handler               ->  Result
-─────────────────────────────────────────────────────────────
-Open JSON           ->  load_graph_definition()     ->  Populate UI nodes/edges
-Save JSON           ->  save_graph_definition()     ->  Write to disk
-Add Node (drag)     ->  on_add_node(type_id)        ->  Insert NodeDefinition
-Connect Ports       ->  on_port_clicked() ×2        ->  Create EdgeDefinition
-Run Graph           ->  on_run_graph()              ->  Build + Execute
-Stop Graph          ->  on_stop_graph()             ->  Set stop_flag
-Delete Node         ->  on_delete_selected()        ->  Remove from graph
-```
 
 ### Headless Mode Flow (CLI)
 
@@ -158,13 +144,17 @@ Delete Node         ->  on_delete_selected()        ->  Remove from graph
 cargo run -- --graph-json my_graph.json --no-gui
 ```
 
-```
-1. Load JSON -> Deserialize to NodeGraphDefinition
-2. Build NodeGraph via build_node_graph_from_definition()
-3. Call NodeGraph::execute() (blocks until complete)
-4. EventProducers run their on_update() loop
-5. Simple nodes execute once per cycle
-6. Exit when all EventProducers return None from on_update()
+```mermaid
+flowchart TD
+    A[Load JSON] --> B[Deserialize to NodeGraphDefinition]
+    B --> C[Build NodeGraph]
+    C --> D[Call NodeGraph::execute]
+    D --> E[EventProducers run on_update loop]
+    D --> F[Simple nodes execute once per cycle]
+    E --> G{All EventProducers return None?}
+    G -->|No| E
+    G -->|Yes| H[Exit]
+    F --> H
 ```
 
 ---
@@ -173,97 +163,78 @@ cargo run -- --graph-json my_graph.json --no-gui
 
 ### Simple Node Lifecycle
 
-```
-[Created] -> add_node() -> [In Graph]
-                              ↓
-                    NodeGraph::execute()
-                              ↓
-                   Topological Sort (dependency order)
-                              ↓
-              For each node in sorted order:
-                 ┌────────────────────────┐
-                 │  1. Collect inputs     │ ← From data_pool (outputs of upstream nodes)
-                 │  2. Validate inputs    │ ← Check types & required ports
-                 │  3. node.execute()     │ ← User-defined logic
-                 │  4. Validate outputs   │ ← Check types
-                 │  5. Insert into pool   │ -> Downstream nodes can now access
-                 └────────────────────────┘
-                              ↓
-                        [Execution Complete]
+```mermaid
+flowchart TD
+    A[Created] --> B[add_node]
+    B --> C[In Graph]
+    C --> D[NodeGraph::execute]
+    D --> E[Topological Sort]
+    E --> F[For each node in sorted order]
+    F --> G[1. Collect inputs from data_pool]
+    G --> H[2. Validate inputs]
+    H --> I[3. node.execute]
+    I --> J[4. Validate outputs]
+    J --> K[5. Insert into pool]
+    K --> L{More nodes?}
+    L -->|Yes| F
+    L -->|No| M[Execution Complete]
 ```
 
 ### EventProducer Lifecycle
 
 EventProducers have a stateful lifecycle with three phases:
 
-```
-[Created] -> add_node() -> [In Graph]
-                              ↓
-                    NodeGraph::execute()
-                              ↓
-              Identify EventProducers (node_type() == EventProducer)
-                              ↓
-                    For each EventProducer:
-                              ↓
-┌──────────────────────────────────────────────────────────────┐
-│ PHASE 1: INITIALIZATION                                      │
-│   on_start(inputs) -> Initialize internal state              │
-│      • Parse input parameters                                │
-│      • Establish connections (e.g., WebSocket)              │
-│      • Set up timers/subscriptions                           │
-└──────────────────────────────────────────────────────────────┘
-                              ↓
-┌──────────────────────────────────────────────────────────────┐
-│ PHASE 2: EVENT LOOP                                          │
-│   loop {                                                      │
-│     if stop_flag.load() { break; }                          │
-│     match on_update() {                                      │
-│       Some(outputs) -> {                                      │
-│         • Validate outputs                                   │
-│         • Merge with base_data_pool                         │
-│         • Execute all downstream Simple nodes               │
-│         • Execute downstream EventProducers (nested)        │
-│       }                                                       │
-│       None -> break  // Signal completion                    │
-│     }                                                         │
-│   }                                                           │
-└──────────────────────────────────────────────────────────────┘
-                              ↓
-┌──────────────────────────────────────────────────────────────┐
-│ PHASE 3: CLEANUP                                             │
-│   on_cleanup() -> Tear down resources                        │
-│      • Close connections                                     │
-│      • Flush buffers                                         │
-│      • Log statistics                                        │
-└──────────────────────────────────────────────────────────────┘
-                              ↓
-                        [Execution Complete]
+```mermaid
+flowchart TD
+    A[Created] --> B[add_node]
+    B --> C[In Graph]
+    C --> D[NodeGraph::execute]
+    D --> E[Identify EventProducers]
+    E --> F[For each EventProducer]
+    F --> G["PHASE 1: INITIALIZATION<br/>on_start(inputs)"]
+    G --> G1[Parse input parameters]
+    G1 --> G2[Establish connections]
+    G2 --> G3[Set up timers/subscriptions]
+    G3 --> H["PHASE 2: EVENT LOOP"]
+    H --> I{stop_flag?}
+    I -->|Yes| N
+    I -->|No| J[on_update]
+    J --> K{Return value?}
+    K -->|Some outputs| L[Validate outputs]
+    L --> L1[Merge with base_data_pool]
+    L1 --> L2[Execute downstream Simple nodes]
+    L2 --> L3[Execute downstream EventProducers]
+    L3 --> H
+    K -->|None| N["PHASE 3: CLEANUP<br/>on_cleanup()"]
+    N --> N1[Close connections]
+    N1 --> N2[Flush buffers]
+    N2 --> N3[Log statistics]
+    N3 --> O[Execution Complete]
 ```
 
 ### Example: BotAdapterNode Lifecycle
 
-```rust
-// PHASE 1: on_start()
-- Parse bot_server_url, qq_id, token from inputs
-- Initialize MessageStore (Redis + MySQL)
-- Spawn WebSocket client in background thread
-- Register event handlers
-
-// PHASE 2: on_update() (called in loop)
-- Check if new message received from WebSocket
-- If yes:
-    - Deserialize RawMessageEvent -> MessageEvent
-    - Persist to MessageStore
-    - Return Some(HashMap { "message_event": DataValue::MessageEvent(...) })
-- If no:
-    - Sleep briefly, return self.on_update() (retry)
-- On disconnect:
-    - Return None (exit loop)
-
-// PHASE 3: on_cleanup()
-- Close WebSocket connection
-- Flush MessageStore
-- Log connection statistics
+```mermaid
+flowchart TD
+    A["PHASE 1: on_start()"] --> A1[Parse bot_server_url, qq_id, token]
+    A1 --> A2[Initialize MessageStore]
+    A2 --> A3[Spawn WebSocket client thread]
+    A3 --> A4[Register event handlers]
+    A4 --> B["PHASE 2: on_update() loop"]
+    B --> C{New message from WebSocket?}
+    C -->|Yes| D[Deserialize RawMessageEvent]
+    D --> E[Persist to MessageStore]
+    E --> F[Return Some with MessageEvent]
+    F --> B
+    C -->|No| G{Connected?}
+    G -->|Yes| H[Sleep briefly]
+    H --> B
+    G -->|No| I[Return None]
+    I --> J["PHASE 3: on_cleanup()"]
+    J --> K[Close WebSocket connection]
+    K --> L[Flush MessageStore]
+    L --> M[Log connection statistics]
+    M --> N[End]
 ```
 
 ---
@@ -274,21 +245,21 @@ EventProducers have a stateful lifecycle with three phases:
 
 Execution order is derived from port bindings:
 
+```mermaid
+graph LR
+    A[StringData] -->|text| B[Uppercase]
+    B -->|result| C[Preview]
+    
+    style A fill:#e1f5ff
+    style B fill:#fff3e0
+    style C fill:#f3e5f5
 ```
-Example Graph:
-  [StringData] --text--> [Uppercase] --result--> [Preview]
 
-Port Connections:
-  StringData.output("text") -> Uppercase.input("text")
-  Uppercase.output("result") -> Preview.input("text")
+**Port Connections:**
+- `StringData.output("text")` → `Uppercase.input("text")`
+- `Uppercase.output("result")` → `Preview.input("text")`
 
-Dependency Graph:
-  Uppercase depends on StringData
-  Preview depends on Uppercase
-
-Topological Sort:
-  [StringData, Uppercase, Preview]
-```
+**Topological Sort:** `[StringData, Uppercase, Preview]`
 
 ### Kahn's Algorithm (Simplified)
 
@@ -326,24 +297,43 @@ When both node types coexist:
 3. **Run EventProducer roots:** For each root EventProducer (no upstream EventProducers):
    - `on_start()` with base layer outputs as inputs
    - Loop `on_update()`:
-     - Merge outputs with base layer -> `event_pool`
+     - Merge outputs with base layer → `event_pool`
      - Execute all reachable Simple nodes in order
      - Execute nested EventProducers (if any)
 
-```
-Example:
-  [Config] -> [EventProducer1] -> [Transform] -> [EventProducer2] -> [Output]
+**Example Graph:**
 
-Execution:
-  1. Execute Config (base layer)
-  2. EventProducer1.on_start(Config.outputs)
-  3. Loop:
-       EventProducer1.on_update() -> outputs
-       Execute Transform(EventProducer1.outputs)
-       EventProducer2.on_start(Transform.outputs)
-       Loop:
-         EventProducer2.on_update() -> outputs
-         Execute Output(EventProducer2.outputs)
+```mermaid
+graph LR
+    A[Config<br/>Simple] --> B[EventProducer1]
+    B --> C[Transform<br/>Simple]
+    C --> D[EventProducer2]
+    D --> E[Output<br/>Simple]
+    
+    style A fill:#e1f5ff
+    style B fill:#ffebee
+    style C fill:#e1f5ff
+    style D fill:#ffebee
+    style E fill:#e1f5ff
+```
+
+**Execution Flow:**
+
+```mermaid
+flowchart TD
+    A[Execute Config - base layer] --> B[EventProducer1.on_start with Config.outputs]
+    B --> C[EventProducer1.on_update loop]
+    C --> D[Get outputs from EventProducer1]
+    D --> E[Execute Transform with outputs]
+    E --> F[EventProducer2.on_start with Transform.outputs]
+    F --> G[EventProducer2.on_update loop]
+    G --> H[Get outputs from EventProducer2]
+    H --> I[Execute Output with outputs]
+    I --> J{EventProducer2 done?}
+    J -->|No| G
+    J -->|Yes| K{EventProducer1 done?}
+    K -->|No| C
+    K -->|Yes| L[Complete]
 ```
 
 ---
