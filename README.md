@@ -127,14 +127,6 @@ Run the engine without the GUI (suitable for servers, edge devices, or web backe
 
 For detailed instructions, see the [Node Development Guide](document/node/node-development.md).
 
-### Project Structure
-- `src/node/`: Core graph engine and node definitions.
-- `src/bot_adapter/`: QQ Bot WebSocket adapter.
-- `src/llm/`: LLM API wrappers and Agent logic.
-- `src/ui/`: Slint-based GUI implementation.
-- `database/`: Python SQLAlchemy models.
-- `migrations/`: Alembic migration scripts.
-
 ## License
 
 AGPL-3.0 license // See [LICENSE](LICENSE) file.
