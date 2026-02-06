@@ -122,4 +122,4 @@ cargo run -- --graph-json my_workflow.json --no-gui
 
 ## License
 
-GNU Affero General Public License v3.0 // See [LICENSE](LICENSE) file.
+AGPL-3.0 license // See [LICENSE](LICENSE) file.
