@@ -44,6 +44,11 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     let graph_state = Rc::new(RefCell::new(initial_graph.unwrap_or_default()));
     let selection_state = Rc::new(RefCell::new(crate::ui::selection::SelectionState::default()));
     let inline_inputs = Rc::new(RefCell::new(HashMap::<String, InlinePortValue>::new()));
+    
+    // Track if a graph is currently running
+    let is_running = Rc::new(RefCell::new(false));
+    // Store stop flag for current execution
+    let current_stop_flag: Rc<RefCell<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>>> = Rc::new(RefCell::new(None));
 
     // Populate inline_inputs from graph
     {
@@ -227,9 +232,18 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     let current_file_clone = Rc::clone(&current_file);
     let selection_state_clone = Rc::clone(&selection_state);
     let inline_inputs_clone = Rc::clone(&inline_inputs);
+    let is_running_clone = Rc::clone(&is_running);
+    let current_stop_flag_clone = Rc::clone(&current_stop_flag);
+    
     ui.on_run_graph(move || {
-        let mut graph_def = graph_state_clone.borrow_mut();
-        let inline_inputs_map = inline_inputs_clone.borrow();
+        // Check if already running
+        if *is_running_clone.borrow() {
+            info!("节点图已在运行中");
+            return;
+        }
+        
+        let mut graph_def = graph_state_clone.borrow_mut().clone();
+        let inline_inputs_map = inline_inputs_clone.borrow().clone();
         
         // Set up inline values in global context for string_data nodes
         {
@@ -264,60 +278,163 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
             }
         }
         
-        // Build node graph from definition and execute
+        // Build node graph from definition
         match crate::node::registry::build_node_graph_from_definition(&graph_def) {
             Ok(mut node_graph) => {
                 info!("开始执行节点图...");
                 
-                let execution_result = node_graph.execute_and_capture_results();
+                // Check if the graph contains event producer nodes
+                let has_event_producer = node_graph.nodes.values()
+                    .any(|node| node.node_type() == crate::node::NodeType::EventProducer);
                 
-                // Store execution results
-                graph_def.execution_results = execution_result.node_results;
-                
-                if let (Some(error_node_id), Some(error_msg)) = 
-                    (execution_result.error_node_id.clone(), execution_result.error_message.clone()) {
-                    // Execution failed
-                    error!("节点图执行失败: {}", error_msg);
+                if has_event_producer {
+                    // Execute in background thread for event producers
+                    *is_running_clone.borrow_mut() = true;
+                    let stop_flag = node_graph.get_stop_flag();
+                    *current_stop_flag_clone.borrow_mut() = Some(stop_flag.clone());
                     
-                    // Mark the error node in graph_def
-                    if let Some(node) = graph_def.nodes.iter_mut().find(|n| n.id == error_node_id) {
-                        node.has_error = true;
+                    let ui_weak = ui_handle.clone();
+                    let graph_state_bg = Rc::clone(&graph_state_clone);
+                    let current_file_bg = Rc::clone(&current_file_clone);
+                    let selection_state_bg = Rc::clone(&selection_state_clone);
+                    let inline_inputs_bg = inline_inputs_map.clone();
+                    let is_running_bg = Rc::clone(&is_running_clone);
+                    let current_stop_flag_bg = Rc::clone(&current_stop_flag_clone);
+                    
+                    if let Some(ui) = ui_weak.upgrade() {
+                        ui.set_is_graph_running(true);
+                        ui.set_connection_status("⏳ 节点图运行中...".into());
                     }
                     
-                    if let Some(ui) = ui_handle.upgrade() {
-                        // Refresh UI to show error node with red border
-                        let label = current_file_clone.borrow().clone();
-                        apply_graph_to_ui(
-                            &ui,
-                            &graph_def,
-                            Some(label),
-                            &selection_state_clone.borrow(),
-                            &inline_inputs_map,
-                        );
+                    // Spawn background thread
+                    std::thread::spawn(move || {
+                        let execution_result = node_graph.execute_and_capture_results();
                         
-                        // Show error dialog
-                        ui.invoke_show_error(format!("执行错误：{}", error_msg).into());
-                    }
+                        // Update UI on main thread via slint
+                        let _ = slint::invoke_from_event_loop(move || {
+                            let mut graph_def = graph_state_bg.borrow_mut();
+                            
+                            // Store execution results
+                            graph_def.execution_results = execution_result.node_results;
+                            
+                            if let (Some(error_node_id), Some(error_msg)) = 
+                                (execution_result.error_node_id.clone(), execution_result.error_message.clone()) {
+                                // Execution failed
+                                error!("节点图执行失败: {}", error_msg);
+                                
+                                // Mark the error node in graph_def
+                                if let Some(node) = graph_def.nodes.iter_mut().find(|n| n.id == error_node_id) {
+                                    node.has_error = true;
+                                }
+                                
+                                if let Some(ui) = ui_weak.upgrade() {
+                                    // Refresh UI to show error node with red border
+                                    let label = current_file_bg.borrow().clone();
+                                    apply_graph_to_ui(
+                                        &ui,
+                                        &graph_def,
+                                        Some(label),
+                                        &selection_state_bg.borrow(),
+                                        &inline_inputs_bg,
+                                    );
+                                    
+                                    // Show error dialog
+                                    ui.invoke_show_error(format!("执行错误：{}", error_msg).into());
+                                    ui.set_connection_status(format!("❌ 执行失败: {}", error_msg).into());
+                                }
+                            } else {
+                                // Execution succeeded or stopped
+                                if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                                    info!("节点图执行已停止");
+                                } else {
+                                    info!("节点图执行成功!");
+                                }
+                                
+                                // Clear error flags from all nodes on success
+                                for node in &mut graph_def.nodes {
+                                    node.has_error = false;
+                                }
+                                
+                                if let Some(ui) = ui_weak.upgrade() {
+                                    if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                                        ui.set_connection_status("⏹ 节点图执行已停止".into());
+                                    } else {
+                                        ui.set_connection_status("✓ 节点图执行成功".into());
+                                    }
+                                    // Refresh UI to show execution results
+                                    let label = current_file_bg.borrow().clone();
+                                    apply_graph_to_ui(
+                                        &ui,
+                                        &graph_def,
+                                        Some(label),
+                                        &selection_state_bg.borrow(),
+                                        &inline_inputs_bg,
+                                    );
+                                }
+                            }
+                            
+                            // Reset running state
+                            *is_running_bg.borrow_mut() = false;
+                            *current_stop_flag_bg.borrow_mut() = None;
+                            
+                            // Update UI running state
+                            if let Some(ui) = ui_weak.upgrade() {
+                                ui.set_is_graph_running(false);
+                            }
+                        });
+                    });
                 } else {
-                    // Execution succeeded
-                    info!("节点图执行成功!");
+                    // Execute synchronously for non-event-producer graphs
+                    let execution_result = node_graph.execute_and_capture_results();
                     
-                    // Clear error flags from all nodes on success
-                    for node in &mut graph_def.nodes {
-                        node.has_error = false;
-                    }
+                    // Store execution results
+                    graph_state_clone.borrow_mut().execution_results = execution_result.node_results;
                     
-                    if let Some(ui) = ui_handle.upgrade() {
-                        ui.set_connection_status("✓ 节点图执行成功".into());
-                        // Refresh UI to show execution results
-                        let label = current_file_clone.borrow().clone();
-                        apply_graph_to_ui(
-                            &ui,
-                            &graph_def,
-                            Some(label),
-                            &selection_state_clone.borrow(),
-                            &inline_inputs_map,
-                        );
+                    if let (Some(error_node_id), Some(error_msg)) = 
+                        (execution_result.error_node_id.clone(), execution_result.error_message.clone()) {
+                        // Execution failed
+                        error!("节点图执行失败: {}", error_msg);
+                        
+                        // Mark the error node in graph_def
+                        if let Some(node) = graph_state_clone.borrow_mut().nodes.iter_mut().find(|n| n.id == error_node_id) {
+                            node.has_error = true;
+                        }
+                        
+                        if let Some(ui) = ui_handle.upgrade() {
+                            // Refresh UI to show error node with red border
+                            let label = current_file_clone.borrow().clone();
+                            apply_graph_to_ui(
+                                &ui,
+                                &graph_state_clone.borrow(),
+                                Some(label),
+                                &selection_state_clone.borrow(),
+                                &inline_inputs_map,
+                            );
+                            
+                            // Show error dialog
+                            ui.invoke_show_error(format!("执行错误：{}", error_msg).into());
+                        }
+                    } else {
+                        // Execution succeeded
+                        info!("节点图执行成功!");
+                        
+                        // Clear error flags from all nodes on success
+                        for node in &mut graph_state_clone.borrow_mut().nodes {
+                            node.has_error = false;
+                        }
+                        
+                        if let Some(ui) = ui_handle.upgrade() {
+                            ui.set_connection_status("✓ 节点图执行成功".into());
+                            // Refresh UI to show execution results
+                            let label = current_file_clone.borrow().clone();
+                            apply_graph_to_ui(
+                                &ui,
+                                &graph_state_clone.borrow(),
+                                Some(label),
+                                &selection_state_clone.borrow(),
+                                &inline_inputs_map,
+                            );
+                        }
                     }
                 }
             }
@@ -327,6 +444,16 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                     ui.invoke_show_error(format!("构建节点图失败：{}", e).into());
                 }
             }
+        }
+    });
+
+    // Add stop graph callback
+    let is_running_stop = Rc::clone(&is_running);
+    let current_stop_flag_stop = Rc::clone(&current_stop_flag);
+    ui.on_stop_graph(move || {
+        if let Some(stop_flag) = current_stop_flag_stop.borrow().as_ref() {
+            info!("请求停止节点图执行");
+            stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
         }
     });
 

@@ -1,4 +1,7 @@
 use serde_json::{json, Value};
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use log::info;
+
 /// NodeType enum for distinguishing node categories
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub enum NodeType {
@@ -201,6 +204,7 @@ pub trait Node: Send + Sync {
 pub struct NodeGraph {
     pub nodes: HashMap<String, Box<dyn Node>>,
     pub inline_values: HashMap<String, HashMap<String, DataValue>>,
+    stop_flag: Arc<AtomicBool>,
 }
 
 impl NodeGraph {
@@ -208,7 +212,20 @@ impl NodeGraph {
         Self {
             nodes: HashMap::new(),
             inline_values: HashMap::new(),
+            stop_flag: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    pub fn get_stop_flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.stop_flag)
+    }
+
+    pub fn request_stop(&self) {
+        self.stop_flag.store(true, Ordering::Relaxed);
+    }
+
+    pub fn reset_stop_flag(&mut self) {
+        self.stop_flag.store(false, Ordering::Relaxed);
     }
 
     pub fn add_node(&mut self, node: Box<dyn Node>) -> Result<()> {
@@ -631,6 +648,11 @@ impl NodeGraph {
         }
 
         loop {
+            if self.stop_flag.load(Ordering::Relaxed) {
+                info!("Event producer '{}' stopped by user request", node_id);
+                break;
+            }
+
             let outputs = {
                 let node = self.nodes.get_mut(node_id).ok_or_else(|| {
                     crate::error::Error::ValidationError(format!(

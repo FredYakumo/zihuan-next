@@ -1070,6 +1070,8 @@ export component NodeGraphWindow inherits Window {
     callback save_json();
     callback add_node(string);
     callback run_graph();
+    callback stop_graph();
+    in property <bool> is_graph_running: false;
     callback show_node_type_menu();
     callback hide_node_type_menu();
     callback show_error(string);
@@ -1233,9 +1235,14 @@ export component NodeGraphWindow inherits Window {
                     clicked => { root.show_node_type_menu(); }
                 }
                 
-                CjkRunButton {
+                if !root.is_graph_running: CjkRunButton {
                     text: "运行节点图";
                     clicked => { root.run_graph(); }
+                }
+                
+                if root.is_graph_running: CjkDeleteButton {
+                    text: "停止运行";
+                    clicked => { root.stop_graph(); }
                 }
                 
                 if root.selected_node_count > 0 || root.selected_edge_from_node != "": CjkDeleteButton {
