@@ -121,10 +121,10 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util_nodes::{ConditionalNode, JsonParserNode, PreviewStringNode, StringDataNode};
+    use crate::node::util_nodes::{ConditionalNode, JsonParserNode, PreviewStringNode, StringDataNode, PreviewMessageListNode};
     use crate::llm::node_impl::{LLMNode, AgentNode, TextProcessorNode};
     use crate::bot_adapter::node_impl::{BotAdapterNode, MessageSenderNode};
-    use crate::bot_adapter::message_event_to_string::MessageEventToStringNode;
+    use crate::bot_adapter::extract_message_from_event::ExtractMessageFromEventNode;
     use crate::node::database_nodes::{RedisNode, MySqlNode};
     use crate::node::message_nodes::{MessageMySQLPersistenceNode, MessageCacheNode};
 
@@ -156,9 +156,17 @@ pub fn init_node_registry() -> Result<()> {
     register_node!(
         "string_data",
         "String Data",
-        "工具",
+        "数据",
         "字符串数据源，通过UI输入框提供字符串",
         StringDataNode
+    );
+
+    register_node!(
+        "preview_message_list",
+        "Preview MessageList",
+        "工具",
+        "在节点卡片内预览消息列表",
+        PreviewMessageListNode
     );
 
     // LLM nodes
@@ -210,11 +218,11 @@ pub fn init_node_registry() -> Result<()> {
     );
 
     register_node!(
-        "message_event_to_string",
-        "消息转字符串",
+        "extract_message_from_event",
+        "事件提取message列表",
         "Bot适配器",
-        "将消息事件转换为LLM提示文本",
-        MessageEventToStringNode
+        "从消息事件中提取openai的message列表",
+        ExtractMessageFromEventNode
     );
 
     // Database nodes

@@ -1,5 +1,6 @@
 pub mod preview_string;
 pub mod string_data;
+pub mod preview_message_list;
 
 use crate::node::graph_io::NodeGraphDefinition;
 use std::collections::HashMap;
@@ -38,6 +39,10 @@ pub fn get_node_preview_text(
         return string_data::StringDataRenderer::get_preview_text(node_id, graph, inline_inputs);
     }
     
+    if preview_message_list::PreviewMessageListRenderer::handles_node_type(node_type) {
+        return preview_message_list::PreviewMessageListRenderer::get_preview_text(node_id, graph, inline_inputs);
+    }
+    
     String::new()
 }
 
@@ -45,6 +50,7 @@ pub fn get_node_preview_text(
 pub fn has_custom_rendering(node_type: &str) -> bool {
     preview_string::PreviewStringRenderer::handles_node_type(node_type)
         || string_data::StringDataRenderer::handles_node_type(node_type)
+        || preview_message_list::PreviewMessageListRenderer::handles_node_type(node_type)
 }
 
 pub fn inline_port_key(node_id: &str, port_name: &str) -> String {
