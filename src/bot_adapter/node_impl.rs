@@ -1,6 +1,5 @@
 use crate::bot_adapter::adapter::{BotAdapter, BotAdapterConfig, SharedBotAdapter};
 use crate::bot_adapter::event;
-use crate::bot_adapter::models::message::MessageProp;
 use crate::bot_adapter::models::event_model::MessageEvent;
 use crate::error::Result;
 use crate::node::{DataType, DataValue, Node, NodeType, Port};
@@ -63,18 +62,8 @@ impl Node for BotAdapterNode {
 
     fn output_ports(&self) -> Vec<Port> {
         vec![
-            Port::new("message", DataType::MessageEvent)
-                .with_description("Raw message event from QQ server"),
             Port::new("message_event", DataType::MessageEvent)
                 .with_description("Raw message event from QQ server"),
-            Port::new("bot_adapter", DataType::BotAdapterRef)
-                .with_description("Shared bot adapter handle (self reference)"),
-            Port::new("message_type", DataType::String)
-                .with_description("Type of the message"),
-            Port::new("user_id", DataType::String)
-                .with_description("User ID who sent the message"),
-            Port::new("content", DataType::String)
-                .with_description("Message content"),
         ]
     }
 
@@ -189,35 +178,8 @@ impl Node for BotAdapterNode {
             None => return Ok(None),
         };
 
-        let adapter_handle = self.adapter_handle.clone().ok_or_else(|| {
-            crate::error::Error::ValidationError("Bot adapter handle missing".to_string())
-        })?;
-
-        let msg_prop = MessageProp::from_messages(&event.message_list, None);
-        let mut content = msg_prop.content.unwrap_or_default();
-        if let Some(ref_cnt) = msg_prop.ref_content.as_deref() {
-            if !ref_cnt.is_empty() {
-                if !content.is_empty() {
-                    content.push_str("\n\n");
-                }
-                content.push_str("[引用内容]\n");
-                content.push_str(ref_cnt);
-            }
-        }
-
         let mut outputs = HashMap::new();
-        outputs.insert("message".to_string(), DataValue::MessageEvent(event.clone()));
         outputs.insert("message_event".to_string(), DataValue::MessageEvent(event.clone()));
-        outputs.insert("bot_adapter".to_string(), DataValue::BotAdapterRef(adapter_handle));
-        outputs.insert(
-            "message_type".to_string(),
-            DataValue::String(event.message_type.as_str().to_string()),
-        );
-        outputs.insert(
-            "user_id".to_string(),
-            DataValue::String(event.sender.user_id.to_string()),
-        );
-        outputs.insert("content".to_string(), DataValue::String(content));
         self.validate_outputs(&outputs)?;
 
         Ok(Some(outputs))
