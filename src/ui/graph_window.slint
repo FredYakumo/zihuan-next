@@ -794,15 +794,15 @@ export component NodeSelector inherits Rectangle {
                 spacing: 8px;
                 
                 HorizontalBox {
-                    height: 35px;
+                    height: 50px;
                     CjkText {
                         text: "搜索:";
                         vertical-alignment: center;
-                        width: 40px;
+                        width: 50px;
                         color: AppTheme.text-secondary;
-
                     }
                     LineEdit {
+                         height: 35px;
                          placeholder-text: "输入节点名称...";
                          edited(text) => {
                              root.current_search = text;
@@ -812,14 +812,16 @@ export component NodeSelector inherits Rectangle {
                 }
                 
                 HorizontalBox {
-                   height: 40px;
+                   height: 50px;
                    CjkText {
                         text: "分类:";
                         vertical-alignment: center;
-                        width: 40px;
+                        width: 50px;
                         color: AppTheme.text-secondary;
                    }
                    ScrollView {
+                       viewport-height: 30px;
+                       height: 40px; 
                        HorizontalLayout {
                            spacing: 8px;
                            padding-right: 8px;
@@ -885,8 +887,8 @@ export component NodeSelector inherits Rectangle {
                 border-width: 1px;
                 
                 ScrollView {
-                    viewport-width: parent.width;
-                    viewport-height: root.node_types.length * 85px; 
+                    viewport-width: parent.width - 20px;
+                    viewport-height: root.node_types.length * 100px; 
 
                     VerticalBox {
                         padding: 8px;
@@ -1074,7 +1076,7 @@ export component NodeGraphWindow inherits Window {
 
         GraphCanvas {
             width: root.width;
-            height: root.height - 100px;
+            height: root.height - 120px;
             nodes: root.nodes;
             edges: root.edges;
             edge_segments: root.edge_segments;
@@ -1159,12 +1161,13 @@ export component NodeGraphWindow inherits Window {
 
         // Bottom control bar
         Rectangle {
-            height: 50px;
+            height: 60px;
             background: transparent;
 
             HorizontalBox {
-                padding: 8px;
-                spacing: 8px;
+                padding: 12px;
+                padding-bottom: 12px;
+                spacing: 12px;
                 alignment: start;
 
                 CjkButton {
