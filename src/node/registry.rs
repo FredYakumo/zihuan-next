@@ -195,7 +195,7 @@ pub fn init_node_registry() -> Result<()> {
     register_node!(
         "bot_adapter",
         "QQ机器人适配器",
-        "适配器",
+        "Bot适配器",
         "接收来自QQ服务器的消息事件",
         BotAdapterNode
     );
