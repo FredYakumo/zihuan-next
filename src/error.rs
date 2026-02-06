@@ -39,6 +39,9 @@ pub enum Error {
     
     #[error("Validation error: {0}")]
     ValidationError(String),
+    
+    #[error("Invalid node input: {0}")]
+    InvalidNodeInput(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
