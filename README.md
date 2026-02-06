@@ -54,18 +54,16 @@ While currently featuring strong support for QQ bots, it is designed as a **univ
 ## Getting Started
 
 ### Prerequisites
-- **Rust**: Latest stable toolchain.
 - **Python 3.10+**: For database migrations (alembic).
 - **Redis**: For caching and message queue.
 - **MySQL**: For persistent storage.
 
 ### Installation
 
-1.  **Clone the repository**
-    ```bash
-    git clone https://github.com/FredYakumo/zihuan-next.git
-    cd zihuan-next
-    ```
+1.  **Download the Application**
+    - Go to the [Releases page](https://github.com/FredYakumo/zihuan-next/releases)
+    - Download the latest version for your OS
+    - Extract the archive to your preferred location
 
 2.  **Configuration**
     Copy the example config and edit it with your environment details (Bot Server URL, LLM endpoints, DB credentials).
@@ -93,17 +91,24 @@ While currently featuring strong support for QQ bots, it is designed as a **univ
 
 **Visual Node Editor (GUI Mode)**
 Launch the visual editor to design your bot logic.
-```bash
-cargo run
-```
+
+- **Windows:** Double-click `zihuan_next.exe`
+- **Linux/macOS:**
+  ```bash
+  ./zihuan_next
+  ```
 
 **Headless/Edge Mode**
 Run the engine without the GUI (suitable for servers, edge devices, or web backends). You can execute complex workflows by simply loading a JSON file.
-```bash
-cargo run -- --no-gui
-# Or load a specific graph file
-cargo run -- --graph-json my_workflow.json --no-gui
-```
+
+- **Windows:**
+  ```powershell
+  .\zihuan_next.exe --graph-json my_workflow.json --no-gui
+  ```
+- **Linux/macOS:**
+  ```bash
+  ./zihuan_next --graph-json my_workflow.json --no-gui
+  ```
 
 ## Documentation
 
