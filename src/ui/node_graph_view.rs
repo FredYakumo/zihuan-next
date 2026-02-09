@@ -1,8 +1,9 @@
 use log::{error, info};
 use slint::{ModelRc, VecModel, SharedString, ComponentHandle};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicBool;
 
 use crate::error::Result;
 use crate::node::graph_io::{
@@ -16,7 +17,7 @@ use crate::ui::graph_window::{
     EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm, NodeGraphWindow, NodeTypeVm,
     NodeVm, PortVm, MessageItemVm,
 };
-use crate::ui::selection::{setup_selection_callbacks, BoxSelection};
+use crate::ui::selection::{BoxSelection, SelectionState};
 use crate::ui::window_state::{apply_window_state, load_window_state, save_window_state, WindowState};
 
 const GRID_SIZE: f32 = 20.0;
@@ -30,6 +31,88 @@ const EDGE_THICKNESS_RATIO: f32 = 0.3;
 
 use crate::ui::node_render::{InlinePortValue, inline_port_key, get_node_preview_text};
 
+struct GraphTabState {
+    id: u64,
+    title: String,
+    file_path: Option<PathBuf>,
+    graph: NodeGraphDefinition,
+    selection: SelectionState,
+    inline_inputs: HashMap<String, InlinePortValue>,
+    is_dirty: bool,
+    is_running: bool,
+    stop_flag: Option<Arc<AtomicBool>>,
+}
+
+fn build_inline_inputs_from_graph(graph: &NodeGraphDefinition) -> HashMap<String, InlinePortValue> {
+    let mut map = HashMap::new();
+    for node in &graph.nodes {
+        for (port_name, val) in &node.inline_values {
+            let key = inline_port_key(&node.id, port_name);
+            match val {
+                serde_json::Value::String(s) => {
+                    map.insert(key, InlinePortValue::Text(s.clone()));
+                }
+                serde_json::Value::Bool(b) => {
+                    map.insert(key, InlinePortValue::Bool(*b));
+                }
+                serde_json::Value::Number(n) => {
+                    map.insert(key, InlinePortValue::Text(n.to_string()));
+                }
+                _ => {}
+            }
+        }
+    }
+    map
+}
+
+fn tab_display_title(tab: &GraphTabState) -> String {
+    if tab.is_dirty {
+        format!("{}*", tab.title)
+    } else {
+        tab.title.clone()
+    }
+}
+
+fn new_blank_tab(next_untitled: &mut usize, next_id: &mut u64) -> GraphTabState {
+    let title = format!("未命名-{}", *next_untitled);
+    *next_untitled += 1;
+    let id = *next_id;
+    *next_id += 1;
+
+    GraphTabState {
+        id,
+        title,
+        file_path: None,
+        graph: NodeGraphDefinition::default(),
+        selection: SelectionState::default(),
+        inline_inputs: HashMap::new(),
+        is_dirty: false,
+        is_running: false,
+        stop_flag: None,
+    }
+}
+
+fn update_tabs_ui(ui: &NodeGraphWindow, tabs: &[GraphTabState], active_index: usize) {
+    let titles: Vec<SharedString> = tabs.iter().map(|t| tab_display_title(t).into()).collect();
+    ui.set_graph_tabs(ModelRc::new(VecModel::from(titles)));
+    ui.set_active_tab_index(active_index as i32);
+}
+
+fn refresh_active_tab_ui(ui: &NodeGraphWindow, tabs: &[GraphTabState], active_index: usize) {
+    if let Some(tab) = tabs.get(active_index) {
+        apply_graph_to_ui(
+            ui,
+            &tab.graph,
+            Some(tab_display_title(tab)),
+            &tab.selection,
+            &tab.inline_inputs,
+        );
+        tab.selection.apply_to_ui(ui);
+        ui.set_is_graph_running(tab.is_running);
+    }
+    update_tabs_ui(ui, tabs, active_index);
+}
+
 pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     register_cjk_fonts();
 
@@ -40,39 +123,21 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         apply_window_state(&ui.window(), &state);
     }
 
-    let graph_state = Arc::new(Mutex::new(initial_graph.unwrap_or_default()));
-    let selection_state = Arc::new(Mutex::new(crate::ui::selection::SelectionState::default()));
-    let inline_inputs = Arc::new(Mutex::new(HashMap::<String, InlinePortValue>::new()));
-    
-    // Track if a graph is currently running
-    let is_running = Arc::new(Mutex::new(false));
-    // Store stop flag for current execution
-    let current_stop_flag: Arc<Mutex<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>>> = Arc::new(Mutex::new(None));
+    let mut next_untitled_index = 1usize;
+    let mut next_tab_id = 1u64;
 
-    // Populate inline_inputs from graph
-    {
-        let graph = graph_state.lock().unwrap();
-        let mut map = inline_inputs.lock().unwrap();
-        for node in &graph.nodes {
-            for (port_name, val) in &node.inline_values {
-                let key = inline_port_key(&node.id, port_name);
-                match val {
-                     serde_json::Value::String(s) => { map.insert(key, InlinePortValue::Text(s.clone())); }
-                     serde_json::Value::Bool(b) => { map.insert(key, InlinePortValue::Bool(*b)); }
-                     serde_json::Value::Number(n) => { map.insert(key, InlinePortValue::Text(n.to_string())); }
-                     _ => {}
-                }
-            }
-        }
+    let mut initial_tab = new_blank_tab(&mut next_untitled_index, &mut next_tab_id);
+    if let Some(graph) = initial_graph {
+        initial_tab.graph = graph.clone();
+        initial_tab.inline_inputs = build_inline_inputs_from_graph(&graph);
+        initial_tab.is_dirty = false;
     }
 
-    let current_file = Arc::new(Mutex::new(
-        if graph_state.lock().unwrap().nodes.is_empty() && graph_state.lock().unwrap().edges.is_empty() {
-            "未加载 节点图".to_string()
-        } else {
-            "已加载 节点图".to_string()
-        },
-    ));
+    let tabs = Arc::new(Mutex::new(vec![initial_tab]));
+    let active_tab_index = Arc::new(Mutex::new(0usize));
+    let next_untitled_index = Arc::new(Mutex::new(next_untitled_index));
+    let next_tab_id = Arc::new(Mutex::new(next_tab_id));
+    let pending_close_tab_id: Arc<Mutex<Option<u64>>> = Arc::new(Mutex::new(None));
 
     // Load available node types from registry
     let node_types: Vec<NodeTypeVm> = NODE_REGISTRY
@@ -100,156 +165,347 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     ui.set_grid_size(GRID_SIZE);
     ui.set_edge_thickness(GRID_SIZE * EDGE_THICKNESS_RATIO);
 
-    apply_graph_to_ui(
-        &ui,
-        &graph_state.lock().unwrap(),
-        Some(current_file.lock().unwrap().clone()),
-        &selection_state.lock().unwrap(),
-        &inline_inputs.lock().unwrap(),
-    );
+    {
+        let tabs_guard = tabs.lock().unwrap();
+        let active_index = *active_tab_index.lock().unwrap();
+        refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+    }
 
     let ui_handle = ui.as_weak();
-    let graph_state_clone = Arc::clone(&graph_state);
-    let current_file_clone = Arc::clone(&current_file);
-    let selection_state_clone = Arc::clone(&selection_state);
-    let inline_inputs_clone = Arc::clone(&inline_inputs);
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
     ui.on_open_json(move || {
         if let Some(path) = rfd::FileDialog::new()
             .add_filter("Node Graph", &["json"])
             .pick_file()
         {
             if let Ok(graph) = load_graph_definition_from_json(&path) {
-                if let Some(ui) = ui_handle.upgrade() {
-                    // Populate inline_inputs from new graph
-                    {
-                        let mut map = inline_inputs_clone.lock().unwrap();
-                        map.clear();
-                        for node in &graph.nodes {
-                            for (port_name, val) in &node.inline_values {
-                                let key = inline_port_key(&node.id, port_name);
-                                match val {
-                                     serde_json::Value::String(s) => { map.insert(key, InlinePortValue::Text(s.clone())); }
-                                     serde_json::Value::Bool(b) => { map.insert(key, InlinePortValue::Bool(*b)); }
-                                     serde_json::Value::Number(n) => { map.insert(key, InlinePortValue::Text(n.to_string())); }
-                                     _ => {}
-                                }
-                            }
-                        }
-                    }
+                let mut tabs_guard = tabs_clone.lock().unwrap();
+                let active_index = *active_tab_clone.lock().unwrap();
+                if let Some(tab) = tabs_guard.get_mut(active_index) {
+                    tab.graph = graph.clone();
+                    tab.inline_inputs = build_inline_inputs_from_graph(&graph);
+                    tab.selection.clear();
+                    tab.file_path = Some(path.clone());
+                    tab.title = path
+                        .file_name()
+                        .map(|name| name.to_string_lossy().to_string())
+                        .unwrap_or_else(|| path.display().to_string());
+                    tab.is_dirty = false;
+                }
 
-                    *graph_state_clone.lock().unwrap() = graph;
-                    let label = path.display().to_string();
-                    *current_file_clone.lock().unwrap() = label.clone();
-                    apply_graph_to_ui(
-                        &ui,
-                        &graph_state_clone.lock().unwrap(),
-                        Some(label),
-                        &selection_state_clone.lock().unwrap(),
-                        &inline_inputs_clone.lock().unwrap(),
-                    );
+                if let Some(ui) = ui_handle.upgrade() {
+                    refresh_active_tab_ui(&ui, &tabs_guard, active_index);
                 }
             }
         }
     });
 
-    let ui_handle = ui.as_weak();
-    let graph_state_clone = Arc::clone(&graph_state);
-    let current_file_clone = Arc::clone(&current_file);
-    let selection_state_clone = Arc::clone(&selection_state);
-    let inline_inputs_clone = Arc::clone(&inline_inputs);
-    ui.on_save_json(move || {
-        if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Node Graph", &["json"])
-            .set_file_name("node_graph.json")
-            .save_file()
-        {
-            let mut graph = graph_state_clone.lock().unwrap();
-            let inline_inputs_map = inline_inputs_clone.lock().unwrap();
-            
-            // Populate inline_values from inline_inputs map to graph definition
-            for node in &mut graph.nodes {
-                for port in &node.input_ports {
-                    let key = inline_port_key(&node.id, &port.name);
-                    if let Some(val) = inline_inputs_map.get(&key) {
-                        match val {
-                            InlinePortValue::Text(s) => {
-                                 node.inline_values.insert(port.name.clone(), serde_json::Value::String(s.clone()));
-                            },
-                            InlinePortValue::Bool(b) => {
-                                 node.inline_values.insert(port.name.clone(), serde_json::Value::Bool(*b));
-                            },
-                        }
-                    }
-                }
-            }
+    let save_tab = Arc::new({
+        let tabs_clone = Arc::clone(&tabs);
+        let active_tab_clone = Arc::clone(&active_tab_index);
+        let ui_handle = ui.as_weak();
+        move |tab_id: u64| -> bool {
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let tab_index = match tabs_guard.iter().position(|t| t.id == tab_id) {
+                Some(index) => index,
+                None => return false,
+            };
 
-            if let Err(e) = crate::node::graph_io::save_graph_definition_to_json(&path, &graph) {
-                eprintln!("Failed to save graph: {}", e);
+            let tab = &mut tabs_guard[tab_index];
+            let path = if let Some(path) = tab.file_path.clone() {
+                path
             } else {
-                let label = path.display().to_string();
-                *current_file_clone.lock().unwrap() = label.clone();
-                if let Some(ui) = ui_handle.upgrade() {
-                    apply_graph_to_ui(
-                        &ui,
-                        &graph,
-                        Some(label),
-                        &selection_state_clone.lock().unwrap(),
-                        &inline_inputs_map,
-                    );
+                match rfd::FileDialog::new()
+                    .add_filter("Node Graph", &["json"])
+                    .set_file_name("node_graph.json")
+                    .save_file()
+                {
+                    Some(path) => path,
+                    None => return false,
                 }
+            };
+
+            apply_inline_inputs_to_graph(&mut tab.graph, &tab.inline_inputs);
+
+            if let Err(e) = crate::node::graph_io::save_graph_definition_to_json(&path, &tab.graph) {
+                eprintln!("Failed to save graph: {}", e);
+                return false;
+            }
+
+            tab.file_path = Some(path.clone());
+            tab.title = path
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.display().to_string());
+            tab.is_dirty = false;
+
+            if let Some(ui) = ui_handle.upgrade() {
+                let active_index = *active_tab_clone.lock().unwrap();
+                refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+            }
+
+            true
+        }
+    });
+
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let tabs_clone = Arc::clone(&tabs);
+    let save_tab_clone = Arc::clone(&save_tab);
+    ui.on_save_json(move || {
+        let tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.get(active_index) {
+            let _ = save_tab_clone(tab.id);
+        }
+    });
+
+    let close_tab_by_id = Arc::new({
+        let tabs_clone = Arc::clone(&tabs);
+        let active_tab_clone = Arc::clone(&active_tab_index);
+        let next_untitled_index_clone = Arc::clone(&next_untitled_index);
+        let next_tab_id_clone = Arc::clone(&next_tab_id);
+        let ui_handle = ui.as_weak();
+        move |tab_id: u64| {
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let mut active_index = *active_tab_clone.lock().unwrap();
+            let remove_index = match tabs_guard.iter().position(|t| t.id == tab_id) {
+                Some(index) => index,
+                None => return,
+            };
+
+            tabs_guard.remove(remove_index);
+
+            if tabs_guard.is_empty() {
+                let mut next_untitled = next_untitled_index_clone.lock().unwrap();
+                let mut next_id = next_tab_id_clone.lock().unwrap();
+                tabs_guard.push(new_blank_tab(&mut *next_untitled, &mut *next_id));
+                active_index = 0;
+            } else {
+                if remove_index < active_index {
+                    active_index -= 1;
+                } else if remove_index == active_index && active_index >= tabs_guard.len() {
+                    active_index = tabs_guard.len() - 1;
+                }
+            }
+
+            *active_tab_clone.lock().unwrap() = active_index;
+            if let Some(ui) = ui_handle.upgrade() {
+                refresh_active_tab_ui(&ui, &tabs_guard, active_index);
             }
         }
     });
 
+    let close_tab_by_id_for_request = Arc::clone(&close_tab_by_id);
+    let request_close_tab = Arc::new({
+        let tabs_clone = Arc::clone(&tabs);
+        let pending_close_tab_id_for_request = Arc::clone(&pending_close_tab_id);
+        let close_tab_by_id_for_request = Arc::clone(&close_tab_by_id_for_request);
+        let ui_handle = ui.as_weak();
+        move |tab_id: u64| {
+            let tabs_guard = tabs_clone.lock().unwrap();
+            let tab = match tabs_guard.iter().find(|t| t.id == tab_id) {
+                Some(tab) => tab,
+                None => return,
+            };
+
+            if let Some(ui) = ui_handle.upgrade() {
+                if tab.is_running {
+                    *pending_close_tab_id_for_request.lock().unwrap() = Some(tab_id);
+                    ui.set_show_running_confirm(true);
+                    return;
+                }
+
+                if tab.is_dirty {
+                    *pending_close_tab_id_for_request.lock().unwrap() = Some(tab_id);
+                    ui.set_show_save_confirm(true);
+                    return;
+                }
+            }
+
+            close_tab_by_id_for_request(tab_id);
+        }
+    });
+
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let close_tab_by_id_clone = Arc::clone(&close_tab_by_id);
+    ui.on_close_tab(move || {
+        let tab_id = {
+            let tabs_guard = tabs_clone.lock().unwrap();
+            let active_index = *active_tab_clone.lock().unwrap();
+            tabs_guard.get(active_index).map(|tab| tab.id)
+        };
+        if let Some(tab_id) = tab_id {
+            close_tab_by_id_clone(tab_id);
+        }
+    });
+
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let next_untitled_index_clone = Arc::clone(&next_untitled_index);
+    let next_tab_id_clone = Arc::clone(&next_tab_id);
     let ui_handle = ui.as_weak();
-    let graph_state_clone = Arc::clone(&graph_state);
-    let current_file_clone = Arc::clone(&current_file);
-    let selection_state_clone = Arc::clone(&selection_state);
-    let inline_inputs_clone = Arc::clone(&inline_inputs);
+    ui.on_new_tab(move || {
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let mut next_untitled = next_untitled_index_clone.lock().unwrap();
+        let mut next_id = next_tab_id_clone.lock().unwrap();
+        tabs_guard.push(new_blank_tab(&mut *next_untitled, &mut *next_id));
+        let active_index = tabs_guard.len() - 1;
+        *active_tab_clone.lock().unwrap() = active_index;
+        if let Some(ui) = ui_handle.upgrade() {
+            refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+        }
+    });
+
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let ui_handle = ui.as_weak();
+    ui.on_select_tab(move |index: i32| {
+        if index < 0 {
+            return;
+        }
+        let tabs_guard = tabs_clone.lock().unwrap();
+        let index = index as usize;
+        if index >= tabs_guard.len() {
+            return;
+        }
+        *active_tab_clone.lock().unwrap() = index;
+        if let Some(ui) = ui_handle.upgrade() {
+            refresh_active_tab_ui(&ui, &tabs_guard, index);
+        }
+    });
+
+    let pending_close_tab_id_for_save = Arc::clone(&pending_close_tab_id);
+    let close_tab_by_id_for_save = Arc::clone(&close_tab_by_id);
+    let save_tab_for_save = Arc::clone(&save_tab);
+    let ui_handle = ui.as_weak();
+    ui.on_save_confirm_save(move || {
+        if let Some(tab_id) = pending_close_tab_id_for_save.lock().unwrap().take() {
+            if save_tab_for_save(tab_id) {
+                close_tab_by_id_for_save(tab_id);
+            }
+        }
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_show_save_confirm(false);
+        }
+    });
+
+    let pending_close_tab_id_for_discard = Arc::clone(&pending_close_tab_id);
+    let close_tab_by_id_for_discard = Arc::clone(&close_tab_by_id);
+    let ui_handle = ui.as_weak();
+    ui.on_save_confirm_discard(move || {
+        if let Some(tab_id) = pending_close_tab_id_for_discard.lock().unwrap().take() {
+            close_tab_by_id_for_discard(tab_id);
+        }
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_show_save_confirm(false);
+        }
+    });
+
+    let pending_close_tab_id_for_cancel = Arc::clone(&pending_close_tab_id);
+    let ui_handle = ui.as_weak();
+    ui.on_save_confirm_cancel(move || {
+        pending_close_tab_id_for_cancel.lock().unwrap().take();
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_show_save_confirm(false);
+        }
+    });
+
+    let tabs_clone = Arc::clone(&tabs);
+    let pending_close_tab_id_for_running = Arc::clone(&pending_close_tab_id);
+    let close_tab_by_id_for_running = Arc::clone(&close_tab_by_id);
+    let ui_handle = ui.as_weak();
+    ui.on_running_confirm_close(move || {
+        let tab_id = match pending_close_tab_id_for_running.lock().unwrap().take() {
+            Some(tab_id) => tab_id,
+            None => return,
+        };
+
+        {
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            if let Some(tab) = tabs_guard.iter_mut().find(|t| t.id == tab_id) {
+                if let Some(stop_flag) = tab.stop_flag.as_ref() {
+                    info!("请求停止节点图执行");
+                    stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+        }
+
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_show_running_confirm(false);
+        }
+
+        let tabs_guard = tabs_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.iter().find(|t| t.id == tab_id) {
+            if tab.is_dirty {
+                if let Some(ui) = ui_handle.upgrade() {
+                    *pending_close_tab_id_for_running.lock().unwrap() = Some(tab_id);
+                    ui.set_show_save_confirm(true);
+                }
+            } else {
+                close_tab_by_id_for_running(tab_id);
+            }
+        }
+    });
+
+    let pending_close_tab_id_for_running_cancel = Arc::clone(&pending_close_tab_id);
+    let ui_handle = ui.as_weak();
+    ui.on_running_confirm_cancel(move || {
+        pending_close_tab_id_for_running_cancel.lock().unwrap().take();
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_show_running_confirm(false);
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
     ui.on_add_node(move |type_id: SharedString| {
         let type_id_str = type_id.as_str();
-        let mut graph = graph_state_clone.lock().unwrap();
-        if let Err(e) = add_node_to_graph(&mut graph, type_id_str) {
-            eprintln!("Failed to add node: {}", e);
-            return;
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.get_mut(active_index) {
+            if let Err(e) = add_node_to_graph(&mut tab.graph, type_id_str) {
+                eprintln!("Failed to add node: {}", e);
+                return;
+            }
+            tab.is_dirty = true;
         }
-        let label = "已修改(未保存)".to_string();
-        *current_file_clone.lock().unwrap() = label.clone();
+
         if let Some(ui) = ui_handle.upgrade() {
-            apply_graph_to_ui(
-                &ui,
-                &graph,
-                Some(label),
-                &selection_state_clone.lock().unwrap(),
-                &inline_inputs_clone.lock().unwrap(),
-            );
+            refresh_active_tab_ui(&ui, &tabs_guard, active_index);
         }
     });
 
     let ui_handle = ui.as_weak();
-    let graph_state_clone = Arc::clone(&graph_state);
-    let current_file_clone = Arc::clone(&current_file);
-    let selection_state_clone = Arc::clone(&selection_state);
-    let inline_inputs_clone = Arc::clone(&inline_inputs);
-    let is_running_clone = Arc::clone(&is_running);
-    let current_stop_flag_clone = Arc::clone(&current_stop_flag);
-    
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
     ui.on_run_graph(move || {
-        // Check if already running
-        if *is_running_clone.lock().unwrap() {
-            info!("节点图已在运行中");
-            return;
-        }
-        
-        let mut graph_def = graph_state_clone.lock().unwrap().clone();
-        let inline_inputs_map = inline_inputs_clone.lock().unwrap().clone();
-        
+        let (tab_id, graph_def, inline_inputs_map) = {
+            let tabs_guard = tabs_clone.lock().unwrap();
+            let active_index = *active_tab_clone.lock().unwrap();
+            let tab = match tabs_guard.get(active_index) {
+                Some(tab) => tab,
+                None => return,
+            };
+
+            if tab.is_running {
+                info!("节点图已在运行中");
+                return;
+            }
+
+            (tab.id, tab.graph.clone(), tab.inline_inputs.clone())
+        };
+
+        let mut graph_def = graph_def;
+
         // Set up inline values in global context for string_data nodes
         {
             use crate::node::util_nodes::STRING_DATA_CONTEXT;
             let mut context = STRING_DATA_CONTEXT.write().unwrap();
             context.clear();
-            
+
             for node in &graph_def.nodes {
                 if node.node_type == "string_data" {
                     let key = inline_port_key(&node.id, "text");
@@ -260,43 +516,42 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
             }
         }
 
-        // Populate inline_values from inline_inputs map to graph definition
-        for node in &mut graph_def.nodes {
-            for port in &node.input_ports {
-                let key = inline_port_key(&node.id, &port.name);
-                if let Some(val) = inline_inputs_map.get(&key) {
-                    match val {
-                        InlinePortValue::Text(s) => {
-                             node.inline_values.insert(port.name.clone(), serde_json::Value::String(s.clone()));
-                        },
-                        InlinePortValue::Bool(b) => {
-                             node.inline_values.insert(port.name.clone(), serde_json::Value::Bool(*b));
-                        },
-                    }
-                }
-            }
-        }
-        
-        // Build node graph from definition
+        apply_inline_inputs_to_graph(&mut graph_def, &inline_inputs_map);
+
         match crate::node::registry::build_node_graph_from_definition(&graph_def) {
             Ok(mut node_graph) => {
                 info!("开始执行节点图...");
-                
-                // Check if the graph contains event producer nodes
-                let has_event_producer = node_graph.nodes.values()
+
+                let has_event_producer = node_graph
+                    .nodes
+                    .values()
                     .any(|node| node.node_type() == crate::node::NodeType::EventProducer);
-                
+
                 if has_event_producer {
-                    // Execute in background thread for event producers
-                    *is_running_clone.lock().unwrap() = true;
                     let stop_flag = node_graph.get_stop_flag();
-                    *current_stop_flag_clone.lock().unwrap() = Some(stop_flag.clone());
-                    
-                    // Setup execution callback to stream updates to UI
-                    let graph_state_cb = Arc::clone(&graph_state_clone);
+
+                    {
+                        let mut tabs_guard = tabs_clone.lock().unwrap();
+                        if let Some(tab) = tabs_guard.iter_mut().find(|t| t.id == tab_id) {
+                            tab.is_running = true;
+                            tab.stop_flag = Some(stop_flag.clone());
+                        }
+                    }
+
+                    if let Some(ui) = ui_handle.upgrade() {
+                        let active_index = *active_tab_clone.lock().unwrap();
+                        let tabs_guard = tabs_clone.lock().unwrap();
+                        if let Some(tab) = tabs_guard.get(active_index) {
+                            if tab.id == tab_id {
+                                ui.set_is_graph_running(true);
+                                ui.set_connection_status("⏳ 节点图运行中...".into());
+                            }
+                        }
+                    }
+
+                    let tabs_cb = Arc::clone(&tabs_clone);
                     let ui_weak_cb = ui_handle.clone();
-                    let current_file_cb = Arc::clone(&current_file_clone);
-                    let selection_state_cb = Arc::clone(&selection_state_clone);
+                    let active_tab_cb = Arc::clone(&active_tab_clone);
                     let inline_inputs_cb = inline_inputs_map.clone();
 
                     node_graph.set_execution_callback(move |node_id, inputs, outputs| {
@@ -306,27 +561,26 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                             result.insert(k.clone(), v.clone());
                         }
 
-                        let graph_state = Arc::clone(&graph_state_cb);
-                        let ui_weak = ui_weak_cb.clone();
-                        let current_file = Arc::clone(&current_file_cb);
-                        let selection_state = Arc::clone(&selection_state_cb);
-                        let inline_inputs = inline_inputs_cb.clone();
+                        let tabs_cb = Arc::clone(&tabs_cb);
+                        let ui_weak_cb = ui_weak_cb.clone();
+                        let active_tab_cb = Arc::clone(&active_tab_cb);
+                        let inline_inputs_cb = inline_inputs_cb.clone();
 
                         let _ = slint::invoke_from_event_loop(move || {
-                            if let Ok(mut graph_def) = graph_state.lock() {
-                                graph_def.execution_results.insert(node_id, result);
-                                
-                                if let Some(ui) = ui_weak.upgrade() {
-                                    if let Ok(label) = current_file.lock() {
-                                        if let Ok(selection) = selection_state.lock() {
-                                            apply_graph_to_ui(
-                                                &ui,
-                                                &graph_def,
-                                                Some(label.clone()),
-                                                &selection,
-                                                &inline_inputs,
-                                            );
-                                        }
+                            let mut tabs_guard = tabs_cb.lock().unwrap();
+                            let active_index = *active_tab_cb.lock().unwrap();
+                            let active_tab_id = tabs_guard.get(active_index).map(|t| t.id);
+                            if let Some(tab) = tabs_guard.iter_mut().find(|t| t.id == tab_id) {
+                                tab.graph.execution_results.insert(node_id, result);
+                                if let Some(ui) = ui_weak_cb.upgrade() {
+                                    if active_tab_id == Some(tab_id) {
+                                        apply_graph_to_ui(
+                                            &ui,
+                                            &tab.graph,
+                                            Some(tab_display_title(tab)),
+                                            &tab.selection,
+                                            &inline_inputs_cb,
+                                        );
                                     }
                                 }
                             }
@@ -334,146 +588,134 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                     });
 
                     let ui_weak = ui_handle.clone();
-                    let graph_state_bg = Arc::clone(&graph_state_clone);
-                    let current_file_bg = Arc::clone(&current_file_clone);
-                    let selection_state_bg = Arc::clone(&selection_state_clone);
+                    let tabs_bg = Arc::clone(&tabs_clone);
+                    let active_tab_bg = Arc::clone(&active_tab_clone);
                     let inline_inputs_bg = inline_inputs_map.clone();
-                    let is_running_bg = Arc::clone(&is_running_clone);
-                    let current_stop_flag_bg = Arc::clone(&current_stop_flag_clone);
-                    
-                    if let Some(ui) = ui_weak.upgrade() {
-                        ui.set_is_graph_running(true);
-                        ui.set_connection_status("⏳ 节点图运行中...".into());
-                    }
-                    
-                    // Spawn background thread
+
                     std::thread::spawn(move || {
                         let execution_result = node_graph.execute_and_capture_results();
-                        
-                        // Update UI on main thread via slint
+
                         let _ = slint::invoke_from_event_loop(move || {
-                            let mut graph_def = graph_state_bg.lock().unwrap();
-                            
-                            // Store execution results
-                            graph_def.execution_results = execution_result.node_results;
-                            
-                            if let (Some(error_node_id), Some(error_msg)) = 
-                                (execution_result.error_node_id.clone(), execution_result.error_message.clone()) {
-                                // Execution failed
+                            let mut tabs_guard = tabs_bg.lock().unwrap();
+                            let active_index = *active_tab_bg.lock().unwrap();
+                            let active_tab_id = tabs_guard.get(active_index).map(|t| t.id);
+                            let tab = match tabs_guard.iter_mut().find(|t| t.id == tab_id) {
+                                Some(tab) => tab,
+                                None => return,
+                            };
+
+                            tab.graph.execution_results = execution_result.node_results;
+
+                            if let (Some(error_node_id), Some(error_msg)) =
+                                (execution_result.error_node_id.clone(), execution_result.error_message.clone())
+                            {
                                 error!("节点图执行失败: {}", error_msg);
-                                
-                                // Mark the error node in graph_def
-                                if let Some(node) = graph_def.nodes.iter_mut().find(|n| n.id == error_node_id) {
+                                if let Some(node) = tab.graph.nodes.iter_mut().find(|n| n.id == error_node_id) {
                                     node.has_error = true;
                                 }
-                                
+
                                 if let Some(ui) = ui_weak.upgrade() {
-                                    // Refresh UI to show error node with red border
-                                    let label = current_file_bg.lock().unwrap().clone();
-                                    apply_graph_to_ui(
-                                        &ui,
-                                        &graph_def,
-                                        Some(label),
-                                        &selection_state_bg.lock().unwrap(),
-                                        &inline_inputs_bg,
-                                    );
-                                    
-                                    // Show error dialog
-                                    ui.invoke_show_error(format!("执行错误：{}", error_msg).into());
-                                    ui.set_connection_status(format!("❌ 执行失败: {}", error_msg).into());
+                                    if active_tab_id == Some(tab_id) {
+                                        apply_graph_to_ui(
+                                            &ui,
+                                            &tab.graph,
+                                            Some(tab_display_title(tab)),
+                                            &tab.selection,
+                                            &inline_inputs_bg,
+                                        );
+                                        ui.invoke_show_error(format!("执行错误：{}", error_msg).into());
+                                        ui.set_connection_status(format!("❌ 执行失败: {}", error_msg).into());
+                                    }
                                 }
                             } else {
-                                // Execution succeeded or stopped
                                 if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
                                     info!("节点图执行已停止");
                                 } else {
                                     info!("节点图执行成功!");
                                 }
-                                
-                                // Clear error flags from all nodes on success
-                                for node in &mut graph_def.nodes {
+
+                                for node in &mut tab.graph.nodes {
                                     node.has_error = false;
                                 }
-                                
+
                                 if let Some(ui) = ui_weak.upgrade() {
-                                    if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-                                        ui.set_connection_status("⏹ 节点图执行已停止".into());
-                                    } else {
-                                        ui.set_connection_status("✓ 节点图执行成功".into());
+                                    if active_tab_id == Some(tab_id) {
+                                        if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                                            ui.set_connection_status("⏹ 节点图执行已停止".into());
+                                        } else {
+                                            ui.set_connection_status("✓ 节点图执行成功".into());
+                                        }
+                                        apply_graph_to_ui(
+                                            &ui,
+                                            &tab.graph,
+                                            Some(tab_display_title(tab)),
+                                            &tab.selection,
+                                            &inline_inputs_bg,
+                                        );
                                     }
-                                    // Refresh UI to show execution results
-                                    let label = current_file_bg.lock().unwrap().clone();
-                                    apply_graph_to_ui(
-                                        &ui,
-                                        &graph_def,
-                                        Some(label),
-                                        &selection_state_bg.lock().unwrap(),
-                                        &inline_inputs_bg,
-                                    );
                                 }
                             }
-                            
-                            // Reset running state
-                            *is_running_bg.lock().unwrap() = false;
-                            *current_stop_flag_bg.lock().unwrap() = None;
-                            
-                            // Update UI running state
+
+                            tab.is_running = false;
+                            tab.stop_flag = None;
+
                             if let Some(ui) = ui_weak.upgrade() {
-                                ui.set_is_graph_running(false);
+                                if active_tab_id == Some(tab_id) {
+                                    ui.set_is_graph_running(false);
+                                }
                             }
                         });
                     });
                 } else {
-                    // Execute synchronously for non-event-producer graphs
                     let execution_result = node_graph.execute_and_capture_results();
-                    
-                    // Store execution results
-                    graph_state_clone.lock().unwrap().execution_results = execution_result.node_results;
-                    
-                    if let (Some(error_node_id), Some(error_msg)) = 
-                        (execution_result.error_node_id.clone(), execution_result.error_message.clone()) {
-                        // Execution failed
+
+                    let mut tabs_guard = tabs_clone.lock().unwrap();
+                    let active_index = *active_tab_clone.lock().unwrap();
+                    let active_tab_id = tabs_guard.get(active_index).map(|t| t.id);
+                    let tab = match tabs_guard.iter_mut().find(|t| t.id == tab_id) {
+                        Some(tab) => tab,
+                        None => return,
+                    };
+
+                    tab.graph.execution_results = execution_result.node_results;
+
+                    if let (Some(error_node_id), Some(error_msg)) =
+                        (execution_result.error_node_id.clone(), execution_result.error_message.clone())
+                    {
                         error!("节点图执行失败: {}", error_msg);
-                        
-                        // Mark the error node in graph_def
-                        if let Some(node) = graph_state_clone.lock().unwrap().nodes.iter_mut().find(|n| n.id == error_node_id) {
+                        if let Some(node) = tab.graph.nodes.iter_mut().find(|n| n.id == error_node_id) {
                             node.has_error = true;
                         }
-                        
+
                         if let Some(ui) = ui_handle.upgrade() {
-                            // Refresh UI to show error node with red border
-                            let label = current_file_clone.lock().unwrap().clone();
-                            apply_graph_to_ui(
-                                &ui,
-                                &graph_state_clone.lock().unwrap(),
-                                Some(label),
-                                &selection_state_clone.lock().unwrap(),
-                                &inline_inputs_map,
-                            );
-                            
-                            // Show error dialog
-                            ui.invoke_show_error(format!("执行错误：{}", error_msg).into());
+                            if active_tab_id == Some(tab_id) {
+                                apply_graph_to_ui(
+                                    &ui,
+                                    &tab.graph,
+                                    Some(tab_display_title(tab)),
+                                    &tab.selection,
+                                    &inline_inputs_map,
+                                );
+                                ui.invoke_show_error(format!("执行错误：{}", error_msg).into());
+                            }
                         }
                     } else {
-                        // Execution succeeded
                         info!("节点图执行成功!");
-                        
-                        // Clear error flags from all nodes on success
-                        for node in &mut graph_state_clone.lock().unwrap().nodes {
+                        for node in &mut tab.graph.nodes {
                             node.has_error = false;
                         }
-                        
+
                         if let Some(ui) = ui_handle.upgrade() {
-                            ui.set_connection_status("✓ 节点图执行成功".into());
-                            // Refresh UI to show execution results
-                            let label = current_file_clone.lock().unwrap().clone();
-                            apply_graph_to_ui(
-                                &ui,
-                                &graph_state_clone.lock().unwrap(),
-                                Some(label),
-                                &selection_state_clone.lock().unwrap(),
-                                &inline_inputs_map,
-                            );
+                            if active_tab_id == Some(tab_id) {
+                                ui.set_connection_status("✓ 节点图执行成功".into());
+                                apply_graph_to_ui(
+                                    &ui,
+                                    &tab.graph,
+                                    Some(tab_display_title(tab)),
+                                    &tab.selection,
+                                    &inline_inputs_map,
+                                );
+                            }
                         }
                     }
                 }
@@ -488,11 +730,16 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     });
 
     // Add stop graph callback
-    let current_stop_flag_stop = Arc::clone(&current_stop_flag);
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
     ui.on_stop_graph(move || {
-        if let Some(stop_flag) = current_stop_flag_stop.lock().unwrap().as_ref() {
-            info!("请求停止节点图执行");
-            stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.get_mut(active_index) {
+            if let Some(stop_flag) = tab.stop_flag.as_ref() {
+                info!("请求停止节点图执行");
+                stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
         }
     });
 
@@ -551,124 +798,118 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     });
 
     let ui_handle = ui.as_weak();
-    let graph_state_clone = Arc::clone(&graph_state);
-    let selection_state_clone = Arc::clone(&selection_state);
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
     ui.on_node_moved(move |node_id: SharedString, x: f32, y: f32| {
-        let mut graph = graph_state_clone.lock().unwrap();
-        if let Some(node) = graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
-            if let Some(pos) = &mut node.position {
-                pos.x = x;
-                pos.y = y;
-            } else {
-                node.position = Some(crate::node::graph_io::GraphPosition { x, y });
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.get_mut(active_index) {
+            if let Some(node) = tab.graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
+                if let Some(pos) = &mut node.position {
+                    pos.x = x;
+                    pos.y = y;
+                } else {
+                    node.position = Some(crate::node::graph_io::GraphPosition { x, y });
+                }
+            }
+
+            if let Some(ui) = ui_handle.upgrade() {
+                let edges = build_edges(&tab.graph, &tab.selection, false);
+                let (edge_segments, edge_corners, edge_labels) =
+                    build_edge_segments(&tab.graph, false);
+
+                ui.set_edges(ModelRc::new(VecModel::from(edges)));
+                ui.set_edge_segments(ModelRc::new(VecModel::from(edge_segments)));
+                ui.set_edge_corners(ModelRc::new(VecModel::from(edge_corners)));
+                ui.set_edge_labels(ModelRc::new(VecModel::from(edge_labels)));
             }
         }
-        
-        // Update edges based on new node positions during drag (no snapping for smoothness)
-        if let Some(ui) = ui_handle.upgrade() {
-            let selection = selection_state_clone.lock().unwrap();
-            let edges = build_edges(&graph, &selection, false);
-            let (edge_segments, edge_corners, edge_labels) = build_edge_segments(&graph, false);
-            
-            ui.set_edges(ModelRc::new(VecModel::from(edges)));
-            ui.set_edge_segments(ModelRc::new(VecModel::from(edge_segments)));
-            ui.set_edge_corners(ModelRc::new(VecModel::from(edge_corners)));
-            ui.set_edge_labels(ModelRc::new(VecModel::from(edge_labels)));
-        }
     });
 
     let ui_handle = ui.as_weak();
-    let graph_state_clone = Arc::clone(&graph_state);
-    let selection_state_clone = Arc::clone(&selection_state);
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
     ui.on_node_resized(move |node_id: SharedString, width: f32, height: f32| {
-        let mut graph = graph_state_clone.lock().unwrap();
-        if let Some(node) = graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
-            node.size = Some(crate::node::graph_io::GraphSize { width, height });
-        }
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.get_mut(active_index) {
+            if let Some(node) = tab.graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
+                node.size = Some(crate::node::graph_io::GraphSize { width, height });
+            }
 
-        if let Some(ui) = ui_handle.upgrade() {
-            let selection = selection_state_clone.lock().unwrap();
-            let edges = build_edges(&graph, &selection, false);
-            let (edge_segments, edge_corners, edge_labels) = build_edge_segments(&graph, false);
+            if let Some(ui) = ui_handle.upgrade() {
+                let edges = build_edges(&tab.graph, &tab.selection, false);
+                let (edge_segments, edge_corners, edge_labels) =
+                    build_edge_segments(&tab.graph, false);
 
-            ui.set_edges(ModelRc::new(VecModel::from(edges)));
-            ui.set_edge_segments(ModelRc::new(VecModel::from(edge_segments)));
-            ui.set_edge_corners(ModelRc::new(VecModel::from(edge_corners)));
-            ui.set_edge_labels(ModelRc::new(VecModel::from(edge_labels)));
+                ui.set_edges(ModelRc::new(VecModel::from(edges)));
+                ui.set_edge_segments(ModelRc::new(VecModel::from(edge_segments)));
+                ui.set_edge_corners(ModelRc::new(VecModel::from(edge_corners)));
+                ui.set_edge_labels(ModelRc::new(VecModel::from(edge_labels)));
+            }
         }
     });
 
     let ui_handle = ui.as_weak();
-    let graph_state_clone = Arc::clone(&graph_state);
-    let current_file_clone = Arc::clone(&current_file);
-    let selection_state_clone = Arc::clone(&selection_state);
-    let inline_inputs_clone = Arc::clone(&inline_inputs);
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
     ui.on_node_move_finished(move |node_id: SharedString, x: f32, y: f32| {
-        let mut graph = graph_state_clone.lock().unwrap();
-        let snapped_x = snap_to_grid(x);
-        let snapped_y = snap_to_grid(y);
-        if let Some(node) = graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
-            if let Some(pos) = &mut node.position {
-                pos.x = snapped_x;
-                pos.y = snapped_y;
-            } else {
-                node.position = Some(crate::node::graph_io::GraphPosition {
-                    x: snapped_x,
-                    y: snapped_y,
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.get_mut(active_index) {
+            let snapped_x = snap_to_grid(x);
+            let snapped_y = snap_to_grid(y);
+            if let Some(node) = tab.graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
+                if let Some(pos) = &mut node.position {
+                    pos.x = snapped_x;
+                    pos.y = snapped_y;
+                } else {
+                    node.position = Some(crate::node::graph_io::GraphPosition {
+                        x: snapped_x,
+                        y: snapped_y,
+                    });
+                }
+            }
+
+            tab.is_dirty = true;
+
+            if let Some(ui) = ui_handle.upgrade() {
+                refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+            }
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    ui.on_node_resize_finished(move |node_id: SharedString, width: f32, height: f32| {
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.get_mut(active_index) {
+            let snapped_width = snap_to_grid(width).max(GRID_SIZE * NODE_WIDTH_CELLS);
+            if let Some(node) = tab.graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
+                let min_height = GRID_SIZE
+                    * (NODE_MIN_ROWS
+                        .max(NODE_HEADER_ROWS + node
+                            .input_ports
+                            .len()
+                            .max(node.output_ports.len()) as f32)
+                        + NODE_PADDING_BOTTOM);
+                let snapped_height = snap_to_grid(height).max(min_height);
+                node.size = Some(crate::node::graph_io::GraphSize {
+                    width: snapped_width,
+                    height: snapped_height,
                 });
             }
-        }
 
-        let label = current_file_clone.lock().unwrap().clone();
-        if let Some(ui) = ui_handle.upgrade() {
-            apply_graph_to_ui(
-                &ui,
-                &graph,
-                Some(label),
-                &selection_state_clone.lock().unwrap(),
-                &inline_inputs_clone.lock().unwrap(),
-            );
+            tab.is_dirty = true;
+
+            if let Some(ui) = ui_handle.upgrade() {
+                refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+            }
         }
     });
 
-    let ui_handle = ui.as_weak();
-    let graph_state_clone = Arc::clone(&graph_state);
-    let current_file_clone = Arc::clone(&current_file);
-    let selection_state_clone = Arc::clone(&selection_state);
-    let inline_inputs_clone = Arc::clone(&inline_inputs);
-    ui.on_node_resize_finished(move |node_id: SharedString, width: f32, height: f32| {
-        let mut graph = graph_state_clone.lock().unwrap();
-        let snapped_width = snap_to_grid(width).max(GRID_SIZE * NODE_WIDTH_CELLS);
-        if let Some(node) = graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
-            let min_height = GRID_SIZE
-                * (NODE_MIN_ROWS
-                    .max(NODE_HEADER_ROWS + node
-                        .input_ports
-                        .len()
-                        .max(node.output_ports.len()) as f32)
-                    + NODE_PADDING_BOTTOM);
-            let snapped_height = snap_to_grid(height).max(min_height);
-            node.size = Some(crate::node::graph_io::GraphSize {
-                width: snapped_width,
-                height: snapped_height,
-            });
-        }
-
-        let label = "已修改(未保存)".to_string();
-        *current_file_clone.lock().unwrap() = label.clone();
-        if let Some(ui) = ui_handle.upgrade() {
-            apply_graph_to_ui(
-                &ui,
-                &graph,
-                Some(label),
-                &selection_state_clone.lock().unwrap(),
-                &inline_inputs_clone.lock().unwrap(),
-            );
-        }
-    });
-
-    let graph_state_clone = Arc::clone(&graph_state);
-    let current_file_clone = Arc::clone(&current_file);
     let port_selection = Arc::new(Mutex::new(None::<(String, String, bool)>));
     let port_selection_for_click = Arc::clone(&port_selection);
     let port_selection_for_move = Arc::clone(&port_selection);
@@ -676,8 +917,8 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     let ui_handle_for_click = ui.as_weak();
     let ui_handle_for_move = ui.as_weak();
     let ui_handle_for_cancel = ui.as_weak();
-    let selection_state_clone = Arc::clone(&selection_state);
-    let inline_inputs_clone = Arc::clone(&inline_inputs);
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
 
     ui.on_port_clicked(move |node_id: SharedString, port_name: SharedString, is_input: bool| {
         let node_id_str = node_id.to_string();
@@ -687,36 +928,32 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
 
         if let Some((prev_node, prev_port, prev_is_input)) = selection.take() {
             if prev_is_input != is_input {
-                let mut graph = graph_state_clone.lock().unwrap();
-                ensure_positions(&mut graph);
+                let mut tabs_guard = tabs_clone.lock().unwrap();
+                let active_index = *active_tab_clone.lock().unwrap();
+                if let Some(tab) = tabs_guard.get_mut(active_index) {
+                    ensure_positions(&mut tab.graph);
 
-                let (from_node, from_port, to_node, to_port) = if is_input {
-                    (prev_node, prev_port, node_id_str, port_name_str)
-                } else {
-                    (node_id_str, port_name_str, prev_node, prev_port)
-                };
+                    let (from_node, from_port, to_node, to_port) = if is_input {
+                        (prev_node, prev_port, node_id_str, port_name_str)
+                    } else {
+                        (node_id_str, port_name_str, prev_node, prev_port)
+                    };
 
-                graph.edges.push(crate::node::graph_io::EdgeDefinition {
-                    from_node_id: from_node,
-                    from_port,
-                    to_node_id: to_node,
-                    to_port,
-                });
+                    tab.graph.edges.push(crate::node::graph_io::EdgeDefinition {
+                        from_node_id: from_node,
+                        from_port,
+                        to_node_id: to_node,
+                        to_port,
+                    });
 
-                let label = "已修改(未保存)".to_string();
-                *current_file_clone.lock().unwrap() = label.clone();
+                    tab.is_dirty = true;
 
-                if let Some(ui) = ui_handle_for_click.upgrade() {
-                    ui.set_drag_line_visible(false);
-                    ui.set_show_port_hint(false);
-                    ui.set_port_hint_text("".into());
-                    apply_graph_to_ui(
-                        &ui,
-                        &graph,
-                        Some(label),
-                        &selection_state_clone.lock().unwrap(),
-                        &inline_inputs_clone.lock().unwrap(),
-                    );
+                    if let Some(ui) = ui_handle_for_click.upgrade() {
+                        ui.set_drag_line_visible(false);
+                        ui.set_show_port_hint(false);
+                        ui.set_port_hint_text("".into());
+                        refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+                    }
                 }
             } else {
                 *selection = Some((prev_node, prev_port, prev_is_input));
@@ -724,16 +961,22 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         } else {
             *selection = Some((node_id_str.clone(), port_name_str.clone(), is_input));
             if let Some(ui) = ui_handle_for_click.upgrade() {
-                let mut graph = graph_state_clone.lock().unwrap();
-                ensure_positions(&mut graph);
-                if let Some((from_x, from_y)) =
-                    get_port_center(&graph, node_id_str.as_str(), port_name_str.as_str(), is_input)
-                {
-                    ui.set_drag_line_visible(true);
-                    ui.set_drag_line_from_x(from_x);
-                    ui.set_drag_line_from_y(from_y);
-                    ui.set_drag_line_to_x(from_x);
-                    ui.set_drag_line_to_y(from_y);
+                let mut tabs_guard = tabs_clone.lock().unwrap();
+                let active_index = *active_tab_clone.lock().unwrap();
+                if let Some(tab) = tabs_guard.get_mut(active_index) {
+                    ensure_positions(&mut tab.graph);
+                    if let Some((from_x, from_y)) = get_port_center(
+                        &tab.graph,
+                        node_id_str.as_str(),
+                        port_name_str.as_str(),
+                        is_input,
+                    ) {
+                        ui.set_drag_line_visible(true);
+                        ui.set_drag_line_from_x(from_x);
+                        ui.set_drag_line_from_y(from_y);
+                        ui.set_drag_line_to_x(from_x);
+                        ui.set_drag_line_to_y(from_y);
+                    }
                 }
 
                 if is_input {
@@ -766,26 +1009,113 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         }
     });
 
-    // Setup selection callbacks using the selection module
-    let selection_state_for_cb = Arc::clone(&selection_state);
-    let inline_inputs_for_cb = Arc::clone(&inline_inputs);
-    let apply_graph_fn = move |ui: &NodeGraphWindow, graph: &NodeGraphDefinition, file: Option<String>| {
-        apply_graph_to_ui(
-            ui,
-            graph,
-            file,
-            &selection_state_for_cb.lock().unwrap(),
-            &inline_inputs_for_cb.lock().unwrap(),
-        );
-    };
-    
-    setup_selection_callbacks(
-        &ui, 
-        Arc::clone(&graph_state), 
-        Arc::clone(&current_file), 
-        apply_graph_fn,
-        Arc::clone(&selection_state)
-    );
+    // Selection callbacks for active tab
+    let ui_handle = ui.as_weak();
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    ui.on_node_clicked(move |node_id: SharedString| {
+        if let Some(ui) = ui_handle.upgrade() {
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let active_index = *active_tab_clone.lock().unwrap();
+            if let Some(tab) = tabs_guard.get_mut(active_index) {
+                tab.selection.select_node(node_id.to_string(), false);
+                tab.selection.apply_to_ui(&ui);
+                apply_graph_to_ui(
+                    &ui,
+                    &tab.graph,
+                    Some(tab_display_title(tab)),
+                    &tab.selection,
+                    &tab.inline_inputs,
+                );
+            }
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    ui.on_edge_clicked(move |from_node: SharedString, from_port: SharedString, to_node: SharedString, to_port: SharedString| {
+        if let Some(ui) = ui_handle.upgrade() {
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let active_index = *active_tab_clone.lock().unwrap();
+            if let Some(tab) = tabs_guard.get_mut(active_index) {
+                tab.selection.select_edge(
+                    from_node.to_string(),
+                    from_port.to_string(),
+                    to_node.to_string(),
+                    to_port.to_string(),
+                );
+                tab.selection.apply_to_ui(&ui);
+                apply_graph_to_ui(
+                    &ui,
+                    &tab.graph,
+                    Some(tab_display_title(tab)),
+                    &tab.selection,
+                    &tab.inline_inputs,
+                );
+            }
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    ui.on_canvas_clicked(move || {
+        if let Some(ui) = ui_handle.upgrade() {
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let active_index = *active_tab_clone.lock().unwrap();
+            if let Some(tab) = tabs_guard.get_mut(active_index) {
+                tab.selection.clear();
+                tab.selection.apply_to_ui(&ui);
+                apply_graph_to_ui(
+                    &ui,
+                    &tab.graph,
+                    Some(tab_display_title(tab)),
+                    &tab.selection,
+                    &tab.inline_inputs,
+                );
+            }
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    ui.on_delete_selected(move || {
+        if let Some(ui) = ui_handle.upgrade() {
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let active_index = *active_tab_clone.lock().unwrap();
+            if let Some(tab) = tabs_guard.get_mut(active_index) {
+                if !tab.selection.selected_node_ids.is_empty() {
+                    tab.graph.nodes.retain(|n| !tab.selection.selected_node_ids.contains(&n.id));
+                    tab.graph.edges.retain(|e| {
+                        !tab.selection.selected_node_ids.contains(&e.from_node_id)
+                            && !tab.selection.selected_node_ids.contains(&e.to_node_id)
+                    });
+                } else if !tab.selection.selected_edge_from_node.is_empty() {
+                    tab.graph.edges.retain(|e| {
+                        !(e.from_node_id == tab.selection.selected_edge_from_node
+                            && e.from_port == tab.selection.selected_edge_from_port
+                            && e.to_node_id == tab.selection.selected_edge_to_node
+                            && e.to_port == tab.selection.selected_edge_to_port)
+                    });
+                }
+
+                tab.selection.clear();
+                tab.selection.apply_to_ui(&ui);
+                tab.is_dirty = true;
+
+                apply_graph_to_ui(
+                    &ui,
+                    &tab.graph,
+                    Some(tab_display_title(tab)),
+                    &tab.selection,
+                    &tab.inline_inputs,
+                );
+                update_tabs_ui(&ui, &tabs_guard, active_index);
+            }
+        }
+    });
     
     // Setup box selection
     let box_selection = Arc::new(Mutex::new(BoxSelection::new()));
@@ -822,63 +1152,76 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     
     let ui_handle = ui.as_weak();
     let box_selection_clone = Arc::clone(&box_selection);
-    let graph_state_clone = Arc::clone(&graph_state);
-    let current_file_clone = Arc::clone(&current_file);
-    let selection_state_clone = Arc::clone(&selection_state);
-    let inline_inputs_clone = Arc::clone(&inline_inputs);
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
     ui.on_box_selection_end(move || {
         if let Some(ui) = ui_handle.upgrade() {
             let mut box_sel = box_selection_clone.lock().unwrap();
-            let graph = graph_state_clone.lock().unwrap();
-            
-            // Find nodes within the selection box
-            let mut selected_nodes = Vec::new();
-            for node in &graph.nodes {
-                if let Some(pos) = &node.position {
-                    let (node_width, node_height) = node_dimensions(node);
-                    
-                    if box_sel.contains_rect(pos.x, pos.y, node_width, node_height) {
-                        selected_nodes.push(node.id.clone());
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let active_index = *active_tab_clone.lock().unwrap();
+
+            if let Some(tab) = tabs_guard.get_mut(active_index) {
+                let mut selected_nodes = Vec::new();
+                for node in &tab.graph.nodes {
+                    if let Some(pos) = &node.position {
+                        let (node_width, node_height) = node_dimensions(node);
+                        if box_sel.contains_rect(pos.x, pos.y, node_width, node_height) {
+                            selected_nodes.push(node.id.clone());
+                        }
                     }
                 }
+
+                tab.selection.clear();
+                for node_id in selected_nodes {
+                    tab.selection.select_node(node_id, true);
+                }
+                tab.selection.apply_to_ui(&ui);
+
+                apply_graph_to_ui(
+                    &ui,
+                    &tab.graph,
+                    Some(tab_display_title(tab)),
+                    &tab.selection,
+                    &tab.inline_inputs,
+                );
             }
-            
-            let mut selection = selection_state_clone.lock().unwrap();
-            // Clear existing selection and select all found nodes
-            selection.clear();
-            for node_id in selected_nodes {
-                selection.select_node(node_id, true);
-            }
-            selection.apply_to_ui(&ui); // To update count and other properties
-            
-            let label = current_file_clone.lock().unwrap().clone();
-            apply_graph_to_ui(
-                &ui,
-                &graph,
-                Some(label),
-                &selection.clone(),
-                &inline_inputs_clone.lock().unwrap(),
-            );
-            
+
             box_sel.end();
             ui.set_box_selection_visible(false);
         }
     });
 
-    let inline_inputs_clone = Arc::clone(&inline_inputs);
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let ui_handle = ui.as_weak();
     ui.on_inline_port_text_changed(move |node_id: SharedString, port_name: SharedString, value: SharedString| {
         let key = inline_port_key(node_id.as_str(), port_name.as_str());
-        inline_inputs_clone
-            .lock().unwrap()
-            .insert(key, InlinePortValue::Text(value.to_string()));
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.get_mut(active_index) {
+            tab.inline_inputs
+                .insert(key, InlinePortValue::Text(value.to_string()));
+            tab.is_dirty = true;
+            if let Some(ui) = ui_handle.upgrade() {
+                update_tabs_ui(&ui, &tabs_guard, active_index);
+            }
+        }
     });
 
-    let inline_inputs_clone = Arc::clone(&inline_inputs);
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let ui_handle = ui.as_weak();
     ui.on_inline_port_bool_changed(move |node_id: SharedString, port_name: SharedString, value: bool| {
         let key = inline_port_key(node_id.as_str(), port_name.as_str());
-        inline_inputs_clone
-            .lock().unwrap()
-            .insert(key, InlinePortValue::Bool(value));
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.get_mut(active_index) {
+            tab.inline_inputs.insert(key, InlinePortValue::Bool(value));
+            tab.is_dirty = true;
+            if let Some(ui) = ui_handle.upgrade() {
+                update_tabs_ui(&ui, &tabs_guard, active_index);
+            }
+        }
     });
 
     let run_result = ui.run();
@@ -1089,6 +1432,29 @@ fn apply_graph_to_ui(
     ui.set_edge_labels(ModelRc::new(VecModel::from(edge_labels)));
     ui.set_grid_lines(ModelRc::new(VecModel::from(grid_lines)));
     ui.set_current_file(label.into());
+}
+
+fn apply_inline_inputs_to_graph(
+    graph: &mut NodeGraphDefinition,
+    inline_inputs: &HashMap<String, InlinePortValue>,
+) {
+    for node in &mut graph.nodes {
+        for port in &node.input_ports {
+            let key = inline_port_key(&node.id, &port.name);
+            if let Some(val) = inline_inputs.get(&key) {
+                match val {
+                    InlinePortValue::Text(s) => {
+                        node.inline_values
+                            .insert(port.name.clone(), serde_json::Value::String(s.clone()));
+                    }
+                    InlinePortValue::Bool(b) => {
+                        node.inline_values
+                            .insert(port.name.clone(), serde_json::Value::Bool(*b));
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn add_node_to_graph(graph: &mut NodeGraphDefinition, type_id: &str) -> Result<()> {
