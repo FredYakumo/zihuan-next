@@ -16,7 +16,6 @@ pub trait BrainAgentTrait: Send + Sync {
     fn clone_box(&self) -> AgentBox;
 }
 
-/// Type alias for a boxed brain agent
 pub type AgentBox = Box<dyn BrainAgentTrait>;
 
 impl Clone for AgentBox {

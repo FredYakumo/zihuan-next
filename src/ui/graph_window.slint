@@ -161,6 +161,33 @@ component CjkRunButton inherits Rectangle {
     }
 }
 
+component TabItem inherits Rectangle {
+    in property <string> text;
+    in property <bool> is_active;
+    callback clicked();
+
+    width: 140px;
+    height: 28px;
+    background: is_active ? AppTheme.surface-overlay : AppTheme.surface;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: AppTheme.border;
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    CjkText {
+        text: root.text;
+        color: is_active ? AppTheme.text-primary : AppTheme.text-muted;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+        font-size: 12px;
+        width: parent.width;
+        height: parent.height;
+    }
+}
+
 component NodeItem inherits Rectangle {
     in property <string> node_id;
     in property <string> label;
@@ -866,6 +893,118 @@ export component ErrorDialog inherits Rectangle {
     }
 }
 
+export component SaveConfirmDialog inherits Rectangle {
+    in property <string> message;
+    callback save();
+    callback discard();
+    callback cancel();
+
+    background: AppTheme.overlay-mask;
+
+    TouchArea {
+        clicked => { root.cancel(); }
+    }
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 800px;
+        height: 200px;
+        background: AppTheme.node-bg;
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: AppTheme.border;
+
+        TouchArea {} // Block clicks
+
+        VerticalLayout {
+            padding: 20px;
+            spacing: 12px;
+
+            CjkText {
+                text: root.message;
+                font-size: 16px;
+                color: AppTheme.text-primary;
+                font-weight: 700;
+                horizontal-alignment: left;
+            }
+
+            HorizontalBox {
+                alignment: center;
+                spacing: 12px;
+
+                CjkButton {
+                    text: "保存";
+                    clicked => { root.save(); }
+                }
+
+                CjkDeleteButton {
+                    text: "不保存";
+                    clicked => { root.discard(); }
+                }
+
+                CjkButton {
+                    text: "取消";
+                    clicked => { root.cancel(); }
+                }
+            }
+        }
+    }
+}
+
+export component RunningConfirmDialog inherits Rectangle {
+    in property <string> message;
+    callback confirm_close();
+    callback cancel();
+
+    background: AppTheme.overlay-mask;
+
+    TouchArea {
+        clicked => { root.cancel(); }
+    }
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 800px;
+        height: 200px;
+        background: AppTheme.node-bg;
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: AppTheme.border;
+
+        TouchArea {} // Block clicks
+
+        VerticalLayout {
+            padding: 20px;
+            spacing: 12px;
+
+            CjkText {
+                text: root.message;
+                font-size: 16px;
+                color: AppTheme.text-primary;
+                font-weight: 700;
+                horizontal-alignment: left;
+            }
+
+            HorizontalBox {
+                alignment: center;
+                spacing: 12px;
+
+                CjkDeleteButton {
+                    text: "停止并关闭";
+                    clicked => { root.confirm_close(); }
+                }
+
+                CjkButton {
+                    text: "取消";
+                    clicked => { root.cancel(); }
+                }
+            }
+        }
+    }
+}
+
 export component NodeSelector inherits Rectangle {
     in property <[NodeTypeVm]> node_types;
     in property <[string]> categories;
@@ -1096,6 +1235,11 @@ export component NodeGraphWindow inherits Window {
     in property <float> edge_thickness: 6;
     in property <string> connection_status: "";
     in property <string> current_file;
+    in property <[string]> graph_tabs;
+    in property <int> active_tab_index: 0;
+    callback select_tab(int);
+    callback new_tab();
+    callback close_tab();
     in property <bool> show_node_selector: false;
     in property <[NodeTypeVm]> available_node_types;
     in property <[string]> node_categories;
@@ -1125,6 +1269,16 @@ export component NodeGraphWindow inherits Window {
     in property <bool> show_port_hint: false;
     in property <bool> show_error_dialog: false;
     in property <string> error_dialog_message: "";
+    in-out property <bool> menu_open: false;
+    in property <bool> show_save_confirm: false;
+    in property <string> save_confirm_message: "当前节点图未保存，是否保存？";
+    callback save_confirm_save();
+    callback save_confirm_discard();
+    callback save_confirm_cancel();
+    in property <bool> show_running_confirm: false;
+    in property <string> running_confirm_message: "节点图正在运行，是否停止并关闭？";
+    callback running_confirm_close();
+    callback running_confirm_cancel();
 
     callback open_json();
     callback save_json();
@@ -1170,26 +1324,29 @@ export component NodeGraphWindow inherits Window {
                 spacing: 8px;
                 alignment: start;
 
-                CjkText {
-                    text: "节点图";
-                    color: AppTheme.text-primary;
-                    font-size: 14px;
-                    vertical-alignment: center;
-                    width: 80px;
+                CjkButton {
+                    text: "菜单";
+                    width: 60px;
+                    height: 28px;
+                    clicked => { root.menu_open = !root.menu_open; }
                 }
 
-                CjkButton {
-                    text: "打开";
-                    width: 80px;
+                Flickable {
                     height: 28px;
-                    clicked => { root.open_json(); }
-                }
+                    viewport-height: 28px;
+                    width: parent.width - 90px;
+                    viewport-width: tabs-layout.preferred-width;
 
-                CjkButton {
-                    text: "保存";
-                    width: 80px;
-                    height: 28px;
-                    clicked => { root.save_json(); }
+                    tabs-layout := HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+
+                        for tab[i] in root.graph_tabs: TabItem {
+                            text: tab;
+                            is_active: i == root.active_tab_index;
+                            clicked => { root.select_tab(i); }
+                        }
+                    }
                 }
             }
         }
@@ -1350,5 +1507,98 @@ export component NodeGraphWindow inherits Window {
     if root.show_error_dialog: ErrorDialog {
         error_message: root.error_dialog_message;
         close => { root.hide_error(); }
+    }
+
+    if root.menu_open: Rectangle {
+        x: 0px;
+        y: 40px;
+        width: parent.width;
+        height: parent.height - 40px;
+        background: #00000000;
+
+        TouchArea {
+            clicked => { root.menu_open = false; }
+        }
+
+        Rectangle {
+            x: 6px;
+            y: 0px;
+            width: 220px;
+            height: 188px;
+            background: AppTheme.surface;
+            border-radius: 6px;
+            border-width: 1px;
+            border-color: AppTheme.border;
+
+            TouchArea {} // Block clicks
+
+            VerticalBox {
+                padding: 8px;
+                spacing: 6px;
+
+                CjkText {
+                    text: "文件";
+                    color: AppTheme.text-muted;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                    height: 16px;
+                }
+
+                CjkButton {
+                    text: "打开";
+                    width: 200px;
+                    height: 26px;
+                    clicked => { root.open_json(); root.menu_open = false; }
+                }
+
+                CjkButton {
+                    text: "保存";
+                    width: 200px;
+                    height: 26px;
+                    clicked => { root.save_json(); root.menu_open = false; }
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: AppTheme.border;
+                    width: parent.width;
+                }
+
+                CjkText {
+                    text: "节点图";
+                    color: AppTheme.text-muted;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                    height: 16px;
+                }
+
+                CjkButton {
+                    text: "新建";
+                    width: 200px;
+                    height: 26px;
+                    clicked => { root.new_tab(); root.menu_open = false; }
+                }
+
+                CjkButton {
+                    text: "关闭";
+                    width: 200px;
+                    height: 26px;
+                    clicked => { root.close_tab(); root.menu_open = false; }
+                }
+            }
+        }
+    }
+
+    if root.show_save_confirm: SaveConfirmDialog {
+        message: root.save_confirm_message;
+        save => { root.save_confirm_save(); }
+        discard => { root.save_confirm_discard(); }
+        cancel => { root.save_confirm_cancel(); }
+    }
+
+    if root.show_running_confirm: RunningConfirmDialog {
+        message: root.running_confirm_message;
+        confirm_close => { root.running_confirm_close(); }
+        cancel => { root.running_confirm_cancel(); }
     }
 }
