@@ -167,11 +167,24 @@ component TabItem inherits Rectangle {
     callback clicked();
 
     width: 140px;
-    height: 28px;
-    background: is_active ? AppTheme.surface-overlay : AppTheme.surface;
-    border-radius: 6px;
-    border-width: 1px;
-    border-color: AppTheme.border;
+    // Height determined by parent
+    background: is_active ? AppTheme.background : AppTheme.surface;
+    
+    // Top border indicator for active state
+    Rectangle {
+        y: 0;
+        height: 2px;
+        width: parent.width;
+        background: is_active ? AppTheme.primary : transparent;
+    }
+
+    // Right border separator
+    Rectangle {
+        x: parent.width - 1px;
+        width: 1px;
+        height: parent.height;
+        background: AppTheme.border;
+    }
 
     TouchArea {
         clicked => { root.clicked(); }
@@ -1311,34 +1324,43 @@ export component NodeGraphWindow inherits Window {
     width: 1200px;
     height: 800px;
 
-    VerticalBox {
+    VerticalLayout {
         // Menu bar area
         Rectangle {
-            height: 40px;
+            height: 32px;
             background: AppTheme.surface;
-            border-width: 1px;
-            border-color: AppTheme.border;
 
-            HorizontalBox {
-                padding: 6px;
-                spacing: 8px;
+            HorizontalLayout {
+                padding: 0px;
+                spacing: 0px;
                 alignment: start;
 
-                CjkButton {
-                    text: "菜单";
-                    width: 60px;
-                    height: 28px;
-                    clicked => { root.menu_open = !root.menu_open; }
+                // Square Settings Button
+                Rectangle {
+                    width: 32px;
+                    height: 32px;
+                    background: transparent;
+
+                    TouchArea {
+                        clicked => { root.menu_open = !root.menu_open; }
+                    }
+
+                    CjkText {
+                        text: "⚙";
+                        font-size: 16px;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                    }
                 }
 
                 Flickable {
-                    height: 28px;
-                    viewport-height: 28px;
-                    width: parent.width - 90px;
+                    height: 32px;
+                    viewport-height: 32px;
+                    width: parent.width - 32px;
                     viewport-width: tabs-layout.preferred-width;
 
                     tabs-layout := HorizontalLayout {
-                        spacing: 6px;
+                        spacing: 0px;
                         alignment: start;
 
                         for tab[i] in root.graph_tabs: TabItem {
@@ -1349,11 +1371,19 @@ export component NodeGraphWindow inherits Window {
                     }
                 }
             }
+
+            // Bottom border
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                width: parent.width;
+                background: AppTheme.border;
+            }
         }
 
         GraphCanvas {
-            width: root.width;
-            height: root.height - 120px;
+            width: 100%;
+            vertical-stretch: 1;
             nodes: root.nodes;
             edges: root.edges;
             edge_segments: root.edge_segments;
@@ -1511,9 +1541,9 @@ export component NodeGraphWindow inherits Window {
 
     if root.menu_open: Rectangle {
         x: 0px;
-        y: 40px;
+        y: 32px;
         width: parent.width;
-        height: parent.height - 40px;
+        height: parent.height - 32px;
         background: #00000000;
 
         TouchArea {
