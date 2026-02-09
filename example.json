@@ -7,16 +7,10 @@
       "node_type": "bot_adapter",
       "input_ports": [
         {
-          "name": "trigger",
-          "data_type": "Boolean",
-          "description": "Trigger to start receiving messages",
-          "required": true
-        },
-        {
           "name": "qq_id",
           "data_type": "String",
           "description": "QQ ID to login",
-          "required": false
+          "required": true
         },
         {
           "name": "bot_server_url",
@@ -37,241 +31,68 @@
           "data_type": "MessageEvent",
           "description": "Raw message event from QQ server",
           "required": true
+        },
+        {
+          "name": "bot_adapter",
+          "data_type": "BotAdapterRef",
+          "description": "Shared reference to the bot adapter instance",
+          "required": true
         }
       ],
       "position": {
-        "x": 20.0,
-        "y": 40.0
+        "x": 40.0,
+        "y": 60.0
       },
-      "size": null
+      "size": {
+        "width": 320.0,
+        "height": 180.0
+      },
+      "inline_values": {},
+      "has_error": false
     },
     {
       "id": "node_2",
-      "name": "MySQL连接",
-      "description": "MySQL连接配置 - 构建MySQL连接URL并输出引用",
-      "node_type": "mysql",
-      "input_ports": [
-        {
-          "name": "mysql_host",
-          "data_type": "String",
-          "description": "MySQL主机地址",
-          "required": true
-        },
-        {
-          "name": "mysql_port",
-          "data_type": "Integer",
-          "description": "MySQL端口号",
-          "required": true
-        },
-        {
-          "name": "mysql_user",
-          "data_type": "String",
-          "description": "MySQL用户名",
-          "required": true
-        },
-        {
-          "name": "mysql_password",
-          "data_type": "String",
-          "description": "MySQL密码",
-          "required": true
-        },
-        {
-          "name": "mysql_database",
-          "data_type": "String",
-          "description": "MySQL数据库名",
-          "required": true
-        },
-        {
-          "name": "reconnect_max_attempts",
-          "data_type": "Integer",
-          "description": "最大重连次数 (默认: 3)",
-          "required": false
-        },
-        {
-          "name": "reconnect_interval_secs",
-          "data_type": "Integer",
-          "description": "重连间隔秒数 (默认: 60)",
-          "required": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "mysql_ref",
-          "data_type": "MySqlRef",
-          "description": "MySQL连接配置引用",
-          "required": true
-        }
-      ],
-      "position": {
-        "x": 20.0,
-        "y": 200.0
-      },
-      "size": null
-    },
-    {
-      "id": "node_3",
-      "name": "Redis连接",
-      "description": "Redis连接配置 - 构建Redis连接URL并输出引用",
-      "node_type": "redis",
-      "input_ports": [
-        {
-          "name": "redis_host",
-          "data_type": "String",
-          "description": "Redis主机地址",
-          "required": true
-        },
-        {
-          "name": "redis_port",
-          "data_type": "Integer",
-          "description": "Redis端口号",
-          "required": true
-        },
-        {
-          "name": "redis_db",
-          "data_type": "Integer",
-          "description": "Redis数据库编号 (默认: 0)",
-          "required": false
-        },
-        {
-          "name": "redis_password",
-          "data_type": "String",
-          "description": "Redis密码",
-          "required": false
-        },
-        {
-          "name": "reconnect_max_attempts",
-          "data_type": "Integer",
-          "description": "最大重连次数 (默认: 3)",
-          "required": false
-        },
-        {
-          "name": "reconnect_interval_secs",
-          "data_type": "Integer",
-          "description": "重连间隔秒数 (默认: 60)",
-          "required": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "redis_ref",
-          "data_type": "RedisRef",
-          "description": "Redis连接配置引用",
-          "required": true
-        }
-      ],
-      "position": {
-        "x": 20.0,
-        "y": 420.0
-      },
-      "size": null
-    },
-    {
-      "id": "node_4",
-      "name": "消息缓存",
-      "description": "消息缓存 - 将MessageEvent缓存到内存或Redis",
-      "node_type": "message_cache",
-      "input_ports": [
-        {
-          "name": "message_event",
-          "data_type": "MessageEvent",
-          "description": "消息事件",
-          "required": true
-        },
-        {
-          "name": "redis_ref",
-          "data_type": "RedisRef",
-          "description": "可选：Redis连接配置引用（若不提供则使用内存缓存）",
-          "required": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "success",
-          "data_type": "Boolean",
-          "description": "消息是否缓存成功",
-          "required": true
-        },
-        {
-          "name": "message_event",
-          "data_type": "MessageEvent",
-          "description": "传递输入的消息事件",
-          "required": true
-        }
-      ],
-      "position": {
-        "x": 280.0,
-        "y": 420.0
-      },
-      "size": null
-    },
-    {
-      "id": "node_5",
-      "name": "消息MySQL持久化",
-      "description": "消息MySQL持久化 - 将MessageEvent存储到MySQL数据库",
-      "node_type": "message_mysql_persistence",
-      "input_ports": [
-        {
-          "name": "message_event",
-          "data_type": "MessageEvent",
-          "description": "消息事件",
-          "required": true
-        },
-        {
-          "name": "mysql_ref",
-          "data_type": "MySqlRef",
-          "description": "MySQL连接配置引用",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "success",
-          "data_type": "Boolean",
-          "description": "消息是否存储成功",
-          "required": true
-        },
-        {
-          "name": "message_event",
-          "data_type": "MessageEvent",
-          "description": "传递输入的消息事件",
-          "required": true
-        }
-      ],
-      "position": {
-        "x": 280.0,
-        "y": 200.0
-      },
-      "size": null
-    },
-    {
-      "id": "node_6",
-      "name": "消息转字符串",
+      "name": "事件提取message列表",
       "description": "Converts MessageEvent to LLM prompt string",
-      "node_type": "message_event_to_string",
+      "node_type": "extract_message_from_event",
       "input_ports": [
         {
           "name": "message_event",
           "data_type": "MessageEvent",
           "description": "MessageEvent containing message data",
           "required": true
+        },
+        {
+          "name": "bot_adapter",
+          "data_type": "BotAdapterRef",
+          "description": "BotAdapter reference for context-aware system message",
+          "required": true
+        },
+        {
+          "name": "persona",
+          "data_type": "String",
+          "description": "Optional persona/character description (default: 默认助手)",
+          "required": false
         }
       ],
       "output_ports": [
         {
-          "name": "prompt",
-          "data_type": "String",
-          "description": "Formatted LLM prompt string",
+          "name": "messages",
+          "data_type": "MessageList",
+          "description": "MessageList containing system and user messages",
           "required": true
         }
       ],
       "position": {
-        "x": 380.0,
-        "y": 40.0
+        "x": 460.0,
+        "y": 60.0
       },
-      "size": null
+      "size": null,
+      "inline_values": {},
+      "has_error": false
     },
     {
-      "id": "node_7",
+      "id": "node_3",
       "name": "大语言模型",
       "description": "LLM API Node - processes text with language model",
       "node_type": "llm",
@@ -316,48 +137,62 @@
         }
       ],
       "position": {
-        "x": 620.0,
-        "y": 40.0
+        "x": 460.0,
+        "y": 260.0
       },
-      "size": null
+      "size": null,
+      "inline_values": {
+        "prompt": "abc"
+      },
+      "has_error": false
+    },
+    {
+      "id": "node_4",
+      "name": "Preview MessageList",
+      "description": "Preview MessageList inside the node card with scrollable message items",
+      "node_type": "preview_message_list",
+      "input_ports": [
+        {
+          "name": "messages",
+          "data_type": "MessageList",
+          "description": "MessageList to preview inside the node",
+          "required": false
+        }
+      ],
+      "output_ports": [],
+      "position": {
+        "x": 760.0,
+        "y": 60.0
+      },
+      "size": null,
+      "inline_values": {},
+      "has_error": false
     }
   ],
   "edges": [
     {
       "from_node_id": "node_1",
       "from_port": "message_event",
-      "to_node_id": "node_4",
+      "to_node_id": "node_2",
       "to_port": "message_event"
     },
     {
-      "from_node_id": "node_3",
-      "from_port": "redis_ref",
-      "to_node_id": "node_4",
-      "to_port": "redis_ref"
+      "from_node_id": "node_1",
+      "from_port": "bot_adapter",
+      "to_node_id": "node_2",
+      "to_port": "bot_adapter"
     },
     {
       "from_node_id": "node_2",
-      "from_port": "mysql_ref",
-      "to_node_id": "node_5",
-      "to_port": "mysql_ref"
+      "from_port": "messages",
+      "to_node_id": "node_3",
+      "to_port": "messages"
     },
     {
-      "from_node_id": "node_1",
-      "from_port": "message_event",
-      "to_node_id": "node_5",
-      "to_port": "message_event"
-    },
-    {
-      "from_node_id": "node_1",
-      "from_port": "message_event",
-      "to_node_id": "node_6",
-      "to_port": "message_event"
-    },
-    {
-      "from_node_id": "node_6",
-      "from_port": "prompt",
-      "to_node_id": "node_7",
-      "to_port": "prompt"
+      "from_node_id": "node_2",
+      "from_port": "messages",
+      "to_node_id": "node_4",
+      "to_port": "messages"
     }
   ]
 }

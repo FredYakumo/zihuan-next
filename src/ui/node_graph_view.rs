@@ -175,28 +175,31 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     let tabs_clone = Arc::clone(&tabs);
     let active_tab_clone = Arc::clone(&active_tab_index);
     ui.on_open_json(move || {
-        if let Some(path) = rfd::FileDialog::new()
+        let selected_path = match rfd::FileDialog::new()
             .add_filter("Node Graph", &["json"])
             .pick_file()
         {
-            if let Ok(graph) = load_graph_definition_from_json(&path) {
-                let mut tabs_guard = tabs_clone.lock().unwrap();
-                let active_index = *active_tab_clone.lock().unwrap();
-                if let Some(tab) = tabs_guard.get_mut(active_index) {
-                    tab.graph = graph.clone();
-                    tab.inline_inputs = build_inline_inputs_from_graph(&graph);
-                    tab.selection.clear();
-                    tab.file_path = Some(path.clone());
-                    tab.title = path
-                        .file_name()
-                        .map(|name| name.to_string_lossy().to_string())
-                        .unwrap_or_else(|| path.display().to_string());
-                    tab.is_dirty = false;
-                }
+            Some(path) => path,
+            None => return,
+        };
 
-                if let Some(ui) = ui_handle.upgrade() {
-                    refresh_active_tab_ui(&ui, &tabs_guard, active_index);
-                }
+        if let Ok(graph) = load_graph_definition_from_json(&selected_path) {
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let active_index = *active_tab_clone.lock().unwrap();
+            if let Some(tab) = tabs_guard.get_mut(active_index) {
+                tab.graph = graph.clone();
+                tab.inline_inputs = build_inline_inputs_from_graph(&graph);
+                tab.selection.clear();
+                tab.file_path = Some(selected_path.clone());
+                tab.title = selected_path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().to_string())
+                    .unwrap_or_else(|| selected_path.display().to_string());
+                tab.is_dirty = false;
+            }
+
+            if let Some(ui) = ui_handle.upgrade() {
+                refresh_active_tab_ui(&ui, &tabs_guard, active_index);
             }
         }
     });
@@ -206,16 +209,21 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         let active_tab_clone = Arc::clone(&active_tab_index);
         let ui_handle = ui.as_weak();
         move |tab_id: u64| -> bool {
-            let mut tabs_guard = tabs_clone.lock().unwrap();
-            let tab_index = match tabs_guard.iter().position(|t| t.id == tab_id) {
-                Some(index) => index,
-                None => return false,
+            // Determine file path (may need to show dialog)
+            let path = {
+                let tabs_guard = tabs_clone.lock().unwrap();
+                let tab_index = match tabs_guard.iter().position(|t| t.id == tab_id) {
+                    Some(index) => index,
+                    None => return false,
+                };
+
+                tabs_guard[tab_index].file_path.clone()
             };
 
-            let tab = &mut tabs_guard[tab_index];
-            let path = if let Some(path) = tab.file_path.clone() {
+            let path = if let Some(path) = path {
                 path
             } else {
+                // Show file dialog without holding lock
                 match rfd::FileDialog::new()
                     .add_filter("Node Graph", &["json"])
                     .set_file_name("node_graph.json")
@@ -226,6 +234,14 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                 }
             };
 
+            // Now perform the save with the lock
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let tab_index = match tabs_guard.iter().position(|t| t.id == tab_id) {
+                Some(index) => index,
+                None => return false,
+            };
+
+            let tab = &mut tabs_guard[tab_index];
             apply_inline_inputs_to_graph(&mut tab.graph, &tab.inline_inputs);
 
             if let Err(e) = crate::node::graph_io::save_graph_definition_to_json(&path, &tab.graph) {
@@ -253,10 +269,13 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     let tabs_clone = Arc::clone(&tabs);
     let save_tab_clone = Arc::clone(&save_tab);
     ui.on_save_json(move || {
-        let tabs_guard = tabs_clone.lock().unwrap();
-        let active_index = *active_tab_clone.lock().unwrap();
-        if let Some(tab) = tabs_guard.get(active_index) {
-            let _ = save_tab_clone(tab.id);
+        let tab_id = {
+            let tabs_guard = tabs_clone.lock().unwrap();
+            let active_index = *active_tab_clone.lock().unwrap();
+            tabs_guard.get(active_index).map(|t| t.id)
+        };
+        if let Some(tab_id) = tab_id {
+            let _ = save_tab_clone(tab_id);
         }
     });
 

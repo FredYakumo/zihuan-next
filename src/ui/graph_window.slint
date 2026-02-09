@@ -1381,124 +1381,127 @@ export component NodeGraphWindow inherits Window {
             }
         }
 
-        GraphCanvas {
-            width: 100%;
-            vertical-stretch: 1;
-            nodes: root.nodes;
-            edges: root.edges;
-            edge_segments: root.edge_segments;
-            edge_corners: root.edge_corners;
-            edge_labels: root.edge_labels;
-            grid_lines: root.grid_lines;
-            grid_size: root.grid_size;
-            edge_thickness: root.edge_thickness;
-            drag_line_visible: root.drag_line_visible;
-            drag_line_from_x: root.drag_line_from_x;
-            drag_line_from_y: root.drag_line_from_y;
-            drag_line_to_x: root.drag_line_to_x;
-            drag_line_to_y: root.drag_line_to_y;
-            dragging: root.dragging;
-            drag_from_node_id: root.drag_from_node_id;
-            drag_from_port: root.drag_from_port;
-            drag_from_is_input: root.drag_from_is_input;
-            box_selection_visible: root.box_selection_visible;
-            box_selection_x: root.box_selection_x;
-            box_selection_y: root.box_selection_y;
-            box_selection_width: root.box_selection_width;
-            box_selection_height: root.box_selection_height;
-            
-            node_moved(node_id, x, y) => {
-                root.node_moved(node_id, x, y);
-            }
-
-            node_move_finished(node_id, x, y) => {
-                root.node_move_finished(node_id, x, y);
-            }
-            
-            port_clicked(node_id, port_name, is_input) => {
-                root.port_clicked(node_id, port_name, is_input);
-            }
-            pointer_moved(x, y) => {
-                root.pointer_moved(x, y);
-            }
-            cancel_connect() => {
-                root.cancel_connect();
-            }
-            
-            node_clicked(node_id) => {
-                root.node_clicked(node_id);
-            }
-            
-            edge_clicked(from_node, from_port, to_node, to_port) => {
-                root.edge_clicked(from_node, from_port, to_node, to_port);
-            }
-            
-            canvas_clicked() => {
-                root.canvas_clicked();
-            }
-            
-            box_selection_start(x, y) => {
-                root.box_selection_start(x, y);
-            }
-            
-            box_selection_update(x, y) => {
-                root.box_selection_update(x, y);
-            }
-            
-            box_selection_end() => {
-                root.box_selection_end();
-            }
-
-            inline_port_text_changed(node_id, port_name, value) => {
-                root.inline_port_text_changed(node_id, port_name, value);
-            }
-
-            inline_port_bool_changed(node_id, port_name, value) => {
-                root.inline_port_bool_changed(node_id, port_name, value);
-            }
-
-            node_resized(node_id, width, height) => {
-                root.node_resized(node_id, width, height);
-            }
-
-            node_resize_finished(node_id, width, height) => {
-                root.node_resize_finished(node_id, width, height);
-            }
-        }
-
-        // Bottom control bar
         Rectangle {
-            height: 60px;
-            background: transparent;
+            vertical-stretch: 1;
 
-            HorizontalBox {
-                padding: 12px;
-                padding-bottom: 12px;
-                spacing: 12px;
-                alignment: end;
+            GraphCanvas {
+                width: 100%;
+                height: 100%;
+                nodes: root.nodes;
+                edges: root.edges;
+                edge_segments: root.edge_segments;
+                edge_corners: root.edge_corners;
+                edge_labels: root.edge_labels;
+                grid_lines: root.grid_lines;
+                grid_size: root.grid_size;
+                edge_thickness: root.edge_thickness;
+                drag_line_visible: root.drag_line_visible;
+                drag_line_from_x: root.drag_line_from_x;
+                drag_line_from_y: root.drag_line_from_y;
+                drag_line_to_x: root.drag_line_to_x;
+                drag_line_to_y: root.drag_line_to_y;
+                dragging: root.dragging;
+                drag_from_node_id: root.drag_from_node_id;
+                drag_from_port: root.drag_from_port;
+                drag_from_is_input: root.drag_from_is_input;
+                box_selection_visible: root.box_selection_visible;
+                box_selection_x: root.box_selection_x;
+                box_selection_y: root.box_selection_y;
+                box_selection_width: root.box_selection_width;
+                box_selection_height: root.box_selection_height;
+                
+                node_moved(node_id, x, y) => {
+                    root.node_moved(node_id, x, y);
+                }
 
-                CjkButton {
-                    text: "新增节点";
-                    clicked => { root.show_node_type_menu(); }
+                node_move_finished(node_id, x, y) => {
+                    root.node_move_finished(node_id, x, y);
                 }
                 
-                if !root.is_graph_running: CjkRunButton {
-                    text: "运行节点图";
-                    clicked => { root.run_graph(); }
+                port_clicked(node_id, port_name, is_input) => {
+                    root.port_clicked(node_id, port_name, is_input);
+                }
+                pointer_moved(x, y) => {
+                    root.pointer_moved(x, y);
+                }
+                cancel_connect() => {
+                    root.cancel_connect();
                 }
                 
-                if root.is_graph_running: CjkDeleteButton {
-                    text: "停止运行";
-                    clicked => { root.stop_graph(); }
+                node_clicked(node_id) => {
+                    root.node_clicked(node_id);
                 }
                 
-                if root.selected_node_count > 0 || root.selected_edge_from_node != "": CjkDeleteButton {
-                    text: root.selected_node_count > 1 ? "删除选中节点" : "删除选中";
-                    clicked => { root.delete_selected(); }
+                edge_clicked(from_node, from_port, to_node, to_port) => {
+                    root.edge_clicked(from_node, from_port, to_node, to_port);
+                }
+                
+                canvas_clicked() => {
+                    root.canvas_clicked();
+                }
+                
+                box_selection_start(x, y) => {
+                    root.box_selection_start(x, y);
+                }
+                
+                box_selection_update(x, y) => {
+                    root.box_selection_update(x, y);
+                }
+                
+                box_selection_end() => {
+                    root.box_selection_end();
+                }
+
+                inline_port_text_changed(node_id, port_name, value) => {
+                    root.inline_port_text_changed(node_id, port_name, value);
+                }
+
+                inline_port_bool_changed(node_id, port_name, value) => {
+                    root.inline_port_bool_changed(node_id, port_name, value);
+                }
+
+                node_resized(node_id, width, height) => {
+                    root.node_resized(node_id, width, height);
+                }
+
+                node_resize_finished(node_id, width, height) => {
+                    root.node_resize_finished(node_id, width, height);
                 }
             }
 
-            // Port hint - centered at bottom with transparent background
+            // Buttons Overlay
+            Rectangle {
+                x: parent.width - self.width - 20px;
+                y: parent.height - self.height - 20px;
+                width: buttons-layout.preferred-width;
+                height: buttons-layout.preferred-height;
+                
+                buttons-layout := HorizontalLayout {
+                    spacing: 12px;
+
+                    CjkButton {
+                        text: "新增节点";
+                        clicked => { root.show_node_type_menu(); }
+                    }
+
+                    if !root.is_graph_running: CjkRunButton {
+                        text: "运行节点图";
+                        clicked => { root.run_graph(); }
+                    }
+
+                    if root.is_graph_running: CjkDeleteButton {
+                        text: "停止运行";
+                        clicked => { root.stop_graph(); }
+                    }
+
+                    if root.selected_node_count > 0 || root.selected_edge_from_node != "": CjkDeleteButton {
+                        text: root.selected_node_count > 1 ? "删除选中节点" : "删除选中";
+                        clicked => { root.delete_selected(); }
+                    }
+                }
+            }
+
+            // Port hint - centered at bottom
             if root.show_port_hint: Rectangle {
                 width: 300px;
                 height: 30px;
@@ -1506,8 +1509,9 @@ export component NodeGraphWindow inherits Window {
                 border-radius: 4px;
                 border-width: 1px;
                 border-color: #4a4a4a;
+                // Position relative to the container rectangle
                 x: (parent.width - self.width) / 2;
-                y: (parent.height - self.height) / 2;
+                y: parent.height - self.height - 50px;
 
                 CjkText {
                     text: root.port_hint_text;
