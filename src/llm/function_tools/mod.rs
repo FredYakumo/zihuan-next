@@ -23,13 +23,13 @@ pub trait FunctionTool: Send + Sync + std::fmt::Debug {
     fn call(&self, arguments: Value) -> Result<Value>;
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ToolCallsFuncSpec {
     pub name: String,
     pub arguments: Value
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ToolCalls {
     pub id: String,
     pub type_name: String,
