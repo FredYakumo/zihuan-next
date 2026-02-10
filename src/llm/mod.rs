@@ -2,12 +2,13 @@ pub mod agent;
 pub mod llm_api;
 pub mod function_tools;
 pub mod prompt;
-pub mod node_impl;
 
 use crate::llm::function_tools::{FunctionTool, ToolCalls};
 use std::sync::Arc;
+use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum MessageRole {
     System,
     User,
@@ -35,7 +36,7 @@ pub fn str_to_role(s: &str) -> MessageRole {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     pub role: MessageRole,
     pub content: Option<String>,

@@ -427,3 +427,131 @@ mod tests {
         debug!("Agent Model Response: {}", response_text);
     }
 }
+
+// ==================== Node Implementation ====================
+
+use crate::node::{Node, Port, DataType, DataValue};
+use crate::error::Result;
+use std::collections::HashMap;
+
+/// LLMAPINode - Node wrapper for LLMAPI that accepts configuration via input ports
+pub struct LLMAPINode {
+    id: String,
+    name: String,
+}
+
+impl LLMAPINode {
+    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+        }
+    }
+}
+
+impl Node for LLMAPINode {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("LLM API调用节点 - 通过输入端口配置并调用语言模型API")
+    }
+
+    fn input_ports(&self) -> Vec<Port> {
+        vec![
+            Port::new("messages", DataType::MessageList)
+                .with_description("输入的消息列表，包含系统消息和用户消息"),
+            Port::new("model_name", DataType::String)
+                .with_description("模型名称，例如: gpt-4, deepseek-chat"),
+            Port::new("api_endpoint", DataType::String)
+                .with_description("API端点URL，例如: https://api.openai.com/v1/chat/completions"),
+            Port::new("api_key", DataType::String)
+                .with_description("API密钥 (可选，某些本地模型不需要)"),
+            Port::new("timeout_secs", DataType::Integer)
+                .with_description("超时秒数 (可选，默认120秒)"),
+        ]
+    }
+
+    fn output_ports(&self) -> Vec<Port> {
+        vec![
+            Port::new("response", DataType::MessageList)
+                .with_description("LLM返回的消息列表，包含语言模型的回复"),        
+        ]
+    }
+
+    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+        self.validate_inputs(&inputs)?;
+
+        // Extract required inputs
+        let messages_data = inputs.get("messages")
+            .ok_or_else(|| crate::error::Error::ValidationError("Missing required input: messages".to_string()))?;
+        
+        let model_name = inputs.get("model_name")
+            .ok_or_else(|| crate::error::Error::ValidationError("Missing required input: model_name".to_string()))?;
+        
+        let api_endpoint = inputs.get("api_endpoint")
+            .ok_or_else(|| crate::error::Error::ValidationError("Missing required input: api_endpoint".to_string()))?;
+
+        // Extract messages from MessageList
+        let messages = match messages_data {
+            DataValue::MessageList(msgs) => msgs.clone(),
+            _ => return Err(crate::error::Error::ValidationError("messages must be MessageList type".to_string())),
+        };
+
+        // Extract model name and api endpoint
+        let model_name_str = match model_name {
+            DataValue::String(s) => s.clone(),
+            _ => return Err(crate::error::Error::ValidationError("model_name must be String type".to_string())),
+        };
+
+        let api_endpoint_str = match api_endpoint {
+            DataValue::String(s) => s.clone(),
+            _ => return Err(crate::error::Error::ValidationError("api_endpoint must be String type".to_string())),
+        };
+
+        // Extract optional api_key
+        let api_key_opt = inputs.get("api_key").and_then(|v| match v {
+            DataValue::String(s) => if s.is_empty() { None } else { Some(s.clone()) },
+            _ => None,
+        });
+
+        // Extract optional timeout
+        let timeout_secs = inputs.get("timeout_secs")
+            .and_then(|v| match v {
+                DataValue::Integer(i) => Some(*i as u64),
+                _ => None,
+            })
+            .unwrap_or(120);
+
+        // Create LLMAPI instance
+        let llm_api = LLMAPI::new(
+            model_name_str,
+            api_endpoint_str,
+            api_key_opt,
+            Duration::from_secs(timeout_secs),
+        );
+
+        // Call LLM inference
+        let param = super::InferenceParam {
+            messages: &messages,
+            tools: None,  // First version doesn't support tools
+        };
+
+        let response_message = llm_api.inference(&param);
+
+        // Build outputs
+        let mut outputs = HashMap::new();
+        outputs.insert(
+            "response".to_string(),
+            DataValue::MessageList(vec![response_message]),
+        );
+
+        self.validate_outputs(&outputs)?;
+        Ok(outputs)
+    }
+}

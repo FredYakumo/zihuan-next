@@ -122,7 +122,7 @@ macro_rules! register_node {
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
     use crate::node::util_nodes::{ConditionalNode, JsonParserNode, PreviewStringNode, StringDataNode, PreviewMessageListNode};
-    use crate::llm::node_impl::{LLMNode, AgentNode, TextProcessorNode};
+    use crate::llm::llm_api::LLMAPINode;
     use crate::bot_adapter::node_impl::{BotAdapterNode, MessageSenderNode};
     use crate::bot_adapter::extract_message_from_event::ExtractMessageFromEventNode;
     use crate::node::database_nodes::{RedisNode, MySqlNode};
@@ -170,35 +170,13 @@ pub fn init_node_registry() -> Result<()> {
     );
 
     // LLM nodes
-    NODE_REGISTRY.register(
-        "llm",
-        "大语言模型",
+    register_node!(
+        "llm_api",
+        "LLM API调用",
         "AI",
-        "调用大语言模型处理文本",
-        Arc::new(|id: String, name: String| {
-            Box::new(LLMNode::new(id, name))
-        }),
-    )?;
-
-    NODE_REGISTRY.register(
-        "agent",
-        "AI Agent",
-        "AI",
-        "具有工具调用能力的智能代理",
-        Arc::new(|id: String, name: String| {
-            Box::new(AgentNode::new(id, name, "default"))
-        }),
-    )?;
-
-    NODE_REGISTRY.register(
-        "text_processor",
-        "文本处理器",
-        "工具",
-        "对文本进行各种处理操作",
-        Arc::new(|id: String, name: String| {
-            Box::new(TextProcessorNode::new(id, name, "uppercase"))
-        }),
-    )?;
+        "调用语言模型API进行推理",
+        LLMAPINode
+    );
 
     // Bot adapter nodes
     register_node!(
