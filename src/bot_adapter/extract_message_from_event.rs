@@ -113,8 +113,9 @@ impl Node for ExtractMessageFromEventNode {
             // Lock adapter and extract all needed information at the beginning
             let adapter = bot_adapter_ref.blocking_lock();
             let system_msg = build_system_message(&adapter, event, persona);
+            let bot_id = adapter.get_bot_id();
             
-            let msg_prop = MessageProp::from_messages(&event.message_list, None);
+            let msg_prop = MessageProp::from_messages(&event.message_list, Some(bot_id));
 
             // Build user message from incoming MessageEvent
             let mut user_text = msg_prop.content.clone().unwrap_or_default();
