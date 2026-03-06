@@ -1,6 +1,6 @@
 use log::{error, info};
 use slint::{ModelRc, VecModel, SharedString, ComponentHandle};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
@@ -1634,7 +1634,7 @@ fn apply_graph_to_ui(
                         is_connected,
                         is_required: p.required,
                         has_value: has_inline,
-                        data_type: p.data_type.to_string().into(),
+                        data_type: resolve_display_data_type(&graph, node, &p.name, true).into(),
                         inline_text: inline_text.into(),
                         inline_bool,
                     }
@@ -1654,7 +1654,7 @@ fn apply_graph_to_ui(
                         is_connected,
                         is_required: false,
                         has_value: false,
-                        data_type: p.data_type.to_string().into(),
+                        data_type: resolve_display_data_type(&graph, node, &p.name, false).into(),
                         inline_text: "".into(),
                         inline_bool: false,
                     }
@@ -2056,7 +2056,7 @@ fn build_edge_segments(
             &mut segments, &mut corners
         );
 
-        let label_text = get_edge_data_type_label(from_node, &edge.from_port)
+        let label_text = get_edge_data_type_label(graph, from_node, &edge.from_port)
             .unwrap_or_else(|| "Unknown".to_string());
         let label_width = (label_text.len() as f32 * 7.0).max(GRID_SIZE * 2.0);
         let label_height = GRID_SIZE * 0.8;
@@ -2160,13 +2160,73 @@ fn push_segment(
 }
 
 fn get_edge_data_type_label(
+    graph: &NodeGraphDefinition,
     node: &crate::node::graph_io::NodeDefinition,
     port_name: &str,
 ) -> Option<String> {
-    node.output_ports
+    Some(resolve_display_data_type(graph, node, port_name, false))
+}
+
+fn resolve_display_data_type(
+    graph: &NodeGraphDefinition,
+    node: &crate::node::graph_io::NodeDefinition,
+    port_name: &str,
+    is_input: bool,
+) -> String {
+    let mut visited = HashSet::new();
+    resolve_display_data_type_inner(graph, node, port_name, is_input, &mut visited)
+        .map(|data_type| data_type.to_string())
+        .unwrap_or_else(|| "Unknown".to_string())
+}
+
+fn resolve_display_data_type_inner(
+    graph: &NodeGraphDefinition,
+    node: &crate::node::graph_io::NodeDefinition,
+    port_name: &str,
+    is_input: bool,
+    visited: &mut HashSet<String>,
+) -> Option<crate::node::DataType> {
+    let visit_key = format!("{}:{}:{}", node.id, if is_input { "in" } else { "out" }, port_name);
+    if !visited.insert(visit_key) {
+        return declared_port_type(node, port_name, is_input);
+    }
+
+    let declared = declared_port_type(node, port_name, is_input)?;
+    if !matches!(declared, crate::node::DataType::Any) {
+        return Some(declared);
+    }
+
+    if is_input {
+        if let Some(edge) = graph
+            .edges
+            .iter()
+            .find(|edge| edge.to_node_id == node.id && edge.to_port == port_name)
+        {
+            let from_node = graph.nodes.iter().find(|candidate| candidate.id == edge.from_node_id)?;
+            return resolve_display_data_type_inner(graph, from_node, &edge.from_port, false, visited)
+                .or(Some(crate::node::DataType::Any));
+        }
+        return Some(crate::node::DataType::Any);
+    }
+
+    if node.node_type == "switch_gate" && port_name == "output" {
+        return resolve_display_data_type_inner(graph, node, "input", true, visited)
+            .or(Some(crate::node::DataType::Any));
+    }
+
+    Some(crate::node::DataType::Any)
+}
+
+fn declared_port_type(
+    node: &crate::node::graph_io::NodeDefinition,
+    port_name: &str,
+    is_input: bool,
+) -> Option<crate::node::DataType> {
+    let ports = if is_input { &node.input_ports } else { &node.output_ports };
+    ports
         .iter()
         .find(|p| p.name == port_name)
-        .map(|p| p.data_type.to_string())
+        .map(|p| p.data_type.clone())
 }
 
 fn build_grid_lines(width: f32, height: f32, grid_size: f32) -> Vec<GridLineVm> {
@@ -2207,5 +2267,77 @@ fn node_dimensions(node: &crate::node::graph_io::NodeDefinition) -> (f32, f32) {
     match &node.size {
         Some(size) => (size.width.max(min_width), size.height.max(min_height)),
         None => (min_width, min_height),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_display_data_type;
+    use crate::node::graph_io::{EdgeDefinition, NodeDefinition, NodeGraphDefinition};
+    use crate::node::{DataType, Port};
+    use std::collections::HashMap;
+
+    fn node(id: &str, node_type: &str, input_ports: Vec<Port>, output_ports: Vec<Port>) -> NodeDefinition {
+        NodeDefinition {
+            id: id.to_string(),
+            name: id.to_string(),
+            description: None,
+            node_type: node_type.to_string(),
+            input_ports,
+            output_ports,
+            position: None,
+            size: None,
+            inline_values: HashMap::new(),
+            has_error: false,
+        }
+    }
+
+    #[test]
+    fn switch_gate_displays_concrete_type_after_connection() {
+        let source = node(
+            "source",
+            "string_data",
+            Vec::new(),
+            vec![Port::new("value", DataType::String)],
+        );
+        let gate = node(
+            "gate",
+            "switch_gate",
+            vec![Port::new("enabled", DataType::Boolean), Port::new("input", DataType::Any)],
+            vec![Port::new("output", DataType::Any)],
+        );
+
+        let graph = NodeGraphDefinition {
+            nodes: vec![source.clone(), gate.clone()],
+            edges: vec![EdgeDefinition {
+                from_node_id: "source".to_string(),
+                from_port: "value".to_string(),
+                to_node_id: "gate".to_string(),
+                to_port: "input".to_string(),
+            }],
+            execution_results: HashMap::new(),
+        };
+
+        assert_eq!(resolve_display_data_type(&graph, &gate, "input", true), "String");
+        assert_eq!(resolve_display_data_type(&graph, &gate, "output", false), "String");
+    }
+
+    #[test]
+    fn switch_gate_keeps_any_when_unconnected() {
+        let gate = node(
+            "gate",
+            "switch_gate",
+            vec![Port::new("enabled", DataType::Boolean), Port::new("input", DataType::Any)],
+            vec![Port::new("output", DataType::Any)],
+        );
+
+        let graph = NodeGraphDefinition {
+            nodes: vec![gate.clone()],
+            edges: Vec::new(),
+            execution_results: HashMap::new(),
+        };
+
+        assert_eq!(resolve_display_data_type(&graph, &gate, "input", true), "Any");
+        assert_eq!(resolve_display_data_type(&graph, &gate, "output", false), "Any");
     }
 }

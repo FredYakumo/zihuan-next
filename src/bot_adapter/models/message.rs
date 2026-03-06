@@ -168,6 +168,7 @@ impl MessageBase for ReplyMessage {
 /// - `ref_content`: Contextual summary from reference/reply chains (e.g., replied content), used to supplement context
 /// - `is_at_me`: Whether the message @'s the bot itself, facilitating priority/trigger judgment
 /// - `at_target_list`: List of all @ targets in the message (QQ numbers, etc.), used for intent recognition and routing
+#[derive(Clone, Debug)]
 pub struct MessageProp {
     pub content: Option<String>,
     pub ref_content: Option<String>,

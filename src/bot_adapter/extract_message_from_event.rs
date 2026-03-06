@@ -80,6 +80,7 @@ impl Node for ExtractMessageFromEventNode {
 
     node_output![
         port! { name = "messages", ty = MessageList, desc = "MessageList containing system and user messages" },
+        port! { name = "msg_prop", ty = MessageProp, desc = "Parsed message properties" },
     ];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
@@ -135,6 +136,7 @@ impl Node for ExtractMessageFromEventNode {
             // Combine system and user messages
             let messages = vec![system_msg, user_msg];
             outputs.insert("messages".to_string(), DataValue::MessageList(messages));
+            outputs.insert("msg_prop".to_string(), DataValue::MessageProp(msg_prop));
         } else {
             return Err("message_event input is required and must be MessageEvent type".into());
         }
@@ -151,7 +153,7 @@ mod tests {
     fn test_message_event_to_string_node_creation() {
         let node = ExtractMessageFromEventNode::new("msg_to_str_1", "ExtractMessageFromEvent");
         assert_eq!(node.id(), "msg_to_str_1");
-        assert_eq!(node.name(), "MessageEventToString");
+        assert_eq!(node.name(), "ExtractMessageFromEvent");
     }
 
     #[test]
@@ -165,7 +167,8 @@ mod tests {
         assert_eq!(input_ports[1].name, "bot_adapter");
         assert_eq!(input_ports[2].name, "persona");
 
-        assert_eq!(output_ports.len(), 1);
+        assert_eq!(output_ports.len(), 2);
         assert_eq!(output_ports[0].name, "messages");
+        assert_eq!(output_ports[1].name, "msg_prop");
     }
 }

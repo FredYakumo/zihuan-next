@@ -121,9 +121,9 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util_nodes::{ConditionalNode, JsonParserNode, PreviewStringNode, StringDataNode, PreviewMessageListNode, MessageListDataNode};
+    use crate::node::util_nodes::{ConditionalNode, JsonParserNode, MessageListDataNode, PreviewMessageListNode, PreviewStringNode, StringDataNode, SwitchNode};
     use crate::llm::llm_api::LLMAPINode;
-    use crate::bot_adapter::node_impl::{BotAdapterNode, MessageSenderNode};
+    use crate::bot_adapter::node_impl::{BotAdapterNode, MessageSenderNode, IsAtMeNode};
     use crate::bot_adapter::extract_message_from_event::ExtractMessageFromEventNode;
     use crate::node::database_nodes::{RedisNode, MySqlNode};
     use crate::node::message_nodes::{MessageMySQLPersistenceNode, MessageCacheNode};
@@ -135,6 +135,14 @@ pub fn init_node_registry() -> Result<()> {
         "工具",
         "根据条件选择不同的输出分支",
         ConditionalNode
+    );
+
+    register_node!(
+        "switch_gate",
+        "开关器",
+        "工具",
+        "当 enabled 为 true 时透传输入，否则阻断后续数据流",
+        SwitchNode
     );
 
     register_node!(
@@ -209,6 +217,14 @@ pub fn init_node_registry() -> Result<()> {
         "Bot适配器",
         "从消息事件中提取openai的message列表",
         ExtractMessageFromEventNode
+    );
+
+    register_node!(
+        "is_at_me",
+        "IsAtMe",
+        "Bot适配器",
+        "从MessageProp中提取is_at_me布尔值",
+        IsAtMeNode
     );
 
     // Database nodes
@@ -294,6 +310,7 @@ pub fn build_node_graph_from_definition(
 
 fn json_to_data_value(json: &Value, target_type: &DataType) -> Option<DataValue> {
     match (json, target_type) {
+        (_, DataType::Any) => infer_any_data_value(json),
         (Value::String(s), DataType::String) => Some(DataValue::String(s.clone())),
         (Value::String(s), DataType::Password) => Some(DataValue::Password(s.clone())),
         (Value::String(s), DataType::Boolean) => {
@@ -355,6 +372,18 @@ fn json_to_data_value(json: &Value, target_type: &DataType) -> Option<DataValue>
     }
 }
 
+fn infer_any_data_value(json: &Value) -> Option<DataValue> {
+    match json {
+        Value::String(s) => Some(DataValue::String(s.clone())),
+        Value::Number(n) => n
+            .as_i64()
+            .map(DataValue::Integer)
+            .or_else(|| n.as_f64().map(DataValue::Float)),
+        Value::Bool(b) => Some(DataValue::Boolean(*b)),
+        _ => Some(DataValue::Json(json.clone())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::json_to_data_value;
@@ -382,6 +411,17 @@ mod tests {
                 assert_eq!(crate::llm::role_to_str(&list[2].role), "user");
                 assert_eq!(list[2].content, None);
             }
+            _ => panic!("unexpected DataValue variant"),
+        }
+    }
+
+    #[test]
+    fn parse_any_inline_value() {
+        let val = json_to_data_value(&serde_json::json!(123), &DataType::Any)
+            .expect("should parse Any integer");
+
+        match val {
+            DataValue::Integer(value) => assert_eq!(value, 123),
             _ => panic!("unexpected DataValue variant"),
         }
     }
