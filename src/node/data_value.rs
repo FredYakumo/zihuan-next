@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::llm::{Message, function_tools::FunctionTool};
 use crate::bot_adapter::adapter::SharedBotAdapter;
 use crate::bot_adapter::models::event_model::MessageEvent;
+use crate::bot_adapter::models::message::MessageProp;
 
 /// Redis connection configuration, passed between nodes as a reference
 #[derive(Debug, Clone)]
@@ -25,6 +26,7 @@ pub struct MySqlConfig {
 /// Dataflow datatype. Use for checking compatibility between ports.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DataType {
+    Any,
     String,
     Integer,
     Float,
@@ -34,6 +36,7 @@ pub enum DataType {
     List(Box<DataType>),
     MessageList,
     MessageEvent,
+    MessageProp,
     FunctionTools,
     BotAdapterRef,
     RedisRef,
@@ -42,9 +45,20 @@ pub enum DataType {
     Custom(String),
 }
 
+impl DataType {
+    pub fn is_compatible_with(&self, other: &DataType) -> bool {
+        match (self, other) {
+            (DataType::Any, _) | (_, DataType::Any) => true,
+            (DataType::List(left), DataType::List(right)) => left.is_compatible_with(right),
+            _ => self == other,
+        }
+    }
+}
+
 impl fmt::Display for DataType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            DataType::Any => write!(f, "Any"),
             DataType::String => write!(f, "String"),
             DataType::Integer => write!(f, "Integer"),
             DataType::Float => write!(f, "Float"),
@@ -54,6 +68,7 @@ impl fmt::Display for DataType {
             DataType::List(inner) => write!(f, "List<{}>", inner),
             DataType::MessageList => write!(f, "MessageList"),
             DataType::MessageEvent => write!(f, "MessageEvent"),
+            DataType::MessageProp => write!(f, "MessageProp"),
             DataType::FunctionTools => write!(f, "FunctionTools"),
             DataType::BotAdapterRef => write!(f, "BotAdapterRef"),
             DataType::RedisRef => write!(f, "RedisRef"),
@@ -76,6 +91,7 @@ pub enum DataValue {
     List(Vec<DataValue>),
     MessageList(Vec<Message>),
     MessageEvent(MessageEvent),
+    MessageProp(MessageProp),
     FunctionTools(Vec<Arc<dyn FunctionTool>>),
     BotAdapterRef(SharedBotAdapter),
     RedisRef(Arc<RedisConfig>),
@@ -101,6 +117,7 @@ impl DataValue {
             }
             DataValue::MessageList(_) => DataType::MessageList,
             DataValue::MessageEvent(_) => DataType::MessageEvent,
+            DataValue::MessageProp(_) => DataType::MessageProp,
             DataValue::FunctionTools(_) => DataType::FunctionTools,
             DataValue::BotAdapterRef(_) => DataType::BotAdapterRef,
             DataValue::RedisRef(_) => DataType::RedisRef,
@@ -145,6 +162,12 @@ impl DataValue {
                     "is_group_message": event.is_group_message,
                 })
             }
+            DataValue::MessageProp(prop) => serde_json::json!({
+                "content": prop.content,
+                "ref_content": prop.ref_content,
+                "is_at_me": prop.is_at_me,
+                "at_target_list": prop.at_target_list,
+            }),
             DataValue::FunctionTools(tools) => {
                 let tool_defs: Vec<Value> = tools.iter()
                     .map(|t| t.get_json())
@@ -181,6 +204,7 @@ impl fmt::Debug for DataValue {
             DataValue::List(value) => f.debug_tuple("List").field(value).finish(),
             DataValue::MessageList(value) => f.debug_tuple("MessageList").field(value).finish(),
             DataValue::MessageEvent(value) => f.debug_tuple("MessageEvent").field(value).finish(),
+            DataValue::MessageProp(value) => f.debug_tuple("MessageProp").field(value).finish(),
             DataValue::FunctionTools(value) => f.debug_tuple("FunctionTools").field(value).finish(),
             DataValue::BotAdapterRef(_) => f.debug_tuple("BotAdapterRef").finish(),
             DataValue::RedisRef(config) => f.debug_tuple("RedisRef").field(config).finish(),
@@ -196,5 +220,25 @@ impl Serialize for DataValue {
         S: serde::Serializer,
     {
         self.to_json().serialize(serializer)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DataType;
+
+    #[test]
+    fn any_type_is_compatible_with_concrete_types() {
+        assert!(DataType::Any.is_compatible_with(&DataType::String));
+        assert!(DataType::MessageEvent.is_compatible_with(&DataType::Any));
+        assert!(DataType::Any.is_compatible_with(&DataType::List(Box::new(DataType::Integer))));
+    }
+
+    #[test]
+    fn concrete_types_remain_strict() {
+        assert!(DataType::String.is_compatible_with(&DataType::String));
+        assert!(!DataType::String.is_compatible_with(&DataType::Integer));
+        assert!(!DataType::List(Box::new(DataType::String))
+            .is_compatible_with(&DataType::List(Box::new(DataType::Integer))));
     }
 }
