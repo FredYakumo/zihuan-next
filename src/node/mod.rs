@@ -369,6 +369,7 @@ impl NodeGraph {
                 let Some(inputs) = Self::collect_inputs_if_available(
                     node.as_ref(),
                     &data_pool,
+                    &output_producers,
                     &node_id,
                     self.inline_values.get(&node_id),
                 )? else {
@@ -426,6 +427,7 @@ impl NodeGraph {
             let Some(inputs) = Self::collect_inputs_if_available(
                 node.as_ref(),
                 &base_data_pool,
+                &output_producers,
                 node_id,
                 self.inline_values.get(node_id),
             )? else {
@@ -459,6 +461,7 @@ impl NodeGraph {
             self.run_event_producer(
                 &root_id,
                 &base_data_pool,
+                &output_producers,
                 &reachable_map,
                 &event_producer_set,
                 &ordered,
@@ -615,6 +618,7 @@ impl NodeGraph {
                 let Some(inputs) = Self::collect_inputs_if_available(
                     node.as_ref(),
                     &data_pool,
+                    &output_producers,
                     &node_id,
                     self.inline_values.get(&node_id),
                 )? else {
@@ -1133,12 +1137,15 @@ impl NodeGraph {
         for port in node.input_ports() {
             if let Some(source_map) = sources.and_then(|m| m.get(&port.name)) {
                 let (from_node_id, from_port) = source_map;
-                if let Some(from_outputs) = data_pool.get(from_node_id) {
-                    if let Some(value) = from_outputs.get(from_port) {
-                        inputs.insert(port.name.clone(), value.clone());
-                        continue;
-                    }
+                if let Some(value) = data_pool
+                    .get(from_node_id)
+                    .and_then(|from_outputs| from_outputs.get(from_port))
+                {
+                    inputs.insert(port.name.clone(), value.clone());
+                    continue;
                 }
+
+                return Ok(None);
             }
 
             if let Some(value) = inline_values.and_then(|m| m.get(&port.name)) {
@@ -1162,6 +1169,7 @@ impl NodeGraph {
     fn collect_inputs_if_available(
         node: &dyn Node,
         data_pool: &HashMap<String, DataValue>,
+        output_producers: &HashMap<String, String>,
         _node_id: &str,
         inline_values: Option<&HashMap<String, DataValue>>,
     ) -> Result<Option<HashMap<String, DataValue>>> {
@@ -1169,6 +1177,8 @@ impl NodeGraph {
         for port in node.input_ports() {
             if let Some(value) = data_pool.get(&port.name) {
                 inputs.insert(port.name.clone(), value.clone());
+            } else if output_producers.contains_key(&port.name) {
+                return Ok(None);
             } else if let Some(value) = inline_values.and_then(|m| m.get(&port.name)) {
                 inputs.insert(port.name.clone(), value.clone());
             } else if port.required {
@@ -1350,6 +1360,7 @@ impl NodeGraph {
         &mut self,
         node_id: &str,
         base_data_pool: &HashMap<String, DataValue>,
+        output_producers: &HashMap<String, String>,
         reachable_map: &HashMap<String, HashSet<String>>,
         event_producer_set: &HashSet<String>,
         ordered: &[String],
@@ -1370,6 +1381,7 @@ impl NodeGraph {
             let Some(inputs) = Self::collect_inputs_if_available(
                 node.as_ref(),
                 base_data_pool,
+                output_producers,
                 node_id,
                 self.inline_values.get(node_id),
             )? else {
@@ -1430,6 +1442,7 @@ impl NodeGraph {
                     let ran = self.run_event_producer(
                         ordered_id,
                         &event_pool,
+                        output_producers,
                         reachable_map,
                         event_producer_set,
                         ordered,
@@ -1452,6 +1465,7 @@ impl NodeGraph {
                 let Some(inputs) = Self::collect_inputs_if_available(
                     node.as_ref(),
                     &event_pool,
+                    output_producers,
                     ordered_id,
                     self.inline_values.get(ordered_id),
                 )? else {
@@ -1571,6 +1585,24 @@ mod tests {
         input_type: DataType,
     }
 
+    struct OptionalSeenSinkNode {
+        id: String,
+        name: String,
+        input_name: String,
+        input_type: DataType,
+    }
+
+    impl OptionalSeenSinkNode {
+        fn new(id: &str, input_name: &str, input_type: DataType) -> Self {
+            Self {
+                id: id.to_string(),
+                name: id.to_string(),
+                input_name: input_name.to_string(),
+                input_type,
+            }
+        }
+    }
+
     impl SeenSinkNode {
         fn new(id: &str, input_name: &str, input_type: DataType) -> Self {
             Self {
@@ -1593,6 +1625,29 @@ mod tests {
 
         fn input_ports(&self) -> Vec<Port> {
             vec![Port::new(self.input_name.clone(), self.input_type.clone())]
+        }
+
+        fn output_ports(&self) -> Vec<Port> {
+            vec![Port::new("seen", DataType::Boolean)]
+        }
+
+        fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+            self.validate_inputs(&inputs)?;
+            Ok(HashMap::from([("seen".to_string(), DataValue::Boolean(true))]))
+        }
+    }
+
+    impl Node for OptionalSeenSinkNode {
+        fn id(&self) -> &str {
+            &self.id
+        }
+
+        fn name(&self) -> &str {
+            &self.name
+        }
+
+        fn input_ports(&self) -> Vec<Port> {
+            vec![Port::new(self.input_name.clone(), self.input_type.clone()).optional()]
         }
 
         fn output_ports(&self) -> Vec<Port> {
@@ -1655,6 +1710,54 @@ mod tests {
         assert_success(&result);
         assert!(result.node_results.contains_key("gate"));
         assert!(!result.node_results.contains_key("sink"));
+    }
+
+    #[test]
+    fn switch_blocks_optional_downstream_in_edge_mode() {
+        let mut graph = NodeGraph::new();
+        graph.add_node(Box::new(StaticOutputNode::new("toggle", "enabled", DataValue::Boolean(false)))).unwrap();
+        graph.add_node(Box::new(StaticOutputNode::new("source", "value", DataValue::MessageList(Vec::new())))).unwrap();
+        graph.add_node(Box::new(SwitchNode::new("gate", "Gate"))).unwrap();
+        graph.add_node(Box::new(OptionalSeenSinkNode::new("preview", "messages", DataType::MessageList))).unwrap();
+        graph.set_edges(vec![
+            EdgeDefinition {
+                from_node_id: "toggle".to_string(),
+                from_port: "enabled".to_string(),
+                to_node_id: "gate".to_string(),
+                to_port: "enabled".to_string(),
+            },
+            EdgeDefinition {
+                from_node_id: "source".to_string(),
+                from_port: "value".to_string(),
+                to_node_id: "gate".to_string(),
+                to_port: "input".to_string(),
+            },
+            EdgeDefinition {
+                from_node_id: "gate".to_string(),
+                from_port: "output".to_string(),
+                to_node_id: "preview".to_string(),
+                to_port: "messages".to_string(),
+            },
+        ]);
+
+        let result = graph.execute_and_capture_results();
+        assert_success(&result);
+        assert!(result.node_results.contains_key("gate"));
+        assert!(!result.node_results.contains_key("preview"));
+    }
+
+    #[test]
+    fn switch_blocks_optional_downstream_in_implicit_mode() {
+        let mut graph = NodeGraph::new();
+        graph.add_node(Box::new(StaticOutputNode::new("toggle", "enabled", DataValue::Boolean(false)))).unwrap();
+        graph.add_node(Box::new(StaticOutputNode::new("source", "input", DataValue::MessageList(Vec::new())))).unwrap();
+        graph.add_node(Box::new(SwitchNode::new("gate", "Gate"))).unwrap();
+        graph.add_node(Box::new(OptionalSeenSinkNode::new("preview", "output", DataType::MessageList))).unwrap();
+
+        let result = graph.execute_and_capture_results();
+        assert_success(&result);
+        assert!(result.node_results.contains_key("gate"));
+        assert!(!result.node_results.contains_key("preview"));
     }
 
     #[test]
