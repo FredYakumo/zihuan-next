@@ -829,9 +829,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
             let filtered: Vec<NodeTypeVm> = all_node_types_clone
                 .iter()
                 .filter(|n| {
-                    let name_match = search_text.is_empty() 
-                        || n.display_name.to_lowercase().contains(&search_text) 
-                        || n.description.to_lowercase().contains(&search_text);
+                    let name_match = matches_node_type_search(n, &search_text);
                     let cat_match = category.is_empty() || n.category == category;
                     name_match && cat_match
                 })
@@ -1553,6 +1551,21 @@ fn register_cjk_fonts() {
         collection.append_fallbacks(hira, ids.iter().copied());
         collection.append_fallbacks(kana, ids.iter().copied());
     }
+}
+
+fn matches_node_type_search(node_type: &NodeTypeVm, search_text: &str) -> bool {
+    if search_text.is_empty() {
+        return true;
+    }
+
+    [
+        node_type.type_id.as_str(),
+        node_type.display_name.as_str(),
+        node_type.category.as_str(),
+        node_type.description.as_str(),
+    ]
+    .into_iter()
+    .any(|field| field.to_lowercase().contains(search_text))
 }
 
 fn apply_graph_to_ui(
