@@ -1430,7 +1430,7 @@ export component NodeSelector inherits Rectangle {
                     }
                     LineEdit {
                          height: 35px;
-                         placeholder-text: "输入节点名称...";
+                        placeholder-text: "输入名称、类型、分类或描述...";
                          edited(text) => {
                              root.current_search = text;
                              root.filter(root.current_search, root.current_category);
