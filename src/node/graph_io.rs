@@ -53,8 +53,32 @@ pub struct GraphSize {
 
 pub fn load_graph_definition_from_json(path: impl AsRef<Path>) -> Result<NodeGraphDefinition> {
     let content = fs::read_to_string(path.as_ref())?;
-    let graph: NodeGraphDefinition = serde_json::from_str(&content)?;
+    let mut graph: NodeGraphDefinition = serde_json::from_str(&content)?;
+    refresh_port_types(&mut graph);
     Ok(graph)
+}
+
+/// Refresh port `data_type` fields in a loaded graph by looking up the canonical types from
+/// the node registry. This migrates graphs saved with stale port types (e.g. `String` instead
+/// of `Password`) without requiring a manual file edit.
+pub fn refresh_port_types(graph: &mut NodeGraphDefinition) {
+    use crate::node::registry::NODE_REGISTRY;
+    for node in &mut graph.nodes {
+        if let Some((canonical_inputs, canonical_outputs)) =
+            NODE_REGISTRY.get_node_ports(&node.node_type)
+        {
+            for port in &mut node.input_ports {
+                if let Some(canonical) = canonical_inputs.iter().find(|p| p.name == port.name) {
+                    port.data_type = canonical.data_type.clone();
+                }
+            }
+            for port in &mut node.output_ports {
+                if let Some(canonical) = canonical_outputs.iter().find(|p| p.name == port.name) {
+                    port.data_type = canonical.data_type.clone();
+                }
+            }
+        }
+    }
 }
 
 pub fn save_graph_definition_to_json(
