@@ -1,4 +1,4 @@
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use log::{debug, error, info, warn};
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 
@@ -6,7 +6,9 @@ use super::event;
 use super::models::{MessageEvent, MessageType, Profile, RawMessageEvent};
 use crate::util::url_utils::extract_host;
 use crate::error::Result;
+use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::sync::Mutex as TokioMutex;
 
 /// Trait for brain agents that handle event processing
@@ -52,6 +54,9 @@ impl BotAdapterConfig {
     }
 }
 
+/// Pending action response channels keyed by echo ID.
+pub type PendingActions = Arc<TokioMutex<HashMap<String, oneshot::Sender<serde_json::Value>>>>;
+
 /// BotAdapter connects to the QQ bot server via WebSocket and processes events
 pub struct BotAdapter {
     url: String,
@@ -59,6 +64,10 @@ pub struct BotAdapter {
     bot_profile: Option<Profile>,
     brain_agent: Option<AgentBox>,
     event_handlers: Vec<event::EventHandler>,
+    /// Sender half for outbound WebSocket actions (set once the connection is live).
+    pub action_tx: Option<mpsc::UnboundedSender<String>>,
+    /// Echo → oneshot channel map for correlating action responses.
+    pub pending_actions: PendingActions,
 }
 
 /// Shared handle for BotAdapter that allows mutation inside async tasks
@@ -75,6 +84,8 @@ impl BotAdapter {
             }),
             brain_agent: config.brain_agent,
             event_handlers: Vec::new(),
+            action_tx: None,
+            pending_actions: Arc::new(TokioMutex::new(HashMap::new())),
         }
     }
 
@@ -93,6 +104,26 @@ impl BotAdapter {
 
     pub fn get_bot_profile(&self) -> Option<&Profile> {
         self.bot_profile.as_ref()
+    }
+
+    /// Derive an HTTP base URL from the WebSocket URL (ws→http, wss→https, path stripped)
+    pub fn get_http_base_url(&self) -> String {
+        let url = &self.url;
+        if url.starts_with("wss://") {
+            let rest = &url["wss://".len()..];
+            let host_port = rest.split('/').next().unwrap_or(rest);
+            format!("https://{}", host_port)
+        } else if url.starts_with("ws://") {
+            let rest = &url["ws://".len()..];
+            let host_port = rest.split('/').next().unwrap_or(rest);
+            format!("http://{}", host_port)
+        } else {
+            url.clone()
+        }
+    }
+
+    pub fn get_token(&self) -> &str {
+        &self.token
     }
 
     pub fn get_brain_agent(&self) -> Option<&AgentBox> {
@@ -135,7 +166,23 @@ impl BotAdapter {
         let (ws_stream, _) = connect_async(request).await?;
         info!("Connected to the qq bot server successfully.");
 
-        let (mut _write, mut read) = ws_stream.split();
+        let (mut write, mut read) = ws_stream.split();
+
+        // Wire up the outbound action channel and store its sender in the adapter.
+        let (action_tx, mut action_rx) = mpsc::unbounded_channel::<String>();
+        {
+            let mut guard = adapter.lock().await;
+            guard.action_tx = Some(action_tx);
+        }
+
+        // Spawn a task that forwards queued actions to the WebSocket write sink.
+        tokio::spawn(async move {
+            while let Some(msg) = action_rx.recv().await {
+                if write.send(WsMessage::Text(msg)).await.is_err() {
+                    break;
+                }
+            }
+        });
 
         // Process incoming messages
         while let Some(msg_result) = read.next().await {
@@ -184,6 +231,20 @@ impl BotAdapter {
                 return;
             }
         };
+
+        // Check if this is an action response (has "echo" field).
+        // Dispatch it to the waiting oneshot channel and return early.
+        if let Some(echo) = message_json.get("echo").and_then(|v| v.as_str()) {
+            let pending = {
+                let guard = adapter.lock().await;
+                guard.pending_actions.clone()
+            };
+            let mut map = pending.lock().await;
+            if let Some(tx) = map.remove(echo) {
+                let _ = tx.send(message_json);
+                return;
+            }
+        }
 
         // Check if this is a message event (has message_type field)
         if message_json.get("message_type").is_none() {

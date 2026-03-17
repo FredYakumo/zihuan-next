@@ -301,6 +301,10 @@ component NodeItem inherits Rectangle {
     callback message_list_move_down(string, int);
     callback message_list_cycle_role(string, int);
     callback message_list_set_content(string, int, string);
+    callback qq_message_list_add(string);
+    callback qq_message_list_insert(string, int);
+    callback qq_message_list_cycle_type(string, int);
+    callback qq_message_list_set_content(string, int, string);
     callback node_resized(float, float);
     callback node_resize_finished(float, float);
 
@@ -690,13 +694,256 @@ component NodeItem inherits Rectangle {
         }
     }
 
+    // Special UI for qq_message_list_data nodes: table-style editor
+    if root.node_type == "qq_message_list_data": Rectangle {
+        x: (grid_size * 0.5) * 1px;
+        y: (grid_size * 1.1) * 1px;
+        width: root.width - (grid_size * 1.0) * 1px;
+        height: min((grid_size * 7.0) * 1px, root.height - (grid_size * 2.0) * 1px);
+        background: transparent;
+
+        VerticalLayout {
+            padding: 4px;
+            spacing: 4px;
+
+            // Header row with add button
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+
+                CjkText {
+                    text: "messages";
+                    color: AppTheme.text-secondary;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+
+                Rectangle {
+                    width: 18px;
+                    height: 18px;
+                    background: AppTheme.primary;
+                    border-radius: 4px;
+
+                    CjkText {
+                        text: "+";
+                        color: AppTheme.text-on-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        font-size: 12px;
+                        font-weight: 700;
+                    }
+
+                    TouchArea {
+                        clicked => {
+                            root.qq_message_list_add(root.node_id);
+                        }
+                    }
+                }
+            }
+
+            // Table header
+            Rectangle {
+                height: 18px;
+                background: AppTheme.node-bg-pressed;
+                border-radius: 4px;
+
+                HorizontalLayout {
+                    padding: 4px;
+                    spacing: 6px;
+
+                    CjkText {
+                        text: "type";
+                        color: AppTheme.text-muted;
+                        font-size: 9px;
+                        width: 60px;
+                    }
+
+                    CjkText {
+                        text: "value";
+                        color: AppTheme.text-muted;
+                        font-size: 9px;
+                        horizontal-stretch: 1;
+                    }
+                }
+            }
+
+            ScrollView {
+                height: min((grid_size * 5.0) * 1px, root.height - (grid_size * 3.0) * 1px);
+
+                VerticalBox {
+                    spacing: 4px;
+                    padding: 2px;
+
+                    for msg[idx] in root.message_list: Rectangle {
+                        height: max((grid_size * 1.6) * 1px, 34px);
+                        border-radius: 6px;
+                        border-width: 1px;
+                        border-color: AppTheme.border;
+                        background: AppTheme.node-bg;
+
+                        HorizontalLayout {
+                            padding: 4px;
+                            spacing: 6px;
+
+                            // Type cell (click to cycle: text → at → reply)
+                            Rectangle {
+                                width: 60px;
+                                height: parent.height - 8px;
+                                border-radius: 4px;
+                                background: msg.role == "text" ? #3498DB :
+                                           msg.role == "at" ? #27AE60 :
+                                           #9B59B6;
+                                border-width: 1px;
+                                border-color: msg.role == "text" ? #2980B9 :
+                                             msg.role == "at" ? #229954 :
+                                             #8E44AD;
+
+                                CjkText {
+                                    text: msg.role == "text" ? "文本" :
+                                          msg.role == "at" ? "@目标" :
+                                          "引用";
+                                    color: #FFFFFF;
+                                    font-size: 9px;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+
+                                TouchArea {
+                                    clicked => {
+                                        root.qq_message_list_cycle_type(root.node_id, idx);
+                                    }
+                                }
+                            }
+
+                            // Value cell (editable)
+                            Rectangle {
+                                height: parent.height - 8px;
+                                border-radius: 4px;
+                                background: AppTheme.node-bg-pressed;
+                                border-width: 1px;
+                                border-color: AppTheme.border;
+                                horizontal-stretch: 1;
+
+                                HorizontalLayout {
+                                    padding: 2px;
+                                    spacing: 4px;
+
+                                    LineEdit {
+                                        text: msg.content;
+                                        placeholder-text: msg.role == "text" ? "输入文本" :
+                                                          msg.role == "at" ? "目标QQ号" : "消息ID";
+                                        height: parent.height - 4px;
+                                        horizontal-stretch: 1;
+                                        edited(text) => {
+                                            root.qq_message_list_set_content(root.node_id, idx, text);
+                                        }
+                                    }
+
+                                    // Row actions
+                                    HorizontalLayout {
+                                        spacing: 2px;
+
+                                        Rectangle {
+                                            width: 16px;
+                                            height: 16px;
+                                            border-radius: 3px;
+                                            background: AppTheme.primary-muted;
+
+                                            CjkText {
+                                                text: "↑";
+                                                color: AppTheme.text-primary;
+                                                font-size: 9px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.message_list_move_up(root.node_id, idx);
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            width: 16px;
+                                            height: 16px;
+                                            border-radius: 3px;
+                                            background: AppTheme.primary-muted;
+
+                                            CjkText {
+                                                text: "↓";
+                                                color: AppTheme.text-primary;
+                                                font-size: 9px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.message_list_move_down(root.node_id, idx);
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            width: 16px;
+                                            height: 16px;
+                                            border-radius: 3px;
+                                            background: AppTheme.primary-muted;
+
+                                            CjkText {
+                                                text: "+";
+                                                color: AppTheme.text-primary;
+                                                font-size: 9px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.qq_message_list_insert(root.node_id, idx);
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            width: 16px;
+                                            height: 16px;
+                                            border-radius: 3px;
+                                            background: AppTheme.danger-bg;
+
+                                            CjkText {
+                                                text: "×";
+                                                color: AppTheme.text-primary;
+                                                font-size: 10px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.message_list_delete(root.node_id, idx);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     for port[i] in input_ports: Rectangle {
         x: (grid_size * 0.2) * 1px;
         y: (grid_size * header_rows + i * grid_size + grid_size * 0.2) * 1px;
         width: (grid_size * 0.6) * 1px;
         height: (grid_size * 0.6) * 1px;
         border-radius: (grid_size * 0.3) * 1px;
-        visible: root.node_type != "message_list_data";
+        visible: root.node_type != "message_list_data" && root.node_type != "qq_message_list_data";
         background: (port.is_connected || port.has_value) ? AppTheme.primary-muted : (port.is_required ? AppTheme.danger-bg : AppTheme.node-port-bg);
         border-width: 1px;
         border-color: (port.is_connected || port.has_value) ? AppTheme.primary : (port.is_required ? AppTheme.danger : AppTheme.node-port-border);
@@ -715,7 +962,7 @@ component NodeItem inherits Rectangle {
         y: (grid_size * header_rows + i * grid_size) * 1px;
         width: root.width - (grid_size * 2.5) * 1px;
         height: (grid_size) * 1px;
-        visible: root.node_type != "message_list_data";
+        visible: root.node_type != "message_list_data" && root.node_type != "qq_message_list_data";
 
         HorizontalLayout {
             alignment: start;
@@ -892,6 +1139,10 @@ component GraphCanvas inherits Rectangle {
     callback message_list_move_down(string, int);
     callback message_list_cycle_role(string, int);
     callback message_list_set_content(string, int, string);
+    callback qq_message_list_add(string);
+    callback qq_message_list_insert(string, int);
+    callback qq_message_list_cycle_type(string, int);
+    callback qq_message_list_set_content(string, int, string);
     callback node_resized(string, float, float);
     callback node_resize_finished(string, float, float);
 
@@ -1145,6 +1396,22 @@ component GraphCanvas inherits Rectangle {
 
         message_list_set_content(node_id, index, value) => {
             root.message_list_set_content(node_id, index, value);
+        }
+
+        qq_message_list_add(node_id) => {
+            root.qq_message_list_add(node_id);
+        }
+
+        qq_message_list_insert(node_id, index) => {
+            root.qq_message_list_insert(node_id, index);
+        }
+
+        qq_message_list_cycle_type(node_id, index) => {
+            root.qq_message_list_cycle_type(node_id, index);
+        }
+
+        qq_message_list_set_content(node_id, index, value) => {
+            root.qq_message_list_set_content(node_id, index, value);
         }
 
         node_resized(width, height) => {
@@ -1682,6 +1949,10 @@ export component NodeGraphWindow inherits Window {
     callback message_list_move_down(string, int);
     callback message_list_cycle_role(string, int);
     callback message_list_set_content(string, int, string);
+    callback qq_message_list_add(string);
+    callback qq_message_list_insert(string, int);
+    callback qq_message_list_cycle_type(string, int);
+    callback qq_message_list_set_content(string, int, string);
     callback node_resized(string, float, float);
     callback node_resize_finished(string, float, float);
 
@@ -1853,6 +2124,22 @@ export component NodeGraphWindow inherits Window {
 
                 message_list_set_content(node_id, index, value) => {
                     root.message_list_set_content(node_id, index, value);
+                }
+
+                qq_message_list_add(node_id) => {
+                    root.qq_message_list_add(node_id);
+                }
+
+                qq_message_list_insert(node_id, index) => {
+                    root.qq_message_list_insert(node_id, index);
+                }
+
+                qq_message_list_cycle_type(node_id, index) => {
+                    root.qq_message_list_cycle_type(node_id, index);
+                }
+
+                qq_message_list_set_content(node_id, index, value) => {
+                    root.qq_message_list_set_content(node_id, index, value);
                 }
 
                 node_resized(node_id, width, height) => {
