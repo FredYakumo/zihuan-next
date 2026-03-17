@@ -130,7 +130,7 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util_nodes::{ConditionalNode, JsonParserNode, MessageListDataNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StringDataNode, SwitchNode};
+    use crate::node::util_nodes::{ArrayGetNode, ConditionalNode, JsonParserNode, MessageListDataNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StringDataNode, SwitchNode};
     use crate::llm::llm_api::LLMAPINode;
     use crate::bot_adapter::node_impl::{BotAdapterNode, IsAtMeNode, SendFriendMessageNode, SendGroupMessageNode};
     use crate::bot_adapter::extract_message_from_event::ExtractMessageFromEventNode;
@@ -152,6 +152,14 @@ pub fn init_node_registry() -> Result<()> {
         "工具",
         "当 enabled 为 true 时透传输入，否则阻断后续数据流",
         SwitchNode
+    );
+
+    register_node!(
+        "array_get",
+        "列表取元素",
+        "工具",
+        "从列表中按下标取元素，支持负数下标（-1为最后一个）",
+        ArrayGetNode
     );
 
     register_node!(
