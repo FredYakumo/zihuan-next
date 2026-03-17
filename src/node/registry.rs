@@ -67,6 +67,15 @@ impl NodeRegistry {
         Ok(factory(id.into(), name.into()))
     }
 
+    /// Return the canonical input and output ports for a registered node type.
+    /// Returns `None` if the type is not registered.
+    pub fn get_node_ports(&self, type_id: &str) -> Option<(Vec<crate::node::Port>, Vec<crate::node::Port>)> {
+        let factories = self.factories.read().unwrap();
+        let factory = factories.get(type_id)?;
+        let node = factory("__probe__".to_string(), "__probe__".to_string());
+        Some((node.input_ports(), node.output_ports()))
+    }
+
     /// Get all registered node types
     pub fn get_all_types(&self) -> Vec<NodeTypeMetadata> {
         self.metadata.read().unwrap().values().cloned().collect()
