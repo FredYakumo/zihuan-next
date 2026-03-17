@@ -130,9 +130,9 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util_nodes::{ConditionalNode, JsonParserNode, MessageListDataNode, PreviewMessageListNode, PreviewStringNode, StringDataNode, SwitchNode};
+    use crate::node::util_nodes::{ConditionalNode, JsonParserNode, MessageListDataNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StringDataNode, SwitchNode};
     use crate::llm::llm_api::LLMAPINode;
-    use crate::bot_adapter::node_impl::{BotAdapterNode, MessageSenderNode, IsAtMeNode};
+    use crate::bot_adapter::node_impl::{BotAdapterNode, IsAtMeNode, SendFriendMessageNode, SendGroupMessageNode};
     use crate::bot_adapter::extract_message_from_event::ExtractMessageFromEventNode;
     use crate::node::database_nodes::{RedisNode, MySqlNode};
     use crate::node::message_nodes::{MessageMySQLPersistenceNode, MessageCacheNode};
@@ -194,6 +194,14 @@ pub fn init_node_registry() -> Result<()> {
         MessageListDataNode
     );
 
+    register_node!(
+        "qq_message_list_data",
+        "QQMessageList Data",
+        "数据",
+        "QQ消息列表数据源，通过UI容器编辑器提供QQMessageList",
+        QQMessageListDataNode
+    );
+
     // LLM nodes
     register_node!(
         "llm_api",
@@ -213,11 +221,19 @@ pub fn init_node_registry() -> Result<()> {
     );
 
     register_node!(
-        "message_sender",
-        "消息发送器",
+        "send_friend_message",
+        "发送好友消息",
         "Bot适配器",
-        "向QQ服务器发送消息",
-        MessageSenderNode
+        "向QQ好友发送消息",
+        SendFriendMessageNode
+    );
+
+    register_node!(
+        "send_group_message",
+        "发送群组消息",
+        "Bot适配器",
+        "向QQ群组发送消息",
+        SendGroupMessageNode
     );
 
     register_node!(
@@ -376,7 +392,18 @@ fn json_to_data_value(json: &Value, target_type: &DataType) -> Option<DataValue>
             }
             Some(DataValue::MessageList(msgs))
         }
-        
+
+        // QQMessageList inline value is stored as a JSON array of QQ message objects using the
+        // bot adapter tagged enum format: [{"type":"text","data":{"text":"..."}}, ...]
+        (Value::Array(items), DataType::QQMessageList) => {
+            use crate::bot_adapter::models::message::Message as QQMessage;
+            let msgs: Vec<QQMessage> = items
+                .iter()
+                .filter_map(|item| serde_json::from_value::<QQMessage>(item.clone()).ok())
+                .collect();
+            Some(DataValue::QQMessageList(msgs))
+        }
+
         _ => None,
     }
 }

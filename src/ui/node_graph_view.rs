@@ -1499,6 +1499,138 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         }
     });
 
+    // --- QQMessageList inline editor callbacks ---
+
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let ui_handle = ui.as_weak();
+    ui.on_qq_message_list_add(move |node_id: SharedString| {
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.get_mut(active_index) {
+            let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
+            items.push(serde_json::json!({"type": "text", "data": {"text": ""}}));
+            set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
+            tab.is_dirty = true;
+            if let Some(ui) = ui_handle.upgrade() {
+                apply_graph_to_ui(
+                    &ui,
+                    &tab.graph,
+                    Some(tab_display_title(tab)),
+                    &tab.selection,
+                    &tab.inline_inputs,
+                );
+                update_tabs_ui(&ui, &tabs_guard, active_index);
+            }
+        }
+    });
+
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let ui_handle = ui.as_weak();
+    ui.on_qq_message_list_insert(move |node_id: SharedString, index: i32| {
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.get_mut(active_index) {
+            let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
+            let len = items.len();
+            let mut insert_at = if index < 0 { 0 } else { (index as usize).saturating_add(1) };
+            if insert_at > len {
+                insert_at = len;
+            }
+            items.insert(insert_at, serde_json::json!({"type": "text", "data": {"text": ""}}));
+            set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
+            tab.is_dirty = true;
+            if let Some(ui) = ui_handle.upgrade() {
+                apply_graph_to_ui(
+                    &ui,
+                    &tab.graph,
+                    Some(tab_display_title(tab)),
+                    &tab.selection,
+                    &tab.inline_inputs,
+                );
+                update_tabs_ui(&ui, &tabs_guard, active_index);
+            }
+        }
+    });
+
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let ui_handle = ui.as_weak();
+    ui.on_qq_message_list_cycle_type(move |node_id: SharedString, index: i32| {
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.get_mut(active_index) {
+            let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
+            if index >= 0 {
+                let idx = index as usize;
+                if let Some(serde_json::Value::Object(map)) = items.get_mut(idx) {
+                    let current = map.get("type").and_then(|v| v.as_str()).unwrap_or("text");
+                    let (next_type, next_data) = match current {
+                        "text"  => ("at",    serde_json::json!({"target": ""})),
+                        "at"    => ("reply",  serde_json::json!({"id": 0})),
+                        _       => ("text",  serde_json::json!({"text": ""})),
+                    };
+                    map.insert("type".to_string(), serde_json::Value::String(next_type.to_string()));
+                    map.insert("data".to_string(), next_data);
+                }
+            }
+            set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
+            tab.is_dirty = true;
+            if let Some(ui) = ui_handle.upgrade() {
+                apply_graph_to_ui(
+                    &ui,
+                    &tab.graph,
+                    Some(tab_display_title(tab)),
+                    &tab.selection,
+                    &tab.inline_inputs,
+                );
+                update_tabs_ui(&ui, &tabs_guard, active_index);
+            }
+        }
+    });
+
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let ui_handle = ui.as_weak();
+    ui.on_qq_message_list_set_content(move |node_id: SharedString, index: i32, value: SharedString| {
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.get_mut(active_index) {
+            let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
+            if index >= 0 {
+                let idx = index as usize;
+                if let Some(serde_json::Value::Object(map)) = items.get_mut(idx) {
+                    let msg_type = map.get("type").and_then(|v| v.as_str()).unwrap_or("text").to_string();
+                    let data_obj = map.entry("data").or_insert_with(|| serde_json::json!({}));
+                    if let serde_json::Value::Object(data) = data_obj {
+                        match msg_type.as_str() {
+                            "text"  => { data.insert("text".to_string(),   serde_json::Value::String(value.to_string())); }
+                            "at"    => { data.insert("target".to_string(), serde_json::Value::String(value.to_string())); }
+                            "reply" => {
+                                let id: i64 = value.as_str().parse().unwrap_or(0);
+                                data.insert("id".to_string(), serde_json::json!(id));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
+            tab.is_dirty = true;
+            if let Some(ui) = ui_handle.upgrade() {
+                apply_graph_to_ui(
+                    &ui,
+                    &tab.graph,
+                    Some(tab_display_title(tab)),
+                    &tab.selection,
+                    &tab.inline_inputs,
+                );
+                update_tabs_ui(&ui, &tabs_guard, active_index);
+            }
+        }
+    });
+
     let run_result = ui.run();
     if run_result.is_ok() {
         let state = WindowState::from_window(&ui.window());
@@ -1639,6 +1771,13 @@ fn apply_graph_to_ui(
                             };
                             (String::new(), false, has_val)
                         }
+                        crate::node::DataType::QQMessageList => {
+                            let has_val = match inline_inputs.get(&key) {
+                                Some(InlinePortValue::Json(serde_json::Value::Array(arr))) => !arr.is_empty(),
+                                _ => false,
+                            };
+                            (String::new(), false, has_val)
+                        }
                         _ => (String::new(), false, false),
                     };
                     PortVm {
@@ -1715,6 +1854,45 @@ fn apply_graph_to_ui(
                                 .to_string();
                             MessageItemVm {
                                 role: role.into(),
+                                content: content.into(),
+                            }
+                        })
+                        .collect(),
+                    _ => Vec::new(),
+                }
+            } else if node.node_type == "qq_message_list_data" {
+                let key = inline_port_key(&node.id, "messages");
+                match inline_inputs.get(&key) {
+                    Some(InlinePortValue::Json(serde_json::Value::Array(items))) => items
+                        .iter()
+                        .filter_map(|v| v.as_object())
+                        .map(|m| {
+                            let msg_type = m
+                                .get("type")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("text")
+                                .to_string();
+                            let data = m.get("data").and_then(|v| v.as_object());
+                            let content = data
+                                .map(|d| match msg_type.as_str() {
+                                    "text" => d
+                                        .get("text")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    "at" => d
+                                        .get("target")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    _ => d
+                                        .get("id")
+                                        .map(|v| v.to_string())
+                                        .unwrap_or_default(),
+                                })
+                                .unwrap_or_default();
+                            MessageItemVm {
+                                role: msg_type.into(),
                                 content: content.into(),
                             }
                         })

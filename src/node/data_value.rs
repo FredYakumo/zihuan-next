@@ -35,6 +35,7 @@ pub enum DataType {
     Binary,
     List(Box<DataType>),
     MessageList,
+    QQMessageList,
     MessageEvent,
     MessageProp,
     FunctionTools,
@@ -67,6 +68,7 @@ impl fmt::Display for DataType {
             DataType::Binary => write!(f, "Binary"),
             DataType::List(inner) => write!(f, "List<{}>", inner),
             DataType::MessageList => write!(f, "MessageList"),
+            DataType::QQMessageList => write!(f, "QQMessageList"),
             DataType::MessageEvent => write!(f, "MessageEvent"),
             DataType::MessageProp => write!(f, "MessageProp"),
             DataType::FunctionTools => write!(f, "FunctionTools"),
@@ -90,6 +92,7 @@ pub enum DataValue {
     Binary(Vec<u8>),
     List(Vec<DataValue>),
     MessageList(Vec<Message>),
+    QQMessageList(Vec<crate::bot_adapter::models::message::Message>),
     MessageEvent(MessageEvent),
     MessageProp(MessageProp),
     FunctionTools(Vec<Arc<dyn FunctionTool>>),
@@ -116,6 +119,7 @@ impl DataValue {
                 }
             }
             DataValue::MessageList(_) => DataType::MessageList,
+            DataValue::QQMessageList(_) => DataType::QQMessageList,
             DataValue::MessageEvent(_) => DataType::MessageEvent,
             DataValue::MessageProp(_) => DataType::MessageProp,
             DataValue::FunctionTools(_) => DataType::FunctionTools,
@@ -136,6 +140,9 @@ impl DataValue {
             DataValue::Binary(bytes) => Value::Array(bytes.iter().map(|b| Value::Number((*b).into())).collect()),
             DataValue::List(items) => {
                 Value::Array(items.iter().map(|item| item.to_json()).collect())
+            }
+            DataValue::QQMessageList(messages) => {
+                Value::Array(messages.iter().map(|m| serde_json::to_value(m).unwrap_or(Value::Null)).collect())
             }
             DataValue::MessageList(messages) => {
                 let msgs: Vec<Value> = messages.iter().map(|m| {
@@ -203,6 +210,7 @@ impl fmt::Debug for DataValue {
             DataValue::Binary(value) => f.debug_tuple("Binary").field(value).finish(),
             DataValue::List(value) => f.debug_tuple("List").field(value).finish(),
             DataValue::MessageList(value) => f.debug_tuple("MessageList").field(value).finish(),
+            DataValue::QQMessageList(value) => f.debug_tuple("QQMessageList").field(value).finish(),
             DataValue::MessageEvent(value) => f.debug_tuple("MessageEvent").field(value).finish(),
             DataValue::MessageProp(value) => f.debug_tuple("MessageProp").field(value).finish(),
             DataValue::FunctionTools(value) => f.debug_tuple("FunctionTools").field(value).finish(),

@@ -150,6 +150,11 @@ pub struct MessageListDataNode {
     name: String,
 }
 
+pub struct QQMessageListDataNode {
+    id: String,
+    name: String,
+}
+
 impl JsonParserNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
@@ -187,6 +192,15 @@ impl PreviewMessageListNode {
 }
 
 impl MessageListDataNode {
+    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+        }
+    }
+}
+
+impl QQMessageListDataNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -370,6 +384,45 @@ impl Node for MessageListDataNode {
         let value = match inputs.get("messages") {
             Some(DataValue::MessageList(list)) => DataValue::MessageList(list.clone()),
             _ => DataValue::MessageList(Vec::new()),
+        };
+        outputs.insert("messages".to_string(), value);
+
+        self.validate_outputs(&outputs)?;
+        Ok(outputs)
+    }
+}
+
+impl Node for QQMessageListDataNode {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("QQMessageList data source with inline UI editor")
+    }
+
+    // We intentionally keep a QQMessageList *input* port so inline_values can persist into the
+    // graph JSON and be parsed into DataValue::QQMessageList by the registry.
+    // The port is optional to avoid validation errors when the node is created before editing.
+    node_input![
+        port! { name = "messages", ty = QQMessageList, desc = "QQMessageList provided by UI inline editor", optional },
+    ];
+
+    node_output![
+        port! { name = "messages", ty = QQMessageList, desc = "Output QQMessageList from UI data source" },
+    ];
+
+    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+        self.validate_inputs(&inputs)?;
+
+        let mut outputs = HashMap::new();
+        let value = match inputs.get("messages") {
+            Some(DataValue::QQMessageList(list)) => DataValue::QQMessageList(list.clone()),
+            _ => DataValue::QQMessageList(Vec::new()),
         };
         outputs.insert("messages".to_string(), value);
 

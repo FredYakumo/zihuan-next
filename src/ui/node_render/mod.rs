@@ -2,6 +2,7 @@ pub mod preview_string;
 pub mod string_data;
 pub mod preview_message_list;
 pub mod message_list_data;
+pub mod qq_message_list_data;
 
 use crate::node::graph_io::NodeGraphDefinition;
 use std::collections::HashMap;
@@ -49,6 +50,10 @@ pub fn get_node_preview_text(
     if message_list_data::MessageListDataRenderer::handles_node_type(node_type) {
         return message_list_data::MessageListDataRenderer::get_preview_text(node_id, graph, inline_inputs);
     }
+
+    if qq_message_list_data::QQMessageListDataRenderer::handles_node_type(node_type) {
+        return qq_message_list_data::QQMessageListDataRenderer::get_preview_text(node_id, graph, inline_inputs);
+    }
     
     String::new()
 }
@@ -59,6 +64,7 @@ pub fn has_custom_rendering(node_type: &str) -> bool {
         || string_data::StringDataRenderer::handles_node_type(node_type)
         || preview_message_list::PreviewMessageListRenderer::handles_node_type(node_type)
         || message_list_data::MessageListDataRenderer::handles_node_type(node_type)
+        || qq_message_list_data::QQMessageListDataRenderer::handles_node_type(node_type)
 }
 
 pub fn inline_port_key(node_id: &str, port_name: &str) -> String {
