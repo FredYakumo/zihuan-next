@@ -1,4 +1,4 @@
-import { HorizontalBox, VerticalBox, ScrollView, LineEdit, CheckBox, Palette } from "std-widgets.slint";
+import { HorizontalBox, VerticalBox, ScrollView, LineEdit, CheckBox, ComboBox, Palette } from "std-widgets.slint";
 import { AppTheme } from "theme.slint";
 
 export struct MessageItemVm {
@@ -23,6 +23,7 @@ export struct NodeVm {
     preview_text: string,
     node_type: string,
     string_data_text: string,
+    message_event_filter_type: string,
     message_list: [MessageItemVm],
     x: float,
     y: float,
@@ -274,6 +275,7 @@ component NodeItem inherits Rectangle {
     in property <string> preview_text;
     in property <string> node_type;
     in property <string> string_data_text;
+    in property <string> message_event_filter_type;
     in property <[MessageItemVm]> message_list;
     in property <float> x_pos;
     in property <float> y_pos;
@@ -943,7 +945,8 @@ component NodeItem inherits Rectangle {
         width: (grid_size * 0.6) * 1px;
         height: (grid_size * 0.6) * 1px;
         border-radius: (grid_size * 0.3) * 1px;
-        visible: root.node_type != "message_list_data" && root.node_type != "qq_message_list_data";
+        visible: (root.node_type != "message_list_data" && root.node_type != "qq_message_list_data") &&
+                 !(root.node_type == "message_event_type_filter" && port.name == "filter_type");
         background: (port.is_connected || port.has_value) ? AppTheme.primary-muted : (port.is_required ? AppTheme.danger-bg : AppTheme.node-port-bg);
         border-width: 1px;
         border-color: (port.is_connected || port.has_value) ? AppTheme.primary : (port.is_required ? AppTheme.danger : AppTheme.node-port-border);
@@ -962,7 +965,8 @@ component NodeItem inherits Rectangle {
         y: (grid_size * header_rows + i * grid_size) * 1px;
         width: root.width - (grid_size * 2.5) * 1px;
         height: (grid_size) * 1px;
-        visible: root.node_type != "message_list_data" && root.node_type != "qq_message_list_data";
+        visible: (root.node_type != "message_list_data" && root.node_type != "qq_message_list_data") &&
+                 !(root.node_type == "message_event_type_filter" && port.name == "filter_type");
 
         HorizontalLayout {
             alignment: start;
@@ -1026,6 +1030,42 @@ component NodeItem inherits Rectangle {
                 placeholder-text: "输入字符串";
                 edited(text) => {
                     root.inline_port_text_changed(root.node_id, "text", text);
+                }
+            }
+        }
+    }
+
+    // Special UI for message_event_type_filter nodes: ComboBox for selecting private/group
+    if root.node_type == "message_event_type_filter": Rectangle {
+        x: (grid_size) * 1px;
+        y: (grid_size * (header_rows + 1)) * 1px;
+        width: root.width - (grid_size * 2.5) * 1px;
+        height: (grid_size) * 1px;
+
+        HorizontalLayout {
+            alignment: start;
+            spacing: 5px;
+
+            CjkText {
+                text: "消息类型";
+                color: AppTheme.text-secondary;
+                font-size: 10px;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 0;
+            }
+
+            ComboBox {
+                width: min(parent.width * 0.65, 120px);
+                height: (grid_size * 0.85) * 1px;
+                model: ["好友消息", "群组消息"];
+                current-index: root.message_event_filter_type == "group" ? 1 : 0;
+                selected(value) => {
+                    root.inline_port_text_changed(
+                        root.node_id,
+                        "filter_type",
+                        value == "群组消息" ? "group" : "private"
+                    );
                 }
             }
         }
@@ -1332,6 +1372,7 @@ component GraphCanvas inherits Rectangle {
         preview_text: node.preview_text;
         node_type: node.node_type;
         string_data_text: node.string_data_text;
+        message_event_filter_type: node.message_event_filter_type;
         message_list: node.message_list;
         x_pos: node.x;
         y_pos: node.y;
