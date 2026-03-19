@@ -27,8 +27,8 @@ const NODE_WIDTH_CELLS: f32 = 10.0;
 const NODE_HEADER_ROWS: f32 = 2.0;
 const NODE_MIN_ROWS: f32 = 3.0;
 const NODE_PADDING_BOTTOM: f32 = 0.8;
-const CANVAS_WIDTH: f32 = 1200.0;
-const CANVAS_HEIGHT: f32 = 800.0;
+const CANVAS_WIDTH: f32 = 4000.0;
+const CANVAS_HEIGHT: f32 = 4000.0;
 const EDGE_THICKNESS_RATIO: f32 = 0.3;
 
 use crate::ui::node_render::{InlinePortValue, inline_port_key, get_node_preview_text};

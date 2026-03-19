@@ -1190,6 +1190,8 @@ component GraphCanvas inherits Rectangle {
     in-out property <string> drag_from_node_id: "";
     in-out property <string> drag_from_port: "";
     in-out property <bool> drag_from_is_input: false;
+    in-out property <float> canvas_pan_x: 0;
+    in-out property <float> canvas_pan_y: 0;
 
     background: AppTheme.background;
     width: 100%;
@@ -1204,8 +1206,8 @@ component GraphCanvas inherits Rectangle {
         stroke: AppTheme.grid-line;
         stroke-width: 1px;
         clip: false;
-        viewbox-x: 0;
-        viewbox-y: 0;
+        viewbox-x: -(Math.mod(Math.mod(root.canvas_pan_x, root.grid_size) + root.grid_size, root.grid_size));
+        viewbox-y: -(Math.mod(Math.mod(root.canvas_pan_y, root.grid_size) + root.grid_size, root.grid_size));
         viewbox-width: parent.width / 1px;
         viewbox-height: parent.height / 1px;
 
@@ -1222,48 +1224,71 @@ component GraphCanvas inherits Rectangle {
 
     drag_area := TouchArea {
         property <bool> is_box_selecting: false;
-        
+        property <bool> is_panning: false;
+        property <bool> did_pan: false;
+        property <float> pan_start_mouse_x: 0;
+        property <float> pan_start_mouse_y: 0;
+        property <float> pan_origin_x: 0;
+        property <float> pan_origin_y: 0;
+
         clicked => {
-            if !is_box_selecting {
+            if !is_box_selecting && !did_pan {
                 root.canvas_clicked();
             }
         }
-        
+
         pointer-event(event) => {
             if (event.kind == PointerEventKind.down) {
+                did_pan = false;
                 if (event.button == PointerEventButton.right) {
                     root.cancel_connect();
                 } else if (event.button == PointerEventButton.left && event.modifiers.control) {
                     // Start box selection with Ctrl held
                     is_box_selecting = true;
-                    root.box_selection_start(self.mouse-x / 1px, self.mouse-y / 1px);
+                    root.box_selection_start(self.mouse-x / 1px - root.canvas_pan_x, self.mouse-y / 1px - root.canvas_pan_y);
+                } else if (event.button == PointerEventButton.left) {
+                    // Start canvas panning on plain left drag
+                    is_panning = true;
+                    pan_start_mouse_x = self.mouse-x / 1px;
+                    pan_start_mouse_y = self.mouse-y / 1px;
+                    pan_origin_x = root.canvas_pan_x;
+                    pan_origin_y = root.canvas_pan_y;
                 }
             } else if (event.kind == PointerEventKind.move) {
-                if (is_box_selecting) {
-                    root.box_selection_update(self.mouse-x / 1px, self.mouse-y / 1px);
+                if (is_panning) {
+                    did_pan = true;
+                    root.canvas_pan_x = pan_origin_x + (self.mouse-x / 1px - pan_start_mouse_x);
+                    root.canvas_pan_y = pan_origin_y + (self.mouse-y / 1px - pan_start_mouse_y);
+                } else if (is_box_selecting) {
+                    root.box_selection_update(self.mouse-x / 1px - root.canvas_pan_x, self.mouse-y / 1px - root.canvas_pan_y);
                 } else {
-                    root.pointer_moved(self.mouse-x / 1px, self.mouse-y / 1px);
+                    root.pointer_moved(self.mouse-x / 1px - root.canvas_pan_x, self.mouse-y / 1px - root.canvas_pan_y);
                 }
             } else if (event.kind == PointerEventKind.up) {
                 if (is_box_selecting) {
                     is_box_selecting = false;
                     root.box_selection_end();
                 }
+                is_panning = false;
             }
         }
 
         moved => {
-            if (is_box_selecting) {
-                root.box_selection_update(self.mouse-x / 1px, self.mouse-y / 1px);
+            if (is_panning) {
+                did_pan = true;
+                root.canvas_pan_x = pan_origin_x + (self.mouse-x / 1px - pan_start_mouse_x);
+                root.canvas_pan_y = pan_origin_y + (self.mouse-y / 1px - pan_start_mouse_y);
+            } else if (is_box_selecting) {
+                root.box_selection_update(self.mouse-x / 1px - root.canvas_pan_x, self.mouse-y / 1px - root.canvas_pan_y);
             } else {
-                root.pointer_moved(self.mouse-x / 1px, self.mouse-y / 1px);
+                root.pointer_moved(self.mouse-x / 1px - root.canvas_pan_x, self.mouse-y / 1px - root.canvas_pan_y);
             }
         }
     }
 
     for segment[idx] in edge_segments: Rectangle {
-        x: segment.x * 1px;
-        y: segment.y * 1px;
+        x: (segment.x + root.canvas_pan_x) * 1px;
+        y: (segment.y + root.canvas_pan_y) * 1px;
         width: segment.width * 1px;
         height: segment.height * 1px;
         background: edges[segment.edge_index].is_selected ? AppTheme.edge-selected : AppTheme.edge;
@@ -1282,8 +1307,8 @@ component GraphCanvas inherits Rectangle {
     }
 
     for corner[idx] in edge_corners: Rectangle {
-        x: (corner.x - root.edge_thickness / 2) * 1px;
-        y: (corner.y - root.edge_thickness / 2) * 1px;
+        x: (corner.x + root.canvas_pan_x - root.edge_thickness / 2) * 1px;
+        y: (corner.y + root.canvas_pan_y - root.edge_thickness / 2) * 1px;
         width: root.edge_thickness * 1px;
         height: root.edge_thickness * 1px;
         background: edges[corner.edge_index].is_selected ? AppTheme.edge-selected : AppTheme.edge;
@@ -1302,8 +1327,8 @@ component GraphCanvas inherits Rectangle {
     }
 
     for label in edge_labels: Rectangle {
-        x: (label.x - label.width / 2) * 1px;
-        y: (label.y - label.height / 2) * 1px;
+        x: (label.x + root.canvas_pan_x - label.width / 2) * 1px;
+        y: (label.y + root.canvas_pan_y - label.height / 2) * 1px;
         width: label.width * 1px;
         height: label.height * 1px;
         background: AppTheme.label-bg;
@@ -1328,8 +1353,8 @@ component GraphCanvas inherits Rectangle {
         fill: transparent;
         stroke: AppTheme.edge;
         stroke-width: root.edge_thickness * 1px;
-        viewbox-x: 0;
-        viewbox-y: 0;
+        viewbox-x: -root.canvas_pan_x;
+        viewbox-y: -root.canvas_pan_y;
         viewbox-width: parent.width / 1px;
         viewbox-height: parent.height / 1px;
 
@@ -1356,8 +1381,8 @@ component GraphCanvas inherits Rectangle {
     
     // Box selection rectangle
     if root.box_selection_visible: Rectangle {
-        x: root.box_selection_x * 1px;
-        y: root.box_selection_y * 1px;
+        x: (root.box_selection_x + root.canvas_pan_x) * 1px;
+        y: (root.box_selection_y + root.canvas_pan_y) * 1px;
         width: root.box_selection_width * 1px;
         height: root.box_selection_height * 1px;
         background: AppTheme.selection-bg;
@@ -1374,8 +1399,8 @@ component GraphCanvas inherits Rectangle {
         string_data_text: node.string_data_text;
         message_event_filter_type: node.message_event_filter_type;
         message_list: node.message_list;
-        x_pos: node.x;
-        y_pos: node.y;
+        x_pos: node.x + root.canvas_pan_x;
+        y_pos: node.y + root.canvas_pan_y;
         node_width: node.width;
         node_height: node.height;
         input_ports: node.input_ports;
@@ -1388,11 +1413,11 @@ component GraphCanvas inherits Rectangle {
         has_error: node.has_error;
         
         node_moved(x, y) => {
-            root.node_moved(node.id, x, y);
+            root.node_moved(node.id, x - root.canvas_pan_x, y - root.canvas_pan_y);
         }
 
         node_move_finished(x, y) => {
-            root.node_move_finished(node.id, x, y);
+            root.node_move_finished(node.id, x - root.canvas_pan_x, y - root.canvas_pan_y);
         }
         
         port_clicked(node_id, port_name, is_input) => {
