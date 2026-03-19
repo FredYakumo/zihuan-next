@@ -1,4 +1,8 @@
 pub mod node_graph_view;
+pub(crate) mod node_graph_view_callbacks;
+pub(crate) mod node_graph_view_geometry;
+pub(crate) mod node_graph_view_inline;
+pub(crate) mod node_graph_view_vm;
 pub mod graph_window;
 pub mod selection;
 pub mod window_state;

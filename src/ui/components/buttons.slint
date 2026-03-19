@@ -1,0 +1,80 @@
+import { AppTheme } from "../theme.slint";
+
+export component CjkText inherits Text {
+    font-family: "Heiti SC";
+    color: AppTheme.text-primary;
+}
+
+export component CjkButton inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+
+    width: 120px;
+    height: 32px;
+    background: AppTheme.surface-overlay;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: AppTheme.border;
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    CjkText {
+        text: root.text;
+        color: AppTheme.text-primary;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+        font-size: 12px;
+    }
+}
+
+export component CjkDeleteButton inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+
+    width: 120px;
+    height: 32px;
+    background: AppTheme.danger-bg;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: AppTheme.danger;
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    CjkText {
+        text: root.text;
+        color: AppTheme.text-on-primary;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+        font-size: 12px;
+        font-weight: 700;
+    }
+}
+
+export component CjkRunButton inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+
+    width: 120px;
+    height: 32px;
+    background: AppTheme.primary-muted;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: AppTheme.primary;
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    CjkText {
+        text: root.text;
+        color: AppTheme.text-on-primary;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+        font-size: 12px;
+        font-weight: 700;
+    }
+}

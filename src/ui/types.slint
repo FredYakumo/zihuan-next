@@ -1,0 +1,81 @@
+export struct MessageItemVm {
+    role: string,
+    content: string,
+}
+
+export struct PortVm {
+    name: string,
+    is_input: bool,
+    is_connected: bool,
+    is_required: bool,
+    has_value: bool,
+    data_type: string,
+    inline_text: string,
+    inline_bool: bool,
+}
+
+export struct NodeVm {
+    id: string,
+    label: string,
+    preview_text: string,
+    node_type: string,
+    string_data_text: string,
+    message_event_filter_type: string,
+    message_list: [MessageItemVm],
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    input_ports: [PortVm],
+    output_ports: [PortVm],
+    is_selected: bool,
+    has_error: bool,
+}
+
+export struct EdgeVm {
+    from_node_id: string,
+    from_port: string,
+    to_node_id: string,
+    to_port: string,
+    from_x: float,
+    from_y: float,
+    to_x: float,
+    to_y: float,
+    is_selected: bool,
+}
+
+export struct EdgeSegmentVm {
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    edge_index: int,
+}
+
+export struct EdgeCornerVm {
+    x: float,
+    y: float,
+    edge_index: int,
+}
+
+export struct EdgeLabelVm {
+    text: string,
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+}
+
+export struct GridLineVm {
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+}
+
+export struct NodeTypeVm {
+    type_id: string,
+    display_name: string,
+    category: string,
+    description: string,
+}
