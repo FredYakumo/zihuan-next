@@ -10,9 +10,15 @@ pub(crate) const NODE_WIDTH_CELLS: f32 = 10.0;
 pub(crate) const NODE_HEADER_ROWS: f32 = 2.0;
 pub(crate) const NODE_MIN_ROWS: f32 = 3.0;
 pub(crate) const NODE_PADDING_BOTTOM: f32 = 0.8;
+pub(crate) const LIST_NODE_MIN_HEIGHT: f32 = GRID_SIZE * 8.0;
+pub(crate) const LIST_NODE_OUTPUT_PORT_CENTER_Y: f32 = GRID_SIZE * 1.6;
 pub(crate) const CANVAS_WIDTH: f32 = 4000.0;
 pub(crate) const CANVAS_HEIGHT: f32 = 4000.0;
 pub(crate) const EDGE_THICKNESS_RATIO: f32 = 0.3;
+
+fn is_list_data_node(node: &NodeDefinition) -> bool {
+    matches!(node.node_type.as_str(), "message_list_data" | "qq_message_list_data")
+}
 
 pub(crate) fn snap_to_grid(value: f32) -> f32 {
     (value / GRID_SIZE).round() * GRID_SIZE
@@ -25,7 +31,13 @@ pub(crate) fn snap_to_grid_center(value: f32) -> f32 {
 pub(crate) fn node_dimensions(node: &NodeDefinition) -> (f32, f32) {
     let min_width = GRID_SIZE * NODE_WIDTH_CELLS;
     let port_rows = node.input_ports.len().max(node.output_ports.len()) as f32;
-    let min_height = GRID_SIZE * (NODE_MIN_ROWS.max(NODE_HEADER_ROWS + port_rows) + NODE_PADDING_BOTTOM);
+    let default_min_height =
+        GRID_SIZE * (NODE_MIN_ROWS.max(NODE_HEADER_ROWS + port_rows) + NODE_PADDING_BOTTOM);
+    let min_height = if is_list_data_node(node) {
+        default_min_height.max(LIST_NODE_MIN_HEIGHT)
+    } else {
+        default_min_height
+    };
 
     match &node.size {
         Some(size) => (size.width.max(min_width), size.height.max(min_height)),
@@ -61,7 +73,11 @@ pub(crate) fn get_port_center_for_node(
     } else {
         position.x + node_width - (GRID_SIZE * 0.5)
     };
-    let center_y = position.y + base_y_offset + index * GRID_SIZE + radius;
+    let center_y = if !is_input && is_list_data_node(node) {
+        position.y + LIST_NODE_OUTPUT_PORT_CENTER_Y + index * GRID_SIZE
+    } else {
+        position.y + base_y_offset + index * GRID_SIZE + radius
+    };
 
     Some((center_x, center_y))
 }
