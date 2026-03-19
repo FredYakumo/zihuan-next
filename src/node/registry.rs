@@ -132,7 +132,7 @@ macro_rules! register_node {
 pub fn init_node_registry() -> Result<()> {
     use crate::node::util_nodes::{ArrayGetNode, ConditionalNode, JsonParserNode, MessageListDataNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, SwitchNode};
     use crate::llm::llm_api::LLMAPINode;
-    use crate::bot_adapter::node_impl::{BotAdapterNode, IsAtMeNode, SendFriendMessageNode, SendGroupMessageNode};
+    use crate::bot_adapter::node_impl::{BotAdapterNode, IsAtMeNode, MessageEventTypeFilterNode, SendFriendMessageNode, SendGroupMessageNode};
     use crate::bot_adapter::extract_message_from_event::ExtractMessageFromEventNode;
     use crate::node::database_nodes::{RedisNode, MySqlNode};
     use crate::node::message_nodes::{MessageMySQLPersistenceNode, MessageCacheNode};
@@ -266,6 +266,14 @@ pub fn init_node_registry() -> Result<()> {
         "Bot适配器",
         "从MessageProp中提取is_at_me布尔值",
         IsAtMeNode
+    );
+
+    register_node!(
+        "message_event_type_filter",
+        "消息类型分支",
+        "Bot适配器",
+        "根据消息类型（好友/群组）路由消息事件",
+        MessageEventTypeFilterNode
     );
 
     // Database nodes

@@ -1824,6 +1824,17 @@ fn apply_graph_to_ui(
                 String::new()
             };
 
+            // Get message_event_type_filter value from inline inputs (defaults to "private")
+            let message_event_filter_type = if node.node_type == "message_event_type_filter" {
+                let key = inline_port_key(&node.id, "filter_type");
+                match inline_inputs.get(&key) {
+                    Some(InlinePortValue::Text(value)) => value.clone(),
+                    _ => "private".to_string(),
+                }
+            } else {
+                String::new()
+            };
+
             // Get message list for preview_message_list nodes (from execution results)
             // and for message_list_data nodes (from inline JSON editor state)
             let message_list: Vec<MessageItemVm> = if node.node_type == "preview_message_list" {
@@ -1909,6 +1920,7 @@ fn apply_graph_to_ui(
                 preview_text: preview_text.into(),
                 node_type: node.node_type.clone().into(),
                 string_data_text: string_data_text.into(),
+                message_event_filter_type: message_event_filter_type.into(),
                 message_list: ModelRc::new(VecModel::from(message_list)),
                 x: position.map(|p| snap_to_grid(p.x)).unwrap_or(0.0),
                 y: position.map(|p| snap_to_grid(p.y)).unwrap_or(0.0),
