@@ -353,4 +353,22 @@ pub(crate) fn bind_window_callbacks(
             ui.set_show_error_dialog(false);
         }
     });
+
+    let ui_handle = ui.as_weak();
+    let all_node_types_clone = Arc::clone(&all_node_types);
+    ui.on_show_node_help(move |type_id: SharedString| {
+        if let Some(ui) = ui_handle.upgrade() {
+            if let Some(node_type) = all_node_types_clone.iter().find(|n| n.type_id == type_id) {
+                ui.set_node_help_data(node_type.clone());
+                ui.set_show_node_help_dialog(true);
+            }
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    ui.on_hide_node_help(move || {
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_show_node_help_dialog(false);
+        }
+    });
 }

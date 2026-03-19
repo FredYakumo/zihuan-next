@@ -73,9 +73,18 @@ export struct GridLineVm {
     y2: float,
 }
 
+export struct PortHelpVm {
+    name: string,
+    data_type: string,
+    description: string,
+    required: bool,
+}
+
 export struct NodeTypeVm {
     type_id: string,
     display_name: string,
     category: string,
     description: string,
+    input_ports: [PortHelpVm],
+    output_ports: [PortHelpVm],
 }

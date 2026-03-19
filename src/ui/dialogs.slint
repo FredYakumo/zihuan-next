@@ -1,6 +1,6 @@
 import { HorizontalBox, VerticalBox, ScrollView, LineEdit } from "std-widgets.slint";
 import { AppTheme } from "theme.slint";
-import { NodeTypeVm } from "types.slint";
+import { NodeTypeVm, PortHelpVm } from "types.slint";
 import { CjkButton, CjkDeleteButton, CjkText } from "components/buttons.slint";
 
 export component ErrorDialog inherits Rectangle {
@@ -223,6 +223,13 @@ export component NodeSelector inherits Rectangle {
 
     property <string> current_search: "";
     property <string> current_category: "";
+    property <bool> show_help_panel: false;
+    property <string> help_type_id: "";
+    property <string> help_display_name: "";
+    property <string> help_category: "";
+    property <string> help_description: "";
+    property <[PortHelpVm]> help_input_ports;
+    property <[PortHelpVm]> help_output_ports;
 
     background: AppTheme.overlay-mask;
 
@@ -233,196 +240,736 @@ export component NodeSelector inherits Rectangle {
     Rectangle {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        width: 700px;
+        width: root.show_help_panel ? 1080px : 700px;
         height: 600px;
         background: AppTheme.node-bg;
         border-radius: 12px;
         border-width: 2px;
         border-color: AppTheme.border;
+        clip: true;
+
+        TouchArea {}
+
+        HorizontalLayout {
+            padding: 0;
+            spacing: 0;
+
+            // ── LEFT: node list panel ──
+            VerticalBox {
+                width: 680px;
+                padding: 16px;
+                spacing: 12px;
+
+                CjkText {
+                    text: "选择节点类型";
+                    font-size: 18px;
+                    color: AppTheme.text-primary;
+                    horizontal-alignment: center;
+                    height: 30px;
+                }
+
+                VerticalBox {
+                    spacing: 8px;
+
+                    HorizontalBox {
+                        height: 50px;
+                        CjkText {
+                            text: "搜索:";
+                            vertical-alignment: center;
+                            width: 50px;
+                            color: AppTheme.text-secondary;
+                        }
+                        LineEdit {
+                            height: 35px;
+                            placeholder-text: "输入名称、类型、分类或描述...";
+                            edited(text) => {
+                                root.current_search = text;
+                                root.filter(root.current_search, root.current_category);
+                            }
+                        }
+                    }
+
+                    HorizontalBox {
+                        height: 50px;
+                        CjkText {
+                            text: "分类:";
+                            vertical-alignment: center;
+                            width: 50px;
+                            color: AppTheme.text-secondary;
+                        }
+                        ScrollView {
+                            viewport-height: 30px;
+                            height: 40px;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                padding-right: 8px;
+                                alignment: start;
+
+                                Rectangle {
+                                    width: 60px;
+                                    height: 30px;
+                                    border-radius: 4px;
+                                    background: root.current_category == "" ? AppTheme.category-bg-selected : AppTheme.category-bg;
+                                    border-width: 1px;
+                                    border-color: AppTheme.border-light;
+
+                                    TouchArea {
+                                        clicked => {
+                                            root.current_category = "";
+                                            root.filter(root.current_search, root.current_category);
+                                        }
+                                    }
+
+                                    CjkText {
+                                        text: "全部";
+                                        color: root.current_category == "" ? AppTheme.category-text-selected : AppTheme.category-text;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        font-size: 12px;
+                                    }
+                                }
+
+                                for category in root.categories : Rectangle {
+                                    width: 80px;
+                                    height: 30px;
+                                    border-radius: 4px;
+                                    background: root.current_category == category ? AppTheme.category-bg-selected : AppTheme.category-bg;
+                                    border-width: 1px;
+                                    border-color: AppTheme.border-light;
+
+                                    TouchArea {
+                                        clicked => {
+                                            root.current_category = category;
+                                            root.filter(root.current_search, root.current_category);
+                                        }
+                                    }
+
+                                    CjkText {
+                                        text: category;
+                                        color: root.current_category == category ? AppTheme.category-text-selected : AppTheme.category-text;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        font-size: 12px;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    background: AppTheme.background;
+                    border-radius: 6px;
+                    border-color: AppTheme.border-light;
+                    border-width: 1px;
+
+                    ScrollView {
+                        viewport-width: parent.width - 20px;
+                        viewport-height: root.node_types.length * 100px;
+
+                        VerticalBox {
+                            padding: 8px;
+                            spacing: 8px;
+                            alignment: start;
+
+                            for node_type in root.node_types: Rectangle {
+                                height: 80px;
+                                background: AppTheme.surface-overlay;
+                                border-radius: 6px;
+                                border-width: root.show_help_panel && root.help_type_id == node_type.type_id ? 2px : 1px;
+                                border-color: root.show_help_panel && root.help_type_id == node_type.type_id ? AppTheme.selection : AppTheme.border;
+
+                                TouchArea {
+                                    clicked => {
+                                        root.add_node(node_type.type_id);
+                                        root.close();
+                                    }
+                                }
+
+                                VerticalLayout {
+                                    padding: 10px;
+                                    spacing: 6px;
+
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        CjkText {
+                                            text: node_type.display_name;
+                                            font-size: 16px;
+                                            color: AppTheme.text-primary;
+                                            font-weight: 700;
+                                            vertical-alignment: center;
+                                        }
+
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Rectangle {
+                                                background: AppTheme.category-bg;
+                                                border-radius: 4px;
+
+                                                HorizontalLayout {
+                                                    padding-left: 6px;
+                                                    padding-right: 6px;
+                                                    padding-top: 2px;
+                                                    padding-bottom: 2px;
+                                                    CjkText {
+                                                        text: node_type.category;
+                                                        font-size: 11px;
+                                                        color: AppTheme.text-muted;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    CjkText {
+                                        text: node_type.description;
+                                        font-size: 13px;
+                                        color: AppTheme.text-muted;
+                                        wrap: word-wrap;
+                                        vertical-alignment: top;
+                                        overflow: elide;
+                                    }
+                                }
+
+                                // "?" help button — top-right corner, declared last so it's on top
+                                Rectangle {
+                                    x: parent.width - self.width - 6px;
+                                    y: 6px;
+                                    width: 22px;
+                                    height: 22px;
+                                    background: root.show_help_panel && root.help_type_id == node_type.type_id
+                                        ? AppTheme.category-bg-selected : AppTheme.category-bg;
+                                    border-radius: 11px;
+                                    border-width: 1px;
+                                    border-color: AppTheme.border-light;
+
+                                    TouchArea {
+                                        clicked => {
+                                            if root.show_help_panel && root.help_type_id == node_type.type_id {
+                                                root.show_help_panel = false;
+                                            } else {
+                                                root.help_type_id = node_type.type_id;
+                                                root.help_display_name = node_type.display_name;
+                                                root.help_category = node_type.category;
+                                                root.help_description = node_type.description;
+                                                root.help_input_ports = node_type.input_ports;
+                                                root.help_output_ports = node_type.output_ports;
+                                                root.show_help_panel = true;
+                                            }
+                                        }
+                                    }
+
+                                    CjkText {
+                                        text: "?";
+                                        color: root.show_help_panel && root.help_type_id == node_type.type_id
+                                            ? AppTheme.category-text-selected : AppTheme.text-secondary;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        font-size: 11px;
+                                        font-weight: 700;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalBox {
+                    alignment: center;
+                    CjkButton {
+                        text: "取消";
+                        clicked => { root.close(); }
+                    }
+                }
+            }            // ── RIGHT: help panel (only visible when show_help_panel) ──
+            if root.show_help_panel: Rectangle {
+                width: 380px;
+                background: AppTheme.surface;
+
+                // Left-edge separator
+                Rectangle {
+                    x: 0px;
+                    y: 0px;
+                    width: 1px;
+                    height: parent.height;
+                    background: AppTheme.border;
+                }
+
+                VerticalBox {
+                    padding: 16px;
+                    spacing: 10px;
+
+                    // Title row
+                    HorizontalLayout {
+                        spacing: 8px;
+                        VerticalLayout {
+                            alignment: center;
+                            CjkText {
+                                text: "节点帮助";
+                                font-size: 14px;
+                                font-weight: 700;
+                                color: AppTheme.text-secondary;
+                            }
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 22px;
+                                height: 22px;
+                                background: AppTheme.category-bg;
+                                border-radius: 11px;
+                                border-width: 1px;
+                                border-color: AppTheme.border-light;
+                                TouchArea {
+                                    clicked => { root.show_help_panel = false; }
+                                }
+                                CjkText {
+                                    text: "×";
+                                    color: AppTheme.text-secondary;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    font-size: 14px;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                    }
+
+                    // Node name + category badge
+                    HorizontalLayout {
+                        spacing: 8px;
+                        VerticalLayout {
+                            alignment: center;
+                            CjkText {
+                                text: root.help_display_name;
+                                font-size: 18px;
+                                font-weight: 700;
+                                color: AppTheme.text-primary;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                background: AppTheme.category-bg;
+                                border-radius: 4px;
+                                HorizontalLayout {
+                                    padding-left: 6px; padding-right: 6px; padding-top: 2px; padding-bottom: 2px;
+                                    CjkText {
+                                        text: root.help_category;
+                                        font-size: 11px;
+                                        color: AppTheme.text-muted;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Description
+                    CjkText {
+                        text: root.help_description;
+                        font-size: 13px;
+                        color: AppTheme.text-secondary;
+                        wrap: word-wrap;
+                    }
+
+                    // Separator
+                    Rectangle {
+                        height: 1px;
+                        background: AppTheme.border;
+                    }
+
+                    // Ports scroll area
+                    ScrollView {
+                        vertical-stretch: 1;
+
+                        VerticalLayout {
+                            spacing: 8px;
+                            padding: 0;
+                            alignment: start;
+
+                            if root.help_input_ports.length > 0: CjkText {
+                                text: "输入端口";
+                                font-size: 12px;
+                                font-weight: 700;
+                                color: AppTheme.text-secondary;
+                                height: 20px;
+                            }
+
+                            for port in root.help_input_ports: Rectangle {
+                                background: AppTheme.surface-overlay;
+                                border-radius: 4px;
+                                border-width: 1px;
+                                border-color: AppTheme.border;
+
+                                VerticalLayout {
+                                    padding: 6px;
+                                    spacing: 3px;
+
+                                    HorizontalLayout {
+                                        spacing: 5px;
+                                        CjkText {
+                                            text: port.name;
+                                            font-size: 11px;
+                                            font-weight: 700;
+                                            color: AppTheme.text-primary;
+                                            vertical-alignment: center;
+                                        }
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Rectangle {
+                                                background: AppTheme.category-bg;
+                                                border-radius: 3px;
+                                                HorizontalLayout {
+                                                    padding-left: 4px; padding-right: 4px; padding-top: 2px; padding-bottom: 2px;
+                                                    CjkText {
+                                                        text: port.data_type;
+                                                        font-size: 10px;
+                                                        color: AppTheme.text-muted;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if port.required: VerticalLayout {
+                                            alignment: center;
+                                            Rectangle {
+                                                background: #b3440020;
+                                                border-radius: 3px;
+                                                HorizontalLayout {
+                                                    padding-left: 4px; padding-right: 4px; padding-top: 2px; padding-bottom: 2px;
+                                                    CjkText {
+                                                        text: "必填";
+                                                        font-size: 10px;
+                                                        color: AppTheme.danger;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Rectangle { horizontal-stretch: 1; }
+                                    }
+
+                                    if port.description != "": CjkText {
+                                        text: port.description;
+                                        font-size: 11px;
+                                        color: AppTheme.text-muted;
+                                        wrap: word-wrap;
+                                    }
+                                }
+                            }
+
+                            if root.help_output_ports.length > 0: Rectangle {
+                                height: 10px;
+                            }
+
+                            if root.help_output_ports.length > 0: CjkText {
+                                text: "输出端口";
+                                font-size: 12px;
+                                font-weight: 700;
+                                color: AppTheme.text-secondary;
+                                height: 20px;
+                            }
+
+                            for port in root.help_output_ports: Rectangle {
+                                background: AppTheme.surface-overlay;
+                                border-radius: 4px;
+                                border-width: 1px;
+                                border-color: AppTheme.border;
+
+                                VerticalLayout {
+                                    padding: 6px;
+                                    spacing: 3px;
+
+                                    HorizontalLayout {
+                                        spacing: 5px;
+                                        CjkText {
+                                            text: port.name;
+                                            font-size: 11px;
+                                            font-weight: 700;
+                                            color: AppTheme.text-primary;
+                                            vertical-alignment: center;
+                                        }
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Rectangle {
+                                                background: AppTheme.category-bg;
+                                                border-radius: 3px;
+                                                HorizontalLayout {
+                                                    padding-left: 4px; padding-right: 4px; padding-top: 2px; padding-bottom: 2px;
+                                                    CjkText {
+                                                        text: port.data_type;
+                                                        font-size: 10px;
+                                                        color: AppTheme.text-muted;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Rectangle { horizontal-stretch: 1; }
+                                    }
+
+                                    if port.description != "": CjkText {
+                                        text: port.description;
+                                        font-size: 11px;
+                                        color: AppTheme.text-muted;
+                                        wrap: word-wrap;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+export component NodeHelpDialog inherits Rectangle {
+    in property <NodeTypeVm> node_data;
+    callback close();
+
+    background: AppTheme.overlay-mask;
+
+    TouchArea {
+        clicked => { root.close(); }
+    }
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 680px;
+        height: 560px;
+        background: AppTheme.node-bg;
+        border-radius: 12px;
+        border-width: 2px;
+        border-color: AppTheme.border;
+        clip: true;
 
         TouchArea {}
 
         VerticalBox {
-            padding: 16px;
+            padding: 20px;
             spacing: 12px;
 
-            CjkText {
-                text: "选择节点类型";
-                font-size: 18px;
-                color: AppTheme.text-primary;
-                horizontal-alignment: center;
-                height: 30px;
-            }
-
-            VerticalBox {
-                spacing: 8px;
-
-                HorizontalBox {
-                    height: 50px;
+            // Title row
+            HorizontalLayout {
+                spacing: 12px;
+                VerticalLayout {
+                    alignment: center;
                     CjkText {
-                        text: "搜索:";
-                        vertical-alignment: center;
-                        width: 50px;
-                        color: AppTheme.text-secondary;
+                        text: root.node_data.display_name;
+                        font-size: 20px;
+                        font-weight: 700;
+                        color: AppTheme.text-primary;
                     }
-                    LineEdit {
-                        height: 35px;
-                        placeholder-text: "输入名称、类型、分类或描述...";
-                        edited(text) => {
-                            root.current_search = text;
-                            root.filter(root.current_search, root.current_category);
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        background: AppTheme.category-bg;
+                        border-radius: 4px;
+                        HorizontalLayout {
+                            padding-left: 8px; padding-right: 8px; padding-top: 4px; padding-bottom: 4px;
+                            CjkText {
+                                text: root.node_data.category;
+                                font-size: 12px;
+                                color: AppTheme.text-muted;
+                            }
                         }
                     }
                 }
-
-                HorizontalBox {
-                    height: 50px;
-                    CjkText {
-                        text: "分类:";
-                        vertical-alignment: center;
-                        width: 50px;
-                        color: AppTheme.text-secondary;
+                Rectangle { horizontal-stretch: 1; }
+                VerticalLayout {
+                    alignment: start;
+                    Rectangle {
+                        width: 26px;
+                        height: 26px;
+                        background: AppTheme.category-bg;
+                        border-radius: 13px;
+                        border-width: 1px;
+                        border-color: AppTheme.border-light;
+                        TouchArea {
+                            clicked => { root.close(); }
+                        }
+                        CjkText {
+                            text: "×";
+                            color: AppTheme.text-secondary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            font-size: 16px;
+                            font-weight: 700;
+                        }
                     }
+                }
+            }
+
+            // Description
+            CjkText {
+                text: root.node_data.description;
+                font-size: 13px;
+                color: AppTheme.text-secondary;
+                wrap: word-wrap;
+            }
+
+            // Separator
+            Rectangle {
+                height: 1px;
+                background: AppTheme.border;
+            }
+
+            // Ports area (Two columns)
+            HorizontalLayout {
+                vertical-stretch: 1;
+                spacing: 20px;
+
+                // Left column - Input ports
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    if root.node_data.input_ports.length > 0: CjkText {
+                        text: "输入端口";
+                        font-size: 13px;
+                        font-weight: 700;
+                        color: AppTheme.text-secondary;
+                        height: 28px;
+                        vertical-alignment: center;
+                    }
+
                     ScrollView {
-                        viewport-height: 30px;
-                        height: 40px;
-                        HorizontalLayout {
+                        vertical-stretch: 1;
+                        VerticalLayout {
                             spacing: 8px;
-                            padding-right: 8px;
+                            padding: 0px;
+                            padding-bottom: 12px;
                             alignment: start;
 
-                            Rectangle {
-                                width: 60px;
-                                height: 30px;
-                                border-radius: 4px;
-                                background: root.current_category == "" ? AppTheme.category-bg-selected : AppTheme.category-bg;
+                            for port in root.node_data.input_ports: Rectangle {
+                                background: AppTheme.surface-overlay;
+                                border-radius: 6px;
                                 border-width: 1px;
-                                border-color: AppTheme.border-light;
+                                border-color: AppTheme.border;
 
-                                TouchArea {
-                                    clicked => {
-                                        root.current_category = "";
-                                        root.filter(root.current_search, root.current_category);
-                                    }
-                                }
+                                VerticalLayout {
+                                    padding: 10px;
+                                    spacing: 6px;
 
-                                CjkText {
-                                    text: "全部";
-                                    color: root.current_category == "" ? AppTheme.category-text-selected : AppTheme.category-text;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                    font-size: 12px;
-                                }
-                            }
-
-                            for category in root.categories : Rectangle {
-                                width: 80px;
-                                height: 30px;
-                                border-radius: 4px;
-                                background: root.current_category == category ? AppTheme.category-bg-selected : AppTheme.category-bg;
-                                border-width: 1px;
-                                border-color: AppTheme.border-light;
-
-                                TouchArea {
-                                    clicked => {
-                                        root.current_category = category;
-                                        root.filter(root.current_search, root.current_category);
-                                    }
-                                }
-
-                                CjkText {
-                                    text: category;
-                                    color: root.current_category == category ? AppTheme.category-text-selected : AppTheme.category-text;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                    font-size: 12px;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Rectangle {
-                background: AppTheme.background;
-                border-radius: 6px;
-                border-color: AppTheme.border-light;
-                border-width: 1px;
-
-                ScrollView {
-                    viewport-width: parent.width - 20px;
-                    viewport-height: root.node_types.length * 100px;
-
-                    VerticalBox {
-                        padding: 8px;
-                        spacing: 8px;
-                        alignment: start;
-
-                        for node_type in root.node_types: Rectangle {
-                            height: 80px;
-                            background: AppTheme.surface-overlay;
-                            border-radius: 6px;
-                            border-width: 1px;
-                            border-color: AppTheme.border;
-
-                            TouchArea {
-                                clicked => {
-                                    root.add_node(node_type.type_id);
-                                    root.close();
-                                }
-                            }
-
-                            VerticalLayout {
-                                padding: 10px;
-                                spacing: 6px;
-
-                                HorizontalLayout {
-                                    spacing: 8px;
-                                    CjkText {
-                                        text: node_type.display_name;
-                                        font-size: 16px;
-                                        color: AppTheme.text-primary;
-                                        font-weight: 700;
-                                        vertical-alignment: center;
-                                    }
-
-                                    Rectangle {
-                                        background: AppTheme.category-bg;
-                                        width: self.height * 2.5;
-
-                                        HorizontalLayout {
-                                            padding-left: 6px;
-                                            padding-right: 6px;
-                                            CjkText {
-                                                text: node_type.category;
-                                                font-size: 11px;
-                                                color: AppTheme.text-muted;
-                                                vertical-alignment: center;
-                                                horizontal-alignment: center;
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        CjkText {
+                                            text: port.name;
+                                            font-size: 12px;
+                                            font-weight: 700;
+                                            color: AppTheme.text-primary;
+                                            vertical-alignment: center;
+                                        }
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Rectangle {
+                                                background: AppTheme.category-bg;
+                                                border-radius: 4px;
+                                                HorizontalLayout {
+                                                    padding-left: 6px; padding-right: 6px; padding-top: 2px; padding-bottom: 2px;
+                                                    CjkText {
+                                                        text: port.data_type;
+                                                        font-size: 10px;
+                                                        color: AppTheme.text-muted;
+                                                    }
+                                                }
                                             }
                                         }
+                                        if port.required: VerticalLayout {
+                                            alignment: center;
+                                            Rectangle {
+                                                background: #b3440020;
+                                                border-radius: 4px;
+                                                HorizontalLayout {
+                                                    padding-left: 6px; padding-right: 6px; padding-top: 2px; padding-bottom: 2px;
+                                                    CjkText {
+                                                        text: "必填";
+                                                        font-size: 10px;
+                                                        color: AppTheme.danger;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Rectangle { horizontal-stretch: 1; }
                                     }
-                                }
 
-                                CjkText {
-                                    text: node_type.description;
-                                    font-size: 13px;
-                                    color: AppTheme.text-muted;
-                                    wrap: word-wrap;
-                                    vertical-alignment: top;
-                                    overflow: elide;
+                                    if port.description != "": CjkText {
+                                        text: port.description;
+                                        font-size: 11px;
+                                        color: AppTheme.text-muted;
+                                        wrap: word-wrap;
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            HorizontalBox {
-                alignment: center;
-                CjkButton {
-                    text: "取消";
-                    clicked => { root.close(); }
+                // Right column - Output ports
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    if root.node_data.output_ports.length > 0: CjkText {
+                        text: "输出端口";
+                        font-size: 13px;
+                        font-weight: 700;
+                        color: AppTheme.text-secondary;
+                        height: 28px;
+                        vertical-alignment: center;
+                    }
+
+                    ScrollView {
+                        vertical-stretch: 1;
+                        VerticalLayout {
+                            spacing: 8px;
+                            padding: 0px;
+                            padding-bottom: 12px;
+                            alignment: start;
+
+                            for port in root.node_data.output_ports: Rectangle {
+                                background: AppTheme.surface-overlay;
+                                border-radius: 6px;
+                                border-width: 1px;
+                                border-color: AppTheme.border;
+
+                                VerticalLayout {
+                                    padding: 10px;
+                                    spacing: 6px;
+
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        CjkText {
+                                            text: port.name;
+                                            font-size: 12px;
+                                            font-weight: 700;
+                                            color: AppTheme.text-primary;
+                                            vertical-alignment: center;
+                                        }
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Rectangle {
+                                                background: AppTheme.category-bg;
+                                                border-radius: 4px;
+                                                HorizontalLayout {
+                                                    padding-left: 6px; padding-right: 6px; padding-top: 2px; padding-bottom: 2px;
+                                                    CjkText {
+                                                        text: port.data_type;
+                                                        font-size: 10px;
+                                                        color: AppTheme.text-muted;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Rectangle { horizontal-stretch: 1; }
+                                    }
+
+                                    if port.description != "": CjkText {
+                                        text: port.description;
+                                        font-size: 11px;
+                                        color: AppTheme.text-muted;
+                                        wrap: word-wrap;
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
