@@ -586,6 +586,8 @@ component NodeItem inherits Rectangle {
                                 horizontal-stretch: 1;
 
                                 HorizontalLayout {
+                                    width: 100%;
+                                    height: 100%;
                                     padding: 2px;
                                     spacing: 4px;
 
@@ -828,6 +830,8 @@ component NodeItem inherits Rectangle {
                                 horizontal-stretch: 1;
 
                                 HorizontalLayout {
+                                    width: 100%;
+                                    height: 100%;
                                     padding: 2px;
                                     spacing: 4px;
 
@@ -1197,6 +1201,7 @@ component GraphCanvas inherits Rectangle {
     background: AppTheme.background;
     width: 100%;
     height: 100%;
+    clip: true;
 
     for line in grid_lines: Path {
         width: parent.width;
@@ -1206,7 +1211,7 @@ component GraphCanvas inherits Rectangle {
         fill: transparent;
         stroke: AppTheme.grid-line;
         stroke-width: 1px;
-        clip: false;
+        clip: true;
         viewbox-x: -(Math.mod(Math.mod(root.canvas_pan_x, root.grid_size) + root.grid_size, root.grid_size));
         viewbox-y: -(Math.mod(Math.mod(root.canvas_pan_y, root.grid_size) + root.grid_size, root.grid_size));
         viewbox-width: parent.width / 1px / root.canvas_zoom;
@@ -2100,6 +2105,7 @@ export component NodeGraphWindow inherits Window {
 
         Rectangle {
             vertical-stretch: 1;
+            clip: true;
 
             GraphCanvas {
                 width: 100%;
