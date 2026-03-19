@@ -5,7 +5,7 @@ import { CjkButton, CjkDeleteButton, CjkRunButton, CjkText } from "components/bu
 import { MenuBarItem, MenuItemRow } from "components/menubar.slint";
 import { TabItem } from "components/tabs.slint";
 import { GraphCanvas } from "components/graph_canvas.slint";
-import { ErrorDialog, NodeSelector, RunningConfirmDialog, SaveConfirmDialog } from "dialogs.slint";
+import { ErrorDialog, NodeHelpDialog, NodeSelector, RunningConfirmDialog, SaveConfirmDialog } from "dialogs.slint";
 
 export component NodeGraphWindow inherits Window {
     in property <[NodeVm]> nodes;
@@ -63,6 +63,10 @@ export component NodeGraphWindow inherits Window {
     in property <string> running_confirm_message: "节点图正在运行，是否停止并关闭？";
     callback running_confirm_close();
     callback running_confirm_cancel();
+    in property <bool> show_node_help_dialog: false;
+    in property <NodeTypeVm> node_help_data;
+    callback show_node_help(string);
+    callback hide_node_help();
 
     callback open_json();
     callback save_json();
@@ -296,6 +300,10 @@ export component NodeGraphWindow inherits Window {
                 node_resize_finished(node_id, width, height) => {
                     root.node_resize_finished(node_id, width, height);
                 }
+
+                show_node_help(node_type) => {
+                    root.show_node_help(node_type);
+                }
             }
 
             // Buttons Overlay
@@ -444,5 +452,10 @@ export component NodeGraphWindow inherits Window {
         message: root.running_confirm_message;
         confirm_close => { root.running_confirm_close(); }
         cancel => { root.running_confirm_cancel(); }
+    }
+
+    if root.show_node_help_dialog: NodeHelpDialog {
+        node_data: root.node_help_data;
+        close => { root.hide_node_help(); }
     }
 }

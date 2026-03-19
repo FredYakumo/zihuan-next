@@ -11,7 +11,7 @@ use crate::node::graph_io::{
 use crate::node::registry::NODE_REGISTRY;
 
 use crate::ui::graph_window::{
-    NodeGraphWindow, NodeTypeVm,
+    NodeGraphWindow, NodeTypeVm, PortHelpVm,
 };
 use crate::ui::node_graph_view_callbacks::{
     bind_canvas_callbacks, bind_inline_port_callbacks, bind_message_list_callbacks,
@@ -122,11 +122,39 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     let node_types: Vec<NodeTypeVm> = NODE_REGISTRY
         .get_all_types()
         .iter()
-        .map(|meta| NodeTypeVm {
-            type_id: meta.type_id.clone().into(),
-            display_name: meta.display_name.clone().into(),
-            category: meta.category.clone().into(),
-            description: meta.description.clone().into(),
+        .map(|meta| {
+            let (input_ports, output_ports) = NODE_REGISTRY
+                .get_node_ports(&meta.type_id)
+                .unwrap_or_default();
+
+            let input_help: Vec<PortHelpVm> = input_ports
+                .iter()
+                .map(|p| PortHelpVm {
+                    name: p.name.clone().into(),
+                    data_type: p.data_type.to_string().into(),
+                    description: p.description.clone().unwrap_or_default().into(),
+                    required: p.required,
+                })
+                .collect();
+
+            let output_help: Vec<PortHelpVm> = output_ports
+                .iter()
+                .map(|p| PortHelpVm {
+                    name: p.name.clone().into(),
+                    data_type: p.data_type.to_string().into(),
+                    description: p.description.clone().unwrap_or_default().into(),
+                    required: false,
+                })
+                .collect();
+
+            NodeTypeVm {
+                type_id: meta.type_id.clone().into(),
+                display_name: meta.display_name.clone().into(),
+                category: meta.category.clone().into(),
+                description: meta.description.clone().into(),
+                input_ports: ModelRc::new(VecModel::from(input_help)),
+                output_ports: ModelRc::new(VecModel::from(output_help)),
+            }
         })
         .collect();
 
