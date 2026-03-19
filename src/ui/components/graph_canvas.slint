@@ -49,6 +49,7 @@ export component GraphCanvas inherits Rectangle {
     callback qq_message_list_set_content(string, int, string);
     callback node_resized(string, float, float);
     callback node_resize_finished(string, float, float);
+    callback show_node_help(string);
 
     in-out property <bool> dragging: false;
     in-out property <string> drag_from_node_id: "";
@@ -361,6 +362,10 @@ export component GraphCanvas inherits Rectangle {
 
         node_resize_finished(width, height) => {
             root.node_resize_finished(node.id, width / root.canvas_zoom, height / root.canvas_zoom);
+        }
+
+        show_help(node_type) => {
+            root.show_node_help(node_type);
         }
     }
 }

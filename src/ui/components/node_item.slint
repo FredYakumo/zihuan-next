@@ -43,6 +43,7 @@ export component NodeItem inherits Rectangle {
     callback qq_message_list_set_content(string, int, string);
     callback node_resized(float, float);
     callback node_resize_finished(float, float);
+    callback show_help(string);
 
     property <float> offset-x: 0;
     property <float> offset-y: 0;
@@ -872,6 +873,31 @@ export component NodeItem inherits Rectangle {
                     root.node_resized(root.node_width, root.node_height);
                 }
             }
+        }
+    }
+
+    Rectangle {
+        x: parent.width - self.width - (grid_size * 0.3) * 1px;
+        y: (grid_size * 0.2) * 1px;
+        width: (grid_size * 0.9) * 1px;
+        height: (grid_size * 0.9) * 1px;
+        background: AppTheme.category-bg;
+        border-radius: (grid_size * 0.45) * 1px;
+        border-width: 1px;
+        border-color: AppTheme.border-light;
+        opacity: 0.75;
+
+        TouchArea {
+            clicked => { root.show_help(root.node_type); }
+        }
+
+        CjkText {
+            text: "?";
+            color: AppTheme.text-secondary;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            font-size: (grid_size * 0.5) * 1px;
+            font-weight: 700;
         }
     }
 }
