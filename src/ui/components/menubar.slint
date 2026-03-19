@@ -1,0 +1,69 @@
+import { AppTheme } from "../theme.slint";
+import { CjkText } from "buttons.slint";
+
+export component MenuBarItem inherits Rectangle {
+    in property <string> text;
+    in property <bool> is_open;
+    callback clicked();
+
+    width: 56px;
+    height: 24px;
+    background: is_open ? AppTheme.menu-item-pressed : (hovered ? AppTheme.menu-item-hover : transparent);
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    property <bool> hovered: touch.has-hover;
+
+    CjkText {
+        text: root.text;
+        color: AppTheme.menu-item-text;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+        font-size: 12px;
+        width: parent.width;
+        height: parent.height;
+        y: 0px;
+    }
+}
+
+export component MenuItemRow inherits Rectangle {
+    in property <string> title;
+    in property <string> shortcut;
+    callback clicked();
+
+    width: 100%;
+    height: 28px;
+    background: touch.pressed ? AppTheme.menu-item-pressed : (hovered ? AppTheme.menu-item-hover : transparent);
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    property <bool> hovered: touch.has-hover;
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 10px;
+
+        CjkText {
+            text: root.title;
+            color: AppTheme.menu-item-text;
+            font-size: 12px;
+            vertical-alignment: center;
+            horizontal-alignment: left;
+            horizontal-stretch: 1;
+        }
+
+        CjkText {
+            text: root.shortcut;
+            color: AppTheme.menu-item-shortcut;
+            font-size: 11px;
+            vertical-alignment: center;
+            horizontal-alignment: right;
+            width: 70px;
+        }
+    }
+}

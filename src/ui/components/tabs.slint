@@ -1,0 +1,39 @@
+import { AppTheme } from "../theme.slint";
+import { CjkText } from "buttons.slint";
+
+export component TabItem inherits Rectangle {
+    in property <string> text;
+    in property <bool> is_active;
+    callback clicked();
+
+    width: 140px;
+    background: is_active ? AppTheme.background : AppTheme.surface;
+
+    Rectangle {
+        y: 0;
+        height: 2px;
+        width: parent.width;
+        background: is_active ? AppTheme.primary : transparent;
+    }
+
+    Rectangle {
+        x: parent.width - 1px;
+        width: 1px;
+        height: parent.height;
+        background: AppTheme.border;
+    }
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    CjkText {
+        text: root.text;
+        color: is_active ? AppTheme.text-primary : AppTheme.text-muted;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+        font-size: 12px;
+        width: parent.width;
+        height: parent.height;
+    }
+}

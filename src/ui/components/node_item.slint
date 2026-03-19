@@ -1,0 +1,863 @@
+import { VerticalBox, ScrollView, LineEdit, CheckBox, ComboBox } from "std-widgets.slint";
+import { AppTheme } from "../theme.slint";
+import { MessageItemVm, PortVm } from "../types.slint";
+import { CjkText } from "buttons.slint";
+
+export component NodeItem inherits Rectangle {
+    in property <string> node_id;
+    in property <string> label;
+    in property <string> preview_text;
+    in property <string> node_type;
+    in property <string> string_data_text;
+    in property <string> message_event_filter_type;
+    in property <[MessageItemVm]> message_list;
+    in property <float> x_pos;
+    in property <float> y_pos;
+    in-out property <float> node_width;
+    in-out property <float> node_height;
+    in property <[PortVm]> input_ports;
+    in property <[PortVm]> output_ports;
+    in property <float> grid_size;
+    in property <float> node_width_cells;
+    in property <float> header_rows;
+    in property <float> min_rows;
+    in property <bool> is_selected;
+    in property <bool> has_error;
+
+    callback node_moved(float, float);
+    callback node_move_finished(float, float);
+    callback port_clicked(string, string, bool);
+    callback node_clicked(string);
+    callback inline_port_text_changed(string, string, string);
+    callback inline_port_bool_changed(string, string, bool);
+    callback message_list_add(string);
+    callback message_list_insert(string, int);
+    callback message_list_delete(string, int);
+    callback message_list_move_up(string, int);
+    callback message_list_move_down(string, int);
+    callback message_list_cycle_role(string, int);
+    callback message_list_set_content(string, int, string);
+    callback qq_message_list_add(string);
+    callback qq_message_list_insert(string, int);
+    callback qq_message_list_cycle_type(string, int);
+    callback qq_message_list_set_content(string, int, string);
+    callback node_resized(float, float);
+    callback node_resize_finished(float, float);
+
+    property <float> offset-x: 0;
+    property <float> offset-y: 0;
+    property <float> drag-start-pointer-x: 0;
+    property <float> drag-start-pointer-y: 0;
+    property <float> drag-start-node-x: 0;
+    property <float> drag-start-node-y: 0;
+    property <bool> is-dragging: false;
+    property <bool> is-resizing: false;
+    property <float> resize-start-pointer-x: 0;
+    property <float> resize-start-pointer-y: 0;
+    property <float> resize-start-width: 0;
+    property <float> resize-start-height: 0;
+    property <float> inner-padding-bottom: grid_size * 0.8;
+
+    x: (x_pos + offset-x) * 1px;
+    y: (y_pos + offset-y) * 1px;
+    width: max(node_width, grid_size * node_width_cells) * 1px;
+    height: max(
+        node_height,
+        grid_size * max(min_rows, header_rows + max(input_ports.length, output_ports.length)) + inner-padding-bottom
+    ) * 1px;
+    background: touch.pressed ? AppTheme.node-bg-pressed : AppTheme.node-bg;
+    border-radius: 8px;
+    border-width: has_error ? 2px : (is_selected ? 2px : 1px);
+    border-color: has_error ? AppTheme.danger : (is_selected ? AppTheme.selection : AppTheme.border);
+
+    touch := TouchArea {
+        clicked => {
+            root.node_clicked(root.node_id);
+        }
+
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down) {
+                is-dragging = true;
+                drag-start-pointer-x = (self.mouse-x / 1px) + root.x / 1px;
+                drag-start-pointer-y = (self.mouse-y / 1px) + root.y / 1px;
+                drag-start-node-x = root.x / 1px;
+                drag-start-node-y = root.y / 1px;
+            } else if (event.kind == PointerEventKind.up) {
+                is-dragging = false;
+                let pointer-x = (self.mouse-x / 1px) + root.x / 1px;
+                let pointer-y = (self.mouse-y / 1px) + root.y / 1px;
+                let new-x = drag-start-node-x + (pointer-x - drag-start-pointer-x);
+                let new-y = drag-start-node-y + (pointer-y - drag-start-pointer-y);
+                offset-x = new-x - root.x_pos;
+                offset-y = new-y - root.y_pos;
+                root.node_moved(root.x_pos + offset-x, root.y_pos + offset-y);
+                root.node_move_finished(root.x_pos + offset-x, root.y_pos + offset-y);
+            }
+        }
+
+        moved => {
+            if (self.pressed && is-dragging) {
+                let pointer-x = (self.mouse-x / 1px) + root.x / 1px;
+                let pointer-y = (self.mouse-y / 1px) + root.y / 1px;
+                let new-x = drag-start-node-x + (pointer-x - drag-start-pointer-x);
+                let new-y = drag-start-node-y + (pointer-y - drag-start-pointer-y);
+                offset-x = new-x - root.x_pos;
+                offset-y = new-y - root.y_pos;
+                root.node_moved(root.x_pos + offset-x, root.y_pos + offset-y);
+            }
+        }
+    }
+
+    CjkText {
+        text: root.label;
+        color: AppTheme.text-primary;
+        horizontal-alignment: center;
+        font-size: grid_size * 0.7 * 1px;
+        font-weight: 700;
+        height: (grid_size * (root.preview_text == "" ? header_rows : 1)) * 1px;
+        width: parent.width;
+        x: 0px;
+        y: 0px;
+    }
+
+    if root.preview_text != "": CjkText {
+        text: root.preview_text;
+        color: AppTheme.text-muted;
+        horizontal-alignment: left;
+        font-size: grid_size * 0.55 * 1px;
+        height: (grid_size) * 1px;
+        width: parent.width - (grid_size) * 1px;
+        x: (grid_size * 0.5) * 1px;
+        y: (grid_size * 1.0) * 1px;
+        wrap: word-wrap;
+        overflow: elide;
+    }
+
+    if root.node_type == "preview_message_list" && root.message_list.length > 0: ScrollView {
+        x: (grid_size * 0.5) * 1px;
+        y: (grid_size * 1.2) * 1px;
+        width: root.width - (grid_size * 1.0) * 1px;
+        height: min((grid_size * 6.0) * 1px, root.height - (grid_size * 2.0) * 1px);
+
+        VerticalBox {
+            spacing: 4px;
+            padding: 4px;
+
+            for msg[idx] in root.message_list: Rectangle {
+                height: (grid_size * 2.0) * 1px;
+                border-radius: 6px;
+                background: msg.role == "system" ? #2C3E50 :
+                           msg.role == "user" ? #3498DB :
+                           msg.role == "assistant" ? #27AE60 :
+                           #E67E22;
+                border-width: 1px;
+                border-color: msg.role == "system" ? #34495E :
+                             msg.role == "user" ? #2980B9 :
+                             msg.role == "assistant" ? #229954 :
+                             #D35400;
+
+                VerticalLayout {
+                    padding: 6px;
+                    spacing: 2px;
+
+                    CjkText {
+                        text: msg.role == "system" ? "系统" :
+                              msg.role == "user" ? "用户" :
+                              msg.role == "assistant" ? "助手" :
+                              "工具";
+                        color: #FFFFFF;
+                        font-size: grid_size * 0.45 * 1px;
+                        font-weight: 700;
+                        horizontal-alignment: left;
+                    }
+
+                    CjkText {
+                        text: msg.content;
+                        color: #FFFFFF;
+                        font-size: grid_size * 0.5 * 1px;
+                        horizontal-alignment: left;
+                        wrap: word-wrap;
+                        overflow: elide;
+                    }
+                }
+            }
+        }
+    }
+
+    if root.node_type == "message_list_data": Rectangle {
+        x: (grid_size * 0.5) * 1px;
+        y: (grid_size * 1.1) * 1px;
+        width: root.width - (grid_size * 1.0) * 1px;
+        height: min((grid_size * 7.0) * 1px, root.height - (grid_size * 2.0) * 1px);
+        background: transparent;
+
+        VerticalLayout {
+            padding: 4px;
+            spacing: 4px;
+
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+
+                CjkText {
+                    text: "messages";
+                    color: AppTheme.text-secondary;
+                    font-size: grid_size * 0.5 * 1px;
+                    vertical-alignment: center;
+                }
+
+                Rectangle {
+                    width: grid_size * 0.9 * 1px;
+                    height: grid_size * 0.9 * 1px;
+                    background: AppTheme.primary;
+                    border-radius: 4px;
+
+                    CjkText {
+                        text: "+";
+                        color: AppTheme.text-on-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        font-size: grid_size * 0.6 * 1px;
+                        font-weight: 700;
+                    }
+
+                    TouchArea {
+                        clicked => {
+                            root.message_list_add(root.node_id);
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                height: grid_size * 0.9 * 1px;
+                background: AppTheme.node-bg-pressed;
+                border-radius: 4px;
+
+                HorizontalLayout {
+                    padding: 4px;
+                    spacing: 6px;
+
+                    CjkText {
+                        text: "role";
+                        color: AppTheme.text-muted;
+                        font-size: grid_size * 0.45 * 1px;
+                        width: grid_size * 3.0 * 1px;
+                    }
+
+                    CjkText {
+                        text: "content";
+                        color: AppTheme.text-muted;
+                        font-size: grid_size * 0.45 * 1px;
+                        horizontal-stretch: 1;
+                    }
+                }
+            }
+
+            ScrollView {
+                height: min((grid_size * 5.0) * 1px, root.height - (grid_size * 3.0) * 1px);
+
+                VerticalBox {
+                    spacing: 4px;
+                    padding: 2px;
+
+                    for msg[idx] in root.message_list: Rectangle {
+                        height: (grid_size * 1.7) * 1px;
+                        border-radius: 6px;
+                        border-width: 1px;
+                        border-color: AppTheme.border;
+                        background: AppTheme.node-bg;
+
+                        HorizontalLayout {
+                            padding: 4px;
+                            spacing: 6px;
+
+                            Rectangle {
+                                width: grid_size * 3.0 * 1px;
+                                height: parent.height - 8px;
+                                border-radius: 4px;
+                                background: msg.role == "system" ? #2C3E50 :
+                                           msg.role == "user" ? #3498DB :
+                                           msg.role == "assistant" ? #27AE60 :
+                                           #E67E22;
+                                border-width: 1px;
+                                border-color: msg.role == "system" ? #34495E :
+                                             msg.role == "user" ? #2980B9 :
+                                             msg.role == "assistant" ? #229954 :
+                                             #D35400;
+
+                                CjkText {
+                                    text: msg.role == "system" ? "系统" :
+                                          msg.role == "user" ? "用户" :
+                                          msg.role == "assistant" ? "助手" :
+                                          "工具";
+                                    color: #FFFFFF;
+                                    font-size: grid_size * 0.45 * 1px;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+
+                                TouchArea {
+                                    clicked => {
+                                        root.message_list_cycle_role(root.node_id, idx);
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                height: parent.height - 8px;
+                                border-radius: 4px;
+                                background: AppTheme.node-bg-pressed;
+                                border-width: 1px;
+                                border-color: AppTheme.border;
+                                horizontal-stretch: 1;
+
+                                HorizontalLayout {
+                                    width: 100%;
+                                    height: 100%;
+                                    padding: 2px;
+                                    spacing: 4px;
+
+                                    LineEdit {
+                                        text: msg.content;
+                                        placeholder-text: "输入内容";
+                                        height: parent.height - 4px;
+                                        horizontal-stretch: 1;
+                                        edited(text) => {
+                                            root.message_list_set_content(root.node_id, idx, text);
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 2px;
+
+                                        Rectangle {
+                                            width: grid_size * 0.8 * 1px;
+                                            height: grid_size * 0.8 * 1px;
+                                            border-radius: 3px;
+                                            background: AppTheme.primary-muted;
+
+                                            CjkText {
+                                                text: "↑";
+                                                color: AppTheme.text-primary;
+                                                font-size: grid_size * 0.45 * 1px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.message_list_move_up(root.node_id, idx);
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            width: grid_size * 0.8 * 1px;
+                                            height: grid_size * 0.8 * 1px;
+                                            border-radius: 3px;
+                                            background: AppTheme.primary-muted;
+
+                                            CjkText {
+                                                text: "↓";
+                                                color: AppTheme.text-primary;
+                                                font-size: grid_size * 0.45 * 1px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.message_list_move_down(root.node_id, idx);
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            width: grid_size * 0.8 * 1px;
+                                            height: grid_size * 0.8 * 1px;
+                                            border-radius: 3px;
+                                            background: AppTheme.primary-muted;
+
+                                            CjkText {
+                                                text: "+";
+                                                color: AppTheme.text-primary;
+                                                font-size: grid_size * 0.45 * 1px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.message_list_insert(root.node_id, idx);
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            width: grid_size * 0.8 * 1px;
+                                            height: grid_size * 0.8 * 1px;
+                                            border-radius: 3px;
+                                            background: AppTheme.danger-bg;
+
+                                            CjkText {
+                                                text: "×";
+                                                color: AppTheme.text-primary;
+                                                font-size: grid_size * 0.5 * 1px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.message_list_delete(root.node_id, idx);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.node_type == "qq_message_list_data": Rectangle {
+        x: (grid_size * 0.5) * 1px;
+        y: (grid_size * 1.1) * 1px;
+        width: root.width - (grid_size * 1.0) * 1px;
+        height: min((grid_size * 7.0) * 1px, root.height - (grid_size * 2.0) * 1px);
+        background: transparent;
+
+        VerticalLayout {
+            padding: 4px;
+            spacing: 4px;
+
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+
+                CjkText {
+                    text: "messages";
+                    color: AppTheme.text-secondary;
+                    font-size: grid_size * 0.5 * 1px;
+                    vertical-alignment: center;
+                }
+
+                Rectangle {
+                    width: grid_size * 0.9 * 1px;
+                    height: grid_size * 0.9 * 1px;
+                    background: AppTheme.primary;
+                    border-radius: 4px;
+
+                    CjkText {
+                        text: "+";
+                        color: AppTheme.text-on-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        font-size: grid_size * 0.6 * 1px;
+                        font-weight: 700;
+                    }
+
+                    TouchArea {
+                        clicked => {
+                            root.qq_message_list_add(root.node_id);
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                height: grid_size * 0.9 * 1px;
+                background: AppTheme.node-bg-pressed;
+                border-radius: 4px;
+
+                HorizontalLayout {
+                    padding: 4px;
+                    spacing: 6px;
+
+                    CjkText {
+                        text: "type";
+                        color: AppTheme.text-muted;
+                        font-size: grid_size * 0.45 * 1px;
+                        width: grid_size * 3.0 * 1px;
+                    }
+
+                    CjkText {
+                        text: "value";
+                        color: AppTheme.text-muted;
+                        font-size: grid_size * 0.45 * 1px;
+                        horizontal-stretch: 1;
+                    }
+                }
+            }
+
+            ScrollView {
+                height: min((grid_size * 5.0) * 1px, root.height - (grid_size * 3.0) * 1px);
+
+                VerticalBox {
+                    spacing: 4px;
+                    padding: 2px;
+
+                    for msg[idx] in root.message_list: Rectangle {
+                        height: (grid_size * 1.7) * 1px;
+                        border-radius: 6px;
+                        border-width: 1px;
+                        border-color: AppTheme.border;
+                        background: AppTheme.node-bg;
+
+                        HorizontalLayout {
+                            padding: 4px;
+                            spacing: 6px;
+
+                            Rectangle {
+                                width: grid_size * 3.0 * 1px;
+                                height: parent.height - 8px;
+                                border-radius: 4px;
+                                background: msg.role == "text" ? #3498DB :
+                                           msg.role == "at" ? #27AE60 :
+                                           #9B59B6;
+                                border-width: 1px;
+                                border-color: msg.role == "text" ? #2980B9 :
+                                             msg.role == "at" ? #229954 :
+                                             #8E44AD;
+
+                                CjkText {
+                                    text: msg.role == "text" ? "文本" :
+                                          msg.role == "at" ? "@目标" :
+                                          "引用";
+                                    color: #FFFFFF;
+                                    font-size: grid_size * 0.45 * 1px;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+
+                                TouchArea {
+                                    clicked => {
+                                        root.qq_message_list_cycle_type(root.node_id, idx);
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                height: parent.height - 8px;
+                                border-radius: 4px;
+                                background: AppTheme.node-bg-pressed;
+                                border-width: 1px;
+                                border-color: AppTheme.border;
+                                horizontal-stretch: 1;
+
+                                HorizontalLayout {
+                                    width: 100%;
+                                    height: 100%;
+                                    padding: 2px;
+                                    spacing: 4px;
+
+                                    LineEdit {
+                                        text: msg.content;
+                                        placeholder-text: msg.role == "text" ? "输入文本" :
+                                                          msg.role == "at" ? "目标QQ号" : "消息ID";
+                                        height: parent.height - 4px;
+                                        horizontal-stretch: 1;
+                                        edited(text) => {
+                                            root.qq_message_list_set_content(root.node_id, idx, text);
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 2px;
+
+                                        Rectangle {
+                                            width: grid_size * 0.8 * 1px;
+                                            height: grid_size * 0.8 * 1px;
+                                            border-radius: 3px;
+                                            background: AppTheme.primary-muted;
+
+                                            CjkText {
+                                                text: "↑";
+                                                color: AppTheme.text-primary;
+                                                font-size: grid_size * 0.45 * 1px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.message_list_move_up(root.node_id, idx);
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            width: grid_size * 0.8 * 1px;
+                                            height: grid_size * 0.8 * 1px;
+                                            border-radius: 3px;
+                                            background: AppTheme.primary-muted;
+
+                                            CjkText {
+                                                text: "↓";
+                                                color: AppTheme.text-primary;
+                                                font-size: grid_size * 0.45 * 1px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.message_list_move_down(root.node_id, idx);
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            width: grid_size * 0.8 * 1px;
+                                            height: grid_size * 0.8 * 1px;
+                                            border-radius: 3px;
+                                            background: AppTheme.primary-muted;
+
+                                            CjkText {
+                                                text: "+";
+                                                color: AppTheme.text-primary;
+                                                font-size: grid_size * 0.45 * 1px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.qq_message_list_insert(root.node_id, idx);
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            width: grid_size * 0.8 * 1px;
+                                            height: grid_size * 0.8 * 1px;
+                                            border-radius: 3px;
+                                            background: AppTheme.danger-bg;
+
+                                            CjkText {
+                                                text: "×";
+                                                color: AppTheme.text-primary;
+                                                font-size: grid_size * 0.5 * 1px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.message_list_delete(root.node_id, idx);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for port[i] in input_ports: Rectangle {
+        x: (grid_size * 0.2) * 1px;
+        y: (grid_size * header_rows + i * grid_size + grid_size * 0.2) * 1px;
+        width: (grid_size * 0.6) * 1px;
+        height: (grid_size * 0.6) * 1px;
+        border-radius: (grid_size * 0.3) * 1px;
+        visible: (root.node_type != "message_list_data" && root.node_type != "qq_message_list_data") &&
+                 !(root.node_type == "message_event_type_filter" && port.name == "filter_type");
+        background: (port.is_connected || port.has_value) ? AppTheme.primary-muted : (port.is_required ? AppTheme.danger-bg : AppTheme.node-port-bg);
+        border-width: 1px;
+        border-color: (port.is_connected || port.has_value) ? AppTheme.primary : (port.is_required ? AppTheme.danger : AppTheme.node-port-border);
+
+        TouchArea {
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down) {
+                    root.port_clicked(root.node_id, port.name, true);
+                }
+            }
+        }
+    }
+
+    for port[i] in input_ports: Rectangle {
+        x: (grid_size) * 1px;
+        y: (grid_size * header_rows + i * grid_size) * 1px;
+        width: root.width - (grid_size * 2.5) * 1px;
+        height: (grid_size) * 1px;
+        visible: (root.node_type != "message_list_data" && root.node_type != "qq_message_list_data") &&
+                 !(root.node_type == "message_event_type_filter" && port.name == "filter_type");
+
+        HorizontalLayout {
+            alignment: start;
+            spacing: 5px;
+
+            CjkText {
+                text: port.name;
+                color: AppTheme.text-secondary;
+                font-size: grid_size * 0.5 * 1px;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 0;
+            }
+
+            if (!port.is_connected && (port.data_type == "String" || port.data_type == "Integer" || port.data_type == "Float" || port.data_type == "Password")): LineEdit {
+                width: min(parent.width * 0.5, 120px);
+                height: (grid_size * 0.8) * 1px;
+                text: port.inline_text;
+                placeholder-text: port.data_type;
+                input-type: port.data_type == "Password" ? password : text;
+                edited(text) => {
+                    root.inline_port_text_changed(root.node_id, port.name, text);
+                }
+            }
+
+            if (!port.is_connected && (port.data_type == "Boolean")): CheckBox {
+                height: (grid_size * 0.7) * 1px;
+                text: "";
+                checked: port.inline_bool;
+                toggled => {
+                    root.inline_port_bool_changed(root.node_id, port.name, self.checked);
+                }
+            }
+        }
+    }
+
+    if root.node_type == "string_data": Rectangle {
+        x: (grid_size) * 1px;
+        y: (grid_size * header_rows) * 1px;
+        width: root.width - (grid_size * 2.5) * 1px;
+        height: (grid_size) * 1px;
+
+        HorizontalLayout {
+            alignment: start;
+            spacing: 5px;
+
+            CjkText {
+                text: "text";
+                color: AppTheme.text-secondary;
+                font-size: grid_size * 0.5 * 1px;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 0;
+            }
+
+            LineEdit {
+                width: min(parent.width * 0.6, 150px);
+                height: (grid_size * 0.8) * 1px;
+                text: root.string_data_text;
+                placeholder-text: "输入字符串";
+                edited(text) => {
+                    root.inline_port_text_changed(root.node_id, "text", text);
+                }
+            }
+        }
+    }
+
+    if root.node_type == "message_event_type_filter": Rectangle {
+        x: (grid_size) * 1px;
+        y: (grid_size * (header_rows + 1)) * 1px;
+        width: root.width - (grid_size * 2.5) * 1px;
+        height: (grid_size) * 1px;
+
+        HorizontalLayout {
+            alignment: start;
+            spacing: 5px;
+
+            CjkText {
+                text: "消息类型";
+                color: AppTheme.text-secondary;
+                font-size: grid_size * 0.5 * 1px;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 0;
+            }
+
+            ComboBox {
+                width: min(parent.width * 0.65, 120px);
+                height: (grid_size * 0.85) * 1px;
+                model: ["好友消息", "群组消息"];
+                current-index: root.message_event_filter_type == "group" ? 1 : 0;
+                selected(value) => {
+                    root.inline_port_text_changed(
+                        root.node_id,
+                        "filter_type",
+                        value == "群组消息" ? "group" : "private"
+                    );
+                }
+            }
+        }
+    }
+
+    for port[i] in output_ports: Rectangle {
+        x: root.width - (grid_size * 0.8) * 1px;
+        y: (grid_size * header_rows + i * grid_size + grid_size * 0.2) * 1px;
+        width: (grid_size * 0.6) * 1px;
+        height: (grid_size * 0.6) * 1px;
+        border-radius: (grid_size * 0.3) * 1px;
+        background: port.is_connected ? AppTheme.primary-muted : (port.is_required ? AppTheme.danger-bg : AppTheme.node-port-bg);
+        border-width: 1px;
+        border-color: port.is_connected ? AppTheme.primary : (port.is_required ? AppTheme.danger : AppTheme.node-port-border);
+
+        TouchArea {
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down) {
+                    root.port_clicked(root.node_id, port.name, false);
+                }
+            }
+        }
+    }
+
+    for port[i] in output_ports: CjkText {
+        text: port.name;
+        color: AppTheme.text-secondary;
+        font-size: grid_size * 0.5 * 1px;
+        vertical-alignment: center;
+        horizontal-alignment: right;
+        x: (grid_size) * 1px;
+        y: (grid_size * header_rows + i * grid_size) * 1px;
+        width: root.width - (grid_size * 2) * 1px;
+        height: (grid_size) * 1px;
+    }
+
+    Rectangle {
+        x: root.width - (grid_size * 0.6) * 1px;
+        y: root.height - (grid_size * 0.5) * 1px - (grid_size * 0.1) * 1px;
+        width: (grid_size * 0.5) * 1px;
+        height: (grid_size * 0.5) * 1px;
+        background: AppTheme.border;
+        border-radius: 3px;
+
+        TouchArea {
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down) {
+                    root.is-resizing = true;
+                    root.resize-start-pointer-x = (self.mouse-x / 1px) + root.x / 1px;
+                    root.resize-start-pointer-y = (self.mouse-y / 1px) + root.y / 1px;
+                    root.resize-start-width = root.width / 1px;
+                    root.resize-start-height = root.height / 1px;
+                } else if (event.kind == PointerEventKind.up) {
+                    root.is-resizing = false;
+                    root.node_resize_finished(root.width / 1px, root.height / 1px);
+                }
+            }
+
+            moved => {
+                if (self.pressed && root.is-resizing) {
+                    let pointer-x = (self.mouse-x / 1px) + root.x / 1px;
+                    let pointer-y = (self.mouse-y / 1px) + root.y / 1px;
+                    let new-width = root.resize-start-width + (pointer-x - root.resize-start-pointer-x);
+                    let new-height = root.resize-start-height + (pointer-y - root.resize-start-pointer-y);
+                    root.node_width = new-width;
+                    root.node_height = new-height;
+                    root.node_resized(root.node_width, root.node_height);
+                }
+            }
+        }
+    }
+}

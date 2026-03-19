@@ -40,27 +40,34 @@ Regardless of mode, the system always performs these initial steps:
 
 In GUI mode, the application launches a Slint-based window system. The execution engine runs in response to user actions or in a separate thread to keep the UI responsive.
 
+The GUI subsystem is split into a root window contract plus dedicated modules for canvas rendering, node rendering, shared view-model structs, and overlay dialogs. This keeps the runtime behavior the same while reducing UI coupling inside a single Slint file.
+
 ### Startup Flow
 
 ```mermaid
 flowchart TD
     A[Start Application] --> B[Initialize Core Systems]
-    B --> C[Launch Slint Window]
-    C --> D[User Interaction Loop]
-    D --> E{Action?}
-    E -->|Drag/Drop Node| F[Update Graph Model]
-    E -->|Click 'Run'| G[Execute Graph Async]
-    E -->|Save| H[Serialize to JSON]
-    G --> I[Update Output View]
-    F --> D
-    I --> D
-    H --> D
+  B --> C[Create NodeGraphWindow]
+  C --> C1[Load shared UI view models]
+  C1 --> C2[Compose GraphCanvas, NodeItem views, dialogs]
+  C2 --> D[User Interaction Loop]
+  D --> E{Action?}
+  E -->|Drag/Drop Node| F[Update Graph Model]
+  E -->|Click 'Run'| G[Execute Graph Async]
+  E -->|Save| H[Serialize to JSON]
+  E -->|Open Dialog| J[Show selector or confirm overlay]
+  G --> I[Update Output View]
+  F --> D
+  H --> D
+  I --> D
+  J --> D
 ```
 
 ### Characteristics
 - **Main Thread**: Occupied by the UI event loop.
 - **Graph Execution**: Can be triggered manually.
 - **Visual Feedback**: Real-time port status and execution logs are displayed in the UI.
+- **UI Composition**: The root window owns the callback/property contract, while canvas, node card, and dialog modules render specialized parts of the interface.
 
 ---
 
