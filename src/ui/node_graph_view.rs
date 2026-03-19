@@ -1619,13 +1619,6 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
             set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
             tab.is_dirty = true;
             if let Some(ui) = ui_handle.upgrade() {
-                apply_graph_to_ui(
-                    &ui,
-                    &tab.graph,
-                    Some(tab_display_title(tab)),
-                    &tab.selection,
-                    &tab.inline_inputs,
-                );
                 update_tabs_ui(&ui, &tabs_guard, active_index);
             }
         }
