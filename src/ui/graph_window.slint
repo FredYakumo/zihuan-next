@@ -827,105 +827,107 @@ component NodeItem inherits Rectangle {
                                 border-color: AppTheme.border;
                                 horizontal-stretch: 1;
 
-                                LineEdit {
-                                    x: 2px;
-                                    y: 2px;
-                                    width: parent.width - 4px;
-                                    height: parent.height - 4px;
-                                    text: msg.content;
-                                    placeholder-text: msg.role == "text" ? "输入文本" :
-                                                      msg.role == "at" ? "目标QQ号" : "消息ID";
-                                    edited(text) => {
-                                        root.qq_message_list_set_content(root.node_id, idx, text);
-                                    }
-                                }
-                            }
+                                HorizontalLayout {
+                                    padding: 2px;
+                                    spacing: 4px;
 
-                            // Row actions
-                            HorizontalLayout {
-                                spacing: 2px;
-                                alignment: center;
-
-                                Rectangle {
-                                    width: grid_size * 0.8 * 1px;
-                                    height: grid_size * 0.8 * 1px;
-                                    border-radius: 3px;
-                                    background: AppTheme.primary-muted;
-
-                                    CjkText {
-                                        text: "↑";
-                                        color: AppTheme.text-primary;
-                                        font-size: grid_size * 0.45 * 1px;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                    }
-
-                                    TouchArea {
-                                        clicked => {
-                                            root.message_list_move_up(root.node_id, idx);
+                                    LineEdit {
+                                        text: msg.content;
+                                        placeholder-text: msg.role == "text" ? "输入文本" :
+                                                          msg.role == "at" ? "目标QQ号" : "消息ID";
+                                        height: parent.height - 4px;
+                                        horizontal-stretch: 1;
+                                        edited(text) => {
+                                            root.qq_message_list_set_content(root.node_id, idx, text);
                                         }
                                     }
-                                }
 
-                                Rectangle {
-                                    width: grid_size * 0.8 * 1px;
-                                    height: grid_size * 0.8 * 1px;
-                                    border-radius: 3px;
-                                    background: AppTheme.primary-muted;
+                                    // Row actions
+                                    HorizontalLayout {
+                                        spacing: 2px;
 
-                                    CjkText {
-                                        text: "↓";
-                                        color: AppTheme.text-primary;
-                                        font-size: grid_size * 0.45 * 1px;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                    }
+                                        Rectangle {
+                                            width: grid_size * 0.8 * 1px;
+                                            height: grid_size * 0.8 * 1px;
+                                            border-radius: 3px;
+                                            background: AppTheme.primary-muted;
 
-                                    TouchArea {
-                                        clicked => {
-                                            root.message_list_move_down(root.node_id, idx);
+                                            CjkText {
+                                                text: "↑";
+                                                color: AppTheme.text-primary;
+                                                font-size: grid_size * 0.45 * 1px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.message_list_move_up(root.node_id, idx);
+                                                }
+                                            }
                                         }
-                                    }
-                                }
 
-                                Rectangle {
-                                    width: grid_size * 0.8 * 1px;
-                                    height: grid_size * 0.8 * 1px;
-                                    border-radius: 3px;
-                                    background: AppTheme.primary-muted;
+                                        Rectangle {
+                                            width: grid_size * 0.8 * 1px;
+                                            height: grid_size * 0.8 * 1px;
+                                            border-radius: 3px;
+                                            background: AppTheme.primary-muted;
 
-                                    CjkText {
-                                        text: "+";
-                                        color: AppTheme.text-primary;
-                                        font-size: grid_size * 0.45 * 1px;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                    }
+                                            CjkText {
+                                                text: "↓";
+                                                color: AppTheme.text-primary;
+                                                font-size: grid_size * 0.45 * 1px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
 
-                                    TouchArea {
-                                        clicked => {
-                                            root.qq_message_list_insert(root.node_id, idx);
+                                            TouchArea {
+                                                clicked => {
+                                                    root.message_list_move_down(root.node_id, idx);
+                                                }
+                                            }
                                         }
-                                    }
-                                }
 
-                                Rectangle {
-                                    width: grid_size * 0.8 * 1px;
-                                    height: grid_size * 0.8 * 1px;
-                                    border-radius: 3px;
-                                    background: AppTheme.danger-bg;
+                                        Rectangle {
+                                            width: grid_size * 0.8 * 1px;
+                                            height: grid_size * 0.8 * 1px;
+                                            border-radius: 3px;
+                                            background: AppTheme.primary-muted;
 
-                                    CjkText {
-                                        text: "×";
-                                        color: AppTheme.text-primary;
-                                        font-size: grid_size * 0.5 * 1px;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                    }
+                                            CjkText {
+                                                text: "+";
+                                                color: AppTheme.text-primary;
+                                                font-size: grid_size * 0.45 * 1px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
 
-                                    TouchArea {
-                                        clicked => {
-                                            root.message_list_delete(root.node_id, idx);
+                                            TouchArea {
+                                                clicked => {
+                                                    root.qq_message_list_insert(root.node_id, idx);
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            width: grid_size * 0.8 * 1px;
+                                            height: grid_size * 0.8 * 1px;
+                                            border-radius: 3px;
+                                            background: AppTheme.danger-bg;
+
+                                            CjkText {
+                                                text: "×";
+                                                color: AppTheme.text-primary;
+                                                font-size: grid_size * 0.5 * 1px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.message_list_delete(root.node_id, idx);
+                                                }
+                                            }
                                         }
                                     }
                                 }
