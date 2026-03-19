@@ -57,6 +57,20 @@ export component NodeItem inherits Rectangle {
     property <float> resize-start-width: 0;
     property <float> resize-start-height: 0;
     property <float> inner-padding-bottom: grid_size * 0.8;
+    property <bool> is-list-data-node: root.node_type == "message_list_data" || root.node_type == "qq_message_list_data";
+    property <bool> shows-preview-row: root.preview_text != "" && !root.is-list-data-node;
+    property <float> list-node-inset: grid_size * 0.5;
+    property <float> list-node-top: grid_size * 1.1;
+    property <float> list-node-width: root.width / 1px - grid_size * 1.0;
+    property <float> list-node-height: min(grid_size * 7.0, root.height / 1px - grid_size * 2.0);
+    property <float> list-node-column-width: grid_size * 2.2;
+    property <float> list-node-row-height: grid_size * 1.5;
+    property <float> list-node-button-size: grid_size * 0.7;
+    property <float> list-node-list-padding: 4;
+    property <float> list-node-row-padding: 3;
+    property <float> list-node-row-spacing: 5;
+    property <float> list-node-action-spacing: 2;
+    property <float> list-node-port-row-y: grid_size * 1.1;
 
     x: (x_pos + offset-x) * 1px;
     y: (y_pos + offset-y) * 1px;
@@ -114,13 +128,13 @@ export component NodeItem inherits Rectangle {
         horizontal-alignment: center;
         font-size: grid_size * 0.7 * 1px;
         font-weight: 700;
-        height: (grid_size * (root.preview_text == "" ? header_rows : 1)) * 1px;
+        height: (grid_size * (root.shows-preview-row ? 1 : (root.is-list-data-node ? 1 : header_rows))) * 1px;
         width: parent.width;
         x: 0px;
         y: 0px;
     }
 
-    if root.preview_text != "": CjkText {
+    if root.shows-preview-row: CjkText {
         text: root.preview_text;
         color: AppTheme.text-muted;
         horizontal-alignment: left;
@@ -185,10 +199,10 @@ export component NodeItem inherits Rectangle {
     }
 
     if root.node_type == "message_list_data": Rectangle {
-        x: (grid_size * 0.5) * 1px;
-        y: (grid_size * 1.1) * 1px;
-        width: root.width - (grid_size * 1.0) * 1px;
-        height: min((grid_size * 7.0) * 1px, root.height - (grid_size * 2.0) * 1px);
+        x: root.list-node-inset * 1px;
+        y: root.list-node-top * 1px;
+        width: root.list-node-width * 1px;
+        height: root.list-node-height * 1px;
         background: transparent;
 
         VerticalLayout {
@@ -242,7 +256,7 @@ export component NodeItem inherits Rectangle {
                         text: "role";
                         color: AppTheme.text-muted;
                         font-size: grid_size * 0.45 * 1px;
-                        width: grid_size * 3.0 * 1px;
+                        width: root.list-node-column-width * 1px;
                     }
 
                     CjkText {
@@ -259,21 +273,21 @@ export component NodeItem inherits Rectangle {
 
                 VerticalBox {
                     spacing: 4px;
-                    padding: 2px;
+                    padding: root.list-node-list-padding * 1px;
 
                     for msg[idx] in root.message_list: Rectangle {
-                        height: (grid_size * 1.7) * 1px;
+                        height: root.list-node-row-height * 1px;
                         border-radius: 6px;
                         border-width: 1px;
                         border-color: AppTheme.border;
                         background: AppTheme.node-bg;
 
                         HorizontalLayout {
-                            padding: 4px;
-                            spacing: 6px;
+                            padding: root.list-node-row-padding * 1px;
+                            spacing: root.list-node-row-spacing * 1px;
 
                             Rectangle {
-                                width: grid_size * 3.0 * 1px;
+                                width: root.list-node-column-width * 1px;
                                 height: parent.height - 8px;
                                 border-radius: 4px;
                                 background: msg.role == "system" ? #2C3E50 :
@@ -330,11 +344,11 @@ export component NodeItem inherits Rectangle {
                                     }
 
                                     HorizontalLayout {
-                                        spacing: 2px;
+                                        spacing: root.list-node-action-spacing * 1px;
 
                                         Rectangle {
-                                            width: grid_size * 0.8 * 1px;
-                                            height: grid_size * 0.8 * 1px;
+                                            width: root.list-node-button-size * 1px;
+                                            height: root.list-node-button-size * 1px;
                                             border-radius: 3px;
                                             background: AppTheme.primary-muted;
 
@@ -354,8 +368,8 @@ export component NodeItem inherits Rectangle {
                                         }
 
                                         Rectangle {
-                                            width: grid_size * 0.8 * 1px;
-                                            height: grid_size * 0.8 * 1px;
+                                            width: root.list-node-button-size * 1px;
+                                            height: root.list-node-button-size * 1px;
                                             border-radius: 3px;
                                             background: AppTheme.primary-muted;
 
@@ -375,8 +389,8 @@ export component NodeItem inherits Rectangle {
                                         }
 
                                         Rectangle {
-                                            width: grid_size * 0.8 * 1px;
-                                            height: grid_size * 0.8 * 1px;
+                                            width: root.list-node-button-size * 1px;
+                                            height: root.list-node-button-size * 1px;
                                             border-radius: 3px;
                                             background: AppTheme.primary-muted;
 
@@ -396,8 +410,8 @@ export component NodeItem inherits Rectangle {
                                         }
 
                                         Rectangle {
-                                            width: grid_size * 0.8 * 1px;
-                                            height: grid_size * 0.8 * 1px;
+                                            width: root.list-node-button-size * 1px;
+                                            height: root.list-node-button-size * 1px;
                                             border-radius: 3px;
                                             background: AppTheme.danger-bg;
 
@@ -426,10 +440,10 @@ export component NodeItem inherits Rectangle {
     }
 
     if root.node_type == "qq_message_list_data": Rectangle {
-        x: (grid_size * 0.5) * 1px;
-        y: (grid_size * 1.1) * 1px;
-        width: root.width - (grid_size * 1.0) * 1px;
-        height: min((grid_size * 7.0) * 1px, root.height - (grid_size * 2.0) * 1px);
+        x: root.list-node-inset * 1px;
+        y: root.list-node-top * 1px;
+        width: root.list-node-width * 1px;
+        height: root.list-node-height * 1px;
         background: transparent;
 
         VerticalLayout {
@@ -483,7 +497,7 @@ export component NodeItem inherits Rectangle {
                         text: "type";
                         color: AppTheme.text-muted;
                         font-size: grid_size * 0.45 * 1px;
-                        width: grid_size * 3.0 * 1px;
+                        width: root.list-node-column-width * 1px;
                     }
 
                     CjkText {
@@ -500,21 +514,21 @@ export component NodeItem inherits Rectangle {
 
                 VerticalBox {
                     spacing: 4px;
-                    padding: 2px;
+                    padding: root.list-node-list-padding * 1px;
 
                     for msg[idx] in root.message_list: Rectangle {
-                        height: (grid_size * 1.7) * 1px;
+                        height: root.list-node-row-height * 1px;
                         border-radius: 6px;
                         border-width: 1px;
                         border-color: AppTheme.border;
                         background: AppTheme.node-bg;
 
                         HorizontalLayout {
-                            padding: 4px;
-                            spacing: 6px;
+                            padding: root.list-node-row-padding * 1px;
+                            spacing: root.list-node-row-spacing * 1px;
 
                             Rectangle {
-                                width: grid_size * 3.0 * 1px;
+                                width: root.list-node-column-width * 1px;
                                 height: parent.height - 8px;
                                 border-radius: 4px;
                                 background: msg.role == "text" ? #3498DB :
@@ -569,11 +583,11 @@ export component NodeItem inherits Rectangle {
                                     }
 
                                     HorizontalLayout {
-                                        spacing: 2px;
+                                        spacing: root.list-node-action-spacing * 1px;
 
                                         Rectangle {
-                                            width: grid_size * 0.8 * 1px;
-                                            height: grid_size * 0.8 * 1px;
+                                            width: root.list-node-button-size * 1px;
+                                            height: root.list-node-button-size * 1px;
                                             border-radius: 3px;
                                             background: AppTheme.primary-muted;
 
@@ -593,8 +607,8 @@ export component NodeItem inherits Rectangle {
                                         }
 
                                         Rectangle {
-                                            width: grid_size * 0.8 * 1px;
-                                            height: grid_size * 0.8 * 1px;
+                                            width: root.list-node-button-size * 1px;
+                                            height: root.list-node-button-size * 1px;
                                             border-radius: 3px;
                                             background: AppTheme.primary-muted;
 
@@ -614,8 +628,8 @@ export component NodeItem inherits Rectangle {
                                         }
 
                                         Rectangle {
-                                            width: grid_size * 0.8 * 1px;
-                                            height: grid_size * 0.8 * 1px;
+                                            width: root.list-node-button-size * 1px;
+                                            height: root.list-node-button-size * 1px;
                                             border-radius: 3px;
                                             background: AppTheme.primary-muted;
 
@@ -635,8 +649,8 @@ export component NodeItem inherits Rectangle {
                                         }
 
                                         Rectangle {
-                                            width: grid_size * 0.8 * 1px;
-                                            height: grid_size * 0.8 * 1px;
+                                            width: root.list-node-button-size * 1px;
+                                            height: root.list-node-button-size * 1px;
                                             border-radius: 3px;
                                             background: AppTheme.danger-bg;
 
@@ -670,7 +684,7 @@ export component NodeItem inherits Rectangle {
         width: (grid_size * 0.6) * 1px;
         height: (grid_size * 0.6) * 1px;
         border-radius: (grid_size * 0.3) * 1px;
-        visible: (root.node_type != "message_list_data" && root.node_type != "qq_message_list_data") &&
+        visible: !root.is-list-data-node &&
                  !(root.node_type == "message_event_type_filter" && port.name == "filter_type");
         background: (port.is_connected || port.has_value) ? AppTheme.primary-muted : (port.is_required ? AppTheme.danger-bg : AppTheme.node-port-bg);
         border-width: 1px;
@@ -690,7 +704,7 @@ export component NodeItem inherits Rectangle {
         y: (grid_size * header_rows + i * grid_size) * 1px;
         width: root.width - (grid_size * 2.5) * 1px;
         height: (grid_size) * 1px;
-        visible: (root.node_type != "message_list_data" && root.node_type != "qq_message_list_data") &&
+        visible: !root.is-list-data-node &&
                  !(root.node_type == "message_event_type_filter" && port.name == "filter_type");
 
         HorizontalLayout {
@@ -796,7 +810,7 @@ export component NodeItem inherits Rectangle {
 
     for port[i] in output_ports: Rectangle {
         x: root.width - (grid_size * 0.8) * 1px;
-        y: (grid_size * header_rows + i * grid_size + grid_size * 0.2) * 1px;
+        y: ((root.is-list-data-node ? (root.list-node-port-row-y + i * grid_size) : (grid_size * header_rows + i * grid_size)) + grid_size * 0.2) * 1px;
         width: (grid_size * 0.6) * 1px;
         height: (grid_size * 0.6) * 1px;
         border-radius: (grid_size * 0.3) * 1px;
@@ -820,7 +834,7 @@ export component NodeItem inherits Rectangle {
         vertical-alignment: center;
         horizontal-alignment: right;
         x: (grid_size) * 1px;
-        y: (grid_size * header_rows + i * grid_size) * 1px;
+        y: (root.is-list-data-node ? (root.list-node-port-row-y + i * grid_size) : (grid_size * header_rows + i * grid_size)) * 1px;
         width: root.width - (grid_size * 2) * 1px;
         height: (grid_size) * 1px;
     }
