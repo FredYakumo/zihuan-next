@@ -12,7 +12,7 @@
 - **Node types**:
   - **Simple nodes**: Stateless transforms (execute once per input)
   - **EventProducer nodes**: Stateful with lifecycle hooks (`on_start` → `on_update` loop → `on_cleanup`) for event sources, timers, polling
-- **Visual editing**: Slint-based GUI (`src/ui/*`) for drag-and-drop node graph creation, JSON import/export, persistent window state.
+- **Visual editing**: Slint-based GUI (`src/ui/*`) for drag-and-drop node graph creation, JSON import/export, persistent window state. The UI is modularized into a root window contract (`graph_window.slint`), shared VM types (`types.slint`), reusable components (`components/*.slint`), and overlay dialogs (`dialogs.slint`).
 
 ### Integration Components
 Built as nodes or node-compatible wrappers:
@@ -88,8 +88,8 @@ cargo run  # In default mode (no args), starts bot adapter + WebSocket client
 - State: `src/util/message_store.rs` (Redis cache, MySQL persistence, in-memory fallback with auto-reconnect)
 - Dataflow: `src/node/mod.rs` (Node trait, NodeGraph, Port, DataValue), `src/node/util_nodes.rs` (utility nodes), `src/llm/node_impl.rs` (LLM-based nodes), `src/bot_adapter/message_event_to_string.rs` (concrete node example)
 - LLM: `src/llm/llm_api.rs` (HTTP client), `src/llm/agent/brain.rs` (BrainAgent with tool orchestration), `src/llm/function_tools/` (tool implementations)
-- UI: `src/ui/node_graph_view.rs` (main UI logic), `src/ui/graph_window.slint` (Slint UI definition), `src/ui/window_state.rs` (persistent window config), `src/ui/selection.rs` (node selection logic)
+- UI: `src/ui/node_graph_view.rs` (main UI logic), `src/ui/graph_window.slint` (root Slint window contract/composition), `src/ui/types.slint` (shared exported UI VM structs), `src/ui/components/*.slint` (canvas, node, buttons, menu, tabs), `src/ui/dialogs.slint` (overlay dialogs/selectors), `src/ui/window_state.rs` (persistent window config), `src/ui/selection.rs` (node selection logic), `src/ui/node_render/` (Rust-side node preview helpers)
 - Database: `database/models/message_record.py` (SQLAlchemy model), `migrations/versions/` (alembic migrations), `alembic.ini` (migration config)
-- Module guides: `.github/copilot-instructions-{config,adapter,event,models,node,utils,message-store}.md`
+- Module guides: `.github/copilot-instructions-{config,adapter,event,models,node,utils,message-store,ui}.md`
 - Documentation: `document/user-guide.md` (end-user), `document/program-execute.md` (internal flow), `document/node/` (node development, lifecycle, JSON spec)
 

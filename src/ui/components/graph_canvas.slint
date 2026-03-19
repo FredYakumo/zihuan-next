@@ -1,0 +1,366 @@
+import { AppTheme } from "../theme.slint";
+import { EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm, NodeVm } from "../types.slint";
+import { CjkText } from "buttons.slint";
+import { NodeItem } from "node_item.slint";
+
+export component GraphCanvas inherits Rectangle {
+    in property <[NodeVm]> nodes;
+    in property <[EdgeVm]> edges;
+    in property <[EdgeSegmentVm]> edge_segments;
+    in property <[EdgeCornerVm]> edge_corners;
+    in property <[EdgeLabelVm]> edge_labels;
+    in property <[GridLineVm]> grid_lines;
+    in property <float> grid_size;
+    in property <float> edge_thickness;
+    in property <bool> drag_line_visible;
+    in property <float> drag_line_from_x;
+    in property <float> drag_line_from_y;
+    in property <float> drag_line_to_x;
+    in property <float> drag_line_to_y;
+    in property <bool> box_selection_visible;
+    in property <float> box_selection_x;
+    in property <float> box_selection_y;
+    in property <float> box_selection_width;
+    in property <float> box_selection_height;
+
+    callback node_moved(string, float, float);
+    callback node_move_finished(string, float, float);
+    callback port_clicked(string, string, bool);
+    callback pointer_moved(float, float);
+    callback cancel_connect();
+    callback node_clicked(string);
+    callback edge_clicked(string, string, string, string);
+    callback canvas_clicked();
+    callback box_selection_start(float, float);
+    callback box_selection_update(float, float);
+    callback box_selection_end();
+    callback inline_port_text_changed(string, string, string);
+    callback inline_port_bool_changed(string, string, bool);
+    callback message_list_add(string);
+    callback message_list_insert(string, int);
+    callback message_list_delete(string, int);
+    callback message_list_move_up(string, int);
+    callback message_list_move_down(string, int);
+    callback message_list_cycle_role(string, int);
+    callback message_list_set_content(string, int, string);
+    callback qq_message_list_add(string);
+    callback qq_message_list_insert(string, int);
+    callback qq_message_list_cycle_type(string, int);
+    callback qq_message_list_set_content(string, int, string);
+    callback node_resized(string, float, float);
+    callback node_resize_finished(string, float, float);
+
+    in-out property <bool> dragging: false;
+    in-out property <string> drag_from_node_id: "";
+    in-out property <string> drag_from_port: "";
+    in-out property <bool> drag_from_is_input: false;
+    in-out property <float> canvas_pan_x: 0;
+    in-out property <float> canvas_pan_y: 0;
+    in-out property <float> canvas_zoom: 1.0;
+
+    background: AppTheme.background;
+    width: 100%;
+    height: 100%;
+    clip: true;
+
+    for line in grid_lines: Path {
+        width: parent.width;
+        height: parent.height;
+        x: 0px;
+        y: 0px;
+        fill: transparent;
+        stroke: AppTheme.grid-line;
+        stroke-width: 1px;
+        clip: true;
+        viewbox-x: -(Math.mod(Math.mod(root.canvas_pan_x, root.grid_size) + root.grid_size, root.grid_size));
+        viewbox-y: -(Math.mod(Math.mod(root.canvas_pan_y, root.grid_size) + root.grid_size, root.grid_size));
+        viewbox-width: parent.width / 1px / root.canvas_zoom;
+        viewbox-height: parent.height / 1px / root.canvas_zoom;
+
+        MoveTo {
+            x: line.x1;
+            y: line.y1;
+        }
+
+        LineTo {
+            x: line.x2;
+            y: line.y2;
+        }
+    }
+
+    drag_area := TouchArea {
+        property <bool> is_box_selecting: false;
+        property <bool> is_panning: false;
+        property <bool> did_pan: false;
+        property <float> pan_start_mouse_x: 0;
+        property <float> pan_start_mouse_y: 0;
+        property <float> pan_origin_x: 0;
+        property <float> pan_origin_y: 0;
+
+        scroll-event(event) => {
+            let old-z = root.canvas_zoom;
+            let factor: float = event.delta-y > 0px ? 1.1 : 0.9;
+            let new-z = max(0.2, min(5.0, old-z * factor));
+            let mx = self.mouse-x / 1px;
+            let my = self.mouse-y / 1px;
+            root.canvas_pan_x = root.canvas_pan_x + mx * (1.0 / new-z - 1.0 / old-z);
+            root.canvas_pan_y = root.canvas_pan_y + my * (1.0 / new-z - 1.0 / old-z);
+            root.canvas_zoom = new-z;
+            EventResult.accept
+        }
+
+        clicked => {
+            if !is_box_selecting && !did_pan {
+                root.canvas_clicked();
+            }
+        }
+
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down) {
+                did_pan = false;
+                if (event.button == PointerEventButton.right) {
+                    root.cancel_connect();
+                } else if (event.button == PointerEventButton.left && event.modifiers.control) {
+                    is_box_selecting = true;
+                    root.box_selection_start(self.mouse-x / 1px / root.canvas_zoom - root.canvas_pan_x, self.mouse-y / 1px / root.canvas_zoom - root.canvas_pan_y);
+                } else if (event.button == PointerEventButton.left) {
+                    is_panning = true;
+                    pan_start_mouse_x = self.mouse-x / 1px;
+                    pan_start_mouse_y = self.mouse-y / 1px;
+                    pan_origin_x = root.canvas_pan_x;
+                    pan_origin_y = root.canvas_pan_y;
+                }
+            } else if (event.kind == PointerEventKind.move) {
+                if (is_panning) {
+                    did_pan = true;
+                    root.canvas_pan_x = pan_origin_x + (self.mouse-x / 1px - pan_start_mouse_x) / root.canvas_zoom;
+                    root.canvas_pan_y = pan_origin_y + (self.mouse-y / 1px - pan_start_mouse_y) / root.canvas_zoom;
+                } else if (is_box_selecting) {
+                    root.box_selection_update(self.mouse-x / 1px / root.canvas_zoom - root.canvas_pan_x, self.mouse-y / 1px / root.canvas_zoom - root.canvas_pan_y);
+                } else {
+                    root.pointer_moved(self.mouse-x / 1px / root.canvas_zoom - root.canvas_pan_x, self.mouse-y / 1px / root.canvas_zoom - root.canvas_pan_y);
+                }
+            } else if (event.kind == PointerEventKind.up) {
+                if (is_box_selecting) {
+                    is_box_selecting = false;
+                    root.box_selection_end();
+                }
+                is_panning = false;
+            }
+        }
+
+        moved => {
+            if (is_panning) {
+                did_pan = true;
+                root.canvas_pan_x = pan_origin_x + (self.mouse-x / 1px - pan_start_mouse_x) / root.canvas_zoom;
+                root.canvas_pan_y = pan_origin_y + (self.mouse-y / 1px - pan_start_mouse_y) / root.canvas_zoom;
+            } else if (is_box_selecting) {
+                root.box_selection_update(self.mouse-x / 1px / root.canvas_zoom - root.canvas_pan_x, self.mouse-y / 1px / root.canvas_zoom - root.canvas_pan_y);
+            } else {
+                root.pointer_moved(self.mouse-x / 1px / root.canvas_zoom - root.canvas_pan_x, self.mouse-y / 1px / root.canvas_zoom - root.canvas_pan_y);
+            }
+        }
+    }
+
+    for segment[idx] in edge_segments: Rectangle {
+        x: (segment.x + root.canvas_pan_x) * root.canvas_zoom * 1px;
+        y: (segment.y + root.canvas_pan_y) * root.canvas_zoom * 1px;
+        width: segment.width * root.canvas_zoom * 1px;
+        height: segment.height * root.canvas_zoom * 1px;
+        background: edges[segment.edge_index].is_selected ? AppTheme.edge-selected : AppTheme.edge;
+        border-radius: (root.edge_thickness / 2) * root.canvas_zoom * 1px;
+
+        TouchArea {
+            clicked => {
+                root.edge_clicked(
+                    edges[segment.edge_index].from_node_id,
+                    edges[segment.edge_index].from_port,
+                    edges[segment.edge_index].to_node_id,
+                    edges[segment.edge_index].to_port
+                );
+            }
+        }
+    }
+
+    for corner[idx] in edge_corners: Rectangle {
+        x: (corner.x + root.canvas_pan_x - root.edge_thickness / 2) * root.canvas_zoom * 1px;
+        y: (corner.y + root.canvas_pan_y - root.edge_thickness / 2) * root.canvas_zoom * 1px;
+        width: root.edge_thickness * root.canvas_zoom * 1px;
+        height: root.edge_thickness * root.canvas_zoom * 1px;
+        background: edges[corner.edge_index].is_selected ? AppTheme.edge-selected : AppTheme.edge;
+        border-radius: (root.edge_thickness / 2) * root.canvas_zoom * 1px;
+
+        TouchArea {
+            clicked => {
+                root.edge_clicked(
+                    edges[corner.edge_index].from_node_id,
+                    edges[corner.edge_index].from_port,
+                    edges[corner.edge_index].to_node_id,
+                    edges[corner.edge_index].to_port
+                );
+            }
+        }
+    }
+
+    for label in edge_labels: Rectangle {
+        x: (label.x + root.canvas_pan_x - label.width / 2) * root.canvas_zoom * 1px;
+        y: (label.y + root.canvas_pan_y - label.height / 2) * root.canvas_zoom * 1px;
+        width: label.width * root.canvas_zoom * 1px;
+        height: label.height * root.canvas_zoom * 1px;
+        background: AppTheme.label-bg;
+        border-radius: 4px;
+        border-width: 1px;
+        border-color: AppTheme.label-border;
+
+        CjkText {
+            text: label.text;
+            color: AppTheme.text-primary;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            font-size: root.grid_size * 0.5 * root.canvas_zoom * 1px;
+        }
+    }
+
+    if root.drag_line_visible: Path {
+        width: parent.width;
+        height: parent.height;
+        x: 0px;
+        y: 0px;
+        fill: transparent;
+        stroke: AppTheme.edge;
+        stroke-width: root.edge_thickness * root.canvas_zoom * 1px;
+        viewbox-x: -root.canvas_pan_x;
+        viewbox-y: -root.canvas_pan_y;
+        viewbox-width: parent.width / 1px / root.canvas_zoom;
+        viewbox-height: parent.height / 1px / root.canvas_zoom;
+
+        MoveTo {
+            x: root.drag_line_from_x;
+            y: root.drag_line_from_y;
+        }
+
+        LineTo {
+            x: (root.drag_line_from_x + root.drag_line_to_x) / 2;
+            y: root.drag_line_from_y;
+        }
+
+        LineTo {
+            x: (root.drag_line_from_x + root.drag_line_to_x) / 2;
+            y: root.drag_line_to_y;
+        }
+
+        LineTo {
+            x: root.drag_line_to_x;
+            y: root.drag_line_to_y;
+        }
+    }
+
+    if root.box_selection_visible: Rectangle {
+        x: (root.box_selection_x + root.canvas_pan_x) * root.canvas_zoom * 1px;
+        y: (root.box_selection_y + root.canvas_pan_y) * root.canvas_zoom * 1px;
+        width: root.box_selection_width * root.canvas_zoom * 1px;
+        height: root.box_selection_height * root.canvas_zoom * 1px;
+        background: AppTheme.selection-bg;
+        border-width: 2px;
+        border-color: AppTheme.selection;
+        border-radius: 0px;
+    }
+
+    for node in nodes: NodeItem {
+        node_id: node.id;
+        label: node.label;
+        preview_text: node.preview_text;
+        node_type: node.node_type;
+        string_data_text: node.string_data_text;
+        message_event_filter_type: node.message_event_filter_type;
+        message_list: node.message_list;
+        x_pos: (node.x + root.canvas_pan_x) * root.canvas_zoom;
+        y_pos: (node.y + root.canvas_pan_y) * root.canvas_zoom;
+        node_width: node.width * root.canvas_zoom;
+        node_height: node.height * root.canvas_zoom;
+        input_ports: node.input_ports;
+        output_ports: node.output_ports;
+        grid_size: root.grid_size * root.canvas_zoom;
+        node_width_cells: 10;
+        header_rows: 2;
+        min_rows: 3;
+        is_selected: node.is_selected;
+        has_error: node.has_error;
+
+        node_moved(x, y) => {
+            root.node_moved(node.id, x / root.canvas_zoom - root.canvas_pan_x, y / root.canvas_zoom - root.canvas_pan_y);
+        }
+
+        node_move_finished(x, y) => {
+            root.node_move_finished(node.id, x / root.canvas_zoom - root.canvas_pan_x, y / root.canvas_zoom - root.canvas_pan_y);
+        }
+
+        port_clicked(node_id, port_name, is_input) => {
+            root.port_clicked(node_id, port_name, is_input);
+        }
+
+        node_clicked(node_id) => {
+            root.node_clicked(node_id);
+        }
+
+        inline_port_text_changed(node_id, port_name, value) => {
+            root.inline_port_text_changed(node_id, port_name, value);
+        }
+
+        inline_port_bool_changed(node_id, port_name, value) => {
+            root.inline_port_bool_changed(node_id, port_name, value);
+        }
+
+        message_list_add(node_id) => {
+            root.message_list_add(node_id);
+        }
+
+        message_list_insert(node_id, index) => {
+            root.message_list_insert(node_id, index);
+        }
+
+        message_list_delete(node_id, index) => {
+            root.message_list_delete(node_id, index);
+        }
+
+        message_list_move_up(node_id, index) => {
+            root.message_list_move_up(node_id, index);
+        }
+
+        message_list_move_down(node_id, index) => {
+            root.message_list_move_down(node_id, index);
+        }
+
+        message_list_cycle_role(node_id, index) => {
+            root.message_list_cycle_role(node_id, index);
+        }
+
+        message_list_set_content(node_id, index, value) => {
+            root.message_list_set_content(node_id, index, value);
+        }
+
+        qq_message_list_add(node_id) => {
+            root.qq_message_list_add(node_id);
+        }
+
+        qq_message_list_insert(node_id, index) => {
+            root.qq_message_list_insert(node_id, index);
+        }
+
+        qq_message_list_cycle_type(node_id, index) => {
+            root.qq_message_list_cycle_type(node_id, index);
+        }
+
+        qq_message_list_set_content(node_id, index, value) => {
+            root.qq_message_list_set_content(node_id, index, value);
+        }
+
+        node_resized(width, height) => {
+            root.node_resized(node.id, width / root.canvas_zoom, height / root.canvas_zoom);
+        }
+
+        node_resize_finished(width, height) => {
+            root.node_resize_finished(node.id, width / root.canvas_zoom, height / root.canvas_zoom);
+        }
+    }
+}
