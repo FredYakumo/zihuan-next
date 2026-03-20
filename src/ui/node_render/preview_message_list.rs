@@ -14,8 +14,12 @@ impl NodeRenderer for PreviewMessageListRenderer {
     ) -> String {
         // Get messages from execution results
         if let Some(results) = graph.execution_results.get(node_id) {
-            if let Some(DataValue::MessageList(messages)) = results.get("messages") {
-                return format_message_list(messages);
+            if let Some(DataValue::Vec(_, items)) = results.get("messages") {
+                let messages: Vec<Message> = items
+                    .iter()
+                    .filter_map(|v| if let DataValue::Message(m) = v { Some(m.clone()) } else { None })
+                    .collect();
+                return format_message_list(&messages);
             }
         }
 
@@ -52,20 +56,23 @@ pub fn get_message_list_data(
     graph: &NodeGraphDefinition,
 ) -> Vec<MessageItem> {
     if let Some(results) = graph.execution_results.get(node_id) {
-        if let Some(DataValue::MessageList(messages)) = results.get("messages") {
-            return messages.iter().map(|msg| {
-                let role_str = match msg.role {
-                    MessageRole::System => "system",
-                    MessageRole::User => "user",
-                    MessageRole::Assistant => "assistant",
-                    MessageRole::Tool => "tool",
-                };
-                
-                MessageItem {
-                    role: role_str.to_string(),
-                    content: msg.content.clone().unwrap_or_default(),
-                }
-            }).collect();
+        if let Some(DataValue::Vec(_, items)) = results.get("messages") {
+            return items
+                .iter()
+                .filter_map(|v| if let DataValue::Message(m) = v { Some(m) } else { None })
+                .map(|msg| {
+                    let role_str = match msg.role {
+                        MessageRole::System => "system",
+                        MessageRole::User => "user",
+                        MessageRole::Assistant => "assistant",
+                        MessageRole::Tool => "tool",
+                    };
+                    MessageItem {
+                        role: role_str.to_string(),
+                        content: msg.content.clone().unwrap_or_default(),
+                    }
+                })
+                .collect();
         }
     }
     Vec::new()

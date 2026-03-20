@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
 use std::sync::Arc;
-use crate::llm::{Message, function_tools::FunctionTool};
+use crate::llm::function_tools::FunctionTool;
 use crate::bot_adapter::adapter::SharedBotAdapter;
 use crate::bot_adapter::models::event_model::MessageEvent;
 use crate::bot_adapter::models::message::MessageProp;
@@ -33,11 +33,11 @@ pub enum DataType {
     Boolean,
     Json,
     Binary,
-    List(Box<DataType>),
-    MessageList,
-    QQMessageList,
+    Vec(Box<DataType>),
     MessageEvent,
     MessageProp,
+    Message,
+    QQMessage,
     FunctionTools,
     BotAdapterRef,
     RedisRef,
@@ -50,7 +50,7 @@ impl DataType {
     pub fn is_compatible_with(&self, other: &DataType) -> bool {
         match (self, other) {
             (DataType::Any, _) | (_, DataType::Any) => true,
-            (DataType::List(left), DataType::List(right)) => left.is_compatible_with(right),
+            (DataType::Vec(left), DataType::Vec(right)) => left.is_compatible_with(right),
             _ => self == other,
         }
     }
@@ -66,11 +66,11 @@ impl fmt::Display for DataType {
             DataType::Boolean => write!(f, "Boolean"),
             DataType::Json => write!(f, "Json"),
             DataType::Binary => write!(f, "Binary"),
-            DataType::List(inner) => write!(f, "List<{}>", inner),
-            DataType::MessageList => write!(f, "MessageList"),
-            DataType::QQMessageList => write!(f, "QQMessageList"),
+            DataType::Vec(inner) => write!(f, "Vec<{}>", inner),
             DataType::MessageEvent => write!(f, "MessageEvent"),
             DataType::MessageProp => write!(f, "MessageProp"),
+            DataType::Message => write!(f, "Message"),
+            DataType::QQMessage => write!(f, "QQMessage"),
             DataType::FunctionTools => write!(f, "FunctionTools"),
             DataType::BotAdapterRef => write!(f, "BotAdapterRef"),
             DataType::RedisRef => write!(f, "RedisRef"),
@@ -90,10 +90,10 @@ pub enum DataValue {
     Boolean(bool),
     Json(Value),
     Binary(Vec<u8>),
-    List(Vec<DataValue>),
-    MessageList(Vec<Message>),
-    QQMessageList(Vec<crate::bot_adapter::models::message::Message>),
+    Vec(Box<DataType>, std::vec::Vec<DataValue>),
     MessageEvent(MessageEvent),
+    Message(crate::llm::Message),
+    QQMessage(crate::bot_adapter::models::message::Message),
     MessageProp(MessageProp),
     FunctionTools(Vec<Arc<dyn FunctionTool>>),
     BotAdapterRef(SharedBotAdapter),
@@ -111,15 +111,9 @@ impl DataValue {
             DataValue::Boolean(_) => DataType::Boolean,
             DataValue::Json(_) => DataType::Json,
             DataValue::Binary(_) => DataType::Binary,
-            DataValue::List(items) => {
-                if let Some(first) = items.first() {
-                    DataType::List(Box::new(first.data_type()))
-                } else {
-                    DataType::List(Box::new(DataType::String))
-                }
-            }
-            DataValue::MessageList(_) => DataType::MessageList,
-            DataValue::QQMessageList(_) => DataType::QQMessageList,
+            DataValue::Vec(ty, _) => DataType::Vec(ty.clone()),
+            DataValue::Message(_) => DataType::Message,
+            DataValue::QQMessage(_) => DataType::QQMessage,
             DataValue::MessageEvent(_) => DataType::MessageEvent,
             DataValue::MessageProp(_) => DataType::MessageProp,
             DataValue::FunctionTools(_) => DataType::FunctionTools,
@@ -138,22 +132,17 @@ impl DataValue {
             DataValue::Boolean(b) => Value::Bool(*b),
             DataValue::Json(v) => v.clone(),
             DataValue::Binary(bytes) => Value::Array(bytes.iter().map(|b| Value::Number((*b).into())).collect()),
-            DataValue::List(items) => {
+            DataValue::Vec(_, items) => {
                 Value::Array(items.iter().map(|item| item.to_json()).collect())
             }
-            DataValue::QQMessageList(messages) => {
-                Value::Array(messages.iter().map(|m| serde_json::to_value(m).unwrap_or(Value::Null)).collect())
+            DataValue::Message(m) => {
+                serde_json::json!({
+                    "role": crate::llm::role_to_str(&m.role),
+                    "content": m.content,
+                    "tool_calls": m.tool_calls,
+                })
             }
-            DataValue::MessageList(messages) => {
-                let msgs: Vec<Value> = messages.iter().map(|m| {
-                    serde_json::json!({
-                        "role": crate::llm::role_to_str(&m.role),
-                        "content": m.content,
-                        "tool_calls": m.tool_calls,
-                    })
-                }).collect();
-                Value::Array(msgs)
-            }
+            DataValue::QQMessage(m) => serde_json::to_value(m).unwrap_or(Value::Null),
             DataValue::MessageEvent(event) => {
                 serde_json::json!({
                     "message_id": event.message_id,
@@ -208,9 +197,9 @@ impl fmt::Debug for DataValue {
             DataValue::Boolean(value) => f.debug_tuple("Boolean").field(value).finish(),
             DataValue::Json(value) => f.debug_tuple("Json").field(value).finish(),
             DataValue::Binary(value) => f.debug_tuple("Binary").field(value).finish(),
-            DataValue::List(value) => f.debug_tuple("List").field(value).finish(),
-            DataValue::MessageList(value) => f.debug_tuple("MessageList").field(value).finish(),
-            DataValue::QQMessageList(value) => f.debug_tuple("QQMessageList").field(value).finish(),
+            DataValue::Vec(ty, value) => f.debug_tuple("Vec").field(ty).field(value).finish(),
+            DataValue::Message(value) => f.debug_tuple("Message").field(value).finish(),
+            DataValue::QQMessage(value) => f.debug_tuple("QQMessage").field(value).finish(),
             DataValue::MessageEvent(value) => f.debug_tuple("MessageEvent").field(value).finish(),
             DataValue::MessageProp(value) => f.debug_tuple("MessageProp").field(value).finish(),
             DataValue::FunctionTools(value) => f.debug_tuple("FunctionTools").field(value).finish(),
@@ -239,14 +228,14 @@ mod tests {
     fn any_type_is_compatible_with_concrete_types() {
         assert!(DataType::Any.is_compatible_with(&DataType::String));
         assert!(DataType::MessageEvent.is_compatible_with(&DataType::Any));
-        assert!(DataType::Any.is_compatible_with(&DataType::List(Box::new(DataType::Integer))));
+        assert!(DataType::Any.is_compatible_with(&DataType::Vec(Box::new(DataType::Integer))));
     }
 
     #[test]
     fn concrete_types_remain_strict() {
         assert!(DataType::String.is_compatible_with(&DataType::String));
         assert!(!DataType::String.is_compatible_with(&DataType::Integer));
-        assert!(!DataType::List(Box::new(DataType::String))
-            .is_compatible_with(&DataType::List(Box::new(DataType::Integer))));
+        assert!(!DataType::Vec(Box::new(DataType::String))
+            .is_compatible_with(&DataType::Vec(Box::new(DataType::Integer))));
     }
 }

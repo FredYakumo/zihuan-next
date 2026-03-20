@@ -79,7 +79,7 @@ impl Node for ExtractMessageFromEventNode {
     ];
 
     node_output![
-        port! { name = "messages", ty = MessageList, desc = "MessageList containing system and user messages" },
+        port! { name = "messages", ty = Vec(Message), desc = "Vec<Message> containing system and user messages" },
         port! { name = "msg_prop", ty = MessageProp, desc = "Parsed message properties" },
     ];
 
@@ -136,7 +136,10 @@ impl Node for ExtractMessageFromEventNode {
 
             // Combine system and user messages
             let messages = vec![system_msg, user_msg];
-            outputs.insert("messages".to_string(), DataValue::MessageList(messages));
+            outputs.insert("messages".to_string(), DataValue::Vec(
+                Box::new(crate::node::DataType::Message),
+                messages.into_iter().map(DataValue::Message).collect(),
+            ));
             outputs.insert("msg_prop".to_string(), DataValue::MessageProp(msg_prop));
         } else {
             return Err("message_event input is required and must be MessageEvent type".into());
