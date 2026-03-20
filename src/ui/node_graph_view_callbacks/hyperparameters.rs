@@ -5,7 +5,7 @@ use slint::ComponentHandle;
 use crate::node::data_value::DataType;
 use crate::node::graph_io::HyperParameter;
 use crate::ui::graph_window::NodeGraphWindow;
-use crate::ui::node_graph_view::{refresh_active_tab_ui, GraphTabState};
+use crate::ui::node_graph_view::{refresh_active_tab_ui, update_tabs_ui, GraphTabState};
 use crate::util::hyperparam_store::save_hyperparameter_values;
 
 fn parse_hp_data_type(type_str: &str) -> DataType {
@@ -168,7 +168,23 @@ pub(crate) fn bind_hyperparameter_callbacks(
                 tab.is_dirty = true;
             }
             if let Some(ui) = ui_handle.upgrade() {
-                refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+                // Targeted in-place update: only update the specific row's value.
+                // A full refresh via refresh_active_tab_ui would replace the entire
+                // model with a new VecModel, causing Slint to recreate all list items
+                // and making the focused LineEdit lose focus on every keystroke.
+                use slint::Model;
+                let model = ui.get_hyperparameters();
+                for i in 0..model.row_count() {
+                    if let Some(mut item) = model.row_data(i) {
+                        if item.name.as_str() == name.as_str() {
+                            item.value = value_str.as_str().into();
+                            model.set_row_data(i, item);
+                            break;
+                        }
+                    }
+                }
+                // Update tab titles to reflect dirty state
+                update_tabs_ui(&ui, &tabs_guard, active_index);
             }
         });
     }
