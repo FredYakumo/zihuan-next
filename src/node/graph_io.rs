@@ -6,11 +6,30 @@ use std::path::Path;
 
 use crate::error::Result;
 use crate::node::{DataValue, Node, NodeGraph, Port};
+use crate::node::data_value::DataType;
+
+/// A graph-level hyperparameter (variable) that can be bound to node input ports.
+/// Values are NOT stored here – they live in a separate per-graph YAML file
+/// in the central app-data directory (`hyperparam_store`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HyperParameter {
+    /// Unique name within the graph
+    pub name: String,
+    /// Must be one of: String, Integer, Float, Boolean
+    pub data_type: DataType,
+    /// Whether execution is blocked when this hyperparameter has no value
+    #[serde(default)]
+    pub required: bool,
+    #[serde(default)]
+    pub description: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NodeGraphDefinition {
     pub nodes: Vec<NodeDefinition>,
     pub edges: Vec<EdgeDefinition>,
+    #[serde(default)]
+    pub hyperparameters: Vec<HyperParameter>,
     #[serde(skip)]
     pub execution_results: HashMap<String, HashMap<String, DataValue>>,
 }
@@ -27,6 +46,8 @@ pub struct NodeDefinition {
     pub size: Option<GraphSize>,
     #[serde(default)]
     pub inline_values: HashMap<String, Value>,
+    #[serde(default)]
+    pub port_bindings: HashMap<String, String>,
     #[serde(default)]
     pub has_error: bool,
 }
@@ -149,6 +170,7 @@ pub fn build_definition_from_graph(graph: &NodeGraph) -> NodeGraphDefinition {
     NodeGraphDefinition { 
         nodes, 
         edges,
+        hyperparameters: Vec::new(),
         execution_results: HashMap::new(),
     }
 }
@@ -164,6 +186,7 @@ fn node_to_definition(id: &str, node: &dyn Node) -> NodeDefinition {
         position: None,
         size: None,
         inline_values: HashMap::new(),
+        port_bindings: HashMap::new(),
         has_error: false,
     }
 }

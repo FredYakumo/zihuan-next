@@ -7,7 +7,7 @@ use crate::ui::graph_window::{NodeGraphWindow, NodeTypeVm};
 use crate::ui::node_graph_view::{
     refresh_active_tab_ui, tab_display_title, GraphTabState,
 };
-use crate::ui::node_graph_view_inline::{add_node_to_graph, apply_inline_inputs_to_graph};
+use crate::ui::node_graph_view_inline::{add_node_to_graph, apply_hyperparameter_bindings_to_graph, apply_inline_inputs_to_graph};
 use crate::ui::node_graph_view_vm::{apply_graph_to_ui, matches_node_type_search};
 use crate::ui::node_render::{inline_port_key, InlinePortValue};
 
@@ -41,7 +41,7 @@ pub(crate) fn bind_window_callbacks(
     let tabs_clone = Arc::clone(&tabs);
     let active_tab_clone = Arc::clone(&active_tab_index);
     ui.on_run_graph(move || {
-        let (tab_id, graph_def, inline_inputs_map) = {
+        let (tab_id, graph_def, inline_inputs_map, hyperparameter_values) = {
             let tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
             let tab = match tabs_guard.get(active_index) {
@@ -54,7 +54,7 @@ pub(crate) fn bind_window_callbacks(
                 return;
             }
 
-            (tab.id, tab.graph.clone(), tab.inline_inputs.clone())
+            (tab.id, tab.graph.clone(), tab.inline_inputs.clone(), tab.hyperparameter_values.clone())
         };
 
         let mut graph_def = graph_def;
@@ -74,6 +74,18 @@ pub(crate) fn bind_window_callbacks(
             }
         }
 
+        // Validate required hyperparameters
+        for hp in &graph_def.hyperparameters {
+            if hp.required && !hyperparameter_values.contains_key(&hp.name) {
+                if let Some(ui) = ui_handle.upgrade() {
+                    ui.set_show_error_dialog(true);
+                    ui.set_error_dialog_message(format!("必填超参数 '{}' 未设置值，无法运行节点图", hp.name).into());
+                }
+                return;
+            }
+        }
+
+        apply_hyperparameter_bindings_to_graph(&mut graph_def, &hyperparameter_values);
         apply_inline_inputs_to_graph(&mut graph_def, &inline_inputs_map);
 
         match crate::node::registry::build_node_graph_from_definition(&graph_def) {
@@ -111,6 +123,7 @@ pub(crate) fn bind_window_callbacks(
                     let ui_weak_cb = ui_handle.clone();
                     let active_tab_cb = Arc::clone(&active_tab_clone);
                     let inline_inputs_cb = inline_inputs_map.clone();
+                    let hp_values_cb = hyperparameter_values.clone();
 
                     node_graph.set_execution_callback(move |node_id, inputs, outputs| {
                         let node_id = node_id.to_string();
@@ -123,6 +136,7 @@ pub(crate) fn bind_window_callbacks(
                         let ui_weak_cb = ui_weak_cb.clone();
                         let active_tab_cb = Arc::clone(&active_tab_cb);
                         let inline_inputs_cb = inline_inputs_cb.clone();
+                        let hp_values_cb = hp_values_cb.clone();
 
                         let _ = slint::invoke_from_event_loop(move || {
                             let mut tabs_guard = tabs_cb.lock().unwrap();
@@ -138,6 +152,7 @@ pub(crate) fn bind_window_callbacks(
                                             Some(tab_display_title(tab)),
                                             &tab.selection,
                                             &inline_inputs_cb,
+                                            &hp_values_cb,
                                         );
                                     }
                                 }
@@ -149,6 +164,7 @@ pub(crate) fn bind_window_callbacks(
                     let tabs_bg = Arc::clone(&tabs_clone);
                     let active_tab_bg = Arc::clone(&active_tab_clone);
                     let inline_inputs_bg = inline_inputs_map.clone();
+                    let hp_values_bg = hyperparameter_values.clone();
 
                     std::thread::spawn(move || {
                         let execution_result = node_graph.execute_and_capture_results();
@@ -181,6 +197,7 @@ pub(crate) fn bind_window_callbacks(
                                             Some(tab_display_title(tab)),
                                             &tab.selection,
                                             &inline_inputs_bg,
+                                            &hp_values_bg,
                                         );
                                         ui.invoke_show_error(format!("执行错误：{}", error_msg).into());
                                         ui.set_connection_status(format!("❌ 执行失败: {}", error_msg).into());
@@ -210,6 +227,7 @@ pub(crate) fn bind_window_callbacks(
                                             Some(tab_display_title(tab)),
                                             &tab.selection,
                                             &inline_inputs_bg,
+                                            &hp_values_bg,
                                         );
                                     }
                                 }
@@ -255,6 +273,7 @@ pub(crate) fn bind_window_callbacks(
                                     Some(tab_display_title(tab)),
                                     &tab.selection,
                                     &inline_inputs_map,
+                                    &hyperparameter_values,
                                 );
                                 ui.invoke_show_error(format!("执行错误：{}", error_msg).into());
                             }
@@ -274,6 +293,7 @@ pub(crate) fn bind_window_callbacks(
                                     Some(tab_display_title(tab)),
                                     &tab.selection,
                                     &inline_inputs_map,
+                                    &hyperparameter_values,
                                 );
                             }
                         }

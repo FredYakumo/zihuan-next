@@ -12,6 +12,7 @@ use crate::ui::node_graph_view::{
 use crate::ui::node_graph_view_inline::{
     apply_inline_inputs_to_graph, build_inline_inputs_from_graph,
 };
+use crate::util::hyperparam_store::{load_hyperparameter_values, save_hyperparameter_values};
 #[cfg(target_os = "macos")]
 use crate::ui::macos_menu::{install_menu, MenuActions};
 
@@ -35,23 +36,33 @@ pub(crate) fn bind_tab_callbacks(
             None => return,
         };
 
-        if let Ok(graph) = load_graph_definition_from_json(&selected_path) {
-            let mut tabs_guard = tabs_clone.lock().unwrap();
-            let active_index = *active_tab_clone.lock().unwrap();
-            if let Some(tab) = tabs_guard.get_mut(active_index) {
-                tab.graph = graph.clone();
-                tab.inline_inputs = build_inline_inputs_from_graph(&graph);
-                tab.selection.clear();
-                tab.file_path = Some(selected_path.clone());
-                tab.title = selected_path
-                    .file_name()
-                    .map(|name| name.to_string_lossy().to_string())
-                    .unwrap_or_else(|| selected_path.display().to_string());
-                tab.is_dirty = false;
-            }
+        match load_graph_definition_from_json(&selected_path) {
+            Ok(graph) => {
+                let mut tabs_guard = tabs_clone.lock().unwrap();
+                let active_index = *active_tab_clone.lock().unwrap();
+                if let Some(tab) = tabs_guard.get_mut(active_index) {
+                    tab.graph = graph.clone();
+                    tab.inline_inputs = build_inline_inputs_from_graph(&graph);
+                    tab.hyperparameter_values = load_hyperparameter_values(&selected_path);
+                    tab.selection.clear();
+                    tab.file_path = Some(selected_path.clone());
+                    tab.title = selected_path
+                        .file_name()
+                        .map(|name| name.to_string_lossy().to_string())
+                        .unwrap_or_else(|| selected_path.display().to_string());
+                    tab.is_dirty = false;
+                }
 
-            if let Some(ui) = ui_handle.upgrade() {
-                refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+                if let Some(ui) = ui_handle.upgrade() {
+                    refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to load graph: {}", e);
+                if let Some(ui) = ui_handle.upgrade() {
+                    ui.set_show_error_dialog(true);
+                    ui.set_error_dialog_message(format!("无法加载文件:\n{}", e).into());
+                }
             }
         }
     });
@@ -96,6 +107,11 @@ pub(crate) fn bind_tab_callbacks(
             if let Err(e) = crate::node::graph_io::save_graph_definition_to_json(&path, &tab.graph) {
                 eprintln!("Failed to save graph: {}", e);
                 return false;
+            }
+
+            // Save hyperparameter values to a separate YAML file in the data directory
+            if let Err(e) = save_hyperparameter_values(&path, &tab.hyperparameter_values) {
+                log::warn!("[HyperParamStore] Failed to save hyperparameter values: {}", e);
             }
 
             tab.file_path = Some(path.clone());

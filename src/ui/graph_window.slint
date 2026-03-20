@@ -1,11 +1,11 @@
 import { VerticalBox } from "std-widgets.slint";
 import { AppTheme } from "theme.slint";
-import { EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm, NodeTypeVm, NodeVm } from "types.slint";
+import { EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm, HyperParameterVm, NodeTypeVm, NodeVm } from "types.slint";
 import { CjkButton, CjkDeleteButton, CjkRunButton, CjkText } from "components/buttons.slint";
 import { MenuBarItem, MenuItemRow } from "components/menubar.slint";
 import { TabItem } from "components/tabs.slint";
 import { GraphCanvas } from "components/graph_canvas.slint";
-import { ErrorDialog, NodeHelpDialog, NodeSelector, RunningConfirmDialog, SaveConfirmDialog } from "dialogs.slint";
+import { ErrorDialog, HyperParameterManagerDialog, NodeHelpDialog, NodeSelector, PortBindHyperparamDialog, RunningConfirmDialog, SaveConfirmDialog } from "dialogs.slint";
 
 export component NodeGraphWindow inherits Window {
     in property <[NodeVm]> nodes;
@@ -105,6 +105,25 @@ export component NodeGraphWindow inherits Window {
     callback qq_message_list_set_content(string, int, string);
     callback node_resized(string, float, float);
     callback node_resize_finished(string, float, float);
+
+    // Hyperparameter system
+    in property <[HyperParameterVm]> hyperparameters;
+    in property <bool> show_hyperparameter_manager: false;
+    in property <bool> show_port_bind_dialog: false;
+    in property <[HyperParameterVm]> port_bind_compatible_params;
+    in property <string> port_bind_current_binding: "";
+    in property <string> port_bind_node_id: "";
+    in property <string> port_bind_port_name: "";
+    callback open_hyperparameter_manager();
+    callback close_hyperparameter_manager();
+    callback add_hyperparameter(string, string, bool, string); // name, data_type, required, description
+    callback delete_hyperparameter(string);                    // name
+    callback set_hyperparameter_value(string, string);         // name, value
+    callback toggle_hyperparameter_required(string);           // name
+    callback port_right_clicked(string, string);               // node_id, port_name
+    callback bind_port_hyperparameter(string, string, string); // node_id, port_name, hyperparam_name
+    callback unbind_port_hyperparameter(string, string);       // node_id, port_name
+    callback close_port_bind_dialog();
 
     title: "Zihuan Node Graph Viewer";
     width: 1200px;
@@ -304,6 +323,10 @@ export component NodeGraphWindow inherits Window {
                 show_node_help(node_type) => {
                     root.show_node_help(node_type);
                 }
+
+                port_right_clicked(node_id, port_name) => {
+                    root.port_right_clicked(node_id, port_name);
+                }
             }
 
             // Buttons Overlay
@@ -315,6 +338,11 @@ export component NodeGraphWindow inherits Window {
                 
                 buttons-layout := HorizontalLayout {
                     spacing: 12px;
+
+                    CjkButton {
+                        text: "超参数";
+                        clicked => { root.open_hyperparameter_manager(); }
+                    }
 
                     CjkButton {
                         text: "新增节点";
@@ -457,5 +485,29 @@ export component NodeGraphWindow inherits Window {
     if root.show_node_help_dialog: NodeHelpDialog {
         node_data: root.node_help_data;
         close => { root.hide_node_help(); }
+    }
+
+    if root.show_hyperparameter_manager: HyperParameterManagerDialog {
+        hyperparameters: root.hyperparameters;
+        add(name, data_type, required, description) => {
+            root.add_hyperparameter(name, data_type, required, description);
+        }
+        delete(name) => { root.delete_hyperparameter(name); }
+        set_value(name, value) => { root.set_hyperparameter_value(name, value); }
+        toggle_required(name) => { root.toggle_hyperparameter_required(name); }
+        close => { root.close_hyperparameter_manager(); }
+    }
+
+    if root.show_port_bind_dialog: PortBindHyperparamDialog {
+        compatible_params: root.port_bind_compatible_params;
+        current_binding: root.port_bind_current_binding;
+        port_name: root.port_bind_port_name;
+        bind(name) => {
+            root.bind_port_hyperparameter(root.port_bind_node_id, root.port_bind_port_name, name);
+        }
+        clear_binding() => {
+            root.unbind_port_hyperparameter(root.port_bind_node_id, root.port_bind_port_name);
+        }
+        close => { root.close_port_bind_dialog(); }
     }
 }

@@ -32,6 +32,7 @@ pub(crate) fn bind_message_list_callbacks(
                     Some(tab_display_title(tab)),
                     &tab.selection,
                     &tab.inline_inputs,
+                    &tab.hyperparameter_values,
                 );
                 update_tabs_ui(&ui, &tabs_guard, active_index);
             }
@@ -61,6 +62,7 @@ pub(crate) fn bind_message_list_callbacks(
                     Some(tab_display_title(tab)),
                     &tab.selection,
                     &tab.inline_inputs,
+                    &tab.hyperparameter_values,
                 );
                 update_tabs_ui(&ui, &tabs_guard, active_index);
             }
@@ -90,6 +92,7 @@ pub(crate) fn bind_message_list_callbacks(
                     Some(tab_display_title(tab)),
                     &tab.selection,
                     &tab.inline_inputs,
+                    &tab.hyperparameter_values,
                 );
                 update_tabs_ui(&ui, &tabs_guard, active_index);
             }
@@ -119,6 +122,7 @@ pub(crate) fn bind_message_list_callbacks(
                     Some(tab_display_title(tab)),
                     &tab.selection,
                     &tab.inline_inputs,
+                    &tab.hyperparameter_values,
                 );
                 update_tabs_ui(&ui, &tabs_guard, active_index);
             }
@@ -148,6 +152,7 @@ pub(crate) fn bind_message_list_callbacks(
                     Some(tab_display_title(tab)),
                     &tab.selection,
                     &tab.inline_inputs,
+                    &tab.hyperparameter_values,
                 );
                 update_tabs_ui(&ui, &tabs_guard, active_index);
             }
@@ -184,6 +189,7 @@ pub(crate) fn bind_message_list_callbacks(
                     Some(tab_display_title(tab)),
                     &tab.selection,
                     &tab.inline_inputs,
+                    &tab.hyperparameter_values,
                 );
                 update_tabs_ui(&ui, &tabs_guard, active_index);
             }

@@ -55,7 +55,10 @@ fn main() {
 
         info!("加载节点图文件: {}", graph_path);
         match node::load_graph_definition_from_json(&graph_path) {
-            Ok(definition) => {
+            Ok(mut definition) => {
+                let hp_values = util::hyperparam_store::load_hyperparameter_values(std::path::Path::new(&graph_path));
+                // Apply hyperparameter bindings before execution
+                ui::node_graph_view_inline::apply_hyperparameter_bindings_to_graph(&mut definition, &hp_values);
                 if let Err(e) = execute_node_graph(definition) {
                     error!("节点图执行失败: {}", e);
                 }
@@ -84,7 +87,7 @@ fn main() {
         node::ensure_positions(graph);
     }
 
-    if let Err(err) = ui::node_graph_view::show_graph(graph) {
+    if let Err(err) = ui::node_graph_view::show_graph(graph, args.graph_json.as_deref().map(std::path::Path::new)) {
         error!("UI渲染失败: {}", err);
     }
 }

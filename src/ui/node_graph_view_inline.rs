@@ -54,6 +54,19 @@ pub(crate) fn apply_inline_inputs_to_graph(
     }
 }
 
+pub(crate) fn apply_hyperparameter_bindings_to_graph(
+    graph: &mut NodeGraphDefinition,
+    values: &std::collections::HashMap<String, serde_json::Value>,
+) {
+    for node in &mut graph.nodes {
+        for (port_name, hp_name) in &node.port_bindings {
+            if let Some(value) = values.get(hp_name.as_str()) {
+                node.inline_values.insert(port_name.clone(), value.clone());
+            }
+        }
+    }
+}
+
 fn message_list_key(node_id: &str) -> String {
     inline_port_key(node_id, "messages")
 }
@@ -116,6 +129,7 @@ pub(crate) fn add_node_to_graph(graph: &mut NodeGraphDefinition, type_id: &str) 
         position: None,
         size: None,
         inline_values: HashMap::new(),
+        port_bindings: HashMap::new(),
         has_error: false,
     });
 
