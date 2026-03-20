@@ -53,6 +53,16 @@ pub struct GraphSize {
 
 pub fn load_graph_definition_from_json(path: impl AsRef<Path>) -> Result<NodeGraphDefinition> {
     let content = fs::read_to_string(path.as_ref())?;
+    // Backward-compat: replace removed type names before parsing so old saved graphs load cleanly.
+    // refresh_port_types() will then overwrite these with the live registry types.
+    let content = content
+        .replace("\"data_type\": \"MessageList\"", "\"data_type\": {\"Vec\":\"Message\"}")
+        .replace("\"data_type\":\"MessageList\"", "\"data_type\":{\"Vec\":\"Message\"}")
+        .replace("\"data_type\": \"QQMessageList\"", "\"data_type\": {\"Vec\":\"QQMessage\"}")
+        .replace("\"data_type\":\"QQMessageList\"", "\"data_type\":{\"Vec\":\"QQMessage\"}")
+        // Also migrate old "List" variant name (renamed to "Vec")
+        .replace("\"data_type\": {\"List\":", "\"data_type\": {\"Vec\":")
+        .replace("\"data_type\":{\"List\":", "\"data_type\":{\"Vec\":");
     let mut graph: NodeGraphDefinition = serde_json::from_str(&content)?;
     refresh_port_types(&mut graph);
     Ok(graph)

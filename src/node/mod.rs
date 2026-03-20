@@ -1716,9 +1716,9 @@ mod tests {
     fn switch_blocks_optional_downstream_in_edge_mode() {
         let mut graph = NodeGraph::new();
         graph.add_node(Box::new(StaticOutputNode::new("toggle", "enabled", DataValue::Boolean(false)))).unwrap();
-        graph.add_node(Box::new(StaticOutputNode::new("source", "value", DataValue::MessageList(Vec::new())))).unwrap();
+        graph.add_node(Box::new(StaticOutputNode::new("source", "value", DataValue::Vec(Box::new(DataType::Message), Vec::new())))).unwrap();
         graph.add_node(Box::new(SwitchNode::new("gate", "Gate"))).unwrap();
-        graph.add_node(Box::new(OptionalSeenSinkNode::new("preview", "messages", DataType::MessageList))).unwrap();
+        graph.add_node(Box::new(OptionalSeenSinkNode::new("preview", "messages", DataType::Vec(Box::new(DataType::Message))))).unwrap();
         graph.set_edges(vec![
             EdgeDefinition {
                 from_node_id: "toggle".to_string(),
@@ -1750,9 +1750,9 @@ mod tests {
     fn switch_blocks_optional_downstream_in_implicit_mode() {
         let mut graph = NodeGraph::new();
         graph.add_node(Box::new(StaticOutputNode::new("toggle", "enabled", DataValue::Boolean(false)))).unwrap();
-        graph.add_node(Box::new(StaticOutputNode::new("source", "input", DataValue::MessageList(Vec::new())))).unwrap();
+        graph.add_node(Box::new(StaticOutputNode::new("source", "input", DataValue::Vec(Box::new(DataType::Message), Vec::new())))).unwrap();
         graph.add_node(Box::new(SwitchNode::new("gate", "Gate"))).unwrap();
-        graph.add_node(Box::new(OptionalSeenSinkNode::new("preview", "output", DataType::MessageList))).unwrap();
+        graph.add_node(Box::new(OptionalSeenSinkNode::new("preview", "output", DataType::Vec(Box::new(DataType::Message))))).unwrap();
 
         let result = graph.execute_and_capture_results();
         assert_success(&result);

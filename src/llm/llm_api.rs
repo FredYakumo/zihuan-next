@@ -462,7 +462,7 @@ impl Node for LLMAPINode {
     }
 
     node_input![
-        port! { name = "messages", ty = MessageList, desc = "输入的消息列表，包含系统消息和用户消息" },
+        port! { name = "messages", ty = Vec(Message), desc = "输入的消息列表，包含系统消息和用户消息" },
         port! { name = "model_name", ty = String, desc = "模型名称，例如: gpt-4, deepseek-chat" },
         port! { name = "api_endpoint", ty = String, desc = "API端点URL，例如: https://api.openai.com/v1/chat/completions" },
         port! { name = "api_key", ty = Password, desc = "API密钥 (可选，某些本地模型不需要)" },
@@ -470,7 +470,7 @@ impl Node for LLMAPINode {
     ];
 
     node_output![
-        port! { name = "response", ty = MessageList, desc = "LLM返回的消息列表，包含语言模型的回复" },
+        port! { name = "response", ty = Vec(Message), desc = "LLM返回的消息列表，包含语言模型的回复" },
     ];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
@@ -486,10 +486,12 @@ impl Node for LLMAPINode {
         let api_endpoint = inputs.get("api_endpoint")
             .ok_or_else(|| crate::error::Error::ValidationError("Missing required input: api_endpoint".to_string()))?;
 
-        // Extract messages from MessageList
-        let messages = match messages_data {
-            DataValue::MessageList(msgs) => msgs.clone(),
-            _ => return Err(crate::error::Error::ValidationError("messages must be MessageList type".to_string())),
+        // Extract messages from Vec<Message>
+        let messages: Vec<crate::llm::Message> = match messages_data {
+            DataValue::Vec(_, items) => items.iter().filter_map(|item| {
+                if let DataValue::Message(m) = item { Some(m.clone()) } else { None }
+            }).collect(),
+            _ => return Err(crate::error::Error::ValidationError("messages must be Vec<Message> type".to_string())),
         };
 
         // Extract model name and api endpoint
@@ -537,7 +539,7 @@ impl Node for LLMAPINode {
         let mut outputs = HashMap::new();
         outputs.insert(
             "response".to_string(),
-            DataValue::MessageList(vec![response_message]),
+            DataValue::Vec(Box::new(crate::node::DataType::Message), vec![DataValue::Message(response_message)]),
         );
 
         self.validate_outputs(&outputs)?;

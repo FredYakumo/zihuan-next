@@ -389,51 +389,46 @@ fn json_to_data_value(json: &Value, target_type: &DataType) -> Option<DataValue>
         
         (v, DataType::Json) => Some(DataValue::Json(v.clone())),
 
-        // MessageList inline value is stored as a JSON array:
-        // [ {"role": "user", "content": "..."}, ... ]
-        (Value::Array(items), DataType::MessageList) => {
-            use crate::llm::{Message, MessageRole};
-
-            fn parse_role(v: &Value) -> MessageRole {
-                // Case-insensitive; unknown values fall back to `user` (safer default for data source).
+        // Single LLM Message from a JSON object: {"role": "user", "content": "..."}
+        (Value::Object(map), DataType::Message) => {
+            fn parse_role(v: &Value) -> crate::llm::MessageRole {
                 let s = v.as_str().unwrap_or("user").to_ascii_lowercase();
                 match s.as_str() {
-                    "system" => MessageRole::System,
-                    "assistant" => MessageRole::Assistant,
-                    "tool" => MessageRole::Tool,
-                    _ => MessageRole::User,
+                    "system" => crate::llm::MessageRole::System,
+                    "assistant" => crate::llm::MessageRole::Assistant,
+                    "tool" => crate::llm::MessageRole::Tool,
+                    _ => crate::llm::MessageRole::User,
                 }
             }
 
-            let mut msgs: Vec<Message> = Vec::with_capacity(items.len());
-            for item in items {
-                if let Value::Object(map) = item {
-                    let role = map.get("role").map(parse_role).unwrap_or(MessageRole::User);
-                    let content = match map.get("content") {
-                        Some(Value::String(s)) => Some(s.clone()),
-                        Some(Value::Null) | None => None,
-                        Some(other) => Some(other.to_string()),
-                    };
-
-                    msgs.push(Message {
-                        role,
-                        content,
-                        tool_calls: Vec::new(),
-                    });
-                }
-            }
-            Some(DataValue::MessageList(msgs))
+            let role = map.get("role").map(|v| parse_role(v)).unwrap_or(crate::llm::MessageRole::User);
+            let content = match map.get("content") {
+                Some(Value::String(s)) => Some(s.clone()),
+                Some(Value::Null) | None => None,
+                Some(other) => Some(other.to_string()),
+            };
+            Some(DataValue::Message(crate::llm::Message {
+                role,
+                content,
+                tool_calls: Vec::new(),
+            }))
         }
 
-        // QQMessageList inline value is stored as a JSON array of QQ message objects using the
-        // bot adapter tagged enum format: [{"type":"text","data":{"text":"..."}}, ...]
-        (Value::Array(items), DataType::QQMessageList) => {
-            use crate::bot_adapter::models::message::Message as QQMessage;
-            let msgs: Vec<QQMessage> = items
+        // Single QQ Message from a JSON object: {"type": "text", "data": {"text": "..."}}
+        (_, DataType::QQMessage) => {
+            serde_json::from_value::<crate::bot_adapter::models::message::Message>(json.clone())
+                .ok()
+                .map(DataValue::QQMessage)
+        }
+
+        // Generic Vec: recurse per element using the inner type.
+        // Handles Vec<Message>, Vec<QQMessage>, and any other Vec<X>.
+        (Value::Array(items), DataType::Vec(inner)) => {
+            let parsed: Vec<DataValue> = items
                 .iter()
-                .filter_map(|item| serde_json::from_value::<QQMessage>(item.clone()).ok())
+                .filter_map(|item| json_to_data_value(item, inner))
                 .collect();
-            Some(DataValue::QQMessageList(msgs))
+            Some(DataValue::Vec(inner.clone(), parsed))
         }
 
         _ => None,
@@ -465,19 +460,34 @@ mod tests {
             {"role": "weird", "content": null}
         ]);
 
-        let val = json_to_data_value(&json, &DataType::MessageList)
-            .expect("should parse MessageList");
+        let val = json_to_data_value(&json, &DataType::Vec(Box::new(DataType::Message)))
+            .expect("should parse Vec<Message>");
 
         match val {
-            DataValue::MessageList(list) => {
+            DataValue::Vec(_, list) => {
                 assert_eq!(list.len(), 3);
-                assert_eq!(crate::llm::role_to_str(&list[0].role), "user");
-                assert_eq!(list[0].content.as_deref(), Some("hi"));
-                assert_eq!(crate::llm::role_to_str(&list[1].role), "assistant");
-                assert_eq!(list[1].content.as_deref(), Some("hello"));
-                // Unknown role falls back to user
-                assert_eq!(crate::llm::role_to_str(&list[2].role), "user");
-                assert_eq!(list[2].content, None);
+                match &list[0] {
+                    DataValue::Message(m) => {
+                        assert_eq!(crate::llm::role_to_str(&m.role), "user");
+                        assert_eq!(m.content.as_deref(), Some("hi"));
+                    }
+                    _ => panic!("expected Message"),
+                }
+                match &list[1] {
+                    DataValue::Message(m) => {
+                        assert_eq!(crate::llm::role_to_str(&m.role), "assistant");
+                        assert_eq!(m.content.as_deref(), Some("hello"));
+                    }
+                    _ => panic!("expected Message"),
+                }
+                match &list[2] {
+                    DataValue::Message(m) => {
+                        // Unknown role falls back to user
+                        assert_eq!(crate::llm::role_to_str(&m.role), "user");
+                        assert_eq!(m.content, None);
+                    }
+                    _ => panic!("expected Message"),
+                }
             }
             _ => panic!("unexpected DataValue variant"),
         }
