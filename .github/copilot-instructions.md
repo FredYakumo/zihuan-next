@@ -55,7 +55,7 @@ cargo run  # In default mode (no args), starts bot adapter + WebSocket client
 2. For event sources: set `node_type() -> NodeType::EventProducer` and override `on_start()/on_update()/on_cleanup()`
 3. Add to `NodeGraph` via `graph.add_node(Box::new(YourNode::new(...)))?`
 4. Connect by matching port names—no explicit edge API
-5. See `ConditionalNode` (node/util/conditional_node.rs), `LLMNode` (llm/node_impl.rs), `MessageEventToStringNode` (bot_adapter/) for examples
+5. See `ConditionalNode` (node/util/conditional.rs), `LLMNode` (llm/node_impl.rs), `MessageEventToStringNode` (bot_adapter/) for examples
 
 ## Project-specific conventions
 - **One node per file**: Every `Node` implementation must live in its own dedicated `.rs` file. If a node's logic is complex, it may be split across multiple `.rs` files within its own sub-module, but multiple nodes must **never** share a single `.rs` file.
@@ -71,7 +71,7 @@ cargo run  # In default mode (no args), starts bot adapter + WebSocket client
 - **UI state**: Window position/size auto-saves to platform-specific config dir (Linux/macOS: `~/.config/zihuan_next/`, Windows: `%APPDATA%/zihuan_next/window_config.json`).
 
 ## Extending the bot
-- **New node type**: Implement `Node` trait (define `id()`, `name()`, `input_ports()`, `output_ports()`, `execute()`). For event sources, override `node_type() -> NodeType::EventProducer` and implement `on_start()/on_update()/on_cleanup()`. See `ConditionalNode` (node/util/conditional_node.rs) for minimal example, `MessageEventToStringNode` (bot_adapter/) for event handling.
+- **New node type**: Implement `Node` trait (define `id()`, `name()`, `input_ports()`, `output_ports()`, `execute()`). For event sources, override `node_type() -> NodeType::EventProducer` and implement `on_start()/on_update()/on_cleanup()`. See `ConditionalNode` (node/util/conditional.rs) for minimal example, `MessageEventToStringNode` (bot_adapter/) for event handling.
 - **Port definition macros**: Inside `impl Node`, you may use `node_input!` / `node_output!` to generate `input_ports()` / `output_ports()`:
   - `node_input![ port!{name="text", type=String, desc="..."}, port!{name="x", type=Integer, optional} ];`
   - `node_output![ port!{name="result", type=String, desc="..."} ];`
