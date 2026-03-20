@@ -44,6 +44,7 @@ export component NodeItem inherits Rectangle {
     callback node_resized(float, float);
     callback node_resize_finished(float, float);
     callback show_help(string);
+    callback port_right_clicked(string, string);
 
     property <float> offset-x: 0;
     property <float> offset-y: 0;
@@ -693,7 +694,9 @@ export component NodeItem inherits Rectangle {
 
         TouchArea {
             pointer-event(event) => {
-                if (event.kind == PointerEventKind.down) {
+                if (event.kind == PointerEventKind.down && event.button == PointerEventButton.right) {
+                    root.port_right_clicked(root.node_id, port.name);
+                } else if (event.kind == PointerEventKind.down) {
                     root.port_clicked(root.node_id, port.name, true);
                 }
             }
@@ -721,7 +724,25 @@ export component NodeItem inherits Rectangle {
                 horizontal-stretch: 0;
             }
 
-            if (!port.is_connected && (port.data_type == "String" || port.data_type == "Integer" || port.data_type == "Float" || port.data_type == "Password")): LineEdit {
+            if (port.bound_hyperparameter != ""): Rectangle {
+                background: #5b21b620;
+                border-radius: 4px;
+                border-width: 1px;
+                border-color: #7c3aed40;
+                width: min(parent.width * 0.5, 120px);
+                HorizontalLayout {
+                    padding-left: 6px; padding-right: 6px; padding-top: 2px; padding-bottom: 2px;
+                    CjkText {
+                        text: "§ " + port.bound_hyperparameter;
+                        font-size: grid_size * 0.45 * 1px;
+                        color: #a78bfa;
+                        overflow: elide;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            if (!port.is_connected && port.bound_hyperparameter == "" && (port.data_type == "String" || port.data_type == "Integer" || port.data_type == "Float" || port.data_type == "Password")): LineEdit {
                 width: min(parent.width * 0.5, 120px);
                 height: (grid_size * 0.8) * 1px;
                 text: port.inline_text;
@@ -732,7 +753,7 @@ export component NodeItem inherits Rectangle {
                 }
             }
 
-            if (!port.is_connected && (port.data_type == "Boolean")): CheckBox {
+            if (!port.is_connected && port.bound_hyperparameter == "" && (port.data_type == "Boolean")): CheckBox {
                 height: (grid_size * 0.7) * 1px;
                 text: "";
                 checked: port.inline_bool;

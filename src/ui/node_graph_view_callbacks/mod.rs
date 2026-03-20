@@ -1,4 +1,5 @@
 pub(crate) mod canvas;
+pub(crate) mod hyperparameters;
 pub(crate) mod inline_ports;
 pub(crate) mod message_list;
 pub(crate) mod qq_message_list;
@@ -6,6 +7,7 @@ pub(crate) mod tabs;
 pub(crate) mod window;
 
 pub(crate) use canvas::bind_canvas_callbacks;
+pub(crate) use hyperparameters::bind_hyperparameter_callbacks;
 pub(crate) use inline_ports::bind_inline_port_callbacks;
 pub(crate) use message_list::bind_message_list_callbacks;
 pub(crate) use qq_message_list::bind_qq_message_list_callbacks;

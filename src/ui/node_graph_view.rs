@@ -14,7 +14,7 @@ use crate::ui::graph_window::{
     NodeGraphWindow, NodeTypeVm, PortHelpVm,
 };
 use crate::ui::node_graph_view_callbacks::{
-    bind_canvas_callbacks, bind_inline_port_callbacks, bind_message_list_callbacks,
+    bind_canvas_callbacks, bind_hyperparameter_callbacks, bind_inline_port_callbacks, bind_message_list_callbacks,
     bind_qq_message_list_callbacks,
     bind_tab_callbacks,
     bind_window_callbacks,
@@ -36,6 +36,9 @@ pub(crate) struct GraphTabState {
     pub(crate) graph: NodeGraphDefinition,
     pub(crate) selection: SelectionState,
     pub(crate) inline_inputs: HashMap<String, InlinePortValue>,
+    /// Hyperparameter values for this graph – stored in a separate YAML file,
+    /// not serialised into the node-graph JSON.
+    pub(crate) hyperparameter_values: HashMap<String, serde_json::Value>,
     pub(crate) is_dirty: bool,
     pub(crate) is_running: bool,
     pub(crate) stop_flag: Option<Arc<AtomicBool>>,
@@ -62,6 +65,7 @@ pub(crate) fn new_blank_tab(next_untitled: &mut usize, next_id: &mut u64) -> Gra
         graph: NodeGraphDefinition::default(),
         selection: SelectionState::default(),
         inline_inputs: HashMap::new(),
+        hyperparameter_values: HashMap::new(),
         is_dirty: false,
         is_running: false,
         stop_flag: None,
@@ -82,6 +86,7 @@ pub(crate) fn refresh_active_tab_ui(ui: &NodeGraphWindow, tabs: &[GraphTabState]
             Some(tab_display_title(tab)),
             &tab.selection,
             &tab.inline_inputs,
+            &tab.hyperparameter_values,
         );
         tab.selection.apply_to_ui(ui);
         ui.set_is_graph_running(tab.is_running);
@@ -89,7 +94,7 @@ pub(crate) fn refresh_active_tab_ui(ui: &NodeGraphWindow, tabs: &[GraphTabState]
     update_tabs_ui(ui, tabs, active_index);
 }
 
-pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
+pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: Option<&std::path::Path>) -> Result<()> {
     register_cjk_fonts();
 
     let ui = NodeGraphWindow::new()
@@ -109,6 +114,15 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     if let Some(graph) = initial_graph {
         initial_tab.graph = graph.clone();
         initial_tab.inline_inputs = build_inline_inputs_from_graph(&graph);
+        if let Some(path) = graph_file_path {
+            initial_tab.hyperparameter_values =
+                crate::util::hyperparam_store::load_hyperparameter_values(path);
+            initial_tab.file_path = Some(path.to_path_buf());
+            initial_tab.title = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.display().to_string());
+        }
         initial_tab.is_dirty = false;
     }
 
@@ -198,6 +212,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     bind_inline_port_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
     bind_message_list_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
     bind_qq_message_list_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
+    bind_hyperparameter_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
 
     let run_result = ui.run();
     if run_result.is_ok() {

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use slint::{ModelRc, VecModel};
 
 use crate::node::graph_io::{ensure_positions, NodeDefinition, NodeGraphDefinition};
-use crate::ui::graph_window::{MessageItemVm, NodeGraphWindow, NodeTypeVm, NodeVm, PortVm};
+use crate::ui::graph_window::{HyperParameterVm, MessageItemVm, NodeGraphWindow, NodeTypeVm, NodeVm, PortVm};
 use crate::ui::node_graph_view_geometry::{
     build_edge_segments, build_edges, build_grid_lines, node_dimensions, resolve_display_data_type,
     snap_to_grid, CANVAS_HEIGHT, CANVAS_WIDTH, GRID_SIZE,
@@ -33,6 +33,7 @@ pub(crate) fn apply_graph_to_ui(
     current_file: Option<String>,
     selection_state: &SelectionState,
     inline_inputs: &HashMap<String, InlinePortValue>,
+    hyperparameter_values: &HashMap<String, serde_json::Value>,
 ) {
     let mut graph = graph.clone();
     ensure_positions(&mut graph);
@@ -63,6 +64,28 @@ pub(crate) fn apply_graph_to_ui(
     ui.set_edge_labels(ModelRc::new(VecModel::from(edge_labels)));
     ui.set_grid_lines(ModelRc::new(VecModel::from(grid_lines)));
     ui.set_current_file(label.into());
+
+    let hyperparameter_vms: Vec<HyperParameterVm> = graph
+        .hyperparameters
+        .iter()
+        .map(|hp| HyperParameterVm {
+            name: hp.name.clone().into(),
+            data_type: hp.data_type.to_string().into(),
+            value: hyperparameter_values
+                .get(&hp.name)
+                .map(|v| match v {
+                    serde_json::Value::String(s) => s.clone(),
+                    serde_json::Value::Bool(b) => b.to_string(),
+                    serde_json::Value::Number(n) => n.to_string(),
+                    other => other.to_string(),
+                })
+                .unwrap_or_default()
+                .into(),
+            required: hp.required,
+            description: hp.description.clone().unwrap_or_default().into(),
+        })
+        .collect();
+    ui.set_hyperparameters(ModelRc::new(VecModel::from(hyperparameter_vms)));
 }
 
 fn build_node_vm(
@@ -95,6 +118,7 @@ fn build_node_vm(
             data_type: resolve_display_data_type(graph, node, &p.name, false).into(),
             inline_text: "".into(),
             inline_bool: false,
+            bound_hyperparameter: "".into(),
         })
         .collect();
 
@@ -145,6 +169,11 @@ fn build_input_port_vm(
     graph: &NodeGraphDefinition,
     inline_inputs: &HashMap<String, InlinePortValue>,
 ) -> PortVm {
+    let bound_hp = node
+        .port_bindings
+        .get(&port.name)
+        .cloned()
+        .unwrap_or_default();
     let is_connected = graph.edges.iter().any(|e| e.to_node_id == node.id && e.to_port == port.name);
     let key = inline_port_key(&node.id, &port.name);
     let (inline_text, inline_bool, has_inline) = match &port.data_type {
@@ -190,10 +219,11 @@ fn build_input_port_vm(
         is_input: true,
         is_connected,
         is_required: port.required,
-        has_value: has_inline,
+        has_value: has_inline || !bound_hp.is_empty(),
         data_type: resolve_display_data_type(graph, node, &port.name, true).into(),
         inline_text: inline_text.into(),
         inline_bool,
+        bound_hyperparameter: bound_hp.into(),
     }
 }
 
