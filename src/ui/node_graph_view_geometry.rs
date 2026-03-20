@@ -393,6 +393,7 @@ mod tests {
             position: None,
             size: None,
             inline_values: HashMap::new(),
+            port_bindings: HashMap::new(),
             has_error: false,
         }
     }
@@ -415,6 +416,7 @@ mod tests {
                 to_node_id: "gate".to_string(),
                 to_port: "input".to_string(),
             }],
+            hyperparameters: Vec::new(),
             execution_results: HashMap::new(),
         };
 
@@ -434,6 +436,7 @@ mod tests {
         let graph = NodeGraphDefinition {
             nodes: vec![gate.clone()],
             edges: Vec::new(),
+            hyperparameters: Vec::new(),
             execution_results: HashMap::new(),
         };
 

@@ -24,7 +24,7 @@ pub struct MySqlConfig {
 }
 
 /// Dataflow datatype. Use for checking compatibility between ports.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub enum DataType {
     Any,
     String,
@@ -78,6 +78,81 @@ impl fmt::Display for DataType {
             DataType::Password => write!(f, "Password"),
             DataType::Custom(name) => write!(f, "Custom({})", name),
         }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for DataType {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::{self, MapAccess, Visitor};
+        use std::fmt;
+
+        struct DataTypeVisitor;
+
+        impl DataTypeVisitor {
+            fn from_str<E: de::Error>(s: &str) -> Result<DataType, E> {
+                // Backward-compat: handle "Vec<Inner>" string format produced by Display
+                if let Some(inner_str) = s.strip_prefix("Vec<").and_then(|t| t.strip_suffix('>')) {
+                    let inner = DataTypeVisitor::from_str(inner_str)?;
+                    return Ok(DataType::Vec(Box::new(inner)));
+                }
+                match s {
+                    "Any" => Ok(DataType::Any),
+                    "String" => Ok(DataType::String),
+                    "Integer" => Ok(DataType::Integer),
+                    "Float" => Ok(DataType::Float),
+                    "Boolean" => Ok(DataType::Boolean),
+                    "Json" => Ok(DataType::Json),
+                    "Binary" => Ok(DataType::Binary),
+                    "MessageEvent" => Ok(DataType::MessageEvent),
+                    "MessageProp" => Ok(DataType::MessageProp),
+                    "Message" => Ok(DataType::Message),
+                    "QQMessage" => Ok(DataType::QQMessage),
+                    "FunctionTools" => Ok(DataType::FunctionTools),
+                    "BotAdapterRef" => Ok(DataType::BotAdapterRef),
+                    "RedisRef" => Ok(DataType::RedisRef),
+                    "MySqlRef" => Ok(DataType::MySqlRef),
+                    "Password" => Ok(DataType::Password),
+                    other => Err(de::Error::unknown_variant(
+                        other,
+                        &["Any", "String", "Integer", "Float", "Boolean", "Json",
+                          "Binary", "Vec", "MessageEvent", "MessageProp", "Message",
+                          "QQMessage", "FunctionTools", "BotAdapterRef", "RedisRef",
+                          "MySqlRef", "Password", "Custom"],
+                    )),
+                }
+            }
+        }
+
+        impl<'de> Visitor<'de> for DataTypeVisitor {
+            type Value = DataType;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a DataType string or {\"Vec\":...} / {\"Custom\":...} object")
+            }
+
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                DataTypeVisitor::from_str(v)
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                let key: String = map
+                    .next_key()?
+                    .ok_or_else(|| de::Error::missing_field("variant key"))?;
+                match key.as_str() {
+                    "Vec" => {
+                        let inner: DataType = map.next_value()?;
+                        Ok(DataType::Vec(Box::new(inner)))
+                    }
+                    "Custom" => {
+                        let name: String = map.next_value()?;
+                        Ok(DataType::Custom(name))
+                    }
+                    other => Err(de::Error::unknown_variant(other, &["Vec", "Custom"])),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(DataTypeVisitor)
     }
 }
 
