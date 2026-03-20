@@ -31,12 +31,12 @@ impl Node for ConditionalNode {
 
     node_input![
         port! { name = "condition", ty = Boolean, desc = "Condition to evaluate" },
-        port! { name = "true_value", ty = Json, desc = "Value to output if condition is true" },
-        port! { name = "false_value", ty = Json, desc = "Value to output if condition is false" },
+        port! { name = "true_value", ty = Any, desc = "Value to output if condition is true" },
+        port! { name = "false_value", ty = Any, desc = "Value to output if condition is false" },
     ];
 
     node_output![
-        port! { name = "result", ty = Json, desc = "Selected value based on condition" },
+        port! { name = "result", ty = Any, desc = "Selected value based on condition" },
         port! { name = "branch_taken", ty = String, desc = "Which branch was taken" },
     ];
 
