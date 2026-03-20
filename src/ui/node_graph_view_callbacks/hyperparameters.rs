@@ -13,6 +13,7 @@ fn parse_hp_data_type(type_str: &str) -> DataType {
         "Integer" => DataType::Integer,
         "Float" => DataType::Float,
         "Boolean" => DataType::Boolean,
+        "Password" => DataType::Password,
         _ => DataType::String,
     }
 }
@@ -43,6 +44,8 @@ fn is_hp_type_compatible(hp_type: &DataType, port_type: &DataType) -> bool {
         (a, b) if a == b => true,
         // Password ports accept String hyperparameters
         (DataType::String, DataType::Password) => true,
+        // Password hyperparameters can also bind to String ports
+        (DataType::Password, DataType::String) => true,
         _ => false,
     }
 }
