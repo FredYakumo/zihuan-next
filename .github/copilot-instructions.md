@@ -55,9 +55,10 @@ cargo run  # In default mode (no args), starts bot adapter + WebSocket client
 2. For event sources: set `node_type() -> NodeType::EventProducer` and override `on_start()/on_update()/on_cleanup()`
 3. Add to `NodeGraph` via `graph.add_node(Box::new(YourNode::new(...)))?`
 4. Connect by matching port names—no explicit edge API
-5. See `ConditionalNode` (util_nodes.rs), `LLMNode` (llm/node_impl.rs), `MessageEventToStringNode` (bot_adapter/) for examples
+5. See `ConditionalNode` (node/util/conditional_node.rs), `LLMNode` (llm/node_impl.rs), `MessageEventToStringNode` (bot_adapter/) for examples
 
 ## Project-specific conventions
+- **One node per file**: Every `Node` implementation must live in its own dedicated `.rs` file. If a node's logic is complex, it may be split across multiple `.rs` files within its own sub-module, but multiple nodes must **never** share a single `.rs` file.
 - **Node port binding**: Port names are the only connection mechanism. Output "result" → Input "result" = auto-connected. The graph is a DAG; `NodeGraph::execute()` validates, topo-sorts, executes. No edge objects, no manual wiring API.
 - **Node execution model**: Simple nodes run once per input set. EventProducer nodes have lifecycle: `on_start()` → `on_update()` loop (returns `Some(outputs)` until done, then `None`) → `on_cleanup()`. Multiple EventProducers can chain (one feeds another).
 - **Data types**: Strongly typed ports (String, Integer, Float, Boolean, Json, Binary). Runtime validation ensures type safety. `DataValue` enum wraps all types.
@@ -70,7 +71,7 @@ cargo run  # In default mode (no args), starts bot adapter + WebSocket client
 - **UI state**: Window position/size auto-saves to platform-specific config dir (Linux/macOS: `~/.config/zihuan_next/`, Windows: `%APPDATA%/zihuan_next/window_config.json`).
 
 ## Extending the bot
-- **New node type**: Implement `Node` trait (define `id()`, `name()`, `input_ports()`, `output_ports()`, `execute()`). For event sources, override `node_type() -> NodeType::EventProducer` and implement `on_start()/on_update()/on_cleanup()`. See `ConditionalNode` (util_nodes.rs) for minimal example, `MessageEventToStringNode` (bot_adapter/) for event handling.
+- **New node type**: Implement `Node` trait (define `id()`, `name()`, `input_ports()`, `output_ports()`, `execute()`). For event sources, override `node_type() -> NodeType::EventProducer` and implement `on_start()/on_update()/on_cleanup()`. See `ConditionalNode` (node/util/conditional_node.rs) for minimal example, `MessageEventToStringNode` (bot_adapter/) for event handling.
 - **Port definition macros**: Inside `impl Node`, you may use `node_input!` / `node_output!` to generate `input_ports()` / `output_ports()`:
   - `node_input![ port!{name="text", type=String, desc="..."}, port!{name="x", type=Integer, optional} ];`
   - `node_output![ port!{name="result", type=String, desc="..."} ];`
@@ -86,7 +87,7 @@ cargo run  # In default mode (no args), starts bot adapter + WebSocket client
 - Bot pipeline: `src/bot_adapter/adapter.rs` (WebSocket, message loop), `src/bot_adapter/event.rs` (dispatch)
 - Message models: `src/bot_adapter/models/event_model.rs` (MessageType enum), `src/bot_adapter/models/message.rs` (typed messages)
 - State: `src/util/message_store.rs` (Redis cache, MySQL persistence, in-memory fallback with auto-reconnect)
-- Dataflow: `src/node/mod.rs` (Node trait, NodeGraph, Port, DataValue), `src/node/util_nodes.rs` (utility nodes), `src/llm/node_impl.rs` (LLM-based nodes), `src/bot_adapter/message_event_to_string.rs` (concrete node example)
+- Dataflow: `src/node/mod.rs` (Node trait, NodeGraph, Port, DataValue), `src/node/util/` (utility nodes, one node per file), `src/llm/node_impl.rs` (LLM-based nodes), `src/bot_adapter/message_event_to_string.rs` (concrete node example)
 - LLM: `src/llm/llm_api.rs` (HTTP client), `src/llm/agent/brain.rs` (BrainAgent with tool orchestration), `src/llm/function_tools/` (tool implementations)
 - UI: `src/ui/node_graph_view.rs` (main UI logic), `src/ui/graph_window.slint` (root Slint window contract/composition), `src/ui/types.slint` (shared exported UI VM structs), `src/ui/components/*.slint` (canvas, node, buttons, menu, tabs), `src/ui/dialogs.slint` (overlay dialogs/selectors), `src/ui/window_state.rs` (persistent window config), `src/ui/selection.rs` (node selection logic), `src/ui/node_render/` (Rust-side node preview helpers)
 - Database: `database/models/message_record.py` (SQLAlchemy model), `migrations/versions/` (alembic migrations), `alembic.ini` (migration config)

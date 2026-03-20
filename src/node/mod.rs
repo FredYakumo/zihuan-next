@@ -47,7 +47,7 @@ type OutputPool = HashMap<String, HashMap<String, DataValue>>;
 type InputSourceMap = HashMap<String, HashMap<String, (String, String)>>;
 
 pub mod data_value;
-pub mod util_nodes;
+pub mod util;
 pub mod graph_io;
 pub mod registry;
 pub mod database_nodes;
@@ -1533,7 +1533,7 @@ impl Default for NodeGraph {
 mod tests {
     use super::{DataType, DataValue, EdgeDefinition, ExecutionResult, Node, NodeGraph, Port};
     use crate::error::Result;
-    use crate::node::util_nodes::SwitchNode;
+    use crate::node::util::SwitchNode;
     use std::collections::HashMap;
 
     struct StaticOutputNode {

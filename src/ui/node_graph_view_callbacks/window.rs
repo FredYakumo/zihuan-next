@@ -60,7 +60,7 @@ pub(crate) fn bind_window_callbacks(
         let mut graph_def = graph_def;
 
         {
-            use crate::node::util_nodes::STRING_DATA_CONTEXT;
+            use crate::node::util::STRING_DATA_CONTEXT;
             let mut context = STRING_DATA_CONTEXT.write().unwrap();
             context.clear();
 
