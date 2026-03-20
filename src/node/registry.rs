@@ -130,7 +130,7 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util_nodes::{ArrayGetNode, ConditionalNode, JsonParserNode, MessageListDataNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, SwitchNode};
+    use crate::node::util::{ArrayGetNode, ConditionalNode, JsonParserNode, MessageListDataNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, SwitchNode};
     use crate::llm::llm_api::LLMAPINode;
     use crate::bot_adapter::node_impl::{BotAdapterNode, ExtractSenderIdFromEventNode, IsAtMeNode, MessageEventTypeFilterNode, SendFriendMessageNode, SendGroupMessageNode};
     use crate::bot_adapter::extract_message_from_event::ExtractMessageFromEventNode;
