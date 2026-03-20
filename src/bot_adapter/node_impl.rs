@@ -451,7 +451,7 @@ impl Node for SendFriendMessageNode {
     node_input![
         port! { name = "bot_adapter", ty = BotAdapterRef, desc = "Bot适配器引用" },
         port! { name = "target_id", ty = String, desc = "目标好友的QQ号" },
-        port! { name = "message", ty = QQMessageList, desc = "要发送的QQ消息段列表" },
+        port! { name = "message", ty = Vec(QQMessage), desc = "要发送的QQ消息段列表" },
     ];
 
     node_output![
@@ -470,8 +470,10 @@ impl Node for SendFriendMessageNode {
             Some(DataValue::String(s)) => s.clone(),
             _ => return Err("target_id input is required".into()),
         };
-        let messages = match inputs.get("message") {
-            Some(DataValue::QQMessageList(v)) => v.clone(),
+        let messages: Vec<crate::bot_adapter::models::message::Message> = match inputs.get("message") {
+            Some(DataValue::Vec(_, items)) => items.iter().filter_map(|item| {
+                if let DataValue::QQMessage(m) = item { Some(m.clone()) } else { None }
+            }).collect(),
             _ => return Err("message input is required".into()),
         };
 
@@ -513,7 +515,7 @@ impl Node for SendGroupMessageNode {
     node_input![
         port! { name = "bot_adapter", ty = BotAdapterRef, desc = "Bot适配器引用" },
         port! { name = "target_id", ty = String, desc = "目标群的群号" },
-        port! { name = "message", ty = QQMessageList, desc = "要发送的QQ消息段列表" }
+        port! { name = "message", ty = Vec(QQMessage), desc = "要发送的QQ消息段列表" }
     ];
 
     node_output![
@@ -532,8 +534,10 @@ impl Node for SendGroupMessageNode {
             Some(DataValue::String(s)) => s.clone(),
             _ => return Err("target_id input is required".into()),
         };
-        let messages = match inputs.get("message") {
-            Some(DataValue::QQMessageList(v)) => v.clone(),
+        let messages: Vec<crate::bot_adapter::models::message::Message> = match inputs.get("message") {
+            Some(DataValue::Vec(_, items)) => items.iter().filter_map(|item| {
+                if let DataValue::QQMessage(m) = item { Some(m.clone()) } else { None }
+            }).collect(),
             _ => return Err("message input is required".into()),
         };
 

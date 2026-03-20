@@ -236,13 +236,13 @@ fn datatype_tokens(expr: Expr) -> Result<proc_macro2::TokenStream> {
                 .map(|seg| seg.ident.to_string())
                 .unwrap_or_default();
 
-            if func_name == "List" {
+            if func_name == "Vec" {
                 if call.args.len() != 1 {
-                    return Err(syn::Error::new(call.span(), "List() expects one argument"));
+                    return Err(syn::Error::new(call.span(), "Vec() expects one argument"));
                 }
                 let inner = call.args.first().cloned().unwrap();
                 let inner_tokens = datatype_tokens(inner)?;
-                return Ok(quote! { DataType::List(Box::new(#inner_tokens)) });
+                return Ok(quote! { DataType::Vec(Box::new(#inner_tokens)) });
             }
 
             if func_name == "Custom" {

@@ -170,7 +170,12 @@ fn build_input_port_vm(
             let has_val = !value.is_empty();
             (value, false, has_val)
         }
-        crate::node::DataType::MessageList | crate::node::DataType::QQMessageList => {
+        crate::node::DataType::Vec(inner)
+            if matches!(
+                inner.as_ref(),
+                crate::node::DataType::Message | crate::node::DataType::QQMessage
+            ) =>
+        {
             let has_val = match inline_inputs.get(&key) {
                 Some(InlinePortValue::Json(serde_json::Value::Array(arr))) => !arr.is_empty(),
                 _ => false,

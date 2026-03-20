@@ -335,7 +335,7 @@ impl Node for PreviewMessageListNode {
     }
 
     node_input![
-        port! { name = "messages", ty = MessageList, desc = "MessageList to preview inside the node", optional },
+        port! { name = "messages", ty = Vec(Message), desc = "Vec<Message> to preview inside the node", optional },
     ];
 
     node_output![];
@@ -366,25 +366,26 @@ impl Node for MessageListDataNode {
         Some("MessageList data source with inline UI editor")
     }
 
-    // We intentionally keep a MessageList *input* port so inline_values can persist into the
-    // graph JSON and be parsed into DataValue::MessageList by the registry.
+    // We intentionally keep a List(Message) *input* port so inline_values can persist into the
+    // graph JSON and be parsed into DataValue::Vec(Message) by the registry.
     // The port is optional to avoid validation errors when the node is created before editing.
     node_input![
-        port! { name = "messages", ty = MessageList, desc = "MessageList provided by UI inline editor", optional },
+        port! { name = "messages", ty = Vec(Message), desc = "Vec<Message> provided by UI inline editor", optional },
     ];
 
     node_output![
-        port! { name = "messages", ty = MessageList, desc = "Output MessageList from UI data source" },
+        port! { name = "messages", ty = Vec(Message), desc = "Output Vec<Message> from UI data source" },
     ];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();
-        let value = match inputs.get("messages") {
-            Some(DataValue::MessageList(list)) => DataValue::MessageList(list.clone()),
-            _ => DataValue::MessageList(Vec::new()),
-        };
+        let value = inputs
+            .get("messages")
+            .cloned()
+            .filter(|v| matches!(v, DataValue::Vec(..)))
+            .unwrap_or_else(|| DataValue::Vec(Box::new(crate::node::DataType::Message), Vec::new()));
         outputs.insert("messages".to_string(), value);
 
         self.validate_outputs(&outputs)?;
@@ -405,25 +406,26 @@ impl Node for QQMessageListDataNode {
         Some("QQMessageList data source with inline UI editor")
     }
 
-    // We intentionally keep a QQMessageList *input* port so inline_values can persist into the
-    // graph JSON and be parsed into DataValue::QQMessageList by the registry.
+    // We intentionally keep a Vec(QQMessage) *input* port so inline_values can persist into the
+    // graph JSON and be parsed into DataValue::Vec(QQMessage) by the registry.
     // The port is optional to avoid validation errors when the node is created before editing.
     node_input![
-        port! { name = "messages", ty = QQMessageList, desc = "QQMessageList provided by UI inline editor", optional },
+        port! { name = "messages", ty = Vec(QQMessage), desc = "Vec<QQMessage> provided by UI inline editor", optional },
     ];
 
     node_output![
-        port! { name = "messages", ty = QQMessageList, desc = "Output QQMessageList from UI data source" },
+        port! { name = "messages", ty = Vec(QQMessage), desc = "Output Vec<QQMessage> from UI data source" },
     ];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();
-        let value = match inputs.get("messages") {
-            Some(DataValue::QQMessageList(list)) => DataValue::QQMessageList(list.clone()),
-            _ => DataValue::QQMessageList(Vec::new()),
-        };
+        let value = inputs
+            .get("messages")
+            .cloned()
+            .filter(|v| matches!(v, DataValue::Vec(..)))
+            .unwrap_or_else(|| DataValue::Vec(Box::new(crate::node::DataType::QQMessage), Vec::new()));
         outputs.insert("messages".to_string(), value);
 
         self.validate_outputs(&outputs)?;
@@ -459,7 +461,7 @@ impl Node for ArrayGetNode {
     }
 
     node_input![
-        port! { name = "array", ty = Any, desc = "输入列表" },
+        port! { name = "array", ty = Vec(Any), desc = "输入列表" },
         port! { name = "index", ty = Integer, desc = "元素下标，负数表示从末尾倒数（-1为最后一个）" },
     ];
 
@@ -471,7 +473,7 @@ impl Node for ArrayGetNode {
         self.validate_inputs(&inputs)?;
 
         let list = match inputs.get("array") {
-            Some(DataValue::List(items)) => items,
+            Some(DataValue::Vec(_, items)) => items,
             _ => {
                 return Err(crate::error::Error::ValidationError(
                     "array 输入必须为 List 类型".to_string(),
@@ -550,8 +552,9 @@ impl Node for StackNode {
             .cloned()
             .ok_or_else(|| crate::error::Error::ValidationError("元素输入不存在".to_string()))?;
 
+        let element_type = element.data_type();
         let mut outputs = HashMap::new();
-        outputs.insert("array".to_string(), DataValue::List(vec![element]));
+        outputs.insert("array".to_string(), DataValue::Vec(Box::new(element_type), vec![element]));
 
         self.validate_outputs(&outputs)?;
         Ok(outputs)
