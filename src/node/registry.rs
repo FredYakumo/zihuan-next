@@ -134,7 +134,7 @@ pub fn init_node_registry() -> Result<()> {
     use crate::llm::llm_api::LLMAPINode;
     use crate::bot_adapter::node_impl::{BotAdapterNode, ExtractSenderIdFromEventNode, IsAtMeNode, MessageEventTypeFilterNode, SendFriendMessageNode, SendGroupMessageNode};
     use crate::bot_adapter::extract_message_from_event::ExtractMessageFromEventNode;
-    use crate::node::database_nodes::{RedisNode, MySqlNode};
+    use crate::node::database::{RedisNode, MySqlNode};
     use crate::node::message_nodes::{MessageMySQLPersistenceNode, MessageCacheNode};
 
     // Utility nodes
