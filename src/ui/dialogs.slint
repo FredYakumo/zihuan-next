@@ -1123,10 +1123,19 @@ export component HyperParameterManagerDialog inherits Rectangle {
                                 VerticalLayout {
                                     alignment: center;
                                     horizontal-stretch: 1;
-                                    if hp.data_type != "Boolean": LineEdit {
+                                    if hp.data_type != "Boolean" && hp.data_type != "Password": LineEdit {
                                         height: 28px;
                                         text: hp.value;
                                         placeholder-text: "输入默认值";
+                                        edited(text) => {
+                                            root.set_value(hp.name, text);
+                                        }
+                                    }
+                                    if hp.data_type == "Password": LineEdit {
+                                        height: 28px;
+                                        input-type: password;
+                                        text: hp.value;
+                                        placeholder-text: "输入密码";
                                         edited(text) => {
                                             root.set_value(hp.name, text);
                                         }
@@ -1230,7 +1239,7 @@ export component HyperParameterManagerDialog inherits Rectangle {
                     ComboBox {
                         width: 90px;
                         height: 32px;
-                        model: ["String", "Integer", "Float", "Boolean"];
+                        model: ["String", "Integer", "Float", "Boolean", "Password"];
                         current-value: root.new_type;
                         selected(val) => { root.new_type = val; }
                     }
