@@ -1430,7 +1430,7 @@ export component PortBindHyperparamDialog inherits Rectangle {
                                 if hp.value != "": VerticalLayout {
                                     alignment: center;
                                     CjkText {
-                                        text: "= " + hp.value;
+                                        text: hp.data_type == "Password" ? "= ****" : "= " + hp.value;
                                         font-size: 11px;
                                         color: AppTheme.text-muted;
                                         overflow: elide;
