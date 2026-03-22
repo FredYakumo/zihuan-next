@@ -144,6 +144,8 @@ fn build_node_vm(
 
     let message_list = build_message_list_vm(node, graph, inline_inputs);
 
+    let is_event_producer = crate::node::registry::NODE_REGISTRY.is_event_producer(&node.node_type);
+
     NodeVm {
         id: node.id.clone().into(),
         label: label.into(),
@@ -160,6 +162,7 @@ fn build_node_vm(
         output_ports: ModelRc::new(VecModel::from(output_ports)),
         is_selected,
         has_error: node.has_error,
+        is_event_producer,
     }
 }
 

@@ -58,6 +58,7 @@ export component GraphCanvas inherits Rectangle {
     in-out property <bool> drag_from_is_input: false;
     in-out property <float> canvas_pan_x: 0;
     in-out property <float> canvas_pan_y: 0;
+    in property <bool> is_graph_running: false;
     in-out property <float> canvas_zoom: 1.0;
 
     background: AppTheme.background;
@@ -288,6 +289,7 @@ export component GraphCanvas inherits Rectangle {
         min_rows: 3;
         is_selected: node.is_selected;
         has_error: node.has_error;
+        is_running: node.is_event_producer && root.is_graph_running;
 
         node_moved(x, y) => {
             root.node_moved(node.id, x / root.canvas_zoom - root.canvas_pan_x, y / root.canvas_zoom - root.canvas_pan_y);
