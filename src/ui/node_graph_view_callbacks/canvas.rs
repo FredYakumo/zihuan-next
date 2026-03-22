@@ -8,7 +8,7 @@ use crate::ui::node_graph_view::{
     refresh_active_tab_ui, tab_display_title, update_tabs_ui, GraphTabState,
 };
 use crate::ui::node_graph_view_geometry::{
-    build_edge_segments, build_edges, get_port_center, node_dimensions, snap_to_grid,
+    build_edge_segments, get_port_center, node_dimensions, snap_to_grid,
     snap_to_grid_center, GRID_SIZE, NODE_HEADER_ROWS, NODE_MIN_ROWS, NODE_PADDING_BOTTOM,
     NODE_WIDTH_CELLS,
 };
@@ -37,10 +37,8 @@ pub(crate) fn bind_canvas_callbacks(
             }
 
             if let Some(ui) = ui_handle.upgrade() {
-                let edges = build_edges(&tab.graph, &tab.selection, false);
                 let (edge_segments, edge_corners, edge_labels) = build_edge_segments(&tab.graph, false);
 
-                ui.set_edges(ModelRc::new(VecModel::from(edges)));
                 ui.set_edge_segments(ModelRc::new(VecModel::from(edge_segments)));
                 ui.set_edge_corners(ModelRc::new(VecModel::from(edge_corners)));
                 ui.set_edge_labels(ModelRc::new(VecModel::from(edge_labels)));
@@ -60,10 +58,8 @@ pub(crate) fn bind_canvas_callbacks(
             }
 
             if let Some(ui) = ui_handle.upgrade() {
-                let edges = build_edges(&tab.graph, &tab.selection, false);
                 let (edge_segments, edge_corners, edge_labels) = build_edge_segments(&tab.graph, false);
 
-                ui.set_edges(ModelRc::new(VecModel::from(edges)));
                 ui.set_edge_segments(ModelRc::new(VecModel::from(edge_segments)));
                 ui.set_edge_corners(ModelRc::new(VecModel::from(edge_corners)));
                 ui.set_edge_labels(ModelRc::new(VecModel::from(edge_labels)));
