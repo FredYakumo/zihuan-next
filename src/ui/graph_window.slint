@@ -5,7 +5,7 @@ import { CjkButton, CjkDeleteButton, CjkRunButton, CjkText } from "components/bu
 import { MenuBarItem, MenuItemRow } from "components/menubar.slint";
 import { TabItem } from "components/tabs.slint";
 import { GraphCanvas } from "components/graph_canvas.slint";
-import { ErrorDialog, HyperParameterManagerDialog, NodeHelpDialog, NodeSelector, PortBindHyperparamDialog, RunningConfirmDialog, SaveConfirmDialog } from "dialogs.slint";
+import { ErrorDialog, HyperParameterManagerDialog, NodeHelpDialog, NodeSelector, OverwriteConfirmDialog, PortBindHyperparamDialog, RunningConfirmDialog, SaveConfirmDialog } from "dialogs.slint";
 
 export component NodeGraphWindow inherits Window {
     in property <[NodeVm]> nodes;
@@ -63,6 +63,10 @@ export component NodeGraphWindow inherits Window {
     in property <string> running_confirm_message: "节点图正在运行，是否停止并关闭？";
     callback running_confirm_close();
     callback running_confirm_cancel();
+    in property <bool> show_overwrite_confirm: false;
+    in property <string> overwrite_confirm_message: "文件已存在，是否覆盖？";
+    callback overwrite_confirm_overwrite();
+    callback overwrite_confirm_cancel();
     in property <bool> show_node_help_dialog: false;
     in property <NodeTypeVm> node_help_data;
     callback show_node_help(string);
@@ -70,6 +74,7 @@ export component NodeGraphWindow inherits Window {
 
     callback open_json();
     callback save_json();
+    callback save_json_as();
     callback add_node(string);
     callback run_graph();
     callback stop_graph();
@@ -447,6 +452,12 @@ export component NodeGraphWindow inherits Window {
                     clicked => { root.save_json(); root.menu_open = false; }
                 }
 
+                MenuItemRow {
+                    title: "另存为...";
+                    shortcut: "Ctrl+Shift+S";
+                    clicked => { root.save_json_as(); root.menu_open = false; }
+                }
+
                 Rectangle {
                     height: 1px;
                     background: AppTheme.menu-separator;
@@ -480,6 +491,12 @@ export component NodeGraphWindow inherits Window {
         message: root.running_confirm_message;
         confirm_close => { root.running_confirm_close(); }
         cancel => { root.running_confirm_cancel(); }
+    }
+
+    if root.show_overwrite_confirm: OverwriteConfirmDialog {
+        message: root.overwrite_confirm_message;
+        overwrite => { root.overwrite_confirm_overwrite(); }
+        cancel => { root.overwrite_confirm_cancel(); }
     }
 
     if root.show_node_help_dialog: NodeHelpDialog {

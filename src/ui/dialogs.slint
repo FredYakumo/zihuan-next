@@ -214,6 +214,59 @@ export component RunningConfirmDialog inherits Rectangle {
     }
 }
 
+export component OverwriteConfirmDialog inherits Rectangle {
+    in property <string> message;
+    callback overwrite();
+    callback cancel();
+
+    background: AppTheme.overlay-mask;
+
+    TouchArea {
+        clicked => { root.cancel(); }
+    }
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 800px;
+        height: 200px;
+        background: AppTheme.node-bg;
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: AppTheme.border;
+
+        TouchArea {}
+
+        VerticalLayout {
+            padding: 20px;
+            spacing: 12px;
+
+            CjkText {
+                text: root.message;
+                font-size: 16px;
+                color: AppTheme.text-primary;
+                font-weight: 700;
+                horizontal-alignment: left;
+            }
+
+            HorizontalBox {
+                alignment: center;
+                spacing: 12px;
+
+                CjkDeleteButton {
+                    text: "覆盖";
+                    clicked => { root.overwrite(); }
+                }
+
+                CjkButton {
+                    text: "取消";
+                    clicked => { root.cancel(); }
+                }
+            }
+        }
+    }
+}
+
 export component NodeSelector inherits Rectangle {
     in property <[NodeTypeVm]> node_types;
     in property <[string]> categories;
