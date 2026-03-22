@@ -61,6 +61,20 @@ export component GraphCanvas inherits Rectangle {
     in property <bool> is_graph_running: false;
     in-out property <float> canvas_zoom: 1.0;
 
+    // FPS counter — synced to actual display refresh rate via animation-tick()
+    private property <float> _fps-anim: mod(animation-tick() / 1ms, 100000.0);
+    private property <int> _fps-count: 0;
+    private property <int> fps-display: 0;
+    changed _fps-anim => { _fps-count += 1; }
+    Timer {
+        interval: 1000ms;
+        running: true;
+        triggered => {
+            fps-display = _fps-count;
+            _fps-count = 0;
+        }
+    }
+
     background: AppTheme.background;
     width: 100%;
     height: 100%;
@@ -152,17 +166,7 @@ export component GraphCanvas inherits Rectangle {
             }
         }
 
-        moved => {
-            if (is_panning) {
-                did_pan = true;
-                root.canvas_pan_x = pan_origin_x + (self.mouse-x / 1px - pan_start_mouse_x) / root.canvas_zoom;
-                root.canvas_pan_y = pan_origin_y + (self.mouse-y / 1px - pan_start_mouse_y) / root.canvas_zoom;
-            } else if (is_box_selecting) {
-                root.box_selection_update(self.mouse-x / 1px / root.canvas_zoom - root.canvas_pan_x, self.mouse-y / 1px / root.canvas_zoom - root.canvas_pan_y);
-            } else {
-                root.pointer_moved(self.mouse-x / 1px / root.canvas_zoom - root.canvas_pan_x, self.mouse-y / 1px / root.canvas_zoom - root.canvas_pan_y);
-            }
-        }
+        moved => {}
     }
 
     for segment[idx] in edge_segments: Rectangle {
@@ -373,6 +377,26 @@ export component GraphCanvas inherits Rectangle {
 
         port_right_clicked(nid, pn) => {
             root.port_right_clicked(nid, pn);
+        }
+    }
+
+    // FPS overlay — bottom-left corner
+    Rectangle {
+        x: 10px;
+        y: parent.height - self.height - 10px;
+        width: 72px;
+        height: 22px;
+        background: #00000060;
+        border-radius: 4px;
+
+        CjkText {
+            text: root.fps-display + " fps";
+            color: #ffffff;
+            font-size: 12px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: 100%;
+            height: 100%;
         }
     }
 }
