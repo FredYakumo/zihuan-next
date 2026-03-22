@@ -23,6 +23,7 @@ export component NodeItem inherits Rectangle {
     in property <float> min_rows;
     in property <bool> is_selected;
     in property <bool> has_error;
+    in property <bool> is_running: false;
 
     callback node_moved(float, float);
     callback node_move_finished(float, float);
@@ -48,6 +49,29 @@ export component NodeItem inherits Rectangle {
 
     property <float> offset-x: 0;
     property <float> offset-y: 0;
+    property <int> spin-frame: 0;
+
+    // Pure position helpers: frame 0-9 = top edge, 10-19 = right, 20-29 = bottom (rtl), 30-39 = left (btt)
+    pure function perim-cx(f: float, nw: float) -> float {
+        f < 10.0 ? f * nw / 10.0 :
+        (f < 20.0 ? nw :
+        (f < 30.0 ? (30.0 - f) * nw / 10.0 :
+        0.0))
+    }
+    pure function perim-cy(f: float, nh: float) -> float {
+        f < 10.0 ? 0.0 :
+        (f < 20.0 ? (f - 10.0) * nh / 10.0 :
+        (f < 30.0 ? nh :
+        (40.0 - f) * nh / 10.0))
+    }
+
+    Timer {
+        running: root.is_running;
+        interval: 80ms;
+        triggered => {
+            root.spin-frame = root.spin-frame < 39.0 ? root.spin-frame + 1.0 : 0.0;
+        }
+    }
     property <float> drag-start-pointer-x: 0;
     property <float> drag-start-pointer-y: 0;
     property <float> drag-start-node-x: 0;
@@ -134,6 +158,80 @@ export component NodeItem inherits Rectangle {
         width: parent.width;
         x: 0px;
         y: 0px;
+    }
+
+    // Perimeter comet tail (continuous polyline) for EventProducer nodes while running.
+    // 10 perimeter positions → 4 chained Path segments with tapering width/opacity.
+    // Adjacent perimeter points are always on the same edge or at a corner,
+    // so no segment ever crosses the node interior.
+    // 40 frames × 80ms ≈ 3.2s/rev
+    if root.is_running: Rectangle {
+        x: 0px; y: 0px;
+        width: root.width; height: root.height;
+        background: transparent; clip: false;
+
+        // 10 perimeter positions: p0 = lead, p9 = tail
+        property <float> p0x: root.perim-cx(Math.mod(root.spin-frame,        40.0), root.width / 1px);
+        property <float> p0y: root.perim-cy(Math.mod(root.spin-frame,        40.0), root.height / 1px);
+        property <float> p1x: root.perim-cx(Math.mod(root.spin-frame + 39.0, 40.0), root.width / 1px);
+        property <float> p1y: root.perim-cy(Math.mod(root.spin-frame + 39.0, 40.0), root.height / 1px);
+        property <float> p2x: root.perim-cx(Math.mod(root.spin-frame + 38.0, 40.0), root.width / 1px);
+        property <float> p2y: root.perim-cy(Math.mod(root.spin-frame + 38.0, 40.0), root.height / 1px);
+        property <float> p3x: root.perim-cx(Math.mod(root.spin-frame + 37.0, 40.0), root.width / 1px);
+        property <float> p3y: root.perim-cy(Math.mod(root.spin-frame + 37.0, 40.0), root.height / 1px);
+        property <float> p4x: root.perim-cx(Math.mod(root.spin-frame + 36.0, 40.0), root.width / 1px);
+        property <float> p4y: root.perim-cy(Math.mod(root.spin-frame + 36.0, 40.0), root.height / 1px);
+        property <float> p5x: root.perim-cx(Math.mod(root.spin-frame + 35.0, 40.0), root.width / 1px);
+        property <float> p5y: root.perim-cy(Math.mod(root.spin-frame + 35.0, 40.0), root.height / 1px);
+        property <float> p6x: root.perim-cx(Math.mod(root.spin-frame + 34.0, 40.0), root.width / 1px);
+        property <float> p6y: root.perim-cy(Math.mod(root.spin-frame + 34.0, 40.0), root.height / 1px);
+        property <float> p7x: root.perim-cx(Math.mod(root.spin-frame + 33.0, 40.0), root.width / 1px);
+        property <float> p7y: root.perim-cy(Math.mod(root.spin-frame + 33.0, 40.0), root.height / 1px);
+        property <float> p8x: root.perim-cx(Math.mod(root.spin-frame + 32.0, 40.0), root.width / 1px);
+        property <float> p8y: root.perim-cy(Math.mod(root.spin-frame + 32.0, 40.0), root.height / 1px);
+        property <float> p9x: root.perim-cx(Math.mod(root.spin-frame + 31.0, 40.0), root.width / 1px);
+        property <float> p9y: root.perim-cy(Math.mod(root.spin-frame + 31.0, 40.0), root.height / 1px);
+
+        // Segment tail (p9→p8→p7) — thinnest, faintest
+        Path {
+            x: 0px; y: 0px; width: 100%; height: 100%;
+            viewbox-x: 0; viewbox-y: 0;
+            viewbox-width: parent.width / 1px; viewbox-height: parent.height / 1px;
+            commands: "M \{parent.p9x} \{parent.p9y} L \{parent.p8x} \{parent.p8y} L \{parent.p7x} \{parent.p7y}";
+            stroke: #4caf5030;
+            stroke-width: grid_size * 0.12 * 1px;
+            fill: transparent;
+        }
+        // Segment (p7→p6→p5)
+        Path {
+            x: 0px; y: 0px; width: 100%; height: 100%;
+            viewbox-x: 0; viewbox-y: 0;
+            viewbox-width: parent.width / 1px; viewbox-height: parent.height / 1px;
+            commands: "M \{parent.p7x} \{parent.p7y} L \{parent.p6x} \{parent.p6y} L \{parent.p5x} \{parent.p5y}";
+            stroke: #4caf5065;
+            stroke-width: grid_size * 0.18 * 1px;
+            fill: transparent;
+        }
+        // Segment (p5→p4→p3)
+        Path {
+            x: 0px; y: 0px; width: 100%; height: 100%;
+            viewbox-x: 0; viewbox-y: 0;
+            viewbox-width: parent.width / 1px; viewbox-height: parent.height / 1px;
+            commands: "M \{parent.p5x} \{parent.p5y} L \{parent.p4x} \{parent.p4y} L \{parent.p3x} \{parent.p3y}";
+            stroke: #4caf50a0;
+            stroke-width: grid_size * 0.24 * 1px;
+            fill: transparent;
+        }
+        // Segment lead (p3→p2→p1→p0) — thickest, brightest
+        Path {
+            x: 0px; y: 0px; width: 100%; height: 100%;
+            viewbox-x: 0; viewbox-y: 0;
+            viewbox-width: parent.width / 1px; viewbox-height: parent.height / 1px;
+            commands: "M \{parent.p3x} \{parent.p3y} L \{parent.p2x} \{parent.p2y} L \{parent.p1x} \{parent.p1y} L \{parent.p0x} \{parent.p0y}";
+            stroke: #4caf50ff;
+            stroke-width: grid_size * 0.30 * 1px;
+            fill: transparent;
+        }
     }
 
     if root.shows-preview-row: CjkText {

@@ -76,6 +76,16 @@ impl NodeRegistry {
         Some((node.input_ports(), node.output_ports()))
     }
 
+    /// Returns true if the registered node type is an EventProducer.
+    pub fn is_event_producer(&self, type_id: &str) -> bool {
+        let factories = self.factories.read().unwrap();
+        let Some(factory) = factories.get(type_id) else {
+            return false;
+        };
+        let node = factory("__probe__".to_string(), "__probe__".to_string());
+        node.node_type() == crate::node::NodeType::EventProducer
+    }
+
     /// Get all registered node types
     pub fn get_all_types(&self) -> Vec<NodeTypeMetadata> {
         self.metadata.read().unwrap().values().cloned().collect()
