@@ -24,6 +24,9 @@ pub(crate) fn bind_tab_callbacks(
     next_tab_id: Arc<Mutex<u64>>,
     pending_close_tab_id: Arc<Mutex<Option<u64>>>,
 ) {
+    let pending_save_as: Arc<Mutex<Option<(std::path::PathBuf, u64)>>> =
+        Arc::new(Mutex::new(None));
+
     let ui_handle = ui.as_weak();
     let tabs_clone = Arc::clone(&tabs);
     let active_tab_clone = Arc::clone(&active_tab_index);
@@ -386,6 +389,109 @@ pub(crate) fn bind_tab_callbacks(
         pending_close_tab_id_for_running_cancel.lock().unwrap().take();
         if let Some(ui) = ui_handle.upgrade() {
             ui.set_show_running_confirm(false);
+        }
+    });
+
+    // --- Save As ---
+
+    let do_save_as = Arc::new({
+        let tabs_clone = Arc::clone(&tabs);
+        let active_tab_clone = Arc::clone(&active_tab_index);
+        let ui_handle = ui.as_weak();
+        move |path: PathBuf, tab_id: u64| -> bool {
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let tab_index = match tabs_guard.iter().position(|t| t.id == tab_id) {
+                Some(index) => index,
+                None => return false,
+            };
+
+            let tab = &mut tabs_guard[tab_index];
+            apply_inline_inputs_to_graph(&mut tab.graph, &tab.inline_inputs);
+
+            if let Err(e) = crate::node::graph_io::save_graph_definition_to_json(&path, &tab.graph) {
+                log::error!("Failed to save graph: {}", e);
+                return false;
+            }
+
+            if let Err(e) = save_hyperparameter_values(&path, &tab.hyperparameter_values) {
+                log::warn!("[HyperParamStore] Failed to save hyperparameter values: {}", e);
+            }
+
+            tab.file_path = Some(path.clone());
+            tab.title = path
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.display().to_string());
+            tab.is_dirty = false;
+
+            if let Some(ui) = ui_handle.upgrade() {
+                let active_index = *active_tab_clone.lock().unwrap();
+                refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+            }
+
+            true
+        }
+    });
+
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let pending_save_as_for_open = Arc::clone(&pending_save_as);
+    let do_save_as_for_open = Arc::clone(&do_save_as);
+    let ui_handle = ui.as_weak();
+    ui.on_save_json_as(move || {
+        let tab_id = {
+            let tabs_guard = tabs_clone.lock().unwrap();
+            let active_index = *active_tab_clone.lock().unwrap();
+            match tabs_guard.get(active_index).map(|t| t.id) {
+                Some(id) => id,
+                None => return,
+            }
+        };
+
+        let path = match rfd::FileDialog::new()
+            .add_filter("Node Graph", &["json"])
+            .set_file_name("node_graph.json")
+            .save_file()
+        {
+            Some(path) => path,
+            None => return,
+        };
+
+        if path.exists() {
+            let filename = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.display().to_string());
+            *pending_save_as_for_open.lock().unwrap() = Some((path, tab_id));
+            if let Some(ui) = ui_handle.upgrade() {
+                ui.set_overwrite_confirm_message(
+                    format!("文件 \"{}\" 已存在，是否覆盖？", filename).into(),
+                );
+                ui.set_show_overwrite_confirm(true);
+            }
+        } else {
+            do_save_as_for_open(path, tab_id);
+        }
+    });
+
+    let pending_save_as_for_overwrite = Arc::clone(&pending_save_as);
+    let do_save_as_for_overwrite = Arc::clone(&do_save_as);
+    let ui_handle = ui.as_weak();
+    ui.on_overwrite_confirm_overwrite(move || {
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_show_overwrite_confirm(false);
+        }
+        if let Some((path, tab_id)) = pending_save_as_for_overwrite.lock().unwrap().take() {
+            do_save_as_for_overwrite(path, tab_id);
+        }
+    });
+
+    let pending_save_as_for_cancel = Arc::clone(&pending_save_as);
+    let ui_handle = ui.as_weak();
+    ui.on_overwrite_confirm_cancel(move || {
+        pending_save_as_for_cancel.lock().unwrap().take();
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_show_overwrite_confirm(false);
         }
     });
 

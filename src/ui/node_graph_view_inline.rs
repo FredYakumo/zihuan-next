@@ -9,6 +9,9 @@ pub(crate) fn build_inline_inputs_from_graph(graph: &NodeGraphDefinition) -> Has
     let mut map = HashMap::new();
     for node in &graph.nodes {
         for (port_name, val) in &node.inline_values {
+            if node.port_bindings.contains_key(port_name) {
+                continue;
+            }
             let key = inline_port_key(&node.id, port_name);
             match val {
                 serde_json::Value::String(s) => {
@@ -36,6 +39,9 @@ pub(crate) fn apply_inline_inputs_to_graph(
 ) {
     for node in &mut graph.nodes {
         for port in &node.input_ports {
+            if node.port_bindings.contains_key(&port.name) {
+                continue;
+            }
             let key = inline_port_key(&node.id, &port.name);
             if let Some(val) = inline_inputs.get(&key) {
                 match val {
