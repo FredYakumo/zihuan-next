@@ -142,7 +142,8 @@ macro_rules! register_node {
 pub fn init_node_registry() -> Result<()> {
     use crate::node::util::{ArrayGetNode, ConditionalNode, JsonParserNode, MessageListDataNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, SwitchNode};
     use crate::llm::llm_api::LLMAPINode;
-    use crate::bot_adapter::node_impl::{BotAdapterNode, ExtractSenderIdFromEventNode, IsAtMeNode, MessageEventTypeFilterNode, SendFriendMessageNode, SendGroupMessageNode};
+    use crate::bot_adapter::{BotAdapterNode, ExtractSenderIdFromEventNode, IsAtMeNode, MessageEventTypeFilterNode, SendFriendMessageNode, SendGroupMessageNode};
+    use crate::bot_adapter::extract_group_id_from_event::ExtractGroupIdFromEventNode;
     use crate::bot_adapter::extract_message_from_event::ExtractMessageFromEventNode;
     use crate::node::database::{RedisNode, MySqlNode};
     use crate::node::message_nodes::{MessageMySQLPersistenceNode, MessageCacheNode};
@@ -292,6 +293,14 @@ pub fn init_node_registry() -> Result<()> {
         "Bot适配器",
         "从消息事件中提取发送者的QQ号（字符串）",
         ExtractSenderIdFromEventNode
+    );
+
+    register_node!(
+        "extract_group_id_from_event",
+        "提取群号",
+        "Bot适配器",
+        "从群消息事件中提取群号（字符串）",
+        ExtractGroupIdFromEventNode
     );
 
     // Database nodes
