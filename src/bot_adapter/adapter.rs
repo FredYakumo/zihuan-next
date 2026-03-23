@@ -168,14 +168,14 @@ impl BotAdapter {
 
         let (mut write, mut read) = ws_stream.split();
 
-        // Wire up the outbound action channel and store its sender in the adapter.
+
         let (action_tx, mut action_rx) = mpsc::unbounded_channel::<String>();
         {
             let mut guard = adapter.lock().await;
             guard.action_tx = Some(action_tx);
         }
 
-        // Spawn a task that forwards queued actions to the WebSocket write sink.
+
         tokio::spawn(async move {
             while let Some(msg) = action_rx.recv().await {
                 if write.send(WsMessage::Text(msg)).await.is_err() {
@@ -184,7 +184,6 @@ impl BotAdapter {
             }
         });
 
-        // Process incoming messages
         while let Some(msg_result) = read.next().await {
             match msg_result {
                 Ok(WsMessage::Text(text)) => {
