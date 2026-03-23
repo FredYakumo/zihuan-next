@@ -30,8 +30,7 @@ struct Args {
 }
 
 fn main() {
-    // Initialize logging using LogUtil
-    LogUtil::init_with_logger(&BASE_LOG).expect("Failed to initialize logger");
+    ui::log_overlay::CompositeLogger::init(&BASE_LOG).expect("Failed to initialize logger");
 
     // Initialize node registry
     if let Err(e) = node::registry::init_node_registry() {
