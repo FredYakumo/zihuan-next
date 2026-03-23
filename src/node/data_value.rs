@@ -6,6 +6,7 @@ use crate::llm::function_tools::FunctionTool;
 use crate::bot_adapter::adapter::SharedBotAdapter;
 use crate::bot_adapter::models::event_model::MessageEvent;
 use crate::bot_adapter::models::message::MessageProp;
+use sqlx::mysql::MySqlPool;
 
 /// Redis connection configuration, passed between nodes as a reference
 #[derive(Debug, Clone)]
@@ -15,12 +16,27 @@ pub struct RedisConfig {
     pub reconnect_interval_secs: Option<u64>,
 }
 
-/// MySQL connection configuration, passed between nodes as a reference
-#[derive(Debug, Clone)]
+/// MySQL connection configuration, passed between nodes as a reference.
+/// The `pool` field carries the live connection pool created by `MySqlNode`;
+/// downstream nodes should use it directly instead of reconnecting.
+#[derive(Clone)]
 pub struct MySqlConfig {
     pub url: Option<String>,
     pub reconnect_max_attempts: Option<u32>,
     pub reconnect_interval_secs: Option<u64>,
+    /// Live connection pool maintained by the MySqlNode.
+    pub pool: Option<MySqlPool>,
+}
+
+impl fmt::Debug for MySqlConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MySqlConfig")
+            .field("url", &self.url)
+            .field("reconnect_max_attempts", &self.reconnect_max_attempts)
+            .field("reconnect_interval_secs", &self.reconnect_interval_secs)
+            .field("pool", &self.pool.as_ref().map(|_| "<MySqlPool>"))
+            .finish()
+    }
 }
 
 /// Dataflow datatype. Use for checking compatibility between ports.
