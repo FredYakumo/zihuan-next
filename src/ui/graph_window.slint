@@ -1,11 +1,12 @@
 import { VerticalBox } from "std-widgets.slint";
 import { AppTheme } from "theme.slint";
-import { EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm, HyperParameterVm, NodeTypeVm, NodeVm } from "types.slint";
+import { EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm, HyperParameterVm, LogEntryVm, NodeTypeVm, NodeVm } from "types.slint";
 import { CjkButton, CjkDeleteButton, CjkRunButton, CjkText } from "components/buttons.slint";
 import { MenuBarItem, MenuItemRow } from "components/menubar.slint";
 import { TabItem } from "components/tabs.slint";
 import { GraphCanvas } from "components/graph_canvas.slint";
-import { ErrorDialog, HyperParameterManagerDialog, NodeHelpDialog, NodeSelector, OverwriteConfirmDialog, PortBindHyperparamDialog, RunningConfirmDialog, SaveConfirmDialog } from "dialogs.slint";
+import { LogOverlay } from "components/log_overlay.slint";
+import { ErrorDialog, HyperParameterManagerDialog, LogHistoryDialog, NodeHelpDialog, NodeSelector, OverwriteConfirmDialog, PortBindHyperparamDialog, RunningConfirmDialog, SaveConfirmDialog } from "dialogs.slint";
 
 export component NodeGraphWindow inherits Window {
     in property <[NodeVm]> nodes;
@@ -129,6 +130,17 @@ export component NodeGraphWindow inherits Window {
     callback bind_port_hyperparameter(string, string, string); // node_id, port_name, hyperparam_name
     callback unbind_port_hyperparameter(string, string);       // node_id, port_name
     callback close_port_bind_dialog();
+
+    // Log overlay
+    in-out property <[LogEntryVm]> log_entries;
+    in-out property <float> log_overlay_opacity: 0.0;
+    animate log_overlay_opacity { duration: 500ms; easing: ease; }
+
+    // Log history dialog
+    in property <[LogEntryVm]> log_history;
+    in-out property <bool> show_log_history: false;
+    callback open_log_history();
+    callback close_log_history();
 
     title: "Zihuan Node Graph Viewer";
     width: 1200px;
@@ -335,6 +347,15 @@ export component NodeGraphWindow inherits Window {
                 }
             }
 
+            // Log overlay — bottom-left of canvas
+            LogOverlay {
+                x: 8px;
+                y: parent.height - self.preferred-height - 50px;
+                width: 420px;
+                opacity: root.log_overlay_opacity;
+                entries: root.log_entries;
+            }
+
             // Buttons Overlay
             Rectangle {
                 x: parent.width - self.width - 20px;
@@ -344,6 +365,11 @@ export component NodeGraphWindow inherits Window {
                 
                 buttons-layout := HorizontalLayout {
                     spacing: 12px;
+
+                    CjkButton {
+                        text: "日志";
+                        clicked => { root.open_log_history(); }
+                    }
 
                     CjkButton {
                         text: "超参数";
@@ -527,5 +553,10 @@ export component NodeGraphWindow inherits Window {
             root.unbind_port_hyperparameter(root.port_bind_node_id, root.port_bind_port_name);
         }
         close => { root.close_port_bind_dialog(); }
+    }
+
+    if root.show_log_history: LogHistoryDialog {
+        entries: root.log_history;
+        close => { root.close_log_history(); }
     }
 }

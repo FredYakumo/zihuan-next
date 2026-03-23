@@ -1,6 +1,6 @@
 import { HorizontalBox, VerticalBox, ScrollView, LineEdit, CheckBox, ComboBox } from "std-widgets.slint";
 import { AppTheme } from "theme.slint";
-import { NodeTypeVm, PortHelpVm, HyperParameterVm } from "types.slint";
+import { NodeTypeVm, PortHelpVm, HyperParameterVm, LogEntryVm } from "types.slint";
 import { CjkButton, CjkDeleteButton, CjkText } from "components/buttons.slint";
 
 export component ErrorDialog inherits Rectangle {
@@ -1498,6 +1498,151 @@ export component PortBindHyperparamDialog inherits Rectangle {
             CjkButton {
                 text: "取消";
                 clicked => { root.close(); }
+            }
+        }
+    }
+}
+
+export component LogHistoryDialog inherits Rectangle {
+    in property <[LogEntryVm]> entries;
+    callback close();
+
+    background: AppTheme.overlay-mask;
+
+    TouchArea {
+        clicked => { root.close(); }
+    }
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 900px;
+        height: parent.height - 80px;
+        background: AppTheme.node-bg;
+        border-radius: 12px;
+        border-width: 2px;
+        border-color: AppTheme.border;
+        clip: true;
+
+        TouchArea {} // block backdrop click-through
+
+        VerticalLayout {
+            padding: 16px;
+            spacing: 10px;
+
+            // ── Title bar ──
+            HorizontalLayout {
+                spacing: 0px;
+
+                CjkText {
+                    text: "运行日志";
+                    font-size: 18px;
+                    font-weight: 700;
+                    color: AppTheme.text-primary;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+
+                close-btn := Rectangle {
+                    width: 30px;
+                    height: 30px;
+                    border-radius: 6px;
+                    background: close-ta.has-hover ? AppTheme.surface : transparent;
+
+                    close-ta := TouchArea {
+                        clicked => { root.close(); }
+                    }
+
+                    CjkText {
+                        text: "×";
+                        color: AppTheme.text-muted;
+                        font-size: 16px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: 100%;
+                        height: 100%;
+                    }
+                }
+            }
+
+            // Divider
+            Rectangle {
+                height: 1px;
+                background: AppTheme.border;
+            }
+
+            // ── Scrollable log list ──
+            ScrollView {
+                vertical-stretch: 1;
+
+                VerticalLayout {
+                    spacing: 2px;
+                    padding: 2px;
+                    alignment: start;
+
+                    for entry in root.entries: Rectangle {
+                        border-radius: 3px;
+                        background: AppTheme.surface;
+
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            padding-top: 6px;
+                            padding-bottom: 6px;
+                            spacing: 8px;
+                            alignment: start;
+
+                            // Level badge — pinned to top of the row
+                            VerticalLayout {
+                                alignment: start;
+                                padding-top: 1px;
+
+                                Rectangle {
+                                    width: 46px;
+                                    height: 18px;
+                                    border-radius: 3px;
+                                    background:
+                                        entry.level == "ERROR" ? #f44336 :
+                                        entry.level == "WARN"  ? #ffc107 :
+                                        entry.level == "INFO"  ? #4caf50 :
+                                        entry.level == "DEBUG" ? #2196f3 :
+                                        #9e9e9e;
+
+                                    CjkText {
+                                        text: entry.level;
+                                        color: entry.level == "WARN" ? #000000 : #ffffff;
+                                        font-size: 10px;
+                                        font-weight: 700;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: 100%;
+                                        height: 100%;
+                                    }
+                                }
+                            }
+
+                            // Message — wraps freely
+                            CjkText {
+                                text: entry.message;
+                                color: AppTheme.text-primary;
+                                font-size: 12px;
+                                vertical-alignment: top;
+                                horizontal-stretch: 1;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Footer ──
+            HorizontalLayout {
+                alignment: center;
+
+                CjkButton {
+                    text: "关闭";
+                    clicked => { root.close(); }
+                }
             }
         }
     }
