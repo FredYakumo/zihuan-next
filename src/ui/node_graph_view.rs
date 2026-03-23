@@ -1,8 +1,11 @@
-use slint::{ModelRc, VecModel, SharedString, ComponentHandle};
+use slint::{Model, ModelRc, VecModel, SharedString, ComponentHandle};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
+use std::cell::Cell;
+use std::rc::Rc;
+use std::time::Instant;
 
 use crate::error::Result;
 use crate::node::graph_io::{
@@ -11,7 +14,7 @@ use crate::node::graph_io::{
 use crate::node::registry::NODE_REGISTRY;
 
 use crate::ui::graph_window::{
-    NodeGraphWindow, NodeTypeVm, PortHelpVm,
+    NodeGraphWindow, NodeTypeVm, PortHelpVm, LogEntryVm,
 };
 use crate::ui::node_graph_view_callbacks::{
     bind_canvas_callbacks, bind_hyperparameter_callbacks, bind_inline_port_callbacks, bind_message_list_callbacks,
@@ -213,6 +216,84 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: O
     bind_message_list_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
     bind_qq_message_list_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
     bind_hyperparameter_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
+
+    // Log history dialog callbacks
+    {
+        let ui_weak = ui.as_weak();
+        ui.on_open_log_history(move || {
+            if let Some(ui) = ui_weak.upgrade() {
+                let history = crate::ui::log_overlay::get_history();
+                let vms: Vec<LogEntryVm> = history
+                    .iter()
+                    .map(|e| LogEntryVm {
+                        level: e.level.to_string().into(),
+                        message: e.message.clone().into(),
+                    })
+                    .collect();
+                ui.set_log_history(ModelRc::new(VecModel::from(vms)));
+                ui.set_show_log_history(true);
+            }
+        });
+    }
+    {
+        let ui_weak = ui.as_weak();
+        ui.on_close_log_history(move || {
+            if let Some(ui) = ui_weak.upgrade() {
+                ui.set_show_log_history(false);
+            }
+        });
+    }
+
+    // Log overlay: poll the ring buffer every 100 ms and update the Slint model
+    let last_log_time: Rc<Cell<Option<Instant>>> = Rc::new(Cell::new(None));
+    let last_log_time_clone = Rc::clone(&last_log_time);
+    let ui_weak_log = ui.as_weak();
+    let _poll_timer = {
+        let t = slint::Timer::default();
+        t.start(
+            slint::TimerMode::Repeated,
+            std::time::Duration::from_millis(100),
+            move || {
+                let new_entries = crate::ui::log_overlay::drain_new_entries();
+                if !new_entries.is_empty() {
+                    last_log_time_clone.set(Some(Instant::now()));
+                    if let Some(ui) = ui_weak_log.upgrade() {
+                        let existing: Vec<LogEntryVm> = ui.get_log_entries().iter().collect();
+                        let mut all = existing;
+                        for e in new_entries {
+                            all.push(LogEntryVm {
+                                level: e.level.to_string().into(),
+                                message: e.message.into(),
+                            });
+                        }
+                        if all.len() > 5 {
+                            let drain_count = all.len() - 5;
+                            all.drain(0..drain_count);
+                        }
+                        ui.set_log_entries(ModelRc::new(VecModel::from(all)));
+                        ui.set_log_overlay_opacity(1.0);
+                    }
+                } else if let Some(last) = last_log_time_clone.get() {
+                    let elapsed = last.elapsed();
+                    if elapsed >= std::time::Duration::from_secs(5) {
+                        if let Some(ui) = ui_weak_log.upgrade() {
+                            if ui.get_log_overlay_opacity() > 0.001 {
+                                ui.set_log_overlay_opacity(0.0);
+                            }
+                        }
+                    }
+                    // Clear entries after fade completes (~5.6 s total)
+                    if elapsed >= std::time::Duration::from_millis(5600) {
+                        if let Some(ui) = ui_weak_log.upgrade() {
+                            ui.set_log_entries(ModelRc::new(VecModel::from(Vec::<LogEntryVm>::new())));
+                        }
+                        last_log_time_clone.set(None);
+                    }
+                }
+            },
+        );
+        t
+    };
 
     let run_result = ui.run();
     if run_result.is_ok() {
