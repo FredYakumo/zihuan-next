@@ -4,11 +4,21 @@ use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 use crate::config::pct_encode;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
+use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
+use tokio::task::block_in_place;
+use log::{debug, info, warn};
 
-/// MySQL configuration node - builds MySQL connection config from input ports
+/// MySQL node - builds a persistent connection pool from input ports and
+/// passes it downstream via MySqlRef. The pool is cached keyed on the
+/// connection URL; it is recreated only when the URL (or credentials) change.
 pub struct MySqlNode {
     id: String,
     name: String,
+    /// Cached pool, reused across graph executions while the URL stays unchanged.
+    pool: Option<MySqlPool>,
+    /// URL that produced `pool`; used to detect credential / host changes.
+    last_url: Option<String>,
 }
 
 impl MySqlNode {
@@ -16,7 +26,72 @@ impl MySqlNode {
         Self {
             id: id.into(),
             name: name.into(),
+            pool: None,
+            last_url: None,
         }
+    }
+
+    /// Return the cached pool when the URL is unchanged; otherwise create a
+    /// new pool using the supplied options and cache it.
+    fn get_or_create_pool(
+        &mut self,
+        url: &str,
+        max_connections: u32,
+        acquire_timeout_secs: u64,
+    ) -> Result<MySqlPool> {
+        if self.last_url.as_deref() == Some(url) {
+            if let Some(ref pool) = self.pool {
+                let size = pool.size();
+                let idle = pool.num_idle();
+                let in_use = size - idle as u32;
+                debug!(
+                    "[MySqlNode] Reusing existing pool (connections: {}/{} max, {} idle, {} in-use)",
+                    size, max_connections, idle, in_use
+                );
+                if idle == 0 && in_use >= max_connections {
+                    warn!(
+                        "[MySqlNode] All {} connections are in-use — acquire may time out!",
+                        max_connections
+                    );
+                }
+                return Ok(pool.clone());
+            }
+        }
+
+        info!(
+            "[MySqlNode] Creating new connection pool (max_connections={}, acquire_timeout={}s)",
+            max_connections, acquire_timeout_secs
+        );
+        let url_str = url.to_string();
+        // idle_timeout: close connections idle for 10 min before the server/NAT drops them.
+        // max_lifetime: recycle every connection after 30 min regardless of activity.
+        // min_connections: keep 1 warm connection so the first INSERT after a quiet
+        //   period doesn't need a full TCP handshake.
+        // test_before_acquire is intentionally NOT set: it counts against acquire_timeout
+        //   and can cause a full 30-second stall when the stale connection is detected.
+        //   Instead, failed queries automatically evict the bad connection; the persistence
+        //   node retries once immediately on connection errors.
+        let pool_opts = MySqlPoolOptions::new()
+            .max_connections(max_connections)
+            .min_connections(1)
+            .acquire_timeout(Duration::from_secs(acquire_timeout_secs))
+            .idle_timeout(Duration::from_secs(600))
+            .max_lifetime(Duration::from_secs(1800));
+        let pool = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            block_in_place(|| handle.block_on(pool_opts.connect(&url_str)))
+        } else {
+            tokio::runtime::Runtime::new()?.block_on(pool_opts.connect(&url_str))
+        }
+        .map_err(|e| crate::string_error!("[MySqlNode] Failed to connect to MySQL: {}", e))?;
+
+        info!(
+            "[MySqlNode] Pool ready (max_connections={}, min_connections=1, acquire_timeout={}s, \
+             idle_timeout=600s, max_lifetime=1800s, initial size={})",
+            max_connections, acquire_timeout_secs, pool.size()
+        );
+        self.pool = Some(pool.clone());
+        self.last_url = Some(url_str);
+        Ok(pool)
     }
 }
 
@@ -30,7 +105,7 @@ impl Node for MySqlNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("MySQL连接配置 - 构建MySQL连接URL并输出引用")
+        Some("MySQL连接配置 - 构建MySQL连接URL并维持持久连接池")
     }
 
     node_input![
@@ -39,6 +114,8 @@ impl Node for MySqlNode {
         port! { name = "mysql_user", ty = String, desc = "MySQL用户名" },
         port! { name = "mysql_password", ty = String, desc = "MySQL密码" },
         port! { name = "mysql_database", ty = String, desc = "MySQL数据库名" },
+        port! { name = "max_connections", ty = Integer, desc = "连接池最大连接数 (默认: 10)", optional },
+        port! { name = "acquire_timeout_secs", ty = Integer, desc = "获取连接超时秒数 (默认: 30)", optional },
         port! { name = "reconnect_max_attempts", ty = Integer, desc = "最大重连次数 (默认: 3)", optional },
         port! { name = "reconnect_interval_secs", ty = Integer, desc = "重连间隔秒数 (默认: 60)", optional },
     ];
@@ -82,6 +159,16 @@ impl Node for MySqlNode {
             Some(format!("mysql://{}@{}:{}/{}", user, host, port, database))
         };
 
+        let max_connections = inputs.get("max_connections").and_then(|v| match v {
+            DataValue::Integer(i) => Some(*i as u32),
+            _ => None,
+        }).unwrap_or(10);
+
+        let acquire_timeout_secs = inputs.get("acquire_timeout_secs").and_then(|v| match v {
+            DataValue::Integer(i) => Some(*i as u64),
+            _ => None,
+        }).unwrap_or(30);
+
         let max_attempts = inputs.get("reconnect_max_attempts").and_then(|v| match v {
             DataValue::Integer(i) => Some(*i as u32),
             _ => None,
@@ -91,10 +178,21 @@ impl Node for MySqlNode {
             _ => None,
         });
 
+        let url_str = url.as_ref().map(|s| s.as_str()).unwrap_or("");
+        let pool = self.get_or_create_pool(url_str, max_connections, acquire_timeout_secs)?;
+
+        let size = pool.size();
+        let idle = pool.num_idle();
+        debug!(
+            "[MySqlNode] Passing pool to downstream node (size={}, idle={}, in-use={})",
+            size, idle, size.saturating_sub(idle as u32)
+        );
+
         let config = MySqlConfig {
             url,
             reconnect_max_attempts: max_attempts,
             reconnect_interval_secs: interval_secs,
+            pool: Some(pool),
         };
 
         let mut outputs = HashMap::new();
