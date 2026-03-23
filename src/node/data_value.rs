@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value;
 use std::fmt;
 use std::sync::Arc;
@@ -19,6 +19,9 @@ pub struct RedisConfig {
 /// MySQL connection configuration, passed between nodes as a reference.
 /// The `pool` field carries the live connection pool created by `MySqlNode`;
 /// downstream nodes should use it directly instead of reconnecting.
+/// The `runtime_handle` points at the tokio runtime that owns the pool's
+/// background tasks, so downstream nodes can execute queries on the same
+/// runtime instead of creating throwaway runtimes.
 #[derive(Clone)]
 pub struct MySqlConfig {
     pub url: Option<String>,
@@ -26,6 +29,8 @@ pub struct MySqlConfig {
     pub reconnect_interval_secs: Option<u64>,
     /// Live connection pool maintained by the MySqlNode.
     pub pool: Option<MySqlPool>,
+    /// Handle to the tokio runtime that owns the pool and its background tasks.
+    pub runtime_handle: Option<tokio::runtime::Handle>,
 }
 
 impl fmt::Debug for MySqlConfig {
@@ -35,6 +40,7 @@ impl fmt::Debug for MySqlConfig {
             .field("reconnect_max_attempts", &self.reconnect_max_attempts)
             .field("reconnect_interval_secs", &self.reconnect_interval_secs)
             .field("pool", &self.pool.as_ref().map(|_| "<MySqlPool>"))
+            .field("runtime_handle", &self.runtime_handle.as_ref().map(|_| "<Handle>"))
             .finish()
     }
 }

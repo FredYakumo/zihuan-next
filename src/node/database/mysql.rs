@@ -19,6 +19,10 @@ pub struct MySqlNode {
     pool: Option<MySqlPool>,
     /// URL that produced `pool`; used to detect credential / host changes.
     last_url: Option<String>,
+    /// Persistent runtime kept alive for SQLx pool background tasks.
+    runtime: Option<tokio::runtime::Runtime>,
+    /// Handle to the runtime that owns the pool.
+    runtime_handle: Option<tokio::runtime::Handle>,
 }
 
 impl MySqlNode {
@@ -28,7 +32,27 @@ impl MySqlNode {
             name: name.into(),
             pool: None,
             last_url: None,
+            runtime: None,
+            runtime_handle: None,
         }
+    }
+
+    fn ensure_runtime_handle(&mut self) -> Result<tokio::runtime::Handle> {
+        if let Some(handle) = &self.runtime_handle {
+            return Ok(handle.clone());
+        }
+
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            self.runtime_handle = Some(handle.clone());
+            return Ok(handle);
+        }
+
+        info!("[MySqlNode] Creating persistent tokio runtime for MySQL pool");
+        let runtime = tokio::runtime::Runtime::new()?;
+        let handle = runtime.handle().clone();
+        self.runtime = Some(runtime);
+        self.runtime_handle = Some(handle.clone());
+        Ok(handle)
     }
 
     /// Return the cached pool when the URL is unchanged; otherwise create a
@@ -62,6 +86,7 @@ impl MySqlNode {
             "[MySqlNode] Creating new connection pool (max_connections={}, acquire_timeout={}s)",
             max_connections, acquire_timeout_secs
         );
+        let handle = self.ensure_runtime_handle()?;
         let url_str = url.to_string();
         // idle_timeout: close connections idle for 10 min before the server/NAT drops them.
         // max_lifetime: recycle every connection after 30 min regardless of activity.
@@ -77,10 +102,10 @@ impl MySqlNode {
             .acquire_timeout(Duration::from_secs(acquire_timeout_secs))
             .idle_timeout(Duration::from_secs(600))
             .max_lifetime(Duration::from_secs(1800));
-        let pool = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        let pool = if tokio::runtime::Handle::try_current().is_ok() {
             block_in_place(|| handle.block_on(pool_opts.connect(&url_str)))
         } else {
-            tokio::runtime::Runtime::new()?.block_on(pool_opts.connect(&url_str))
+            handle.block_on(pool_opts.connect(&url_str))
         }
         .map_err(|e| crate::string_error!("[MySqlNode] Failed to connect to MySQL: {}", e))?;
 
@@ -193,6 +218,7 @@ impl Node for MySqlNode {
             reconnect_max_attempts: max_attempts,
             reconnect_interval_secs: interval_secs,
             pool: Some(pool),
+            runtime_handle: self.runtime_handle.clone(),
         };
 
         let mut outputs = HashMap::new();

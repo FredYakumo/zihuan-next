@@ -168,7 +168,13 @@ impl Node for MessageMySQLPersistenceNode {
                 .await
             };
 
-            let result = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let result = if let Some(handle) = mysql_config.runtime_handle.clone() {
+                if tokio::runtime::Handle::try_current().is_ok() {
+                    block_in_place(|| handle.block_on(run))
+                } else {
+                    handle.block_on(run)
+                }
+            } else if let Ok(handle) = tokio::runtime::Handle::try_current() {
                 block_in_place(|| handle.block_on(run))
             } else {
                 tokio::runtime::Runtime::new()?.block_on(run)
