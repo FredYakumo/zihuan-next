@@ -5,20 +5,30 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::task::block_in_place;
-use sqlx::mysql::MySqlPool;
-use log::{debug, error};
+use log::{debug, error, info, warn};
 use chrono::Local;
+use sqlx;
 
-/// Message MySQL Persistence Node - Stores MessageEvent to MySQL database
+/// Returns true for errors that indicate a dropped/stale connection rather than
+/// a SQL-level problem (constraint violation, syntax error, etc.).
+/// On such errors the persistence node retries once; sqlx will have already
+/// evicted the bad connection from the pool so the retry gets a fresh one.
+fn is_connection_error(e: &sqlx::Error) -> bool {
+    matches!(
+        e,
+        sqlx::Error::PoolTimedOut
+            | sqlx::Error::PoolClosed
+            | sqlx::Error::Io(_)
+    )
+}
+
+/// Message MySQL Persistence Node - Stores MessageEvent to MySQL database.
+/// This node is stateless with respect to the pool: it relies on the MySqlNode
+/// (upstream) to own and maintain the connection pool, which arrives via the
+/// `mysql_ref` input port.
 pub struct MessageMySQLPersistenceNode {
     id: String,
     name: String,
-    pool: Option<MySqlPool>,
-    /// The URL used in the last connection attempt (success or failure).
-    last_mysql_url: Option<String>,
-    /// Cached error string from the last failed connection attempt for the current URL.
-    /// When set, `ensure_pool` skips retrying until the URL changes.
-    pool_connect_error: Option<String>,
 }
 
 impl MessageMySQLPersistenceNode {
@@ -26,48 +36,6 @@ impl MessageMySQLPersistenceNode {
         Self {
             id: id.into(),
             name: name.into(),
-            pool: None,
-            last_mysql_url: None,
-            pool_connect_error: None,
-        }
-    }
-
-    /// Return the cached pool if the URL is unchanged and the last attempt succeeded.
-    /// Skip retrying if the URL is unchanged but the last attempt failed (return cached error).
-    /// Reconnect only when the URL changes.
-    fn ensure_pool(&mut self, url: &str) -> Result<&MySqlPool> {
-        let url_changed = self.last_mysql_url.as_deref() != Some(url);
-
-        if !url_changed {
-            // Same URL — return existing pool or propagate cached error without retrying.
-            if self.pool.is_some() {
-                return Ok(self.pool.as_ref().unwrap());
-            }
-            if let Some(ref err) = self.pool_connect_error {
-                return Err(crate::string_error!("{}", err));
-            }
-        }
-
-        // URL changed or first attempt — try (re)connecting.
-        let url_str = url.to_string();
-        match if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            block_in_place(|| handle.block_on(MySqlPool::connect(&url_str)))
-        } else {
-            tokio::runtime::Runtime::new()?.block_on(MySqlPool::connect(&url_str))
-        } {
-            Ok(pool) => {
-                self.pool = Some(pool);
-                self.last_mysql_url = Some(url_str);
-                self.pool_connect_error = None;
-                Ok(self.pool.as_ref().unwrap())
-            }
-            Err(e) => {
-                let msg = format!("[MessageMySQLPersistenceNode] Failed to connect to MySQL: {}", e);
-                self.pool = None;
-                self.last_mysql_url = Some(url_str);
-                self.pool_connect_error = Some(msg.clone());
-                Err(crate::string_error!("{}", msg))
-            }
         }
     }
 }
@@ -110,9 +78,35 @@ impl Node for MessageMySQLPersistenceNode {
             _ => None,
         }).ok_or_else(|| crate::error::Error::InvalidNodeInput("mysql_ref is required".to_string()))?;
 
-        let url = mysql_config.url.as_deref().ok_or_else(|| {
-            crate::error::Error::InvalidNodeInput("mysql_ref has no URL configured".to_string())
-        })?;
+        // Obtain the live pool from MySqlRef (maintained by the upstream MySqlNode).
+        let pool = match mysql_config.pool.clone() {
+            Some(p) => {
+                let size = p.size();
+                let idle = p.num_idle();
+                let in_use = size.saturating_sub(idle as u32);
+                debug!(
+                    "[MessageMySQLPersistenceNode] Received pool from MySqlRef \
+                     (size={}, idle={}, in-use={})",
+                    size, idle, in_use
+                );
+                if idle == 0 {
+                    warn!(
+                        "[MessageMySQLPersistenceNode] No idle connections in pool \
+                         (all {} in-use) — INSERT may stall waiting for one to free up",
+                        in_use
+                    );
+                }
+                p
+            }
+            None => {
+                error!("[MessageMySQLPersistenceNode] mysql_ref has no active pool — ensure the MySqlNode is connected");
+                let mut outputs = HashMap::new();
+                outputs.insert("success".to_string(), DataValue::Boolean(false));
+                outputs.insert("message_event".to_string(), DataValue::MessageEvent(message_event));
+                self.validate_outputs(&outputs)?;
+                return Ok(outputs);
+            }
+        };
 
         // Build record fields from MessageEvent
         let message_id = message_event.message_id.to_string();
@@ -138,69 +132,90 @@ impl Node for MessageMySQLPersistenceNode {
             Some(at_targets.join(","))
         };
 
-        let pool = match self.ensure_pool(url) {
-            Ok(p) => p,
-            Err(e) => {
-                error!("[MessageMySQLPersistenceNode] Cannot acquire pool: {}", e);
-                let mut outputs = HashMap::new();
-                outputs.insert("success".to_string(), DataValue::Boolean(false));
-                outputs.insert("message_event".to_string(), DataValue::MessageEvent(message_event));
-                self.validate_outputs(&outputs)?;
-                return Ok(outputs);
-            }
-        };
+        // Keep a copy for use in log calls after the async block consumes the originals.
+        let message_id_log = message_id.clone();
 
-        let run = async {
-            sqlx::query(
-                r#"
-                INSERT INTO message_record
-                (message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                "#,
-            )
-            .bind(&message_id)
-            .bind(&sender_id)
-            .bind(&sender_name)
-            .bind(send_time)
-            .bind(&group_id)
-            .bind(&group_name)
-            .bind(&content)
-            .bind(&at_target_list)
-            .execute(pool)
-            .await
-        };
+        info!(
+            "[MessageMySQLPersistenceNode] Inserting message {} (sender={}, group={:?}) into MySQL",
+            message_id_log,
+            sender_id,
+            group_id,
+        );
 
-        let success = if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            match block_in_place(|| handle.block_on(run)) {
+        // Retry once on connection-level errors (PoolTimedOut, Io, etc.).
+        // sqlx automatically evicts the bad connection after a failed query,
+        // so the retry will acquire a fresh connection.
+        let mut success = false;
+        for attempt in 1u32..=2 {
+            // Borrow (not move) all locals so the loop body can run twice.
+            let run = async {
+                sqlx::query(
+                    r#"
+                    INSERT INTO message_record
+                    (message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    "#,
+                )
+                .bind(&message_id)
+                .bind(&sender_id)
+                .bind(&sender_name)
+                .bind(send_time)
+                .bind(&group_id)
+                .bind(&group_name)
+                .bind(&content)
+                .bind(&at_target_list)
+                .execute(&pool)
+                .await
+            };
+
+            let result = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                block_in_place(|| handle.block_on(run))
+            } else {
+                tokio::runtime::Runtime::new()?.block_on(run)
+            };
+
+            match result {
                 Ok(_) => {
-                    debug!("[MessageMySQLPersistenceNode] Message {} persisted to MySQL", message_id);
-                    true
+                    if attempt > 1 {
+                        info!(
+                            "[MessageMySQLPersistenceNode] Message {} inserted successfully (attempt {})",
+                            message_id_log, attempt
+                        );
+                    } else {
+                        info!("[MessageMySQLPersistenceNode] Message {} inserted successfully", message_id_log);
+                    }
+                    success = true;
+                    break;
+                }
+                Err(ref e) if attempt < 2 && is_connection_error(e) => {
+                    warn!(
+                        "[MessageMySQLPersistenceNode] Message {} attempt {} failed with connection error \
+                         ({}); sqlx will evict the bad connection — retrying immediately",
+                        message_id_log, attempt, e
+                    );
+                    // Continue to attempt 2.
                 }
                 Err(e) => {
-                    error!("[MessageMySQLPersistenceNode] INSERT failed for message {}: {}", message_id, e);
-                    // Drop pool so the next message triggers a fresh reconnect attempt.
-                    self.pool = None;
-                    self.last_mysql_url = None;
-                    self.pool_connect_error = None;
-                    false
+                    error!(
+                        "[MessageMySQLPersistenceNode] INSERT failed for message {} (attempt {}): {}",
+                        message_id_log, attempt, e
+                    );
+                    break;
                 }
             }
+        }
+
+        if success {
+            info!(
+                "[MessageMySQLPersistenceNode] Returning success=true for message {}",
+                message_id_log
+            );
         } else {
-            match tokio::runtime::Runtime::new()?.block_on(run) {
-                Ok(_) => {
-                    debug!("[MessageMySQLPersistenceNode] Message {} persisted to MySQL", message_id);
-                    true
-                }
-                Err(e) => {
-                    error!("[MessageMySQLPersistenceNode] INSERT failed for message {}: {}", message_id, e);
-                    self.pool = None;
-                    self.last_mysql_url = None;
-                    self.pool_connect_error = None;
-                    false
-                }
-            }
-        };
-
+            error!(
+                "[MessageMySQLPersistenceNode] Returning success=false for message {}",
+                message_id_log
+            );
+        }
         let mut outputs = HashMap::new();
         outputs.insert("success".to_string(), DataValue::Boolean(success));
         outputs.insert("message_event".to_string(), DataValue::MessageEvent(message_event));
