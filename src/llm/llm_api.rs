@@ -1,9 +1,10 @@
-use super::{InferenceParam, LLMBase, Message, MessageRole, role_to_str, str_to_role};
+use super::{InferenceParam, Message, MessageRole, role_to_str, str_to_role};
 use super::function_tools::{ToolCalls, ToolCallsFuncSpec};
 use reqwest::blocking::Client;
 use serde_json::{Value, json};
 use std::time::Duration;
 use log::{error, debug};
+use crate::llm::llm_base::LLMBase;
 
 #[cfg(test)]
 use log::warn;
