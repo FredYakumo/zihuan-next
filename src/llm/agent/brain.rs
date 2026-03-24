@@ -6,9 +6,10 @@ use crate::bot_adapter::adapter::BotAdapter;
 use crate::bot_adapter::models::MessageEvent;
 use crate::bot_adapter::models::message::MessageProp;
 use crate::llm::agent::Agent;
-use crate::llm::{InferenceParam, LLMBase, Message, UserMessage};
+use crate::llm::{InferenceParam, Message, UserMessage};
 use crate::error::Result;
 use crate::llm::function_tools::FunctionTool;
+use crate::llm::llm_base::LLMBase;
 
 #[derive(Clone)]
 pub struct BrainAgent {
