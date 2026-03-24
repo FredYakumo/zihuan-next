@@ -1,5 +1,5 @@
 use super::FunctionTool;
-use crate::llm::{InferenceParam, Message, MessageRole};
+use crate::llm::{InferenceParam, OpenAIMessage, MessageRole};
 use crate::error::Result;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -46,8 +46,8 @@ impl FunctionTool for NaturalLanguageReplyTool {
         let system = arguments.get("system").and_then(|v| v.as_str()).unwrap_or("You are a helpful assistant.");
 
         let messages = vec![
-            Message { role: MessageRole::System, content: Some(system.to_string()), tool_calls: Vec::new() },
-            Message { role: MessageRole::User, content: Some(prompt.to_string()), tool_calls: Vec::new() },
+            OpenAIMessage { role: MessageRole::System, content: Some(system.to_string()), tool_calls: Vec::new() },
+            OpenAIMessage { role: MessageRole::User, content: Some(prompt.to_string()), tool_calls: Vec::new() },
         ];
         let param = InferenceParam { messages: &messages, tools: None };
         let resp = self.llm.inference(&param);

@@ -5,13 +5,13 @@ use crate::llm::function_tools::ToolCalls;
 use super::message_role::MessageRole;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Message {
+pub struct OpenAIMessage {
     pub role: MessageRole,
     pub content: Option<String>,
     pub tool_calls: Vec<ToolCalls>,
 }
 
-impl Message {
+impl OpenAIMessage {
     pub fn system<S: Into<String>>(content: S) -> Self {
         Self {
             role: MessageRole::System,

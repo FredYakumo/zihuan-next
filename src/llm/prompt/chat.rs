@@ -1,7 +1,7 @@
-use crate::{bot_adapter::{adapter::BotAdapter, models::MessageEvent}, llm::{Message, SystemMessage}};
+use crate::{bot_adapter::{adapter::BotAdapter, models::MessageEvent}, llm::{OpenAIMessage, SystemMessage}};
 
 /// Build system message for chat agent based on bot profile and event context
-pub fn build_chat_system_message(bot_adapter: &BotAdapter, event: &MessageEvent, persona: &str) -> Message {
+pub fn build_chat_system_message(bot_adapter: &BotAdapter, event: &MessageEvent, persona: &str) -> OpenAIMessage {
     let bot_profile = bot_adapter.get_bot_profile();
     
     if let Some(profile) = bot_profile {

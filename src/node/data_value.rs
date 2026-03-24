@@ -58,7 +58,7 @@ pub enum DataType {
     Vec(Box<DataType>),
     MessageEvent,
     MessageProp,
-    Message,
+    OpenAIMessage,
     QQMessage,
     FunctionTools,
     BotAdapterRef,
@@ -91,7 +91,7 @@ impl fmt::Display for DataType {
             DataType::Vec(inner) => write!(f, "Vec<{}>", inner),
             DataType::MessageEvent => write!(f, "MessageEvent"),
             DataType::MessageProp => write!(f, "MessageProp"),
-            DataType::Message => write!(f, "Message"),
+                DataType::OpenAIMessage => write!(f, "OpenAIMessage"),
             DataType::QQMessage => write!(f, "QQMessage"),
             DataType::FunctionTools => write!(f, "FunctionTools"),
             DataType::BotAdapterRef => write!(f, "BotAdapterRef"),
@@ -127,7 +127,8 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "Binary" => Ok(DataType::Binary),
                     "MessageEvent" => Ok(DataType::MessageEvent),
                     "MessageProp" => Ok(DataType::MessageProp),
-                    "Message" => Ok(DataType::Message),
+                        "OpenAIMessage" => Ok(DataType::OpenAIMessage),
+                    "Message" => Ok(DataType::OpenAIMessage),
                     "QQMessage" => Ok(DataType::QQMessage),
                     "FunctionTools" => Ok(DataType::FunctionTools),
                     "BotAdapterRef" => Ok(DataType::BotAdapterRef),
@@ -137,7 +138,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     other => Err(de::Error::unknown_variant(
                         other,
                         &["Any", "String", "Integer", "Float", "Boolean", "Json",
-                          "Binary", "Vec", "MessageEvent", "MessageProp", "Message",
+                              "Binary", "Vec", "MessageEvent", "MessageProp", "OpenAIMessage", "Message",
                           "QQMessage", "FunctionTools", "BotAdapterRef", "RedisRef",
                           "MySqlRef", "Password", "Custom"],
                     )),
@@ -189,7 +190,7 @@ pub enum DataValue {
     Binary(Vec<u8>),
     Vec(Box<DataType>, std::vec::Vec<DataValue>),
     MessageEvent(MessageEvent),
-    Message(crate::llm::Message),
+    OpenAIMessage(crate::llm::OpenAIMessage),
     QQMessage(crate::bot_adapter::models::message::Message),
     MessageProp(MessageProp),
     FunctionTools(Vec<Arc<dyn FunctionTool>>),
@@ -209,7 +210,7 @@ impl DataValue {
             DataValue::Json(_) => DataType::Json,
             DataValue::Binary(_) => DataType::Binary,
             DataValue::Vec(ty, _) => DataType::Vec(ty.clone()),
-            DataValue::Message(_) => DataType::Message,
+            DataValue::OpenAIMessage(_) => DataType::OpenAIMessage,
             DataValue::QQMessage(_) => DataType::QQMessage,
             DataValue::MessageEvent(_) => DataType::MessageEvent,
             DataValue::MessageProp(_) => DataType::MessageProp,
@@ -232,7 +233,7 @@ impl DataValue {
             DataValue::Vec(_, items) => {
                 Value::Array(items.iter().map(|item| item.to_json()).collect())
             }
-            DataValue::Message(m) => {
+            DataValue::OpenAIMessage(m) => {
                 serde_json::json!({
                     "role": crate::llm::role_to_str(&m.role),
                     "content": m.content,
@@ -295,7 +296,7 @@ impl fmt::Debug for DataValue {
             DataValue::Json(value) => f.debug_tuple("Json").field(value).finish(),
             DataValue::Binary(value) => f.debug_tuple("Binary").field(value).finish(),
             DataValue::Vec(ty, value) => f.debug_tuple("Vec").field(ty).field(value).finish(),
-            DataValue::Message(value) => f.debug_tuple("Message").field(value).finish(),
+                DataValue::OpenAIMessage(value) => f.debug_tuple("OpenAIMessage").field(value).finish(),
             DataValue::QQMessage(value) => f.debug_tuple("QQMessage").field(value).finish(),
             DataValue::MessageEvent(value) => f.debug_tuple("MessageEvent").field(value).finish(),
             DataValue::MessageProp(value) => f.debug_tuple("MessageProp").field(value).finish(),

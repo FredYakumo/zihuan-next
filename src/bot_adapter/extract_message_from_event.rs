@@ -2,12 +2,12 @@ use crate::bot_adapter::adapter::BotAdapter;
 use crate::bot_adapter::models::message::MessageProp;
 use crate::bot_adapter::models::MessageEvent;
 use crate::error::Result;
-use crate::llm::{Message, SystemMessage};
+use crate::llm::{OpenAIMessage, SystemMessage};
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 
 /// Build system message based on bot profile and event context
-pub fn build_system_message(bot_adapter: &BotAdapter, event: &MessageEvent, persona: &str) -> Message {
+pub fn build_system_message(bot_adapter: &BotAdapter, event: &MessageEvent, persona: &str) -> OpenAIMessage {
     let bot_profile = bot_adapter.get_bot_profile();
 
     if let Some(profile) = bot_profile {
@@ -44,7 +44,7 @@ pub fn build_system_message(bot_adapter: &BotAdapter, event: &MessageEvent, pers
 ///   - persona: Optional persona/character description (default: "默认助手")
 /// 
 /// Outputs:
-///   - messages: MessageList containing system message and user message
+///   - messages: OpenAIMessage 列表，包含 system message 和 user message
 pub struct ExtractMessageFromEventNode {
     id: String,
     name: String,
@@ -79,7 +79,7 @@ impl Node for ExtractMessageFromEventNode {
     ];
 
     node_output![
-        port! { name = "messages", ty = Vec(Message), desc = "Vec<Message> containing system and user messages" },
+        port! { name = "messages", ty = Vec(OpenAIMessage), desc = "Vec<OpenAIMessage> containing system and user messages" },
         port! { name = "msg_prop", ty = MessageProp, desc = "Parsed message properties" },
     ];
 
@@ -132,13 +132,13 @@ impl Node for ExtractMessageFromEventNode {
                 user_text = "(无文本内容，可能是仅@或回复)".to_string();
             }
 
-            let user_msg = Message::user(user_text);
+            let user_msg = OpenAIMessage::user(user_text);
 
             // Combine system and user messages
             let messages = vec![system_msg, user_msg];
             outputs.insert("messages".to_string(), DataValue::Vec(
-                Box::new(crate::node::DataType::Message),
-                messages.into_iter().map(DataValue::Message).collect(),
+                Box::new(crate::node::DataType::OpenAIMessage),
+                messages.into_iter().map(DataValue::OpenAIMessage).collect(),
             ));
             outputs.insert("msg_prop".to_string(), DataValue::MessageProp(msg_prop));
         } else {

@@ -26,11 +26,11 @@ impl Node for PreviewMessageListNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("Preview MessageList inside the node card with scrollable message items")
+            Some("Preview OpenAIMessage list inside the node card with scrollable message items")
     }
 
     node_input![
-        port! { name = "messages", ty = Vec(Message), desc = "Vec<Message> to preview inside the node", optional },
+            port! { name = "messages", ty = Vec(OpenAIMessage), desc = "Vec<OpenAIMessage> to preview inside the node", optional },
     ];
 
     node_output![];

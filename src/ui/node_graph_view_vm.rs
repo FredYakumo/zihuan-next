@@ -205,7 +205,7 @@ fn build_input_port_vm(
         crate::node::DataType::Vec(inner)
             if matches!(
                 inner.as_ref(),
-                crate::node::DataType::Message | crate::node::DataType::QQMessage
+                crate::node::DataType::OpenAIMessage | crate::node::DataType::QQMessage
             ) =>
         {
             let has_val = match inline_inputs.get(&key) {

@@ -1,5 +1,5 @@
 use super::FunctionTool;
-use crate::llm::{InferenceParam, Message, MessageRole};
+use crate::llm::{InferenceParam, OpenAIMessage, MessageRole};
 use crate::error::Result;
 use crate::llm::llm_base::LLMBase;
 use serde_json::{json, Value};
@@ -57,8 +57,8 @@ impl FunctionTool for CodeWriterTool {
         };
 
         let messages = vec![
-            Message { role: MessageRole::System, content: Some(system.to_string()), tool_calls: Vec::new() },
-            Message { role: MessageRole::User, content: Some(user_prompt), tool_calls: Vec::new() },
+            OpenAIMessage { role: MessageRole::System, content: Some(system.to_string()), tool_calls: Vec::new() },
+            OpenAIMessage { role: MessageRole::User, content: Some(user_prompt), tool_calls: Vec::new() },
         ];
         let param = InferenceParam { messages: &messages, tools: None };
         let resp = self.llm.inference(&param);
