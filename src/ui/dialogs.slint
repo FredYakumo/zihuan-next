@@ -765,6 +765,13 @@ export component NodeSelector inherits Rectangle {
                                         color: AppTheme.text-muted;
                                         wrap: word-wrap;
                                     }
+
+                                    if port.connection_text != "": CjkText {
+                                        text: port.connection_text;
+                                        font-size: 11px;
+                                        color: AppTheme.primary;
+                                        wrap: word-wrap;
+                                    }
                                 }
                             }
                         }
@@ -950,6 +957,13 @@ export component NodeHelpDialog inherits Rectangle {
                                         color: AppTheme.text-muted;
                                         wrap: word-wrap;
                                     }
+
+                                    if port.connection_text != "": CjkText {
+                                        text: port.connection_text;
+                                        font-size: 11px;
+                                        color: AppTheme.primary;
+                                        wrap: word-wrap;
+                                    }
                                 }
                             }
                         }
@@ -1017,6 +1031,13 @@ export component NodeHelpDialog inherits Rectangle {
                                         text: port.description;
                                         font-size: 11px;
                                         color: AppTheme.text-muted;
+                                        wrap: word-wrap;
+                                    }
+
+                                    if port.connection_text != "": CjkText {
+                                        text: port.connection_text;
+                                        font-size: 11px;
+                                        color: AppTheme.primary;
                                         wrap: word-wrap;
                                     }
                                 }

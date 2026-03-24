@@ -70,7 +70,7 @@ export component NodeGraphWindow inherits Window {
     callback overwrite_confirm_cancel();
     in property <bool> show_node_help_dialog: false;
     in property <NodeTypeVm> node_help_data;
-    callback show_node_help(string);
+    callback show_node_help(string, string);
     callback hide_node_help();
 
     callback open_json();
@@ -338,8 +338,8 @@ export component NodeGraphWindow inherits Window {
                     root.node_resize_finished(node_id, width, height);
                 }
 
-                show_node_help(node_type) => {
-                    root.show_node_help(node_type);
+                show_node_help(node_id, node_type) => {
+                    root.show_node_help(node_id, node_type);
                 }
 
                 port_right_clicked(node_id, port_name) => {

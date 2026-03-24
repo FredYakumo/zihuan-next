@@ -44,7 +44,7 @@ export component NodeItem inherits Rectangle {
     callback qq_message_list_set_content(string, int, string);
     callback node_resized(float, float);
     callback node_resize_finished(float, float);
-    callback show_help(string);
+    callback show_help(string, string);
     callback port_right_clicked(string, string);
 
     property <float> offset-x: 0;
@@ -1007,7 +1007,7 @@ export component NodeItem inherits Rectangle {
         opacity: 0.75;
 
         TouchArea {
-            clicked => { root.show_help(root.node_type); }
+            clicked => { root.show_help(root.node_id, root.node_type); }
         }
 
         CjkText {
