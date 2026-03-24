@@ -12,7 +12,6 @@ pub struct Message {
 }
 
 impl Message {
-    /// Create a system message with the given content and no tool calls.
     pub fn system<S: Into<String>>(content: S) -> Self {
         Self {
             role: MessageRole::System,
@@ -21,7 +20,6 @@ impl Message {
         }
     }
 
-    /// Create a user message with the given content and no tool calls.
     pub fn user<S: Into<String>>(content: S) -> Self {
         Self {
             role: MessageRole::User,
