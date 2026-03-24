@@ -6,5 +6,5 @@ pub mod prompt;
 pub mod util;
 pub mod llm_base;
 
-pub use model::{InferenceParam, Message, MessageRole};
+pub use model::{InferenceParam, OpenAIMessage, MessageRole};
 pub use util::{SystemMessage, UserMessage, role_to_str, str_to_role};

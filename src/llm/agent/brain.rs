@@ -6,7 +6,7 @@ use crate::bot_adapter::adapter::BotAdapter;
 use crate::bot_adapter::models::MessageEvent;
 use crate::bot_adapter::models::message::MessageProp;
 use crate::llm::agent::Agent;
-use crate::llm::{InferenceParam, Message, UserMessage};
+use crate::llm::{InferenceParam, OpenAIMessage, UserMessage};
 use crate::error::Result;
 use crate::llm::function_tools::FunctionTool;
 use crate::llm::llm_base::LLMBase;
@@ -144,7 +144,7 @@ impl Agent for BrainAgent {
                             info!("[BrainAgent] tool [{}] executed successfully", tool_call.function.name);
                             
                             // Add tool result as a tool message
-                            let tool_msg = Message {
+                            let tool_msg = OpenAIMessage {
                                 role: crate::llm::MessageRole::Tool,
                                 content: Some(tool_response.to_string()),
                                 tool_calls: Vec::new(),
@@ -155,7 +155,7 @@ impl Agent for BrainAgent {
                             info!("[BrainAgent] tool [{}] execution failed: {}", tool_call.function.name, e);
                             
                             // Add error message as tool result
-                            let error_msg = Message {
+                            let error_msg = OpenAIMessage {
                                 role: crate::llm::MessageRole::Tool,
                                 content: Some(format!("Error executing tool: {}", e)),
                                 tool_calls: Vec::new(),
@@ -167,7 +167,7 @@ impl Agent for BrainAgent {
                     info!("[BrainAgent] tool [{}] not found", tool_call.function.name);
                     
                     // Add error message for missing tool
-                    let error_msg = Message {
+                    let error_msg = OpenAIMessage {
                         role: crate::llm::MessageRole::Tool,
                         content: Some(format!("Tool '{}' not found", tool_call.function.name)),
                         tool_calls: Vec::new(),
@@ -184,7 +184,7 @@ impl Agent for BrainAgent {
         Ok(())
     }
 
-    fn on_agent_input(&self, _adapter: &mut BotAdapter, _event: &MessageEvent, _messages: Vec<Message>) -> Self::Output {
+    fn on_agent_input(&self, _adapter: &mut BotAdapter, _event: &MessageEvent, _messages: Vec<OpenAIMessage>) -> Self::Output {
         Ok(())
     }
     

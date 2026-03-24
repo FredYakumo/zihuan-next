@@ -1,4 +1,4 @@
-use super::{InferenceParam, Message, MessageRole, role_to_str, str_to_role};
+use super::{InferenceParam, OpenAIMessage, MessageRole, role_to_str, str_to_role};
 use super::function_tools::{ToolCalls, ToolCallsFuncSpec};
 use reqwest::blocking::Client;
 use serde_json::{Value, json};
@@ -40,8 +40,8 @@ impl LLMAPI {
     }
 
     /// Create a system message
-    pub fn system_message(content: &str) -> Message {
-        Message {
+    pub fn system_message(content: &str) -> OpenAIMessage {
+        OpenAIMessage {
             role: MessageRole::System,
             content: Some(content.to_string()),
             tool_calls: Vec::new(),
@@ -49,8 +49,8 @@ impl LLMAPI {
     }
 
     /// Create a user message
-    pub fn user_message(content: &str) -> Message {
-        Message {
+    pub fn user_message(content: &str) -> OpenAIMessage {
+        OpenAIMessage {
             role: MessageRole::User,
             content: Some(content.to_string()),
             tool_calls: Vec::new(),
@@ -92,7 +92,7 @@ impl LLMAPI {
             .unwrap_or_default()
     }
 
-    fn parse_api_message(api_resp: &Value) -> Option<Message> {
+    fn parse_api_message(api_resp: &Value) -> Option<OpenAIMessage> {
         let choices = api_resp.get("choices")?.as_array()?;
         let choice = choices.first()?;
         let msg = choice.get("message")?;
@@ -106,7 +106,7 @@ impl LLMAPI {
             .map(|tc| Self::parse_tool_calls(tc))
             .unwrap_or_default();
 
-        Some(Message {
+        Some(OpenAIMessage {
             role,
             content,
             tool_calls,
@@ -119,7 +119,7 @@ impl LLMBase for LLMAPI {
         &self.model_name
     }
 
-    fn inference(&self, param: &InferenceParam) -> Message {
+    fn inference(&self, param: &InferenceParam) -> OpenAIMessage {
         let client = Client::builder()
             .timeout(self.timeout)
             .build()
@@ -203,7 +203,7 @@ impl LLMBase for LLMAPI {
                                 msg
                             } else {
                                 error!("Invalid API response structure: missing required fields");
-                                Message {
+                                OpenAIMessage {
                                     role: MessageRole::Assistant,
                                     content: Some("Error: Invalid response structure from API".to_string()),
                                     tool_calls: Vec::new(),
@@ -212,7 +212,7 @@ impl LLMBase for LLMAPI {
                         }
                         Err(e) => {
                             error!("Failed to parse API response: {}, original response: {:?}", e, &response_text);
-                            Message {
+                            OpenAIMessage {
                                 role: MessageRole::Assistant,
                                 content: Some(format!("Error: Failed to parse response - {}", e)),
                                 tool_calls: Vec::new(),
@@ -221,7 +221,7 @@ impl LLMBase for LLMAPI {
                     }
                 } else {
                     error!("API request failed with status {}: {}", status, response_text);
-                    Message {
+                    OpenAIMessage {
                         role: MessageRole::Assistant,
                         content: Some(format!("Error: API request failed with status {}", status)),
                         tool_calls: Vec::new(),
@@ -230,7 +230,7 @@ impl LLMBase for LLMAPI {
             }
             Err(e) => {
                 error!("Failed to send API request: {}", e);
-                Message {
+                OpenAIMessage {
                     role: MessageRole::Assistant,
                     content: Some(format!("Error: Failed to send request - {}", e)),
                     tool_calls: Vec::new(),
@@ -463,7 +463,7 @@ impl Node for LLMAPINode {
     }
 
     node_input![
-        port! { name = "messages", ty = Vec(Message), desc = "输入的消息列表，包含系统消息和用户消息" },
+        port! { name = "messages", ty = Vec(OpenAIMessage), desc = "输入的消息列表，包含系统消息和用户消息" },
         port! { name = "model_name", ty = String, desc = "模型名称，例如: gpt-4, deepseek-chat" },
         port! { name = "api_endpoint", ty = String, desc = "API端点URL，例如: https://api.openai.com/v1/chat/completions" },
         port! { name = "api_key", ty = Password, desc = "API密钥 (可选，某些本地模型不需要)" },
@@ -471,7 +471,7 @@ impl Node for LLMAPINode {
     ];
 
     node_output![
-        port! { name = "response", ty = Vec(Message), desc = "LLM返回的消息列表，包含语言模型的回复" },
+        port! { name = "response", ty = Vec(OpenAIMessage), desc = "LLM返回的消息列表，包含语言模型的回复" },
     ];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
@@ -487,12 +487,12 @@ impl Node for LLMAPINode {
         let api_endpoint = inputs.get("api_endpoint")
             .ok_or_else(|| crate::error::Error::ValidationError("Missing required input: api_endpoint".to_string()))?;
 
-        // Extract messages from Vec<Message>
-        let messages: Vec<crate::llm::Message> = match messages_data {
+        // Extract messages from Vec<OpenAIMessage>
+        let messages: Vec<crate::llm::OpenAIMessage> = match messages_data {
             DataValue::Vec(_, items) => items.iter().filter_map(|item| {
-                if let DataValue::Message(m) = item { Some(m.clone()) } else { None }
+                if let DataValue::OpenAIMessage(m) = item { Some(m.clone()) } else { None }
             }).collect(),
-            _ => return Err(crate::error::Error::ValidationError("messages must be Vec<Message> type".to_string())),
+            _ => return Err(crate::error::Error::ValidationError("messages must be Vec<OpenAIMessage> type".to_string())),
         };
 
         // Extract model name and api endpoint
@@ -540,7 +540,7 @@ impl Node for LLMAPINode {
         let mut outputs = HashMap::new();
         outputs.insert(
             "response".to_string(),
-            DataValue::Vec(Box::new(crate::node::DataType::Message), vec![DataValue::Message(response_message)]),
+            DataValue::Vec(Box::new(crate::node::DataType::OpenAIMessage), vec![DataValue::OpenAIMessage(response_message)]),
         );
 
         self.validate_outputs(&outputs)?;

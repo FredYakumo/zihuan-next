@@ -1,21 +1,25 @@
 pub mod array_get;
 pub mod conditional;
 pub mod json_parser;
+pub mod message_content;
 pub mod message_list_data;
 pub mod preview_message_list;
 pub mod preview_string;
 pub mod qq_message_list_data;
 pub mod stack;
 pub mod string_data;
+pub mod string_to_plain_text;
 pub mod switch;
 
 pub use array_get::ArrayGetNode;
 pub use conditional::ConditionalNode;
 pub use json_parser::JsonParserNode;
+pub use message_content::MessageContentNode;
 pub use message_list_data::MessageListDataNode;
 pub use preview_message_list::PreviewMessageListNode;
 pub use preview_string::PreviewStringNode;
 pub use qq_message_list_data::QQMessageListDataNode;
 pub use stack::StackNode;
 pub use string_data::{StringDataNode, STRING_DATA_CONTEXT};
+pub use string_to_plain_text::StringToPlainTextNode;
 pub use switch::SwitchNode;

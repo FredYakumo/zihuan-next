@@ -77,8 +77,8 @@ pub fn load_graph_definition_from_json(path: impl AsRef<Path>) -> Result<NodeGra
     // Backward-compat: replace removed type names before parsing so old saved graphs load cleanly.
     // refresh_port_types() will then overwrite these with the live registry types.
     let content = content
-        .replace("\"data_type\": \"MessageList\"", "\"data_type\": {\"Vec\":\"Message\"}")
-        .replace("\"data_type\":\"MessageList\"", "\"data_type\":{\"Vec\":\"Message\"}")
+           .replace("\"data_type\": \"MessageList\"", "\"data_type\": {\"Vec\":\"OpenAIMessage\"}")
+           .replace("\"data_type\":\"MessageList\"", "\"data_type\":{\"Vec\":\"OpenAIMessage\"}")
         .replace("\"data_type\": \"QQMessageList\"", "\"data_type\": {\"Vec\":\"QQMessage\"}")
         .replace("\"data_type\":\"QQMessageList\"", "\"data_type\":{\"Vec\":\"QQMessage\"}")
         // Also migrate old "List" variant name (renamed to "Vec")
