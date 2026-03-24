@@ -1,8 +1,9 @@
 use std::sync::{Arc, Mutex};
 
 use log::{error, info};
-use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 
+use crate::node::graph_io::NodeGraphDefinition;
 use crate::ui::graph_window::{NodeGraphWindow, NodeTypeVm};
 use crate::ui::node_graph_view::{
     refresh_active_tab_ui, tab_display_title, GraphTabState,
@@ -10,6 +11,89 @@ use crate::ui::node_graph_view::{
 use crate::ui::node_graph_view_inline::{add_node_to_graph, apply_hyperparameter_bindings_to_graph, apply_inline_inputs_to_graph};
 use crate::ui::node_graph_view_vm::{apply_graph_to_ui, matches_node_type_search};
 use crate::ui::node_render::{inline_port_key, InlinePortValue};
+
+fn build_node_help_data(
+    node_type: &NodeTypeVm,
+    graph: &NodeGraphDefinition,
+    node_id: &str,
+) -> NodeTypeVm {
+    let node = graph.nodes.iter().find(|candidate| candidate.id == node_id);
+
+    let input_ports = node_type
+        .input_ports
+        .iter()
+        .map(|port| {
+            let connection_text = graph
+                .edges
+                .iter()
+                .find(|edge| edge.to_node_id == node_id && edge.to_port == port.name.as_str())
+                .and_then(|edge| {
+                    graph
+                        .nodes
+                        .iter()
+                        .find(|candidate| candidate.id == edge.from_node_id)
+                        .map(|source_node| format!("已连接自：{} · {}", source_node.name, edge.from_port))
+                })
+                .unwrap_or_default();
+
+            crate::ui::graph_window::PortHelpVm {
+                name: port.name.clone(),
+                data_type: port.data_type.clone(),
+                description: port.description.clone(),
+                required: port.required,
+                connection_text: connection_text.into(),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let output_ports = node_type
+        .output_ports
+        .iter()
+        .map(|port| {
+            let mut connection_lines = graph
+                .edges
+                .iter()
+                .filter(|edge| edge.from_node_id == node_id && edge.from_port == port.name.as_str())
+                .filter_map(|edge| {
+                    graph
+                        .nodes
+                        .iter()
+                        .find(|candidate| candidate.id == edge.to_node_id)
+                        .map(|target_node| format!("已连接到：{} · {}", target_node.name, edge.to_port))
+                })
+                .collect::<Vec<_>>();
+
+            let overflow = connection_lines.len().saturating_sub(2);
+            if connection_lines.len() > 2 {
+                connection_lines.truncate(2);
+                connection_lines.push(format!("等...（其余 {} 个）", overflow));
+            }
+
+            crate::ui::graph_window::PortHelpVm {
+                name: port.name.clone(),
+                data_type: port.data_type.clone(),
+                description: port.description.clone(),
+                required: port.required,
+                connection_text: connection_lines.join("\n").into(),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    NodeTypeVm {
+        type_id: node_type.type_id.clone(),
+        display_name: node
+            .map(|node| node.name.as_str())
+            .unwrap_or(node_type.display_name.as_str())
+            .into(),
+        category: node_type.category.clone(),
+        description: node
+            .and_then(|node| node.description.as_deref())
+            .unwrap_or(node_type.description.as_str())
+            .into(),
+        input_ports: ModelRc::new(VecModel::from(input_ports)),
+        output_ports: ModelRc::new(VecModel::from(output_ports)),
+    }
+}
 
 pub(crate) fn bind_window_callbacks(
     ui: &NodeGraphWindow,
@@ -375,11 +459,20 @@ pub(crate) fn bind_window_callbacks(
     });
 
     let ui_handle = ui.as_weak();
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
     let all_node_types_clone = Arc::clone(&all_node_types);
-    ui.on_show_node_help(move |type_id: SharedString| {
+    ui.on_show_node_help(move |node_id: SharedString, type_id: SharedString| {
         if let Some(ui) = ui_handle.upgrade() {
             if let Some(node_type) = all_node_types_clone.iter().find(|n| n.type_id == type_id) {
-                ui.set_node_help_data(node_type.clone());
+                let active_index = *active_tab_clone.lock().unwrap();
+                let tabs_guard = tabs_clone.lock().unwrap();
+                let node_help_data = tabs_guard
+                    .get(active_index)
+                    .map(|tab| build_node_help_data(node_type, &tab.graph, node_id.as_str()))
+                    .unwrap_or_else(|| node_type.clone());
+
+                ui.set_node_help_data(node_help_data);
                 ui.set_show_node_help_dialog(true);
             }
         }
