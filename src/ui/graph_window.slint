@@ -1,12 +1,12 @@
 import { VerticalBox } from "std-widgets.slint";
 import { AppTheme } from "theme.slint";
-import { EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm, HyperParameterVm, LogEntryVm, NodeTypeVm, NodeVm } from "types.slint";
+import { EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm, HyperParameterVm, LogEntryVm, NodeTypeVm, NodeVm, ToolDefinitionVm } from "types.slint";
 import { CjkButton, CjkDeleteButton, CjkRunButton, CjkText } from "components/buttons.slint";
 import { MenuBarItem, MenuItemRow } from "components/menubar.slint";
 import { TabItem } from "components/tabs.slint";
 import { GraphCanvas } from "components/graph_canvas.slint";
 import { LogOverlay } from "components/log_overlay.slint";
-import { ErrorDialog, HyperParameterManagerDialog, LogHistoryDialog, NodeHelpDialog, NodeSelector, OverwriteConfirmDialog, PortBindHyperparamDialog, RunningConfirmDialog, SaveConfirmDialog } from "dialogs.slint";
+import { ErrorDialog, HyperParameterManagerDialog, LogHistoryDialog, NodeHelpDialog, NodeSelector, OverwriteConfirmDialog, PortBindHyperparamDialog, RunningConfirmDialog, SaveConfirmDialog, ToolEditorDialog } from "dialogs.slint";
 
 export component NodeGraphWindow inherits Window {
     in property <[NodeVm]> nodes;
@@ -111,6 +111,7 @@ export component NodeGraphWindow inherits Window {
     callback qq_message_list_set_content(string, int, string);
     callback node_resized(string, float, float);
     callback node_resize_finished(string, float, float);
+    callback edit_tools_clicked(string);
 
     // Hyperparameter system
     in property <[HyperParameterVm]> hyperparameters;
@@ -130,6 +131,24 @@ export component NodeGraphWindow inherits Window {
     callback bind_port_hyperparameter(string, string, string); // node_id, port_name, hyperparam_name
     callback unbind_port_hyperparameter(string, string);       // node_id, port_name
     callback close_port_bind_dialog();
+
+    // Tool editor
+    in property <bool> show_tool_editor_dialog: false;
+    in property <string> tool_editor_node_id: "";
+    in property <int> tool_editor_selected_index: -1;
+    in property <[ToolDefinitionVm]> tool_editor_items;
+    callback open_tool_editor(string);
+    callback close_tool_editor();
+    callback save_tool_editor();
+    callback tool_editor_select(int);
+    callback tool_editor_add_tool();
+    callback tool_editor_delete_tool(int);
+    callback tool_editor_set_tool_name(int, string);
+    callback tool_editor_set_tool_description(int, string);
+    callback tool_editor_add_param(int);
+    callback tool_editor_delete_param(int, int);
+    callback tool_editor_set_param_name(int, int, string);
+    callback tool_editor_set_param_type(int, int, string);
 
     // Log overlay
     in-out property <[LogEntryVm]> log_entries;
@@ -345,6 +364,10 @@ export component NodeGraphWindow inherits Window {
                 port_right_clicked(node_id, port_name) => {
                     root.port_right_clicked(node_id, port_name);
                 }
+
+                edit_tools_clicked(node_id) => {
+                    root.edit_tools_clicked(node_id);
+                }
             }
 
             // Log overlay — bottom-left of canvas
@@ -553,6 +576,22 @@ export component NodeGraphWindow inherits Window {
             root.unbind_port_hyperparameter(root.port_bind_node_id, root.port_bind_port_name);
         }
         close => { root.close_port_bind_dialog(); }
+    }
+
+    if root.show_tool_editor_dialog: ToolEditorDialog {
+        tools: root.tool_editor_items;
+        selected_tool_index: root.tool_editor_selected_index;
+        select_tool(index) => { root.tool_editor_select(index); }
+        add_tool() => { root.tool_editor_add_tool(); }
+        delete_tool(index) => { root.tool_editor_delete_tool(index); }
+        set_tool_name(index, value) => { root.tool_editor_set_tool_name(index, value); }
+        set_tool_description(index, value) => { root.tool_editor_set_tool_description(index, value); }
+        add_param(index) => { root.tool_editor_add_param(index); }
+        delete_param(tool_index, param_index) => { root.tool_editor_delete_param(tool_index, param_index); }
+        set_param_name(tool_index, param_index, value) => { root.tool_editor_set_param_name(tool_index, param_index, value); }
+        set_param_type(tool_index, param_index, value) => { root.tool_editor_set_param_type(tool_index, param_index, value); }
+        save => { root.save_tool_editor(); }
+        close => { root.close_tool_editor(); }
     }
 
     if root.show_log_history: LogHistoryDialog {

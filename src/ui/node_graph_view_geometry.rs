@@ -12,12 +12,17 @@ pub(crate) const NODE_MIN_ROWS: f32 = 3.0;
 pub(crate) const NODE_PADDING_BOTTOM: f32 = 0.8;
 pub(crate) const LIST_NODE_MIN_HEIGHT: f32 = GRID_SIZE * 8.0;
 pub(crate) const LIST_NODE_OUTPUT_PORT_CENTER_Y: f32 = GRID_SIZE * 1.6;
+pub(crate) const BRAIN_NODE_MIN_HEIGHT: f32 = GRID_SIZE * 6.2;
 pub(crate) const CANVAS_WIDTH: f32 = 4000.0;
 pub(crate) const CANVAS_HEIGHT: f32 = 4000.0;
 pub(crate) const EDGE_THICKNESS_RATIO: f32 = 0.3;
 
 fn is_list_data_node(node: &NodeDefinition) -> bool {
     matches!(node.node_type.as_str(), "message_list_data" | "qq_message_list_data")
+}
+
+fn is_brain_node(node: &NodeDefinition) -> bool {
+    node.node_type == "brain"
 }
 
 pub(crate) fn snap_to_grid(value: f32) -> f32 {
@@ -35,6 +40,8 @@ pub(crate) fn node_dimensions(node: &NodeDefinition) -> (f32, f32) {
         GRID_SIZE * (NODE_MIN_ROWS.max(NODE_HEADER_ROWS + port_rows) + NODE_PADDING_BOTTOM);
     let min_height = if is_list_data_node(node) {
         default_min_height.max(LIST_NODE_MIN_HEIGHT)
+    } else if is_brain_node(node) {
+        default_min_height.max(BRAIN_NODE_MIN_HEIGHT)
     } else {
         default_min_height
     };

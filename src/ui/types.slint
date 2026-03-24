@@ -11,6 +11,17 @@ export struct HyperParameterVm {
     description: string,
 }
 
+export struct ToolParamVm {
+    name: string,
+    data_type: string,
+}
+
+export struct ToolDefinitionVm {
+    name: string,
+    description: string,
+    params: [ToolParamVm],
+}
+
 export struct PortVm {
     name: string,
     is_input: bool,
