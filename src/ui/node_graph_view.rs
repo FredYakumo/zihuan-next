@@ -20,6 +20,7 @@ use crate::ui::node_graph_view_callbacks::{
     bind_canvas_callbacks, bind_hyperparameter_callbacks, bind_inline_port_callbacks, bind_message_list_callbacks,
     bind_qq_message_list_callbacks,
     bind_tab_callbacks,
+    bind_tool_editor_callbacks,
     bind_window_callbacks,
 };
 use crate::ui::node_graph_view_geometry::{
@@ -218,6 +219,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: O
     bind_message_list_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
     bind_qq_message_list_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
     bind_hyperparameter_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
+    bind_tool_editor_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
 
     // Log history dialog callbacks
     {

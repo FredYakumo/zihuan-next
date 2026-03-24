@@ -142,6 +142,7 @@ macro_rules! register_node {
 pub fn init_node_registry() -> Result<()> {
     use crate::node::util::{ArrayGetNode, ConcatVecNode, ConditionalNode, JsonParserNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToPlainTextNode, SwitchNode};
     use crate::llm::llm_api_node::LLMApiNode;
+    use crate::llm::brain_node::BrainNode;
     use crate::llm::llm_infer_node::LLMInferNode;
     use crate::bot_adapter::{BotAdapterNode, ExtractSenderIdFromEventNode, IsAtMeNode, MessageEventTypeFilterNode, SendFriendMessageNode, SendGroupMessageNode};
     use crate::bot_adapter::extract_group_id_from_event::ExtractGroupIdFromEventNode;
@@ -270,6 +271,14 @@ pub fn init_node_registry() -> Result<()> {
         "AI",
         "使用LLModel引用对消息列表进行一次推理",
         LLMInferNode
+    );
+
+    register_node!(
+        "brain",
+        "Brain",
+        "AI",
+        "使用 LLModel + system prompt + user message 触发带可编辑 Tools 的函数调用推理",
+        BrainNode
     );
 
     // Bot adapter nodes
@@ -437,6 +446,13 @@ pub fn build_node_graph_from_definition(
         }
 
         graph.add_node(node)?;
+    }
+
+    let inline_values_snapshot = graph.inline_values.clone();
+    for (node_id, node) in graph.nodes.iter_mut() {
+        if let Some(inline_values) = inline_values_snapshot.get(node_id) {
+            node.apply_inline_config(inline_values)?;
+        }
     }
 
     Ok(graph)
