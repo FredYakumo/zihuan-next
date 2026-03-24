@@ -1,6 +1,6 @@
 use crate::node::graph_io::NodeGraphDefinition;
 use crate::node::DataValue;
-use crate::llm::{Message, MessageRole};
+use crate::llm::{OpenAIMessage, MessageRole};
 use super::{NodeRenderer, InlinePortValue};
 use std::collections::HashMap;
 
@@ -15,9 +15,9 @@ impl NodeRenderer for PreviewMessageListRenderer {
         // Get messages from execution results
         if let Some(results) = graph.execution_results.get(node_id) {
             if let Some(DataValue::Vec(_, items)) = results.get("messages") {
-                let messages: Vec<Message> = items
+                let messages: Vec<OpenAIMessage> = items
                     .iter()
-                    .filter_map(|v| if let DataValue::Message(m) = v { Some(m.clone()) } else { None })
+                    .filter_map(|v| if let DataValue::OpenAIMessage(m) = v { Some(m.clone()) } else { None })
                     .collect();
                 return format_message_list(&messages);
             }
@@ -32,7 +32,7 @@ impl NodeRenderer for PreviewMessageListRenderer {
 }
 
 /// Format a list of messages as a preview text
-fn format_message_list(messages: &[Message]) -> String {
+fn format_message_list(messages: &[OpenAIMessage]) -> String {
     messages.iter()
         .map(|msg| {
             let role_str = match msg.role {
@@ -59,7 +59,7 @@ pub fn get_message_list_data(
         if let Some(DataValue::Vec(_, items)) = results.get("messages") {
             return items
                 .iter()
-                .filter_map(|v| if let DataValue::Message(m) = v { Some(m) } else { None })
+                .filter_map(|v| if let DataValue::OpenAIMessage(m) = v { Some(m) } else { None })
                 .map(|msg| {
                     let role_str = match msg.role {
                         MessageRole::System => "system",

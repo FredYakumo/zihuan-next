@@ -52,6 +52,7 @@ pub mod graph_io;
 pub mod registry;
 pub mod database;
 pub mod message_nodes;
+pub mod message_cache;
 
 #[allow(unused_imports)]
 pub use data_value::{DataType, DataValue};
@@ -128,6 +129,14 @@ pub trait Node: Send + Sync {
     /// inputs: input port name -> data value
     /// returns: output port name -> data value
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>>;
+
+    /// Called once at the start of each graph execution.
+    ///
+    /// Nodes with run-scoped state can reset themselves here so state persists
+    /// during the current execution, but not across separate runs.
+    fn on_graph_start(&mut self) -> Result<()> {
+        Ok(())
+    }
 
     /// Event producer lifecycle: called before update loop
     fn on_start(&mut self, _inputs: HashMap<String, DataValue>) -> Result<()> {
@@ -262,7 +271,21 @@ impl NodeGraph {
         Ok(())
     }
 
+    fn prepare_for_execution(&mut self) -> Result<()> {
+        self.stop_flag.store(false, Ordering::Relaxed);
+
+        for (node_id, node) in self.nodes.iter_mut() {
+            node.on_graph_start().map_err(|e| {
+                crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
+            })?;
+        }
+
+        Ok(())
+    }
+
     pub fn execute(&mut self) -> Result<()> {
+        self.prepare_for_execution()?;
+
         if !self.edges.is_empty() {
             return self.execute_with_edges();
         }
@@ -512,6 +535,8 @@ impl NodeGraph {
         &mut self,
         node_results: &mut HashMap<String, HashMap<String, DataValue>>,
     ) -> Result<()> {
+        self.prepare_for_execution()?;
+
         if !self.edges.is_empty() {
             return self.execute_and_capture_results_with_edges(node_results);
         }
@@ -1716,9 +1741,9 @@ mod tests {
     fn switch_blocks_optional_downstream_in_edge_mode() {
         let mut graph = NodeGraph::new();
         graph.add_node(Box::new(StaticOutputNode::new("toggle", "enabled", DataValue::Boolean(false)))).unwrap();
-        graph.add_node(Box::new(StaticOutputNode::new("source", "value", DataValue::Vec(Box::new(DataType::Message), Vec::new())))).unwrap();
+        graph.add_node(Box::new(StaticOutputNode::new("source", "value", DataValue::Vec(Box::new(DataType::OpenAIMessage), Vec::new())))).unwrap();
         graph.add_node(Box::new(SwitchNode::new("gate", "Gate"))).unwrap();
-        graph.add_node(Box::new(OptionalSeenSinkNode::new("preview", "messages", DataType::Vec(Box::new(DataType::Message))))).unwrap();
+        graph.add_node(Box::new(OptionalSeenSinkNode::new("preview", "messages", DataType::Vec(Box::new(DataType::OpenAIMessage))))).unwrap();
         graph.set_edges(vec![
             EdgeDefinition {
                 from_node_id: "toggle".to_string(),
@@ -1750,9 +1775,9 @@ mod tests {
     fn switch_blocks_optional_downstream_in_implicit_mode() {
         let mut graph = NodeGraph::new();
         graph.add_node(Box::new(StaticOutputNode::new("toggle", "enabled", DataValue::Boolean(false)))).unwrap();
-        graph.add_node(Box::new(StaticOutputNode::new("source", "input", DataValue::Vec(Box::new(DataType::Message), Vec::new())))).unwrap();
+        graph.add_node(Box::new(StaticOutputNode::new("source", "input", DataValue::Vec(Box::new(DataType::OpenAIMessage), Vec::new())))).unwrap();
         graph.add_node(Box::new(SwitchNode::new("gate", "Gate"))).unwrap();
-        graph.add_node(Box::new(OptionalSeenSinkNode::new("preview", "output", DataType::Vec(Box::new(DataType::Message))))).unwrap();
+        graph.add_node(Box::new(OptionalSeenSinkNode::new("preview", "output", DataType::Vec(Box::new(DataType::OpenAIMessage))))).unwrap();
 
         let result = graph.execute_and_capture_results();
         assert_success(&result);

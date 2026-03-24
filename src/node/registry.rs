@@ -140,13 +140,14 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util::{ArrayGetNode, ConditionalNode, JsonParserNode, MessageListDataNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, SwitchNode};
+    use crate::node::util::{ArrayGetNode, ConditionalNode, JsonParserNode, MessageContentNode, MessageListDataNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToPlainTextNode, SwitchNode};
     use crate::llm::llm_api::LLMAPINode;
     use crate::bot_adapter::{BotAdapterNode, ExtractSenderIdFromEventNode, IsAtMeNode, MessageEventTypeFilterNode, SendFriendMessageNode, SendGroupMessageNode};
     use crate::bot_adapter::extract_group_id_from_event::ExtractGroupIdFromEventNode;
     use crate::bot_adapter::extract_message_from_event::ExtractMessageFromEventNode;
     use crate::node::database::{RedisNode, MySqlNode};
-    use crate::node::message_nodes::{MessageMySQLPersistenceNode, MessageCacheNode};
+    use crate::node::message_nodes::MessageMySQLPersistenceNode;
+    use crate::node::message_cache::MessageCacheNode;
 
     // Utility nodes
     register_node!(
@@ -190,6 +191,14 @@ pub fn init_node_registry() -> Result<()> {
     );
 
     register_node!(
+        "message_content",
+        "提取 OpenAIMessage 内容",
+        "消息",
+        "从 OpenAIMessage 中提取 content 字段，以字符串形式输出",
+        MessageContentNode
+    );
+
+    register_node!(
         "preview_string",
         "Preview String",
         "工具",
@@ -207,17 +216,17 @@ pub fn init_node_registry() -> Result<()> {
 
     register_node!(
         "preview_message_list",
-        "Preview MessageList",
+            "Preview OpenAIMessage List",
         "工具",
-        "在节点卡片内预览消息列表",
+            "在节点卡片内预览 OpenAIMessage 列表",
         PreviewMessageListNode
     );
 
     register_node!(
         "message_list_data",
-        "MessageList Data",
+            "OpenAIMessage List Data",
         "数据",
-        "消息列表数据源，通过UI容器编辑器提供MessageList",
+            "OpenAIMessage 列表数据源，通过 UI 容器编辑器提供列表数据",
         MessageListDataNode
     );
 
@@ -227,6 +236,14 @@ pub fn init_node_registry() -> Result<()> {
         "数据",
         "QQ消息列表数据源，通过UI容器编辑器提供QQMessageList",
         QQMessageListDataNode
+    );
+
+    register_node!(
+        "string_to_plain_text",
+        "字符串转QQ纯文本",
+        "消息",
+        "将字符串转换为 QQ 消息中的纯文本（PlainText）消息段",
+        StringToPlainTextNode
     );
 
     // LLM nodes
@@ -265,9 +282,9 @@ pub fn init_node_registry() -> Result<()> {
 
     register_node!(
         "extract_message_from_event",
-        "事件提取message列表",
+            "事件提取 OpenAIMessage 列表",
         "Bot适配器",
-        "从消息事件中提取openai的message列表",
+            "从消息事件中提取 OpenAIMessage 列表",
         ExtractMessageFromEventNode
     );
 
@@ -408,8 +425,8 @@ fn json_to_data_value(json: &Value, target_type: &DataType) -> Option<DataValue>
         
         (v, DataType::Json) => Some(DataValue::Json(v.clone())),
 
-        // Single LLM Message from a JSON object: {"role": "user", "content": "..."}
-        (Value::Object(map), DataType::Message) => {
+        // Single OpenAIMessage from a JSON object: {"role": "user", "content": "..."}
+        (Value::Object(map), DataType::OpenAIMessage) => {
             fn parse_role(v: &Value) -> crate::llm::MessageRole {
                 let s = v.as_str().unwrap_or("user").to_ascii_lowercase();
                 match s.as_str() {
@@ -426,7 +443,7 @@ fn json_to_data_value(json: &Value, target_type: &DataType) -> Option<DataValue>
                 Some(Value::Null) | None => None,
                 Some(other) => Some(other.to_string()),
             };
-            Some(DataValue::Message(crate::llm::Message {
+            Some(DataValue::OpenAIMessage(crate::llm::OpenAIMessage {
                 role,
                 content,
                 tool_calls: Vec::new(),
@@ -441,7 +458,7 @@ fn json_to_data_value(json: &Value, target_type: &DataType) -> Option<DataValue>
         }
 
         // Generic Vec: recurse per element using the inner type.
-        // Handles Vec<Message>, Vec<QQMessage>, and any other Vec<X>.
+        // Handles Vec<OpenAIMessage>, Vec<QQMessage>, and any other Vec<X>.
         (Value::Array(items), DataType::Vec(inner)) => {
             let parsed: Vec<DataValue> = items
                 .iter()
@@ -479,33 +496,33 @@ mod tests {
             {"role": "weird", "content": null}
         ]);
 
-        let val = json_to_data_value(&json, &DataType::Vec(Box::new(DataType::Message)))
-            .expect("should parse Vec<Message>");
+        let val = json_to_data_value(&json, &DataType::Vec(Box::new(DataType::OpenAIMessage)))
+            .expect("should parse Vec<OpenAIMessage>");
 
         match val {
             DataValue::Vec(_, list) => {
                 assert_eq!(list.len(), 3);
                 match &list[0] {
-                    DataValue::Message(m) => {
+                    DataValue::OpenAIMessage(m) => {
                         assert_eq!(crate::llm::role_to_str(&m.role), "user");
                         assert_eq!(m.content.as_deref(), Some("hi"));
                     }
-                    _ => panic!("expected Message"),
+                    _ => panic!("expected OpenAIMessage"),
                 }
                 match &list[1] {
-                    DataValue::Message(m) => {
+                    DataValue::OpenAIMessage(m) => {
                         assert_eq!(crate::llm::role_to_str(&m.role), "assistant");
                         assert_eq!(m.content.as_deref(), Some("hello"));
                     }
-                    _ => panic!("expected Message"),
+                    _ => panic!("expected OpenAIMessage"),
                 }
                 match &list[2] {
-                    DataValue::Message(m) => {
+                    DataValue::OpenAIMessage(m) => {
                         // Unknown role falls back to user
                         assert_eq!(crate::llm::role_to_str(&m.role), "user");
                         assert_eq!(m.content, None);
                     }
-                    _ => panic!("expected Message"),
+                    _ => panic!("expected OpenAIMessage"),
                 }
             }
             _ => panic!("unexpected DataValue variant"),
