@@ -1,12 +1,15 @@
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 use crate::llm::function_tools::FunctionTool;
 use crate::bot_adapter::adapter::SharedBotAdapter;
 use crate::bot_adapter::models::event_model::MessageEvent;
 use crate::bot_adapter::models::message::MessageProp;
+use redis::{aio::ConnectionManager, AsyncCommands};
 use sqlx::mysql::MySqlPool;
+use tokio::sync::Mutex as TokioMutex;
 
 /// Redis connection configuration, passed between nodes as a reference
 #[derive(Debug, Clone)]
@@ -45,6 +48,148 @@ impl fmt::Debug for MySqlConfig {
     }
 }
 
+/// Run-scoped OpenAI message session cache reference, passed between nodes.
+///
+/// This reference points at the live storage owned by `OpenAIMessageSessionCacheNode`.
+/// The storage persists for the duration of a single graph execution and is reset
+/// by the node on the next graph start.
+#[derive(Clone)]
+pub struct OpenAIMessageSessionCacheRef {
+    pub node_id: String,
+    pub memory_cache: Arc<TokioMutex<HashMap<String, Vec<crate::llm::OpenAIMessage>>>>,
+    pub redis_cm: Arc<TokioMutex<Option<ConnectionManager>>>,
+    pub cached_redis_url: Arc<TokioMutex<Option<String>>>,
+    pub sender_bucket_map: Arc<TokioMutex<HashMap<String, String>>>,
+}
+
+impl OpenAIMessageSessionCacheRef {
+    fn normalize_bucket_name(bucket_name: Option<&str>) -> String {
+        let bucket_name = bucket_name.unwrap_or("default").trim();
+        if bucket_name.is_empty() {
+            "default".to_string()
+        } else {
+            bucket_name.to_string()
+        }
+    }
+
+    fn storage_key(&self, bucket_name: &str, sender_id: &str) -> String {
+        format!(
+            "openai_message_session:{}:{}:{}",
+            self.node_id, bucket_name, sender_id
+        )
+    }
+
+    pub async fn get_messages(
+        &self,
+        sender_id: &str,
+    ) -> crate::error::Result<Vec<crate::llm::OpenAIMessage>> {
+        let bucket_name = {
+            let sender_bucket_map = self.sender_bucket_map.lock().await;
+            sender_bucket_map
+                .get(sender_id)
+                .cloned()
+                .unwrap_or_else(|| Self::normalize_bucket_name(None))
+        };
+        let key = self.storage_key(&bucket_name, sender_id);
+
+        let redis_url = {
+            let url_guard = self.cached_redis_url.lock().await;
+            url_guard.clone()
+        };
+
+        if let Some(url) = redis_url {
+            let mut cm_guard = self.redis_cm.lock().await;
+            let mut url_guard = self.cached_redis_url.lock().await;
+
+            if url_guard.as_deref() != Some(url.as_str()) {
+                *cm_guard = None;
+                *url_guard = Some(url.clone());
+            }
+
+            if cm_guard.is_none() {
+                let client = redis::Client::open(url.as_str())?;
+                match ConnectionManager::new(client).await {
+                    Ok(cm) => {
+                        *cm_guard = Some(cm);
+                    }
+                    Err(e) => return Err(e.into()),
+                }
+            }
+
+            if let Some(cm) = cm_guard.as_mut() {
+                let existing_json: Option<String> = cm.get(&key).await?;
+                if let Some(raw) = existing_json {
+                    let messages: Vec<crate::llm::OpenAIMessage> = serde_json::from_str(&raw)?;
+                    return Ok(messages);
+                }
+            }
+        }
+
+        let cache = self.memory_cache.lock().await;
+        Ok(cache.get(&key).cloned().unwrap_or_default())
+    }
+
+    pub async fn clear_messages(&self, sender_id: &str) -> crate::error::Result<bool> {
+        let bucket_name = {
+            let mut sender_bucket_map = self.sender_bucket_map.lock().await;
+            sender_bucket_map
+                .remove(sender_id)
+                .unwrap_or_else(|| Self::normalize_bucket_name(None))
+        };
+        let key = self.storage_key(&bucket_name, sender_id);
+        let mut cleared = false;
+
+        let redis_url = {
+            let url_guard = self.cached_redis_url.lock().await;
+            url_guard.clone()
+        };
+
+        if let Some(url) = redis_url {
+            let mut cm_guard = self.redis_cm.lock().await;
+            let mut url_guard = self.cached_redis_url.lock().await;
+
+            if url_guard.as_deref() != Some(url.as_str()) {
+                *cm_guard = None;
+                *url_guard = Some(url.clone());
+            }
+
+            if cm_guard.is_none() {
+                let client = redis::Client::open(url.as_str())?;
+                match ConnectionManager::new(client).await {
+                    Ok(cm) => {
+                        *cm_guard = Some(cm);
+                    }
+                    Err(e) => return Err(e.into()),
+                }
+            }
+
+            if let Some(cm) = cm_guard.as_mut() {
+                let deleted_count: i32 = cm.del(&key).await?;
+                let tracker_key = format!("openai_message_session:{}:bucket:{}:keys", self.node_id, bucket_name);
+                let _: () = cm.srem(&tracker_key, &key).await?;
+                cleared |= deleted_count > 0;
+            }
+        }
+
+        let mut memory_cache = self.memory_cache.lock().await;
+        cleared |= memory_cache.remove(&key).is_some();
+
+        Ok(cleared)
+    }
+}
+
+impl fmt::Debug for OpenAIMessageSessionCacheRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpenAIMessageSessionCacheRef")
+            .field("node_id", &self.node_id)
+            .field("memory_cache", &"<TokioMutex<HashMap<...>>>")
+            .field("redis_cm", &"<TokioMutex<Option<ConnectionManager>>>")
+            .field("cached_redis_url", &"<TokioMutex<Option<String>>>")
+            .field("sender_bucket_map", &"<TokioMutex<HashMap<...>>>")
+            .finish()
+    }
+}
+
 /// Dataflow datatype. Use for checking compatibility between ports.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub enum DataType {
@@ -64,6 +209,7 @@ pub enum DataType {
     BotAdapterRef,
     RedisRef,
     MySqlRef,
+    OpenAIMessageSessionCacheRef,
     Password,
     Custom(String),
 }
@@ -97,6 +243,7 @@ impl fmt::Display for DataType {
             DataType::BotAdapterRef => write!(f, "BotAdapterRef"),
             DataType::RedisRef => write!(f, "RedisRef"),
             DataType::MySqlRef => write!(f, "MySqlRef"),
+            DataType::OpenAIMessageSessionCacheRef => write!(f, "OpenAIMessageSessionCacheRef"),
             DataType::Password => write!(f, "Password"),
             DataType::Custom(name) => write!(f, "Custom({})", name),
         }
@@ -134,13 +281,14 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "BotAdapterRef" => Ok(DataType::BotAdapterRef),
                     "RedisRef" => Ok(DataType::RedisRef),
                     "MySqlRef" => Ok(DataType::MySqlRef),
+                    "OpenAIMessageSessionCacheRef" => Ok(DataType::OpenAIMessageSessionCacheRef),
                     "Password" => Ok(DataType::Password),
                     other => Err(de::Error::unknown_variant(
                         other,
                         &["Any", "String", "Integer", "Float", "Boolean", "Json",
                               "Binary", "Vec", "MessageEvent", "MessageProp", "OpenAIMessage", "Message",
                           "QQMessage", "FunctionTools", "BotAdapterRef", "RedisRef",
-                          "MySqlRef", "Password", "Custom"],
+                          "MySqlRef", "OpenAIMessageSessionCacheRef", "Password", "Custom"],
                     )),
                 }
             }
@@ -197,6 +345,7 @@ pub enum DataValue {
     BotAdapterRef(SharedBotAdapter),
     RedisRef(Arc<RedisConfig>),
     MySqlRef(Arc<MySqlConfig>),
+    OpenAIMessageSessionCacheRef(Arc<OpenAIMessageSessionCacheRef>),
     Password(String),
 }
 
@@ -218,6 +367,7 @@ impl DataValue {
             DataValue::BotAdapterRef(_) => DataType::BotAdapterRef,
             DataValue::RedisRef(_) => DataType::RedisRef,
             DataValue::MySqlRef(_) => DataType::MySqlRef,
+            DataValue::OpenAIMessageSessionCacheRef(_) => DataType::OpenAIMessageSessionCacheRef,
             DataValue::Password(_) => DataType::Password,
         }
     }
@@ -282,6 +432,10 @@ impl DataValue {
                 "reconnect_max_attempts": config.reconnect_max_attempts,
                 "reconnect_interval_secs": config.reconnect_interval_secs,
             }),
+            DataValue::OpenAIMessageSessionCacheRef(cache_ref) => serde_json::json!({
+                "type": "OpenAIMessageSessionCacheRef",
+                "node_id": cache_ref.node_id,
+            }),
         }
     }
 }
@@ -304,6 +458,7 @@ impl fmt::Debug for DataValue {
             DataValue::BotAdapterRef(_) => f.debug_tuple("BotAdapterRef").finish(),
             DataValue::RedisRef(config) => f.debug_tuple("RedisRef").field(config).finish(),
             DataValue::MySqlRef(config) => f.debug_tuple("MySqlRef").field(config).finish(),
+            DataValue::OpenAIMessageSessionCacheRef(cache_ref) => f.debug_tuple("OpenAIMessageSessionCacheRef").field(cache_ref).finish(),
             DataValue::Password(value) => f.debug_tuple("Password").field(value).finish(),
         }
     }

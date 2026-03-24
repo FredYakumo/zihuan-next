@@ -140,7 +140,7 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util::{ArrayGetNode, ConditionalNode, JsonParserNode, MessageContentNode, MessageListDataNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToPlainTextNode, SwitchNode};
+    use crate::node::util::{ArrayGetNode, ConditionalNode, JsonParserNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToPlainTextNode, SwitchNode};
     use crate::llm::llm_api::LLMAPINode;
     use crate::bot_adapter::{BotAdapterNode, ExtractSenderIdFromEventNode, IsAtMeNode, MessageEventTypeFilterNode, SendFriendMessageNode, SendGroupMessageNode};
     use crate::bot_adapter::extract_group_id_from_event::ExtractGroupIdFromEventNode;
@@ -352,6 +352,30 @@ pub fn init_node_registry() -> Result<()> {
         "消息存储",
         "缓存消息事件到内存或Redis",
         MessageCacheNode
+    );
+
+    register_node!(
+        "openai_message_session_cache",
+        "OpenAIMessage 会话暂存",
+        "消息存储",
+        "按 sender_id 在单次节点图运行内暂存并累积 Vec<OpenAIMessage>，支持 Redis 或内存回退",
+        OpenAIMessageSessionCacheNode
+    );
+
+    register_node!(
+        "openai_message_session_cache_get",
+        "获取 OpenAIMessage 历史",
+        "消息存储",
+        "根据 OpenAIMessage 会话缓存 Ref 和 sender_id 读取当前运行期累计的 Vec<OpenAIMessage>",
+        OpenAIMessageSessionCacheGetNode
+    );
+
+    register_node!(
+        "openai_message_session_cache_clear",
+        "清空 OpenAIMessage 历史",
+        "消息存储",
+        "根据 OpenAIMessage 会话缓存 Ref 和 sender_id 清空当前运行期累计的历史消息",
+        OpenAIMessageSessionCacheClearNode
     );
 
     Ok(())
