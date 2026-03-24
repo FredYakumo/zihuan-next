@@ -151,6 +151,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: O
                     data_type: p.data_type.to_string().into(),
                     description: p.description.clone().unwrap_or_default().into(),
                     required: p.required,
+                    connection_text: SharedString::default(),
                 })
                 .collect();
 
@@ -161,6 +162,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: O
                     data_type: p.data_type.to_string().into(),
                     description: p.description.clone().unwrap_or_default().into(),
                     required: false,
+                    connection_text: SharedString::default(),
                 })
                 .collect();
 
