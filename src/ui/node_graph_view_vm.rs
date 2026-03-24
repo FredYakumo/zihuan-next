@@ -103,6 +103,7 @@ fn build_node_vm(
     let input_ports: Vec<PortVm> = node
         .input_ports
         .iter()
+        .filter(|p| !(node.node_type == "brain" && p.name == "tools_config"))
         .map(|p| build_input_port_vm(node, p, graph, inline_inputs))
         .collect();
 

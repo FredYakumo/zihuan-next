@@ -138,6 +138,12 @@ pub trait Node: Send + Sync {
         Ok(())
     }
 
+    /// Restore node-specific configuration from parsed inline values after the
+    /// graph has been loaded from JSON.
+    fn apply_inline_config(&mut self, _inline_values: &HashMap<String, DataValue>) -> Result<()> {
+        Ok(())
+    }
+
     /// Event producer lifecycle: called before update loop
     fn on_start(&mut self, _inputs: HashMap<String, DataValue>) -> Result<()> {
         Ok(())
