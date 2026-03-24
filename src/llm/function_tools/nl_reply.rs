@@ -1,8 +1,9 @@
 use super::FunctionTool;
-use crate::llm::{LLMBase, InferenceParam, Message, MessageRole};
+use crate::llm::{InferenceParam, Message, MessageRole};
 use crate::error::Result;
 use serde_json::{json, Value};
 use std::sync::Arc;
+use crate::llm::llm_base::LLMBase;
 
 /// Natural-language reply tool: delegates to the LLM to produce a response.
 ///
