@@ -140,7 +140,7 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util::{ArrayGetNode, ConditionalNode, JsonParserNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToPlainTextNode, SwitchNode};
+    use crate::node::util::{ArrayGetNode, ConcatVecNode, ConditionalNode, JsonParserNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToPlainTextNode, SwitchNode};
     use crate::llm::llm_api::LLMAPINode;
     use crate::bot_adapter::{BotAdapterNode, ExtractSenderIdFromEventNode, IsAtMeNode, MessageEventTypeFilterNode, SendFriendMessageNode, SendGroupMessageNode};
     use crate::bot_adapter::extract_group_id_from_event::ExtractGroupIdFromEventNode;
@@ -180,6 +180,14 @@ pub fn init_node_registry() -> Result<()> {
         "工具",
         "将单个元素封装为单元素 List",
         StackNode
+    );
+
+    register_node!(
+        "concat_vec",
+        "拼接两个列表",
+        "工具",
+        "将 vec2 拼接到 vec1 后面，要求两个列表的元素类型一致",
+        ConcatVecNode
     );
 
     register_node!(
