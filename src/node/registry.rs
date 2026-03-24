@@ -141,7 +141,8 @@ macro_rules! register_node {
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
     use crate::node::util::{ArrayGetNode, ConcatVecNode, ConditionalNode, JsonParserNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToPlainTextNode, SwitchNode};
-    use crate::llm::llm_api::LLMAPINode;
+    use crate::llm::llm_api_node::LLMApiNode;
+    use crate::llm::llm_infer_node::LLMInferNode;
     use crate::bot_adapter::{BotAdapterNode, ExtractSenderIdFromEventNode, IsAtMeNode, MessageEventTypeFilterNode, SendFriendMessageNode, SendGroupMessageNode};
     use crate::bot_adapter::extract_group_id_from_event::ExtractGroupIdFromEventNode;
     use crate::bot_adapter::extract_message_from_event::ExtractMessageFromEventNode;
@@ -257,10 +258,18 @@ pub fn init_node_registry() -> Result<()> {
     // LLM nodes
     register_node!(
         "llm_api",
-        "LLM API调用",
+        "LLM API配置",
         "AI",
-        "调用语言模型API进行推理",
-        LLMAPINode
+        "配置语言模型API连接，输出LLModel引用",
+        LLMApiNode
+    );
+
+    register_node!(
+        "llm_infer",
+        "LLM推理",
+        "AI",
+        "使用LLModel引用对消息列表进行一次推理",
+        LLMInferNode
     );
 
     // Bot adapter nodes

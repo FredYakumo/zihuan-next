@@ -211,6 +211,7 @@ pub enum DataType {
     MySqlRef,
     OpenAIMessageSessionCacheRef,
     Password,
+    LLModel,
     Custom(String),
 }
 
@@ -245,6 +246,7 @@ impl fmt::Display for DataType {
             DataType::MySqlRef => write!(f, "MySqlRef"),
             DataType::OpenAIMessageSessionCacheRef => write!(f, "OpenAIMessageSessionCacheRef"),
             DataType::Password => write!(f, "Password"),
+            DataType::LLModel => write!(f, "LLModel"),
             DataType::Custom(name) => write!(f, "Custom({})", name),
         }
     }
@@ -283,12 +285,13 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "MySqlRef" => Ok(DataType::MySqlRef),
                     "OpenAIMessageSessionCacheRef" => Ok(DataType::OpenAIMessageSessionCacheRef),
                     "Password" => Ok(DataType::Password),
+                    "LLModel" => Ok(DataType::LLModel),
                     other => Err(de::Error::unknown_variant(
                         other,
                         &["Any", "String", "Integer", "Float", "Boolean", "Json",
                               "Binary", "Vec", "MessageEvent", "MessageProp", "OpenAIMessage", "Message",
                           "QQMessage", "FunctionTools", "BotAdapterRef", "RedisRef",
-                          "MySqlRef", "OpenAIMessageSessionCacheRef", "Password", "Custom"],
+                          "MySqlRef", "OpenAIMessageSessionCacheRef", "Password", "LLModel", "Custom"],
                     )),
                 }
             }
@@ -347,6 +350,7 @@ pub enum DataValue {
     MySqlRef(Arc<MySqlConfig>),
     OpenAIMessageSessionCacheRef(Arc<OpenAIMessageSessionCacheRef>),
     Password(String),
+    LLModel(Arc<dyn crate::llm::llm_base::LLMBase>),
 }
 
 impl DataValue {
@@ -369,6 +373,7 @@ impl DataValue {
             DataValue::MySqlRef(_) => DataType::MySqlRef,
             DataValue::OpenAIMessageSessionCacheRef(_) => DataType::OpenAIMessageSessionCacheRef,
             DataValue::Password(_) => DataType::Password,
+            DataValue::LLModel(_) => DataType::LLModel,
         }
     }
 
@@ -419,6 +424,10 @@ impl DataValue {
                 Value::Array(tool_defs)
             }
             DataValue::Password(value) => Value::String(value.clone()),
+            DataValue::LLModel(m) => serde_json::json!({
+                "type": "LLModel",
+                "model_name": m.get_model_name(),
+            }),
             DataValue::BotAdapterRef(_) => Value::String("BotAdapterRef".to_string()),
             DataValue::RedisRef(config) => serde_json::json!({
                 "type": "RedisRef",
@@ -460,6 +469,7 @@ impl fmt::Debug for DataValue {
             DataValue::MySqlRef(config) => f.debug_tuple("MySqlRef").field(config).finish(),
             DataValue::OpenAIMessageSessionCacheRef(cache_ref) => f.debug_tuple("OpenAIMessageSessionCacheRef").field(cache_ref).finish(),
             DataValue::Password(value) => f.debug_tuple("Password").field(value).finish(),
+            DataValue::LLModel(m) => f.debug_tuple("LLModel").field(&m.get_model_name()).finish(),
         }
     }
 }
