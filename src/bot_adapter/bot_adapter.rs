@@ -5,7 +5,7 @@ use crate::error::Result;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 use log::{error, info};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::block_in_place;
 use tokio::sync::Mutex as TokioMutex;
@@ -18,6 +18,7 @@ pub struct BotAdapterNode {
     error_rx: Option<TokioMutex<mpsc::UnboundedReceiver<String>>>,
     adapter_handle: Option<SharedBotAdapter>,
     runtime: Option<tokio::runtime::Runtime>,
+    stop_flag: Option<Arc<AtomicBool>>,
 }
 
 impl BotAdapterNode {
@@ -29,6 +30,7 @@ impl BotAdapterNode {
             error_rx: None,
             adapter_handle: None,
             runtime: None,
+            stop_flag: None,
         }
     }
 }
@@ -159,10 +161,12 @@ impl Node for BotAdapterNode {
             crate::error::Error::ValidationError("Bot adapter is not initialized".to_string())
         })?;
         let error_rx = self.error_rx.as_ref();
+        let stop_flag = self.stop_flag.clone();
 
         let result = if let Ok(handle) = tokio::runtime::Handle::try_current() {
             block_in_place(|| {
                 handle.block_on(async {
+                    let stop_flag = stop_flag.clone();
                     if let Some(error_rx) = error_rx {
                         select! {
                             error_msg = async {
@@ -180,16 +184,43 @@ impl Node for BotAdapterNode {
                             } => {
                                 Ok(event)
                             }
+                            _ = async move {
+                                loop {
+                                    if let Some(ref flag) = stop_flag {
+                                        if flag.load(Ordering::Relaxed) { return; }
+                                    }
+                                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                                }
+                            } => {
+                                Ok(None)
+                            }
                         }
                     } else {
-                        let mut guard = event_rx.lock().await;
-                        Ok(guard.recv().await)
+                        select! {
+                            event = async {
+                                let mut guard = event_rx.lock().await;
+                                guard.recv().await
+                            } => {
+                                Ok(event)
+                            }
+                            _ = async move {
+                                loop {
+                                    if let Some(ref flag) = stop_flag {
+                                        if flag.load(Ordering::Relaxed) { return; }
+                                    }
+                                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                                }
+                            } => {
+                                Ok(None)
+                            }
+                        }
                     }
                 })
             })
         } else {
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(async {
+                let stop_flag = stop_flag.clone();
                 if let Some(error_rx) = error_rx {
                     select! {
                         error_msg = async {
@@ -207,10 +238,36 @@ impl Node for BotAdapterNode {
                         } => {
                             Ok(event)
                         }
+                        _ = async move {
+                            loop {
+                                if let Some(ref flag) = stop_flag {
+                                    if flag.load(Ordering::Relaxed) { return; }
+                                }
+                                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                            }
+                        } => {
+                            Ok(None)
+                        }
                     }
                 } else {
-                    let mut guard = event_rx.lock().await;
-                    Ok(guard.recv().await)
+                    select! {
+                        event = async {
+                            let mut guard = event_rx.lock().await;
+                            guard.recv().await
+                        } => {
+                            Ok(event)
+                        }
+                        _ = async move {
+                            loop {
+                                if let Some(ref flag) = stop_flag {
+                                    if flag.load(Ordering::Relaxed) { return; }
+                                }
+                                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                            }
+                        } => {
+                            Ok(None)
+                        }
+                    }
                 }
             })
         };
@@ -233,6 +290,11 @@ impl Node for BotAdapterNode {
         self.error_rx = None;
         self.adapter_handle = None;
         self.runtime = None;
+        self.stop_flag = None;
         Ok(())
+    }
+
+    fn set_stop_flag(&mut self, stop_flag: Arc<AtomicBool>) {
+        self.stop_flag = Some(stop_flag);
     }
 }

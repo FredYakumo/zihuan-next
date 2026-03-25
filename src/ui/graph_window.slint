@@ -166,6 +166,38 @@ export component NodeGraphWindow inherits Window {
     width: 1200px;
     height: 800px;
 
+    forward-focus: key-handler;
+
+    key-handler := FocusScope {
+        width: 100%;
+        height: 100%;
+
+        key-pressed(event) => {
+            if (event.modifiers.control) {
+                if (event.modifiers.shift && (event.text == "s" || event.text == "S")) {
+                    root.save_json_as();
+                    return accept;
+                }
+                if (event.text == "o") {
+                    root.open_json();
+                    return accept;
+                }
+                if (event.text == "s") {
+                    root.save_json();
+                    return accept;
+                }
+                if (event.text == "t") {
+                    root.new_tab();
+                    return accept;
+                }
+                if (event.text == "w") {
+                    root.close_tab();
+                    return accept;
+                }
+            }
+            return reject;
+        }
+
     VerticalLayout {
         // Menu bar area
         if root.show_in_window_menu : Rectangle {
@@ -604,4 +636,5 @@ export component NodeGraphWindow inherits Window {
         entries: root.log_history;
         close => { root.close_log_history(); }
     }
+    } // end FocusScope key-handler
 }
