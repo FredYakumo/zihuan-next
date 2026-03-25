@@ -487,6 +487,44 @@ pub fn build_node_graph_from_definition(
         }
     }
 
+    // Second pass: nodes with dynamic input ports (e.g. FormatStringNode) only expose
+    // their full port list after apply_inline_config. Re-collect any inline values that
+    // were skipped in the first pass because the ports didn't exist yet.
+    let extra_inline: Vec<(String, HashMap<String, DataValue>)> = definition
+        .nodes
+        .iter()
+        .filter_map(|node_def| {
+            if node_def.inline_values.is_empty() {
+                return None;
+            }
+            let node = graph.nodes.get(&node_def.id)?;
+            let already_set: std::collections::HashSet<&str> = graph
+                .inline_values
+                .get(&node_def.id)
+                .map(|m| m.keys().map(String::as_str).collect())
+                .unwrap_or_default();
+            let ports: HashMap<String, DataType> = node
+                .input_ports()
+                .into_iter()
+                .map(|p| (p.name, p.data_type))
+                .collect();
+            let mut extra = HashMap::new();
+            for (port_name, json_val) in &node_def.inline_values {
+                if !already_set.contains(port_name.as_str()) {
+                    if let Some(data_type) = ports.get(port_name) {
+                        if let Some(val) = json_to_data_value(json_val, data_type) {
+                            extra.insert(port_name.clone(), val);
+                        }
+                    }
+                }
+            }
+            if extra.is_empty() { None } else { Some((node_def.id.clone(), extra)) }
+        })
+        .collect();
+    for (node_id, extra_values) in extra_inline {
+        graph.inline_values.entry(node_id).or_default().extend(extra_values);
+    }
+
     Ok(graph)
 }
 
