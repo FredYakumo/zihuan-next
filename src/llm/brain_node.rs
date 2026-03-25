@@ -182,8 +182,7 @@ impl Node for BrainNode {
 
     node_input![
         port! { name = "llm_model", ty = LLModel, desc = "LLM 模型引用，由 LLM API 节点提供" },
-        port! { name = "system_prompt", ty = String, desc = "系统提示词" },
-        port! { name = "user_message", ty = String, desc = "用户输入消息" },
+        port! { name = "messages", ty = Vec(OpenAIMessage), desc = "消息列表（包含 system/user/assistant 等角色）" },
         port! { name = "tools_config", ty = Json, desc = "Tools 配置，由工具编辑器维护", optional },
     ];
 
@@ -232,20 +231,20 @@ impl Node for BrainNode {
             }
         };
 
-        let system_prompt = match inputs.get("system_prompt") {
-            Some(DataValue::String(value)) => value.clone(),
+        let messages: Vec<OpenAIMessage> = match inputs.get("messages") {
+            Some(DataValue::Vec(_, items)) => items
+                .iter()
+                .filter_map(|item| {
+                    if let DataValue::OpenAIMessage(msg) = item {
+                        Some(msg.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
             _ => {
                 return Err(Error::ValidationError(
-                    "Missing required input: system_prompt".to_string(),
-                ));
-            }
-        };
-
-        let user_message = match inputs.get("user_message") {
-            Some(DataValue::String(value)) => value.clone(),
-            _ => {
-                return Err(Error::ValidationError(
-                    "Missing required input: user_message".to_string(),
+                    "Missing required input: messages".to_string(),
                 ));
             }
         };
@@ -256,19 +255,6 @@ impl Node for BrainNode {
             .cloned()
             .map(|definition| Arc::new(DynamicFunctionTool::new(definition)) as Arc<dyn FunctionTool>)
             .collect();
-
-        let messages = vec![
-            OpenAIMessage {
-                role: MessageRole::System,
-                content: Some(system_prompt),
-                tool_calls: Vec::new(),
-            },
-            OpenAIMessage {
-                role: MessageRole::User,
-                content: Some(user_message),
-                tool_calls: Vec::new(),
-            },
-        ];
 
         let response = model.inference(&InferenceParam {
             messages: &messages,
@@ -390,12 +376,14 @@ mod tests {
         let outputs = node.execute(HashMap::from([
             ("llm_model".to_string(), DataValue::LLModel(llm)),
             (
-                "system_prompt".to_string(),
-                DataValue::String("You are helpful".to_string()),
-            ),
-            (
-                "user_message".to_string(),
-                DataValue::String("Find rust docs".to_string()),
+                "messages".to_string(),
+                DataValue::Vec(
+                    Box::new(DataType::OpenAIMessage),
+                    vec![
+                        DataValue::OpenAIMessage(OpenAIMessage::system("You are helpful")),
+                        DataValue::OpenAIMessage(OpenAIMessage::user("Find rust docs")),
+                    ],
+                ),
             ),
             (
                 "tools_config".to_string(),
