@@ -148,6 +148,7 @@ impl Agent for BrainAgent {
                                 role: crate::llm::MessageRole::Tool,
                                 content: Some(tool_response.to_string()),
                                 tool_calls: Vec::new(),
+                                tool_call_id: Some(tool_call.id.clone()),
                             };
                             brain_message_list.push(tool_msg);
                         }
@@ -159,6 +160,7 @@ impl Agent for BrainAgent {
                                 role: crate::llm::MessageRole::Tool,
                                 content: Some(format!("Error executing tool: {}", e)),
                                 tool_calls: Vec::new(),
+                                tool_call_id: Some(tool_call.id.clone()),
                             };
                             brain_message_list.push(error_msg);
                         }
@@ -171,6 +173,7 @@ impl Agent for BrainAgent {
                         role: crate::llm::MessageRole::Tool,
                         content: Some(format!("Tool '{}' not found", tool_call.function.name)),
                         tool_calls: Vec::new(),
+                        tool_call_id: Some(tool_call.id.clone()),
                     };
                     brain_message_list.push(error_msg);
                 }
