@@ -1,3 +1,4 @@
+pub mod format_string;
 pub mod preview_string;
 pub mod string_data;
 pub mod preview_message_list;
@@ -35,6 +36,10 @@ pub fn get_node_preview_text(
     graph: &NodeGraphDefinition,
     inline_inputs: &HashMap<String, InlinePortValue>,
 ) -> String {
+    if format_string::FormatStringRenderer::handles_node_type(node_type) {
+        return format_string::FormatStringRenderer::get_preview_text(node_id, graph, inline_inputs);
+    }
+
     if preview_string::PreviewStringRenderer::handles_node_type(node_type) {
         return preview_string::PreviewStringRenderer::get_preview_text(node_id, graph, inline_inputs);
     }

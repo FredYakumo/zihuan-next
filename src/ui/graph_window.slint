@@ -6,7 +6,7 @@ import { MenuBarItem, MenuItemRow } from "components/menubar.slint";
 import { TabItem } from "components/tabs.slint";
 import { GraphCanvas } from "components/graph_canvas.slint";
 import { LogOverlay } from "components/log_overlay.slint";
-import { ErrorDialog, HyperParameterManagerDialog, LogHistoryDialog, NodeHelpDialog, NodeSelector, OverwriteConfirmDialog, PortBindHyperparamDialog, RunningConfirmDialog, SaveConfirmDialog, ToolEditorDialog } from "dialogs.slint";
+import { ErrorDialog, FormatStringEditorDialog, HyperParameterManagerDialog, LogHistoryDialog, NodeHelpDialog, NodeSelector, OverwriteConfirmDialog, PortBindHyperparamDialog, RunningConfirmDialog, SaveConfirmDialog, ToolEditorDialog } from "dialogs.slint";
 
 export component NodeGraphWindow inherits Window {
     in property <[NodeVm]> nodes;
@@ -113,6 +113,7 @@ export component NodeGraphWindow inherits Window {
     callback node_resized(string, float, float);
     callback node_resize_finished(string, float, float);
     callback edit_tools_clicked(string);
+    callback edit_format_string_clicked(string);
 
     // Hyperparameter system
     in property <[HyperParameterVm]> hyperparameters;
@@ -150,6 +151,19 @@ export component NodeGraphWindow inherits Window {
     callback tool_editor_delete_param(int, int);
     callback tool_editor_set_param_name(int, int, string);
     callback tool_editor_set_param_type(int, int, string);
+
+    // Format string editor
+    in property <bool> show_format_string_editor: false;
+    in property <string> format_string_editor_node_id: "";
+    in-out property <string> format_string_editor_template: "";
+    in property <[string]> format_string_editor_variables;
+    in property <[string]> format_string_editor_suggestions;
+    in property <bool> format_string_show_autocomplete: false;
+    callback open_format_string_editor(string);
+    callback close_format_string_editor();
+    callback save_format_string_editor();
+    callback format_string_text_changed(string);
+    callback format_string_autocomplete_select(string);
 
     // Log overlay
     in-out property <[LogEntryVm]> log_entries;
@@ -401,6 +415,10 @@ export component NodeGraphWindow inherits Window {
                 edit_tools_clicked(node_id) => {
                     root.edit_tools_clicked(node_id);
                 }
+
+                edit_format_string_clicked(node_id) => {
+                    root.edit_format_string_clicked(node_id);
+                }
             }
 
             // Log overlay — bottom-left of canvas
@@ -630,6 +648,17 @@ export component NodeGraphWindow inherits Window {
         set_param_type(tool_index, param_index, value) => { root.tool_editor_set_param_type(tool_index, param_index, value); }
         save => { root.save_tool_editor(); }
         close => { root.close_tool_editor(); }
+    }
+
+    if root.show_format_string_editor: FormatStringEditorDialog {
+        template_text <=> root.format_string_editor_template;
+        variables: root.format_string_editor_variables;
+        autocomplete_suggestions: root.format_string_editor_suggestions;
+        show_autocomplete: root.format_string_show_autocomplete;
+        text_changed(text) => { root.format_string_text_changed(text); }
+        autocomplete_select(s) => { root.format_string_autocomplete_select(s); }
+        save => { root.save_format_string_editor(); }
+        cancel => { root.close_format_string_editor(); }
     }
 
     if root.show_log_history: LogHistoryDialog {
