@@ -57,8 +57,8 @@ impl FunctionTool for CodeWriterTool {
         };
 
         let messages = vec![
-            OpenAIMessage { role: MessageRole::System, content: Some(system.to_string()), tool_calls: Vec::new() },
-            OpenAIMessage { role: MessageRole::User, content: Some(user_prompt), tool_calls: Vec::new() },
+            OpenAIMessage { role: MessageRole::System, content: Some(system.to_string()), tool_calls: Vec::new(), tool_call_id: None },
+            OpenAIMessage { role: MessageRole::User, content: Some(user_prompt), tool_calls: Vec::new(), tool_call_id: None },
         ];
         let param = InferenceParam { messages: &messages, tools: None };
         let resp = self.llm.inference(&param);

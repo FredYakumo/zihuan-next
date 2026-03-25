@@ -416,6 +416,7 @@ mod tests {
             role,
             content: Some(content.to_string()),
             tool_calls: Vec::new(),
+            tool_call_id: None,
         }
     }
 

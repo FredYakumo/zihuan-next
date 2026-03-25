@@ -92,6 +92,7 @@ fn data_type_to_json_schema_type(data_type: &DataType) -> &'static str {
         | DataType::MySqlRef
         | DataType::OpenAIMessageSessionCacheRef
         | DataType::LLModel
+        | DataType::LoopControlRef
         | DataType::Custom(_) => "object",
         DataType::Binary => "string",
         DataType::Vec(_) => "array",
@@ -155,8 +156,12 @@ impl BrainNode {
     }
 
     fn outputs_from_tool_definitions(tool_definitions: &[ToolDefinition]) -> Vec<Port> {
-        let mut ports = vec![Port::new("response", DataType::String)
-            .with_description("LLM 返回的最终文本回复")];
+        let mut ports = vec![
+            Port::new("assistant_message", DataType::OpenAIMessage)
+                .with_description("LLM 返回的完整 assistant 消息（含 tool_calls，用于 agentic loop）"),
+            Port::new("response", DataType::String)
+                .with_description("LLM 返回的最终文本回复"),
+        ];
 
         ports.extend(tool_definitions.iter().map(|tool| {
             Port::new(tool.name.clone(), DataType::Json)
@@ -263,6 +268,10 @@ impl Node for BrainNode {
 
         let mut outputs = HashMap::new();
         outputs.insert(
+            "assistant_message".to_string(),
+            DataValue::OpenAIMessage(response.clone()),
+        );
+        outputs.insert(
             "response".to_string(),
             DataValue::String(response.content.clone().unwrap_or_default()),
         );
@@ -270,9 +279,12 @@ impl Node for BrainNode {
         let mut tool_payloads: HashMap<String, Vec<Value>> = HashMap::new();
         for tool_call in response.tool_calls {
             tool_payloads
-                .entry(tool_call.function.name)
+                .entry(tool_call.function.name.clone())
                 .or_default()
-                .push(tool_call.function.arguments);
+                .push(json!({
+                    "tool_call_id": tool_call.id,
+                    "arguments": tool_call.function.arguments,
+                }));
         }
 
         for tool in &self.tool_definitions {
@@ -338,7 +350,7 @@ mod tests {
         node.apply_inline_config(&inline_values).unwrap();
 
         let output_names: Vec<String> = node.output_ports().into_iter().map(|p| p.name).collect();
-        assert_eq!(output_names, vec!["response", "search"]);
+        assert_eq!(output_names, vec!["assistant_message", "response", "search"]);
     }
 
     #[test]
@@ -370,6 +382,7 @@ mod tests {
                         arguments: json!({"query": "rust", "limit": 3}),
                     },
                 }],
+                tool_call_id: None,
             },
         });
 
@@ -401,7 +414,7 @@ mod tests {
         ])).unwrap();
 
         assert!(matches!(outputs.get("response"), Some(DataValue::String(text)) if text == "done"));
-        assert!(matches!(outputs.get("search"), Some(DataValue::Json(value)) if *value == json!({"query": "rust", "limit": 3})));
+        assert!(matches!(outputs.get("search"), Some(DataValue::Json(value)) if *value == json!({"tool_call_id": "tool_1", "arguments": {"query": "rust", "limit": 3}})));
     }
 
     #[test]

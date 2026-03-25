@@ -45,6 +45,7 @@ impl LLMAPI {
             role: MessageRole::System,
             content: Some(content.to_string()),
             tool_calls: Vec::new(),
+            tool_call_id: None,
         }
     }
 
@@ -54,6 +55,7 @@ impl LLMAPI {
             role: MessageRole::User,
             content: Some(content.to_string()),
             tool_calls: Vec::new(),
+            tool_call_id: None,
         }
     }
 
@@ -100,16 +102,21 @@ impl LLMAPI {
         let role_str = msg.get("role")?.as_str().unwrap_or("assistant");
         let role = str_to_role(role_str);
 
-        let content = msg.get("content")?.as_str().map(|s| s.to_string());
+        let content = msg.get("content").and_then(|v| v.as_str()).map(|s| s.to_string());
         let tool_calls = msg
             .get("tool_calls")
             .map(|tc| Self::parse_tool_calls(tc))
             .unwrap_or_default();
+        let tool_call_id = msg
+            .get("tool_call_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         Some(OpenAIMessage {
             role,
             content,
             tool_calls,
+            tool_call_id,
         })
     }
 }
@@ -154,6 +161,11 @@ impl LLMBase for LLMAPI {
                         })
                         .collect();
                     msg_obj["tool_calls"] = json!(tool_calls);
+                }
+
+                // Add tool_call_id for tool result messages
+                if let Some(ref id) = msg.tool_call_id {
+                    msg_obj["tool_call_id"] = json!(id);
                 }
 
                 msg_obj
@@ -207,6 +219,7 @@ impl LLMBase for LLMAPI {
                                     role: MessageRole::Assistant,
                                     content: Some("Error: Invalid response structure from API".to_string()),
                                     tool_calls: Vec::new(),
+                                    tool_call_id: None,
                                 }
                             }
                         }
@@ -216,6 +229,7 @@ impl LLMBase for LLMAPI {
                                 role: MessageRole::Assistant,
                                 content: Some(format!("Error: Failed to parse response - {}", e)),
                                 tool_calls: Vec::new(),
+                                tool_call_id: None,
                             }
                         }
                     }
@@ -225,6 +239,7 @@ impl LLMBase for LLMAPI {
                         role: MessageRole::Assistant,
                         content: Some(format!("Error: API request failed with status {}", status)),
                         tool_calls: Vec::new(),
+                        tool_call_id: None,
                     }
                 }
             }
@@ -234,6 +249,7 @@ impl LLMBase for LLMAPI {
                     role: MessageRole::Assistant,
                     content: Some(format!("Error: Failed to send request - {}", e)),
                     tool_calls: Vec::new(),
+                    tool_call_id: None,
                 }
             }
         }
