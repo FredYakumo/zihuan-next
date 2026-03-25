@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::path::Path;
 
@@ -134,6 +134,215 @@ pub fn ensure_positions(graph: &mut NodeGraphDefinition) {
                 x: 40.0 + col * spacing_x,
                 y: 40.0 + row * spacing_y,
             });
+        }
+    }
+}
+
+/// Compute node height from port count, matching the geometry module logic.
+fn calc_node_height(node: &NodeDefinition) -> f32 {
+    const GRID: f32 = 20.0;
+    let port_rows = node.input_ports.len().max(node.output_ports.len()) as f32;
+    let default_min = GRID * (3.0f32.max(2.0 + port_rows) + 0.8);
+    let min_h = match node.node_type.as_str() {
+        "message_list_data" | "qq_message_list_data" => default_min.max(GRID * 8.0),
+        "brain" => default_min.max(GRID * 6.2),
+        _ => default_min,
+    };
+    node.size.as_ref().map_or(min_h, |s| s.height.max(min_h))
+}
+
+/// Compute node width, matching the geometry module logic.
+fn calc_node_width(node: &NodeDefinition) -> f32 {
+    const MIN_WIDTH: f32 = 200.0;
+    node.size.as_ref().map_or(MIN_WIDTH, |s| s.width.max(MIN_WIDTH))
+}
+
+/// Auto-layout all nodes in a hierarchical left-to-right arrangement following data flow.
+/// Roots are placed at the leftmost column; each additional level moves one column right.
+/// Multiple root chains are stacked vertically. Chains longer than MAX_COLS wrap to a new band below.
+/// Node sizes are taken into account for spacing.
+pub fn auto_layout(graph: &mut NodeGraphDefinition) {
+    const ORIGIN_X: f32 = 40.0;
+    const ORIGIN_Y: f32 = 40.0;
+    const H_GAP: f32 = 60.0;   // horizontal gap between columns
+    const V_GAP: f32 = 20.0;   // vertical gap between nodes in the same column
+    const BAND_GAP: f32 = 60.0; // extra vertical gap between wrap bands
+    const MAX_COLS: usize = 8;
+
+    if graph.nodes.is_empty() {
+        return;
+    }
+
+    // Index node dimensions by id
+    let node_dims: HashMap<String, (f32, f32)> = graph
+        .nodes
+        .iter()
+        .map(|n| (n.id.clone(), (calc_node_width(n), calc_node_height(n))))
+        .collect();
+
+    // Build successor and predecessor maps
+    let mut successors: HashMap<String, Vec<String>> = HashMap::new();
+    let mut predecessors: HashMap<String, Vec<String>> = HashMap::new();
+    for node in &graph.nodes {
+        successors.entry(node.id.clone()).or_default();
+        predecessors.entry(node.id.clone()).or_default();
+    }
+    for edge in &graph.edges {
+        successors
+            .entry(edge.from_node_id.clone())
+            .or_default()
+            .push(edge.to_node_id.clone());
+        predecessors
+            .entry(edge.to_node_id.clone())
+            .or_default()
+            .push(edge.from_node_id.clone());
+    }
+
+    // Compute topological level: level[n] = max(level[preds]) + 1, roots = 0
+    let mut in_degree: HashMap<String, usize> = HashMap::new();
+    for node in &graph.nodes {
+        in_degree.insert(node.id.clone(), predecessors[&node.id].len());
+    }
+    let mut level: HashMap<String, usize> = HashMap::new();
+    let mut queue: VecDeque<String> = VecDeque::new();
+    for node in &graph.nodes {
+        if in_degree[&node.id] == 0 {
+            level.insert(node.id.clone(), 0);
+            queue.push_back(node.id.clone());
+        }
+    }
+    let mut remaining_in: HashMap<String, usize> = in_degree.clone();
+    while let Some(id) = queue.pop_front() {
+        let cur_level = level[&id];
+        let succs = successors[&id].clone();
+        for succ in succs {
+            let new_level = cur_level + 1;
+            let entry = level.entry(succ.clone()).or_insert(0);
+            if new_level > *entry {
+                *entry = new_level;
+            }
+            let deg = remaining_in.entry(succ.clone()).or_insert(1);
+            *deg = deg.saturating_sub(1);
+            if *deg == 0 {
+                queue.push_back(succ);
+            }
+        }
+    }
+    for node in &graph.nodes {
+        level.entry(node.id.clone()).or_insert(0);
+    }
+
+    // Find roots ordered by their position in graph.nodes
+    let roots: Vec<String> = graph
+        .nodes
+        .iter()
+        .filter(|n| in_degree[&n.id] == 0)
+        .map(|n| n.id.clone())
+        .collect();
+
+    // Assign track (root group) via BFS from each root in order
+    let mut track: HashMap<String, usize> = HashMap::new();
+    let mut discovery_order: HashMap<String, usize> = HashMap::new();
+    let mut order_counter = 0usize;
+    for (root_idx, root_id) in roots.iter().enumerate() {
+        let mut bfs: VecDeque<String> = VecDeque::new();
+        if !track.contains_key(root_id) {
+            track.insert(root_id.clone(), root_idx);
+            discovery_order.insert(root_id.clone(), order_counter);
+            order_counter += 1;
+            bfs.push_back(root_id.clone());
+        }
+        while let Some(id) = bfs.pop_front() {
+            let succs = successors[&id].clone();
+            for succ in succs {
+                if !track.contains_key(&succ) {
+                    track.insert(succ.clone(), root_idx);
+                    discovery_order.insert(succ.clone(), order_counter);
+                    order_counter += 1;
+                    bfs.push_back(succ);
+                }
+            }
+        }
+    }
+    let fallback_track = roots.len();
+    for node in &graph.nodes {
+        track.entry(node.id.clone()).or_insert(fallback_track);
+        discovery_order.entry(node.id.clone()).or_insert(order_counter);
+        order_counter += 1;
+    }
+
+    // Group nodes by (band, col_in_band), sorted by (track, discovery_order)
+    let mut col_groups: HashMap<(usize, usize), Vec<String>> = HashMap::new();
+    for node in &graph.nodes {
+        let lv = level[&node.id];
+        col_groups
+            .entry((lv / MAX_COLS, lv % MAX_COLS))
+            .or_default()
+            .push(node.id.clone());
+    }
+    for nodes_in_col in col_groups.values_mut() {
+        nodes_in_col.sort_by_key(|id| (track[id], discovery_order[id]));
+    }
+
+    let max_band = col_groups.keys().map(|(b, _)| *b).max().unwrap_or(0);
+
+    // For each (band, col): compute max node width, and total column height (sum of heights + gaps)
+    // col_x[band][col] = ORIGIN_X + sum of (max_width[band][0..col] + H_GAP)
+    // col_total_height[band][col] = sum of node heights + (n-1)*V_GAP
+    let mut col_max_width: HashMap<(usize, usize), f32> = HashMap::new();
+    let mut col_total_height: HashMap<(usize, usize), f32> = HashMap::new();
+    for (&key, nodes_in_col) in &col_groups {
+        let max_w = nodes_in_col
+            .iter()
+            .map(|id| node_dims[id].0)
+            .fold(0.0f32, f32::max);
+        let total_h = nodes_in_col
+            .iter()
+            .map(|id| node_dims[id].1)
+            .sum::<f32>()
+            + (nodes_in_col.len().saturating_sub(1) as f32) * V_GAP;
+        col_max_width.insert(key, max_w);
+        col_total_height.insert(key, total_h);
+    }
+
+    // Compute x offset per (band, col): cumulative sum of widths + H_GAP within the band
+    let mut col_x: HashMap<(usize, usize), f32> = HashMap::new();
+    for b in 0..=max_band {
+        let mut cursor_x = ORIGIN_X;
+        for c in 0..MAX_COLS {
+            let key = (b, c);
+            col_x.insert(key, cursor_x);
+            if col_groups.contains_key(&key) {
+                cursor_x += col_max_width.get(&key).copied().unwrap_or(0.0) + H_GAP;
+            }
+        }
+    }
+
+    // Compute band_start_y: based on the tallest column in each band
+    let mut band_start_y: Vec<f32> = vec![0.0; max_band + 2];
+    band_start_y[0] = ORIGIN_Y;
+    for b in 0..=max_band {
+        let max_col_h = (0..MAX_COLS)
+            .filter_map(|c| col_total_height.get(&(b, c)).copied())
+            .fold(0.0f32, f32::max);
+        band_start_y[b + 1] = band_start_y[b] + max_col_h.max(1.0) + BAND_GAP;
+    }
+
+    // Assign positions: within each column, stack nodes top-to-bottom using actual heights
+    let mut positions: HashMap<String, (f32, f32)> = HashMap::new();
+    for (&(band, col_in_band), nodes_in_col) in &col_groups {
+        let x = col_x[&(band, col_in_band)];
+        let mut cursor_y = band_start_y[band];
+        for node_id in nodes_in_col {
+            positions.insert(node_id.clone(), (x, cursor_y));
+            cursor_y += node_dims[node_id].1 + V_GAP;
+        }
+    }
+
+    // Apply positions to nodes
+    for node in &mut graph.nodes {
+        if let Some(&(x, y)) = positions.get(&node.id) {
+            node.position = Some(GraphPosition { x, y });
         }
     }
 }
