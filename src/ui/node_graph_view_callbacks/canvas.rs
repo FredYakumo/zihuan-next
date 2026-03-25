@@ -335,6 +335,29 @@ pub(crate) fn bind_canvas_callbacks(
         }
     });
 
+    let ui_handle = ui.as_weak();
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    ui.on_auto_layout_graph(move || {
+        if let Some(ui) = ui_handle.upgrade() {
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let active_index = *active_tab_clone.lock().unwrap();
+            if let Some(tab) = tabs_guard.get_mut(active_index) {
+                crate::node::graph_io::auto_layout(&mut tab.graph);
+                tab.is_dirty = true;
+                apply_graph_to_ui(
+                    &ui,
+                    &tab.graph,
+                    Some(tab_display_title(tab)),
+                    &tab.selection,
+                    &tab.inline_inputs,
+                    &tab.hyperparameter_values,
+                );
+                update_tabs_ui(&ui, &tabs_guard, active_index);
+            }
+        }
+    });
+
     let box_selection = Arc::new(Mutex::new(BoxSelection::new()));
 
     let ui_handle = ui.as_weak();

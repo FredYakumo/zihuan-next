@@ -93,6 +93,7 @@ export component NodeGraphWindow inherits Window {
     callback edge_clicked(string, string, string, string);
     callback canvas_clicked();
     callback delete_selected();
+    callback auto_layout_graph();
     callback box_selection_start(float, float);
     callback box_selection_update(float, float);
     callback box_selection_end();
@@ -397,6 +398,11 @@ export component NodeGraphWindow inherits Window {
                     CjkButton {
                         text: "超参数";
                         clicked => { root.open_hyperparameter_manager(); }
+                    }
+
+                    CjkButton {
+                        text: "自动排布";
+                        clicked => { root.auto_layout_graph(); }
                     }
 
                     CjkButton {
