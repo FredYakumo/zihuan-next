@@ -1,4 +1,4 @@
-import { HorizontalBox, VerticalBox, ScrollView, LineEdit, CheckBox, ComboBox } from "std-widgets.slint";
+import { HorizontalBox, VerticalBox, ScrollView, LineEdit, CheckBox, ComboBox, TextEdit } from "std-widgets.slint";
 import { AppTheme } from "theme.slint";
 import { NodeTypeVm, PortHelpVm, HyperParameterVm, LogEntryVm, ToolDefinitionVm } from "types.slint";
 import { CjkButton, CjkDeleteButton, CjkText } from "components/buttons.slint";
@@ -2042,6 +2042,195 @@ export component ToolEditorDialog inherits Rectangle {
                             clicked => { root.save(); }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+export component FormatStringEditorDialog inherits Rectangle {
+    in-out property <string> template_text;
+    in property <[string]> variables;
+    in property <[string]> autocomplete_suggestions;
+    in property <bool> show_autocomplete;
+    callback text_changed(string);
+    callback autocomplete_select(string);
+    callback save();
+    callback cancel();
+
+    background: AppTheme.overlay-mask;
+
+    TouchArea {
+        clicked => { root.cancel(); }
+    }
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 900px;
+        height: 550px;
+        background: AppTheme.node-bg;
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: AppTheme.border;
+
+        TouchArea {}
+
+        VerticalLayout {
+            padding: 16px;
+            spacing: 12px;
+
+            // Title
+            CjkText {
+                text: "编辑格式化文本";
+                font-size: 16px;
+                color: AppTheme.text-primary;
+                font-weight: 700;
+                horizontal-alignment: left;
+            }
+
+            // Main area: left variable list + right editor
+            HorizontalLayout {
+                spacing: 12px;
+                vertical-stretch: 1;
+
+                // Left panel: variable list
+                Rectangle {
+                    width: 180px;
+                    background: AppTheme.surface;
+                    border-radius: 5px;
+                    border-width: 1px;
+                    border-color: AppTheme.border;
+
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 6px;
+
+                        CjkText {
+                            text: "变量列表";
+                            font-size: 12px;
+                            color: AppTheme.text-secondary;
+                            font-weight: 600;
+                            horizontal-alignment: left;
+                        }
+
+                        ScrollView {
+                            vertical-stretch: 1;
+                            viewport-height: max(40px, root.variables.length * 34px);
+
+                            VerticalLayout {
+                                spacing: 4px;
+
+                                for var in root.variables: Rectangle {
+                                    height: 28px;
+                                    background: AppTheme.primary-muted;
+                                    border-radius: 4px;
+                                    border-width: 1px;
+                                    border-color: AppTheme.primary;
+
+                                    CjkText {
+                                        text: "${" + var + "}";
+                                        font-size: 11px;
+                                        color: AppTheme.text-primary;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+                        }
+
+                        if root.variables.length == 0: CjkText {
+                            text: "（暂无变量）";
+                            font-size: 11px;
+                            color: AppTheme.text-secondary;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+
+                // Right panel: text editor + autocomplete
+                Rectangle {
+                    vertical-stretch: 1;
+                    horizontal-stretch: 1;
+
+                    VerticalLayout {
+                        spacing: 4px;
+
+                        CjkText {
+                            text: "使用 ${变量名} 输入格式化文本";
+                            font-size: 11px;
+                            color: AppTheme.text-secondary;
+                            horizontal-alignment: left;
+                        }
+
+                        // Text editor
+                        TextEdit {
+                            vertical-stretch: 1;
+                            text <=> root.template_text;
+                            font-size: 13px;
+                            edited(text) => {
+                                root.text_changed(text);
+                            }
+                        }
+
+                        // Autocomplete dropdown
+                        if root.show_autocomplete && root.autocomplete_suggestions.length > 0: Rectangle {
+                            height: min(root.autocomplete_suggestions.length * 30px + 8px, 160px);
+                            background: AppTheme.node-bg;
+                            border-radius: 4px;
+                            border-width: 1px;
+                            border-color: AppTheme.primary;
+
+                            ScrollView {
+                                viewport-height: root.autocomplete_suggestions.length * 30px;
+
+                                VerticalLayout {
+                                    padding: 4px;
+                                    spacing: 2px;
+
+                                    for suggestion in root.autocomplete_suggestions: Rectangle {
+                                        height: 28px;
+                                        border-radius: 3px;
+
+                                        states [
+                                            hovered when ta.has-hover: {
+                                                background: AppTheme.primary-muted;
+                                            }
+                                        ]
+
+                                        ta := TouchArea {
+                                            clicked => { root.autocomplete_select(suggestion); }
+                                        }
+
+                                        CjkText {
+                                            x: 8px;
+                                            text: suggestion;
+                                            font-size: 12px;
+                                            color: AppTheme.text-primary;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Footer buttons
+            HorizontalBox {
+                alignment: center;
+                spacing: 12px;
+
+                CjkButton {
+                    text: "取消";
+                    clicked => { root.cancel(); }
+                }
+
+                CjkButton {
+                    text: "保存";
+                    clicked => { root.save(); }
                 }
             }
         }

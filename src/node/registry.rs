@@ -140,7 +140,7 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util::{ArrayGetNode, ConcatVecNode, ConditionalNode, JsonParserNode, LoopBreakNode, LoopNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
+    use crate::node::util::{ArrayGetNode, ConcatVecNode, ConditionalNode, FormatStringNode, JsonParserNode, LoopBreakNode, LoopNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
     use crate::llm::llm_api_node::LLMApiNode;
     use crate::llm::brain_node::BrainNode;
     use crate::llm::llm_infer_node::LLMInferNode;
@@ -152,6 +152,14 @@ pub fn init_node_registry() -> Result<()> {
     use crate::node::message_cache::MessageCacheNode;
 
     // Utility nodes
+    register_node!(
+        "format_string",
+        "格式化字符串",
+        "工具",
+        "通过 ${变量名} 模板语法将输入变量格式化为字符串",
+        FormatStringNode
+    );
+
     register_node!(
         "conditional",
         "条件分支",
