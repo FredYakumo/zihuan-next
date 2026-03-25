@@ -1,5 +1,6 @@
 pub mod array_get;
 pub mod concat_vec;
+pub mod format_string;
 pub mod conditional;
 pub mod loop_node;
 pub mod loop_break_node;
@@ -194,6 +195,7 @@ pub mod openai_message_session_cache_clear {
 }
 
 pub use array_get::ArrayGetNode;
+pub use format_string::FormatStringNode;
 pub use concat_vec::ConcatVecNode;
 pub use conditional::ConditionalNode;
 pub use loop_node::LoopNode;

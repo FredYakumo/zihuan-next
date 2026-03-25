@@ -47,6 +47,7 @@ export component NodeItem inherits Rectangle {
     callback show_help(string, string);
     callback port_right_clicked(string, string);
     callback edit_tools_clicked(string);
+    callback edit_format_string_clicked(string);
 
     property <float> offset-x: 0;
     property <float> offset-y: 0;
@@ -99,6 +100,7 @@ export component NodeItem inherits Rectangle {
     property <float> list-node-action-spacing: 2;
     property <float> list-node-port-row-y: grid_size * 1.1;
     property <bool> has-tools-editor: root.node_type == "brain";
+    property <bool> has-format-string-editor: root.node_type == "format_string";
 
     x: (x_pos + offset-x) * 1px;
     y: (y_pos + offset-y) * 1px;
@@ -977,6 +979,30 @@ export component NodeItem inherits Rectangle {
 
         CjkText {
             text: "编辑 Tools";
+            color: AppTheme.text-primary;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            font-size: (grid_size * 0.48) * 1px;
+            font-weight: 700;
+        }
+    }
+
+    if root.has-format-string-editor: Rectangle {
+        x: (root.width - self.width) / 2;
+        y: root.height - self.height - (grid_size * 0.45) * 1px;
+        width: max((grid_size * 5.0) * 1px, root.width * 0.55);
+        height: (grid_size * 0.9) * 1px;
+        background: AppTheme.primary-muted;
+        border-radius: 5px;
+        border-width: 1px;
+        border-color: AppTheme.primary;
+
+        TouchArea {
+            clicked => { root.edit_format_string_clicked(root.node_id); }
+        }
+
+        CjkText {
+            text: "编辑格式化文本";
             color: AppTheme.text-primary;
             horizontal-alignment: center;
             vertical-alignment: center;
