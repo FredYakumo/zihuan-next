@@ -46,8 +46,8 @@ impl FunctionTool for NaturalLanguageReplyTool {
         let system = arguments.get("system").and_then(|v| v.as_str()).unwrap_or("You are a helpful assistant.");
 
         let messages = vec![
-            OpenAIMessage { role: MessageRole::System, content: Some(system.to_string()), tool_calls: Vec::new() },
-            OpenAIMessage { role: MessageRole::User, content: Some(prompt.to_string()), tool_calls: Vec::new() },
+            OpenAIMessage { role: MessageRole::System, content: Some(system.to_string()), tool_calls: Vec::new(), tool_call_id: None },
+            OpenAIMessage { role: MessageRole::User, content: Some(prompt.to_string()), tool_calls: Vec::new(), tool_call_id: None },
         ];
         let param = InferenceParam { messages: &messages, tools: None };
         let resp = self.llm.inference(&param);

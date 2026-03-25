@@ -140,7 +140,7 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util::{ArrayGetNode, ConcatVecNode, ConditionalNode, JsonParserNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToPlainTextNode, SwitchNode};
+    use crate::node::util::{ArrayGetNode, ConcatVecNode, ConditionalNode, JsonParserNode, LoopBreakNode, LoopNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
     use crate::llm::llm_api_node::LLMApiNode;
     use crate::llm::brain_node::BrainNode;
     use crate::llm::llm_infer_node::LLMInferNode;
@@ -166,6 +166,22 @@ pub fn init_node_registry() -> Result<()> {
         "工具",
         "当 enabled 为 true 时透传输入，否则阻断后续数据流",
         SwitchNode
+    );
+
+    register_node!(
+        "loop",
+        "循环",
+        "工具",
+        "重复执行，将 input 透传为 output，直到 LoopBreakNode 触发退出条件",
+        LoopNode
+    );
+
+    register_node!(
+        "loop_break",
+        "循环退出",
+        "工具",
+        "当 condition 为 true 时，通知循环节点在下一轮退出；放置在循环链路最末端",
+        LoopBreakNode
     );
 
     register_node!(
@@ -279,6 +295,14 @@ pub fn init_node_registry() -> Result<()> {
         "AI",
         "使用 LLModel + system prompt + user message 触发带可编辑 Tools 的函数调用推理",
         BrainNode
+    );
+
+    register_node!(
+        "tool_result",
+        "Tool 结果消息",
+        "AI",
+        "将工具执行结果封装为 role=tool 的 OpenAIMessage，供 agentic loop 回写对话列表",
+        ToolResultNode
     );
 
     // Bot adapter nodes
@@ -504,6 +528,7 @@ fn json_to_data_value(json: &Value, target_type: &DataType) -> Option<DataValue>
                 role,
                 content,
                 tool_calls: Vec::new(),
+                tool_call_id: None,
             }))
         }
 

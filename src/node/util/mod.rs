@@ -1,6 +1,8 @@
 pub mod array_get;
 pub mod concat_vec;
 pub mod conditional;
+pub mod loop_node;
+pub mod loop_break_node;
 pub mod json_parser;
 pub mod message_content;
 pub mod message_list_data;
@@ -13,6 +15,7 @@ pub mod stack;
 pub mod string_data;
 pub mod string_to_plain_text;
 pub mod switch;
+pub mod tool_result_node;
 
 pub mod openai_message_session_cache_clear {
 	use crate::error::Result;
@@ -107,6 +110,7 @@ pub mod openai_message_session_cache_clear {
 				role,
 				content: Some(content.to_string()),
 				tool_calls: Vec::new(),
+				tool_call_id: None,
 			}
 		}
 
@@ -192,6 +196,8 @@ pub mod openai_message_session_cache_clear {
 pub use array_get::ArrayGetNode;
 pub use concat_vec::ConcatVecNode;
 pub use conditional::ConditionalNode;
+pub use loop_node::LoopNode;
+pub use loop_break_node::LoopBreakNode;
 pub use json_parser::JsonParserNode;
 pub use message_content::MessageContentNode;
 pub use message_list_data::MessageListDataNode;
@@ -205,3 +211,4 @@ pub use stack::StackNode;
 pub use string_data::{StringDataNode, STRING_DATA_CONTEXT};
 pub use string_to_plain_text::StringToPlainTextNode;
 pub use switch::SwitchNode;
+pub use tool_result_node::ToolResultNode;

@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use crate::llm::function_tools::FunctionTool;
 use crate::bot_adapter::adapter::SharedBotAdapter;
 use crate::bot_adapter::models::event_model::MessageEvent;
@@ -190,6 +191,27 @@ impl fmt::Debug for OpenAIMessageSessionCacheRef {
     }
 }
 
+/// Shared loop control state, passed from LoopNode to LoopBreakNode via LoopControlRef ports.
+#[derive(Debug)]
+pub struct LoopControl {
+    break_flag: AtomicBool,
+}
+
+impl LoopControl {
+    pub fn new() -> Self {
+        Self { break_flag: AtomicBool::new(false) }
+    }
+    pub fn request_break(&self) {
+        self.break_flag.store(true, Ordering::SeqCst);
+    }
+    pub fn should_break(&self) -> bool {
+        self.break_flag.load(Ordering::SeqCst)
+    }
+    pub fn reset(&self) {
+        self.break_flag.store(false, Ordering::SeqCst);
+    }
+}
+
 /// Dataflow datatype. Use for checking compatibility between ports.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub enum DataType {
@@ -212,6 +234,7 @@ pub enum DataType {
     OpenAIMessageSessionCacheRef,
     Password,
     LLModel,
+    LoopControlRef,
     Custom(String),
 }
 
@@ -247,6 +270,7 @@ impl fmt::Display for DataType {
             DataType::OpenAIMessageSessionCacheRef => write!(f, "OpenAIMessageSessionCacheRef"),
             DataType::Password => write!(f, "Password"),
             DataType::LLModel => write!(f, "LLModel"),
+            DataType::LoopControlRef => write!(f, "LoopControlRef"),
             DataType::Custom(name) => write!(f, "Custom({})", name),
         }
     }
@@ -286,12 +310,14 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "OpenAIMessageSessionCacheRef" => Ok(DataType::OpenAIMessageSessionCacheRef),
                     "Password" => Ok(DataType::Password),
                     "LLModel" => Ok(DataType::LLModel),
+                    "LoopControlRef" => Ok(DataType::LoopControlRef),
                     other => Err(de::Error::unknown_variant(
                         other,
                         &["Any", "String", "Integer", "Float", "Boolean", "Json",
                               "Binary", "Vec", "MessageEvent", "MessageProp", "OpenAIMessage", "Message",
                           "QQMessage", "FunctionTools", "BotAdapterRef", "RedisRef",
-                          "MySqlRef", "OpenAIMessageSessionCacheRef", "Password", "LLModel", "Custom"],
+                          "MySqlRef", "OpenAIMessageSessionCacheRef", "Password", "LLModel",
+                          "LoopControlRef", "Custom"],
                     )),
                 }
             }
@@ -351,6 +377,7 @@ pub enum DataValue {
     OpenAIMessageSessionCacheRef(Arc<OpenAIMessageSessionCacheRef>),
     Password(String),
     LLModel(Arc<dyn crate::llm::llm_base::LLMBase>),
+    LoopControlRef(Arc<LoopControl>),
 }
 
 impl DataValue {
@@ -374,6 +401,7 @@ impl DataValue {
             DataValue::OpenAIMessageSessionCacheRef(_) => DataType::OpenAIMessageSessionCacheRef,
             DataValue::Password(_) => DataType::Password,
             DataValue::LLModel(_) => DataType::LLModel,
+            DataValue::LoopControlRef(_) => DataType::LoopControlRef,
         }
     }
 
@@ -445,6 +473,7 @@ impl DataValue {
                 "type": "OpenAIMessageSessionCacheRef",
                 "node_id": cache_ref.node_id,
             }),
+            DataValue::LoopControlRef(_) => Value::Null,
         }
     }
 }
@@ -470,6 +499,7 @@ impl fmt::Debug for DataValue {
             DataValue::OpenAIMessageSessionCacheRef(cache_ref) => f.debug_tuple("OpenAIMessageSessionCacheRef").field(cache_ref).finish(),
             DataValue::Password(value) => f.debug_tuple("Password").field(value).finish(),
             DataValue::LLModel(m) => f.debug_tuple("LLModel").field(&m.get_model_name()).finish(),
+            DataValue::LoopControlRef(_) => f.debug_tuple("LoopControlRef").finish(),
         }
     }
 }
