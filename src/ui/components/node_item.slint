@@ -789,7 +789,8 @@ export component NodeItem inherits Rectangle {
         height: (grid_size * 0.6) * 1px;
         border-radius: (grid_size * 0.3) * 1px;
         visible: !root.is-list-data-node &&
-                 !(root.node_type == "message_event_type_filter" && port.name == "filter_type");
+                 !(root.node_type == "message_event_type_filter" && port.name == "filter_type") &&
+                 !(root.node_type == "format_string" && port.name == "template");
         background: (port.is_connected || port.has_value) ? AppTheme.primary-muted : (port.is_required ? AppTheme.danger-bg : AppTheme.node-port-bg);
         border-width: 1px;
         border-color: (port.is_connected || port.has_value) ? AppTheme.primary : (port.is_required ? AppTheme.danger : AppTheme.node-port-border);
@@ -811,7 +812,8 @@ export component NodeItem inherits Rectangle {
         width: root.width - (grid_size * 2.5) * 1px;
         height: (grid_size) * 1px;
         visible: !root.is-list-data-node &&
-                 !(root.node_type == "message_event_type_filter" && port.name == "filter_type");
+                 !(root.node_type == "message_event_type_filter" && port.name == "filter_type") &&
+                 !(root.node_type == "format_string" && port.name == "template");
 
         HorizontalLayout {
             alignment: start;
