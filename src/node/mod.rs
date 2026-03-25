@@ -154,6 +154,10 @@ pub trait Node: Send + Sync {
         Ok(None)
     }
 
+    /// Called before the event producer loop starts. Nodes that block in
+    /// on_update() should store this flag and use it to interrupt the wait.
+    fn set_stop_flag(&mut self, _stop_flag: Arc<AtomicBool>) {}
+
     /// Event producer lifecycle: called after update loop exits
     fn on_cleanup(&mut self) -> Result<()> {
         Ok(())
@@ -1266,6 +1270,7 @@ impl NodeGraph {
             node.on_start(inputs).map_err(|e| {
                 crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
             })?;
+            node.set_stop_flag(Arc::clone(&self.stop_flag));
         }
 
         loop {
@@ -1421,6 +1426,7 @@ impl NodeGraph {
             node.on_start(inputs).map_err(|e| {
                 crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
             })?;
+            node.set_stop_flag(Arc::clone(&self.stop_flag));
         }
 
         loop {
