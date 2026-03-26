@@ -1,4 +1,4 @@
-import { HorizontalBox, VerticalBox, ScrollView, LineEdit, CheckBox, ComboBox, TextEdit } from "std-widgets.slint";
+import { HorizontalBox, VerticalBox, ScrollView, LineEdit, CheckBox, ComboBox } from "std-widgets.slint";
 import { AppTheme } from "theme.slint";
 import { NodeTypeVm, PortHelpVm, HyperParameterVm, LogEntryVm, ToolDefinitionVm } from "types.slint";
 import { CjkButton, CjkDeleteButton, CjkText } from "components/buttons.slint";
@@ -2053,8 +2053,11 @@ export component FormatStringEditorDialog inherits Rectangle {
     in property <[string]> variables;
     in property <[string]> autocomplete_suggestions;
     in property <bool> show_autocomplete;
-    callback text_changed(string);
+    in property <int> autocomplete_selected_index: -1;
+    callback text_changed(string, int);
     callback autocomplete_select(string);
+    callback autocomplete_navigate(int);
+    callback autocomplete_accept();
     callback save();
     callback cancel();
 
@@ -2150,9 +2153,12 @@ export component FormatStringEditorDialog inherits Rectangle {
                 }
 
                 // Right panel: text editor + autocomplete
-                Rectangle {
+                right_panel := Rectangle {
                     vertical-stretch: 1;
                     horizontal-stretch: 1;
+                    private property <length> caret_x: 0px;
+                    private property <length> caret_y: 0px;
+                    private property <length> caret_line_height: 20px;
 
                     VerticalLayout {
                         spacing: 4px;
@@ -2165,50 +2171,109 @@ export component FormatStringEditorDialog inherits Rectangle {
                         }
 
                         // Text editor
-                        TextEdit {
+                        editor := Rectangle {
                             vertical-stretch: 1;
-                            text <=> root.template_text;
-                            font-size: 13px;
-                            edited(text) => {
-                                root.text_changed(text);
-                            }
-                        }
-
-                        // Autocomplete dropdown
-                        if root.show_autocomplete && root.autocomplete_suggestions.length > 0: Rectangle {
-                            height: min(root.autocomplete_suggestions.length * 30px + 8px, 160px);
-                            background: AppTheme.node-bg;
+                            background: AppTheme.surface;
                             border-radius: 4px;
                             border-width: 1px;
-                            border-color: AppTheme.primary;
+                            border-color: AppTheme.border;
 
-                            ScrollView {
-                                viewport-height: root.autocomplete_suggestions.length * 30px;
+                            scroll := ScrollView {
+                                x: 8px;
+                                y: 8px;
+                                width: parent.width - 16px;
+                                height: parent.height - 16px;
+                                viewport-width: self.visible-width;
+                                viewport-height: max(self.visible-height, input.preferred-height);
 
-                                VerticalLayout {
-                                    padding: 4px;
-                                    spacing: 2px;
+                                input := TextInput {
+                                    width: parent.visible-width;
+                                    height: max(parent.visible-height, self.preferred-height);
+                                    text <=> root.template_text;
+                                    font-size: 13px;
+                                    color: AppTheme.text-primary;
+                                    selection-background-color: AppTheme.selection;
+                                    selection-foreground-color: #ffffff;
+                                    single-line: false;
+                                    wrap: word-wrap;
+                                    page-height: parent.visible-height;
 
-                                    for suggestion in root.autocomplete_suggestions: Rectangle {
-                                        height: 28px;
-                                        border-radius: 3px;
+                                    edited => {
+                                        root.text_changed(self.text, self.cursor-position_byte-offset);
+                                    }
 
-                                        states [
-                                            hovered when ta.has-hover: {
-                                                background: AppTheme.primary-muted;
+                                    key-pressed(event) => {
+                                        if (root.show_autocomplete && root.autocomplete_suggestions.length > 0) {
+                                            if (event.text == Key.UpArrow) {
+                                                root.autocomplete_navigate(-1);
+                                                return accept;
+                                            } else if (event.text == Key.DownArrow) {
+                                                root.autocomplete_navigate(1);
+                                                return accept;
+                                            } else if (event.text == Key.Tab) {
+                                                root.autocomplete_accept();
+                                                return accept;
                                             }
-                                        ]
+                                        }
+                                        return reject;
+                                    }
 
-                                        ta := TouchArea {
-                                            clicked => { root.autocomplete_select(suggestion); }
+                                    cursor-position-changed(cpos) => {
+                                        if (cpos.y + scroll.viewport-y < 12px) {
+                                            scroll.viewport-y = min(0px, max(parent.visible-height - self.height, -cpos.y + 12px));
+                                        } else if (cpos.y + scroll.viewport-y > parent.visible-height - 12px - right_panel.caret_line_height) {
+                                            scroll.viewport-y = min(0px, max(parent.visible-height - self.height, parent.visible-height - cpos.y - 12px - right_panel.caret_line_height));
                                         }
 
-                                        CjkText {
-                                            x: 8px;
-                                            text: suggestion;
-                                            font-size: 12px;
-                                            color: AppTheme.text-primary;
-                                            vertical-alignment: center;
+                                        right_panel.caret_x = scroll.x + cpos.x + scroll.viewport-x;
+                                        right_panel.caret_y = scroll.y + cpos.y + scroll.viewport-y;
+
+                                        root.text_changed(self.text, self.cursor-position_byte-offset);
+                                    }
+                                }
+                            }
+
+                            if root.show_autocomplete && root.autocomplete_suggestions.length > 0: Rectangle {
+                                width: min(editor.width - 8px, 260px);
+                                height: min(root.autocomplete_suggestions.length * 30px + 8px, 160px);
+                                x: max(4px, min(editor.width - self.width - 4px, right_panel.caret_x));
+                                y: max(4px, min(editor.height - self.height - 4px, right_panel.caret_y + right_panel.caret_line_height + 2px));
+                                background: AppTheme.node-bg;
+                                border-radius: 4px;
+                                border-width: 1px;
+                                border-color: AppTheme.primary;
+
+                                ScrollView {
+                                    viewport-height: root.autocomplete_suggestions.length * 30px;
+
+                                    VerticalLayout {
+                                        padding: 4px;
+                                        spacing: 2px;
+
+                                        for suggestion[i] in root.autocomplete_suggestions: Rectangle {
+                                            height: 28px;
+                                            border-radius: 3px;
+
+                                            states [
+                                                selected when i == root.autocomplete_selected_index: {
+                                                    background: AppTheme.primary-muted;
+                                                }
+                                                hovered when ta.has-hover && i != root.autocomplete_selected_index: {
+                                                    background: AppTheme.surface;
+                                                }
+                                            ]
+
+                                            ta := TouchArea {
+                                                clicked => { root.autocomplete_select(suggestion); }
+                                            }
+
+                                            CjkText {
+                                                x: 8px;
+                                                text: suggestion;
+                                                font-size: 12px;
+                                                color: AppTheme.text-primary;
+                                                vertical-alignment: center;
+                                            }
                                         }
                                     }
                                 }

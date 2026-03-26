@@ -159,11 +159,14 @@ export component NodeGraphWindow inherits Window {
     in property <[string]> format_string_editor_variables;
     in property <[string]> format_string_editor_suggestions;
     in property <bool> format_string_show_autocomplete: false;
+    in property <int> format_string_autocomplete_selected_index: -1;
     callback open_format_string_editor(string);
     callback close_format_string_editor();
     callback save_format_string_editor();
-    callback format_string_text_changed(string);
+    callback format_string_text_changed(string, int);
     callback format_string_autocomplete_select(string);
+    callback format_string_autocomplete_navigate(int);
+    callback format_string_autocomplete_accept();
 
     // Log overlay
     in-out property <[LogEntryVm]> log_entries;
@@ -655,8 +658,11 @@ export component NodeGraphWindow inherits Window {
         variables: root.format_string_editor_variables;
         autocomplete_suggestions: root.format_string_editor_suggestions;
         show_autocomplete: root.format_string_show_autocomplete;
-        text_changed(text) => { root.format_string_text_changed(text); }
+        autocomplete_selected_index: root.format_string_autocomplete_selected_index;
+        text_changed(text, cursor_offset) => { root.format_string_text_changed(text, cursor_offset); }
         autocomplete_select(s) => { root.format_string_autocomplete_select(s); }
+        autocomplete_navigate(delta) => { root.format_string_autocomplete_navigate(delta); }
+        autocomplete_accept() => { root.format_string_autocomplete_accept(); }
         save => { root.save_format_string_editor(); }
         cancel => { root.close_format_string_editor(); }
     }
