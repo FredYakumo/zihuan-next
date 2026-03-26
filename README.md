@@ -2,7 +2,7 @@
 
 **Node-graph-based visual programming system** for building event-driven bot pipelines with composable dataflow components.
 
-![alt text](example_workflow.png)
+<img width="1248" height="880" alt="QQ_1774524965499" src="https://github.com/user-attachments/assets/ac06d18e-bf36-4ae8-893a-45ee9e36f475" />
 
 ## Overview
 
