@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::node::graph_io::{NodeDefinition, NodeGraphDefinition};
+use crate::node::graph_io::{EdgeDefinition, NodeDefinition, NodeGraphDefinition};
 use crate::node::DataType;
 use crate::ui::graph_window::{EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm};
 use crate::ui::selection::SelectionState;
@@ -301,6 +301,29 @@ pub(crate) fn build_edge_segments(
     (segments, corners, labels)
 }
 
+const N_EDGE_COLORS: usize = 8;
+
+fn edge_color(edge: &EdgeDefinition) -> slint::Color {
+    let key = format!(
+        "{}{}{}{}",
+        edge.from_node_id, edge.from_port, edge.to_node_id, edge.to_port
+    );
+    let hash = key
+        .bytes()
+        .fold(0usize, |acc, b| acc.wrapping_mul(31).wrapping_add(b as usize));
+    match hash % N_EDGE_COLORS {
+        0 => slint::Color::from_rgb_u8(0xaa, 0xaa, 0xaa),
+        1 => slint::Color::from_rgb_u8(0x5b, 0x9b, 0xd5),
+        2 => slint::Color::from_rgb_u8(0xed, 0x7d, 0x31),
+        3 => slint::Color::from_rgb_u8(0xa9, 0xd1, 0x8e),
+        4 => slint::Color::from_rgb_u8(0xff, 0x7e, 0xb3),
+        5 => slint::Color::from_rgb_u8(0xc5, 0xa3, 0xd5),
+        6 => slint::Color::from_rgb_u8(0x4e, 0xcd, 0xc4),
+        7 => slint::Color::from_rgb_u8(0xff, 0xd9, 0x3d),
+        _ => unreachable!(),
+    }
+}
+
 pub(crate) fn build_edges(
     graph: &NodeGraphDefinition,
     selection_state: &SelectionState,
@@ -348,6 +371,7 @@ pub(crate) fn build_edges(
                 to_x: to_x.into(),
                 to_y: to_y.into(),
                 is_selected,
+                color: edge_color(edge),
             })
         })
         .collect()
