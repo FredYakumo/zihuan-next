@@ -21,14 +21,61 @@ fn extract_variables(template: &str) -> Vec<String> {
     vars
 }
 
-pub fn find_incomplete_variable(text: &str) -> Option<String> {
-    let last_open = text.rfind("${")?;
-    let after = &text[last_open + 2..];
-    if after.contains('}') {
-        None
-    } else {
-        Some(after.to_string())
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IncompleteVariable {
+    pub open_index: usize,
+    pub cursor_index: usize,
+    pub prefix: String,
+}
+
+fn clamp_to_char_boundary(text: &str, byte_offset: usize) -> usize {
+    let mut offset = byte_offset.min(text.len());
+    while offset > 0 && !text.is_char_boundary(offset) {
+        offset -= 1;
     }
+    offset
+}
+
+pub fn find_incomplete_variable_at(
+    text: &str,
+    cursor_byte_offset: usize,
+) -> Option<IncompleteVariable> {
+    let cursor_index = clamp_to_char_boundary(text, cursor_byte_offset);
+    let before_cursor = &text[..cursor_index];
+    let open_index = before_cursor.rfind("${")?;
+    let prefix = &before_cursor[open_index + 2..];
+    if prefix.contains('}') {
+        return None;
+    }
+
+    Some(IncompleteVariable {
+        open_index,
+        cursor_index,
+        prefix: prefix.to_string(),
+    })
+}
+
+pub fn complete_incomplete_variable_at(
+    text: &str,
+    cursor_byte_offset: usize,
+    suggestion: &str,
+) -> Option<String> {
+    let ctx = find_incomplete_variable_at(text, cursor_byte_offset)?;
+
+    // If there is already a closing brace after the cursor, replace the full
+    // `${...}` segment. Otherwise replace only the incomplete prefix.
+    let replacement_end = if let Some(close_rel) = text[ctx.cursor_index..].find('}') {
+        ctx.cursor_index + close_rel + 1
+    } else {
+        ctx.cursor_index
+    };
+
+    Some(format!(
+        "{}${{{}}}{}",
+        &text[..ctx.open_index],
+        suggestion,
+        &text[replacement_end..]
+    ))
 }
 
 pub struct FormatStringNode {
@@ -133,15 +180,39 @@ mod tests {
 
     #[test]
     fn find_incomplete_variable_detects_open() {
-        assert_eq!(
-            find_incomplete_variable("Hello ${na"),
-            Some("na".to_string())
-        );
+        let text = "Hello ${na";
+        let ctx = find_incomplete_variable_at(text, text.len()).unwrap();
+        assert_eq!(ctx.prefix, "na");
     }
 
     #[test]
     fn find_incomplete_variable_none_when_closed() {
-        assert_eq!(find_incomplete_variable("Hello ${name}"), None);
+        assert!(find_incomplete_variable_at("Hello ${name}", "Hello ${name}".len()).is_none());
+    }
+
+    #[test]
+    fn find_incomplete_variable_at_middle_cursor() {
+        let text = "A ${na} B";
+        let cursor = text.find('}').unwrap();
+        let ctx = find_incomplete_variable_at(text, cursor).unwrap();
+        assert_eq!(ctx.prefix, "na");
+        assert_eq!(&text[ctx.open_index..ctx.cursor_index], "${na");
+    }
+
+    #[test]
+    fn complete_incomplete_variable_without_closing_brace() {
+        let text = "Hello ${na world";
+        let cursor = "Hello ${na".len();
+        let completed = complete_incomplete_variable_at(text, cursor, "name").unwrap();
+        assert_eq!(completed, "Hello ${name} world");
+    }
+
+    #[test]
+    fn complete_incomplete_variable_with_existing_closing_brace() {
+        let text = "Hello ${na_me} world";
+        let cursor = text.find('_').unwrap();
+        let completed = complete_incomplete_variable_at(text, cursor, "name").unwrap();
+        assert_eq!(completed, "Hello ${name} world");
     }
 
     #[test]

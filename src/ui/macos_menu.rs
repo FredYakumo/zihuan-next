@@ -96,11 +96,20 @@ pub fn install_menu(actions: MenuActions) {
         let app = NSApp();
         let handler = create_handler(actions);
 
-        // Get the existing menu bar created by winit/Slint, and append our menus to it
-        let menubar: id = msg_send![app, mainMenu];
+        // Get the existing menu bar, or create one if winit/Slint didn't
+        let mut menubar: id = msg_send![app, mainMenu];
         if menubar == nil {
-            eprintln!("[macOS menu] mainMenu is nil, cannot install menu");
-            return;
+            menubar = NSMenu::new(nil).autorelease();
+            let _: () = msg_send![app, setMainMenu: menubar];
+
+            // Create the application menu (first item, usually blank title)
+            let app_menu_title = NSString::alloc(nil).init_str("");
+            let app_menu = NSMenu::alloc(nil).initWithTitle_(app_menu_title);
+            app_menu.addItem_(menu_item("退出", sel!(quit:), "q", handler));
+
+            let app_menu_item = NSMenuItem::new(nil).autorelease();
+            app_menu_item.setSubmenu_(app_menu);
+            menubar.addItem_(app_menu_item);
         }
 
         let count: i64 = msg_send![menubar, numberOfItems];
