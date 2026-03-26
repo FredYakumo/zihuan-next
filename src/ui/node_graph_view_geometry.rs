@@ -97,6 +97,7 @@ fn route_edge(
     thickness: f32,
     edge_index: i32,
     snap: bool,
+    mid_x_override: Option<f32>,
     segments: &mut Vec<EdgeSegmentVm>,
     corners: &mut Vec<EdgeCornerVm>,
 ) -> (f32, f32) {
@@ -130,10 +131,11 @@ fn route_edge(
 
         ((x_right + x_left) / 2.0, mid_y)
     } else {
+        let raw_mid = mid_x_override.unwrap_or((from_x + to_x) / 2.0);
         let mid_x = if snap {
-            snap_to_grid_center((from_x + to_x) / 2.0)
+            snap_to_grid_center(raw_mid)
         } else {
-            (from_x + to_x) / 2.0
+            raw_mid
         };
 
         push_segment(segments, from_x, from_y, mid_x, from_y, thickness, edge_index);
@@ -147,6 +149,11 @@ fn route_edge(
     }
 }
 
+/// Spacing between parallel vertical segments when edges overlap.
+const EDGE_NUDGE_SPACING: f32 = GRID_SIZE * 0.5;
+/// Edges whose raw mid_x falls within this distance are grouped together.
+const EDGE_CHANNEL_THRESHOLD: f32 = GRID_SIZE;
+
 pub(crate) fn build_edge_segments(
     graph: &NodeGraphDefinition,
     snap: bool,
@@ -155,9 +162,21 @@ pub(crate) fn build_edge_segments(
     let mut corners = Vec::new();
     let mut labels = Vec::new();
     let thickness = GRID_SIZE * EDGE_THICKNESS_RATIO;
-    let mut edge_index: i32 = 0;
+    let min_dist = GRID_SIZE * 2.0;
 
-    for edge in &graph.edges {
+    // First pass: resolve coordinates and compute raw mid_x for each edge.
+    struct EdgeInfo {
+        from_x: f32,
+        from_y: f32,
+        to_x: f32,
+        to_y: f32,
+        raw_mid_x: f32,
+        is_backward: bool,
+        edge_idx: usize,
+    }
+
+    let mut infos: Vec<EdgeInfo> = Vec::new();
+    for (idx, edge) in graph.edges.iter().enumerate() {
         let from_node = match graph.nodes.iter().find(|n| n.id == edge.from_node_id) {
             Some(node) => node,
             None => continue,
@@ -187,18 +206,84 @@ pub(crate) fn build_edge_segments(
             (from_x, from_y, to_x, to_y)
         };
 
-        let (label_x, label_y) = route_edge(
+        let is_backward = to_x < from_x + min_dist;
+        let raw_mid_x = (from_x + to_x) / 2.0;
+
+        infos.push(EdgeInfo {
             from_x,
             from_y,
             to_x,
             to_y,
+            raw_mid_x,
+            is_backward,
+            edge_idx: idx,
+        });
+    }
+
+    // Second pass: group forward edges by similar mid_x and assign nudged offsets.
+    let mut mid_x_overrides: Vec<Option<f32>> = vec![None; infos.len()];
+
+    // Collect indices of forward (non-backward) edges for channel grouping.
+    let mut forward_indices: Vec<usize> = infos
+        .iter()
+        .enumerate()
+        .filter(|(_, info)| !info.is_backward)
+        .map(|(i, _)| i)
+        .collect();
+
+    // Sort by raw_mid_x so we can group nearby ones.
+    forward_indices.sort_by(|&a, &b| {
+        infos[a]
+            .raw_mid_x
+            .partial_cmp(&infos[b].raw_mid_x)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // Group edges whose raw_mid_x is within the threshold.
+    let mut i = 0;
+    while i < forward_indices.len() {
+        let group_start = i;
+        let anchor = infos[forward_indices[i]].raw_mid_x;
+        while i < forward_indices.len()
+            && (infos[forward_indices[i]].raw_mid_x - anchor).abs() < EDGE_CHANNEL_THRESHOLD
+        {
+            i += 1;
+        }
+        let group_end = i;
+        let group_size = group_end - group_start;
+        if group_size > 1 {
+            let center = anchor;
+            let total_width = (group_size - 1) as f32 * EDGE_NUDGE_SPACING;
+            for (j, &fi) in forward_indices[group_start..group_end].iter().enumerate() {
+                mid_x_overrides[fi] =
+                    Some(center - total_width / 2.0 + j as f32 * EDGE_NUDGE_SPACING);
+            }
+        }
+    }
+
+    // Third pass: route edges using the nudged mid_x values.
+    for (info_idx, info) in infos.iter().enumerate() {
+        let edge_index = info_idx as i32;
+
+        let (label_x, label_y) = route_edge(
+            info.from_x,
+            info.from_y,
+            info.to_x,
+            info.to_y,
             thickness,
             edge_index,
             snap,
+            mid_x_overrides[info_idx],
             &mut segments,
             &mut corners,
         );
 
+        let edge = &graph.edges[info.edge_idx];
+        let from_node = graph
+            .nodes
+            .iter()
+            .find(|n| n.id == edge.from_node_id)
+            .unwrap();
         let label_text = get_edge_data_type_label(graph, from_node, &edge.from_port)
             .unwrap_or_else(|| "Unknown".to_string());
         let label_width = (label_text.len() as f32 * 7.0).max(GRID_SIZE * 2.0);
@@ -211,8 +296,6 @@ pub(crate) fn build_edge_segments(
             width: label_width,
             height: label_height,
         });
-
-        edge_index += 1;
     }
 
     (segments, corners, labels)
