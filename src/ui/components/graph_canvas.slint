@@ -178,6 +178,8 @@ export component GraphCanvas inherits Rectangle {
         height: segment.height * root.canvas_zoom * 1px;
         background: edges[segment.edge_index].is_selected ? AppTheme.edge-selected : AppTheme.edge;
         border-radius: (root.edge_thickness / 2) * root.canvas_zoom * 1px;
+        border-width: 1px;
+        border-color: edges[segment.edge_index].is_selected ? AppTheme.edge-border-selected : AppTheme.edge-border;
 
         TouchArea {
             clicked => {
@@ -198,6 +200,8 @@ export component GraphCanvas inherits Rectangle {
         height: root.edge_thickness * root.canvas_zoom * 1px;
         background: edges[corner.edge_index].is_selected ? AppTheme.edge-selected : AppTheme.edge;
         border-radius: (root.edge_thickness / 2) * root.canvas_zoom * 1px;
+        border-width: 1px;
+        border-color: edges[corner.edge_index].is_selected ? AppTheme.edge-border-selected : AppTheme.edge-border;
 
         TouchArea {
             clicked => {
