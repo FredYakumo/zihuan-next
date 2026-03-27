@@ -1412,8 +1412,7 @@ export component HyperParameterManagerDialog inherits Rectangle {
                         horizontal-stretch: 1;
                         height: 32px;
                         placeholder-text: "参数名称";
-                        text: root.new_name;
-                        edited(text) => { root.new_name = text; }
+                        text <=> root.new_name;
                     }
 
                     ComboBox {
