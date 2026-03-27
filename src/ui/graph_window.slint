@@ -37,6 +37,11 @@ export component NodeGraphWindow inherits Window {
     in-out property <string> drag_from_node_id: "";
     in-out property <string> drag_from_port: "";
     in-out property <bool> drag_from_is_input: false;
+    in-out property <float> canvas_pan_x: 0;
+    in-out property <float> canvas_pan_y: 0;
+    in-out property <float> canvas_zoom: 1.0;
+    in property <float> canvas_viewport_width: canvas_container.width / 1px;
+    in property <float> canvas_viewport_height: canvas_container.height / 1px;
     in property <int> selected_node_count: 0;
     in property <string> selected_edge_from_node: "";
     in property <string> selected_edge_from_port: "";
@@ -278,7 +283,7 @@ export component NodeGraphWindow inherits Window {
             }
         }
 
-        Rectangle {
+        canvas_container := Rectangle {
             vertical-stretch: 1;
             clip: true;
 
@@ -302,6 +307,9 @@ export component NodeGraphWindow inherits Window {
                 drag_from_node_id: root.drag_from_node_id;
                 drag_from_port: root.drag_from_port;
                 drag_from_is_input: root.drag_from_is_input;
+                canvas_pan_x <=> root.canvas_pan_x;
+                canvas_pan_y <=> root.canvas_pan_y;
+                canvas_zoom <=> root.canvas_zoom;
                 box_selection_visible: root.box_selection_visible;
                 box_selection_x: root.box_selection_x;
                 box_selection_y: root.box_selection_y;

@@ -8,6 +8,7 @@ use crate::ui::graph_window::{NodeGraphWindow, NodeTypeVm};
 use crate::ui::node_graph_view::{
     refresh_active_tab_ui, tab_display_title, GraphTabState,
 };
+use crate::ui::node_graph_view_geometry::{node_dimensions, snap_to_grid};
 use crate::ui::node_graph_view_inline::{add_node_to_graph, apply_hyperparameter_bindings_to_graph, apply_inline_inputs_to_graph};
 use crate::ui::node_graph_view_vm::{apply_graph_to_ui, matches_node_type_search};
 use crate::ui::node_render::{inline_port_key, InlinePortValue};
@@ -112,6 +113,38 @@ pub(crate) fn bind_window_callbacks(
             if let Err(e) = add_node_to_graph(&mut tab.graph, type_id_str) {
                 eprintln!("Failed to add node: {}", e);
                 return;
+            }
+
+            if let Some(node) = tab.graph.nodes.last_mut() {
+                let (pan_x, pan_y, viewport_width, viewport_height) = ui_handle
+                    .upgrade()
+                    .map(|ui| {
+                        (
+                            ui.get_canvas_pan_x(),
+                            ui.get_canvas_pan_y(),
+                            ui.get_canvas_zoom().max(0.2),
+                            ui.get_canvas_viewport_width().max(1.0),
+                            ui.get_canvas_viewport_height().max(1.0),
+                        )
+                    })
+                    .map(|(pan_x, pan_y, zoom, viewport_width, viewport_height)| {
+                        (
+                            pan_x,
+                            pan_y,
+                            viewport_width / zoom,
+                            viewport_height / zoom,
+                        )
+                    })
+                    .unwrap_or((0.0, 0.0, 1200.0, 800.0));
+
+                let center_canvas_x = viewport_width / 2.0 - pan_x;
+                let center_canvas_y = viewport_height / 2.0 - pan_y;
+                let (node_width, node_height) = node_dimensions(node);
+
+                node.position = Some(crate::node::graph_io::GraphPosition {
+                    x: snap_to_grid(center_canvas_x - node_width / 2.0),
+                    y: snap_to_grid(center_canvas_y - node_height / 2.0),
+                });
             }
             tab.is_dirty = true;
         }
