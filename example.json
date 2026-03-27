@@ -138,9 +138,29 @@
           "required": true
         },
         {
-          "name": "msg_prop",
-          "data_type": "MessageProp",
-          "description": "Parsed message properties",
+          "name": "content",
+          "data_type": "String",
+          "description": "Merged readable message body",
+          "required": true
+        },
+        {
+          "name": "ref_content",
+          "data_type": "String",
+          "description": "Referenced/replied message content",
+          "required": true
+        },
+        {
+          "name": "is_at_me",
+          "data_type": "Boolean",
+          "description": "Whether the message @'s the bot",
+          "required": true
+        },
+        {
+          "name": "at_target_list",
+          "data_type": {
+            "Vec": "String"
+          },
+          "description": "List of all @ targets in the message",
           "required": true
         }
       ],
@@ -188,9 +208,29 @@
           "required": true
         },
         {
-          "name": "msg_prop",
-          "data_type": "MessageProp",
-          "description": "Parsed message properties",
+          "name": "content",
+          "data_type": "String",
+          "description": "Merged readable message body",
+          "required": true
+        },
+        {
+          "name": "ref_content",
+          "data_type": "String",
+          "description": "Referenced/replied message content",
+          "required": true
+        },
+        {
+          "name": "is_at_me",
+          "data_type": "Boolean",
+          "description": "Whether the message @'s the bot",
+          "required": true
+        },
+        {
+          "name": "at_target_list",
+          "data_type": {
+            "Vec": "String"
+          },
+          "description": "List of all @ targets in the message",
           "required": true
         }
       ],
@@ -446,13 +486,13 @@
         "height": 200.0
       },
       "inline_values": {
-        "mysql_database": "zihuan_aibot",
+        "mysql_port": "3306",
         "mysql_host": "127.0.0.1",
-        "mysql_port": "3306"
+        "mysql_database": "zihuan_aibot"
       },
       "port_bindings": {
-        "mysql_password": "MYSQL_PASSWORD",
-        "mysql_user": "MYSQL_USER"
+        "mysql_user": "MYSQL_USER",
+        "mysql_password": "MYSQL_PASSWORD"
       },
       "has_error": false
     },
@@ -622,36 +662,6 @@
       "position": {
         "x": 2060.0,
         "y": -560.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false
-    },
-    {
-      "id": "node_17",
-      "name": "IsAtMe",
-      "description": "Extracts the is_at_me boolean field from a MessageProp",
-      "node_type": "is_at_me",
-      "input_ports": [
-        {
-          "name": "msg_prop",
-          "data_type": "MessageProp",
-          "description": "Parsed message properties",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "is_at_me",
-          "data_type": "Boolean",
-          "description": "Whether the message @'s the bot",
-          "required": true
-        }
-      ],
-      "position": {
-        "x": 860.0,
-        "y": 320.0
       },
       "size": null,
       "inline_values": {},
@@ -980,77 +990,14 @@
         }
       ],
       "position": {
-        "x": 220.0,
-        "y": 220.0
+        "x": 160.0,
+        "y": 340.0
       },
       "size": null,
       "inline_values": {
         "ttl_secs": "600",
         "bucket_name": "cache"
       },
-      "port_bindings": {},
-      "has_error": false
-    },
-    {
-      "id": "node_28",
-      "name": "Redis连接",
-      "description": "Redis连接配置 - 构建Redis连接URL并输出引用",
-      "node_type": "redis",
-      "input_ports": [
-        {
-          "name": "redis_host",
-          "data_type": "String",
-          "description": "Redis主机地址",
-          "required": true
-        },
-        {
-          "name": "redis_port",
-          "data_type": "Integer",
-          "description": "Redis端口号",
-          "required": true
-        },
-        {
-          "name": "redis_db",
-          "data_type": "Integer",
-          "description": "Redis数据库编号 (默认: 0)",
-          "required": false
-        },
-        {
-          "name": "redis_password",
-          "data_type": "String",
-          "description": "Redis密码",
-          "required": false
-        },
-        {
-          "name": "reconnect_max_attempts",
-          "data_type": "Integer",
-          "description": "最大重连次数 (默认: 3)",
-          "required": false
-        },
-        {
-          "name": "reconnect_interval_secs",
-          "data_type": "Integer",
-          "description": "重连间隔秒数 (默认: 60)",
-          "required": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "redis_ref",
-          "data_type": "RedisRef",
-          "description": "Redis连接配置引用",
-          "required": true
-        }
-      ],
-      "position": {
-        "x": -160.0,
-        "y": 320.0
-      },
-      "size": {
-        "width": 280.0,
-        "height": 180.0
-      },
-      "inline_values": {},
       "port_bindings": {},
       "has_error": false
     },
@@ -1285,12 +1232,6 @@
     },
     {
       "from_node_id": "node_4",
-      "from_port": "msg_prop",
-      "to_node_id": "node_17",
-      "to_port": "msg_prop"
-    },
-    {
-      "from_node_id": "node_17",
       "from_port": "is_at_me",
       "to_node_id": "node_18",
       "to_port": "enabled"
@@ -1354,12 +1295,6 @@
       "from_port": "message_event",
       "to_node_id": "node_27",
       "to_port": "message_event"
-    },
-    {
-      "from_node_id": "node_28",
-      "from_port": "redis_ref",
-      "to_node_id": "node_27",
-      "to_port": "redis_ref"
     },
     {
       "from_node_id": "node_29",
