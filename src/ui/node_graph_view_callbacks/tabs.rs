@@ -4,8 +4,11 @@ use std::sync::{Arc, Mutex};
 use log::info;
 use slint::ComponentHandle;
 
-use crate::node::graph_io::load_graph_definition_from_json;
-use crate::ui::graph_window::NodeGraphWindow;
+use crate::node::graph_io::{
+    auto_fix_graph_definition, load_graph_definition_from_json, validate_graph_definition,
+    NodeGraphDefinition,
+};
+use crate::ui::graph_window::{NodeGraphWindow, ValidationIssueVm};
 use crate::ui::node_graph_view::{
     new_blank_tab, refresh_active_tab_ui, GraphTabState,
 };
@@ -26,10 +29,13 @@ pub(crate) fn bind_tab_callbacks(
 ) {
     let pending_save_as: Arc<Mutex<Option<(std::path::PathBuf, u64)>>> =
         Arc::new(Mutex::new(None));
+    let pending_open_graph: Arc<Mutex<Option<(PathBuf, NodeGraphDefinition)>>> =
+        Arc::new(Mutex::new(None));
 
     let ui_handle = ui.as_weak();
     let tabs_clone = Arc::clone(&tabs);
     let active_tab_clone = Arc::clone(&active_tab_index);
+    let pending_open_for_open = Arc::clone(&pending_open_graph);
     ui.on_open_json(move || {
         let selected_path = match rfd::FileDialog::new()
             .add_filter("Node Graph", &["json"])
@@ -41,6 +47,26 @@ pub(crate) fn bind_tab_callbacks(
 
         match load_graph_definition_from_json(&selected_path) {
             Ok(graph) => {
+                let issues = validate_graph_definition(&graph);
+                if !issues.is_empty() {
+                    // Store the pending graph and show the validation dialog
+                    *pending_open_for_open.lock().unwrap() = Some((selected_path, graph));
+                    let issue_vms: Vec<ValidationIssueVm> = issues
+                        .iter()
+                        .map(|i| ValidationIssueVm {
+                            severity: i.severity.clone().into(),
+                            message: i.message.clone().into(),
+                        })
+                        .collect();
+                    if let Some(ui) = ui_handle.upgrade() {
+                        ui.set_validation_issues(slint::ModelRc::from(
+                            std::rc::Rc::new(slint::VecModel::from(issue_vms)),
+                        ));
+                        ui.set_show_validation_fix_dialog(true);
+                    }
+                    return;
+                }
+                // No issues — load immediately
                 let mut tabs_guard = tabs_clone.lock().unwrap();
                 let active_index = *active_tab_clone.lock().unwrap();
                 if let Some(tab) = tabs_guard.get_mut(active_index) {
@@ -67,6 +93,49 @@ pub(crate) fn bind_tab_callbacks(
                     ui.set_error_dialog_message(format!("无法加载文件:\n{}", e).into());
                 }
             }
+        }
+    });
+
+    // ── Validation Fix: confirm (auto-fix + load) ──
+    let pending_open_for_confirm = Arc::clone(&pending_open_graph);
+    let tabs_for_confirm = Arc::clone(&tabs);
+    let active_tab_for_confirm = Arc::clone(&active_tab_index);
+    let ui_handle_confirm = ui.as_weak();
+    ui.on_validation_fix_confirm(move || {
+        if let Some(ui) = ui_handle_confirm.upgrade() {
+            ui.set_show_validation_fix_dialog(false);
+        }
+        let (selected_path, mut graph) = match pending_open_for_confirm.lock().unwrap().take() {
+            Some(v) => v,
+            None => return,
+        };
+        auto_fix_graph_definition(&mut graph);
+        let mut tabs_guard = tabs_for_confirm.lock().unwrap();
+        let active_index = *active_tab_for_confirm.lock().unwrap();
+        if let Some(tab) = tabs_guard.get_mut(active_index) {
+            tab.inline_inputs = build_inline_inputs_from_graph(&graph);
+            tab.hyperparameter_values = load_hyperparameter_values(&selected_path);
+            tab.selection.clear();
+            tab.file_path = Some(selected_path.clone());
+            tab.title = selected_path
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| selected_path.display().to_string());
+            tab.is_dirty = true; // mark dirty since we fixed but haven't saved
+            tab.graph = graph;
+        }
+        if let Some(ui) = ui_handle_confirm.upgrade() {
+            refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+        }
+    });
+
+    // ── Validation Fix: cancel ──
+    let pending_open_for_cancel = Arc::clone(&pending_open_graph);
+    let ui_handle_cancel = ui.as_weak();
+    ui.on_validation_fix_cancel(move || {
+        pending_open_for_cancel.lock().unwrap().take();
+        if let Some(ui) = ui_handle_cancel.upgrade() {
+            ui.set_show_validation_fix_dialog(false);
         }
     });
 

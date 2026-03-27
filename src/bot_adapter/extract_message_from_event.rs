@@ -6,36 +6,6 @@ use crate::llm::{OpenAIMessage, SystemMessage};
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 
-/// Build system message based on bot profile and event context
-pub fn build_system_message(bot_adapter: &BotAdapter, event: &MessageEvent, persona: &str) -> OpenAIMessage {
-    let bot_profile = bot_adapter.get_bot_profile();
-
-    if let Some(profile) = bot_profile {
-        if event.is_group_message {
-            SystemMessage(format!(
-                "你是\"{}\"，QQ号是\"{}\"。群\"{}\"里的一个叫\"{}\"(QQ号: \"{}\")的人给你发送了一条消息。你的性格是: {}, 你需要根据消息内容决定做出反应或者无反应，其中你做出的反应需要委派给相应的Agent智能体(通过function tools)来完成",
-                profile.nickname,
-                profile.qq_id,
-                event.group_name.clone().unwrap_or_default(),
-                if !event.sender.card.is_empty() { event.sender.card.clone() } else { event.sender.nickname.clone() },
-                event.sender.user_id,
-                persona
-            ))
-        } else {
-            SystemMessage(format!(
-                "你是\"{}\"，QQ号是\"{}\"。你的好友\"{}\"(QQ号: \"{}\")给你发送了一条消息。你的性格是: {}, 你需要根据消息内容决定做出反应或者无反应，其中你做出的反应需要委派给相应的Agent智能体(通过function tools)来完成",
-                profile.nickname, profile.qq_id, event.sender.nickname, event.sender.user_id, persona
-            ))
-        }
-    } else {
-        SystemMessage(format!(
-            "你是\"紫幻\", QQ号是\"{}\"。你的性格是: {}, 你需要根据消息内容决定做出反应或者无反应，其中你做出的反应需要委派给相应的Agent智能体(通过function tools)来完成", 
-            bot_adapter.get_bot_id(),
-            persona
-        ))
-    }
-}
-
 /// Node that converts a MessageEvent to an LLM prompt message list
 /// 
 /// Inputs:
@@ -44,7 +14,7 @@ pub fn build_system_message(bot_adapter: &BotAdapter, event: &MessageEvent, pers
 ///   - persona: Optional persona/character description (default: "默认助手")
 /// 
 /// Outputs:
-///   - messages: OpenAIMessage 列表，包含 system message 和 user message
+///   - messages: Vec<OpenAIMessage>: One user message
 pub struct ExtractMessageFromEventNode {
     id: String,
     name: String,
@@ -74,8 +44,7 @@ impl Node for ExtractMessageFromEventNode {
 
     node_input![
         port! { name = "message_event", ty = MessageEvent, desc = "MessageEvent containing message data" },
-        port! { name = "bot_adapter", ty = BotAdapterRef, desc = "BotAdapter reference for context-aware system message", required = true },
-        port! { name = "persona", ty = String, desc = "Optional persona/character description (default: 默认助手)", optional },
+        port! { name = "bot_adapter", ty = BotAdapterRef, desc = "BotAdapter reference for context-aware system message", required = true }
     ];
 
     node_output![
@@ -102,20 +71,8 @@ impl Node for ExtractMessageFromEventNode {
                 })
                 .ok_or("bot_adapter input is required")?;
 
-            // Get persona from input, use default if not provided
-            let persona = inputs.get("persona")
-                .and_then(|v| {
-                    if let DataValue::String(s) = v {
-                        if s.is_empty() { None } else { Some(s.as_str()) }
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or("默认助手");
-
             // Lock adapter and extract all needed information at the beginning
             let adapter = bot_adapter_ref.blocking_lock();
-            let system_msg = build_system_message(&adapter, event, persona);
             let bot_id = adapter.get_bot_id();
             
             let msg_prop = MessageProp::from_messages(&event.message_list, Some(bot_id));
@@ -137,8 +94,7 @@ impl Node for ExtractMessageFromEventNode {
 
             let user_msg = OpenAIMessage::user(user_text);
 
-            // Combine system and user messages
-            let messages = vec![system_msg, user_msg];
+            let messages = vec![user_msg];
             outputs.insert("messages".to_string(), DataValue::Vec(
                 Box::new(crate::node::DataType::OpenAIMessage),
                 messages.into_iter().map(DataValue::OpenAIMessage).collect(),

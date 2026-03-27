@@ -1,7 +1,113 @@
 import { HorizontalBox, VerticalBox, ScrollView, LineEdit, CheckBox, ComboBox } from "std-widgets.slint";
 import { AppTheme } from "theme.slint";
-import { NodeTypeVm, PortHelpVm, HyperParameterVm, LogEntryVm, ToolDefinitionVm } from "types.slint";
+import { NodeTypeVm, PortHelpVm, HyperParameterVm, LogEntryVm, ToolDefinitionVm, ValidationIssueVm } from "types.slint";
 import { CjkButton, CjkDeleteButton, CjkText } from "components/buttons.slint";
+
+export component ValidationFixDialog inherits Rectangle {
+    in property <[ValidationIssueVm]> issues;
+    callback confirm();
+    callback cancel();
+
+    background: AppTheme.overlay-mask;
+
+    TouchArea {
+        clicked => { root.cancel(); }
+    }
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 560px;
+        height: 460px;
+        background: AppTheme.node-bg;
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: AppTheme.border;
+
+        TouchArea {}
+
+        VerticalLayout {
+            padding: 20px;
+            spacing: 12px;
+
+            CjkText {
+                text: "节点图存在兼容性问题";
+                font-size: 16px;
+                color: AppTheme.text-primary;
+                font-weight: 700;
+                horizontal-alignment: left;
+            }
+
+            CjkText {
+                text: "检测到以下节点定义与当前程序不符，是否自动修复？\n修复仅在内存中生效，不会保存文件。";
+                font-size: 12px;
+                color: AppTheme.text-secondary;
+                wrap: word-wrap;
+                horizontal-alignment: left;
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
+                background: AppTheme.surface;
+                border-radius: 4px;
+                border-width: 1px;
+                border-color: AppTheme.border;
+
+                ScrollView {
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 4px;
+
+                        for issue in root.issues: HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+
+                            Rectangle {
+                                width: 48px;
+                                height: 20px;
+                                border-radius: 3px;
+                                background: issue.severity == "error" ? AppTheme.error-icon-bg : #b07800;
+
+                                CjkText {
+                                    text: issue.severity == "error" ? "错误" : "警告";
+                                    font-size: 11px;
+                                    color: AppTheme.text-on-primary;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: 100%;
+                                    height: 100%;
+                                }
+                            }
+
+                            CjkText {
+                                text: issue.message;
+                                font-size: 12px;
+                                color: AppTheme.text-primary;
+                                wrap: word-wrap;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+
+            HorizontalBox {
+                alignment: center;
+                spacing: 12px;
+
+                CjkButton {
+                    text: "自动修复并打开";
+                    clicked => { root.confirm(); }
+                }
+
+                CjkButton {
+                    text: "取消";
+                    clicked => { root.cancel(); }
+                }
+            }
+        }
+    }
+}
 
 export component ErrorDialog inherits Rectangle {
     in property <string> error_message;
