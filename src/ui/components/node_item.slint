@@ -48,6 +48,7 @@ export component NodeItem inherits Rectangle {
     callback port_right_clicked(string, string);
     callback edit_tools_clicked(string);
     callback edit_format_string_clicked(string);
+    callback edit_json_extract_clicked(string);
 
     property <float> offset-x: 0;
     property <float> offset-y: 0;
@@ -101,6 +102,7 @@ export component NodeItem inherits Rectangle {
     property <float> list-node-port-row-y: grid_size * 1.1;
     property <bool> has-tools-editor: root.node_type == "brain";
     property <bool> has-format-string-editor: root.node_type == "format_string";
+    property <bool> has-json-extract-editor: root.node_type == "json_extract";
 
     x: (x_pos + offset-x) * 1px;
     y: (y_pos + offset-y) * 1px;
@@ -790,7 +792,9 @@ export component NodeItem inherits Rectangle {
         border-radius: (grid_size * 0.3) * 1px;
         visible: !root.is-list-data-node &&
                  !(root.node_type == "message_event_type_filter" && port.name == "filter_type") &&
-                 !(root.node_type == "format_string" && port.name == "template");
+                 !((root.node_type == "string_to_openai_message" || root.node_type == "as_system_openai_message") && port.name == "role") &&
+                 !(root.node_type == "format_string" && port.name == "template") &&
+                 !(root.node_type == "json_extract" && port.name == "fields_config");
         background: (port.is_connected || port.has_value) ? AppTheme.primary-muted : (port.is_required ? AppTheme.danger-bg : AppTheme.node-port-bg);
         border-width: 1px;
         border-color: (port.is_connected || port.has_value) ? AppTheme.primary : (port.is_required ? AppTheme.danger : AppTheme.node-port-border);
@@ -813,7 +817,9 @@ export component NodeItem inherits Rectangle {
         height: (grid_size) * 1px;
         visible: !root.is-list-data-node &&
                  !(root.node_type == "message_event_type_filter" && port.name == "filter_type") &&
-                 !(root.node_type == "format_string" && port.name == "template");
+                 !((root.node_type == "string_to_openai_message" || root.node_type == "as_system_openai_message") && port.name == "role") &&
+                 !(root.node_type == "format_string" && port.name == "template") &&
+                 !(root.node_type == "json_extract" && port.name == "fields_config");
 
         HorizontalLayout {
             alignment: start;
@@ -934,6 +940,39 @@ export component NodeItem inherits Rectangle {
         }
     }
 
+    if root.node_type == "string_to_openai_message" || root.node_type == "as_system_openai_message": Rectangle {
+        x: (grid_size) * 1px;
+        y: (grid_size * (header_rows + 1)) * 1px;
+        width: root.width - (grid_size * 2.5) * 1px;
+        height: (grid_size) * 1px;
+
+        HorizontalLayout {
+            alignment: start;
+            spacing: 5px;
+
+            CjkText {
+                text: "role";
+                color: AppTheme.text-secondary;
+                font-size: grid_size * 0.5 * 1px;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 0;
+            }
+
+            ComboBox {
+                width: min(parent.width * 0.65, 140px);
+                height: (grid_size * 0.85) * 1px;
+                model: ["system", "user", "assistant", "tool"];
+                current-index: root.message_event_filter_type == "user" ? 1 :
+                               root.message_event_filter_type == "assistant" ? 2 :
+                               root.message_event_filter_type == "tool" ? 3 : 0;
+                selected(value) => {
+                    root.inline_port_text_changed(root.node_id, "role", value);
+                }
+            }
+        }
+    }
+
     for port[i] in output_ports: Rectangle {
         x: root.width - (grid_size * 0.8) * 1px;
         y: ((root.is-list-data-node ? (root.list-node-port-row-y + i * grid_size) : (grid_size * header_rows + i * grid_size)) + grid_size * 0.2) * 1px;
@@ -1005,6 +1044,30 @@ export component NodeItem inherits Rectangle {
 
         CjkText {
             text: "编辑格式化文本";
+            color: AppTheme.text-primary;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            font-size: (grid_size * 0.48) * 1px;
+            font-weight: 700;
+        }
+    }
+
+    if root.has-json-extract-editor: Rectangle {
+        x: (root.width - self.width) / 2;
+        y: root.height - self.height - (grid_size * 0.45) * 1px;
+        width: max((grid_size * 5.0) * 1px, root.width * 0.55);
+        height: (grid_size * 0.9) * 1px;
+        background: AppTheme.primary-muted;
+        border-radius: 5px;
+        border-width: 1px;
+        border-color: AppTheme.primary;
+
+        TouchArea {
+            clicked => { root.edit_json_extract_clicked(root.node_id); }
+        }
+
+        CjkText {
+            text: "编辑提取字段";
             color: AppTheme.text-primary;
             horizontal-alignment: center;
             vertical-alignment: center;

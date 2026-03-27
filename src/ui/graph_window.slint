@@ -1,12 +1,12 @@
 import { VerticalBox } from "std-widgets.slint";
 import { AppTheme } from "theme.slint";
-import { EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm, HyperParameterVm, LogEntryVm, NodeTypeVm, NodeVm, ToolDefinitionVm, ValidationIssueVm } from "types.slint";
+import { EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm, HyperParameterVm, JsonExtractFieldVm, LogEntryVm, NodeTypeVm, NodeVm, ToolDefinitionVm, ValidationIssueVm } from "types.slint";
 import { CjkButton, CjkDeleteButton, CjkRunButton, CjkText } from "components/buttons.slint";
 import { MenuBarItem, MenuItemRow } from "components/menubar.slint";
 import { TabItem } from "components/tabs.slint";
 import { GraphCanvas } from "components/graph_canvas.slint";
 import { LogOverlay } from "components/log_overlay.slint";
-import { ErrorDialog, FormatStringEditorDialog, HyperParameterManagerDialog, LogHistoryDialog, NodeHelpDialog, NodeSelector, OverwriteConfirmDialog, PortBindHyperparamDialog, RunningConfirmDialog, SaveConfirmDialog, ToolEditorDialog, ValidationFixDialog } from "dialogs.slint";
+import { ErrorDialog, FormatStringEditorDialog, HyperParameterManagerDialog, JsonExtractEditorDialog, LogHistoryDialog, NodeHelpDialog, NodeSelector, OverwriteConfirmDialog, PortBindHyperparamDialog, RunningConfirmDialog, SaveConfirmDialog, ToolEditorDialog, ValidationFixDialog } from "dialogs.slint";
 
 export component NodeGraphWindow inherits Window {
     in property <[NodeVm]> nodes;
@@ -123,6 +123,7 @@ export component NodeGraphWindow inherits Window {
     callback node_resize_finished(string, float, float);
     callback edit_tools_clicked(string);
     callback edit_format_string_clicked(string);
+    callback edit_json_extract_clicked(string);
 
     // Hyperparameter system
     in property <[HyperParameterVm]> hyperparameters;
@@ -160,6 +161,20 @@ export component NodeGraphWindow inherits Window {
     callback tool_editor_delete_param(int, int);
     callback tool_editor_set_param_name(int, int, string);
     callback tool_editor_set_param_type(int, int, string);
+
+    // JSON extract editor
+    in property <bool> show_json_extract_editor_dialog: false;
+    in property <string> json_extract_editor_node_id: "";
+    in property <int> json_extract_editor_selected_index: -1;
+    in property <[JsonExtractFieldVm]> json_extract_editor_items;
+    callback open_json_extract_editor(string);
+    callback close_json_extract_editor();
+    callback save_json_extract_editor();
+    callback json_extract_editor_select(int);
+    callback json_extract_editor_add_field();
+    callback json_extract_editor_delete_field(int);
+    callback json_extract_editor_set_field_name(int, string);
+    callback json_extract_editor_set_field_type(int, string);
 
     // Format string editor
     in property <bool> show_format_string_editor: false;
@@ -434,6 +449,10 @@ export component NodeGraphWindow inherits Window {
                 edit_format_string_clicked(node_id) => {
                     root.edit_format_string_clicked(node_id);
                 }
+
+                edit_json_extract_clicked(node_id) => {
+                    root.edit_json_extract_clicked(node_id);
+                }
             }
 
             // Log overlay — bottom-left of canvas
@@ -677,6 +696,18 @@ export component NodeGraphWindow inherits Window {
         autocomplete_accept() => { root.format_string_autocomplete_accept(); }
         save => { root.save_format_string_editor(); }
         cancel => { root.close_format_string_editor(); }
+    }
+
+    if root.show_json_extract_editor_dialog: JsonExtractEditorDialog {
+        fields: root.json_extract_editor_items;
+        selected_field_index: root.json_extract_editor_selected_index;
+        select_field(index) => { root.json_extract_editor_select(index); }
+        add_field() => { root.json_extract_editor_add_field(); }
+        delete_field(index) => { root.json_extract_editor_delete_field(index); }
+        set_field_name(index, value) => { root.json_extract_editor_set_field_name(index, value); }
+        set_field_type(index, value) => { root.json_extract_editor_set_field_type(index, value); }
+        save => { root.save_json_extract_editor(); }
+        close => { root.close_json_extract_editor(); }
     }
 
     if root.show_log_history: LogHistoryDialog {

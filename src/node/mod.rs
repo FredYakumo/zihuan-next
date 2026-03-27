@@ -125,6 +125,14 @@ pub trait Node: Send + Sync {
 
     fn output_ports(&self) -> Vec<Port>;
 
+    fn has_dynamic_input_ports(&self) -> bool {
+        false
+    }
+
+    fn has_dynamic_output_ports(&self) -> bool {
+        false
+    }
+
     /// Execute the node's main logic
     /// inputs: input port name -> data value
     /// returns: output port name -> data value
@@ -1801,14 +1809,16 @@ mod tests {
     fn switch_forwards_any_typed_values_in_edge_mode() {
         let mut graph = NodeGraph::new();
         graph.add_node(Box::new(StaticOutputNode::new("toggle", "enabled", DataValue::Boolean(true)))).unwrap();
-        graph.add_node(Box::new(StaticOutputNode::new("source", "value", DataValue::MessageProp(crate::bot_adapter::models::message::MessageProp {
-            content: Some("hello".to_string()),
-            ref_content: None,
-            is_at_me: false,
-            at_target_list: Vec::new(),
-        })))).unwrap();
+        graph.add_node(Box::new(StaticOutputNode::new(
+            "source",
+            "value",
+            DataValue::Json(serde_json::json!({
+                "content": "hello",
+                "is_at_me": false,
+            })),
+        ))).unwrap();
         graph.add_node(Box::new(SwitchNode::new("gate", "Gate"))).unwrap();
-        graph.add_node(Box::new(SeenSinkNode::new("sink", "value", DataType::MessageProp))).unwrap();
+        graph.add_node(Box::new(SeenSinkNode::new("sink", "value", DataType::Json))).unwrap();
         graph.set_edges(vec![
             EdgeDefinition {
                 from_node_id: "toggle".to_string(),

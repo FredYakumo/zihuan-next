@@ -42,6 +42,10 @@ pub struct NodeDefinition {
     pub node_type: String,
     pub input_ports: Vec<Port>,
     pub output_ports: Vec<Port>,
+    #[serde(default)]
+    pub dynamic_input_ports: bool,
+    #[serde(default)]
+    pub dynamic_output_ports: bool,
     pub position: Option<GraphPosition>,
     pub size: Option<GraphSize>,
     #[serde(default)]
@@ -95,14 +99,21 @@ pub fn load_graph_definition_from_json(path: impl AsRef<Path>) -> Result<NodeGra
 pub fn refresh_port_types(graph: &mut NodeGraphDefinition) {
     use crate::node::registry::NODE_REGISTRY;
     for node in &mut graph.nodes {
-        if let Some((canonical_inputs, canonical_outputs)) =
-            NODE_REGISTRY.get_node_ports(&node.node_type)
-        {
-            for port in &mut node.input_ports {
-                if let Some(canonical) = canonical_inputs.iter().find(|p| p.name == port.name) {
-                    port.data_type = canonical.data_type.clone();
+            if let Some((canonical_inputs, canonical_outputs)) =
+                NODE_REGISTRY.get_node_ports(&node.node_type)
+            {
+                if let Some((dynamic_inputs, dynamic_outputs)) =
+                    NODE_REGISTRY.get_node_dynamic_port_flags(&node.node_type)
+                {
+                    node.dynamic_input_ports = dynamic_inputs;
+                    node.dynamic_output_ports = dynamic_outputs;
                 }
-            }
+
+                for port in &mut node.input_ports {
+                    if let Some(canonical) = canonical_inputs.iter().find(|p| p.name == port.name) {
+                        port.data_type = canonical.data_type.clone();
+                    }
+                }
             // Silently add optional input ports that exist in the registry but not in the JSON
             for canon in &canonical_inputs {
                 if !canon.required && !node.input_ports.iter().any(|p| p.name == canon.name) {
@@ -146,52 +157,6 @@ impl ValidationIssue {
     }
 }
 
-fn extract_format_string_variables(template: &str) -> Vec<String> {
-    use std::collections::HashSet;
-
-    let mut vars = Vec::new();
-    let mut seen = HashSet::new();
-    let mut pos = 0;
-    while let Some(rel) = template[pos..].find("${") {
-        let start = pos + rel + 2;
-        if let Some(end_rel) = template[start..].find('}') {
-            let name = template[start..start + end_rel].trim().to_string();
-            if !name.is_empty() && seen.insert(name.clone()) {
-                vars.push(name);
-            }
-            pos = start + end_rel + 1;
-        } else {
-            break;
-        }
-    }
-    vars
-}
-
-fn expand_dynamic_ports_for_node(
-    node: &NodeDefinition,
-    mut canonical_inputs: Vec<Port>,
-    canonical_outputs: Vec<Port>,
-) -> (Vec<Port>, Vec<Port>) {
-    if node.node_type == "format_string" {
-        let template = node
-            .inline_values
-            .get("template")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
-        for var in extract_format_string_variables(template) {
-            if !canonical_inputs.iter().any(|p| p.name == var) {
-                canonical_inputs.push(
-                    Port::new(var.clone(), DataType::String)
-                        .with_description(format!("变量 {var}")),
-                );
-            }
-        }
-    }
-
-    (canonical_inputs, canonical_outputs)
-}
-
 /// Validate a loaded `NodeGraphDefinition` against the live node registry.
 /// Returns a (possibly empty) list of issues. Does NOT mutate the definition.
 pub fn validate_graph_definition(graph: &NodeGraphDefinition) -> Vec<ValidationIssue> {
@@ -211,57 +176,64 @@ pub fn validate_graph_definition(graph: &NodeGraphDefinition) -> Vec<ValidationI
                 )));
             }
             Some((canonical_inputs, canonical_outputs)) => {
-                let (canonical_inputs, canonical_outputs) =
-                    expand_dynamic_ports_for_node(node, canonical_inputs, canonical_outputs);
-
                 // Check for REQUIRED ports in registry but missing from JSON (inputs)
-                for canon_port in &canonical_inputs {
-                    if canon_port.required && !node.input_ports.iter().any(|p| p.name == canon_port.name) {
-                        issues.push(ValidationIssue::error(format!(
-                            "节点 \"{}\" 缺少必要输入端口 \"{}\"",
-                            node.name, canon_port.name
-                        )));
+                if !node.dynamic_input_ports {
+                    for canon_port in &canonical_inputs {
+                        if canon_port.required && !node.input_ports.iter().any(|p| p.name == canon_port.name) {
+                            issues.push(ValidationIssue::error(format!(
+                                "节点 \"{}\" 缺少必要输入端口 \"{}\"",
+                                node.name, canon_port.name
+                            )));
+                        }
                     }
                 }
                 // Check for ports in JSON but absent from registry (inputs)
-                for port in &node.input_ports {
-                    if !canonical_inputs.iter().any(|p| p.name == port.name) {
-                        issues.push(ValidationIssue::warning(format!(
-                            "节点 \"{}\" 存在已删除的输入端口 \"{}\"",
-                            node.name, port.name
-                        )));
+                if !node.dynamic_input_ports {
+                    for port in &node.input_ports {
+                        if !canonical_inputs.iter().any(|p| p.name == port.name) {
+                            issues.push(ValidationIssue::warning(format!(
+                                "节点 \"{}\" 存在已删除的输入端口 \"{}\"",
+                                node.name, port.name
+                            )));
+                        }
                     }
                 }
                 // Check for REQUIRED ports in registry but missing from JSON (outputs)
-                for canon_port in &canonical_outputs {
-                    if canon_port.required && !node.output_ports.iter().any(|p| p.name == canon_port.name) {
-                        issues.push(ValidationIssue::error(format!(
-                            "节点 \"{}\" 缺少必要输出端口 \"{}\"",
-                            node.name, canon_port.name
-                        )));
+                if !node.dynamic_output_ports {
+                    for canon_port in &canonical_outputs {
+                        if canon_port.required && !node.output_ports.iter().any(|p| p.name == canon_port.name) {
+                            issues.push(ValidationIssue::error(format!(
+                                "节点 \"{}\" 缺少必要输出端口 \"{}\"",
+                                node.name, canon_port.name
+                            )));
+                        }
                     }
                 }
                 // Check for ports in JSON but absent from registry (outputs)
-                for port in &node.output_ports {
-                    if !canonical_outputs.iter().any(|p| p.name == port.name) {
-                        issues.push(ValidationIssue::warning(format!(
-                            "节点 \"{}\" 存在已删除的输出端口 \"{}\"",
-                            node.name, port.name
-                        )));
+                if !node.dynamic_output_ports {
+                    for port in &node.output_ports {
+                        if !canonical_outputs.iter().any(|p| p.name == port.name) {
+                            issues.push(ValidationIssue::warning(format!(
+                                "节点 \"{}\" 存在已删除的输出端口 \"{}\"",
+                                node.name, port.name
+                            )));
+                        }
                     }
                 }
                 // Check inline_values keys against all known port names
-                let all_port_names: Vec<&str> = canonical_inputs
-                    .iter()
-                    .chain(canonical_outputs.iter())
-                    .map(|p| p.name.as_str())
-                    .collect();
-                for key in node.inline_values.keys() {
-                    if !all_port_names.contains(&key.as_str()) {
-                        issues.push(ValidationIssue::warning(format!(
-                            "节点 \"{}\" 的内联值 \"{}\" 对应的端口不存在",
-                            node.name, key
-                        )));
+                if !node.dynamic_input_ports {
+                    let all_port_names: Vec<&str> = canonical_inputs
+                        .iter()
+                        .chain(canonical_outputs.iter())
+                        .map(|p| p.name.as_str())
+                        .collect();
+                    for key in node.inline_values.keys() {
+                        if !all_port_names.contains(&key.as_str()) {
+                            issues.push(ValidationIssue::warning(format!(
+                                "节点 \"{}\" 的内联值 \"{}\" 对应的端口不存在",
+                                node.name, key
+                            )));
+                        }
                     }
                 }
             }
@@ -319,49 +291,58 @@ pub fn auto_fix_graph_definition(graph: &mut NodeGraphDefinition) {
                 node.has_error = true;
             }
             Some((canonical_inputs, canonical_outputs)) => {
-                let (canonical_inputs, canonical_outputs) =
-                    expand_dynamic_ports_for_node(node, canonical_inputs, canonical_outputs);
-
                 node.has_error = false;
+                if let Some((dynamic_inputs, dynamic_outputs)) =
+                    NODE_REGISTRY.get_node_dynamic_port_flags(&node.node_type)
+                {
+                    node.dynamic_input_ports = dynamic_inputs;
+                    node.dynamic_output_ports = dynamic_outputs;
+                }
 
                 // Remove input ports not present in registry
-                let before: Vec<String> = node.input_ports.iter().map(|p| p.name.clone()).collect();
-                node.input_ports.retain(|p| canonical_inputs.iter().any(|c| c.name == p.name));
-                for removed in &before {
-                    if !node.input_ports.iter().any(|p| &p.name == removed) {
-                        removed_input_ports.push((node.id.clone(), removed.clone()));
+                if !node.dynamic_input_ports {
+                    let before: Vec<String> = node.input_ports.iter().map(|p| p.name.clone()).collect();
+                    node.input_ports.retain(|p| canonical_inputs.iter().any(|c| c.name == p.name));
+                    for removed in &before {
+                        if !node.input_ports.iter().any(|p| &p.name == removed) {
+                            removed_input_ports.push((node.id.clone(), removed.clone()));
+                        }
                     }
-                }
-                // Add input ports missing from JSON
-                for canon in &canonical_inputs {
-                    if !node.input_ports.iter().any(|p| p.name == canon.name) {
-                        node.input_ports.push(canon.clone());
+                    // Add input ports missing from JSON
+                    for canon in &canonical_inputs {
+                        if !node.input_ports.iter().any(|p| p.name == canon.name) {
+                            node.input_ports.push(canon.clone());
+                        }
                     }
                 }
 
                 // Remove output ports not present in registry
-                let before: Vec<String> =
-                    node.output_ports.iter().map(|p| p.name.clone()).collect();
-                node.output_ports.retain(|p| canonical_outputs.iter().any(|c| c.name == p.name));
-                for removed in &before {
-                    if !node.output_ports.iter().any(|p| &p.name == removed) {
-                        removed_output_ports.push((node.id.clone(), removed.clone()));
+                if !node.dynamic_output_ports {
+                    let before: Vec<String> =
+                        node.output_ports.iter().map(|p| p.name.clone()).collect();
+                    node.output_ports.retain(|p| canonical_outputs.iter().any(|c| c.name == p.name));
+                    for removed in &before {
+                        if !node.output_ports.iter().any(|p| &p.name == removed) {
+                            removed_output_ports.push((node.id.clone(), removed.clone()));
+                        }
                     }
-                }
-                // Add output ports missing from JSON
-                for canon in &canonical_outputs {
-                    if !node.output_ports.iter().any(|p| p.name == canon.name) {
-                        node.output_ports.push(canon.clone());
+                    // Add output ports missing from JSON
+                    for canon in &canonical_outputs {
+                        if !node.output_ports.iter().any(|p| p.name == canon.name) {
+                            node.output_ports.push(canon.clone());
+                        }
                     }
                 }
 
                 // Remove orphan inline_values (no matching port in registry)
-                let all_canonical_names: Vec<&str> = canonical_inputs
-                    .iter()
-                    .chain(canonical_outputs.iter())
-                    .map(|p| p.name.as_str())
-                    .collect();
-                node.inline_values.retain(|k, _| all_canonical_names.contains(&k.as_str()));
+                if !node.dynamic_input_ports {
+                    let all_canonical_names: Vec<&str> = canonical_inputs
+                        .iter()
+                        .chain(canonical_outputs.iter())
+                        .map(|p| p.name.as_str())
+                        .collect();
+                    node.inline_values.retain(|k, _| all_canonical_names.contains(&k.as_str()));
+                }
             }
         }
     }
@@ -677,6 +658,8 @@ fn node_to_definition(id: &str, node: &dyn Node) -> NodeDefinition {
         node_type: format!("{:?}", node.node_type()),
         input_ports: node.input_ports(),
         output_ports: node.output_ports(),
+        dynamic_input_ports: node.has_dynamic_input_ports(),
+        dynamic_output_ports: node.has_dynamic_output_ports(),
         position: None,
         size: None,
         inline_values: HashMap::new(),
@@ -700,6 +683,10 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn ensure_registry_initialized() {
+        let _ = crate::node::registry::init_node_registry();
+    }
+
     fn format_string_node(input_ports: Vec<Port>) -> NodeDefinition {
         NodeDefinition {
             id: "node_1".to_string(),
@@ -708,6 +695,8 @@ mod tests {
             node_type: "format_string".to_string(),
             input_ports,
             output_ports: vec![Port::new("output", DataType::String)],
+            dynamic_input_ports: true,
+            dynamic_output_ports: false,
             position: None,
             size: None,
             inline_values: HashMap::from([(
@@ -721,6 +710,7 @@ mod tests {
 
     #[test]
     fn validate_format_string_dynamic_ports_without_false_deleted_warning() {
+        ensure_registry_initialized();
         let graph = NodeGraphDefinition {
             nodes: vec![format_string_node(vec![
                 Port::new("角色名称", DataType::String),
@@ -745,6 +735,7 @@ mod tests {
 
     #[test]
     fn auto_fix_keeps_format_string_ports_from_template() {
+        ensure_registry_initialized();
         let mut graph = NodeGraphDefinition {
             nodes: vec![format_string_node(vec![
                 Port::new("角色名称", DataType::String),
@@ -762,5 +753,84 @@ mod tests {
         assert!(fixed.input_ports.iter().any(|p| p.name == "角色名称"));
         assert!(fixed.input_ports.iter().any(|p| p.name == "sender_id"));
         assert!(fixed.input_ports.iter().any(|p| p.name == "time"));
+    }
+
+    fn brain_node(output_ports: Vec<Port>) -> NodeDefinition {
+        NodeDefinition {
+            id: "node_1".to_string(),
+            name: "Brain".to_string(),
+            description: Some("使用 LLModel + system prompt + user message 触发带可编辑 Tools 的函数调用推理".to_string()),
+            node_type: "brain".to_string(),
+            input_ports: vec![
+                Port::new("llm_model", DataType::LLModel),
+                Port::new("messages", DataType::Vec(Box::new(DataType::OpenAIMessage))),
+                Port::new("tools_config", DataType::Json).optional(),
+            ],
+            output_ports,
+            dynamic_input_ports: false,
+            dynamic_output_ports: true,
+            position: None,
+            size: None,
+            inline_values: HashMap::from([(
+                "tools_config".to_string(),
+                json!([
+                    {
+                        "name": "search",
+                        "description": "Search docs",
+                        "parameters": [
+                            { "name": "query", "data_type": "String" }
+                        ]
+                    }
+                ]),
+            )]),
+            port_bindings: HashMap::new(),
+            has_error: false,
+        }
+    }
+
+    #[test]
+    fn validate_brain_dynamic_outputs_without_false_issues() {
+        ensure_registry_initialized();
+        let graph = NodeGraphDefinition {
+            nodes: vec![brain_node(vec![
+                Port::new("assistant_message", DataType::OpenAIMessage),
+                Port::new("response", DataType::String),
+                Port::new("search", DataType::Json),
+            ])],
+            edges: vec![],
+            hyperparameters: vec![],
+            execution_results: HashMap::new(),
+        };
+
+        let issues = validate_graph_definition(&graph);
+        assert!(
+            issues.is_empty(),
+            "unexpected compatibility issues: {:?}",
+            issues
+                .iter()
+                .map(|i| i.message.clone())
+                .collect::<Vec<String>>()
+        );
+    }
+
+    #[test]
+    fn auto_fix_skips_brain_dynamic_outputs() {
+        ensure_registry_initialized();
+        let mut graph = NodeGraphDefinition {
+            nodes: vec![brain_node(vec![
+                Port::new("response", DataType::String),
+                Port::new("search", DataType::Json),
+            ])],
+            edges: vec![],
+            hyperparameters: vec![],
+            execution_results: HashMap::new(),
+        };
+
+        auto_fix_graph_definition(&mut graph);
+
+        let fixed = &graph.nodes[0];
+        assert!(fixed.output_ports.iter().any(|p| p.name == "response"));
+        assert!(fixed.output_ports.iter().any(|p| p.name == "search"));
+        assert!(!fixed.output_ports.iter().any(|p| p.name == "assistant_message"));
     }
 }

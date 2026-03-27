@@ -1,124 +1,38 @@
 # Node Development Guide
 
-> **Prerequisites:** Familiarity with Rust traits, async/sync patterns, and the [Node Graph JSON Specification](./node-graph-json.md).
+> **Prerequisites:** Read [node-system.md](../dev-guides/node-system.md) first for a full picture of how the system works.
 
-This guide covers the full lifecycle of creating, registering, and distributing custom node types in the zihuan-next node graph system.
-
----
-
-## Table of Contents
-
-- [Node Development Guide](#node-development-guide)
-  - [Table of Contents](#table-of-contents)
-  - [Core Concepts](#core-concepts)
-    - [Node Types](#node-types)
-    - [Port-based Dataflow](#port-based-dataflow)
-    - [Execution Flow](#execution-flow)
-  - [Node Trait Reference](#node-trait-reference)
-  - [Creating a Simple Node](#creating-a-simple-node)
-    - [1. Define the struct](#1-define-the-struct)
-    - [2. Implement the `Node` trait](#2-implement-the-node-trait)
-  - [Creating an EventProducer Node](#creating-an-eventproducer-node)
-  - [Registering Your Node](#registering-your-node)
-    - [Using the `register_node!` macro](#using-the-register_node-macro)
-    - [Manual registration (for nodes with complex constructors)](#manual-registration-for-nodes-with-complex-constructors)
-  - [Data Types and Validation](#data-types-and-validation)
-    - [Available `DataType` variants](#available-datatype-variants)
-    - [Creating a Port](#creating-a-port)
-    - [Defining ports with macros](#defining-ports-with-macros)
-    - [Type Validation](#type-validation)
-  - [Built-in Node Types](#built-in-node-types)
-  - [Testing Your Node](#testing-your-node)
-    - [Unit test example](#unit-test-example)
-    - [Integration test with NodeGraph](#integration-test-with-nodegraph)
-  - [Source Code References](#source-code-references)
+This guide walks through creating, registering, and testing a node from scratch.
 
 ---
 
-## Core Concepts
+## Table of contents
 
-### Node Types
-
-All nodes implement the `Node` trait (`src/node/mod.rs`). There are two execution models:
-
-| Type | Trait method | Use case |
-|------|-------------|----------|
-| **Simple** | `execute()` | Stateless transform — runs once per input set |
-| **EventProducer** | `on_start()`, `on_update()`, `on_cleanup()` | Stateful event source — runs a lifecycle loop |
-
-### Port-based Dataflow
-
-- **Ports** are typed input/output channels (e.g., `String`, `MessageEvent`).
-- **Edges** connect an output port to an input port with matching types.
-- The engine validates types, detects cycles, topologically sorts nodes, and executes them in dependency order.
-
-### Execution Flow
-
-```
-Simple node:     NodeGraph::execute() → node.execute(inputs) → outputs
-EventProducer:   on_start(inputs) → loop { on_update() } → on_cleanup()
-```
-
-EventProducers can feed simple nodes or other EventProducers downstream.
+- [Creating a Simple node](#creating-a-simple-node)
+- [Creating an EventProducer node](#creating-an-eventproducer-node)
+- [Registering your node](#registering-your-node)
+- [Declaring ports with node_input! / node_output!](#declaring-ports-with-node_input--node_output)
+- [Data types reference](#data-types-reference)
+- [Validation](#validation)
+- [Testing](#testing)
+- [Checklist](#checklist)
 
 ---
 
-## Node Trait Reference
+## Creating a Simple node
 
-Full trait definition from `src/node/mod.rs`:
+A Simple node runs once per input set and returns outputs. It is stateless.
+
+### 1. Create the file
+
+Put it in the appropriate module. Utility/transform nodes go in `src/node/util/`:
 
 ```rust
-pub trait Node: Send + Sync {
-    /// Node execution model: Simple or EventProducer
-    fn node_type(&self) -> NodeType { NodeType::Simple }
+// src/node/util/uppercase.rs
 
-    /// Unique node ID (set at creation time)
-    fn id(&self) -> &str;
-
-    /// Display name shown in GUI
-    fn name(&self) -> &str;
-
-    /// Optional tooltip/documentation
-    fn description(&self) -> Option<&str> { None }
-
-    /// Define input ports with types and requirements
-    fn input_ports(&self) -> Vec<Port>;
-
-    /// Define output ports with types
-    fn output_ports(&self) -> Vec<Port>;
-
-    /// [Simple nodes] Execute logic and return outputs
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>>;
-
-    /// [EventProducer] Initialize with inputs before loop
-    fn on_start(&mut self, _inputs: HashMap<String, DataValue>) -> Result<()> { Ok(()) }
-
-    /// [EventProducer] Called repeatedly; return Some(outputs) or None to exit
-    fn on_update(&mut self) -> Result<Option<HashMap<String, DataValue>>> { Ok(None) }
-
-    /// [EventProducer] Cleanup after loop exits
-    fn on_cleanup(&mut self) -> Result<()> { Ok(()) }
-
-    // Validation methods (auto-generated, override if needed)
-    fn validate_inputs(&self, inputs: &HashMap<String, DataValue>) -> Result<()> { /* ... */ }
-    fn validate_outputs(&self, outputs: &HashMap<String, DataValue>) -> Result<()> { /* ... */ }
-}
-```
-
----
-
-## Creating a Simple Node
-
-A minimal node that uppercases strings.
-
-### 1. Define the struct
-
-```rust
-// src/node/util_nodes.rs (or your module)
-
-use crate::node::{Node, NodeType, Port, DataType, DataValue};
-use crate::error::Result;
 use std::collections::HashMap;
+use crate::error::{Error, Result};
+use crate::node::{DataType, DataValue, Node, NodeType, Port, node_input, node_output};
 
 pub struct UppercaseNode {
     id: String,
@@ -132,305 +46,333 @@ impl UppercaseNode {
 }
 ```
 
-### 2. Implement the `Node` trait
+### 2. Implement the Node trait
+
+Use `node_input!` and `node_output!` to declare ports (see the [macro reference](#declaring-ports-with-node_input--node_output) for full syntax):
 
 ```rust
 impl Node for UppercaseNode {
-    fn node_type(&self) -> NodeType {
-        NodeType::Simple
-    }
+    fn id(&self) -> &str { &self.id }
+    fn name(&self) -> &str { &self.name }
+    fn description(&self) -> Option<&str> { Some("Converts text to uppercase") }
 
-    fn id(&self) -> &str {
-        &self.id
-    }
+    node_input![
+        port! { name = "text", ty = String, desc = "Input text" },
+    ];
 
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn description(&self) -> Option<&str> {
-        Some("Converts input text to uppercase")
-    }
-
-    fn input_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("text", DataType::String)
-                .with_description("Input text")
-                .with_required(true),
-        ]
-    }
-
-    fn output_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("result", DataType::String)
-                .with_description("Uppercased text"),
-        ]
-    }
+    node_output![
+        port! { name = "result", ty = String, desc = "Uppercased text" },
+    ];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
         let text = match inputs.get("text") {
-            Some(DataValue::String(s)) => s.to_uppercase(),
-            _ => return Err(crate::error::Error::ValidationError("Missing or invalid 'text' input".into())),
+            Some(DataValue::String(s)) => s.clone(),
+            _ => return Err(Error::ValidationError("missing or wrong-type 'text'".into())),
         };
 
-        let mut outputs = HashMap::new();
-        outputs.insert("result".to_string(), DataValue::String(text));
-        Ok(outputs)
+        let mut out = HashMap::new();
+        out.insert("result".to_string(), DataValue::String(text.to_uppercase()));
+        Ok(out)
     }
 }
 ```
 
----
-
-## Creating an EventProducer Node
-
-A node that emits periodic messages (e.g., timer or polling).
+**Required ports are `required = true` by default.** Use `optional` to allow unconnected ports:
 
 ```rust
+node_input![
+    port! { name = "text",   ty = String, desc = "Input text" },
+    port! { name = "suffix", ty = String, desc = "Optional suffix", optional },
+];
+```
+
+### 3. Export from the module
+
+Add to `src/node/util/mod.rs`:
+
+```rust
+mod uppercase;
+pub use uppercase::UppercaseNode;
+```
+
+---
+
+## Creating an EventProducer node
+
+An EventProducer maintains a lifecycle loop and emits outputs on each iteration. Use this for nodes that receive external events (WebSocket, timer, polling).
+
+```rust
+// src/node/util/timer.rs
+
+use std::collections::HashMap;
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::{Duration, Instant};
+use crate::error::Result;
+use crate::node::{DataType, DataValue, Node, NodeType, Port, node_input, node_output};
 
 pub struct TimerNode {
     id: String,
     name: String,
-    interval_secs: u64,
-    max_ticks: u32,
-    tick_count: u32,
+    interval_ms: u64,
+    tick: u64,
     last_tick: Option<Instant>,
+    stop_flag: Arc<AtomicBool>,
 }
 
 impl TimerNode {
     pub fn new(id: String, name: String) -> Self {
         Self {
-            id,
-            name,
-            interval_secs: 5,
-            max_ticks: 10,
-            tick_count: 0,
+            id, name,
+            interval_ms: 1000,
+            tick: 0,
             last_tick: None,
+            stop_flag: Arc::new(AtomicBool::new(false)),
         }
     }
 }
 
 impl Node for TimerNode {
-    fn node_type(&self) -> NodeType {
-        NodeType::EventProducer
-    }
-
     fn id(&self) -> &str { &self.id }
     fn name(&self) -> &str { &self.name }
+    fn node_type(&self) -> NodeType { NodeType::EventProducer }
 
-    fn description(&self) -> Option<&str> {
-        Some("Emits events at fixed intervals")
+    fn set_stop_flag(&mut self, flag: Arc<AtomicBool>) {
+        self.stop_flag = flag;
     }
 
-    fn input_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("interval_secs", DataType::Integer)
-                .with_description("Interval in seconds")
-                .optional(),
-            Port::new("max_ticks", DataType::Integer)
-                .with_description("Max number of ticks")
-                .optional(),
-        ]
-    }
+    node_input![
+        port! { name = "interval_ms", ty = Integer, desc = "Interval in milliseconds (default 1000)", optional },
+    ];
 
-    fn output_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("tick", DataType::Integer)
-                .with_description("Current tick count"),
-        ]
-    }
-
-    fn execute(&mut self, _inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
-        // Not used for EventProducers
-        Ok(HashMap::new())
-    }
+    node_output![
+        port! { name = "tick", ty = Integer, desc = "Tick counter (starts at 1)" },
+    ];
 
     fn on_start(&mut self, inputs: HashMap<String, DataValue>) -> Result<()> {
-        if let Some(DataValue::Integer(i)) = inputs.get("interval_secs") {
-            self.interval_secs = *i as u64;
+        if let Some(DataValue::Integer(ms)) = inputs.get("interval_ms") {
+            self.interval_ms = (*ms).max(1) as u64;
         }
-        if let Some(DataValue::Integer(i)) = inputs.get("max_ticks") {
-            self.max_ticks = *i as u32;
-        }
+        self.tick = 0;
         self.last_tick = Some(Instant::now());
-        self.tick_count = 0;
         Ok(())
     }
 
     fn on_update(&mut self) -> Result<Option<HashMap<String, DataValue>>> {
-        if self.tick_count >= self.max_ticks {
-            return Ok(None); // Signal completion
+        // Check stop flag first
+        if self.stop_flag.load(Ordering::Relaxed) {
+            return Ok(None); // returning None exits the loop
         }
 
+        // Wait for interval
         if let Some(last) = self.last_tick {
-            if last.elapsed() < Duration::from_secs(self.interval_secs) {
-                std::thread::sleep(Duration::from_millis(100));
-                return self.on_update(); // Retry
+            if last.elapsed() < Duration::from_millis(self.interval_ms) {
+                std::thread::sleep(Duration::from_millis(10));
+                return self.on_update();
             }
         }
 
-        self.tick_count += 1;
+        self.tick += 1;
         self.last_tick = Some(Instant::now());
 
-        let mut outputs = HashMap::new();
-        outputs.insert("tick".to_string(), DataValue::Integer(self.tick_count as i64));
-        Ok(Some(outputs))
+        let mut out = HashMap::new();
+        out.insert("tick".to_string(), DataValue::Integer(self.tick as i64));
+        Ok(Some(out))
     }
 
     fn on_cleanup(&mut self) -> Result<()> {
-        log::info!("Timer node {} completed {} ticks", self.id, self.tick_count);
+        log::info!("Timer '{}' completed {} ticks", self.id, self.tick);
         Ok(())
+    }
+
+    // execute() is unused for EventProducers but must compile
+    fn execute(&mut self, _inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+        Ok(HashMap::new())
     }
 }
 ```
 
+**EventProducer contract:**
+- `on_start()` — called once before the loop; read inputs here
+- `on_update()` — called in a loop; return `Ok(Some(outputs))` to emit, `Ok(None)` to exit
+- `on_cleanup()` — called after the loop regardless of how it ended
+- `set_stop_flag()` — must store the flag and check it in `on_update()`
+
 ---
 
-## Registering Your Node
+## Registering your node
 
-All nodes must be registered in `src/node/registry.rs` → `init_node_registry()`.
+All nodes must be registered in `src/node/registry.rs → init_node_registry()`.
 
-### Using the `register_node!` macro
+### Using the macro (preferred)
 
 ```rust
-// In init_node_registry() function:
+// In init_node_registry():
+use crate::node::util::UppercaseNode;
 
 register_node!(
-    "uppercase",           // type_id (used in JSON node_type field)
-    "Uppercase",           // Display name
-    "Utility",             // Category
-    "Converts text to uppercase",  // Description
-    UppercaseNode          // Your struct type
+    "uppercase",          // type_id — used in JSON node_type field; never change after publishing
+    "Uppercase",          // display name shown in the node palette
+    "工具",               // category (see code-conventions.md for category labels)
+    "Converts text to uppercase",
+    UppercaseNode
 );
 ```
 
-### Manual registration (for nodes with complex constructors)
+The macro requires `YourStruct::new(id: String, name: String)` to exist.
+
+### Manual registration (complex constructors)
 
 ```rust
 NODE_REGISTRY.register(
     "timer",
     "Timer",
-    "Event Sources",
-    "Emits periodic events",
-    Arc::new(|id: String, name: String| {
-        Box::new(TimerNode::new(id, name))
-    }),
+    "工具",
+    "Emits events at fixed intervals",
+    Arc::new(|id: String, name: String| Box::new(TimerNode::new(id, name))),
 )?;
 ```
 
 ---
 
-## Data Types and Validation
+## Declaring ports with node_input! / node_output!
 
-### Available `DataType` variants
+`node_input!` and `node_output!` are procedural macros defined in the `node_macros` crate. They generate the `fn input_ports` and `fn output_ports` methods from a compact declarative syntax, and perform duplicate-name checking at compile time.
 
-See `src/node/data_value.rs`:
-
-| Type | Rust variant | Use case |
-|------|-------------|----------|
-| `String` | `DataType::String` | Text data |
-| `Integer` | `DataType::Integer` | `i64` numbers |
-| `Float` | `DataType::Float` | `f64` numbers |
-| `Boolean` | `DataType::Boolean` | `true`/`false` |
-| `Json` | `DataType::Json` | Arbitrary JSON structures |
-| `Binary` | `DataType::Binary` | `Vec<u8>` blobs |
-| `List(inner)` | `DataType::List(Box<DataType>)` | Homogeneous arrays |
-| `MessageList` | `DataType::MessageList` | LLM chat history |
-| `MessageEvent` | `DataType::MessageEvent` | Bot message events |
-| `FunctionTools` | `DataType::FunctionTools` | LLM function tools |
-| `BotAdapterRef` | `DataType::BotAdapterRef` | Shared bot adapter |
-| `RedisRef` | `DataType::RedisRef` | Redis connection config |
-| `MySqlRef` | `DataType::MySqlRef` | MySQL connection config |
-
-### Creating a Port
+### Syntax
 
 ```rust
-Port::new("input_name", DataType::String)
-    .with_description("Help text")
-    .with_required(true)  // or .optional() for false
+node_input![
+    port! { name = "port_name", ty = TypeName, desc = "help text" },
+    port! { name = "optional_port", ty = TypeName, optional },
+];
+
+node_output![
+    port! { name = "result", ty = String },
+];
 ```
 
-### Defining ports with macros
+Each `port! { ... }` entry supports these fields:
 
-To reduce boilerplate when writing many nodes, you can define ports declaratively inside your `impl Node` using `node_input!` / `node_output!`.
+| Field | Alias | Required | Description |
+|-------|-------|----------|-------------|
+| `name = "..."` | | yes | Port name (must be a string literal) |
+| `ty = ...` | `type = ...` | yes | Port data type (see below) |
+| `desc = "..."` | | no | Tooltip text shown in the GUI |
+| `optional` | `optional = true` | no | Makes the port optional (default: required) |
+
+### Type syntax
+
+| Macro syntax | Expands to |
+|-------------|-----------|
+| `ty = String` | `DataType::String` |
+| `ty = Integer` | `DataType::Integer` |
+| `ty = Float` | `DataType::Float` |
+| `ty = Boolean` | `DataType::Boolean` |
+| `ty = Json` | `DataType::Json` |
+| `ty = Password` | `DataType::Password` |
+| `ty = MessageEvent` | `DataType::MessageEvent` |
+| `ty = OpenAIMessage` | `DataType::OpenAIMessage` |
+| `ty = LLModel` | `DataType::LLModel` |
+| `ty = BotAdapterRef` | `DataType::BotAdapterRef` |
+| `ty = RedisRef` | `DataType::RedisRef` |
+| `ty = MySqlRef` | `DataType::MySqlRef` |
+| `ty = Vec(OpenAIMessage)` | `DataType::Vec(Box::new(DataType::OpenAIMessage))` |
+| `ty = Vec(String)` | `DataType::Vec(Box::new(DataType::String))` |
+| `ty = Custom("my_type")` | `DataType::Custom("my_type".to_string())` |
+| `ty = DataType::String` | `DataType::String` (full path also accepted) |
+
+### Real example (BrainNode)
 
 ```rust
-use crate::node::{DataValue, Node, Port, DataType, node_input, node_output};
-
-impl Node for MyNode {
-    // ... id(), name(), description() ...
-
-    node_input![
-        port!{name="text", type=String, desc="Input text"},
-        port!{name="times", type=Integer, desc="Repeat count", optional}
-    ];
-
-    node_output![
-        port!{name="result", type=String, desc="Output"}
-    ];
-
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
-        // ...
-    }
-}
+node_input![
+    port! { name = "llm_model",    ty = LLModel,           desc = "LLM model reference from llm_api node" },
+    port! { name = "messages",     ty = Vec(OpenAIMessage), desc = "Message list (system/user/assistant roles)" },
+    port! { name = "tools_config", ty = Json,              desc = "Tools config managed by tool editor", optional },
+];
 ```
 
-Notes:
-- `type=...` supports both short forms (e.g. `String`, `Integer`) and explicit paths (e.g. `DataType::String`).
-- `optional` can be used as a flag (`optional`) or as a boolean (`optional=true`).
-- When using `[]` delimiters (as above), the macro invocation must end with a semicolon because it expands to items.
+### Trailing comma
 
-### Type Validation
+A trailing comma after the last `port!` entry is allowed and recommended (matches Rust convention).
 
-The `Node` trait provides default validation that checks:
-- Required input ports have values
-- All port types match their declared types
+### When NOT to use the macros
 
-Override `validate_inputs()` or `validate_outputs()` for custom checks:
+Dynamic-port nodes must compute their port lists at runtime from configuration. For these nodes, do **not** use `node_input!` / `node_output!` for the dynamic direction — implement `input_ports()` / `output_ports()` manually instead. See [dynamic-port-nodes.md](./dynamic-port-nodes.md).
+
+---
+
+## Data types reference
+
+Full list of `DataType` variants (defined in `src/node/data_value.rs`):
+
+| Variant | Runtime value | Notes |
+|---------|--------------|-------|
+| `DataType::Any` | Any `DataValue` | Accepts all types (wildcard) |
+| `DataType::String` | `DataValue::String(String)` | UTF-8 text |
+| `DataType::Integer` | `DataValue::Integer(i64)` | 64-bit signed integer |
+| `DataType::Float` | `DataValue::Float(f64)` | 64-bit float |
+| `DataType::Boolean` | `DataValue::Boolean(bool)` | true / false |
+| `DataType::Json` | `DataValue::Json(serde_json::Value)` | Arbitrary JSON |
+| `DataType::Binary` | `DataValue::Binary(Vec<u8>)` | Raw bytes |
+| `DataType::Password` | `DataValue::Password(String)` | Like String but masked in UI |
+| `DataType::Vec(inner)` | `DataValue::Vec(Vec<DataValue>)` | Homogeneous list |
+| `DataType::MessageEvent` | `DataValue::MessageEvent(MessageEvent)` | Bot platform event |
+| `DataType::OpenAIMessage` | `DataValue::OpenAIMessage(OpenAIMessage)` | LLM chat message |
+| `DataType::QQMessage` | `DataValue::QQMessage(QQMessage)` | QQ message segment |
+| `DataType::FunctionTools` | `DataValue::FunctionTools(...)` | LLM tool definitions |
+| `DataType::BotAdapterRef` | `DataValue::BotAdapterRef(SharedBotAdapter)` | Shared bot connection |
+| `DataType::RedisRef` | `DataValue::RedisRef(RedisConfig)` | Redis config |
+| `DataType::MySqlRef` | `DataValue::MySqlRef(MySqlConfig)` | MySQL config + pool |
+| `DataType::OpenAIMessageSessionCacheRef` | `DataValue::OpenAIMessageSessionCacheRef(...)` | Message cache |
+| `DataType::LLModel` | `DataValue::LLModel(...)` | Language model config |
+| `DataType::LoopControlRef` | `DataValue::LoopControlRef(Arc<LoopControl>)` | Loop break signal |
+
+---
+
+## Validation
+
+The `Node` trait provides default `validate_inputs()` and `validate_outputs()` implementations that check:
+- All required input ports have a value
+- All values match their declared `DataType`
+
+Override for custom rules:
 
 ```rust
 fn validate_inputs(&self, inputs: &HashMap<String, DataValue>) -> Result<()> {
-    if let Some(DataValue::Integer(n)) = inputs.get("port_number") {
-        if *n < 1024 || *n > 65535 {
-            return Err(Error::ValidationError("Port must be 1024-65535".into()));
+    if let Some(DataValue::Integer(n)) = inputs.get("count") {
+        if *n < 1 {
+            return Err(Error::ValidationError("count must be >= 1".into()));
         }
     }
-    // Call default validation
     self.validate_inputs_default(inputs)
 }
 ```
 
 ---
 
-## Built-in Node Types
+## Configuration: apply_inline_config
 
-Registered in `src/node/registry.rs` → `init_node_registry()`:
+If your node reads from inline values (set directly on the node card without an incoming edge), override `apply_inline_config()`:
 
-| `node_type` | Display Name | Category | Source |
-|-------------|-------------|----------|--------|
-| `conditional` | Conditional Branch | Utility | `src/node/util_nodes.rs` |
-| `json_parser` | JSON Parser | Utility | `src/node/util_nodes.rs` |
-| `preview_string` | Preview String | Utility | `src/node/util_nodes.rs` |
-| `string_data` | String Data | Utility | `src/node/util_nodes.rs` |
-| `llm` | LLM | AI | `src/llm/node_impl.rs` |
-| `agent` | AI Agent | AI | `src/llm/node_impl.rs` |
-| `text_processor` | Text Processor | Utility | `src/llm/node_impl.rs` |
-| `bot_adapter` | QQ Bot Adapter | Bot Adapter | `src/bot_adapter/node_impl.rs` |
-| `message_sender` | Message Sender | Bot Adapter | `src/bot_adapter/node_impl.rs` |
-| `message_event_to_string` | Message → String | Bot Adapter | `src/bot_adapter/message_event_to_string.rs` |
-| `redis` | Redis Connection | Database | `src/node/database_nodes.rs` |
-| `mysql` | MySQL Connection | Database | `src/node/database_nodes.rs` |
-| `message_mysql_persistence` | Message MySQL Persistence | Message Store | `src/node/message_nodes.rs` |
-| `message_cache` | Message Cache | Message Store | `src/node/message_nodes.rs` |
+```rust
+fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
+    if let Some(DataValue::String(s)) = inline_values.get("mode") {
+        self.mode = s.clone();
+    }
+    if let Some(DataValue::Integer(n)) = inline_values.get("max_retries") {
+        self.max_retries = *n as u32;
+    }
+    Ok(())
+}
+```
 
-Refer to these implementations for patterns and best practices.
+This is called before execution starts (`prepare_for_execution()`). For **dynamic-port nodes**, this is where you rebuild the dynamic port list. See [dynamic-port-nodes.md](./dynamic-port-nodes.md).
 
 ---
 
-## Testing Your Node
+## Testing
 
-### Unit test example
+### Unit test (in the node file)
 
 ```rust
 #[cfg(test)]
@@ -438,18 +380,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_uppercase_node() {
+    fn test_uppercase_basic() {
         let mut node = UppercaseNode::new("test".into(), "Test".into());
-        
+
         let mut inputs = HashMap::new();
-        inputs.insert("text".to_string(), DataValue::String("hello".into()));
+        inputs.insert("text".to_string(), DataValue::String("hello world".into()));
 
         let outputs = node.execute(inputs).unwrap();
-        
-        match outputs.get("result") {
-            Some(DataValue::String(s)) => assert_eq!(s, "HELLO"),
-            _ => panic!("Expected String output"),
-        }
+
+        assert_eq!(
+            outputs.get("result"),
+            Some(&DataValue::String("HELLO WORLD".into()))
+        );
+    }
+
+    #[test]
+    fn test_uppercase_missing_input() {
+        let mut node = UppercaseNode::new("test".into(), "Test".into());
+        let result = node.execute(HashMap::new());
+        assert!(result.is_err());
     }
 }
 ```
@@ -458,43 +407,46 @@ mod tests {
 
 ```rust
 #[test]
-fn test_node_in_graph() {
+fn test_uppercase_in_graph() {
     use crate::node::{NodeGraph, graph_io::NodeGraphDefinition};
-    use crate::node::registry::build_node_graph_from_definition;
+    use crate::node::registry::{build_node_graph_from_definition, init_node_registry};
 
-    let json = r#"
-    {
-      "nodes": [
-        {
-          "id": "n1",
-          "name": "Uppercase",
-          "node_type": "uppercase",
-          "input_ports": [{"name": "text", "data_type": "String", "required": true}],
-          "output_ports": [{"name": "result", "data_type": "String", "required": true}],
-          "inline_values": {"text": "test"}
-        }
-      ],
+    init_node_registry().unwrap();
+
+    let json = r#"{
+      "nodes": [{
+        "id": "n1", "name": "Upper", "node_type": "uppercase",
+        "input_ports":  [{"name": "text",   "data_type": "String", "required": true}],
+        "output_ports": [{"name": "result", "data_type": "String", "required": true}],
+        "inline_values": {"text": "hello"}
+      }],
       "edges": []
-    }
-    "#;
+    }"#;
 
     let def: NodeGraphDefinition = serde_json::from_str(json).unwrap();
-    let mut graph = build_node_graph_from_definition(&def).unwrap();
-    graph.execute().unwrap();
+    let result = build_node_graph_from_definition(&def).unwrap()
+        .execute_and_capture_results()
+        .unwrap();
+
+    let outputs = result.node_results.get("n1").unwrap();
+    assert_eq!(outputs.get("result"), Some(&DataValue::String("HELLO".into())));
 }
 ```
 
 ---
 
-## Source Code References
+## Checklist
 
-| Concept | File |
-|---------|------|
-| `Node` trait definition | `src/node/mod.rs` |
-| `Port`, `DataType`, `DataValue` | `src/node/data_value.rs` |
-| Node registry & `register_node!` macro | `src/node/registry.rs` |
-| Simple node examples | `src/node/util_nodes.rs` |
-| EventProducer example | `src/bot_adapter/node_impl.rs` (`BotAdapterNode`) |
-| LLM-based nodes | `src/llm/node_impl.rs` |
-| JSON format | [node-graph-json.md](./node-graph-json.md) |
-| Lifecycle & execution details | [node-lifecycle.md](./node-lifecycle.md) |
+Use this checklist before submitting a new node:
+
+- [ ] Node struct in its own file under the appropriate module
+- [ ] `new(id: String, name: String)` constructor
+- [ ] All `Node` trait methods implemented
+- [ ] Ports declared using `node_input!` / `node_output!` macros (except dynamic-port directions)
+- [ ] `execute()` always returns `Ok(...)` or a meaningful `Err(...)`
+- [ ] EventProducers: `set_stop_flag()` stored and checked in `on_update()`
+- [ ] Registered in `src/node/registry.rs → init_node_registry()`
+- [ ] Exported from parent `mod.rs`
+- [ ] Unit tests for happy path and error cases
+- [ ] `type_id` is unique and `snake_case`
+- [ ] Port names are descriptive and `snake_case`

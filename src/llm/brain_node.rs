@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
@@ -184,6 +185,10 @@ impl Node for BrainNode {
         Some("使用 system prompt 和 user message 发起一次带动态 Tools 的 LLM 推理")
     }
 
+    fn has_dynamic_output_ports(&self) -> bool {
+        true
+    }
+
     node_input![
         port! { name = "llm_model", ty = LLModel, desc = "LLM 模型引用，由 LLM API 节点提供" },
         port! { name = "messages", ty = Vec(OpenAIMessage), desc = "消息列表（包含 system/user/assistant 等角色）" },
@@ -277,6 +282,11 @@ impl Node for BrainNode {
 
         let mut tool_payloads: HashMap<String, Vec<Value>> = HashMap::new();
         for tool_call in response.tool_calls {
+            info!(
+                "[BrainNode] tool call: {} args={}",
+                tool_call.function.name,
+                tool_call.function.arguments
+            );
             tool_payloads
                 .entry(tool_call.function.name.clone())
                 .or_default()

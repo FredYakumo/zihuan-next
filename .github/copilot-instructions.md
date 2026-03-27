@@ -1,96 +1,40 @@
-# Copilot Instructions for zihuan-next_aibot-800b
+# Copilot Instructions
 
-> Keep this concise. Details live in code, tests, and the module notes under `.github/`.
+## Overview
 
-## Architecture (big picture)
-**Node-graph-based visual programming system** for building event-driven bot pipelines with composable dataflow components.
+`zihuan-next` is a Rust + Slint node-graph workflow engine for event-driven bot pipelines.
 
-### Core: Node Graph System (`src/node/`)
-- **Foundation**: Everything is a node. Nodes implement `Node` trait with typed input/output ports (String, Integer, Float, Boolean, Json, Binary).
-- **Port-based binding**: No explicit edges—connections inferred from matching port names. Output port "result" auto-connects to any input port "result".
-- **DAG execution**: `NodeGraph::execute()` validates port dependencies, detects cycles, topologically sorts, then executes nodes in order.
-- **Node types**:
-  - **Simple nodes**: Stateless transforms (execute once per input)
-  - **EventProducer nodes**: Stateful with lifecycle hooks (`on_start` → `on_update` loop → `on_cleanup`) for event sources, timers, polling
-- **Visual editing**: Slint-based GUI (`src/ui/*`) for drag-and-drop node graph creation, JSON import/export, persistent window state. The UI is modularized into a root window contract (`graph_window.slint`), shared VM types (`types.slint`), reusable components (`components/*.slint`), and overlay dialogs (`dialogs.slint`).
+## High-Level Rules
 
-### Integration Components
-Built as nodes or node-compatible wrappers:
-- **Bot Adapter** (`src/bot_adapter/`): WebSocket inbound from QQ bot server → deserialize to typed messages → convert to node inputs via `message_event_to_string.rs`.
-- **LLM Integration** (`src/llm/`): `LLMNode`, `AgentNode`, `TextProcessorNode` wrap HTTP chat API; `BrainAgent` orchestrates multi-tool reasoning; function tools (`MathTool`, `ChatHistoryTool`, `CodeWriterTool`) plugged as node dependencies.
-- **Message Store** (`src/util/message_store.rs`): Three-tier storage (Redis cache, MySQL persistence, in-memory fallback) accessible to nodes for context retrieval.
-- **Config** (`src/config.rs`): YAML-based settings (BOT_SERVER_URL, REDIS_*, MYSQL_*, LLM endpoints) loaded at startup; priority: file → env vars → defaults.
+- Keep changes focused.
+- Preserve current architecture and naming unless the task requires otherwise.
+- One node per file.
+- Preserve DAG-based graph behavior.
+- Register new node types in `src/node/registry.rs`.
+- Keep UI responsibilities split between Slint presentation and Rust orchestration.
+- Keep message parsing and storage behavior resilient.
 
-### Language Division
-- **Rust**: Node graph engine, execution runtime, bot adapters, LLM/agent logic, UI, configuration, all business logic.
-- **Python**: Database schema migrations (alembic) for MySQL persistence layer.
+## Build And Validation
 
-## Critical workflows
-### Setup
 ```bash
-cp config.yaml.example config.yaml  # Customize BOT_SERVER_URL, REDIS_*, MYSQL_*, LLM endpoints
-docker compose -f docker/docker-compose.yaml up -d  # Start Redis (optional: MySQL for persistence)
-alembic upgrade head  # Apply database migrations (if using MySQL)
+cargo build
+cargo run
+cargo test
 ```
 
-### Node Graph Development
-```bash
-# Visual node editing (primary mode)
-cargo run                                    # Launch GUI with empty graph
-cargo run -- --graph-json example.json      # Load existing graph in GUI
+## Detailed References
 
-# Headless/CLI mode
-cargo run -- --graph-json input.json --save-graph-json output.json --no-gui  # Convert/validate graphs
-cargo test                                   # Unit tests (add -- --ignored for LLM integration tests)
-```
+Detailed guidance has moved under `document/`.
 
-### Bot Runtime
-```bash
-cargo run  # In default mode (no args), starts bot adapter + WebSocket client
-# Bot mode vs GUI mode determined by CLI args: no args = GUI; `--no-gui` or graph file = headless
-```
-
-### Creating Custom Nodes
-1. Implement `Node` trait in new `.rs` file (define `id()`, `name()`, `input_ports()`, `output_ports()`, `execute()`)
-2. For event sources: set `node_type() -> NodeType::EventProducer` and override `on_start()/on_update()/on_cleanup()`
-3. Add to `NodeGraph` via `graph.add_node(Box::new(YourNode::new(...)))?`
-4. Connect by matching port names—no explicit edge API
-5. See `ConditionalNode` (node/util/conditional.rs), `LLMNode` (llm/node_impl.rs), `MessageEventToStringNode` (bot_adapter/) for examples
-
-## Project-specific conventions
-- **One node per file**: Every `Node` implementation must live in its own dedicated `.rs` file. If a node's logic is complex, it may be split across multiple `.rs` files within its own sub-module, but multiple nodes must **never** share a single `.rs` file.
-- **Node port binding**: Port names are the only connection mechanism. Output "result" → Input "result" = auto-connected. The graph is a DAG; `NodeGraph::execute()` validates, topo-sorts, executes. No edge objects, no manual wiring API.
-- **Node execution model**: Simple nodes run once per input set. EventProducer nodes have lifecycle: `on_start()` → `on_update()` loop (returns `Some(outputs)` until done, then `None`) → `on_cleanup()`. Multiple EventProducers can chain (one feeds another).
-- **Data types**: Strongly typed ports (String, Integer, Float, Boolean, Json, Binary). Runtime validation ensures type safety. `DataValue` enum wraps all types.
-- **Configuration**: Single source of truth in `config.yaml`. Loaded by `config::load_config()` in `src/main.rs`. Priority: file → env vars → defaults. Bot server URL and token guaranteed non-empty after load.
-- **Redis**: Special chars in passwords percent-encoded (RFC 3986) by `config::pct_encode()`. Redis URL built by `config::build_redis_url()`. Redis is flushed (`FLUSHDB`) on startup.
-- **MySQL**: Database URL built by `config::build_mysql_url()`. Schema managed via Python/alembic migrations in `migrations/`. SQLx pool created on store init.
-- **Message store**: Always init early in `BotAdapter::new()` with both Redis and MySQL URLs. Redis for cache, MySQL for persistence, in-memory fallback logs warning. Get context with `MessageStore::get_message()` (Redis cache) or `MessageStore::get_message_record()` (MySQL) before LLM responses. Historical queries use `MessageStore::query_messages()` (MySQL).
-- **Deserialization**: Serde-based enums with lenient parsing—skips unsupported elements instead of failing entire event.
-- **Logging**: Logs to `./logs` via `LogUtil` (`log_util` crate). Prefix message store logs with `[MessageStore]`.
-- **UI state**: Window position/size auto-saves to platform-specific config dir (Linux/macOS: `~/.config/zihuan_next/`, Windows: `%APPDATA%/zihuan_next/window_config.json`).
-
-## Extending the bot
-- **New node type**: Implement `Node` trait (define `id()`, `name()`, `input_ports()`, `output_ports()`, `execute()`). For event sources, override `node_type() -> NodeType::EventProducer` and implement `on_start()/on_update()/on_cleanup()`. See `ConditionalNode` (node/util/conditional.rs) for minimal example, `MessageEventToStringNode` (bot_adapter/) for event handling.
-- **Port definition macros**: Inside `impl Node`, you may use `node_input!` / `node_output!` to generate `input_ports()` / `output_ports()`:
-  - `node_input![ port!{name="text", type=String, desc="..."}, port!{name="x", type=Integer, optional} ];`
-  - `node_output![ port!{name="result", type=String, desc="..."} ];`
-  - Note: using `[]` requires a trailing `;` because these macros expand to items.
-- **New platform**: Add handler in `src/bot_adapter/event.rs`, register in `BotAdapter::new()`, extend `MessageType` enum in `src/bot_adapter/models/event_model.rs`.
-- **Node registry**: Add new node types to `src/node/registry.rs` for discoverability in GUI. Register with `NODE_REGISTRY.lock().unwrap().register(...)` during initialization.
-- **Configuration changes**: Modify `Config` struct fields in `src/config.rs`, update `load_config()` priority logic, document in `config.yaml.example`.
-- **Database schema changes**: Edit Python models in `database/models/`, generate migration: `alembic revision --autogenerate -m "description"`, apply: `alembic upgrade head`.
-- **New LLM function tool**: Implement `FunctionTool` trait in `src/llm/function_tools/`, register in `src/main.rs` tools vec. See `MathTool`, `ChatHistoryTool` for examples.
-
-## Key files reference
-- Config loading: `src/config.rs` (priority chain, defaults, env overrides)
-- Bot pipeline: `src/bot_adapter/adapter.rs` (WebSocket, message loop), `src/bot_adapter/event.rs` (dispatch)
-- Message models: `src/bot_adapter/models/event_model.rs` (MessageType enum), `src/bot_adapter/models/message.rs` (typed messages)
-- State: `src/util/message_store.rs` (Redis cache, MySQL persistence, in-memory fallback with auto-reconnect)
-- Dataflow: `src/node/mod.rs` (Node trait, NodeGraph, Port, DataValue), `src/node/util/` (utility nodes, one node per file), `src/llm/node_impl.rs` (LLM-based nodes), `src/bot_adapter/message_event_to_string.rs` (concrete node example)
-- LLM: `src/llm/llm_api.rs` (HTTP client), `src/llm/agent/brain.rs` (BrainAgent with tool orchestration), `src/llm/function_tools/` (tool implementations)
-- UI: `src/ui/node_graph_view.rs` (main UI logic), `src/ui/graph_window.slint` (root Slint window contract/composition), `src/ui/types.slint` (shared exported UI VM structs), `src/ui/components/*.slint` (canvas, node, buttons, menu, tabs), `src/ui/dialogs.slint` (overlay dialogs/selectors), `src/ui/window_state.rs` (persistent window config), `src/ui/selection.rs` (node selection logic), `src/ui/node_render/` (Rust-side node preview helpers)
-- Database: `database/models/message_record.py` (SQLAlchemy model), `migrations/versions/` (alembic migrations), `alembic.ini` (migration config)
-- Module guides: `.github/copilot-instructions-{config,adapter,event,models,node,utils,message-store,ui}.md`
-- Documentation: `document/user-guide.md` (end-user), `document/program-execute.md` (internal flow), `document/node/` (node development, lifecycle, JSON spec)
+- `document/dev-guides/README.md`
+- `document/dev-guides/node-system.md`
+- `document/dev-guides/ui-architecture.md`
+- `document/dev-guides/bot-adapter.md`
+- `document/dev-guides/event-handlers.md`
+- `document/dev-guides/message-models.md`
+- `document/dev-guides/message-store.md`
+- `document/dev-guides/runtime-utils.md`
+- `document/node/node-development.md`
+- `document/node/dynamic-port-nodes.md`
+- `document/node/node-graph-json.md`
 
