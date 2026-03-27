@@ -13,6 +13,7 @@ use std::sync::Once;
 pub struct MenuActions {
     pub open: Box<dyn Fn() + 'static>,
     pub save: Box<dyn Fn() + 'static>,
+    pub save_as: Box<dyn Fn() + 'static>,
     pub new_tab: Box<dyn Fn() + 'static>,
     pub close_tab: Box<dyn Fn() + 'static>,
     pub quit: Box<dyn Fn() + 'static>,
@@ -30,6 +31,7 @@ fn menu_handler_class() -> *const Class {
             decl.add_ivar::<*mut c_void>("rustActions");
             decl.add_method(sel!(openJson:), open_json as extern "C" fn(&Object, Sel, id));
             decl.add_method(sel!(saveJson:), save_json as extern "C" fn(&Object, Sel, id));
+            decl.add_method(sel!(saveJsonAs:), save_json_as as extern "C" fn(&Object, Sel, id));
             decl.add_method(sel!(newTab:), new_tab as extern "C" fn(&Object, Sel, id));
             decl.add_method(sel!(closeTab:), close_tab as extern "C" fn(&Object, Sel, id));
             decl.add_method(sel!(quit:), quit as extern "C" fn(&Object, Sel, id));
@@ -54,6 +56,10 @@ extern "C" fn open_json(this: &Object, _: Sel, _: id) {
 
 extern "C" fn save_json(this: &Object, _: Sel, _: id) {
     unsafe { with_actions(this, |actions| (actions.save)()); }
+}
+
+extern "C" fn save_json_as(this: &Object, _: Sel, _: id) {
+    unsafe { with_actions(this, |actions| (actions.save_as)()); }
 }
 
 extern "C" fn new_tab(this: &Object, _: Sel, _: id) {
@@ -120,6 +126,7 @@ pub fn install_menu(actions: MenuActions) {
 
         file_menu.addItem_(menu_item("打开…", sel!(openJson:), "o", handler));
         file_menu.addItem_(menu_item("保存", sel!(saveJson:), "s", handler));
+        file_menu.addItem_(menu_item("另存为…", sel!(saveJsonAs:), "S", handler));
         let separator: id = msg_send![class!(NSMenuItem), separatorItem];
         file_menu.addItem_(separator);
         file_menu.addItem_(menu_item("新建节点图", sel!(newTab:), "t", handler));

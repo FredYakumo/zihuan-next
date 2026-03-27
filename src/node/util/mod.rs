@@ -1,4 +1,5 @@
 pub mod array_get;
+pub mod as_system_openai_message;
 pub mod concat_vec;
 pub mod format_string;
 pub mod conditional;
@@ -195,6 +196,7 @@ pub mod openai_message_session_cache_clear {
 }
 
 pub use array_get::ArrayGetNode;
+pub use as_system_openai_message::AsSystemOpenAIMessageNode;
 pub use format_string::FormatStringNode;
 pub use concat_vec::ConcatVecNode;
 pub use conditional::ConditionalNode;
