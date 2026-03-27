@@ -83,7 +83,6 @@ fn data_type_to_json_schema_type(data_type: &DataType) -> &'static str {
         DataType::Boolean => "boolean",
         DataType::Json
         | DataType::MessageEvent
-        | DataType::MessageProp
         | DataType::OpenAIMessage
         | DataType::QQMessage
         | DataType::FunctionTools
