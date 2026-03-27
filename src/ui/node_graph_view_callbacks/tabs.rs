@@ -26,10 +26,9 @@ pub(crate) fn bind_tab_callbacks(
     next_untitled_index: Arc<Mutex<usize>>,
     next_tab_id: Arc<Mutex<u64>>,
     pending_close_tab_id: Arc<Mutex<Option<u64>>>,
+    pending_open_graph: Arc<Mutex<Option<(PathBuf, NodeGraphDefinition)>>>,
 ) {
     let pending_save_as: Arc<Mutex<Option<(std::path::PathBuf, u64)>>> =
-        Arc::new(Mutex::new(None));
-    let pending_open_graph: Arc<Mutex<Option<(PathBuf, NodeGraphDefinition)>>> =
         Arc::new(Mutex::new(None));
 
     let ui_handle = ui.as_weak();
