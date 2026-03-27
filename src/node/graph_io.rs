@@ -103,9 +103,21 @@ pub fn refresh_port_types(graph: &mut NodeGraphDefinition) {
                     port.data_type = canonical.data_type.clone();
                 }
             }
+            // Silently add optional input ports that exist in the registry but not in the JSON
+            for canon in &canonical_inputs {
+                if !canon.required && !node.input_ports.iter().any(|p| p.name == canon.name) {
+                    node.input_ports.push(canon.clone());
+                }
+            }
             for port in &mut node.output_ports {
                 if let Some(canonical) = canonical_outputs.iter().find(|p| p.name == port.name) {
                     port.data_type = canonical.data_type.clone();
+                }
+            }
+            // Silently add optional output ports that exist in the registry but not in the JSON
+            for canon in &canonical_outputs {
+                if !canon.required && !node.output_ports.iter().any(|p| p.name == canon.name) {
+                    node.output_ports.push(canon.clone());
                 }
             }
         }
@@ -153,11 +165,11 @@ pub fn validate_graph_definition(graph: &NodeGraphDefinition) -> Vec<ValidationI
                 )));
             }
             Some((canonical_inputs, canonical_outputs)) => {
-                // Check for ports in registry but missing from JSON (inputs)
+                // Check for REQUIRED ports in registry but missing from JSON (inputs)
                 for canon_port in &canonical_inputs {
-                    if !node.input_ports.iter().any(|p| p.name == canon_port.name) {
-                        issues.push(ValidationIssue::warning(format!(
-                            "节点 \"{}\" 缺少输入端口 \"{}\"",
+                    if canon_port.required && !node.input_ports.iter().any(|p| p.name == canon_port.name) {
+                        issues.push(ValidationIssue::error(format!(
+                            "节点 \"{}\" 缺少必要输入端口 \"{}\"",
                             node.name, canon_port.name
                         )));
                     }
@@ -171,11 +183,11 @@ pub fn validate_graph_definition(graph: &NodeGraphDefinition) -> Vec<ValidationI
                         )));
                     }
                 }
-                // Check for ports in registry but missing from JSON (outputs)
+                // Check for REQUIRED ports in registry but missing from JSON (outputs)
                 for canon_port in &canonical_outputs {
-                    if !node.output_ports.iter().any(|p| p.name == canon_port.name) {
-                        issues.push(ValidationIssue::warning(format!(
-                            "节点 \"{}\" 缺少输出端口 \"{}\"",
+                    if canon_port.required && !node.output_ports.iter().any(|p| p.name == canon_port.name) {
+                        issues.push(ValidationIssue::error(format!(
+                            "节点 \"{}\" 缺少必要输出端口 \"{}\"",
                             node.name, canon_port.name
                         )));
                     }
