@@ -144,7 +144,7 @@ pub fn init_node_registry() -> Result<()> {
     use crate::llm::llm_api_node::LLMApiNode;
     use crate::llm::brain_node::BrainNode;
     use crate::llm::llm_infer_node::LLMInferNode;
-    use crate::bot_adapter::{BotAdapterNode, ExtractSenderIdFromEventNode, IsAtMeNode, MessageEventTypeFilterNode, SendFriendMessageNode, SendGroupMessageNode};
+    use crate::bot_adapter::{BotAdapterNode, ExtractSenderIdFromEventNode, MessageEventTypeFilterNode, SendFriendMessageNode, SendGroupMessageNode};
     use crate::bot_adapter::extract_group_id_from_event::ExtractGroupIdFromEventNode;
     use crate::bot_adapter::extract_message_from_event::ExtractMessageFromEventNode;
     use crate::node::database::{RedisNode, MySqlNode};
@@ -344,14 +344,6 @@ pub fn init_node_registry() -> Result<()> {
         "Bot适配器",
             "从消息事件中提取 OpenAIMessage 列表",
         ExtractMessageFromEventNode
-    );
-
-    register_node!(
-        "is_at_me",
-        "IsAtMe",
-        "Bot适配器",
-        "从MessageProp中提取is_at_me布尔值",
-        IsAtMeNode
     );
 
     register_node!(

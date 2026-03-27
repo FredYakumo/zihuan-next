@@ -80,7 +80,10 @@ impl Node for ExtractMessageFromEventNode {
 
     node_output![
         port! { name = "messages", ty = Vec(OpenAIMessage), desc = "Vec<OpenAIMessage> containing system and user messages" },
-        port! { name = "msg_prop", ty = MessageProp, desc = "Parsed message properties" },
+        port! { name = "content", ty = String, desc = "Merged readable message body" },
+        port! { name = "ref_content", ty = String, desc = "Referenced/replied message content" },
+        port! { name = "is_at_me", ty = Boolean, desc = "Whether the message @'s the bot" },
+        port! { name = "at_target_list", ty = Vec(String), desc = "List of all @ targets in the message" },
     ];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
@@ -140,7 +143,13 @@ impl Node for ExtractMessageFromEventNode {
                 Box::new(crate::node::DataType::OpenAIMessage),
                 messages.into_iter().map(DataValue::OpenAIMessage).collect(),
             ));
-            outputs.insert("msg_prop".to_string(), DataValue::MessageProp(msg_prop));
+            outputs.insert("content".to_string(), DataValue::String(msg_prop.content.unwrap_or_default()));
+            outputs.insert("ref_content".to_string(), DataValue::String(msg_prop.ref_content.unwrap_or_default()));
+            outputs.insert("is_at_me".to_string(), DataValue::Boolean(msg_prop.is_at_me));
+            outputs.insert("at_target_list".to_string(), DataValue::Vec(
+                Box::new(DataType::String),
+                msg_prop.at_target_list.into_iter().map(DataValue::String).collect(),
+            ));
         } else {
             return Err("message_event input is required and must be MessageEvent type".into());
         }
@@ -171,8 +180,11 @@ mod tests {
         assert_eq!(input_ports[1].name, "bot_adapter");
         assert_eq!(input_ports[2].name, "persona");
 
-        assert_eq!(output_ports.len(), 2);
+        assert_eq!(output_ports.len(), 5);
         assert_eq!(output_ports[0].name, "messages");
-        assert_eq!(output_ports[1].name, "msg_prop");
+        assert_eq!(output_ports[1].name, "content");
+        assert_eq!(output_ports[2].name, "ref_content");
+        assert_eq!(output_ports[3].name, "is_at_me");
+        assert_eq!(output_ports[4].name, "at_target_list");
     }
 }

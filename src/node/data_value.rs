@@ -7,7 +7,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::llm::function_tools::FunctionTool;
 use crate::bot_adapter::adapter::SharedBotAdapter;
 use crate::bot_adapter::models::event_model::MessageEvent;
-use crate::bot_adapter::models::message::MessageProp;
 use redis::{aio::ConnectionManager, AsyncCommands};
 use sqlx::mysql::MySqlPool;
 use tokio::sync::Mutex as TokioMutex;
@@ -224,7 +223,6 @@ pub enum DataType {
     Binary,
     Vec(Box<DataType>),
     MessageEvent,
-    MessageProp,
     OpenAIMessage,
     QQMessage,
     FunctionTools,
@@ -260,7 +258,6 @@ impl fmt::Display for DataType {
             DataType::Binary => write!(f, "Binary"),
             DataType::Vec(inner) => write!(f, "Vec<{}>", inner),
             DataType::MessageEvent => write!(f, "MessageEvent"),
-            DataType::MessageProp => write!(f, "MessageProp"),
                 DataType::OpenAIMessage => write!(f, "OpenAIMessage"),
             DataType::QQMessage => write!(f, "QQMessage"),
             DataType::FunctionTools => write!(f, "FunctionTools"),
@@ -299,7 +296,6 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "Json" => Ok(DataType::Json),
                     "Binary" => Ok(DataType::Binary),
                     "MessageEvent" => Ok(DataType::MessageEvent),
-                    "MessageProp" => Ok(DataType::MessageProp),
                         "OpenAIMessage" => Ok(DataType::OpenAIMessage),
                     "Message" => Ok(DataType::OpenAIMessage),
                     "QQMessage" => Ok(DataType::QQMessage),
@@ -314,7 +310,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     other => Err(de::Error::unknown_variant(
                         other,
                         &["Any", "String", "Integer", "Float", "Boolean", "Json",
-                              "Binary", "Vec", "MessageEvent", "MessageProp", "OpenAIMessage", "Message",
+                              "Binary", "Vec", "MessageEvent", "OpenAIMessage", "Message",
                           "QQMessage", "FunctionTools", "BotAdapterRef", "RedisRef",
                           "MySqlRef", "OpenAIMessageSessionCacheRef", "Password", "LLModel",
                           "LoopControlRef", "Custom"],
@@ -369,7 +365,6 @@ pub enum DataValue {
     MessageEvent(MessageEvent),
     OpenAIMessage(crate::llm::OpenAIMessage),
     QQMessage(crate::bot_adapter::models::message::Message),
-    MessageProp(MessageProp),
     FunctionTools(Vec<Arc<dyn FunctionTool>>),
     BotAdapterRef(SharedBotAdapter),
     RedisRef(Arc<RedisConfig>),
@@ -393,7 +388,6 @@ impl DataValue {
             DataValue::OpenAIMessage(_) => DataType::OpenAIMessage,
             DataValue::QQMessage(_) => DataType::QQMessage,
             DataValue::MessageEvent(_) => DataType::MessageEvent,
-            DataValue::MessageProp(_) => DataType::MessageProp,
             DataValue::FunctionTools(_) => DataType::FunctionTools,
             DataValue::BotAdapterRef(_) => DataType::BotAdapterRef,
             DataValue::RedisRef(_) => DataType::RedisRef,
@@ -439,12 +433,6 @@ impl DataValue {
                     "is_group_message": event.is_group_message,
                 })
             }
-            DataValue::MessageProp(prop) => serde_json::json!({
-                "content": prop.content,
-                "ref_content": prop.ref_content,
-                "is_at_me": prop.is_at_me,
-                "at_target_list": prop.at_target_list,
-            }),
             DataValue::FunctionTools(tools) => {
                 let tool_defs: Vec<Value> = tools.iter()
                     .map(|t| t.get_json())
@@ -491,7 +479,6 @@ impl fmt::Debug for DataValue {
                 DataValue::OpenAIMessage(value) => f.debug_tuple("OpenAIMessage").field(value).finish(),
             DataValue::QQMessage(value) => f.debug_tuple("QQMessage").field(value).finish(),
             DataValue::MessageEvent(value) => f.debug_tuple("MessageEvent").field(value).finish(),
-            DataValue::MessageProp(value) => f.debug_tuple("MessageProp").field(value).finish(),
             DataValue::FunctionTools(value) => f.debug_tuple("FunctionTools").field(value).finish(),
             DataValue::BotAdapterRef(_) => f.debug_tuple("BotAdapterRef").finish(),
             DataValue::RedisRef(config) => f.debug_tuple("RedisRef").field(config).finish(),
