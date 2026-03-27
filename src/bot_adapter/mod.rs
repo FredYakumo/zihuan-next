@@ -5,7 +5,6 @@ pub mod extract_message_from_event;
 pub mod extract_group_id_from_event;
 pub mod ws_action;
 pub mod bot_adapter;
-pub mod is_at_me;
 pub mod message_sender;
 pub mod send_friend_message;
 pub mod send_group_message;
@@ -13,7 +12,6 @@ pub mod message_event_type_filter;
 pub mod extract_sender_id_from_event;
 
 pub use bot_adapter::BotAdapterNode;
-pub use is_at_me::IsAtMeNode;
 pub use message_sender::MessageSenderNode;
 pub use send_friend_message::SendFriendMessageNode;
 pub use send_group_message::SendGroupMessageNode;
