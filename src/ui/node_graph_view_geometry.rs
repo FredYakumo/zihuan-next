@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::node::graph_io::{EdgeDefinition, NodeDefinition, NodeGraphDefinition};
 use crate::node::DataType;
@@ -150,9 +150,9 @@ fn route_edge(
 }
 
 /// Spacing between parallel vertical segments when edges overlap.
-const EDGE_NUDGE_SPACING: f32 = GRID_SIZE * 0.5;
-/// Edges whose raw mid_x falls within this distance are grouped together.
-const EDGE_CHANNEL_THRESHOLD: f32 = GRID_SIZE;
+const EDGE_NUDGE_SPACING: f32 = GRID_SIZE * 1.0;
+/// Edges whose raw mid_x falls within this distance are considered potential conflicts.
+const EDGE_CHANNEL_THRESHOLD: f32 = GRID_SIZE * 2.0;
 
 pub(crate) fn build_edge_segments(
     graph: &NodeGraphDefinition,
@@ -171,6 +171,8 @@ pub(crate) fn build_edge_segments(
         to_x: f32,
         to_y: f32,
         raw_mid_x: f32,
+        y_min: f32,
+        y_max: f32,
         is_backward: bool,
         edge_idx: usize,
     }
@@ -208,6 +210,8 @@ pub(crate) fn build_edge_segments(
 
         let is_backward = to_x < from_x + min_dist;
         let raw_mid_x = (from_x + to_x) / 2.0;
+        let y_min = from_y.min(to_y);
+        let y_max = from_y.max(to_y);
 
         infos.push(EdgeInfo {
             from_x,
@@ -215,47 +219,84 @@ pub(crate) fn build_edge_segments(
             to_x,
             to_y,
             raw_mid_x,
+            y_min,
+            y_max,
             is_backward,
             edge_idx: idx,
         });
     }
 
-    // Second pass: group forward edges by similar mid_x and assign nudged offsets.
+    // Second pass: detect conflicting forward edges (overlapping Y range AND close mid_x),
+    // group them via union-find, then assign staggered mid_x sorted by to_y to minimise crossings.
     let mut mid_x_overrides: Vec<Option<f32>> = vec![None; infos.len()];
 
-    // Collect indices of forward (non-backward) edges for channel grouping.
-    let mut forward_indices: Vec<usize> = infos
+    let forward_indices: Vec<usize> = infos
         .iter()
         .enumerate()
         .filter(|(_, info)| !info.is_backward)
         .map(|(i, _)| i)
         .collect();
 
-    // Sort by raw_mid_x so we can group nearby ones.
-    forward_indices.sort_by(|&a, &b| {
-        infos[a]
-            .raw_mid_x
-            .partial_cmp(&infos[b].raw_mid_x)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    let nf = forward_indices.len();
+    if nf > 1 {
+        // Union-find over positions within forward_indices (0..nf).
+        let mut parent: Vec<usize> = (0..nf).collect();
 
-    // Group edges whose raw_mid_x is within the threshold.
-    let mut i = 0;
-    while i < forward_indices.len() {
-        let group_start = i;
-        let anchor = infos[forward_indices[i]].raw_mid_x;
-        while i < forward_indices.len()
-            && (infos[forward_indices[i]].raw_mid_x - anchor).abs() < EDGE_CHANNEL_THRESHOLD
-        {
-            i += 1;
+        for k in 0..nf {
+            for l in (k + 1)..nf {
+                let a = &infos[forward_indices[k]];
+                let b = &infos[forward_indices[l]];
+                let mid_x_close =
+                    (a.raw_mid_x - b.raw_mid_x).abs() < EDGE_CHANNEL_THRESHOLD;
+                let y_overlap = a.y_min < b.y_max && b.y_min < a.y_max;
+                if mid_x_close && y_overlap {
+                    // Find roots (iterative, no path compression needed for small n)
+                    let mut rk = k;
+                    while parent[rk] != rk {
+                        rk = parent[rk];
+                    }
+                    let mut rl = l;
+                    while parent[rl] != rl {
+                        rl = parent[rl];
+                    }
+                    if rk != rl {
+                        parent[rl] = rk;
+                    }
+                }
+            }
         }
-        let group_end = i;
-        let group_size = group_end - group_start;
-        if group_size > 1 {
-            let center = anchor;
-            let total_width = (group_size - 1) as f32 * EDGE_NUDGE_SPACING;
-            for (j, &fi) in forward_indices[group_start..group_end].iter().enumerate() {
-                mid_x_overrides[fi] =
+
+        // Collect groups by root.
+        let mut groups: HashMap<usize, Vec<usize>> = HashMap::new();
+        for k in 0..nf {
+            let mut root = k;
+            while parent[root] != root {
+                root = parent[root];
+            }
+            groups.entry(root).or_default().push(k);
+        }
+
+        for (_, mut members) in groups {
+            if members.len() <= 1 {
+                continue;
+            }
+            // Sort by to_y so mid_x assignments are monotone → fewer crossings.
+            members.sort_by(|&a, &b| {
+                infos[forward_indices[a]]
+                    .to_y
+                    .partial_cmp(&infos[forward_indices[b]].to_y)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            // Centre the spread around the group's average raw_mid_x.
+            let center: f32 = members
+                .iter()
+                .map(|&k| infos[forward_indices[k]].raw_mid_x)
+                .sum::<f32>()
+                / members.len() as f32;
+            let total_width = (members.len() - 1) as f32 * EDGE_NUDGE_SPACING;
+            for (j, &k) in members.iter().enumerate() {
+                mid_x_overrides[k] =
                     Some(center - total_width / 2.0 + j as f32 * EDGE_NUDGE_SPACING);
             }
         }
