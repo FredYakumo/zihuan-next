@@ -332,6 +332,14 @@ pub(crate) fn bind_tab_callbacks(
                         }
                     }
                 }),
+                save_as: Box::new({
+                    let ui_weak = ui_weak.clone();
+                    move || {
+                        if let Some(ui) = ui_weak.upgrade() {
+                            ui.invoke_save_json_as();
+                        }
+                    }
+                }),
                 new_tab: Box::new({
                     let ui_weak = ui_weak.clone();
                     move || {

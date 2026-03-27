@@ -140,7 +140,7 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util::{ArrayGetNode, ConcatVecNode, ConditionalNode, FormatStringNode, JsonParserNode, LoopBreakNode, LoopNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
+    use crate::node::util::{ArrayGetNode, AsSystemOpenAIMessageNode, ConcatVecNode, ConditionalNode, FormatStringNode, JsonParserNode, LoopBreakNode, LoopNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
     use crate::llm::llm_api_node::LLMApiNode;
     use crate::llm::brain_node::BrainNode;
     use crate::llm::llm_infer_node::LLMInferNode;
@@ -230,6 +230,14 @@ pub fn init_node_registry() -> Result<()> {
         "消息",
         "从 OpenAIMessage 中提取 content 字段，以字符串形式输出",
         MessageContentNode
+    );
+
+    register_node!(
+        "as_system_openai_message",
+        "字符串转 System OpenAIMessage",
+        "消息",
+        "将字符串封装为 role=system 的 OpenAIMessage",
+        AsSystemOpenAIMessageNode
     );
 
     register_node!(
