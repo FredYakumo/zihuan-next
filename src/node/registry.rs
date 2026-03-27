@@ -140,7 +140,7 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util::{ArrayGetNode, AsSystemOpenAIMessageNode, ConcatVecNode, ConditionalNode, FormatStringNode, JsonParserNode, LoopBreakNode, LoopNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
+    use crate::node::util::{ArrayGetNode, AsSystemOpenAIMessageNode, ConcatVecNode, ConditionalNode, CurrentTimeNode, FormatStringNode, JsonParserNode, LoopBreakNode, LoopNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
     use crate::llm::llm_api_node::LLMApiNode;
     use crate::llm::brain_node::BrainNode;
     use crate::llm::llm_infer_node::LLMInferNode;
@@ -254,6 +254,14 @@ pub fn init_node_registry() -> Result<()> {
         "数据",
         "字符串数据源，通过UI输入框提供字符串",
         StringDataNode
+    );
+
+    register_node!(
+        "current_time",
+        "当前时间",
+        "数据",
+        "输出当前本地时间字符串，无需输入",
+        CurrentTimeNode
     );
 
     register_node!(
