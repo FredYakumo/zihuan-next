@@ -1,12 +1,12 @@
 import { VerticalBox } from "std-widgets.slint";
 import { AppTheme } from "theme.slint";
-import { EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm, HyperParameterVm, LogEntryVm, NodeTypeVm, NodeVm, ToolDefinitionVm } from "types.slint";
+import { EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm, HyperParameterVm, LogEntryVm, NodeTypeVm, NodeVm, ToolDefinitionVm, ValidationIssueVm } from "types.slint";
 import { CjkButton, CjkDeleteButton, CjkRunButton, CjkText } from "components/buttons.slint";
 import { MenuBarItem, MenuItemRow } from "components/menubar.slint";
 import { TabItem } from "components/tabs.slint";
 import { GraphCanvas } from "components/graph_canvas.slint";
 import { LogOverlay } from "components/log_overlay.slint";
-import { ErrorDialog, FormatStringEditorDialog, HyperParameterManagerDialog, LogHistoryDialog, NodeHelpDialog, NodeSelector, OverwriteConfirmDialog, PortBindHyperparamDialog, RunningConfirmDialog, SaveConfirmDialog, ToolEditorDialog } from "dialogs.slint";
+import { ErrorDialog, FormatStringEditorDialog, HyperParameterManagerDialog, LogHistoryDialog, NodeHelpDialog, NodeSelector, OverwriteConfirmDialog, PortBindHyperparamDialog, RunningConfirmDialog, SaveConfirmDialog, ToolEditorDialog, ValidationFixDialog } from "dialogs.slint";
 
 export component NodeGraphWindow inherits Window {
     in property <[NodeVm]> nodes;
@@ -53,6 +53,10 @@ export component NodeGraphWindow inherits Window {
     in property <bool> show_port_hint: false;
     in property <bool> show_error_dialog: false;
     in property <string> error_dialog_message: "";
+    in property <bool> show_validation_fix_dialog: false;
+    in property <[ValidationIssueVm]> validation_issues;
+    callback validation_fix_confirm();
+    callback validation_fix_cancel();
     in-out property <bool> menu_open: false;
     in property <bool> show_in_window_menu: true;
     in property <bool> show_save_confirm: false;
@@ -670,6 +674,12 @@ export component NodeGraphWindow inherits Window {
     if root.show_log_history: LogHistoryDialog {
         entries: root.log_history;
         close => { root.close_log_history(); }
+    }
+
+    if root.show_validation_fix_dialog: ValidationFixDialog {
+        issues: root.validation_issues;
+        confirm => { root.validation_fix_confirm(); }
+        cancel => { root.validation_fix_cancel(); }
     }
     } // end FocusScope key-handler
 }

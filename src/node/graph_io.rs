@@ -112,6 +112,227 @@ pub fn refresh_port_types(graph: &mut NodeGraphDefinition) {
     }
 }
 
+// ─────────────────────────────────────────────────────────────
+// Validation & Auto-Fix
+// ─────────────────────────────────────────────────────────────
+
+/// A single compatibility issue found when validating a graph definition
+/// against the current node registry.
+#[derive(Debug, Clone)]
+pub struct ValidationIssue {
+    /// `"error"` or `"warning"`
+    pub severity: String,
+    pub message: String,
+}
+
+impl ValidationIssue {
+    fn error(msg: impl Into<String>) -> Self {
+        Self { severity: "error".into(), message: msg.into() }
+    }
+    fn warning(msg: impl Into<String>) -> Self {
+        Self { severity: "warning".into(), message: msg.into() }
+    }
+}
+
+/// Validate a loaded `NodeGraphDefinition` against the live node registry.
+/// Returns a (possibly empty) list of issues. Does NOT mutate the definition.
+pub fn validate_graph_definition(graph: &NodeGraphDefinition) -> Vec<ValidationIssue> {
+    use crate::node::registry::NODE_REGISTRY;
+    let mut issues = Vec::new();
+
+    // Build a quick lookup: node_id → NodeDefinition
+    let node_map: HashMap<String, &NodeDefinition> =
+        graph.nodes.iter().map(|n| (n.id.clone(), n)).collect();
+
+    for node in &graph.nodes {
+        match NODE_REGISTRY.get_node_ports(&node.node_type) {
+            None => {
+                issues.push(ValidationIssue::error(format!(
+                    "节点 \"{}\" 的类型 \"{}\" 在注册表中不存在",
+                    node.name, node.node_type
+                )));
+            }
+            Some((canonical_inputs, canonical_outputs)) => {
+                // Check for ports in registry but missing from JSON (inputs)
+                for canon_port in &canonical_inputs {
+                    if !node.input_ports.iter().any(|p| p.name == canon_port.name) {
+                        issues.push(ValidationIssue::warning(format!(
+                            "节点 \"{}\" 缺少输入端口 \"{}\"",
+                            node.name, canon_port.name
+                        )));
+                    }
+                }
+                // Check for ports in JSON but absent from registry (inputs)
+                for port in &node.input_ports {
+                    if !canonical_inputs.iter().any(|p| p.name == port.name) {
+                        issues.push(ValidationIssue::warning(format!(
+                            "节点 \"{}\" 存在已删除的输入端口 \"{}\"",
+                            node.name, port.name
+                        )));
+                    }
+                }
+                // Check for ports in registry but missing from JSON (outputs)
+                for canon_port in &canonical_outputs {
+                    if !node.output_ports.iter().any(|p| p.name == canon_port.name) {
+                        issues.push(ValidationIssue::warning(format!(
+                            "节点 \"{}\" 缺少输出端口 \"{}\"",
+                            node.name, canon_port.name
+                        )));
+                    }
+                }
+                // Check for ports in JSON but absent from registry (outputs)
+                for port in &node.output_ports {
+                    if !canonical_outputs.iter().any(|p| p.name == port.name) {
+                        issues.push(ValidationIssue::warning(format!(
+                            "节点 \"{}\" 存在已删除的输出端口 \"{}\"",
+                            node.name, port.name
+                        )));
+                    }
+                }
+                // Check inline_values keys against all known port names
+                let all_port_names: Vec<&str> = canonical_inputs
+                    .iter()
+                    .chain(canonical_outputs.iter())
+                    .map(|p| p.name.as_str())
+                    .collect();
+                for key in node.inline_values.keys() {
+                    if !all_port_names.contains(&key.as_str()) {
+                        issues.push(ValidationIssue::warning(format!(
+                            "节点 \"{}\" 的内联值 \"{}\" 对应的端口不存在",
+                            node.name, key
+                        )));
+                    }
+                }
+            }
+        }
+    }
+
+    // Validate edges: node IDs and port names must exist
+    for edge in &graph.edges {
+        let from_ok = node_map
+            .get(&edge.from_node_id)
+            .map(|n| n.output_ports.iter().any(|p| p.name == edge.from_port))
+            .unwrap_or(false);
+        if !from_ok {
+            issues.push(ValidationIssue::error(format!(
+                "无效连接：源节点 \"{}\" 的输出端口 \"{}\" 不存在",
+                edge.from_node_id, edge.from_port
+            )));
+        }
+        let to_ok = node_map
+            .get(&edge.to_node_id)
+            .map(|n| n.input_ports.iter().any(|p| p.name == edge.to_port))
+            .unwrap_or(false);
+        if !to_ok {
+            issues.push(ValidationIssue::error(format!(
+                "无效连接：目标节点 \"{}\" 的输入端口 \"{}\" 不存在",
+                edge.to_node_id, edge.to_port
+            )));
+        }
+    }
+
+    issues
+}
+
+/// Apply automatic in-memory fixes to make the graph consistent with the
+/// current registry. Does NOT write anything to disk.
+///
+/// Fix strategy:
+/// - Unregistered node type → mark `has_error = true` (preserved for user inspection)
+/// - Missing ports vs registry → add the canonical port definition
+/// - Extra ports not in registry → remove them; also drop any edges and inline_values referencing them
+/// - Invalid edges (bad node/port reference) → remove
+/// - Orphan inline_values (no matching port) → remove
+pub fn auto_fix_graph_definition(graph: &mut NodeGraphDefinition) {
+    use crate::node::registry::NODE_REGISTRY;
+
+    // Track (node_id, port_name, is_input) of ports that no longer exist after fix –
+    // used to prune dangling edges.
+    let mut removed_output_ports: Vec<(String, String)> = Vec::new();
+    let mut removed_input_ports: Vec<(String, String)> = Vec::new();
+
+    for node in &mut graph.nodes {
+        match NODE_REGISTRY.get_node_ports(&node.node_type) {
+            None => {
+                // Unknown node type — preserve it but flag the error
+                node.has_error = true;
+            }
+            Some((canonical_inputs, canonical_outputs)) => {
+                node.has_error = false;
+
+                // Remove input ports not present in registry
+                let before: Vec<String> = node.input_ports.iter().map(|p| p.name.clone()).collect();
+                node.input_ports.retain(|p| canonical_inputs.iter().any(|c| c.name == p.name));
+                for removed in &before {
+                    if !node.input_ports.iter().any(|p| &p.name == removed) {
+                        removed_input_ports.push((node.id.clone(), removed.clone()));
+                    }
+                }
+                // Add input ports missing from JSON
+                for canon in &canonical_inputs {
+                    if !node.input_ports.iter().any(|p| p.name == canon.name) {
+                        node.input_ports.push(canon.clone());
+                    }
+                }
+
+                // Remove output ports not present in registry
+                let before: Vec<String> =
+                    node.output_ports.iter().map(|p| p.name.clone()).collect();
+                node.output_ports.retain(|p| canonical_outputs.iter().any(|c| c.name == p.name));
+                for removed in &before {
+                    if !node.output_ports.iter().any(|p| &p.name == removed) {
+                        removed_output_ports.push((node.id.clone(), removed.clone()));
+                    }
+                }
+                // Add output ports missing from JSON
+                for canon in &canonical_outputs {
+                    if !node.output_ports.iter().any(|p| p.name == canon.name) {
+                        node.output_ports.push(canon.clone());
+                    }
+                }
+
+                // Remove orphan inline_values (no matching port in registry)
+                let all_canonical_names: Vec<&str> = canonical_inputs
+                    .iter()
+                    .chain(canonical_outputs.iter())
+                    .map(|p| p.name.as_str())
+                    .collect();
+                node.inline_values.retain(|k, _| all_canonical_names.contains(&k.as_str()));
+            }
+        }
+    }
+
+    // Build set of valid (node_id, output_port) and (node_id, input_port) for edge validation
+    let node_map: HashMap<String, &NodeDefinition> =
+        graph.nodes.iter().map(|n| (n.id.clone(), n)).collect();
+
+    graph.edges.retain(|edge| {
+        // Drop if referencing a port we just removed
+        if removed_output_ports
+            .iter()
+            .any(|(nid, port)| nid == &edge.from_node_id && port == &edge.from_port)
+        {
+            return false;
+        }
+        if removed_input_ports
+            .iter()
+            .any(|(nid, port)| nid == &edge.to_node_id && port == &edge.to_port)
+        {
+            return false;
+        }
+        // Drop if node or port referenced doesn't exist at all
+        let from_ok = node_map
+            .get(&edge.from_node_id)
+            .map(|n| n.output_ports.iter().any(|p| p.name == edge.from_port))
+            .unwrap_or(false);
+        let to_ok = node_map
+            .get(&edge.to_node_id)
+            .map(|n| n.input_ports.iter().any(|p| p.name == edge.to_port))
+            .unwrap_or(false);
+        from_ok && to_ok
+    });
+}
+
 pub fn save_graph_definition_to_json(
     path: impl AsRef<Path>,
     graph: &NodeGraphDefinition,
