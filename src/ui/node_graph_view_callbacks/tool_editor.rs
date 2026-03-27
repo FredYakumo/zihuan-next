@@ -142,7 +142,11 @@ fn validate_tools(items: &[ToolDefinitionVm]) -> Result<(), String> {
 }
 
 fn brain_output_ports(items: &[ToolDefinitionVm]) -> Vec<Port> {
-    let mut ports = vec![Port::new("response", DataType::String).with_description("LLM 返回的最终文本回复")];
+    let mut ports = vec![
+        Port::new("assistant_message", DataType::OpenAIMessage)
+            .with_description("LLM 返回的完整 assistant 消息（含 tool_calls，用于 agentic loop）"),
+        Port::new("response", DataType::String).with_description("LLM 返回的最终文本回复"),
+    ];
     ports.extend(items.iter().map(|tool| {
         Port::new(tool.name.as_str(), DataType::Json)
             .with_description(format!("Tool '{}' 的调用参数 JSON", tool.name))

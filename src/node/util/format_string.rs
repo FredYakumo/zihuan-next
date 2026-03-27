@@ -109,6 +109,10 @@ impl Node for FormatStringNode {
         Some("通过 ${变量名} 模板语法将输入变量格式化为字符串")
     }
 
+    fn has_dynamic_input_ports(&self) -> bool {
+        true
+    }
+
     fn input_ports(&self) -> Vec<Port> {
         // "template" must always be present so the registry can pass it to
         // apply_inline_config before the dynamic variable ports are known.

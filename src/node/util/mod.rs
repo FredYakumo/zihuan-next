@@ -1,5 +1,4 @@
 pub mod array_get;
-pub mod as_system_openai_message;
 pub mod concat_vec;
 pub mod format_string;
 pub mod conditional;
@@ -7,6 +6,7 @@ pub mod loop_node;
 pub mod loop_break_node;
 pub mod current_time;
 pub mod json_parser;
+pub mod json_extract;
 pub mod message_content;
 pub mod message_list_data;
 pub mod openai_message_session_cache;
@@ -15,6 +15,7 @@ pub mod preview_message_list;
 pub mod preview_string;
 pub mod qq_message_list_data;
 pub mod stack;
+pub mod string_to_openai_message;
 pub mod string_data;
 pub mod string_to_plain_text;
 pub mod switch;
@@ -197,7 +198,6 @@ pub mod openai_message_session_cache_clear {
 }
 
 pub use array_get::ArrayGetNode;
-pub use as_system_openai_message::AsSystemOpenAIMessageNode;
 pub use format_string::FormatStringNode;
 pub use concat_vec::ConcatVecNode;
 pub use conditional::ConditionalNode;
@@ -205,6 +205,7 @@ pub use current_time::CurrentTimeNode;
 pub use loop_node::LoopNode;
 pub use loop_break_node::LoopBreakNode;
 pub use json_parser::JsonParserNode;
+pub use json_extract::JsonExtractNode;
 pub use message_content::MessageContentNode;
 pub use message_list_data::MessageListDataNode;
 pub use openai_message_session_cache::OpenAIMessageSessionCacheNode;
@@ -214,6 +215,7 @@ pub use preview_message_list::PreviewMessageListNode;
 pub use preview_string::PreviewStringNode;
 pub use qq_message_list_data::QQMessageListDataNode;
 pub use stack::StackNode;
+pub use string_to_openai_message::StringToOpenAIMessageNode;
 pub use string_data::{StringDataNode, STRING_DATA_CONTEXT};
 pub use string_to_plain_text::StringToPlainTextNode;
 pub use switch::SwitchNode;

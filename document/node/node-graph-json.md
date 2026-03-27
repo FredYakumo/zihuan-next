@@ -1,151 +1,181 @@
 # Node Graph JSON Specification
 
-> **Source of truth:** `src/node/graph_io.rs` — Rust structs are serialized/deserialized with [serde](https://serde.rs).  
-> **Live example:** [`node_graph.json`](../node_graph.json) in the repository root.
+> **Source of truth:** `src/node/graph_io.rs` — Rust structs serialized/deserialized with [serde](https://serde.rs).
 
-This document describes the JSON format used to persist and exchange node graphs.  
-The GUI loads/saves this format, and the runtime rebuilds an executable `NodeGraph` from it via `build_node_graph_from_definition()` in `src/node/registry.rs`.
+This document describes the JSON format used to save and load node graphs. The GUI reads and writes this format; the runtime rebuilds an executable `NodeGraph` from it via `build_node_graph_from_definition()` in `src/node/registry.rs`.
 
 ---
 
-## Overview
-
-A node graph file is a single JSON object with two top-level arrays:
+## Root structure
 
 ```jsonc
 {
-  "nodes": [ ... ],   // required — list of NodeDefinition objects
-  "edges": [ ... ]    // required — list of EdgeDefinition objects (may be empty)
+  "nodes": [ /* NodeDefinition[] */ ],
+  "edges": [ /* EdgeDefinition[] */ ],
+  "hyperparameters": [ /* HyperParameter[] */ ]   // optional
 }
 ```
 
-> **Runtime-only field:** `execution_results` exists in memory for UI display but is **never** serialized to disk.
+`execution_results` exists in memory for UI display purposes but is **never** written to disk.
 
 ---
 
 ## NodeDefinition
 
-Each entry in `nodes` describes a single node:
-
 ```jsonc
 {
-  "id":           "node_1",                              // unique, e.g. node_1, node_2, ...
-  "name":         "QQ Bot Adapter",                      // display label
-  "description":  "Receives messages from QQ server",    // optional
-  "node_type":    "bot_adapter",                         // registry type_id (see § Registered Node Types)
-  "input_ports":  [ /* Port */ ],
-  "output_ports": [ /* Port */ ],
-  "position":     { "x": 40.0, "y": 40.0 },             // optional — top-left corner in canvas coords
-  "size":         { "width": 200.0, "height": 120.0 },   // optional — custom size; null = auto
-  "inline_values": { "port_name": <json_value> },        // optional — default values for input ports
-  "has_error":    false                                   // optional — runtime error flag, safe to omit
+  "id":           "node_1",
+  "name":         "Format String",
+  "description":  "Optional tooltip",
+  "node_type":    "format_string",        // must match a registered type_id
+  "input_ports":  [ /* Port[] */ ],
+  "output_ports": [ /* Port[] */ ],
+  "dynamic_input_ports":  false,          // optional; default false
+  "dynamic_output_ports": false,          // optional; default false
+  "position":     { "x": 40.0, "y": 40.0 },
+  "size":         { "width": 200.0, "height": 120.0 },  // null = auto-size
+  "inline_values": {
+    "template": "Hello ${name}"           // port_name → JSON value
+  },
+  "has_error":    false                   // runtime flag, safe to omit/ignore
 }
 ```
 
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| `id` | `string` | true | Must be unique within the graph. Convention: `node_<n>`. |
-| `name` | `string` | true | Human-readable display name shown in the GUI. |
-| `description` | `string` | false | Tooltip / documentation. |
-| `node_type` | `string` | true | Must match a registered `type_id` in `NODE_REGISTRY`. |
-| `input_ports` | `Port[]` | true | Ordered list of input ports. |
-| `output_ports` | `Port[]` | true | Ordered list of output ports. |
-| `position` | `{ x, y }` | false | If omitted, the GUI auto-layouts on load. |
-| `size` | `{ width, height }` | false | `null` or omitted -> auto-calculated from port count. |
-| `inline_values` | `object` | false | Keys are port names; values are JSON primitives (`string`, `number`, `bool`). The UI supports inline editing for `String`, `Integer`, `Float`, and `Boolean` ports. |
-| `has_error` | `bool` | false | Set by the runtime when execution fails at this node. Ignored on load. |
+| Field | Required | Notes |
+|-------|----------|-------|
+| `id` | yes | Unique within the graph. Convention: `node_1`, `node_2`, ... |
+| `name` | yes | Display label shown on the node card in the GUI |
+| `description` | no | Tooltip text |
+| `node_type` | yes | Must be a registered `type_id` in `NODE_REGISTRY` |
+| `input_ports` | yes | Ordered list of input Port objects |
+| `output_ports` | yes | Ordered list of output Port objects |
+| `dynamic_input_ports` | no | `true` = input ports are config-driven; skip auto-fix and compatibility checks for this direction |
+| `dynamic_output_ports` | no | Same for output direction |
+| `position` | no | Top-left corner in canvas space. Omitting lets the GUI auto-layout on load |
+| `size` | no | `null` or omitted = auto-calculated from port count |
+| `inline_values` | no | Default values for input ports; keys are port names |
+| `has_error` | no | Set by the runtime on execution failure; ignored on load |
 
 ---
 
 ## Port
 
-Describes one input or output port on a node:
-
 ```jsonc
 {
-  "name":        "prompt",         // binding key — edges reference this name
-  "data_type":   "String",         // see § Data Types
-  "description": "Input prompt",   // optional
-  "required":    true              // input ports only — true means execution fails if unconnected and no inline value
+  "name":        "template",
+  "data_type":   "String",
+  "description": "Format template with ${variable} placeholders",
+  "required":    true
 }
 ```
 
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| `name` | `string` | true | Unique within the node's input or output port list. |
-| `data_type` | `DataType` | true | See [Data Types](#data-types) section. |
-| `description` | `string` | false | Shown as tooltip in the GUI. |
-| `required` | `bool` | true | Only meaningful for input ports. If `true`, the port must receive data from an edge or an `inline_values` entry. |
+| Field | Required | Notes |
+|-------|----------|-------|
+| `name` | yes | Unique within the node's input or output port list. `snake_case`. |
+| `data_type` | yes | See [Data Types](#data-types) below |
+| `description` | no | Shown as tooltip in the GUI |
+| `required` | yes | Only meaningful for input ports. If `true`, execution fails if this port has no incoming edge and no `inline_values` entry |
 
 ---
 
 ## EdgeDefinition
 
-Each entry in `edges` represents a directed connection from an output port to an input port:
-
 ```jsonc
 {
-  "from_node_id": "node_1",       // source node
-  "from_port":    "message_event", // source output port name
-  "to_node_id":   "node_2",       // target node
-  "to_port":      "message_event"  // target input port name
+  "from_node_id": "node_1",
+  "from_port":    "output",
+  "to_node_id":   "node_2",
+  "to_port":      "text"
 }
 ```
 
-**Validation rules** (enforced at runtime):
-- Both referenced nodes must exist.
-- `from_port` must be an output port on the source node.
-- `to_port` must be an input port on the target node.
-- The `data_type` of both ports must match.
-- Each input port can have **at most one** incoming edge.
-- The graph must be a **DAG** (no cycles).
+**Validation rules enforced at runtime:**
+- Both nodes must exist in the graph
+- `from_port` must be an output port on the source node
+- `to_port` must be an input port on the target node
+- Port data types must be compatible
+- Each input port may receive **at most one** incoming edge
+- The graph must be a **DAG** (no cycles)
 
-> **Legacy mode:** When `edges` is empty, the engine falls back to implicit auto-binding — an output port named `"foo"` automatically feeds any input port also named `"foo"` on a different node.
+> **Legacy mode:** when `edges` is an empty array, the engine falls back to implicit name-matching: an output port `"foo"` automatically feeds any input port `"foo"` on any other node. Do not use this for new graphs.
+
+---
+
+## HyperParameter
+
+Hyperparameters are graph-level variables that can be bound to input ports and overridden at runtime without editing the graph:
+
+```jsonc
+{
+  "name":        "api_key",
+  "data_type":   "Password",
+  "description": "OpenAI API key",
+  "required":    true
+}
+```
+
+Hyperparameter *values* are stored in a separate YAML file, not in the graph JSON.
 
 ---
 
 ## Data Types
 
-The `data_type` field maps to the `DataType` Rust enum (defined in `src/node/data_value.rs`).
+The `data_type` field is a string or JSON object corresponding to the `DataType` Rust enum in `src/node/data_value.rs`.
 
 ### Primitive types
 
-| Value | Rust variant | JSON inline value |
-|-------|-------------|-------------------|
+| JSON value | Rust variant | Inline value format |
+|-----------|-------------|---------------------|
 | `"String"` | `DataType::String` | `"hello"` |
 | `"Integer"` | `DataType::Integer` | `42` |
 | `"Float"` | `DataType::Float` | `3.14` |
 | `"Boolean"` | `DataType::Boolean` | `true` / `false` |
 | `"Json"` | `DataType::Json` | any JSON value |
-| `"Binary"` | `DataType::Binary` | *(not inlineable)* |
+| `"Binary"` | `DataType::Binary` | *(not inline-editable)* |
+| `"Password"` | `DataType::Password` | `"secret"` (masked in UI) |
+| `"Any"` | `DataType::Any` | any value |
 
-### Composite / domain types
+### Vec (homogeneous list)
 
-| Value | Description |
-|-------|-------------|
-| `"MessageList"` | `Vec<Message>` — LLM chat message history |
-| `"MessageEvent"` | Bot message event struct |
-| `"FunctionTools"` | LLM function-calling tool definitions |
-| `"BotAdapterRef"` | Shared reference to the bot adapter |
-| `"RedisRef"` | Redis connection configuration |
-| `"MySqlRef"` | MySQL connection configuration |
-| `{ "Custom": "<name>" }` | User-defined type |
-
-### List type
-
-`List` wraps an inner type and serializes as a JSON object:
+Serialized as a JSON object with key `"Vec"`:
 
 ```json
-{ "List": "String" }
+{ "Vec": "OpenAIMessage" }
+{ "Vec": "String" }
+{ "Vec": "QQMessage" }
 ```
 
----
+### Domain types
+
+| JSON value | Description |
+|-----------|-------------|
+| `"MessageEvent"` | Bot platform message event |
+| `"OpenAIMessage"` | LLM chat message `{role, content, tool_calls}` |
+| `"QQMessage"` | QQ platform message segment |
+| `"FunctionTools"` | LLM function-calling tool definitions |
+| `"BotAdapterRef"` | Shared bot WebSocket connection |
+| `"RedisRef"` | Redis configuration + connection manager |
+| `"MySqlRef"` | MySQL configuration + connection pool |
+| `"OpenAIMessageSessionCacheRef"` | Per-sender message history cache |
+| `"LLModel"` | Language model configuration |
+| `"LoopControlRef"` | Loop break signal |
+
+### Backward-compatible aliases
+
+The deserializer accepts these old names and converts them silently:
+
+| Old name | Resolves to |
+|---------|-------------|
+| `"Message"` | `"OpenAIMessage"` |
+| `"MessageList"` | `{"Vec": "OpenAIMessage"}` |
+| `"QQMessageList"` | `{"Vec": "QQMessage"}` |
+| `"Vec<OpenAIMessage>"` (Display string) | `{"Vec": "OpenAIMessage"}` |
 
 ---
 
-## Complete Example
+## Complete example
 
-A minimal 3-node pipeline: **Bot Adapter -> Message-to-String -> Preview**
+A 3-node pipeline: **Bot Adapter → Extract Message → Preview**
 
 ```json
 {
@@ -156,31 +186,30 @@ A minimal 3-node pipeline: **Bot Adapter -> Message-to-String -> Preview**
       "description": "Receives messages from QQ server",
       "node_type": "bot_adapter",
       "input_ports": [
-        { "name": "qq_id",            "data_type": "String", "description": "QQ ID",                    "required": true  },
-        { "name": "bot_server_url",   "data_type": "String", "description": "WebSocket server address", "required": true  },
-        { "name": "bot_server_token", "data_type": "String", "description": "Auth token",               "required": false }
+        { "name": "qq_id",            "data_type": "String", "required": true  },
+        { "name": "bot_server_url",   "data_type": "String", "required": true  },
+        { "name": "bot_server_token", "data_type": "Password", "required": false }
       ],
       "output_ports": [
-        { "name": "message_event", "data_type": "MessageEvent", "description": "Raw message event", "required": true }
+        { "name": "message_event", "data_type": "MessageEvent", "required": true }
       ],
       "position": { "x": 40.0, "y": 40.0 },
       "inline_values": {
-        "qq_id": "2721394556",
-        "bot_server_url": "ws://localhost:3001",
-        "bot_server_token": "my_token"
+        "qq_id": "123456789",
+        "bot_server_url": "ws://localhost:3001"
       }
     },
     {
       "id": "node_2",
-      "name": "Message to String",
-      "node_type": "message_event_to_string",
+      "name": "Extract Message",
+      "node_type": "extract_message_from_event",
       "input_ports": [
         { "name": "message_event", "data_type": "MessageEvent", "required": true }
       ],
       "output_ports": [
-        { "name": "prompt", "data_type": "String", "required": true }
+        { "name": "message", "data_type": { "Vec": "QQMessage" }, "required": true }
       ],
-      "position": { "x": 400.0, "y": 40.0 }
+      "position": { "x": 300.0, "y": 40.0 }
     },
     {
       "id": "node_3",
@@ -192,24 +221,26 @@ A minimal 3-node pipeline: **Bot Adapter -> Message-to-String -> Preview**
       "output_ports": [
         { "name": "text", "data_type": "String", "required": true }
       ],
-      "position": { "x": 760.0, "y": 40.0 }
+      "position": { "x": 560.0, "y": 40.0 }
     }
   ],
   "edges": [
     { "from_node_id": "node_1", "from_port": "message_event", "to_node_id": "node_2", "to_port": "message_event" },
-    { "from_node_id": "node_2", "from_port": "prompt",        "to_node_id": "node_3", "to_port": "text" }
+    { "from_node_id": "node_2", "from_port": "message",       "to_node_id": "node_3", "to_port": "text" }
   ]
 }
 ```
 
-The dataflow is:
+Data flow:
 
 ```
-[Bot Adapter] --message_event--> [Message->String] --prompt/text--> [Preview]
+[bot_adapter] --message_event--> [extract_message_from_event] --message--> [preview_string]
 ```
 
 ---
 
-## See Also
+## See also
 
-- **[Node Development Guide](./node-development.md)** — How to create custom nodes, register them, and extend the node type system.
+- [Node Development Guide](./node-development.md) — creating and registering node types
+- [Dynamic Port Nodes Guide](./dynamic-port-nodes.md) — config-driven port lists
+- [node-system.md](../dev-guides/node-system.md) — execution engine and all built-in node types

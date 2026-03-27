@@ -132,6 +132,8 @@ pub(crate) fn add_node_to_graph(graph: &mut NodeGraphDefinition, type_id: &str) 
         node_type: type_id.to_string(),
         input_ports: dummy_node.input_ports(),
         output_ports: dummy_node.output_ports(),
+        dynamic_input_ports: dummy_node.has_dynamic_input_ports(),
+        dynamic_output_ports: dummy_node.has_dynamic_output_ports(),
         position: None,
         size: None,
         inline_values: HashMap::new(),
