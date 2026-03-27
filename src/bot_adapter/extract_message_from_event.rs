@@ -11,7 +11,6 @@ use std::collections::HashMap;
 /// Inputs:
 ///   - message_event: MessageEvent containing message data
 ///   - bot_adapter: BotAdapterRef for building context-aware system message
-///   - persona: Optional persona/character description (default: "默认助手")
 /// 
 /// Outputs:
 ///   - messages: Vec<OpenAIMessage>: One user message
@@ -131,10 +130,9 @@ mod tests {
         let input_ports = node.input_ports();
         let output_ports = node.output_ports();
 
-        assert_eq!(input_ports.len(), 3);
+        assert_eq!(input_ports.len(), 2);
         assert_eq!(input_ports[0].name, "message_event");
         assert_eq!(input_ports[1].name, "bot_adapter");
-        assert_eq!(input_ports[2].name, "persona");
 
         assert_eq!(output_ports.len(), 5);
         assert_eq!(output_ports[0].name, "messages");

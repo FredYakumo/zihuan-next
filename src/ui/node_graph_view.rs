@@ -9,8 +9,9 @@ use std::time::Instant;
 
 use crate::error::Result;
 use crate::node::graph_io::{
-    NodeGraphDefinition,
+    NodeGraphDefinition, validate_graph_definition,
 };
+use crate::ui::graph_window::ValidationIssueVm;
 use crate::node::registry::NODE_REGISTRY;
 
 use crate::ui::graph_window::{
@@ -115,20 +116,36 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: O
     let mut next_untitled_index = 1usize;
     let mut next_tab_id = 1u64;
 
+    // Shared state for pending graph open (used both by file-open dialog and CLI startup)
+    let pending_open_graph: Arc<Mutex<Option<(PathBuf, NodeGraphDefinition)>>> =
+        Arc::new(Mutex::new(None));
+
     let mut initial_tab = new_blank_tab(&mut next_untitled_index, &mut next_tab_id);
+    let mut startup_has_validation_issues = false;
     if let Some(graph) = initial_graph {
-        initial_tab.graph = graph.clone();
-        initial_tab.inline_inputs = build_inline_inputs_from_graph(&graph);
-        if let Some(path) = graph_file_path {
-            initial_tab.hyperparameter_values =
-                crate::util::hyperparam_store::load_hyperparameter_values(path);
-            initial_tab.file_path = Some(path.to_path_buf());
-            initial_tab.title = path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| path.display().to_string());
+        let issues = validate_graph_definition(&graph);
+        if issues.is_empty() {
+            // No issues – load directly
+            initial_tab.graph = graph.clone();
+            initial_tab.inline_inputs = build_inline_inputs_from_graph(&graph);
+            if let Some(path) = graph_file_path {
+                initial_tab.hyperparameter_values =
+                    crate::util::hyperparam_store::load_hyperparameter_values(path);
+                initial_tab.file_path = Some(path.to_path_buf());
+                initial_tab.title = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| path.display().to_string());
+            }
+            initial_tab.is_dirty = false;
+        } else {
+            // Validation issues found – store as pending and show dialog after startup
+            let pending_path = graph_file_path
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| PathBuf::from("unknown"));
+            *pending_open_graph.lock().unwrap() = Some((pending_path, graph));
+            startup_has_validation_issues = true;
         }
-        initial_tab.is_dirty = false;
     }
 
     let tabs = Arc::new(Mutex::new(vec![initial_tab]));
@@ -206,7 +223,34 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: O
         Arc::clone(&next_untitled_index),
         Arc::clone(&next_tab_id),
         Arc::clone(&pending_close_tab_id),
+        Arc::clone(&pending_open_graph),
     );
+
+    // If startup graph had validation issues, show the dialog once the event loop is running
+    if startup_has_validation_issues {
+        let ui_weak = ui.as_weak();
+        let pending_clone = Arc::clone(&pending_open_graph);
+        slint::Timer::single_shot(std::time::Duration::from_millis(0), move || {
+            let guard = pending_clone.lock().unwrap();
+            if let Some((_, ref graph)) = *guard {
+                let issues = validate_graph_definition(graph);
+                let issue_vms: Vec<ValidationIssueVm> = issues
+                    .iter()
+                    .map(|i| ValidationIssueVm {
+                        severity: i.severity.clone().into(),
+                        message: i.message.clone().into(),
+                    })
+                    .collect();
+                drop(guard);
+                if let Some(ui) = ui_weak.upgrade() {
+                    ui.set_validation_issues(slint::ModelRc::from(
+                        std::rc::Rc::new(slint::VecModel::from(issue_vms)),
+                    ));
+                    ui.set_show_validation_fix_dialog(true);
+                }
+            }
+        });
+    }
 
     bind_window_callbacks(
         &ui,
