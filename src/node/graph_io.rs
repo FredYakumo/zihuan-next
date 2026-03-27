@@ -146,6 +146,52 @@ impl ValidationIssue {
     }
 }
 
+fn extract_format_string_variables(template: &str) -> Vec<String> {
+    use std::collections::HashSet;
+
+    let mut vars = Vec::new();
+    let mut seen = HashSet::new();
+    let mut pos = 0;
+    while let Some(rel) = template[pos..].find("${") {
+        let start = pos + rel + 2;
+        if let Some(end_rel) = template[start..].find('}') {
+            let name = template[start..start + end_rel].trim().to_string();
+            if !name.is_empty() && seen.insert(name.clone()) {
+                vars.push(name);
+            }
+            pos = start + end_rel + 1;
+        } else {
+            break;
+        }
+    }
+    vars
+}
+
+fn expand_dynamic_ports_for_node(
+    node: &NodeDefinition,
+    mut canonical_inputs: Vec<Port>,
+    canonical_outputs: Vec<Port>,
+) -> (Vec<Port>, Vec<Port>) {
+    if node.node_type == "format_string" {
+        let template = node
+            .inline_values
+            .get("template")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        for var in extract_format_string_variables(template) {
+            if !canonical_inputs.iter().any(|p| p.name == var) {
+                canonical_inputs.push(
+                    Port::new(var.clone(), DataType::String)
+                        .with_description(format!("变量 {var}")),
+                );
+            }
+        }
+    }
+
+    (canonical_inputs, canonical_outputs)
+}
+
 /// Validate a loaded `NodeGraphDefinition` against the live node registry.
 /// Returns a (possibly empty) list of issues. Does NOT mutate the definition.
 pub fn validate_graph_definition(graph: &NodeGraphDefinition) -> Vec<ValidationIssue> {
@@ -165,6 +211,9 @@ pub fn validate_graph_definition(graph: &NodeGraphDefinition) -> Vec<ValidationI
                 )));
             }
             Some((canonical_inputs, canonical_outputs)) => {
+                let (canonical_inputs, canonical_outputs) =
+                    expand_dynamic_ports_for_node(node, canonical_inputs, canonical_outputs);
+
                 // Check for REQUIRED ports in registry but missing from JSON (inputs)
                 for canon_port in &canonical_inputs {
                     if canon_port.required && !node.input_ports.iter().any(|p| p.name == canon_port.name) {
@@ -270,6 +319,9 @@ pub fn auto_fix_graph_definition(graph: &mut NodeGraphDefinition) {
                 node.has_error = true;
             }
             Some((canonical_inputs, canonical_outputs)) => {
+                let (canonical_inputs, canonical_outputs) =
+                    expand_dynamic_ports_for_node(node, canonical_inputs, canonical_outputs);
+
                 node.has_error = false;
 
                 // Remove input ports not present in registry
@@ -640,5 +692,75 @@ impl NodeGraphDefinition {
 
     pub fn to_json_value(&self) -> serde_json::Value {
         serde_json::to_value(self).unwrap_or(serde_json::Value::Null)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn format_string_node(input_ports: Vec<Port>) -> NodeDefinition {
+        NodeDefinition {
+            id: "node_1".to_string(),
+            name: "格式化字符串".to_string(),
+            description: Some("通过 ${变量名} 模板语法将输入变量格式化为字符串".to_string()),
+            node_type: "format_string".to_string(),
+            input_ports,
+            output_ports: vec![Port::new("output", DataType::String)],
+            position: None,
+            size: None,
+            inline_values: HashMap::from([(
+                "template".to_string(),
+                json!("你的角色是${角色名称}, 用户=${sender_id}, 时间=${time}"),
+            )]),
+            port_bindings: HashMap::new(),
+            has_error: false,
+        }
+    }
+
+    #[test]
+    fn validate_format_string_dynamic_ports_without_false_deleted_warning() {
+        let graph = NodeGraphDefinition {
+            nodes: vec![format_string_node(vec![
+                Port::new("角色名称", DataType::String),
+                Port::new("sender_id", DataType::String),
+                Port::new("time", DataType::String),
+            ])],
+            edges: vec![],
+            hyperparameters: vec![],
+            execution_results: HashMap::new(),
+        };
+
+        let issues = validate_graph_definition(&graph);
+        assert!(
+            issues.is_empty(),
+            "unexpected compatibility issues: {:?}",
+            issues
+                .iter()
+                .map(|i| i.message.clone())
+                .collect::<Vec<String>>()
+        );
+    }
+
+    #[test]
+    fn auto_fix_keeps_format_string_ports_from_template() {
+        let mut graph = NodeGraphDefinition {
+            nodes: vec![format_string_node(vec![
+                Port::new("角色名称", DataType::String),
+                Port::new("sender_id", DataType::String),
+                Port::new("time", DataType::String),
+            ])],
+            edges: vec![],
+            hyperparameters: vec![],
+            execution_results: HashMap::new(),
+        };
+
+        auto_fix_graph_definition(&mut graph);
+
+        let fixed = &graph.nodes[0];
+        assert!(fixed.input_ports.iter().any(|p| p.name == "角色名称"));
+        assert!(fixed.input_ports.iter().any(|p| p.name == "sender_id"));
+        assert!(fixed.input_ports.iter().any(|p| p.name == "time"));
     }
 }
