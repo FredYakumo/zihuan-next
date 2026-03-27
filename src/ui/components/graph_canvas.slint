@@ -53,6 +53,7 @@ export component GraphCanvas inherits Rectangle {
     callback port_right_clicked(string, string);
     callback edit_tools_clicked(string);
     callback edit_format_string_clicked(string);
+    callback edit_json_extract_clicked(string);
 
     in-out property <bool> dragging: false;
     in-out property <string> drag_from_node_id: "";
@@ -172,11 +173,20 @@ export component GraphCanvas inherits Rectangle {
     }
 
     for segment[idx] in edge_segments: Rectangle {
+        if edges[segment.edge_index].is_selected: Rectangle {
+            x: -2px;
+            y: -2px;
+            width: parent.width + 4px;
+            height: parent.height + 4px;
+            background: AppTheme.edge-highlight;
+            border-radius: ((root.edge_thickness / 2) * root.canvas_zoom + 2) * 1px;
+        }
+
         x: (segment.x + root.canvas_pan_x) * root.canvas_zoom * 1px;
         y: (segment.y + root.canvas_pan_y) * root.canvas_zoom * 1px;
         width: segment.width * root.canvas_zoom * 1px;
         height: segment.height * root.canvas_zoom * 1px;
-        background: edges[segment.edge_index].is_selected ? AppTheme.edge-selected : edges[segment.edge_index].color;
+        background: edges[segment.edge_index].color;
         border-radius: (root.edge_thickness / 2) * root.canvas_zoom * 1px;
         border-width: 1px;
         border-color: edges[segment.edge_index].is_selected ? AppTheme.edge-border-selected : AppTheme.edge-border;
@@ -194,11 +204,20 @@ export component GraphCanvas inherits Rectangle {
     }
 
     for corner[idx] in edge_corners: Rectangle {
+        if edges[corner.edge_index].is_selected: Rectangle {
+            x: -2px;
+            y: -2px;
+            width: parent.width + 4px;
+            height: parent.height + 4px;
+            background: AppTheme.edge-highlight;
+            border-radius: ((root.edge_thickness / 2) * root.canvas_zoom + 2) * 1px;
+        }
+
         x: (corner.x + root.canvas_pan_x - root.edge_thickness / 2) * root.canvas_zoom * 1px;
         y: (corner.y + root.canvas_pan_y - root.edge_thickness / 2) * root.canvas_zoom * 1px;
         width: root.edge_thickness * root.canvas_zoom * 1px;
         height: root.edge_thickness * root.canvas_zoom * 1px;
-        background: edges[corner.edge_index].is_selected ? AppTheme.edge-selected : edges[corner.edge_index].color;
+        background: edges[corner.edge_index].color;
         border-radius: (root.edge_thickness / 2) * root.canvas_zoom * 1px;
         border-width: 1px;
         border-color: edges[corner.edge_index].is_selected ? AppTheme.edge-border-selected : AppTheme.edge-border;
@@ -391,6 +410,10 @@ export component GraphCanvas inherits Rectangle {
 
         edit_format_string_clicked(node_id) => {
             root.edit_format_string_clicked(node_id);
+        }
+
+        edit_json_extract_clicked(node_id) => {
+            root.edit_json_extract_clicked(node_id);
         }
     }
 

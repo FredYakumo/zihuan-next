@@ -76,6 +76,13 @@ impl NodeRegistry {
         Some((node.input_ports(), node.output_ports()))
     }
 
+    pub fn get_node_dynamic_port_flags(&self, type_id: &str) -> Option<(bool, bool)> {
+        let factories = self.factories.read().unwrap();
+        let factory = factories.get(type_id)?;
+        let node = factory("__probe__".to_string(), "__probe__".to_string());
+        Some((node.has_dynamic_input_ports(), node.has_dynamic_output_ports()))
+    }
+
     /// Returns true if the registered node type is an EventProducer.
     pub fn is_event_producer(&self, type_id: &str) -> bool {
         let factories = self.factories.read().unwrap();
@@ -140,7 +147,7 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util::{ArrayGetNode, AsSystemOpenAIMessageNode, ConcatVecNode, ConditionalNode, CurrentTimeNode, FormatStringNode, JsonParserNode, LoopBreakNode, LoopNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
+    use crate::node::util::{ArrayGetNode, ConcatVecNode, ConditionalNode, CurrentTimeNode, FormatStringNode, JsonExtractNode, JsonParserNode, LoopBreakNode, LoopNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
     use crate::llm::llm_api_node::LLMApiNode;
     use crate::llm::brain_node::BrainNode;
     use crate::llm::llm_infer_node::LLMInferNode;
@@ -225,6 +232,14 @@ pub fn init_node_registry() -> Result<()> {
     );
 
     register_node!(
+        "json_extract",
+        "提取 JSON 字段",
+        "工具",
+        "通过字段编辑器配置要提取的字段列表，并动态输出对应类型的字段值",
+        JsonExtractNode
+    );
+
+    register_node!(
         "message_content",
         "提取 OpenAIMessage 内容",
         "消息",
@@ -233,11 +248,19 @@ pub fn init_node_registry() -> Result<()> {
     );
 
     register_node!(
-        "as_system_openai_message",
-        "字符串转 System OpenAIMessage",
+        "string_to_openai_message",
+        "字符串转 OpenAIMessage",
         "消息",
-        "将字符串封装为 role=system 的 OpenAIMessage",
-        AsSystemOpenAIMessageNode
+        "将字符串封装为可选 role 的 OpenAIMessage",
+        StringToOpenAIMessageNode
+    );
+
+    register_node!(
+        "as_system_openai_message",
+        "字符串转 OpenAIMessage",
+        "消息",
+        "兼容旧节点类型 ID：将字符串封装为可选 role 的 OpenAIMessage，默认 role=system",
+        StringToOpenAIMessageNode
     );
 
     register_node!(
