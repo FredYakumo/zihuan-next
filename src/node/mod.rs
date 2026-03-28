@@ -1133,8 +1133,8 @@ impl NodeGraph {
 
             if !from_port.data_type.is_compatible_with(&to_port.data_type) {
                 return Err(crate::error::Error::ValidationError(format!(
-                    "Port type mismatch for edge {}.{} -> {}.{}",
-                    edge.from_node_id, edge.from_port, edge.to_node_id, edge.to_port
+                    "端口类型不匹配：\"{}\"的输出端口\"{}\" -> \"{}\"的输入端口\"{}\" [NODE_ERROR:{}]",
+                    from_node.name(), edge.from_port, to_node.name(), edge.to_port, edge.to_node_id
                 )));
             }
 

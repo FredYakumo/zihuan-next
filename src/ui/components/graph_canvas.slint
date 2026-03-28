@@ -173,12 +173,12 @@ export component GraphCanvas inherits Rectangle {
     }
 
     for segment[idx] in edge_segments: Rectangle {
-        if edges[segment.edge_index].is_selected: Rectangle {
+        if edges[segment.edge_index].is_selected || edges[segment.edge_index].has_error: Rectangle {
             x: -2px;
             y: -2px;
             width: parent.width + 4px;
             height: parent.height + 4px;
-            background: AppTheme.edge-highlight;
+            background: edges[segment.edge_index].has_error ? AppTheme.danger : AppTheme.edge-highlight;
             border-radius: ((root.edge_thickness / 2) * root.canvas_zoom + 2) * 1px;
         }
 
@@ -189,7 +189,7 @@ export component GraphCanvas inherits Rectangle {
         background: edges[segment.edge_index].color;
         border-radius: (root.edge_thickness / 2) * root.canvas_zoom * 1px;
         border-width: 1px;
-        border-color: edges[segment.edge_index].is_selected ? AppTheme.edge-border-selected : AppTheme.edge-border;
+        border-color: edges[segment.edge_index].has_error ? AppTheme.danger : (edges[segment.edge_index].is_selected ? AppTheme.edge-border-selected : AppTheme.edge-border);
 
         TouchArea {
             clicked => {
@@ -204,12 +204,12 @@ export component GraphCanvas inherits Rectangle {
     }
 
     for corner[idx] in edge_corners: Rectangle {
-        if edges[corner.edge_index].is_selected: Rectangle {
+        if edges[corner.edge_index].is_selected || edges[corner.edge_index].has_error: Rectangle {
             x: -2px;
             y: -2px;
             width: parent.width + 4px;
             height: parent.height + 4px;
-            background: AppTheme.edge-highlight;
+            background: edges[corner.edge_index].has_error ? AppTheme.danger : AppTheme.edge-highlight;
             border-radius: ((root.edge_thickness / 2) * root.canvas_zoom + 2) * 1px;
         }
 
@@ -220,7 +220,7 @@ export component GraphCanvas inherits Rectangle {
         background: edges[corner.edge_index].color;
         border-radius: (root.edge_thickness / 2) * root.canvas_zoom * 1px;
         border-width: 1px;
-        border-color: edges[corner.edge_index].is_selected ? AppTheme.edge-border-selected : AppTheme.edge-border;
+        border-color: edges[corner.edge_index].has_error ? AppTheme.danger : (edges[corner.edge_index].is_selected ? AppTheme.edge-border-selected : AppTheme.edge-border);
 
         TouchArea {
             clicked => {

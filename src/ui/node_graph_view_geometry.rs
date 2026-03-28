@@ -423,6 +423,12 @@ fn edge_color(edge: &EdgeDefinition) -> slint::Color {
     }
 }
 
+fn edge_has_error(graph: &NodeGraphDefinition, edge: &EdgeDefinition) -> bool {
+    graph.nodes.iter().any(|node| {
+        node.has_error && (node.id == edge.from_node_id || node.id == edge.to_node_id)
+    })
+}
+
 pub(crate) fn build_edges(
     graph: &NodeGraphDefinition,
     selection_state: &SelectionState,
@@ -470,7 +476,12 @@ pub(crate) fn build_edges(
                 to_x: to_x.into(),
                 to_y: to_y.into(),
                 is_selected,
-                color: edge_color(edge),
+                has_error: edge_has_error(graph, edge),
+                color: if edge_has_error(graph, edge) {
+                    slint::Color::from_rgb_u8(0xdc, 0x35, 0x45)
+                } else {
+                    edge_color(edge)
+                },
             })
         })
         .collect()

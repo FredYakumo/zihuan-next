@@ -147,7 +147,7 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util::{ArrayGetNode, ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode, LastMessageIsToolNode, JsonExtractNode, JsonParserNode, LoopBreakNode, LoopNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
+    use crate::node::util::{ArrayGetNode, ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode, LastMessageIsToolNode, JsonExtractNode, JsonParserNode, LoopBreakNode, LoopNode, LoopStateUpdateNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
     use crate::llm::llm_api_node::LLMApiNode;
     use crate::llm::brain_node::BrainNode;
     use crate::llm::llm_infer_node::LLMInferNode;
@@ -205,6 +205,14 @@ pub fn init_node_registry() -> Result<()> {
         "工具",
         "当 condition 为 true 时，通知循环节点在下一轮退出；放置在循环链路最末端",
         LoopBreakNode
+    );
+
+    register_node!(
+        "loop_state_update",
+        "循环状态更新",
+        "工具",
+        "将 new_state 写入循环控制引用；循环下一轮将以此值为 output 输出，无需图中回边",
+        LoopStateUpdateNode
     );
 
     register_node!(
