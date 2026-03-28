@@ -3,13 +3,12 @@ use crate::node::data_value::LoopControl;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 pub struct LoopNode {
 	id: String,
 	name: String,
 	loop_control: Arc<LoopControl>,
-	current_data: Arc<Mutex<DataValue>>,
 	stop_flag: Arc<AtomicBool>,
 }
 
@@ -19,7 +18,6 @@ impl LoopNode {
 			id: id.into(),
 			name: name.into(),
 			loop_control: Arc::new(LoopControl::new()),
-			current_data: Arc::new(Mutex::new(DataValue::Boolean(false))),
 			stop_flag: Arc::new(AtomicBool::new(false)),
 		}
 	}
@@ -62,7 +60,7 @@ impl Node for LoopNode {
 	fn on_start(&mut self, inputs: HashMap<String, DataValue>) -> Result<()> {
 		self.loop_control.reset();
 		let data = inputs.get("input").cloned().unwrap_or(DataValue::Boolean(false));
-		*self.current_data.lock().unwrap() = data;
+		self.loop_control.init_state(data);
 		Ok(())
 	}
 
@@ -70,7 +68,7 @@ impl Node for LoopNode {
 		if self.stop_flag.load(Ordering::Relaxed) || self.loop_control.should_break() {
 			return Ok(None);
 		}
-		let data = self.current_data.lock().unwrap().clone();
+		let data = self.loop_control.get_state();
 		let mut outputs = HashMap::new();
 		outputs.insert("output".to_string(), data);
 		outputs.insert(

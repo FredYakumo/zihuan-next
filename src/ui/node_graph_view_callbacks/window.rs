@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use log::{error, info};
@@ -94,6 +95,61 @@ fn build_node_help_data(
         input_ports: ModelRc::new(VecModel::from(input_ports)),
         output_ports: ModelRc::new(VecModel::from(output_ports)),
     }
+}
+
+fn clear_graph_error_state(graph: &mut NodeGraphDefinition) {
+    for node in &mut graph.nodes {
+        node.has_error = false;
+    }
+}
+
+fn collect_error_related_node_ids(_graph: &NodeGraphDefinition, error_node_id: &str) -> HashSet<String> {
+    let mut related_node_ids = HashSet::new();
+    related_node_ids.insert(error_node_id.to_string());
+    related_node_ids
+}
+
+fn mark_graph_error_path(graph: &mut NodeGraphDefinition, error_node_id: &str) {
+    clear_graph_error_state(graph);
+
+    for related_node_id in collect_error_related_node_ids(graph, error_node_id) {
+        if let Some(node) = graph.nodes.iter_mut().find(|node| node.id == related_node_id) {
+            node.has_error = true;
+        }
+    }
+}
+
+fn format_execution_error_message(
+    graph: &NodeGraphDefinition,
+    error_node_id: &str,
+    error_msg: &str,
+) -> String {
+    let display_msg = if let Some(idx) = error_msg.find(" [NODE_ERROR:") {
+        &error_msg[..idx]
+    } else {
+        error_msg
+    };
+    if let Some(node) = graph.nodes.iter().find(|node| node.id == error_node_id) {
+        format!("节点 \"{}\" 执行失败: {}", node.name, display_msg)
+    } else {
+        format!("节点 {} 执行失败: {}", error_node_id, display_msg)
+    }
+}
+
+fn extract_error_node_id(error_msg: &str) -> Option<String> {
+    if let Some(start) = error_msg.find("[NODE_ERROR:") {
+        if let Some(end) = error_msg[start + 12..].find(']') {
+            return Some(error_msg[start + 12..start + 12 + end].to_string());
+        }
+    }
+
+    if let Some(start) = error_msg.find("Node '") {
+        if let Some(end) = error_msg[start + 6..].find('\'') {
+            return Some(error_msg[start + 6..start + 6 + end].to_string());
+        }
+    }
+
+    None
 }
 
 pub(crate) fn bind_window_callbacks(
@@ -204,6 +260,7 @@ pub(crate) fn bind_window_callbacks(
 
         apply_hyperparameter_bindings_to_graph(&mut graph_def, &hyperparameter_values);
         apply_inline_inputs_to_graph(&mut graph_def, &inline_inputs_map);
+        clear_graph_error_state(&mut graph_def);
 
         match crate::node::registry::build_node_graph_from_definition(&graph_def) {
             Ok(mut node_graph) => {
@@ -302,9 +359,8 @@ pub(crate) fn bind_window_callbacks(
                                 execution_result.error_message.clone(),
                             ) {
                                 error!("节点图执行失败: {}", error_msg);
-                                if let Some(node) = tab.graph.nodes.iter_mut().find(|n| n.id == error_node_id) {
-                                    node.has_error = true;
-                                }
+                                mark_graph_error_path(&mut tab.graph, &error_node_id);
+                                let display_error = format_execution_error_message(&tab.graph, &error_node_id, &error_msg);
 
                                 if let Some(ui) = ui_weak.upgrade() {
                                     if active_tab_id == Some(tab_id) {
@@ -316,8 +372,8 @@ pub(crate) fn bind_window_callbacks(
                                             &inline_inputs_bg,
                                             &hp_values_bg,
                                         );
-                                        ui.invoke_show_error(format!("执行错误：{}", error_msg).into());
-                                        ui.set_connection_status(format!("❌ 执行失败: {}", error_msg).into());
+                                        ui.invoke_show_error(display_error.clone().into());
+                                        ui.set_connection_status(format!("❌ {}", display_error).into());
                                     }
                                 }
                             } else {
@@ -327,9 +383,7 @@ pub(crate) fn bind_window_callbacks(
                                     info!("节点图执行成功!");
                                 }
 
-                                for node in &mut tab.graph.nodes {
-                                    node.has_error = false;
-                                }
+                                clear_graph_error_state(&mut tab.graph);
 
                                 if let Some(ui) = ui_weak.upgrade() {
                                     if active_tab_id == Some(tab_id) {
@@ -378,9 +432,8 @@ pub(crate) fn bind_window_callbacks(
                         execution_result.error_message.clone(),
                     ) {
                         error!("节点图执行失败: {}", error_msg);
-                        if let Some(node) = tab.graph.nodes.iter_mut().find(|n| n.id == error_node_id) {
-                            node.has_error = true;
-                        }
+                        mark_graph_error_path(&mut tab.graph, &error_node_id);
+                        let display_error = format_execution_error_message(&tab.graph, &error_node_id, &error_msg);
 
                         if let Some(ui) = ui_handle.upgrade() {
                             if active_tab_id == Some(tab_id) {
@@ -392,14 +445,13 @@ pub(crate) fn bind_window_callbacks(
                                     &inline_inputs_map,
                                     &hyperparameter_values,
                                 );
-                                ui.invoke_show_error(format!("执行错误：{}", error_msg).into());
+                                ui.invoke_show_error(display_error.clone().into());
+                                ui.set_connection_status(format!("❌ {}", display_error).into());
                             }
                         }
                     } else {
                         info!("节点图执行成功!");
-                        for node in &mut tab.graph.nodes {
-                            node.has_error = false;
-                        }
+                        clear_graph_error_state(&mut tab.graph);
 
                         if let Some(ui) = ui_handle.upgrade() {
                             if active_tab_id == Some(tab_id) {
@@ -420,7 +472,13 @@ pub(crate) fn bind_window_callbacks(
             Err(e) => {
                 error!("构建节点图失败: {}", e);
                 if let Some(ui) = ui_handle.upgrade() {
-                    ui.invoke_show_error(format!("构建节点图失败：{}", e).into());
+                    let error_msg = e.to_string();
+                    ui.invoke_show_error(
+                        extract_error_node_id(&error_msg)
+                            .map(|error_node_id| format_execution_error_message(&graph_def, &error_node_id, &error_msg))
+                            .unwrap_or_else(|| format!("构建节点图失败：{}", error_msg))
+                            .into(),
+                    );
                 }
             }
         }
