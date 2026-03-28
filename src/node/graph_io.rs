@@ -17,6 +17,9 @@ pub struct HyperParameter {
     pub name: String,
     /// Must be one of: String, Integer, Float, Boolean
     pub data_type: DataType,
+    /// Logical group for shared hyperparameter storage.
+    #[serde(default = "default_hyperparameter_group")]
+    pub group: String,
     /// Whether execution is blocked when this hyperparameter has no value
     #[serde(default)]
     pub required: bool,
@@ -24,10 +27,16 @@ pub struct HyperParameter {
     pub description: Option<String>,
 }
 
+fn default_hyperparameter_group() -> String {
+    "default".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NodeGraphDefinition {
     pub nodes: Vec<NodeDefinition>,
     pub edges: Vec<EdgeDefinition>,
+    #[serde(default)]
+    pub hyperparameter_groups: Vec<String>,
     #[serde(default)]
     pub hyperparameters: Vec<HyperParameter>,
     #[serde(skip)]
@@ -131,6 +140,55 @@ pub fn refresh_port_types(graph: &mut NodeGraphDefinition) {
                     node.output_ports.push(canon.clone());
                 }
             }
+        }
+    }
+
+    rebuild_dynamic_ports_from_inline_values(graph);
+}
+
+fn rebuild_dynamic_ports_from_inline_values(graph: &mut NodeGraphDefinition) {
+    use crate::node::registry::{json_to_data_value, NODE_REGISTRY};
+
+    for node in &mut graph.nodes {
+        if !node.dynamic_input_ports && !node.dynamic_output_ports {
+            continue;
+        }
+
+        let Ok(mut runtime_node) = NODE_REGISTRY.create_node(
+            &node.node_type,
+            node.id.clone(),
+            node.name.clone(),
+        ) else {
+            continue;
+        };
+
+        let input_types: HashMap<String, DataType> = runtime_node
+            .input_ports()
+            .into_iter()
+            .map(|port| (port.name, port.data_type))
+            .collect();
+
+        let inline_values: HashMap<String, DataValue> = node
+            .inline_values
+            .iter()
+            .filter_map(|(port_name, json_val)| {
+                input_types
+                    .get(port_name)
+                    .and_then(|data_type| json_to_data_value(json_val, data_type))
+                    .map(|value| (port_name.clone(), value))
+            })
+            .collect();
+
+        if runtime_node.apply_inline_config(&inline_values).is_err() {
+            node.has_error = true;
+            continue;
+        }
+
+        if node.dynamic_input_ports {
+            node.input_ports = runtime_node.input_ports();
+        }
+        if node.dynamic_output_ports {
+            node.output_ports = runtime_node.output_ports();
         }
     }
 }
@@ -376,6 +434,8 @@ pub fn auto_fix_graph_definition(graph: &mut NodeGraphDefinition) {
             .unwrap_or(false);
         from_ok && to_ok
     });
+
+    rebuild_dynamic_ports_from_inline_values(graph);
 }
 
 pub fn save_graph_definition_to_json(
@@ -645,6 +705,7 @@ pub fn build_definition_from_graph(graph: &NodeGraph) -> NodeGraphDefinition {
     NodeGraphDefinition { 
         nodes, 
         edges,
+        hyperparameter_groups: Vec::new(),
         hyperparameters: Vec::new(),
         execution_results: HashMap::new(),
     }
@@ -718,6 +779,7 @@ mod tests {
                 Port::new("time", DataType::String),
             ])],
             edges: vec![],
+            hyperparameter_groups: vec![],
             hyperparameters: vec![],
             execution_results: HashMap::new(),
         };
@@ -743,6 +805,7 @@ mod tests {
                 Port::new("time", DataType::String),
             ])],
             edges: vec![],
+            hyperparameter_groups: vec![],
             hyperparameters: vec![],
             execution_results: HashMap::new(),
         };
@@ -798,6 +861,7 @@ mod tests {
                 Port::new("search", DataType::Json),
             ])],
             edges: vec![],
+            hyperparameter_groups: vec![],
             hyperparameters: vec![],
             execution_results: HashMap::new(),
         };
@@ -814,7 +878,7 @@ mod tests {
     }
 
     #[test]
-    fn auto_fix_skips_brain_dynamic_outputs() {
+    fn auto_fix_rebuilds_brain_dynamic_outputs_from_inline_config() {
         ensure_registry_initialized();
         let mut graph = NodeGraphDefinition {
             nodes: vec![brain_node(vec![
@@ -822,6 +886,7 @@ mod tests {
                 Port::new("search", DataType::Json),
             ])],
             edges: vec![],
+            hyperparameter_groups: vec![],
             hyperparameters: vec![],
             execution_results: HashMap::new(),
         };
@@ -829,8 +894,27 @@ mod tests {
         auto_fix_graph_definition(&mut graph);
 
         let fixed = &graph.nodes[0];
+        assert!(fixed.output_ports.iter().any(|p| p.name == "assistant_message"));
         assert!(fixed.output_ports.iter().any(|p| p.name == "response"));
         assert!(fixed.output_ports.iter().any(|p| p.name == "search"));
-        assert!(!fixed.output_ports.iter().any(|p| p.name == "assistant_message"));
+    }
+
+    #[test]
+    fn refresh_port_types_rebuilds_brain_dynamic_outputs_from_inline_config() {
+        ensure_registry_initialized();
+        let mut graph = NodeGraphDefinition {
+            nodes: vec![brain_node(vec![Port::new("search", DataType::Json)])],
+            edges: vec![],
+            hyperparameter_groups: vec![],
+            hyperparameters: vec![],
+            execution_results: HashMap::new(),
+        };
+
+        refresh_port_types(&mut graph);
+
+        let fixed = &graph.nodes[0];
+        assert!(fixed.output_ports.iter().any(|p| p.name == "assistant_message"));
+        assert!(fixed.output_ports.iter().any(|p| p.name == "response"));
+        assert!(fixed.output_ports.iter().any(|p| p.name == "search"));
     }
 }

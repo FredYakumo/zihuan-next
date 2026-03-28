@@ -70,6 +70,7 @@ pub(crate) fn apply_graph_to_ui(
         .iter()
         .map(|hp| HyperParameterVm {
             name: hp.name.clone().into(),
+            group: hp.group.clone().into(),
             data_type: hp.data_type.to_string().into(),
             value: hyperparameter_values
                 .get(&hp.name)

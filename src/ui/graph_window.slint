@@ -6,7 +6,7 @@ import { MenuBarItem, MenuItemRow } from "components/menubar.slint";
 import { TabItem } from "components/tabs.slint";
 import { GraphCanvas } from "components/graph_canvas.slint";
 import { LogOverlay } from "components/log_overlay.slint";
-import { ErrorDialog, FormatStringEditorDialog, HyperParameterManagerDialog, JsonExtractEditorDialog, LogHistoryDialog, NodeHelpDialog, NodeSelector, OverwriteConfirmDialog, PortBindHyperparamDialog, RunningConfirmDialog, SaveConfirmDialog, ToolEditorDialog, ValidationFixDialog } from "dialogs.slint";
+import { ErrorDialog, FormatStringEditorDialog, GroupManagerDialog, HyperParameterManagerDialog, JsonExtractEditorDialog, LogHistoryDialog, NodeHelpDialog, NodeSelector, OverwriteConfirmDialog, PortBindHyperparamDialog, RunningConfirmDialog, SaveConfirmDialog, ToolEditorDialog, ValidationFixDialog } from "dialogs.slint";
 
 export component NodeGraphWindow inherits Window {
     in property <[NodeVm]> nodes;
@@ -127,7 +127,10 @@ export component NodeGraphWindow inherits Window {
 
     // Hyperparameter system
     in property <[HyperParameterVm]> hyperparameters;
+    in property <[string]> hyperparameter_groups;
+    in-out property <string> selected_hyperparameter_group: "default";
     in property <bool> show_hyperparameter_manager: false;
+    in property <bool> show_group_manager: false;
     in property <bool> show_port_bind_dialog: false;
     in property <[HyperParameterVm]> port_bind_compatible_params;
     in property <string> port_bind_current_binding: "";
@@ -135,7 +138,13 @@ export component NodeGraphWindow inherits Window {
     in property <string> port_bind_port_name: "";
     callback open_hyperparameter_manager();
     callback close_hyperparameter_manager();
-    callback add_hyperparameter(string, string, bool, string); // name, data_type, required, description
+    callback open_group_manager();
+    callback close_group_manager();
+    callback add_hyperparameter(string, string, bool, string, string); // name, data_type, required, description, group
+    callback select_hyperparameter_group(string);
+    callback create_hyperparameter_group(string);
+    callback rename_hyperparameter_group(string, string);
+    callback delete_hyperparameter_group(string);
     callback delete_hyperparameter(string);                    // name
     callback set_hyperparameter_value(string, string);         // name, value
     callback toggle_hyperparameter_required(string);           // name
@@ -646,13 +655,27 @@ export component NodeGraphWindow inherits Window {
 
     if root.show_hyperparameter_manager: HyperParameterManagerDialog {
         hyperparameters: root.hyperparameters;
-        add(name, data_type, required, description) => {
-            root.add_hyperparameter(name, data_type, required, description);
+        groups: root.hyperparameter_groups;
+        current_group <=> root.selected_hyperparameter_group;
+        open_group_manager() => { root.open_group_manager(); }
+        add(name, data_type, required, description, group) => {
+            root.add_hyperparameter(name, data_type, required, description, group);
         }
+        select_group(name) => { root.select_hyperparameter_group(name); }
         delete(name) => { root.delete_hyperparameter(name); }
         set_value(name, value) => { root.set_hyperparameter_value(name, value); }
         toggle_required(name) => { root.toggle_hyperparameter_required(name); }
         close => { root.close_hyperparameter_manager(); }
+    }
+
+    if root.show_group_manager: GroupManagerDialog {
+        groups: root.hyperparameter_groups;
+        current_group <=> root.selected_hyperparameter_group;
+        select_group(name) => { root.select_hyperparameter_group(name); }
+        create_group(name) => { root.create_hyperparameter_group(name); }
+        rename_group(old_name, new_name) => { root.rename_hyperparameter_group(old_name, new_name); }
+        delete_group(name) => { root.delete_hyperparameter_group(name); }
+        close => { root.close_group_manager(); }
     }
 
     if root.show_port_bind_dialog: PortBindHyperparamDialog {

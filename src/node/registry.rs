@@ -147,7 +147,7 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util::{ArrayGetNode, ConcatVecNode, ConditionalNode, CurrentTimeNode, FormatStringNode, JsonExtractNode, JsonParserNode, LoopBreakNode, LoopNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
+    use crate::node::util::{ArrayGetNode, ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode, LastMessageIsToolNode, JsonExtractNode, JsonParserNode, LoopBreakNode, LoopNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, QQMessageListDataNode, PreviewMessageListNode, PreviewStringNode, StackNode, StringDataNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
     use crate::llm::llm_api_node::LLMApiNode;
     use crate::llm::brain_node::BrainNode;
     use crate::llm::llm_infer_node::LLMInferNode;
@@ -173,6 +173,14 @@ pub fn init_node_registry() -> Result<()> {
         "工具",
         "根据条件选择不同的输出分支",
         ConditionalNode
+    );
+
+    register_node!(
+        "conditional_router",
+        "变量分拣器",
+        "工具",
+        "按布尔条件在两路输入间选择一路输出，适合循环状态切换",
+        ConditionalRouterNode
     );
 
     register_node!(
@@ -350,6 +358,14 @@ pub fn init_node_registry() -> Result<()> {
         "AI",
         "将工具执行结果封装为 role=tool 的 OpenAIMessage，供 agentic loop 回写对话列表",
         ToolResultNode
+    );
+
+    register_node!(
+        "last_message_is_tool",
+        "最后一条是否为 Tool 消息",
+        "AI",
+        "判断 Vec<OpenAIMessage> 最后一条消息是否为 role=tool，输出布尔值",
+        LastMessageIsToolNode
     );
 
     // Bot adapter nodes
@@ -559,7 +575,7 @@ pub fn build_node_graph_from_definition(
     Ok(graph)
 }
 
-fn json_to_data_value(json: &Value, target_type: &DataType) -> Option<DataValue> {
+pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option<DataValue> {
     match (json, target_type) {
         (_, DataType::Any) => infer_any_data_value(json),
         (Value::String(s), DataType::String) => Some(DataValue::String(s.clone())),

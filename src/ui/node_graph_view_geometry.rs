@@ -644,6 +644,7 @@ mod tests {
                 to_node_id: "gate".to_string(),
                 to_port: "input".to_string(),
             }],
+            hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
             execution_results: HashMap::new(),
         };
@@ -664,6 +665,7 @@ mod tests {
         let graph = NodeGraphDefinition {
             nodes: vec![gate.clone()],
             edges: Vec::new(),
+            hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
             execution_results: HashMap::new(),
         };
@@ -715,6 +717,7 @@ mod tests {
                     to_port: "text".to_string(),
                 },
             ],
+            hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
             execution_results: HashMap::new(),
         };
@@ -771,6 +774,7 @@ mod tests {
                     to_port: "second".to_string(),
                 },
             ],
+            hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
             execution_results: HashMap::new(),
         };

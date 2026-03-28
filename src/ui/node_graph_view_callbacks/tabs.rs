@@ -71,7 +71,7 @@ pub(crate) fn bind_tab_callbacks(
                 if let Some(tab) = tabs_guard.get_mut(active_index) {
                     tab.graph = graph.clone();
                     tab.inline_inputs = build_inline_inputs_from_graph(&graph);
-                    tab.hyperparameter_values = load_hyperparameter_values(&selected_path);
+                    tab.hyperparameter_values = load_hyperparameter_values(&selected_path, &tab.graph);
                     tab.selection.clear();
                     tab.file_path = Some(selected_path.clone());
                     tab.title = selected_path
@@ -113,7 +113,7 @@ pub(crate) fn bind_tab_callbacks(
         let active_index = *active_tab_for_confirm.lock().unwrap();
         if let Some(tab) = tabs_guard.get_mut(active_index) {
             tab.inline_inputs = build_inline_inputs_from_graph(&graph);
-            tab.hyperparameter_values = load_hyperparameter_values(&selected_path);
+            tab.hyperparameter_values = load_hyperparameter_values(&selected_path, &tab.graph);
             tab.selection.clear();
             tab.file_path = Some(selected_path.clone());
             tab.title = selected_path
@@ -181,7 +181,7 @@ pub(crate) fn bind_tab_callbacks(
             }
 
             // Save hyperparameter values to a separate YAML file in the data directory
-            if let Err(e) = save_hyperparameter_values(&path, &tab.hyperparameter_values) {
+            if let Err(e) = save_hyperparameter_values(&path, &tab.graph, &tab.hyperparameter_values) {
                 log::warn!("[HyperParamStore] Failed to save hyperparameter values: {}", e);
             }
 
@@ -489,7 +489,7 @@ pub(crate) fn bind_tab_callbacks(
                 return false;
             }
 
-            if let Err(e) = save_hyperparameter_values(&path, &tab.hyperparameter_values) {
+            if let Err(e) = save_hyperparameter_values(&path, &tab.graph, &tab.hyperparameter_values) {
                 log::warn!("[HyperParamStore] Failed to save hyperparameter values: {}", e);
             }
 
