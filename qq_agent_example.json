@@ -54,6 +54,7 @@
         "qq_id": "2496875785"
       },
       "port_bindings": {
+        "qq_id": "BOT_ID",
         "bot_server_token": "BOT_SERVER_TOKEN"
       },
       "has_error": false
@@ -506,9 +507,9 @@
         "height": 200.0
       },
       "inline_values": {
-        "mysql_database": "zihuan_aibot",
         "mysql_port": "3306",
-        "mysql_host": "127.0.0.1"
+        "mysql_host": "127.0.0.1",
+        "mysql_database": "zihuan_aibot"
       },
       "port_bindings": {
         "mysql_password": "MYSQL_PASSWORD",
@@ -1103,8 +1104,8 @@
       },
       "port_bindings": {
         "api_key": "LLM_API_KEY",
-        "model_name": "LLM_MODEL_NAME",
-        "api_endpoint": "LLM_API_ENDPOINT"
+        "api_endpoint": "LLM_API_ENDPOINT",
+        "model_name": "LLM_MODEL_NAME"
       },
       "has_error": false
     },
@@ -1559,56 +1560,6 @@
       "has_error": false
     },
     {
-      "id": "node_37",
-      "name": "变量分拣器",
-      "description": "按布尔条件在 primary 和 fallback 两路输入之间选择一路输出",
-      "node_type": "conditional_router",
-      "input_ports": [
-        {
-          "name": "condition",
-          "data_type": "Boolean",
-          "description": "条件为 true 时选择 primary，否则选择 fallback",
-          "required": true
-        },
-        {
-          "name": "primary",
-          "data_type": "Any",
-          "description": "condition=true 时输出的值",
-          "required": true
-        },
-        {
-          "name": "fallback",
-          "data_type": "Any",
-          "description": "condition=false 时输出的值",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "result",
-          "data_type": "Any",
-          "description": "被选中的输入值，原样透传",
-          "required": true
-        },
-        {
-          "name": "branch_taken",
-          "data_type": "String",
-          "description": "实际走到的分支：primary 或 fallback",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1500.0,
-        "y": -1380.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false
-    },
-    {
       "id": "node_38",
       "name": "封装元素为数组",
       "description": "将单个元素封装为单元素 List",
@@ -1724,6 +1675,69 @@
           }
         ]
       },
+      "port_bindings": {},
+      "has_error": false
+    },
+    {
+      "id": "node_41",
+      "name": "封装元素为数组",
+      "description": "将单个元素封装为单元素 List",
+      "node_type": "stack",
+      "input_ports": [
+        {
+          "name": "element",
+          "data_type": "Any",
+          "description": "要封装到数组中的元素",
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "array",
+          "data_type": "Any",
+          "description": "包含单个元素的 List",
+          "required": true
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 620.0,
+        "y": -1060.0
+      },
+      "size": null,
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false
+    },
+    {
+      "id": "node_42",
+      "name": "循环状态更新",
+      "description": "将 new_state 写入循环控制引用的状态，供下一轮迭代使用；无图返回边，保持 DAG 结构",
+      "node_type": "loop_state_update",
+      "input_ports": [
+        {
+          "name": "loop_control",
+          "data_type": "LoopControlRef",
+          "description": "来自 LoopNode 的循环控制引用",
+          "required": true
+        },
+        {
+          "name": "new_state",
+          "data_type": "Any",
+          "description": "本轮迭代结束后写入循环的新状态值",
+          "required": true
+        }
+      ],
+      "output_ports": [],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 1620.0,
+        "y": -1460.0
+      },
+      "size": null,
+      "inline_values": {},
       "port_bindings": {},
       "has_error": false
     }
@@ -1946,12 +1960,6 @@
       "to_port": "content"
     },
     {
-      "from_node_id": "node_31",
-      "from_port": "message",
-      "to_node_id": "node_32",
-      "to_port": "vec1"
-    },
-    {
       "from_node_id": "node_3",
       "from_port": "messages",
       "to_node_id": "node_32",
@@ -1982,12 +1990,6 @@
       "to_port": "loop_control"
     },
     {
-      "from_node_id": "node_36",
-      "from_port": "result",
-      "to_node_id": "node_37",
-      "to_port": "condition"
-    },
-    {
       "from_node_id": "node_17",
       "from_port": "assistant_message",
       "to_node_id": "node_38",
@@ -1998,18 +2000,6 @@
       "from_port": "array",
       "to_node_id": "node_36",
       "to_port": "messages"
-    },
-    {
-      "from_node_id": "node_37",
-      "from_port": "result",
-      "to_node_id": "node_17",
-      "to_port": "messages"
-    },
-    {
-      "from_node_id": "node_34",
-      "from_port": "output",
-      "to_node_id": "node_37",
-      "to_port": "fallback"
     },
     {
       "from_node_id": "node_38",
@@ -2024,12 +2014,6 @@
       "to_port": "vec1"
     },
     {
-      "from_node_id": "node_39",
-      "from_port": "vec",
-      "to_node_id": "node_37",
-      "to_port": "primary"
-    },
-    {
       "from_node_id": "node_17",
       "from_port": "自然语言回复",
       "to_node_id": "node_40",
@@ -2040,54 +2024,93 @@
       "from_port": "消息内容 ",
       "to_node_id": "node_15",
       "to_port": "text"
+    },
+    {
+      "from_node_id": "node_31",
+      "from_port": "message",
+      "to_node_id": "node_41",
+      "to_port": "element"
+    },
+    {
+      "from_node_id": "node_41",
+      "from_port": "array",
+      "to_node_id": "node_32",
+      "to_port": "vec1"
+    },
+    {
+      "from_node_id": "node_34",
+      "from_port": "output",
+      "to_node_id": "node_17",
+      "to_port": "messages"
+    },
+    {
+      "from_node_id": "node_34",
+      "from_port": "loop_control",
+      "to_node_id": "node_42",
+      "to_port": "loop_control"
+    },
+    {
+      "from_node_id": "node_39",
+      "from_port": "vec",
+      "to_node_id": "node_42",
+      "to_port": "new_state"
     }
   ],
+  "hyperparameter_groups": [],
   "hyperparameters": [
     {
       "name": "BOT_SERVER_TOKEN",
       "data_type": "Password",
+      "group": "default",
       "required": true,
       "description": null
     },
     {
       "name": "LLM_API_KEY",
       "data_type": "Password",
+      "group": "default",
       "required": false,
       "description": null
     },
     {
       "name": "LLM_API_ENDPOINT",
       "data_type": "String",
+      "group": "default",
       "required": true,
       "description": null
     },
     {
       "name": "LLM_MODEL_NAME",
       "data_type": "String",
+      "group": "default",
       "required": false,
       "description": null
     },
     {
       "name": "MYSQL_USER",
       "data_type": "String",
+      "group": "default",
       "required": false,
       "description": null
     },
     {
       "name": "MYSQL_PASSWORD",
       "data_type": "Password",
+      "group": "default",
       "required": false,
       "description": null
     },
     {
       "name": "BOT_ID",
       "data_type": "String",
+      "group": "default",
       "required": true,
       "description": null
     },
     {
       "name": "BOT_NAME",
       "data_type": "String",
+      "group": "default",
       "required": true,
       "description": null
     }
