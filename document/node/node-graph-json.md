@@ -108,13 +108,23 @@ Hyperparameters are graph-level variables that can be bound to input ports and o
 ```jsonc
 {
   "name":        "api_key",
+  "group":       "default",
   "data_type":   "Password",
   "description": "OpenAI API key",
   "required":    true
 }
 ```
 
-Hyperparameter *values* are stored in a separate YAML file, not in the graph JSON.
+| Field | Required | Notes |
+|-------|----------|-------|
+| `name` | yes | Unique name within the graph |
+| `group` | no | Shared storage group. Defaults to `"default"` |
+| `data_type` | yes | Same data type rules as ports |
+| `description` | no | UI hint text |
+| `required` | no | Whether execution is blocked when no value is present |
+
+Hyperparameter *values* are stored in a shared local YAML file, not in the graph JSON.  
+Graphs reuse values by `(group, name)`, so renaming or moving the graph file will not break value lookup.
 
 ---
 

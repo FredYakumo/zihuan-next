@@ -5,7 +5,7 @@ use slint::ComponentHandle;
 use crate::node::data_value::DataType;
 use crate::node::graph_io::HyperParameter;
 use crate::ui::graph_window::NodeGraphWindow;
-use crate::ui::node_graph_view::{refresh_active_tab_ui, update_tabs_ui, GraphTabState};
+use crate::ui::node_graph_view::{collect_hyperparameter_groups, refresh_active_tab_ui, update_tabs_ui, GraphTabState};
 use crate::util::hyperparam_store::save_hyperparameter_values;
 
 fn parse_hp_data_type(type_str: &str) -> DataType {
@@ -50,6 +50,15 @@ fn is_hp_type_compatible(hp_type: &DataType, port_type: &DataType) -> bool {
     }
 }
 
+fn normalize_group_name(group: &str) -> String {
+    let trimmed = group.trim();
+    if trimmed.is_empty() {
+        "default".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
 pub(crate) fn bind_hyperparameter_callbacks(
     ui: &NodeGraphWindow,
     tabs: Arc<Mutex<Vec<GraphTabState>>>,
@@ -75,17 +84,36 @@ pub(crate) fn bind_hyperparameter_callbacks(
         });
     }
 
+    {
+        let ui_handle = ui.as_weak();
+        ui.on_open_group_manager(move || {
+            if let Some(ui) = ui_handle.upgrade() {
+                ui.set_show_group_manager(true);
+            }
+        });
+    }
+
+    {
+        let ui_handle = ui.as_weak();
+        ui.on_close_group_manager(move || {
+            if let Some(ui) = ui_handle.upgrade() {
+                ui.set_show_group_manager(false);
+            }
+        });
+    }
+
     // Add a new hyperparameter
     {
         let ui_handle = ui.as_weak();
         let tabs_clone = Arc::clone(&tabs);
         let active_tab_clone = Arc::clone(&active_tab_index);
-        ui.on_add_hyperparameter(move |name, data_type_str, required, description| {
+        ui.on_add_hyperparameter(move |name, data_type_str, required, description, group| {
             let name = name.trim().to_string();
             if name.is_empty() {
                 return;
             }
             let data_type = parse_hp_data_type(data_type_str.as_str());
+            let group = normalize_group_name(group.as_str());
 
             let mut tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
@@ -94,9 +122,13 @@ pub(crate) fn bind_hyperparameter_callbacks(
                 if tab.graph.hyperparameters.iter().any(|hp| hp.name == name) {
                     return;
                 }
+                if !tab.graph.hyperparameter_groups.iter().any(|g| g == &group) {
+                    tab.graph.hyperparameter_groups.push(group.clone());
+                }
                 tab.graph.hyperparameters.push(HyperParameter {
                     name,
                     data_type,
+                    group,
                     required,
                     description: if description.is_empty() {
                         None
@@ -108,6 +140,108 @@ pub(crate) fn bind_hyperparameter_callbacks(
             }
             if let Some(ui) = ui_handle.upgrade() {
                 refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+            }
+        });
+    }
+
+    {
+        let ui_handle = ui.as_weak();
+        ui.on_select_hyperparameter_group(move |group| {
+            if let Some(ui) = ui_handle.upgrade() {
+                ui.set_selected_hyperparameter_group(normalize_group_name(group.as_str()).into());
+            }
+        });
+    }
+
+    {
+        let ui_handle = ui.as_weak();
+        let tabs_clone = Arc::clone(&tabs);
+        let active_tab_clone = Arc::clone(&active_tab_index);
+        ui.on_create_hyperparameter_group(move |group| {
+            let group = normalize_group_name(group.as_str());
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let active_index = *active_tab_clone.lock().unwrap();
+            if let Some(tab) = tabs_guard.get_mut(active_index) {
+                if !tab.graph.hyperparameter_groups.iter().any(|existing| existing == &group) {
+                    tab.graph.hyperparameter_groups.push(group.clone());
+                    tab.is_dirty = true;
+                }
+            }
+            if let Some(ui) = ui_handle.upgrade() {
+                refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+                ui.set_selected_hyperparameter_group(group.into());
+            }
+        });
+    }
+
+    {
+        let ui_handle = ui.as_weak();
+        let tabs_clone = Arc::clone(&tabs);
+        let active_tab_clone = Arc::clone(&active_tab_index);
+        ui.on_rename_hyperparameter_group(move |old_group, new_group| {
+            let old_group = normalize_group_name(old_group.as_str());
+            let new_group = normalize_group_name(new_group.as_str());
+            if old_group == "default" || new_group == "default" || old_group == new_group {
+                return;
+            }
+
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let active_index = *active_tab_clone.lock().unwrap();
+            if let Some(tab) = tabs_guard.get_mut(active_index) {
+                if tab.graph.hyperparameter_groups.iter().any(|existing| existing == &new_group) {
+                    return;
+                }
+                if let Some(group) = tab
+                    .graph
+                    .hyperparameter_groups
+                    .iter_mut()
+                    .find(|existing| **existing == old_group)
+                {
+                    *group = new_group.clone();
+                }
+                for hp in &mut tab.graph.hyperparameters {
+                    if hp.group == old_group {
+                        hp.group = new_group.clone();
+                    }
+                }
+                tab.is_dirty = true;
+            }
+            if let Some(ui) = ui_handle.upgrade() {
+                refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+                if ui.get_selected_hyperparameter_group().as_str() == old_group.as_str() {
+                    ui.set_selected_hyperparameter_group(new_group.into());
+                }
+            }
+        });
+    }
+
+    {
+        let ui_handle = ui.as_weak();
+        let tabs_clone = Arc::clone(&tabs);
+        let active_tab_clone = Arc::clone(&active_tab_index);
+        ui.on_delete_hyperparameter_group(move |group| {
+            let group = normalize_group_name(group.as_str());
+            if group == "default" {
+                return;
+            }
+
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let active_index = *active_tab_clone.lock().unwrap();
+            if let Some(tab) = tabs_guard.get_mut(active_index) {
+                tab.graph.hyperparameter_groups.retain(|existing| existing != &group);
+                for hp in &mut tab.graph.hyperparameters {
+                    if hp.group == group {
+                        hp.group = "default".to_string();
+                    }
+                }
+                if !tab.graph.hyperparameter_groups.iter().any(|existing| existing == "default") {
+                    tab.graph.hyperparameter_groups.push("default".to_string());
+                }
+                tab.is_dirty = true;
+            }
+            if let Some(ui) = ui_handle.upgrade() {
+                refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+                ui.set_selected_hyperparameter_group("default".into());
             }
         });
     }
@@ -130,7 +264,7 @@ pub(crate) fn bind_hyperparameter_callbacks(
                 tab.hyperparameter_values.remove(name);
                 // Auto-save values if the graph is backed by a file
                 if let Some(path) = &tab.file_path {
-                    if let Err(e) = save_hyperparameter_values(path, &tab.hyperparameter_values) {
+                    if let Err(e) = save_hyperparameter_values(path, &tab.graph, &tab.hyperparameter_values) {
                         log::warn!("[HyperParamStore] auto-save failed: {}", e);
                     }
                 }
@@ -161,7 +295,7 @@ pub(crate) fn bind_hyperparameter_callbacks(
                 }
                 // Auto-save values if the graph is backed by a file
                 if let Some(path) = &tab.file_path {
-                    if let Err(e) = save_hyperparameter_values(path, &tab.hyperparameter_values) {
+                    if let Err(e) = save_hyperparameter_values(path, &tab.graph, &tab.hyperparameter_values) {
                         log::warn!("[HyperParamStore] auto-save failed: {}", e);
                     }
                 }
@@ -265,6 +399,7 @@ pub(crate) fn bind_hyperparameter_callbacks(
                 .filter(|hp| is_hp_type_compatible(&hp.data_type, &port_type))
                 .map(|hp| HyperParameterVm {
                     name: hp.name.clone().into(),
+                    group: hp.group.clone().into(),
                     data_type: hp.data_type.to_string().into(),
                     value: tab.hyperparameter_values
                         .get(&hp.name)
@@ -286,6 +421,10 @@ pub(crate) fn bind_hyperparameter_callbacks(
             ui.set_port_bind_current_binding(current_binding.into());
             ui.set_port_bind_compatible_params(ModelRc::new(VecModel::from(compatible)));
             ui.set_show_port_bind_dialog(true);
+            let groups = collect_hyperparameter_groups(&tab.graph);
+            if !groups.iter().any(|group| group == &ui.get_selected_hyperparameter_group().to_string()) {
+                ui.set_selected_hyperparameter_group("default".into());
+            }
         });
     }
 

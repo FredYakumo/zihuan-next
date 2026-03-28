@@ -34,7 +34,7 @@ Documentation for developing and extending zihuan-next — a Rust + Slint node-g
 
 | Document | Contents |
 |----------|----------|
-| [../node/node-development.md](../node/node-development.md) | Full node tutorial: Simple nodes, EventProducer nodes, registration, testing |
+| [../node/node-development.md](../node/node-development.md) | Node implementation outline and quick checklist; detailed contracts live in `node-system.md` |
 | [../node/dynamic-port-nodes.md](../node/dynamic-port-nodes.md) | Dynamic-port nodes: implementation pattern, UI coordination, JSON markers |
 | [../node/node-graph-json.md](../node/node-graph-json.md) | Complete node graph JSON specification with all field and data type descriptions |
 | [../node/node-lifecycle.md](../node/node-lifecycle.md) | Node lifecycle detail: on_graph_start, execute, on_start/update/cleanup |

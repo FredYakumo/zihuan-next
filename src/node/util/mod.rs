@@ -2,6 +2,7 @@ pub mod array_get;
 pub mod concat_vec;
 pub mod format_string;
 pub mod conditional;
+pub mod conditional_router;
 pub mod loop_node;
 pub mod loop_break_node;
 pub mod current_time;
@@ -20,6 +21,7 @@ pub mod string_data;
 pub mod string_to_plain_text;
 pub mod switch;
 pub mod tool_result_node;
+pub mod last_message_is_tool;
 
 pub mod openai_message_session_cache_clear {
 	use crate::error::Result;
@@ -201,6 +203,7 @@ pub use array_get::ArrayGetNode;
 pub use format_string::FormatStringNode;
 pub use concat_vec::ConcatVecNode;
 pub use conditional::ConditionalNode;
+pub use conditional_router::ConditionalRouterNode;
 pub use current_time::CurrentTimeNode;
 pub use loop_node::LoopNode;
 pub use loop_break_node::LoopBreakNode;
@@ -220,3 +223,4 @@ pub use string_data::{StringDataNode, STRING_DATA_CONTEXT};
 pub use string_to_plain_text::StringToPlainTextNode;
 pub use switch::SwitchNode;
 pub use tool_result_node::ToolResultNode;
+pub use last_message_is_tool::LastMessageIsToolNode;

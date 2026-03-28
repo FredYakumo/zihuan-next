@@ -55,7 +55,10 @@ fn main() {
         info!("加载节点图文件: {}", graph_path);
         match node::load_graph_definition_from_json(&graph_path) {
             Ok(mut definition) => {
-                let hp_values = util::hyperparam_store::load_hyperparameter_values(std::path::Path::new(&graph_path));
+                let hp_values = util::hyperparam_store::load_hyperparameter_values(
+                    std::path::Path::new(&graph_path),
+                    &definition,
+                );
                 // Apply hyperparameter bindings before execution
                 ui::node_graph_view_inline::apply_hyperparameter_bindings_to_graph(&mut definition, &hp_values);
                 if let Err(e) = execute_node_graph(definition) {
