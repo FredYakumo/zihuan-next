@@ -39,6 +39,8 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": -620.0,
         "y": -1280.0
@@ -89,6 +91,8 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": -160.0,
         "y": -1160.0
@@ -158,6 +162,8 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": 360.0,
         "y": -980.0
@@ -222,6 +228,8 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": 500.0,
         "y": 420.0
@@ -252,6 +260,8 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": -160.0,
         "y": -1000.0
@@ -275,6 +285,8 @@
         }
       ],
       "output_ports": [],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": 1140.0,
         "y": 80.0
@@ -300,9 +312,11 @@
         }
       ],
       "output_ports": [],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
-        "x": 1380.0,
-        "y": -640.0
+        "x": 1320.0,
+        "y": -620.0
       },
       "size": {
         "width": 320.0,
@@ -353,9 +367,11 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
-        "x": 2340.0,
-        "y": -600.0
+        "x": 2560.0,
+        "y": -1220.0
       },
       "size": null,
       "inline_values": {},
@@ -387,6 +403,8 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": 1860.0,
         "y": -60.0
@@ -477,6 +495,8 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": -160.0,
         "y": 100.0
@@ -487,8 +507,8 @@
       },
       "inline_values": {
         "mysql_database": "zihuan_aibot",
-        "mysql_host": "127.0.0.1",
-        "mysql_port": "3306"
+        "mysql_port": "3306",
+        "mysql_host": "127.0.0.1"
       },
       "port_bindings": {
         "mysql_password": "MYSQL_PASSWORD",
@@ -529,6 +549,8 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": 520.0,
         "y": -400.0
@@ -559,9 +581,11 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
-        "x": 1480.0,
-        "y": -420.0
+        "x": 1740.0,
+        "y": -580.0
       },
       "size": null,
       "inline_values": {},
@@ -597,6 +621,8 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": 1180.0,
         "y": -400.0
@@ -629,9 +655,11 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
-        "x": 1780.0,
-        "y": -560.0
+        "x": 2180.0,
+        "y": -920.0
       },
       "size": null,
       "inline_values": {},
@@ -659,9 +687,11 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
-        "x": 2060.0,
-        "y": -560.0
+        "x": 2380.0,
+        "y": -920.0
       },
       "size": null,
       "inline_values": {},
@@ -695,6 +725,8 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": 480.0,
         "y": 800.0
@@ -725,6 +757,8 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": 1360.0,
         "y": 440.0
@@ -755,6 +789,8 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": 1500.0,
         "y": 200.0
@@ -805,6 +841,8 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": 1940.0,
         "y": 820.0
@@ -843,6 +881,8 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": 1120.0,
         "y": 680.0
@@ -875,6 +915,8 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": 1280.0,
         "y": 900.0
@@ -905,6 +947,8 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": 1420.0,
         "y": 720.0
@@ -935,6 +979,8 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": 1720.0,
         "y": 700.0
@@ -989,14 +1035,16 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": 160.0,
         "y": 340.0
       },
       "size": null,
       "inline_values": {
-        "bucket_name": "cache",
-        "ttl_secs": "600"
+        "ttl_secs": "600",
+        "bucket_name": "cache"
       },
       "port_bindings": {},
       "has_error": false
@@ -1040,6 +1088,8 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": -160.0,
         "y": -400.0
@@ -1052,9 +1102,9 @@
         "timeout_secs": "600"
       },
       "port_bindings": {
+        "api_key": "LLM_API_KEY",
         "model_name": "LLM_MODEL_NAME",
-        "api_endpoint": "LLM_API_ENDPOINT",
-        "api_key": "LLM_API_KEY"
+        "api_endpoint": "LLM_API_ENDPOINT"
       },
       "has_error": false
     },
@@ -1089,6 +1139,8 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": 900.0,
         "y": -540.0
@@ -1129,6 +1181,8 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
         "x": 760.0,
         "y": 740.0
@@ -1167,6 +1221,12 @@
       ],
       "output_ports": [
         {
+          "name": "assistant_message",
+          "data_type": "OpenAIMessage",
+          "description": "LLM 返回的完整 assistant 消息（含 tool_calls，用于 agentic loop）",
+          "required": true
+        },
+        {
           "name": "response",
           "data_type": "String",
           "description": "LLM 返回的最终文本回复",
@@ -1179,9 +1239,11 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": true,
       "position": {
-        "x": 1260.0,
-        "y": -940.0
+        "x": 1500.0,
+        "y": -1060.0
       },
       "size": null,
       "inline_values": {
@@ -1208,6 +1270,12 @@
       "node_type": "format_string",
       "input_ports": [
         {
+          "name": "template",
+          "data_type": "String",
+          "description": "格式化模板字符串，使用 ${变量名} 语法引用输入变量",
+          "required": false
+        },
+        {
           "name": "角色名称",
           "data_type": "String",
           "description": "变量 角色名称",
@@ -1224,12 +1292,6 @@
           "data_type": "String",
           "description": "变量 time",
           "required": true
-        },
-        {
-          "name": "template",
-          "data_type": "String",
-          "description": "格式化模板字符串，使用 ${变量名} 语法引用输入变量",
-          "required": false
         }
       ],
       "output_ports": [
@@ -1240,9 +1302,11 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": true,
+      "dynamic_output_ports": false,
       "position": {
-        "x": 380.0,
-        "y": -1160.0
+        "x": 360.0,
+        "y": -1300.0
       },
       "size": {
         "width": 540.0,
@@ -1270,9 +1334,11 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
-        "x": 380.0,
-        "y": -1320.0
+        "x": 80.0,
+        "y": -1380.0
       },
       "size": null,
       "inline_values": {},
@@ -1306,9 +1372,11 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
-        "x": 1020.0,
-        "y": -1160.0
+        "x": 1040.0,
+        "y": -1300.0
       },
       "size": {
         "width": 320.0,
@@ -1351,12 +1419,311 @@
           "required": true
         }
       ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
       "position": {
-        "x": 920.0,
-        "y": -900.0
+        "x": 900.0,
+        "y": -1020.0
       },
       "size": null,
       "inline_values": {},
+      "port_bindings": {},
+      "has_error": false
+    },
+    {
+      "id": "node_33",
+      "name": "Preview String",
+      "description": "Preview input string inside the node card",
+      "node_type": "preview_string",
+      "input_ports": [
+        {
+          "name": "text",
+          "data_type": "String",
+          "description": "Text to preview inside the node",
+          "required": false
+        }
+      ],
+      "output_ports": [],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 1720.0,
+        "y": -1040.0
+      },
+      "size": null,
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false
+    },
+    {
+      "id": "node_34",
+      "name": "循环",
+      "description": "重复执行，将 input 透传为 output，直到 LoopBreakNode 触发退出条件",
+      "node_type": "loop",
+      "input_ports": [
+        {
+          "name": "input",
+          "data_type": "Any",
+          "description": "循环中透传的数据",
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "output",
+          "data_type": "Any",
+          "description": "透传的数据（与 input 相同）",
+          "required": true
+        },
+        {
+          "name": "loop_control",
+          "data_type": "LoopControlRef",
+          "description": "循环控制引用，连接到 LoopBreakNode",
+          "required": true
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 1200.0,
+        "y": -1060.0
+      },
+      "size": null,
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false
+    },
+    {
+      "id": "node_35",
+      "name": "循环退出",
+      "description": "当 condition 为 true 时，通知循环节点在下一轮退出；放置在循环链路最末端",
+      "node_type": "loop_break",
+      "input_ports": [
+        {
+          "name": "loop_control",
+          "data_type": "LoopControlRef",
+          "description": "来自 LoopNode 的循环控制引用",
+          "required": true
+        },
+        {
+          "name": "condition",
+          "data_type": "Boolean",
+          "description": "为 true 时触发退出循环",
+          "required": true
+        }
+      ],
+      "output_ports": [],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 2900.0,
+        "y": -1320.0
+      },
+      "size": null,
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false
+    },
+    {
+      "id": "node_36",
+      "name": "最后一条是否为 Tool 消息",
+      "description": "判断 Vec<OpenAIMessage> 最后一条消息是否为 role=tool",
+      "node_type": "last_message_is_tool",
+      "input_ports": [
+        {
+          "name": "messages",
+          "data_type": {
+            "Vec": "OpenAIMessage"
+          },
+          "description": "OpenAIMessage 列表",
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "result",
+          "data_type": "Boolean",
+          "description": "最后一条消息是否为 role=tool",
+          "required": true
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 2120.0,
+        "y": -1340.0
+      },
+      "size": null,
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false
+    },
+    {
+      "id": "node_37",
+      "name": "变量分拣器",
+      "description": "按布尔条件在 primary 和 fallback 两路输入之间选择一路输出",
+      "node_type": "conditional_router",
+      "input_ports": [
+        {
+          "name": "condition",
+          "data_type": "Boolean",
+          "description": "条件为 true 时选择 primary，否则选择 fallback",
+          "required": true
+        },
+        {
+          "name": "primary",
+          "data_type": "Any",
+          "description": "condition=true 时输出的值",
+          "required": true
+        },
+        {
+          "name": "fallback",
+          "data_type": "Any",
+          "description": "condition=false 时输出的值",
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "result",
+          "data_type": "Any",
+          "description": "被选中的输入值，原样透传",
+          "required": true
+        },
+        {
+          "name": "branch_taken",
+          "data_type": "String",
+          "description": "实际走到的分支：primary 或 fallback",
+          "required": true
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 1500.0,
+        "y": -1380.0
+      },
+      "size": null,
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false
+    },
+    {
+      "id": "node_38",
+      "name": "封装元素为数组",
+      "description": "将单个元素封装为单元素 List",
+      "node_type": "stack",
+      "input_ports": [
+        {
+          "name": "element",
+          "data_type": "Any",
+          "description": "要封装到数组中的元素",
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "array",
+          "data_type": "Any",
+          "description": "包含单个元素的 List",
+          "required": true
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 1880.0,
+        "y": -1340.0
+      },
+      "size": null,
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false
+    },
+    {
+      "id": "node_39",
+      "name": "拼接两个列表",
+      "description": "将 vec2 拼接到 vec1 之后，要求两个 Vec 的元素类型一致",
+      "node_type": "concat_vec",
+      "input_ports": [
+        {
+          "name": "vec1",
+          "data_type": {
+            "Vec": "Any"
+          },
+          "description": "前半部分列表",
+          "required": true
+        },
+        {
+          "name": "vec2",
+          "data_type": {
+            "Vec": "Any"
+          },
+          "description": "后半部分列表，将拼接到 vec1 后面",
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "vec",
+          "data_type": "Any",
+          "description": "拼接后的列表，元素类型与输入列表一致",
+          "required": true
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 1960.0,
+        "y": -1560.0
+      },
+      "size": null,
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false
+    },
+    {
+      "id": "node_40",
+      "name": "提取 JSON 字段",
+      "description": "从输入 JSON 中按字段名提取值，并根据字段配置动态生成输出端口",
+      "node_type": "json_extract",
+      "input_ports": [
+        {
+          "name": "json",
+          "data_type": "Json",
+          "description": "待提取字段的 JSON 对象",
+          "required": true
+        },
+        {
+          "name": "fields_config",
+          "data_type": "Json",
+          "description": "提取字段配置，由字段编辑器维护",
+          "required": false
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "消息内容 ",
+          "data_type": "String",
+          "description": "从输入 JSON 中提取字段 '消息内容 '",
+          "required": true
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": true,
+      "position": {
+        "x": 1960.0,
+        "y": -920.0
+      },
+      "size": null,
+      "inline_values": {
+        "fields_config": [
+          {
+            "data_type": "String",
+            "name": "消息内容 "
+          }
+        ]
+      },
       "port_bindings": {},
       "has_error": false
     }
@@ -1433,12 +1800,6 @@
       "from_port": "element",
       "to_node_id": "node_13",
       "to_port": "message"
-    },
-    {
-      "from_node_id": "node_13",
-      "from_port": "content",
-      "to_node_id": "node_15",
-      "to_port": "text"
     },
     {
       "from_node_id": "node_15",
@@ -1597,10 +1958,88 @@
       "to_port": "vec2"
     },
     {
+      "from_node_id": "node_17",
+      "from_port": "response",
+      "to_node_id": "node_33",
+      "to_port": "text"
+    },
+    {
       "from_node_id": "node_32",
       "from_port": "vec",
+      "to_node_id": "node_34",
+      "to_port": "input"
+    },
+    {
+      "from_node_id": "node_36",
+      "from_port": "result",
+      "to_node_id": "node_35",
+      "to_port": "condition"
+    },
+    {
+      "from_node_id": "node_34",
+      "from_port": "loop_control",
+      "to_node_id": "node_35",
+      "to_port": "loop_control"
+    },
+    {
+      "from_node_id": "node_36",
+      "from_port": "result",
+      "to_node_id": "node_37",
+      "to_port": "condition"
+    },
+    {
+      "from_node_id": "node_17",
+      "from_port": "assistant_message",
+      "to_node_id": "node_38",
+      "to_port": "element"
+    },
+    {
+      "from_node_id": "node_38",
+      "from_port": "array",
+      "to_node_id": "node_36",
+      "to_port": "messages"
+    },
+    {
+      "from_node_id": "node_37",
+      "from_port": "result",
       "to_node_id": "node_17",
       "to_port": "messages"
+    },
+    {
+      "from_node_id": "node_34",
+      "from_port": "output",
+      "to_node_id": "node_37",
+      "to_port": "fallback"
+    },
+    {
+      "from_node_id": "node_38",
+      "from_port": "array",
+      "to_node_id": "node_39",
+      "to_port": "vec2"
+    },
+    {
+      "from_node_id": "node_34",
+      "from_port": "output",
+      "to_node_id": "node_39",
+      "to_port": "vec1"
+    },
+    {
+      "from_node_id": "node_39",
+      "from_port": "vec",
+      "to_node_id": "node_37",
+      "to_port": "primary"
+    },
+    {
+      "from_node_id": "node_17",
+      "from_port": "自然语言回复",
+      "to_node_id": "node_40",
+      "to_port": "json"
+    },
+    {
+      "from_node_id": "node_40",
+      "from_port": "消息内容 ",
+      "to_node_id": "node_15",
+      "to_port": "text"
     }
   ],
   "hyperparameters": [

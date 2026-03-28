@@ -36,6 +36,28 @@ use crate::ui::window_state::{apply_window_state, load_window_state, save_window
 
 use crate::ui::node_render::InlinePortValue;
 
+pub(crate) fn collect_hyperparameter_groups(graph: &NodeGraphDefinition) -> Vec<String> {
+    let mut groups = graph.hyperparameter_groups.clone();
+    for hp in &graph.hyperparameters {
+        if !groups.iter().any(|group| group == &hp.group) {
+            groups.push(hp.group.clone());
+        }
+    }
+    if !groups.iter().any(|group| group == "default") {
+        groups.insert(0, "default".to_string());
+    }
+    groups.retain(|group| !group.trim().is_empty());
+    groups.sort();
+    groups.dedup();
+    if let Some(index) = groups.iter().position(|group| group == "default") {
+        if index != 0 {
+            let default_group = groups.remove(index);
+            groups.insert(0, default_group);
+        }
+    }
+    groups
+}
+
 pub(crate) struct GraphTabState {
     pub(crate) id: u64,
     pub(crate) title: String,
@@ -95,6 +117,21 @@ pub(crate) fn refresh_active_tab_ui(ui: &NodeGraphWindow, tabs: &[GraphTabState]
             &tab.inline_inputs,
             &tab.hyperparameter_values,
         );
+        let groups = collect_hyperparameter_groups(&tab.graph);
+        ui.set_hyperparameter_groups(ModelRc::new(VecModel::from(
+            groups
+                .iter()
+                .cloned()
+                .map(SharedString::from)
+                .collect::<Vec<_>>(),
+        )));
+        let selected_group = ui.get_selected_hyperparameter_group().to_string();
+        let next_group = if groups.iter().any(|group| group == &selected_group) {
+            selected_group
+        } else {
+            "default".to_string()
+        };
+        ui.set_selected_hyperparameter_group(next_group.into());
         tab.selection.apply_to_ui(ui);
         ui.set_is_graph_running(tab.is_running);
     }
@@ -131,7 +168,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: O
             initial_tab.inline_inputs = build_inline_inputs_from_graph(&graph);
             if let Some(path) = graph_file_path {
                 initial_tab.hyperparameter_values =
-                    crate::util::hyperparam_store::load_hyperparameter_values(path);
+                    crate::util::hyperparam_store::load_hyperparameter_values(path, &initial_tab.graph);
                 initial_tab.file_path = Some(path.to_path_buf());
                 initial_tab.title = path
                     .file_name()
