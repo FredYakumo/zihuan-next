@@ -145,7 +145,8 @@ fn brain_output_ports(items: &[ToolDefinitionVm]) -> Vec<Port> {
     let mut ports = vec![
         Port::new("assistant_message", DataType::OpenAIMessage)
             .with_description("LLM 返回的完整 assistant 消息（含 tool_calls，用于 agentic loop）"),
-        Port::new("response", DataType::String).with_description("LLM 返回的最终文本回复"),
+        Port::new("has_tool_call", DataType::Boolean)
+            .with_description("LLM 返回的 assistant 消息是否包含 tool_calls，用于控制 agentic loop 继续或结束"),
     ];
     ports.extend(items.iter().map(|tool| {
         Port::new(tool.name.as_str(), DataType::Json)

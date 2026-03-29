@@ -23,13 +23,13 @@ export component GraphCanvas inherits Rectangle {
     in property <float> box_selection_width;
     in property <float> box_selection_height;
 
-    callback node_pointer_down(string);
+    callback node_pointer_down(string, bool);
     callback node_moved(string, float, float);
     callback node_move_finished(string, float, float);
     callback port_clicked(string, string, bool);
     callback pointer_moved(float, float);
     callback cancel_connect();
-    callback node_clicked(string);
+    callback node_clicked(string, bool);
     callback node_right_clicked(string, float, float);
     callback edge_clicked(string, string, string, string);
     callback canvas_clicked();
@@ -338,8 +338,8 @@ export component GraphCanvas inherits Rectangle {
         has_cycle: node.has_cycle;
         is_running: node.is_event_producer && root.is_graph_running;
 
-        node_pointer_down(node_id) => {
-            root.node_pointer_down(node_id);
+        node_pointer_down(node_id, shift_pressed) => {
+            root.node_pointer_down(node_id, shift_pressed);
         }
 
         node_moved(x, y) => {
@@ -354,8 +354,8 @@ export component GraphCanvas inherits Rectangle {
             root.port_clicked(node_id, port_name, is_input);
         }
 
-        node_clicked(node_id) => {
-            root.node_clicked(node_id);
+        node_clicked(node_id, shift_pressed) => {
+            root.node_clicked(node_id, shift_pressed);
         }
 
         node_right_clicked(node_id, x, y) => {

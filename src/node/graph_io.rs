@@ -1014,7 +1014,7 @@ mod tests {
         let graph = NodeGraphDefinition {
             nodes: vec![brain_node(vec![
                 Port::new("assistant_message", DataType::OpenAIMessage),
-                Port::new("response", DataType::String),
+                Port::new("has_tool_call", DataType::Boolean),
                 Port::new("search", DataType::Json),
             ])],
             edges: vec![],
@@ -1039,7 +1039,7 @@ mod tests {
         ensure_registry_initialized();
         let mut graph = NodeGraphDefinition {
             nodes: vec![brain_node(vec![
-                Port::new("response", DataType::String),
+                Port::new("has_tool_call", DataType::Boolean),
                 Port::new("search", DataType::Json),
             ])],
             edges: vec![],
@@ -1052,7 +1052,7 @@ mod tests {
 
         let fixed = &graph.nodes[0];
         assert!(fixed.output_ports.iter().any(|p| p.name == "assistant_message"));
-        assert!(fixed.output_ports.iter().any(|p| p.name == "response"));
+        assert!(fixed.output_ports.iter().any(|p| p.name == "has_tool_call"));
         assert!(fixed.output_ports.iter().any(|p| p.name == "search"));
     }
 
@@ -1071,7 +1071,7 @@ mod tests {
 
         let fixed = &graph.nodes[0];
         assert!(fixed.output_ports.iter().any(|p| p.name == "assistant_message"));
-        assert!(fixed.output_ports.iter().any(|p| p.name == "response"));
+        assert!(fixed.output_ports.iter().any(|p| p.name == "has_tool_call"));
         assert!(fixed.output_ports.iter().any(|p| p.name == "search"));
     }
 
