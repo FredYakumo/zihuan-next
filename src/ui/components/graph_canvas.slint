@@ -29,8 +29,10 @@ export component GraphCanvas inherits Rectangle {
     callback pointer_moved(float, float);
     callback cancel_connect();
     callback node_clicked(string);
+    callback node_right_clicked(string, float, float);
     callback edge_clicked(string, string, string, string);
     callback canvas_clicked();
+    callback canvas_right_clicked(float, float, float, float);
     callback box_selection_start(float, float);
     callback box_selection_update(float, float);
     callback box_selection_end();
@@ -112,6 +114,7 @@ export component GraphCanvas inherits Rectangle {
         property <bool> is_box_selecting: false;
         property <bool> is_panning: false;
         property <bool> did_pan: false;
+        property <bool> suppress_click: false;
         property <float> pan_start_mouse_x: 0;
         property <float> pan_start_mouse_y: 0;
         property <float> pan_origin_x: 0;
@@ -130,20 +133,33 @@ export component GraphCanvas inherits Rectangle {
         }
 
         clicked => {
-            if !is_box_selecting && !did_pan {
+            if !suppress_click && !is_box_selecting && !did_pan {
                 root.canvas_clicked();
             }
+            suppress_click = false;
         }
 
         pointer-event(event) => {
             if (event.kind == PointerEventKind.down) {
                 did_pan = false;
                 if (event.button == PointerEventButton.right) {
-                    root.cancel_connect();
+                    suppress_click = true;
+                    if root.drag_line_visible {
+                        root.cancel_connect();
+                    } else {
+                        root.canvas_right_clicked(
+                            self.mouse-x / 1px,
+                            self.mouse-y / 1px,
+                            self.mouse-x / 1px / root.canvas_zoom - root.canvas_pan_x,
+                            self.mouse-y / 1px / root.canvas_zoom - root.canvas_pan_y
+                        );
+                    }
                 } else if (event.button == PointerEventButton.left && event.modifiers.control) {
+                    suppress_click = true;
                     is_box_selecting = true;
                     root.box_selection_start(self.mouse-x / 1px / root.canvas_zoom - root.canvas_pan_x, self.mouse-y / 1px / root.canvas_zoom - root.canvas_pan_y);
                 } else if (event.button == PointerEventButton.left) {
+                    suppress_click = false;
                     is_panning = true;
                     pan_start_mouse_x = self.mouse-x / 1px;
                     pan_start_mouse_y = self.mouse-y / 1px;
@@ -335,6 +351,10 @@ export component GraphCanvas inherits Rectangle {
 
         node_clicked(node_id) => {
             root.node_clicked(node_id);
+        }
+
+        node_right_clicked(node_id, x, y) => {
+            root.node_right_clicked(node_id, x, y);
         }
 
         inline_port_text_changed(node_id, port_name, value) => {

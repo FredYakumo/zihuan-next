@@ -30,6 +30,7 @@ export component NodeItem inherits Rectangle {
     callback node_move_finished(float, float);
     callback port_clicked(string, string, bool);
     callback node_clicked(string);
+    callback node_right_clicked(string, float, float);
     callback inline_port_text_changed(string, string, string);
     callback inline_port_bool_changed(string, string, bool);
     callback message_list_add(string);
@@ -104,6 +105,7 @@ export component NodeItem inherits Rectangle {
     property <bool> has-tools-editor: root.node_type == "brain";
     property <bool> has-format-string-editor: root.node_type == "format_string";
     property <bool> has-json-extract-editor: root.node_type == "json_extract";
+    property <bool> suppress-click: false;
 
     x: (x_pos + offset-x) * 1px;
     y: (y_pos + offset-y) * 1px;
@@ -119,17 +121,30 @@ export component NodeItem inherits Rectangle {
 
     touch := TouchArea {
         clicked => {
-            root.node_clicked(root.node_id);
+            if !root.suppress-click {
+                root.node_clicked(root.node_id);
+            }
+            root.suppress-click = false;
         }
 
         pointer-event(event) => {
             if (event.kind == PointerEventKind.down) {
-                is-dragging = true;
-                drag-start-pointer-x = (self.mouse-x / 1px) + root.x / 1px;
-                drag-start-pointer-y = (self.mouse-y / 1px) + root.y / 1px;
-                drag-start-node-x = root.x / 1px;
-                drag-start-node-y = root.y / 1px;
-            } else if (event.kind == PointerEventKind.up) {
+                if (event.button == PointerEventButton.right) {
+                    root.suppress-click = true;
+                    root.node_right_clicked(
+                        root.node_id,
+                        (self.mouse-x / 1px) + root.x / 1px,
+                        (self.mouse-y / 1px) + root.y / 1px
+                    );
+                } else if (event.button == PointerEventButton.left) {
+                    root.suppress-click = false;
+                    is-dragging = true;
+                    drag-start-pointer-x = (self.mouse-x / 1px) + root.x / 1px;
+                    drag-start-pointer-y = (self.mouse-y / 1px) + root.y / 1px;
+                    drag-start-node-x = root.x / 1px;
+                    drag-start-node-y = root.y / 1px;
+                }
+            } else if (event.kind == PointerEventKind.up && event.button == PointerEventButton.left) {
                 is-dragging = false;
                 let pointer-x = (self.mouse-x / 1px) + root.x / 1px;
                 let pointer-y = (self.mouse-y / 1px) + root.y / 1px;

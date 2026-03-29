@@ -6,6 +6,9 @@ use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 
 use crate::node::graph_io::NodeGraphDefinition;
 use crate::ui::graph_window::{NodeGraphWindow, NodeTypeVm};
+use crate::ui::node_graph_view_clipboard::{
+    copy_selected_nodes_to_clipboard, paste_nodes_from_clipboard, NodeClipboard,
+};
 use crate::ui::node_graph_view::{
     refresh_active_tab_ui, tab_display_title, GraphTabState,
 };
@@ -184,10 +187,14 @@ pub(crate) fn bind_window_callbacks(
     tabs: Arc<Mutex<Vec<GraphTabState>>>,
     active_tab_index: Arc<Mutex<usize>>,
     all_node_types: Arc<Vec<NodeTypeVm>>,
+    node_clipboard: Arc<Mutex<Option<NodeClipboard>>>,
+    last_context_canvas_pos: Arc<Mutex<Option<(f32, f32)>>>,
+    pending_add_node_pos: Arc<Mutex<Option<(f32, f32)>>>,
 ) {
     let ui_handle = ui.as_weak();
     let tabs_clone = Arc::clone(&tabs);
     let active_tab_clone = Arc::clone(&active_tab_index);
+    let pending_add_node_pos_clone = Arc::clone(&pending_add_node_pos);
     ui.on_add_node(move |type_id: SharedString| {
         let type_id_str = type_id.as_str();
         let mut tabs_guard = tabs_clone.lock().unwrap();
@@ -199,30 +206,31 @@ pub(crate) fn bind_window_callbacks(
             }
 
             if let Some(node) = tab.graph.nodes.last_mut() {
-                let (pan_x, pan_y, viewport_width, viewport_height) = ui_handle
-                    .upgrade()
-                    .map(|ui| {
-                        (
-                            ui.get_canvas_pan_x(),
-                            ui.get_canvas_pan_y(),
-                            ui.get_canvas_zoom().max(0.2),
-                            ui.get_canvas_viewport_width().max(1.0),
-                            ui.get_canvas_viewport_height().max(1.0),
-                        )
-                    })
-                    .map(|(pan_x, pan_y, zoom, viewport_width, viewport_height)| {
-                        (
-                            pan_x,
-                            pan_y,
-                            viewport_width / zoom,
-                            viewport_height / zoom,
-                        )
-                    })
-                    .unwrap_or((0.0, 0.0, 1200.0, 800.0));
-
-                let center_canvas_x = viewport_width / 2.0 - pan_x;
-                let center_canvas_y = viewport_height / 2.0 - pan_y;
                 let (node_width, node_height) = node_dimensions(node);
+                let context_pos = pending_add_node_pos_clone.lock().unwrap().take();
+
+                let (center_canvas_x, center_canvas_y) = if let Some((x, y)) = context_pos {
+                    (x, y)
+                } else {
+                    ui_handle
+                        .upgrade()
+                        .map(|ui| {
+                            (
+                                ui.get_canvas_pan_x(),
+                                ui.get_canvas_pan_y(),
+                                ui.get_canvas_zoom().max(0.2),
+                                ui.get_canvas_viewport_width().max(1.0),
+                                ui.get_canvas_viewport_height().max(1.0),
+                            )
+                        })
+                        .map(|(pan_x, pan_y, zoom, viewport_width, viewport_height)| {
+                            (
+                                viewport_width / zoom / 2.0 - pan_x,
+                                viewport_height / zoom / 2.0 - pan_y,
+                            )
+                        })
+                        .unwrap_or((0.0, 0.0))
+                };
 
                 node.position = Some(crate::node::graph_io::GraphPosition {
                     x: snap_to_grid(center_canvas_x - node_width / 2.0),
@@ -537,6 +545,95 @@ pub(crate) fn bind_window_callbacks(
     });
 
     let ui_handle = ui.as_weak();
+    ui.on_hide_graph_context_menu(move || {
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_show_graph_context_menu(false);
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let node_clipboard_clone = Arc::clone(&node_clipboard);
+    ui.on_copy_selected_nodes(move || {
+        let new_clipboard = {
+            let tabs_guard = tabs_clone.lock().unwrap();
+            let active_index = *active_tab_clone.lock().unwrap();
+            tabs_guard.get(active_index).and_then(|tab| {
+                copy_selected_nodes_to_clipboard(
+                    &tab.graph,
+                    &tab.inline_inputs,
+                    &tab.selection.selected_node_ids,
+                )
+            })
+        };
+
+        let can_paste = if let Some(clipboard) = new_clipboard {
+            *node_clipboard_clone.lock().unwrap() = Some(clipboard);
+            true
+        } else {
+            node_clipboard_clone.lock().unwrap().is_some()
+        };
+
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_show_graph_context_menu(false);
+            ui.set_graph_context_menu_can_paste(can_paste);
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let node_clipboard_clone = Arc::clone(&node_clipboard);
+    let last_context_canvas_pos_clone = Arc::clone(&last_context_canvas_pos);
+    ui.on_paste_nodes_at_context(move || {
+        let clipboard = node_clipboard_clone.lock().unwrap().clone();
+        let context_pos = *last_context_canvas_pos_clone.lock().unwrap();
+
+        if let (Some(clipboard), Some((x, y))) = (clipboard, context_pos) {
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let active_index = *active_tab_clone.lock().unwrap();
+            if let Some(tab) = tabs_guard.get_mut(active_index) {
+                if let Some(pasted) = paste_nodes_from_clipboard(&tab.graph, &clipboard, x, y) {
+                    let pasted_node_ids = pasted.pasted_node_ids.clone();
+                    tab.graph.nodes.extend(pasted.nodes);
+                    tab.graph.edges.extend(pasted.edges);
+                    tab.inline_inputs.extend(pasted.inline_inputs);
+                    tab.selection.clear();
+                    for node_id in pasted_node_ids {
+                        tab.selection.select_node(node_id, true);
+                    }
+                    tab.is_dirty = true;
+                }
+
+                if let Some(ui) = ui_handle.upgrade() {
+                    ui.set_show_graph_context_menu(false);
+                    refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+                }
+            }
+        } else if let Some(ui) = ui_handle.upgrade() {
+            ui.set_show_graph_context_menu(false);
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    let all_node_types_clone = Arc::clone(&all_node_types);
+    let last_context_canvas_pos_clone = Arc::clone(&last_context_canvas_pos);
+    let pending_add_node_pos_clone = Arc::clone(&pending_add_node_pos);
+    ui.on_context_menu_new_node(move || {
+        *pending_add_node_pos_clone.lock().unwrap() =
+            *last_context_canvas_pos_clone.lock().unwrap();
+
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_available_node_types(ModelRc::new(VecModel::from(
+                all_node_types_clone.as_ref().clone(),
+            )));
+            ui.set_show_graph_context_menu(false);
+            ui.set_show_node_selector(true);
+        }
+    });
+
+    let ui_handle = ui.as_weak();
     let all_node_types_clone = Arc::clone(&all_node_types);
     ui.on_filter_nodes(move |search_text: SharedString, category: SharedString| {
         if let Some(ui) = ui_handle.upgrade() {
@@ -559,15 +656,20 @@ pub(crate) fn bind_window_callbacks(
 
     let ui_handle = ui.as_weak();
     let all_node_types_clone = Arc::clone(&all_node_types);
+    let pending_add_node_pos_clone = Arc::clone(&pending_add_node_pos);
     ui.on_show_node_type_menu(move || {
+        pending_add_node_pos_clone.lock().unwrap().take();
         if let Some(ui) = ui_handle.upgrade() {
             ui.set_available_node_types(ModelRc::new(VecModel::from(all_node_types_clone.as_ref().clone())));
+            ui.set_show_graph_context_menu(false);
             ui.set_show_node_selector(true);
         }
     });
 
     let ui_handle = ui.as_weak();
+    let pending_add_node_pos_clone = Arc::clone(&pending_add_node_pos);
     ui.on_hide_node_type_menu(move || {
+        pending_add_node_pos_clone.lock().unwrap().take();
         if let Some(ui) = ui_handle.upgrade() {
             ui.set_show_node_selector(false);
         }

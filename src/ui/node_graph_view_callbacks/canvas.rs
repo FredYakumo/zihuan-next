@@ -4,6 +4,7 @@ use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
 use crate::node::graph_io::ensure_positions;
 use crate::ui::graph_window::NodeGraphWindow;
+use crate::ui::node_graph_view_clipboard::NodeClipboard;
 use crate::ui::node_graph_view::{
     refresh_active_tab_ui, tab_display_title, update_tabs_ui, GraphTabState,
 };
@@ -15,10 +16,16 @@ use crate::ui::node_graph_view_geometry::{
 use crate::ui::node_graph_view_vm::apply_graph_to_ui;
 use crate::ui::selection::BoxSelection;
 
+fn hide_graph_context_menu(ui: &NodeGraphWindow) {
+    ui.set_show_graph_context_menu(false);
+}
+
 pub(crate) fn bind_canvas_callbacks(
     ui: &NodeGraphWindow,
     tabs: Arc<Mutex<Vec<GraphTabState>>>,
     active_tab_index: Arc<Mutex<usize>>,
+    node_clipboard: Arc<Mutex<Option<NodeClipboard>>>,
+    last_context_canvas_pos: Arc<Mutex<Option<(f32, f32)>>>,
 ) {
     let ui_handle = ui.as_weak();
     let tabs_clone = Arc::clone(&tabs);
@@ -225,10 +232,54 @@ pub(crate) fn bind_canvas_callbacks(
     });
 
     let ui_handle = ui.as_weak();
+    let node_clipboard_clone = Arc::clone(&node_clipboard);
+    let last_context_canvas_pos_clone = Arc::clone(&last_context_canvas_pos);
+    ui.on_canvas_right_clicked(move |menu_x: f32, menu_y: f32, canvas_x: f32, canvas_y: f32| {
+        *last_context_canvas_pos_clone.lock().unwrap() = Some((canvas_x, canvas_y));
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_graph_context_menu_x(menu_x);
+            ui.set_graph_context_menu_y(menu_y);
+            ui.set_graph_context_menu_mode("canvas".into());
+            ui.set_graph_context_menu_can_paste(node_clipboard_clone.lock().unwrap().is_some());
+            ui.set_show_graph_context_menu(true);
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    ui.on_node_right_clicked(move |node_id: SharedString, menu_x: f32, menu_y: f32| {
+        if let Some(ui) = ui_handle.upgrade() {
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let active_index = *active_tab_clone.lock().unwrap();
+            if let Some(tab) = tabs_guard.get_mut(active_index) {
+                if !tab.selection.selected_node_ids.contains(node_id.as_str()) {
+                    tab.selection.select_node(node_id.to_string(), false);
+                    tab.selection.apply_to_ui(&ui);
+                    apply_graph_to_ui(
+                        &ui,
+                        &tab.graph,
+                        Some(tab_display_title(tab)),
+                        &tab.selection,
+                        &tab.inline_inputs,
+                        &tab.hyperparameter_values,
+                    );
+                }
+
+                ui.set_graph_context_menu_x(menu_x);
+                ui.set_graph_context_menu_y(menu_y);
+                ui.set_graph_context_menu_mode("selection".into());
+                ui.set_show_graph_context_menu(true);
+            }
+        }
+    });
+
+    let ui_handle = ui.as_weak();
     let tabs_clone = Arc::clone(&tabs);
     let active_tab_clone = Arc::clone(&active_tab_index);
     ui.on_node_clicked(move |node_id: SharedString| {
         if let Some(ui) = ui_handle.upgrade() {
+            hide_graph_context_menu(&ui);
             let mut tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
@@ -251,6 +302,7 @@ pub(crate) fn bind_canvas_callbacks(
     let active_tab_clone = Arc::clone(&active_tab_index);
     ui.on_edge_clicked(move |from_node: SharedString, from_port: SharedString, to_node: SharedString, to_port: SharedString| {
         if let Some(ui) = ui_handle.upgrade() {
+            hide_graph_context_menu(&ui);
             let mut tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
@@ -278,6 +330,7 @@ pub(crate) fn bind_canvas_callbacks(
     let active_tab_clone = Arc::clone(&active_tab_index);
     ui.on_canvas_clicked(move || {
         if let Some(ui) = ui_handle.upgrade() {
+            hide_graph_context_menu(&ui);
             let mut tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
@@ -300,6 +353,7 @@ pub(crate) fn bind_canvas_callbacks(
     let active_tab_clone = Arc::clone(&active_tab_index);
     ui.on_delete_selected(move || {
         if let Some(ui) = ui_handle.upgrade() {
+            hide_graph_context_menu(&ui);
             let mut tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
@@ -340,6 +394,7 @@ pub(crate) fn bind_canvas_callbacks(
     let active_tab_clone = Arc::clone(&active_tab_index);
     ui.on_auto_layout_graph(move || {
         if let Some(ui) = ui_handle.upgrade() {
+            hide_graph_context_menu(&ui);
             let mut tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
@@ -367,6 +422,7 @@ pub(crate) fn bind_canvas_callbacks(
         box_sel.start(x, y);
 
         if let Some(ui) = ui_handle.upgrade() {
+            hide_graph_context_menu(&ui);
             ui.set_box_selection_visible(true);
             ui.set_box_selection_x(x);
             ui.set_box_selection_y(y);
