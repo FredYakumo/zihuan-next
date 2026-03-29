@@ -1,8 +1,9 @@
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
-use crate::node::graph_io::ensure_positions;
+use crate::node::graph_io::{ensure_positions, GraphPosition};
 use crate::ui::graph_window::NodeGraphWindow;
 use crate::ui::node_graph_view_clipboard::NodeClipboard;
 use crate::ui::node_graph_view::{
@@ -13,11 +14,89 @@ use crate::ui::node_graph_view_geometry::{
     snap_to_grid_center, GRID_SIZE, NODE_HEADER_ROWS, NODE_MIN_ROWS, NODE_PADDING_BOTTOM,
     NODE_WIDTH_CELLS,
 };
-use crate::ui::node_graph_view_vm::apply_graph_to_ui;
+use crate::ui::node_graph_view_vm::{apply_graph_to_ui, apply_graph_to_ui_live};
 use crate::ui::selection::BoxSelection;
 
 fn hide_graph_context_menu(ui: &NodeGraphWindow) {
     ui.set_show_graph_context_menu(false);
+}
+
+#[derive(Clone)]
+struct DragSession {
+    anchor_node_id: String,
+    anchor_start: GraphPosition,
+    node_start_positions: HashMap<String, GraphPosition>,
+}
+
+fn build_drag_session(tab: &mut GraphTabState, anchor_node_id: &str) -> Option<DragSession> {
+    ensure_positions(&mut tab.graph);
+
+    let anchor_start = tab
+        .graph
+        .nodes
+        .iter()
+        .find(|node| node.id == anchor_node_id)
+        .and_then(|node| node.position.clone())?;
+
+    let participant_ids: Vec<String> = if tab.selection.selected_node_ids.len() > 1
+        && tab.selection.selected_node_ids.contains(anchor_node_id)
+    {
+        tab.selection.selected_node_ids.iter().cloned().collect()
+    } else {
+        vec![anchor_node_id.to_string()]
+    };
+
+    let node_start_positions = participant_ids
+        .into_iter()
+        .filter_map(|node_id| {
+            tab.graph
+                .nodes
+                .iter()
+                .find(|node| node.id == node_id)
+                .and_then(|node| node.position.clone().map(|position| (node_id, position)))
+        })
+        .collect::<HashMap<_, _>>();
+
+    if !node_start_positions.contains_key(anchor_node_id) {
+        return None;
+    }
+
+    Some(DragSession {
+        anchor_node_id: anchor_node_id.to_string(),
+        anchor_start,
+        node_start_positions,
+    })
+}
+
+fn apply_drag_session(
+    tab: &mut GraphTabState,
+    drag_session: &DragSession,
+    anchor_x: f32,
+    anchor_y: f32,
+) -> bool {
+    let delta_x = anchor_x - drag_session.anchor_start.x;
+    let delta_y = anchor_y - drag_session.anchor_start.y;
+    let mut changed = false;
+
+    for node in &mut tab.graph.nodes {
+        let Some(start_position) = drag_session.node_start_positions.get(&node.id) else {
+            continue;
+        };
+
+        let next_x = start_position.x + delta_x;
+        let next_y = start_position.y + delta_y;
+
+        if let Some(position) = &mut node.position {
+            changed |= position.x != next_x || position.y != next_y;
+            position.x = next_x;
+            position.y = next_y;
+        } else {
+            node.position = Some(GraphPosition { x: next_x, y: next_y });
+            changed = true;
+        }
+    }
+
+    changed
 }
 
 pub(crate) fn bind_canvas_callbacks(
@@ -27,28 +106,57 @@ pub(crate) fn bind_canvas_callbacks(
     node_clipboard: Arc<Mutex<Option<NodeClipboard>>>,
     last_context_canvas_pos: Arc<Mutex<Option<(f32, f32)>>>,
 ) {
+    let drag_session = Arc::new(Mutex::new(None::<DragSession>));
+
     let ui_handle = ui.as_weak();
     let tabs_clone = Arc::clone(&tabs);
     let active_tab_clone = Arc::clone(&active_tab_index);
+    let drag_session_clone = Arc::clone(&drag_session);
+    ui.on_node_pointer_down(move |node_id: SharedString| {
+        if let Some(ui) = ui_handle.upgrade() {
+            hide_graph_context_menu(&ui);
+            *drag_session_clone.lock().unwrap() = None;
+
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let active_index = *active_tab_clone.lock().unwrap();
+            if let Some(tab) = tabs_guard.get_mut(active_index) {
+                if !tab.selection.selected_node_ids.contains(node_id.as_str()) {
+                    tab.selection.select_node(node_id.to_string(), false);
+                    tab.selection.apply_to_ui(&ui);
+                }
+            }
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let drag_session_clone = Arc::clone(&drag_session);
     ui.on_node_moved(move |node_id: SharedString, x: f32, y: f32| {
         let mut tabs_guard = tabs_clone.lock().unwrap();
         let active_index = *active_tab_clone.lock().unwrap();
         if let Some(tab) = tabs_guard.get_mut(active_index) {
-            if let Some(node) = tab.graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
-                if let Some(pos) = &mut node.position {
-                    pos.x = x;
-                    pos.y = y;
-                } else {
-                    node.position = Some(crate::node::graph_io::GraphPosition { x, y });
-                }
-            }
-
             if let Some(ui) = ui_handle.upgrade() {
-                let (edge_segments, edge_corners, edge_labels) = build_edge_segments(&tab.graph, false);
+                let mut drag_session_guard = drag_session_clone.lock().unwrap();
+                let needs_new_session = drag_session_guard
+                    .as_ref()
+                    .map(|session| session.anchor_node_id != node_id.as_str())
+                    .unwrap_or(true);
+                if needs_new_session {
+                    *drag_session_guard = build_drag_session(tab, node_id.as_str());
+                }
 
-                ui.set_edge_segments(ModelRc::new(VecModel::from(edge_segments)));
-                ui.set_edge_corners(ModelRc::new(VecModel::from(edge_corners)));
-                ui.set_edge_labels(ModelRc::new(VecModel::from(edge_labels)));
+                if let Some(drag_session) = drag_session_guard.as_ref() {
+                    apply_drag_session(tab, drag_session, x, y);
+                    apply_graph_to_ui_live(
+                        &ui,
+                        &tab.graph,
+                        Some(tab_display_title(tab)),
+                        &tab.selection,
+                        &tab.inline_inputs,
+                        &tab.hyperparameter_values,
+                    );
+                }
             }
         }
     });
@@ -77,25 +185,31 @@ pub(crate) fn bind_canvas_callbacks(
     let ui_handle = ui.as_weak();
     let tabs_clone = Arc::clone(&tabs);
     let active_tab_clone = Arc::clone(&active_tab_index);
+    let drag_session_clone = Arc::clone(&drag_session);
     ui.on_node_move_finished(move |node_id: SharedString, x: f32, y: f32| {
         let mut tabs_guard = tabs_clone.lock().unwrap();
         let active_index = *active_tab_clone.lock().unwrap();
         if let Some(tab) = tabs_guard.get_mut(active_index) {
             let snapped_x = snap_to_grid(x);
             let snapped_y = snap_to_grid(y);
-            if let Some(node) = tab.graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
-                if let Some(pos) = &mut node.position {
-                    pos.x = snapped_x;
-                    pos.y = snapped_y;
-                } else {
-                    node.position = Some(crate::node::graph_io::GraphPosition {
-                        x: snapped_x,
-                        y: snapped_y,
-                    });
-                }
+            let mut drag_session_guard = drag_session_clone.lock().unwrap();
+            let needs_new_session = drag_session_guard
+                .as_ref()
+                .map(|session| session.anchor_node_id != node_id.as_str())
+                .unwrap_or(true);
+            if needs_new_session {
+                *drag_session_guard = build_drag_session(tab, node_id.as_str());
             }
 
-            tab.is_dirty = true;
+            let moved = drag_session_guard
+                .as_ref()
+                .map(|drag_session| apply_drag_session(tab, drag_session, snapped_x, snapped_y))
+                .unwrap_or(false);
+            *drag_session_guard = None;
+
+            if moved {
+                tab.is_dirty = true;
+            }
 
             if let Some(ui) = ui_handle.upgrade() {
                 refresh_active_tab_ui(&ui, &tabs_guard, active_index);
