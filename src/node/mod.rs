@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use log::info;
+use log::{error, info};
 
 /// NodeType enum for distinguishing node categories
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -171,6 +171,16 @@ pub trait Node: Send + Sync {
         Ok(())
     }
 
+    /// Called when an event producer wants to stop its own loop after an error.
+    /// Default is no-op; LoopNode overrides this to request break.
+    fn on_error_request_stop(&self) {}
+
+    /// Whether an event producer should stop itself quietly instead of failing
+    /// the whole graph after `on_error_request_stop` is called.
+    fn suppress_error_after_stop_request(&self) -> bool {
+        false
+    }
+
     fn to_json(&self) -> Value {
         json!({
             "id": self.id(),
@@ -275,6 +285,27 @@ impl NodeGraph {
 
     pub fn reset_stop_flag(&mut self) {
         self.stop_flag.store(false, Ordering::Relaxed);
+    }
+
+    fn stop_current_event_producer_on_error(
+        &self,
+        event_producer_id: &str,
+        err: &crate::error::Error,
+    ) -> bool {
+        let Some(node) = self.nodes.get(event_producer_id) else {
+            return false;
+        };
+
+        node.on_error_request_stop();
+        if node.suppress_error_after_stop_request() {
+            error!(
+                "Event producer '{}' stopped after internal error: {}",
+                event_producer_id, err
+            );
+            true
+        } else {
+            false
+        }
     }
 
     pub fn add_node(&mut self, node: Box<dyn Node>) -> Result<()> {
@@ -1295,9 +1326,19 @@ impl NodeGraph {
                     ))
                 })?;
 
-                match node.on_update().map_err(|e| {
+                let update_result = node.on_update().map_err(|e| {
                     crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
-                })? {
+                });
+                let update_result = match update_result {
+                    Ok(value) => value,
+                    Err(err) => {
+                        if self.stop_current_event_producer_on_error(node_id, &err) {
+                            break;
+                        }
+                        return Err(err);
+                    }
+                };
+                match update_result {
                     Some(outputs) => {
                         node.validate_outputs(&outputs)?;
                         outputs
@@ -1374,9 +1415,18 @@ impl NodeGraph {
                             ordered_id
                         ))
                     })?;
-                    node.execute(inputs).map_err(|e| {
+                    let exec_result = node.execute(inputs).map_err(|e| {
                         crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", ordered_id, e))
-                    })?
+                    });
+                    match exec_result {
+                        Ok(value) => value,
+                        Err(err) => {
+                            if self.stop_current_event_producer_on_error(node_id, &err) {
+                                break;
+                            }
+                            return Err(err);
+                        }
+                    }
                 };
 
                 if let Some(cb) = &self.execution_callback {
@@ -1451,9 +1501,19 @@ impl NodeGraph {
                     ))
                 })?;
 
-                match node.on_update().map_err(|e| {
+                let update_result = node.on_update().map_err(|e| {
                     crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
-                })? {
+                });
+                let update_result = match update_result {
+                    Ok(value) => value,
+                    Err(err) => {
+                        if self.stop_current_event_producer_on_error(node_id, &err) {
+                            break;
+                        }
+                        return Err(err);
+                    }
+                };
+                match update_result {
                     Some(outputs) => {
                         node.validate_outputs(&outputs)?;
                         outputs
@@ -1519,9 +1579,18 @@ impl NodeGraph {
                 
                 let inputs_clone = if self.execution_callback.is_some() { Some(inputs.clone()) } else { None };
 
-                let outputs = node.execute(inputs).map_err(|e| {
+                let exec_result = node.execute(inputs).map_err(|e| {
                     crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", ordered_id, e))
-                })?;
+                });
+                let outputs = match exec_result {
+                    Ok(value) => value,
+                    Err(err) => {
+                        if self.stop_current_event_producer_on_error(node_id, &err) {
+                            break;
+                        }
+                        return Err(err);
+                    }
+                };
                 
                 if let Some(cb) = &self.execution_callback {
                     if let Some(inp) = inputs_clone {

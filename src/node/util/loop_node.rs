@@ -77,4 +77,12 @@ impl Node for LoopNode {
 		);
 		Ok(Some(outputs))
 	}
+
+	fn on_error_request_stop(&self) {
+		self.loop_control.request_break();
+	}
+
+	fn suppress_error_after_stop_request(&self) -> bool {
+		true
+	}
 }
