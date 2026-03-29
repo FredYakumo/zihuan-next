@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::llm::function_tools::FunctionTool;
+use crate::llm::tooling::FunctionTool;
 
 use super::message::OpenAIMessage;
 

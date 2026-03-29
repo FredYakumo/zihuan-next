@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::error::{Error, Result};
-use crate::llm::function_tools::FunctionTool;
+use crate::llm::tooling::FunctionTool;
 use crate::llm::{InferenceParam, MessageRole, OpenAIMessage};
 use crate::node::{DataType, DataValue, Node, Port, node_input};
 
@@ -170,6 +170,20 @@ impl BrainNode {
 
         ports
     }
+
+    fn build_tool_payload(tool_call_id: String, arguments: Value) -> Value {
+        let mut payload = Map::new();
+        payload.insert("tool_call_id".to_string(), Value::String(tool_call_id));
+
+        if let Value::Object(argument_map) = &arguments {
+            for (key, value) in argument_map {
+                payload.insert(key.clone(), value.clone());
+            }
+        }
+
+        payload.insert("arguments".to_string(), arguments);
+        Value::Object(payload)
+    }
 }
 
 impl Node for BrainNode {
@@ -290,10 +304,10 @@ impl Node for BrainNode {
             tool_payloads
                 .entry(tool_call.function.name.clone())
                 .or_default()
-                .push(json!({
-                    "tool_call_id": tool_call.id,
-                    "arguments": tool_call.function.arguments,
-                }));
+                .push(Self::build_tool_payload(
+                    tool_call.id,
+                    tool_call.function.arguments,
+                ));
         }
 
         for tool in &self.tool_definitions {
@@ -317,10 +331,10 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    use serde_json::json;
+    use serde_json::{Map, json, Value};
 
     use super::{BrainNode, ToolDefinition, ToolParamDef};
-    use crate::llm::function_tools::{FunctionTool, ToolCalls, ToolCallsFuncSpec};
+    use crate::llm::tooling::{FunctionTool, ToolCalls, ToolCallsFuncSpec};
     use crate::llm::llm_base::LLMBase;
     use crate::llm::{InferenceParam, MessageRole, OpenAIMessage};
     use crate::node::{DataType, DataValue, Node};
@@ -423,7 +437,40 @@ mod tests {
         ])).unwrap();
 
         assert!(matches!(outputs.get("response"), Some(DataValue::String(text)) if text == "done"));
-        assert!(matches!(outputs.get("search"), Some(DataValue::Json(value)) if *value == json!({"tool_call_id": "tool_1", "arguments": {"query": "rust", "limit": 3}})));
+        assert!(matches!(outputs.get("search"), Some(DataValue::Json(value)) if *value == json!({
+            "tool_call_id": "tool_1",
+            "query": "rust",
+            "limit": 3,
+            "arguments": {"query": "rust", "limit": 3}
+        })));
+    }
+
+    #[test]
+    fn build_tool_payload_flattens_object_arguments() {
+        let payload = BrainNode::build_tool_payload(
+            "tool_1".to_string(),
+            json!({ "content": "hello" }),
+        );
+
+        assert_eq!(
+            payload,
+            json!({
+                "tool_call_id": "tool_1",
+                "content": "hello",
+                "arguments": { "content": "hello" }
+            })
+        );
+    }
+
+    #[test]
+    fn build_tool_payload_keeps_non_object_arguments_under_arguments() {
+        let payload = BrainNode::build_tool_payload("tool_1".to_string(), Value::String("hello".to_string()));
+
+        let mut expected = Map::new();
+        expected.insert("tool_call_id".to_string(), Value::String("tool_1".to_string()));
+        expected.insert("arguments".to_string(), Value::String("hello".to_string()));
+
+        assert_eq!(payload, Value::Object(expected));
     }
 
     #[test]
