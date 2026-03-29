@@ -284,6 +284,16 @@ impl Node for BrainNode {
             tools: Some(&tools),
         });
 
+        if let Some(content) = response.content.as_deref() {
+            let is_transport_error = content.starts_with("Error: API request failed")
+                || content.starts_with("Error: Failed to send request")
+                || content.starts_with("Error: Failed to parse response")
+                || content.starts_with("Error: Invalid response structure");
+            if is_transport_error {
+                return Err(Error::ValidationError(format!("LLM request failed: {}", content)));
+            }
+        }
+
         let mut outputs = HashMap::new();
         outputs.insert(
             "assistant_message".to_string(),

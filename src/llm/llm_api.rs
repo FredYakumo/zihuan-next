@@ -1,6 +1,5 @@
 use super::{InferenceParam, OpenAIMessage, MessageRole, role_to_str, str_to_role};
 use super::tooling::{ToolCalls, ToolCallsFuncSpec};
-use std::collections::HashSet;
 use reqwest::blocking::Client;
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -121,87 +120,6 @@ impl LLMAPI {
         })
     }
 
-    fn normalize_messages_for_tool_calls(messages: &[OpenAIMessage]) -> Vec<OpenAIMessage> {
-        let mut keep_tool_calls = vec![true; messages.len()];
-
-        for (index, msg) in messages.iter().enumerate() {
-            if msg.role != MessageRole::Assistant || msg.tool_calls.is_empty() {
-                continue;
-            }
-
-            let expected_ids: HashSet<&str> = msg
-                .tool_calls
-                .iter()
-                .map(|tc| tc.id.as_str())
-                .collect();
-
-            if expected_ids.is_empty() {
-                continue;
-            }
-
-            let mut received_ids = HashSet::new();
-            let mut cursor = index + 1;
-            while cursor < messages.len() && messages[cursor].role == MessageRole::Tool {
-                if let Some(tool_call_id) = messages[cursor].tool_call_id.as_deref() {
-                    if expected_ids.contains(tool_call_id) {
-                        received_ids.insert(tool_call_id);
-                    }
-                }
-                cursor += 1;
-            }
-
-            if received_ids.len() != expected_ids.len() {
-                keep_tool_calls[index] = false;
-            }
-        }
-
-        let mut normalized = Vec::with_capacity(messages.len());
-        let mut pending_tool_ids: HashSet<String> = HashSet::new();
-
-        for (index, original) in messages.iter().enumerate() {
-            match original.role {
-                MessageRole::Assistant => {
-                    let mut msg = original.clone();
-                    pending_tool_ids.clear();
-
-                    if !msg.tool_calls.is_empty() {
-                        if keep_tool_calls[index] {
-                            pending_tool_ids = msg.tool_calls.iter().map(|tc| tc.id.clone()).collect();
-                        } else {
-                            debug!(
-                                "Dropping incomplete tool_calls from assistant message at index {} before API request",
-                                index
-                            );
-                            msg.tool_calls.clear();
-                        }
-                    }
-
-                    normalized.push(msg);
-                }
-                MessageRole::Tool => {
-                    let Some(tool_call_id) = original.tool_call_id.as_deref() else {
-                        debug!("Dropping tool message without tool_call_id before API request");
-                        continue;
-                    };
-
-                    if pending_tool_ids.remove(tool_call_id) {
-                        normalized.push(original.clone());
-                    } else {
-                        debug!(
-                            "Dropping orphan tool message (tool_call_id={}) before API request",
-                            tool_call_id
-                        );
-                    }
-                }
-                _ => {
-                    pending_tool_ids.clear();
-                    normalized.push(original.clone());
-                }
-            }
-        }
-
-        normalized
-    }
 }
 
 impl LLMBase for LLMAPI {
@@ -215,10 +133,9 @@ impl LLMBase for LLMAPI {
             .build()
             .expect("Failed to create HTTP client");
 
-        let normalized_messages = Self::normalize_messages_for_tool_calls(param.messages);
-
         // Convert internal MessageRole enum to string
-        let messages: Vec<serde_json::Value> = normalized_messages
+        let messages: Vec<serde_json::Value> = param
+            .messages
             .iter()
             .map(|msg| {
                 let role_str = role_to_str(&msg.role);
@@ -343,7 +260,6 @@ impl LLMBase for LLMAPI {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::llm::tooling::{ToolCalls, ToolCallsFuncSpec};
     use serde_yaml::Value;
     use std::fs;
     use std::path::Path;
@@ -404,75 +320,6 @@ mod tests {
         assert!(user_msg.tool_calls.is_empty());
     }
 
-    #[test]
-    fn normalize_messages_drops_incomplete_tool_calls_and_orphan_tool_messages() {
-        let messages = vec![
-            OpenAIMessage::system("system"),
-            OpenAIMessage::user("user"),
-            OpenAIMessage {
-                role: MessageRole::Assistant,
-                content: None,
-                tool_calls: vec![ToolCalls {
-                    id: "call_1".to_string(),
-                    type_name: "function".to_string(),
-                    function: ToolCallsFuncSpec {
-                        name: "natural_lanuage_reply".to_string(),
-                        arguments: json!({ "content": "你好" }),
-                    },
-                }],
-                tool_call_id: None,
-            },
-            OpenAIMessage::user("next user"),
-            OpenAIMessage::tool_result("call_1", "tool output"),
-        ];
-
-        let normalized = LLMAPI::normalize_messages_for_tool_calls(&messages);
-
-        assert_eq!(normalized.len(), 4);
-        assert!(normalized[2].tool_calls.is_empty());
-        assert!(normalized.iter().all(|msg| msg.role != MessageRole::Tool));
-    }
-
-    #[test]
-    fn normalize_messages_keeps_complete_tool_call_chain() {
-        let messages = vec![
-            OpenAIMessage::system("system"),
-            OpenAIMessage::user("user"),
-            OpenAIMessage {
-                role: MessageRole::Assistant,
-                content: None,
-                tool_calls: vec![
-                    ToolCalls {
-                        id: "call_1".to_string(),
-                        type_name: "function".to_string(),
-                        function: ToolCallsFuncSpec {
-                            name: "tool_a".to_string(),
-                            arguments: json!({ "x": 1 }),
-                        },
-                    },
-                    ToolCalls {
-                        id: "call_2".to_string(),
-                        type_name: "function".to_string(),
-                        function: ToolCallsFuncSpec {
-                            name: "tool_b".to_string(),
-                            arguments: json!({ "y": 2 }),
-                        },
-                    },
-                ],
-                tool_call_id: None,
-            },
-            OpenAIMessage::tool_result("call_1", "a"),
-            OpenAIMessage::tool_result("call_2", "b"),
-            OpenAIMessage::user("next user"),
-        ];
-
-        let normalized = LLMAPI::normalize_messages_for_tool_calls(&messages);
-
-        assert_eq!(normalized.len(), messages.len());
-        assert_eq!(normalized[2].tool_calls.len(), 2);
-        assert!(matches!(normalized[3].role, MessageRole::Tool));
-        assert!(matches!(normalized[4].role, MessageRole::Tool));
-    }
 
     #[test]
     #[ignore]  // This is an integration test that requires valid API key and network access
