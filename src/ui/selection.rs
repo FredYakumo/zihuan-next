@@ -85,12 +85,11 @@ pub fn setup_selection_callbacks(
     let apply_graph_fn_clone = Arc::clone(&apply_graph_fn_1);
     let selection_state_clone = Arc::clone(&selection_state);
     
-    ui.on_node_clicked(move |node_id: SharedString| {
+    ui.on_node_clicked(move |node_id: SharedString, shift_pressed: bool| {
         if let Some(ui) = ui_handle.upgrade() {
             {
                 let mut selection = selection_state_clone.lock().unwrap();
-                // TODO: Detect modifier keys for multi-select toggle
-                selection.select_node(node_id.to_string(), false);
+                selection.select_node(node_id.to_string(), shift_pressed);
                 selection.apply_to_ui(&ui);
             }
             
