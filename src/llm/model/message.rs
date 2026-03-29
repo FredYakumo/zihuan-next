@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::llm::function_tools::ToolCalls;
+use crate::llm::tooling::ToolCalls;
 
 use super::message_role::MessageRole;
 

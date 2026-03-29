@@ -8,7 +8,7 @@ use crate::bot_adapter::models::message::MessageProp;
 use crate::llm::agent::Agent;
 use crate::llm::{InferenceParam, OpenAIMessage, UserMessage};
 use crate::error::Result;
-use crate::llm::function_tools::FunctionTool;
+use crate::llm::tooling::FunctionTool;
 use crate::llm::llm_base::LLMBase;
 
 #[derive(Clone)]
