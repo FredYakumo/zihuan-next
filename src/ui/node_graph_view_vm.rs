@@ -96,38 +96,59 @@ fn apply_graph_to_ui_with_options(
     let (edge_segments, edge_corners, edge_labels) = build_edge_segments(&graph, snap_positions);
 
     let label = current_file.unwrap_or_else(|| "已加载 JSON".to_string());
-    let grid_lines = build_grid_lines(CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE);
+    if snap_positions {
+        let grid_lines = build_grid_lines(CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE);
 
-    ui.set_nodes(ModelRc::new(VecModel::from(nodes)));
-    ui.set_edges(ModelRc::new(VecModel::from(edges)));
-    ui.set_edge_segments(ModelRc::new(VecModel::from(edge_segments)));
-    ui.set_edge_corners(ModelRc::new(VecModel::from(edge_corners)));
-    ui.set_edge_labels(ModelRc::new(VecModel::from(edge_labels)));
-    ui.set_grid_lines(ModelRc::new(VecModel::from(grid_lines)));
-    ui.set_current_file(label.into());
+        ui.set_nodes(ModelRc::new(VecModel::from(nodes)));
+        ui.set_edges(ModelRc::new(VecModel::from(edges)));
+        ui.set_edge_segments(ModelRc::new(VecModel::from(edge_segments)));
+        ui.set_edge_corners(ModelRc::new(VecModel::from(edge_corners)));
+        ui.set_edge_labels(ModelRc::new(VecModel::from(edge_labels)));
+        ui.set_grid_lines(ModelRc::new(VecModel::from(grid_lines)));
+        ui.set_current_file(label.into());
 
-    let hyperparameter_vms: Vec<HyperParameterVm> = graph
-        .hyperparameters
-        .iter()
-        .map(|hp| HyperParameterVm {
-            name: hp.name.clone().into(),
-            group: hp.group.clone().into(),
-            data_type: hp.data_type.to_string().into(),
-            value: hyperparameter_values
-                .get(&hp.name)
-                .map(|v| match v {
-                    serde_json::Value::String(s) => s.clone(),
-                    serde_json::Value::Bool(b) => b.to_string(),
-                    serde_json::Value::Number(n) => n.to_string(),
-                    other => other.to_string(),
-                })
-                .unwrap_or_default()
-                .into(),
-            required: hp.required,
-            description: hp.description.clone().unwrap_or_default().into(),
-        })
-        .collect();
-    ui.set_hyperparameters(ModelRc::new(VecModel::from(hyperparameter_vms)));
+        let hyperparameter_vms: Vec<HyperParameterVm> = graph
+            .hyperparameters
+            .iter()
+            .map(|hp| HyperParameterVm {
+                name: hp.name.clone().into(),
+                group: hp.group.clone().into(),
+                data_type: hp.data_type.to_string().into(),
+                value: hyperparameter_values
+                    .get(&hp.name)
+                    .map(|v| match v {
+                        serde_json::Value::String(s) => s.clone(),
+                        serde_json::Value::Bool(b) => b.to_string(),
+                        serde_json::Value::Number(n) => n.to_string(),
+                        other => other.to_string(),
+                    })
+                    .unwrap_or_default()
+                    .into(),
+                required: hp.required,
+                description: hp.description.clone().unwrap_or_default().into(),
+            })
+            .collect();
+        ui.set_hyperparameters(ModelRc::new(VecModel::from(hyperparameter_vms)));
+    } else {
+        update_nodes_model_in_place(ui, nodes);
+        ui.set_edges(ModelRc::new(VecModel::from(edges)));
+        ui.set_edge_segments(ModelRc::new(VecModel::from(edge_segments)));
+        ui.set_edge_corners(ModelRc::new(VecModel::from(edge_corners)));
+        ui.set_edge_labels(ModelRc::new(VecModel::from(edge_labels)));
+    }
+}
+
+fn update_nodes_model_in_place(ui: &NodeGraphWindow, nodes: Vec<NodeVm>) {
+    use slint::Model;
+
+    let model = ui.get_nodes();
+    if model.row_count() == nodes.len() {
+        for (index, node) in nodes.into_iter().enumerate() {
+            model.set_row_data(index, node);
+        }
+    } else {
+        ui.set_nodes(ModelRc::new(VecModel::from(nodes)));
+    }
 }
 
 fn build_node_vm(

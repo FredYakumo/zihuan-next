@@ -123,6 +123,14 @@ pub(crate) fn bind_canvas_callbacks(
                 if !tab.selection.selected_node_ids.contains(node_id.as_str()) {
                     tab.selection.select_node(node_id.to_string(), false);
                     tab.selection.apply_to_ui(&ui);
+                    apply_graph_to_ui_live(
+                        &ui,
+                        &tab.graph,
+                        Some(tab_display_title(tab)),
+                        &tab.selection,
+                        &tab.inline_inputs,
+                        &tab.hyperparameter_values,
+                    );
                 }
             }
         }
