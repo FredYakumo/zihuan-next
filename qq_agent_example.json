@@ -50,12 +50,12 @@
         "height": 160.0
       },
       "inline_values": {
-        "qq_id": "2496875785",
-        "bot_server_url": "ws://localhost:3001"
+        "bot_server_url": "ws://localhost:3001",
+        "qq_id": "2496875785"
       },
       "port_bindings": {
-        "bot_server_token": "BOT_SERVER_TOKEN",
-        "qq_id": "BOT_ID"
+        "qq_id": "BOT_ID",
+        "bot_server_token": "BOT_SERVER_TOKEN"
       },
       "has_error": false,
       "has_cycle": false
@@ -235,8 +235,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": -580.0,
-        "y": -600.0
+        "x": -600.0,
+        "y": -640.0
       },
       "size": null,
       "inline_values": {},
@@ -268,8 +268,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": -960.0,
-        "y": -640.0
+        "x": -600.0,
+        "y": -860.0
       },
       "size": null,
       "inline_values": {},
@@ -298,37 +298,6 @@
         "y": 82.25812
       },
       "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_8",
-      "name": "Preview MessageList",
-      "description": "Preview MessageList inside the node card with scrollable message items",
-      "node_type": "preview_message_list",
-      "input_ports": [
-        {
-          "name": "messages",
-          "data_type": {
-            "Vec": "OpenAIMessage"
-          },
-          "description": "Vec<Message> to preview inside the node",
-          "required": false
-        }
-      ],
-      "output_ports": [],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1320.0,
-        "y": -620.0
-      },
-      "size": {
-        "width": 320.0,
-        "height": 140.0
-      },
       "inline_values": {},
       "port_bindings": {},
       "has_error": false,
@@ -378,8 +347,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 2080.0,
-        "y": -740.0
+        "x": 1720.0,
+        "y": -1040.0
       },
       "size": null,
       "inline_values": {},
@@ -467,13 +436,13 @@
         "height": 200.0
       },
       "inline_values": {
-        "mysql_host": "127.0.0.1",
+        "mysql_database": "zihuan_aibot",
         "mysql_port": "3306",
-        "mysql_database": "zihuan_aibot"
+        "mysql_host": "127.0.0.1"
       },
       "port_bindings": {
-        "mysql_user": "MYSQL_USER",
-        "mysql_password": "MYSQL_PASSWORD"
+        "mysql_password": "MYSQL_PASSWORD",
+        "mysql_user": "MYSQL_USER"
       },
       "has_error": false,
       "has_cycle": false
@@ -623,8 +592,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1680.0,
-        "y": -740.0
+        "x": 1320.0,
+        "y": -1040.0
       },
       "size": null,
       "inline_values": {},
@@ -656,8 +625,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1880.0,
-        "y": -740.0
+        "x": 1520.0,
+        "y": -1040.0
       },
       "size": null,
       "inline_values": {},
@@ -695,8 +664,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": -504.97552,
-        "y": 598.8639
+        "x": -600.0,
+        "y": -420.0
       },
       "size": null,
       "inline_values": {},
@@ -728,8 +697,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 375.02448,
-        "y": 238.86386
+        "x": -360.0,
+        "y": -640.0
       },
       "size": null,
       "inline_values": {},
@@ -814,8 +783,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 955.0245,
-        "y": 598.8639
+        "x": 1560.0,
+        "y": -100.0
       },
       "size": null,
       "inline_values": {},
@@ -855,8 +824,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 135.02448,
-        "y": 478.86386
+        "x": 720.0,
+        "y": -220.0
       },
       "size": null,
       "inline_values": {
@@ -890,41 +859,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 295.02448,
-        "y": 698.8639
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_25",
-      "name": "字符串转QQ纯文本",
-      "description": "将字符串转换为 QQ 消息中的纯文本（PlainText）消息段",
-      "node_type": "string_to_plain_text",
-      "input_ports": [
-        {
-          "name": "text",
-          "data_type": "String",
-          "description": "输入字符串",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "result",
-          "data_type": "QQMessage",
-          "description": "输出 QQMessage PlainText 消息段",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 435.02448,
-        "y": 518.8639
+        "x": -20.0,
+        "y": -480.0
       },
       "size": null,
       "inline_values": {},
@@ -956,8 +892,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 735.0245,
-        "y": 498.86386
+        "x": 326.6483,
+        "y": 4.3437805
       },
       "size": null,
       "inline_values": {},
@@ -1078,96 +1014,10 @@
         "timeout_secs": "600"
       },
       "port_bindings": {
+        "api_key": "LLM_API_KEY",
         "api_endpoint": "LLM_API_ENDPOINT",
-        "model_name": "LLM_MODEL_NAME",
-        "api_key": "LLM_API_KEY"
+        "model_name": "LLM_MODEL_NAME"
       },
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_6",
-      "name": "LLM推理",
-      "description": "使用LLModel引用对消息列表进行一次推理，返回模型回复",
-      "node_type": "llm_infer",
-      "input_ports": [
-        {
-          "name": "llm_model",
-          "data_type": "LLModel",
-          "description": "LLM模型引用，由LLMApiNode提供",
-          "required": true
-        },
-        {
-          "name": "messages",
-          "data_type": {
-            "Vec": "OpenAIMessage"
-          },
-          "description": "输入消息列表，包含系统消息和用户消息",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "response",
-          "data_type": {
-            "Vec": "OpenAIMessage"
-          },
-          "description": "LLM返回的消息列表",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 900.0,
-        "y": -540.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_22",
-      "name": "LLM推理",
-      "description": "使用LLModel引用对消息列表进行一次推理，返回模型回复",
-      "node_type": "llm_infer",
-      "input_ports": [
-        {
-          "name": "llm_model",
-          "data_type": "LLModel",
-          "description": "LLM模型引用，由LLMApiNode提供",
-          "required": true
-        },
-        {
-          "name": "messages",
-          "data_type": {
-            "Vec": "OpenAIMessage"
-          },
-          "description": "输入消息列表，包含系统消息和用户消息",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "response",
-          "data_type": {
-            "Vec": "OpenAIMessage"
-          },
-          "description": "LLM返回的消息列表",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": -224.97552,
-        "y": 538.8639
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
       "has_error": false,
       "has_cycle": false
     },
@@ -1221,8 +1071,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": true,
       "position": {
-        "x": 1480.0,
-        "y": -940.0
+        "x": 1120.0,
+        "y": -1240.0
       },
       "size": null,
       "inline_values": {
@@ -1285,8 +1135,8 @@
       "dynamic_input_ports": true,
       "dynamic_output_ports": false,
       "position": {
-        "x": 340.0,
-        "y": -1380.0
+        "x": -20.0,
+        "y": -1680.0
       },
       "size": {
         "width": 540.0,
@@ -1318,8 +1168,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 100.0,
-        "y": -1380.0
+        "x": -1320.0,
+        "y": -1300.0
       },
       "size": null,
       "inline_values": {},
@@ -1357,8 +1207,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 900.0,
-        "y": -1380.0
+        "x": 540.0,
+        "y": -1680.0
       },
       "size": {
         "width": 320.0,
@@ -1405,8 +1255,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 900.0,
-        "y": -1020.0
+        "x": 540.0,
+        "y": -1320.0
       },
       "size": null,
       "inline_values": {},
@@ -1444,8 +1294,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1220.0,
-        "y": -1020.0
+        "x": 860.0,
+        "y": -1320.0
       },
       "size": null,
       "inline_values": {},
@@ -1489,8 +1339,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 2480.0,
-        "y": -940.0
+        "x": 2120.0,
+        "y": -1240.0
       },
       "size": null,
       "inline_values": {},
@@ -1522,8 +1372,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1660.0,
-        "y": -1220.0
+        "x": 1300.0,
+        "y": -1520.0
       },
       "size": null,
       "inline_values": {},
@@ -1565,8 +1415,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 2360.0,
-        "y": -1260.0
+        "x": 2000.0,
+        "y": -1560.0
       },
       "size": null,
       "inline_values": {},
@@ -1604,8 +1454,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": true,
       "position": {
-        "x": 1760.0,
-        "y": -880.0
+        "x": 1400.0,
+        "y": -1180.0
       },
       "size": null,
       "inline_values": {
@@ -1644,8 +1494,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1220.0,
-        "y": -1380.0
+        "x": 860.0,
+        "y": -1680.0
       },
       "size": null,
       "inline_values": {},
@@ -1676,8 +1526,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1620.0,
-        "y": -1460.0
+        "x": 1260.0,
+        "y": -1760.0
       },
       "size": null,
       "inline_values": {},
@@ -1704,8 +1554,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 3260.0,
-        "y": -1780.0
+        "x": 2240.0,
+        "y": -2020.0
       },
       "size": {
         "width": 440.0,
@@ -1748,8 +1598,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 2000.0,
-        "y": -1220.0
+        "x": 1640.0,
+        "y": -1520.0
       },
       "size": null,
       "inline_values": {},
@@ -1787,8 +1637,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1660.0,
-        "y": -1120.0
+        "x": 1300.0,
+        "y": -1420.0
       },
       "size": null,
       "inline_values": {},
@@ -1846,8 +1696,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 520.0,
-        "y": -1820.0
+        "x": 160.0,
+        "y": -2120.0
       },
       "size": {
         "width": 380.0,
@@ -1900,8 +1750,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1100.0,
-        "y": -1840.0
+        "x": 740.0,
+        "y": -2140.0
       },
       "size": null,
       "inline_values": {},
@@ -1943,8 +1793,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1380.0,
-        "y": -1860.0
+        "x": 1020.0,
+        "y": -2160.0
       },
       "size": null,
       "inline_values": {},
@@ -1990,8 +1840,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 2840.0,
-        "y": -960.0
+        "x": 2480.0,
+        "y": -1260.0
       },
       "size": null,
       "inline_values": {},
@@ -2025,8 +1875,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 2220.0,
-        "y": -1040.0
+        "x": 1860.0,
+        "y": -1340.0
       },
       "size": null,
       "inline_values": {},
@@ -2062,8 +1912,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 60.0,
-        "y": -1840.0
+        "x": -300.0,
+        "y": -2140.0
       },
       "size": {
         "width": 340.0,
@@ -2072,6 +1922,231 @@
       "inline_values": {
         "messages": []
       },
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false
+    },
+    {
+      "id": "node_10",
+      "name": "格式化字符串",
+      "description": "通过 ${变量名} 模板语法将输入变量格式化为字符串",
+      "node_type": "format_string",
+      "input_ports": [
+        {
+          "name": "template",
+          "data_type": "String",
+          "description": "格式化模板字符串，使用 ${变量名} 语法引用输入变量",
+          "required": false
+        },
+        {
+          "name": "角色名称",
+          "data_type": "String",
+          "description": "变量 角色名称",
+          "required": true
+        },
+        {
+          "name": "time",
+          "data_type": "String",
+          "description": "变量 time",
+          "required": true
+        },
+        {
+          "name": "sender_id",
+          "data_type": "String",
+          "description": "变量 sender_id",
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "output",
+          "data_type": "String",
+          "description": "格式化后的字符串",
+          "required": true
+        }
+      ],
+      "dynamic_input_ports": true,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": -20.0,
+        "y": -660.0
+      },
+      "size": {
+        "width": 540.0,
+        "height": 120.0
+      },
+      "inline_values": {
+        "template": "你的角色是${角色名称}。现在时间是${time}，你的好友${sender_id}向你发送了一条消息。\r\n\r\n你可以按需调用工具来获取信息或执行动作，包括“自然语言回复”工具。\r\n\r\n规则：\r\n1. 你需要先判断是否有必要回复对方。\r\n2. 如果决定回复，使用“自然语言回复”工具发送完整回复。\r\n3. 一次完整回复发送完成后，就视为任务已经完成，不要再次调用“自然语言回复”工具。\r\n4. 只有在单次内容超过工具长度限制，或者确实需要分成多句分开发送时，才允许多次调用“自然语言回复”工具。\r\n5. 不要为了确认、重复表达、补一句客套话、或者自言自语而再次调用“自然语言回复”工具。\r\n6. 当你已经完成要说的话后，立即停止后续工具调用。\r\n7. 如果你决定不回复，则不要调用“自然语言回复”工具。\n"
+      },
+      "port_bindings": {
+        "角色名称": "BOT_NAME"
+      },
+      "has_error": false,
+      "has_cycle": false
+    },
+    {
+      "id": "node_49",
+      "name": "字符串转 System OpenAIMessage",
+      "description": "将字符串封装为 role=system 的 OpenAIMessage",
+      "node_type": "as_system_openai_message",
+      "input_ports": [
+        {
+          "name": "content",
+          "data_type": "String",
+          "description": "系统提示词内容",
+          "required": true
+        },
+        {
+          "name": "role",
+          "data_type": "String",
+          "description": "OpenAIMessage 角色，可选 system / user / assistant / tool",
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "message",
+          "data_type": "OpenAIMessage",
+          "description": "role=system 的 OpenAIMessage",
+          "required": true
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 520.0,
+        "y": -660.0
+      },
+      "size": {
+        "width": 320.0,
+        "height": 140.0
+      },
+      "inline_values": {
+        "role": "system"
+      },
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false
+    },
+    {
+      "id": "node_50",
+      "name": "封装元素为数组",
+      "description": "将单个元素封装为单元素 List",
+      "node_type": "stack",
+      "input_ports": [
+        {
+          "name": "element",
+          "data_type": "Any",
+          "description": "要封装到数组中的元素",
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "array",
+          "data_type": "Any",
+          "description": "包含单个元素的 List",
+          "required": true
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 840.0,
+        "y": -660.0
+      },
+      "size": null,
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false
+    },
+    {
+      "id": "node_6",
+      "name": "列表尾部追加元素",
+      "description": "将单个元素追加到列表末尾，要求元素类型与列表元素类型一致",
+      "node_type": "push_back_vec",
+      "input_ports": [
+        {
+          "name": "vec",
+          "data_type": {
+            "Vec": "Any"
+          },
+          "description": "输入列表",
+          "required": true
+        },
+        {
+          "name": "element",
+          "data_type": "Any",
+          "description": "要追加到列表末尾的元素",
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "result",
+          "data_type": "Any",
+          "description": "追加元素后的新列表，元素类型与输入列表一致",
+          "required": true
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 240.0,
+        "y": -480.0
+      },
+      "size": null,
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false
+    },
+    {
+      "id": "node_8",
+      "name": "获取 OpenAIMessage 历史",
+      "description": "根据缓存 Ref 和 sender_id 读取当前运行期累计的 Vec<OpenAIMessage>",
+      "node_type": "openai_message_session_cache_get",
+      "input_ports": [
+        {
+          "name": "cache_ref",
+          "data_type": "OpenAIMessageSessionCacheRef",
+          "description": "OpenAIMessage 会话暂存节点输出的缓存引用",
+          "required": true
+        },
+        {
+          "name": "sender_id",
+          "data_type": "String",
+          "description": "要读取历史消息的 sender_id",
+          "required": true
+        },
+        {
+          "name": "fallback",
+          "data_type": {
+            "Vec": "OpenAIMessage"
+          },
+          "description": "可选：未读取到 sender_id 历史消息时输出的回退消息列表",
+          "required": false
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "messages",
+          "data_type": {
+            "Vec": "OpenAIMessage"
+          },
+          "description": "读取到的历史 Vec<OpenAIMessage>",
+          "required": true
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 200.0,
+        "y": -820.0
+      },
+      "size": null,
+      "inline_values": {},
       "port_bindings": {},
       "has_error": false,
       "has_cycle": false
@@ -2199,24 +2274,6 @@
       "to_port": "target_id"
     },
     {
-      "from_node_id": "node_23",
-      "from_port": "element",
-      "to_node_id": "node_24",
-      "to_port": "message"
-    },
-    {
-      "from_node_id": "node_24",
-      "from_port": "content",
-      "to_node_id": "node_25",
-      "to_port": "text"
-    },
-    {
-      "from_node_id": "node_25",
-      "from_port": "result",
-      "to_node_id": "node_26",
-      "to_port": "element"
-    },
-    {
       "from_node_id": "node_26",
       "from_port": "array",
       "to_node_id": "node_21",
@@ -2227,48 +2284,6 @@
       "from_port": "message_event",
       "to_node_id": "node_27",
       "to_port": "message_event"
-    },
-    {
-      "from_node_id": "node_29",
-      "from_port": "llm_model",
-      "to_node_id": "node_6",
-      "to_port": "llm_model"
-    },
-    {
-      "from_node_id": "node_3",
-      "from_port": "messages",
-      "to_node_id": "node_6",
-      "to_port": "messages"
-    },
-    {
-      "from_node_id": "node_6",
-      "from_port": "response",
-      "to_node_id": "node_8",
-      "to_port": "messages"
-    },
-    {
-      "from_node_id": "node_6",
-      "from_port": "response",
-      "to_node_id": "node_14",
-      "to_port": "array"
-    },
-    {
-      "from_node_id": "node_18",
-      "from_port": "output",
-      "to_node_id": "node_22",
-      "to_port": "messages"
-    },
-    {
-      "from_node_id": "node_29",
-      "from_port": "llm_model",
-      "to_node_id": "node_22",
-      "to_port": "llm_model"
-    },
-    {
-      "from_node_id": "node_22",
-      "from_port": "response",
-      "to_node_id": "node_23",
-      "to_port": "array"
     },
     {
       "from_node_id": "node_29",
@@ -2473,6 +2488,42 @@
       "from_port": "result",
       "to_node_id": "node_35",
       "to_port": "condition"
+    },
+    {
+      "from_node_id": "node_10",
+      "from_port": "output",
+      "to_node_id": "node_49",
+      "to_port": "content"
+    },
+    {
+      "from_node_id": "node_49",
+      "from_port": "message",
+      "to_node_id": "node_50",
+      "to_port": "element"
+    },
+    {
+      "from_node_id": "node_30",
+      "from_port": "time",
+      "to_node_id": "node_10",
+      "to_port": "time"
+    },
+    {
+      "from_node_id": "node_18",
+      "from_port": "output",
+      "to_node_id": "node_24",
+      "to_port": "message"
+    },
+    {
+      "from_node_id": "node_50",
+      "from_port": "array",
+      "to_node_id": "node_6",
+      "to_port": "vec"
+    },
+    {
+      "from_node_id": "node_24",
+      "from_port": "content",
+      "to_node_id": "node_6",
+      "to_port": "element"
     }
   ],
   "hyperparameter_groups": [],

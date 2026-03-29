@@ -223,6 +223,23 @@ export component NodeGraphWindow inherits Window {
     in-out property <bool> show_log_history: false;
     callback open_log_history();
     callback close_log_history();
+    in property <bool> graph_shortcuts_enabled:
+        !show_node_selector
+        && !show_error_dialog
+        && !show_validation_fix_dialog
+        && !show_graph_context_menu
+        && !menu_open
+        && !show_save_confirm
+        && !show_running_confirm
+        && !show_overwrite_confirm
+        && !show_node_help_dialog
+        && !show_hyperparameter_manager
+        && !show_group_manager
+        && !show_port_bind_dialog
+        && !show_tool_editor_dialog
+        && !show_format_string_editor
+        && !show_json_extract_editor_dialog
+        && !show_log_history;
 
     title: "Zihuan Node Graph Viewer";
     preferred-width: 1200px;
@@ -237,25 +254,33 @@ export component NodeGraphWindow inherits Window {
         height: 100%;
 
         key-pressed(event) => {
-            if (event.modifiers.control) {
+            if (event.modifiers.control || event.modifiers.meta) {
                 if (event.modifiers.shift && (event.text == "s" || event.text == "S")) {
                     root.save_json_as();
                     return accept;
                 }
-                if (event.text == "o") {
+                if (event.text == "o" || event.text == "O") {
                     root.open_json();
                     return accept;
                 }
-                if (event.text == "s") {
+                if (event.text == "s" || event.text == "S") {
                     root.save_json();
                     return accept;
                 }
-                if (event.text == "t") {
+                if (event.text == "t" || event.text == "T") {
                     root.new_tab();
                     return accept;
                 }
-                if (event.text == "w") {
+                if (event.text == "w" || event.text == "W") {
                     root.close_tab();
+                    return accept;
+                }
+                if (root.graph_shortcuts_enabled && (event.text == "c" || event.text == "C")) {
+                    root.copy_selected_nodes();
+                    return accept;
+                }
+                if (root.graph_shortcuts_enabled && (event.text == "v" || event.text == "V")) {
+                    root.paste_nodes_at_context();
                     return accept;
                 }
             }
