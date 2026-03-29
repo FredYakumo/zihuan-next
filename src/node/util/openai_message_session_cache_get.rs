@@ -35,6 +35,7 @@ impl Node for OpenAIMessageSessionCacheGetNode {
     node_input![
         port! { name = "cache_ref", ty = OpenAIMessageSessionCacheRef, desc = "OpenAIMessage 会话暂存节点输出的缓存引用" },
         port! { name = "sender_id", ty = String, desc = "要读取历史消息的 sender_id" },
+        port! { name = "fallback", ty = Vec(OpenAIMessage), desc = "可选：未读取到 sender_id 历史消息时输出的回退消息列表", optional },
     ];
 
     node_output![
@@ -60,13 +61,37 @@ impl Node for OpenAIMessageSessionCacheGetNode {
             })
             .ok_or_else(|| crate::error::Error::InvalidNodeInput("sender_id is required".to_string()))?;
 
+        let fallback_messages = inputs
+            .get("fallback")
+            .and_then(|value| match value {
+                DataValue::Vec(inner_type, items) if **inner_type == DataType::OpenAIMessage => Some(
+                    items.iter()
+                        .map(|item| match item {
+                            DataValue::OpenAIMessage(message) => Ok(message.clone()),
+                            _ => Err(crate::error::Error::InvalidNodeInput(
+                                "fallback must contain OpenAIMessage items".to_string(),
+                            )),
+                        })
+                        .collect::<Result<Vec<_>>>(),
+                ),
+                _ => None,
+            })
+            .transpose()?
+            .unwrap_or_default();
+
         let read_messages = async move { cache_ref.get_messages(&sender_id).await };
 
-        let messages = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        let cached_messages = if let Ok(handle) = tokio::runtime::Handle::try_current() {
             block_in_place(|| handle.block_on(read_messages))
         } else {
             tokio::runtime::Runtime::new()?.block_on(read_messages)
         }?;
+
+        let messages = if cached_messages.is_empty() {
+            fallback_messages
+        } else {
+            cached_messages
+        };
 
         let mut outputs = HashMap::new();
         outputs.insert(
@@ -157,6 +182,70 @@ mod tests {
         ]))?;
 
         assert_eq!(extract_message_contents(&outputs), vec!["第一条", "第二条"]);
+        Ok(())
+    }
+
+    #[test]
+    fn returns_fallback_when_sender_history_is_missing() -> Result<()> {
+        let mut cache_node = OpenAIMessageSessionCacheNode::new("cache", "Cache");
+        let mut get_node = OpenAIMessageSessionCacheGetNode::new("getter", "Getter");
+
+        let cache_outputs = cache_node.execute(cache_input(
+            "user-1",
+            vec![message(MessageRole::User, "第一条")],
+        ))?;
+
+        let cache_ref = cache_outputs
+            .get("cache_ref")
+            .cloned()
+            .expect("cache_ref output should exist");
+
+        let outputs = get_node.execute(HashMap::from([
+            ("cache_ref".to_string(), cache_ref),
+            (
+                "sender_id".to_string(),
+                DataValue::String("user-2".to_string()),
+            ),
+            (
+                "fallback".to_string(),
+                DataValue::Vec(
+                    Box::new(DataType::OpenAIMessage),
+                    vec![DataValue::OpenAIMessage(message(
+                        MessageRole::System,
+                        "fallback",
+                    ))],
+                ),
+            ),
+        ]))?;
+
+        assert_eq!(extract_message_contents(&outputs), vec!["fallback"]);
+        Ok(())
+    }
+
+    #[test]
+    fn returns_empty_when_sender_history_is_missing_and_no_fallback() -> Result<()> {
+        let mut cache_node = OpenAIMessageSessionCacheNode::new("cache", "Cache");
+        let mut get_node = OpenAIMessageSessionCacheGetNode::new("getter", "Getter");
+
+        let cache_outputs = cache_node.execute(cache_input(
+            "user-1",
+            vec![message(MessageRole::User, "第一条")],
+        ))?;
+
+        let cache_ref = cache_outputs
+            .get("cache_ref")
+            .cloned()
+            .expect("cache_ref output should exist");
+
+        let outputs = get_node.execute(HashMap::from([
+            ("cache_ref".to_string(), cache_ref),
+            (
+                "sender_id".to_string(),
+                DataValue::String("user-2".to_string()),
+            ),
+        ]))?;
+
+        assert!(extract_message_contents(&outputs).is_empty());
         Ok(())
     }
 }

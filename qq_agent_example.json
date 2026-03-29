@@ -507,8 +507,8 @@
         "height": 200.0
       },
       "inline_values": {
-        "mysql_port": "3306",
         "mysql_host": "127.0.0.1",
+        "mysql_port": "3306",
         "mysql_database": "zihuan_aibot"
       },
       "port_bindings": {
@@ -1044,8 +1044,8 @@
       },
       "size": null,
       "inline_values": {
-        "ttl_secs": "600",
-        "bucket_name": "cache"
+        "bucket_name": "cache",
+        "ttl_secs": "600"
       },
       "port_bindings": {},
       "has_error": false
@@ -1103,9 +1103,9 @@
         "timeout_secs": "600"
       },
       "port_bindings": {
+        "model_name": "LLM_MODEL_NAME",
         "api_key": "LLM_API_KEY",
-        "api_endpoint": "LLM_API_ENDPOINT",
-        "model_name": "LLM_MODEL_NAME"
+        "api_endpoint": "LLM_API_ENDPOINT"
       },
       "has_error": false
     },
@@ -1271,6 +1271,12 @@
       "node_type": "format_string",
       "input_ports": [
         {
+          "name": "template",
+          "data_type": "String",
+          "description": "格式化模板字符串，使用 ${变量名} 语法引用输入变量",
+          "required": false
+        },
+        {
           "name": "角色名称",
           "data_type": "String",
           "description": "变量 角色名称",
@@ -1370,7 +1376,7 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 980.0,
+        "x": 900.0,
         "y": -1380.0
       },
       "size": {
@@ -1595,7 +1601,7 @@
       "dynamic_output_ports": false,
       "position": {
         "x": 2020.0,
-        "y": -1640.0
+        "y": -1600.0
       },
       "size": null,
       "inline_values": {},
@@ -1671,7 +1677,7 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1300.0,
+        "x": 1220.0,
         "y": -1380.0
       },
       "size": null,
@@ -1868,8 +1874,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1560.0,
-        "y": -1900.0
+        "x": 880.0,
+        "y": -1940.0
       },
       "size": {
         "width": 380.0,
@@ -1898,6 +1904,14 @@
           "data_type": "String",
           "description": "要读取历史消息的 sender_id",
           "required": true
+        },
+        {
+          "name": "fallback",
+          "data_type": {
+            "Vec": "OpenAIMessage"
+          },
+          "description": "可选：未读取到 sender_id 历史消息时输出的回退消息列表",
+          "required": false
         }
       ],
       "output_ports": [
@@ -1913,8 +1927,96 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1720.0,
-        "y": -1660.0
+        "x": 1140.0,
+        "y": -1620.0
+      },
+      "size": null,
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false
+    },
+    {
+      "id": "node_46",
+      "name": "拼接两个列表",
+      "description": "将 vec2 拼接到 vec1 之后，要求两个 Vec 的元素类型一致",
+      "node_type": "concat_vec",
+      "input_ports": [
+        {
+          "name": "vec1",
+          "data_type": {
+            "Vec": "Any"
+          },
+          "description": "前半部分列表",
+          "required": true
+        },
+        {
+          "name": "vec2",
+          "data_type": {
+            "Vec": "Any"
+          },
+          "description": "后半部分列表，将拼接到 vec1 后面",
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "vec",
+          "data_type": "Any",
+          "description": "拼接后的列表，元素类型与输入列表一致",
+          "required": true
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 1360.0,
+        "y": -1700.0
+      },
+      "size": null,
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false
+    },
+    {
+      "id": "node_47",
+      "name": "覆写 OpenAIMessage 历史",
+      "description": "根据缓存 Ref、sender_id 与消息列表，覆写当前运行期累计的 Vec<OpenAIMessage>",
+      "node_type": "openai_message_session_cache_set",
+      "input_ports": [
+        {
+          "name": "cache_ref",
+          "data_type": "OpenAIMessageSessionCacheRef",
+          "description": "OpenAIMessage 会话暂存节点输出的缓存引用",
+          "required": true
+        },
+        {
+          "name": "sender_id",
+          "data_type": "String",
+          "description": "要覆写历史消息的 sender_id",
+          "required": true
+        },
+        {
+          "name": "messages",
+          "data_type": {
+            "Vec": "OpenAIMessage"
+          },
+          "description": "要写回并覆写到缓存中的 Vec<OpenAIMessage>",
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "success",
+          "data_type": "Boolean",
+          "description": "是否成功覆写历史消息",
+          "required": true
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 2960.0,
+        "y": -1120.0
       },
       "size": null,
       "inline_values": {},
@@ -2188,12 +2290,6 @@
       "to_port": "element"
     },
     {
-      "from_node_id": "node_41",
-      "from_port": "array",
-      "to_node_id": "node_32",
-      "to_port": "vec1"
-    },
-    {
       "from_node_id": "node_34",
       "from_port": "output",
       "to_node_id": "node_17",
@@ -2270,6 +2366,36 @@
       "from_port": "result",
       "to_node_id": "node_43",
       "to_port": "sender_id"
+    },
+    {
+      "from_node_id": "node_43",
+      "from_port": "cache_ref",
+      "to_node_id": "node_45",
+      "to_port": "cache_ref"
+    },
+    {
+      "from_node_id": "node_5",
+      "from_port": "result",
+      "to_node_id": "node_45",
+      "to_port": "sender_id"
+    },
+    {
+      "from_node_id": "node_45",
+      "from_port": "messages",
+      "to_node_id": "node_46",
+      "to_port": "vec2"
+    },
+    {
+      "from_node_id": "node_41",
+      "from_port": "array",
+      "to_node_id": "node_46",
+      "to_port": "vec1"
+    },
+    {
+      "from_node_id": "node_46",
+      "from_port": "vec",
+      "to_node_id": "node_32",
+      "to_port": "vec1"
     }
   ],
   "hyperparameter_groups": [],

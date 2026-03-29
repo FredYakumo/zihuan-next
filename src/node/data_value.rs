@@ -176,6 +176,63 @@ impl OpenAIMessageSessionCacheRef {
 
         Ok(cleared)
     }
+
+    pub async fn set_messages(
+        &self,
+        sender_id: &str,
+        messages: Vec<crate::llm::OpenAIMessage>,
+    ) -> crate::error::Result<()> {
+        let bucket_name = {
+            let mut sender_bucket_map = self.sender_bucket_map.lock().await;
+            sender_bucket_map
+                .entry(sender_id.to_string())
+                .or_insert_with(|| Self::normalize_bucket_name(None))
+                .clone()
+        };
+        let key = self.storage_key(&bucket_name, sender_id);
+
+        let redis_url = {
+            let url_guard = self.cached_redis_url.lock().await;
+            url_guard.clone()
+        };
+
+        if let Some(url) = redis_url {
+            let mut cm_guard = self.redis_cm.lock().await;
+            let mut url_guard = self.cached_redis_url.lock().await;
+
+            if url_guard.as_deref() != Some(url.as_str()) {
+                *cm_guard = None;
+                *url_guard = Some(url.clone());
+            }
+
+            if cm_guard.is_none() {
+                let client = redis::Client::open(url.as_str())?;
+                match ConnectionManager::new(client).await {
+                    Ok(cm) => {
+                        *cm_guard = Some(cm);
+                    }
+                    Err(e) => return Err(e.into()),
+                }
+            }
+
+            if let Some(cm) = cm_guard.as_mut() {
+                let serialized = serde_json::to_string(&messages)?;
+                cm.set::<_, _, ()>(&key, serialized).await?;
+                let tracker_key =
+                    format!("openai_message_session:{}:bucket:{}:keys", self.node_id, bucket_name);
+                let tracker_registry_key =
+                    format!("openai_message_session:{}:tracker_sets", self.node_id);
+                cm.sadd::<_, _, ()>(&tracker_key, &key).await?;
+                cm.sadd::<_, _, ()>(&tracker_registry_key, &tracker_key)
+                    .await?;
+            }
+        }
+
+        let mut memory_cache = self.memory_cache.lock().await;
+        memory_cache.insert(key, messages);
+
+        Ok(())
+    }
 }
 
 impl fmt::Debug for OpenAIMessageSessionCacheRef {
