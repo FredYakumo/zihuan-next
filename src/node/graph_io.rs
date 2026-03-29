@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::Path;
 
@@ -63,6 +63,8 @@ pub struct NodeDefinition {
     pub port_bindings: HashMap<String, String>,
     #[serde(default)]
     pub has_error: bool,
+    #[serde(default)]
+    pub has_cycle: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,6 +86,8 @@ pub struct GraphSize {
     pub width: f32,
     pub height: f32,
 }
+
+pub type CycleEdgeKey = (String, String, String, String);
 
 pub fn load_graph_definition_from_json(path: impl AsRef<Path>) -> Result<NodeGraphDefinition> {
     let content = fs::read_to_string(path.as_ref())?;
@@ -464,6 +468,156 @@ pub fn ensure_positions(graph: &mut NodeGraphDefinition) {
     }
 }
 
+fn collect_cycle_members(
+    graph: &NodeGraphDefinition,
+) -> (HashSet<String>, HashSet<CycleEdgeKey>) {
+    struct TarjanState {
+        next_index: usize,
+        index_by_node: HashMap<String, usize>,
+        lowlink_by_node: HashMap<String, usize>,
+        stack: Vec<String>,
+        on_stack: HashSet<String>,
+        components: Vec<Vec<String>>,
+    }
+
+    fn strong_connect(
+        node_id: &str,
+        adjacency: &HashMap<String, Vec<String>>,
+        state: &mut TarjanState,
+    ) {
+        let node_id_string = node_id.to_string();
+        state
+            .index_by_node
+            .insert(node_id_string.clone(), state.next_index);
+        state
+            .lowlink_by_node
+            .insert(node_id_string.clone(), state.next_index);
+        state.next_index += 1;
+        state.stack.push(node_id_string.clone());
+        state.on_stack.insert(node_id_string.clone());
+
+        if let Some(neighbors) = adjacency.get(node_id) {
+            for neighbor in neighbors {
+                if !state.index_by_node.contains_key(neighbor) {
+                    strong_connect(neighbor, adjacency, state);
+                    let neighbor_lowlink =
+                        *state.lowlink_by_node.get(neighbor).unwrap_or(&usize::MAX);
+                    if let Some(lowlink) = state.lowlink_by_node.get_mut(&node_id_string) {
+                        *lowlink = (*lowlink).min(neighbor_lowlink);
+                    }
+                } else if state.on_stack.contains(neighbor) {
+                    let neighbor_index =
+                        *state.index_by_node.get(neighbor).unwrap_or(&usize::MAX);
+                    if let Some(lowlink) = state.lowlink_by_node.get_mut(&node_id_string) {
+                        *lowlink = (*lowlink).min(neighbor_index);
+                    }
+                }
+            }
+        }
+
+        let node_index = *state
+            .index_by_node
+            .get(&node_id_string)
+            .unwrap_or(&usize::MAX);
+        let node_lowlink = *state
+            .lowlink_by_node
+            .get(&node_id_string)
+            .unwrap_or(&usize::MAX);
+        if node_index == node_lowlink {
+            let mut component = Vec::new();
+            while let Some(current) = state.stack.pop() {
+                state.on_stack.remove(&current);
+                component.push(current.clone());
+                if current == node_id_string {
+                    break;
+                }
+            }
+            state.components.push(component);
+        }
+    }
+
+    let mut adjacency: HashMap<String, Vec<String>> = graph
+        .nodes
+        .iter()
+        .map(|node| (node.id.clone(), Vec::new()))
+        .collect();
+    let mut self_loops = HashSet::new();
+    for edge in &graph.edges {
+        adjacency
+            .entry(edge.from_node_id.clone())
+            .or_default()
+            .push(edge.to_node_id.clone());
+        if edge.from_node_id == edge.to_node_id {
+            self_loops.insert(edge.from_node_id.clone());
+        }
+    }
+
+    let mut state = TarjanState {
+        next_index: 0,
+        index_by_node: HashMap::new(),
+        lowlink_by_node: HashMap::new(),
+        stack: Vec::new(),
+        on_stack: HashSet::new(),
+        components: Vec::new(),
+    };
+
+    for node in &graph.nodes {
+        if !state.index_by_node.contains_key(&node.id) {
+            strong_connect(&node.id, &adjacency, &mut state);
+        }
+    }
+
+    let mut cycle_node_ids = HashSet::new();
+    let mut node_component_index = HashMap::new();
+    let mut cyclic_components = HashSet::new();
+
+    for (component_index, component) in state.components.iter().enumerate() {
+        let is_cycle_component = component.len() > 1
+            || component
+                .first()
+                .map(|node_id| self_loops.contains(node_id))
+                .unwrap_or(false);
+        for node_id in component {
+            node_component_index.insert(node_id.clone(), component_index);
+            if is_cycle_component {
+                cycle_node_ids.insert(node_id.clone());
+            }
+        }
+        if is_cycle_component {
+            cyclic_components.insert(component_index);
+        }
+    }
+
+    let cycle_edge_keys = graph
+        .edges
+        .iter()
+        .filter_map(|edge| {
+            let from_component = node_component_index.get(&edge.from_node_id)?;
+            let to_component = node_component_index.get(&edge.to_node_id)?;
+            if from_component == to_component && cyclic_components.contains(from_component) {
+                Some((
+                    edge.from_node_id.clone(),
+                    edge.from_port.clone(),
+                    edge.to_node_id.clone(),
+                    edge.to_port.clone(),
+                ))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    (cycle_node_ids, cycle_edge_keys)
+}
+
+pub fn find_cycle_node_ids(graph: &NodeGraphDefinition) -> HashSet<String> {
+    collect_cycle_members(graph).0
+}
+
+pub fn find_cycle_edge_keys(graph: &NodeGraphDefinition) -> HashSet<CycleEdgeKey> {
+    collect_cycle_members(graph).1
+}
+
 /// Compute node height from port count, matching the geometry module logic.
 fn calc_node_height(node: &NodeDefinition) -> f32 {
     const GRID: f32 = 20.0;
@@ -726,6 +880,7 @@ fn node_to_definition(id: &str, node: &dyn Node) -> NodeDefinition {
         inline_values: HashMap::new(),
         port_bindings: HashMap::new(),
         has_error: false,
+        has_cycle: false,
     }
 }
 
@@ -766,6 +921,7 @@ mod tests {
             )]),
             port_bindings: HashMap::new(),
             has_error: false,
+            has_cycle: false,
         }
     }
 
@@ -848,6 +1004,7 @@ mod tests {
             )]),
             port_bindings: HashMap::new(),
             has_error: false,
+            has_cycle: false,
         }
     }
 
@@ -916,5 +1073,109 @@ mod tests {
         assert!(fixed.output_ports.iter().any(|p| p.name == "assistant_message"));
         assert!(fixed.output_ports.iter().any(|p| p.name == "response"));
         assert!(fixed.output_ports.iter().any(|p| p.name == "search"));
+    }
+
+    #[test]
+    fn find_cycle_node_ids_only_marks_nodes_inside_cycle() {
+        let graph = NodeGraphDefinition {
+            nodes: vec![
+                NodeDefinition {
+                    id: "a".to_string(),
+                    name: "A".to_string(),
+                    description: None,
+                    node_type: "preview_string".to_string(),
+                    input_ports: Vec::new(),
+                    output_ports: Vec::new(),
+                    dynamic_input_ports: false,
+                    dynamic_output_ports: false,
+                    position: None,
+                    size: None,
+                    inline_values: HashMap::new(),
+                    port_bindings: HashMap::new(),
+                    has_error: false,
+                    has_cycle: false,
+                },
+                NodeDefinition {
+                    id: "b".to_string(),
+                    name: "B".to_string(),
+                    description: None,
+                    node_type: "preview_string".to_string(),
+                    input_ports: Vec::new(),
+                    output_ports: Vec::new(),
+                    dynamic_input_ports: false,
+                    dynamic_output_ports: false,
+                    position: None,
+                    size: None,
+                    inline_values: HashMap::new(),
+                    port_bindings: HashMap::new(),
+                    has_error: false,
+                    has_cycle: false,
+                },
+                NodeDefinition {
+                    id: "c".to_string(),
+                    name: "C".to_string(),
+                    description: None,
+                    node_type: "preview_string".to_string(),
+                    input_ports: Vec::new(),
+                    output_ports: Vec::new(),
+                    dynamic_input_ports: false,
+                    dynamic_output_ports: false,
+                    position: None,
+                    size: None,
+                    inline_values: HashMap::new(),
+                    port_bindings: HashMap::new(),
+                    has_error: false,
+                    has_cycle: false,
+                },
+            ],
+            edges: vec![
+                EdgeDefinition {
+                    from_node_id: "a".to_string(),
+                    from_port: "out".to_string(),
+                    to_node_id: "b".to_string(),
+                    to_port: "in".to_string(),
+                },
+                EdgeDefinition {
+                    from_node_id: "b".to_string(),
+                    from_port: "out".to_string(),
+                    to_node_id: "a".to_string(),
+                    to_port: "in".to_string(),
+                },
+                EdgeDefinition {
+                    from_node_id: "b".to_string(),
+                    from_port: "out".to_string(),
+                    to_node_id: "c".to_string(),
+                    to_port: "in".to_string(),
+                },
+            ],
+            hyperparameter_groups: Vec::new(),
+            hyperparameters: Vec::new(),
+            execution_results: HashMap::new(),
+        };
+
+        let cycle_nodes = find_cycle_node_ids(&graph);
+        let cycle_edges = find_cycle_edge_keys(&graph);
+
+        assert!(cycle_nodes.contains("a"));
+        assert!(cycle_nodes.contains("b"));
+        assert!(!cycle_nodes.contains("c"));
+        assert!(cycle_edges.contains(&(
+            "a".to_string(),
+            "out".to_string(),
+            "b".to_string(),
+            "in".to_string(),
+        )));
+        assert!(cycle_edges.contains(&(
+            "b".to_string(),
+            "out".to_string(),
+            "a".to_string(),
+            "in".to_string(),
+        )));
+        assert!(!cycle_edges.contains(&(
+            "b".to_string(),
+            "out".to_string(),
+            "c".to_string(),
+            "in".to_string(),
+        )));
     }
 }

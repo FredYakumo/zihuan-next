@@ -139,6 +139,7 @@ pub(crate) fn add_node_to_graph(graph: &mut NodeGraphDefinition, type_id: &str) 
         inline_values: HashMap::new(),
         port_bindings: HashMap::new(),
         has_error: false,
+        has_cycle: false,
     });
 
     Ok(())

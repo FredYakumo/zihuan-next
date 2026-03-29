@@ -213,8 +213,10 @@ export component NodeGraphWindow inherits Window {
     callback close_log_history();
 
     title: "Zihuan Node Graph Viewer";
-    width: 1200px;
-    height: 800px;
+    preferred-width: 1200px;
+    preferred-height: 800px;
+    min-width: 800px;
+    min-height: 600px;
 
     forward-focus: key-handler;
 

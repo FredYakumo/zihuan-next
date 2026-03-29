@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
-use crate::node::graph_io::{EdgeDefinition, NodeDefinition, NodeGraphDefinition};
+use crate::node::graph_io::{find_cycle_edge_keys, EdgeDefinition, NodeDefinition, NodeGraphDefinition};
 use crate::node::DataType;
 use crate::ui::graph_window::{EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm};
 use crate::ui::selection::SelectionState;
@@ -429,6 +429,18 @@ fn edge_has_error(graph: &NodeGraphDefinition, edge: &EdgeDefinition) -> bool {
     })
 }
 
+fn edge_has_cycle(
+    cycle_edge_keys: &HashSet<(String, String, String, String)>,
+    edge: &EdgeDefinition,
+) -> bool {
+    cycle_edge_keys.contains(&(
+        edge.from_node_id.clone(),
+        edge.from_port.clone(),
+        edge.to_node_id.clone(),
+        edge.to_port.clone(),
+    ))
+}
+
 pub(crate) fn build_edges(
     graph: &NodeGraphDefinition,
     selection_state: &SelectionState,
@@ -438,6 +450,11 @@ pub(crate) fn build_edges(
     let selected_edge_from_port = &selection_state.selected_edge_from_port;
     let selected_edge_to_node = &selection_state.selected_edge_to_node;
     let selected_edge_to_port = &selection_state.selected_edge_to_port;
+    let cycle_edge_keys = if graph.nodes.iter().any(|node| node.has_cycle) {
+        find_cycle_edge_keys(graph)
+    } else {
+        HashSet::new()
+    };
 
     graph
         .edges
@@ -465,6 +482,8 @@ pub(crate) fn build_edges(
                 && edge.from_port == selected_edge_from_port.as_str()
                 && edge.to_node_id == selected_edge_to_node.as_str()
                 && edge.to_port == selected_edge_to_port.as_str();
+            let has_error = edge_has_error(graph, edge);
+            let has_cycle = edge_has_cycle(&cycle_edge_keys, edge);
 
             Some(EdgeVm {
                 from_node_id: edge.from_node_id.clone().into(),
@@ -476,9 +495,12 @@ pub(crate) fn build_edges(
                 to_x: to_x.into(),
                 to_y: to_y.into(),
                 is_selected,
-                has_error: edge_has_error(graph, edge),
-                color: if edge_has_error(graph, edge) {
+                has_error,
+                has_cycle,
+                color: if has_error {
                     slint::Color::from_rgb_u8(0xdc, 0x35, 0x45)
+                } else if has_cycle {
+                    slint::Color::from_rgb_u8(0xf2, 0xc9, 0x4c)
                 } else {
                     edge_color(edge)
                 },
@@ -621,6 +643,7 @@ mod tests {
             inline_values: HashMap::new(),
             port_bindings: HashMap::new(),
             has_error: false,
+            has_cycle: false,
         }
     }
 

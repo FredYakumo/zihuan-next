@@ -100,6 +100,7 @@ fn build_node_help_data(
 fn clear_graph_error_state(graph: &mut NodeGraphDefinition) {
     for node in &mut graph.nodes {
         node.has_error = false;
+        node.has_cycle = false;
     }
 }
 
@@ -119,11 +120,37 @@ fn mark_graph_error_path(graph: &mut NodeGraphDefinition, error_node_id: &str) {
     }
 }
 
+fn is_cycle_dependency_error(error_msg: &str) -> bool {
+    error_msg.contains("Cycle detected in node dependencies")
+}
+
+fn mark_graph_cycle_path(graph: &mut NodeGraphDefinition) {
+    clear_graph_error_state(graph);
+
+    for cycle_node_id in crate::node::graph_io::find_cycle_node_ids(graph) {
+        if let Some(node) = graph.nodes.iter_mut().find(|node| node.id == cycle_node_id) {
+            node.has_cycle = true;
+        }
+    }
+}
+
+fn format_cycle_error_message(error_msg: &str) -> String {
+    let display_msg = if let Some(idx) = error_msg.find("Validation error: ") {
+        &error_msg[idx + "Validation error: ".len()..]
+    } else {
+        error_msg
+    };
+    format!("节点图存在环路依赖，已标黄相关节点: {}", display_msg)
+}
+
 fn format_execution_error_message(
     graph: &NodeGraphDefinition,
     error_node_id: &str,
     error_msg: &str,
 ) -> String {
+    if is_cycle_dependency_error(error_msg) {
+        return format_cycle_error_message(error_msg);
+    }
     let display_msg = if let Some(idx) = error_msg.find(" [NODE_ERROR:") {
         &error_msg[..idx]
     } else {
@@ -354,13 +381,19 @@ pub(crate) fn bind_window_callbacks(
 
                             tab.graph.execution_results = execution_result.node_results;
 
-                            if let (Some(error_node_id), Some(error_msg)) = (
-                                execution_result.error_node_id.clone(),
-                                execution_result.error_message.clone(),
-                            ) {
+                            if let Some(error_msg) = execution_result.error_message.clone() {
                                 error!("节点图执行失败: {}", error_msg);
-                                mark_graph_error_path(&mut tab.graph, &error_node_id);
-                                let display_error = format_execution_error_message(&tab.graph, &error_node_id, &error_msg);
+                                let display_error = if is_cycle_dependency_error(&error_msg) {
+                                    mark_graph_cycle_path(&mut tab.graph);
+                                    format_cycle_error_message(&error_msg)
+                                } else {
+                                    let error_node_id = execution_result
+                                        .error_node_id
+                                        .clone()
+                                        .unwrap_or_else(|| "unknown".to_string());
+                                    mark_graph_error_path(&mut tab.graph, &error_node_id);
+                                    format_execution_error_message(&tab.graph, &error_node_id, &error_msg)
+                                };
 
                                 if let Some(ui) = ui_weak.upgrade() {
                                     if active_tab_id == Some(tab_id) {
@@ -427,13 +460,19 @@ pub(crate) fn bind_window_callbacks(
 
                     tab.graph.execution_results = execution_result.node_results;
 
-                    if let (Some(error_node_id), Some(error_msg)) = (
-                        execution_result.error_node_id.clone(),
-                        execution_result.error_message.clone(),
-                    ) {
+                    if let Some(error_msg) = execution_result.error_message.clone() {
                         error!("节点图执行失败: {}", error_msg);
-                        mark_graph_error_path(&mut tab.graph, &error_node_id);
-                        let display_error = format_execution_error_message(&tab.graph, &error_node_id, &error_msg);
+                        let display_error = if is_cycle_dependency_error(&error_msg) {
+                            mark_graph_cycle_path(&mut tab.graph);
+                            format_cycle_error_message(&error_msg)
+                        } else {
+                            let error_node_id = execution_result
+                                .error_node_id
+                                .clone()
+                                .unwrap_or_else(|| "unknown".to_string());
+                            mark_graph_error_path(&mut tab.graph, &error_node_id);
+                            format_execution_error_message(&tab.graph, &error_node_id, &error_msg)
+                        };
 
                         if let Some(ui) = ui_handle.upgrade() {
                             if active_tab_id == Some(tab_id) {
