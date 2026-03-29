@@ -7,7 +7,7 @@ use serde_json::{Map, Value, json};
 
 use crate::error::{Error, Result};
 use crate::llm::tooling::FunctionTool;
-use crate::llm::{InferenceParam, MessageRole, OpenAIMessage};
+use crate::llm::{InferenceParam, OpenAIMessage};
 use crate::node::{DataType, DataValue, Node, Port, node_input};
 
 const TOOLS_CONFIG_PORT: &str = "tools_config";
@@ -159,8 +159,8 @@ impl BrainNode {
         let mut ports = vec![
             Port::new("assistant_message", DataType::OpenAIMessage)
                 .with_description("LLM 返回的完整 assistant 消息（含 tool_calls，用于 agentic loop）"),
-            Port::new("response", DataType::String)
-                .with_description("LLM 返回的最终文本回复"),
+            Port::new("has_tool_call", DataType::Boolean)
+                .with_description("LLM 返回的 assistant 消息是否包含 tool_calls，用于控制 agentic loop 继续或结束"),
         ];
 
         ports.extend(tool_definitions.iter().map(|tool| {
@@ -294,14 +294,16 @@ impl Node for BrainNode {
             }
         }
 
+        let has_tool_call = !response.tool_calls.is_empty();
+
         let mut outputs = HashMap::new();
         outputs.insert(
             "assistant_message".to_string(),
             DataValue::OpenAIMessage(response.clone()),
         );
         outputs.insert(
-            "response".to_string(),
-            DataValue::String(response.content.clone().unwrap_or_default()),
+            "has_tool_call".to_string(),
+            DataValue::Boolean(has_tool_call),
         );
 
         let mut tool_payloads: HashMap<String, Vec<Value>> = HashMap::new();
@@ -383,7 +385,7 @@ mod tests {
         node.apply_inline_config(&inline_values).unwrap();
 
         let output_names: Vec<String> = node.output_ports().into_iter().map(|p| p.name).collect();
-        assert_eq!(output_names, vec!["assistant_message", "response", "search"]);
+        assert_eq!(output_names, vec!["assistant_message", "has_tool_call", "search"]);
     }
 
     #[test]
@@ -446,13 +448,49 @@ mod tests {
             ),
         ])).unwrap();
 
-        assert!(matches!(outputs.get("response"), Some(DataValue::String(text)) if text == "done"));
+        assert!(matches!(
+            outputs.get("has_tool_call"),
+            Some(DataValue::Boolean(true))
+        ));
         assert!(matches!(outputs.get("search"), Some(DataValue::Json(value)) if *value == json!({
             "tool_call_id": "tool_1",
             "query": "rust",
             "limit": 3,
             "arguments": {"query": "rust", "limit": 3}
         })));
+    }
+
+    #[test]
+    fn execute_sets_has_tool_call_false_when_no_tools_are_requested() {
+        let mut node = BrainNode::new("brain_1", "Brain");
+        let llm = Arc::new(TestLlm {
+            response: OpenAIMessage {
+                role: MessageRole::Assistant,
+                content: Some("done".to_string()),
+                tool_calls: Vec::new(),
+                tool_call_id: None,
+            },
+        });
+
+        let outputs = node.execute(HashMap::from([
+            ("llm_model".to_string(), DataValue::LLModel(llm)),
+            (
+                "messages".to_string(),
+                DataValue::Vec(
+                    Box::new(DataType::OpenAIMessage),
+                    vec![
+                        DataValue::OpenAIMessage(OpenAIMessage::system("You are helpful")),
+                        DataValue::OpenAIMessage(OpenAIMessage::user("Say hi")),
+                    ],
+                ),
+            ),
+        ])).unwrap();
+
+        assert!(matches!(
+            outputs.get("has_tool_call"),
+            Some(DataValue::Boolean(false))
+        ));
+        assert!(!outputs.contains_key("search"));
     }
 
     #[test]

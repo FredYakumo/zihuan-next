@@ -26,11 +26,11 @@ export component NodeItem inherits Rectangle {
     in property <bool> has_cycle;
     in property <bool> is_running: false;
 
-    callback node_pointer_down(string);
+    callback node_pointer_down(string, bool);
     callback node_moved(float, float);
     callback node_move_finished(float, float);
     callback port_clicked(string, string, bool);
-    callback node_clicked(string);
+    callback node_clicked(string, bool);
     callback node_right_clicked(string, float, float);
     callback inline_port_text_changed(string, string, string);
     callback inline_port_bool_changed(string, string, bool);
@@ -106,6 +106,7 @@ export component NodeItem inherits Rectangle {
     property <bool> has-format-string-editor: root.node_type == "format_string";
     property <bool> has-json-extract-editor: root.node_type == "json_extract";
     property <bool> suppress-click: false;
+    property <bool> shift-click-active: false;
 
     x: x_pos * 1px;
     y: y_pos * 1px;
@@ -122,7 +123,7 @@ export component NodeItem inherits Rectangle {
     touch := TouchArea {
         clicked => {
             if !root.suppress-click {
-                root.node_clicked(root.node_id);
+                root.node_clicked(root.node_id, root.shift-click-active);
             }
             root.suppress-click = false;
         }
@@ -137,7 +138,8 @@ export component NodeItem inherits Rectangle {
                         (self.mouse-y / 1px) + root.y / 1px
                     );
                 } else if (event.button == PointerEventButton.left) {
-                    root.node_pointer_down(root.node_id);
+                    root.shift-click-active = event.modifiers.shift;
+                    root.node_pointer_down(root.node_id, event.modifiers.shift);
                     root.suppress-click = false;
                     did-drag = false;
                     is-dragging = true;

@@ -147,7 +147,7 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util::{ArrayGetNode, ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode, LastMessageIsToolNode, JsonExtractNode, JsonParserNode, LoopBreakNode, LoopNode, LoopStateUpdateNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheSetNode, PreviewMessageListNode, PreviewStringNode, PushBackVecNode, QQMessageListDataNode, StackNode, StringDataNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
+    use crate::node::util::{ArrayGetNode, AtQQTargetMessageNode, BooleanNotNode, ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode, JoinStringNode, JsonExtractNode, JsonParserNode, LoopBreakNode, LoopNode, LoopStateUpdateNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheSetNode, PreviewMessageListNode, PreviewStringNode, PushBackVecNode, QQMessageListDataNode, StackNode, StringDataNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
     use crate::llm::llm_api_node::LLMApiNode;
     use crate::llm::brain_node::BrainNode;
     use crate::llm::llm_infer_node::LLMInferNode;
@@ -189,6 +189,14 @@ pub fn init_node_registry() -> Result<()> {
         "工具",
         "当 enabled 为 true 时透传输入，否则阻断后续数据流",
         SwitchNode
+    );
+
+    register_node!(
+        "boolean_not",
+        "布尔取反",
+        "工具",
+        "对输入的 Boolean 值取反",
+        BooleanNotNode
     );
 
     register_node!(
@@ -237,6 +245,14 @@ pub fn init_node_registry() -> Result<()> {
         "工具",
         "将 vec2 拼接到 vec1 后面，要求两个列表的元素类型一致",
         ConcatVecNode
+    );
+
+    register_node!(
+        "join_string",
+        "拼接字符串列表",
+        "工具",
+        "使用分隔符将 Vec<String> 拼接为单个字符串",
+        JoinStringNode
     );
 
     register_node!(
@@ -343,6 +359,14 @@ pub fn init_node_registry() -> Result<()> {
         StringToPlainTextNode
     );
 
+    register_node!(
+        "at_qq_target_message",
+        "构造QQ艾特消息",
+        "消息",
+        "输入 QQ 目标 id 字符串，输出 @ 目标的 QQ 消息段",
+        AtQQTargetMessageNode
+    );
+
     // LLM nodes
     register_node!(
         "llm_api",
@@ -374,14 +398,6 @@ pub fn init_node_registry() -> Result<()> {
         "AI",
         "将工具执行结果封装为 role=tool 的 OpenAIMessage，供 agentic loop 回写对话列表",
         ToolResultNode
-    );
-
-    register_node!(
-        "last_message_is_tool",
-        "最后一条是否为 Tool 消息",
-        "AI",
-        "判断 Vec<OpenAIMessage> 最后一条消息是否为 role=tool，输出布尔值",
-        LastMessageIsToolNode
     );
 
     // Bot adapter nodes

@@ -104,8 +104,8 @@ export component NodeGraphWindow inherits Window {
     callback port_clicked(string, string, bool);
     callback pointer_moved(float, float);
     callback cancel_connect();
-    callback node_pointer_down(string);
-    callback node_clicked(string);
+    callback node_pointer_down(string, bool);
+    callback node_clicked(string, bool);
     callback node_right_clicked(string, float, float);
     callback edge_clicked(string, string, string, string);
     callback canvas_clicked();
@@ -253,7 +253,7 @@ export component NodeGraphWindow inherits Window {
         width: 100%;
         height: 100%;
 
-        key-pressed(event) => {
+        capture-key-pressed(event) => {
             if (event.modifiers.control || event.modifiers.meta) {
                 if (event.modifiers.shift && (event.text == "s" || event.text == "S")) {
                     root.save_json_as();
@@ -380,8 +380,9 @@ export component NodeGraphWindow inherits Window {
                 box_selection_height: root.box_selection_height;
                 is_graph_running: root.is_graph_running;
                 
-                node_pointer_down(node_id) => {
-                    root.node_pointer_down(node_id);
+                node_pointer_down(node_id, shift_pressed) => {
+                    key-handler.focus();
+                    root.node_pointer_down(node_id, shift_pressed);
                 }
 
                 node_moved(node_id, x, y) => {
@@ -393,6 +394,7 @@ export component NodeGraphWindow inherits Window {
                 }
                 
                 port_clicked(node_id, port_name, is_input) => {
+                    key-handler.focus();
                     root.port_clicked(node_id, port_name, is_input);
                 }
                 pointer_moved(x, y) => {
@@ -402,27 +404,33 @@ export component NodeGraphWindow inherits Window {
                     root.cancel_connect();
                 }
                 
-                node_clicked(node_id) => {
-                    root.node_clicked(node_id);
+                node_clicked(node_id, shift_pressed) => {
+                    key-handler.focus();
+                    root.node_clicked(node_id, shift_pressed);
                 }
 
                 node_right_clicked(node_id, x, y) => {
+                    key-handler.focus();
                     root.node_right_clicked(node_id, x, y);
                 }
                 
                 edge_clicked(from_node, from_port, to_node, to_port) => {
+                    key-handler.focus();
                     root.edge_clicked(from_node, from_port, to_node, to_port);
                 }
                 
                 canvas_clicked() => {
+                    key-handler.focus();
                     root.canvas_clicked();
                 }
 
                 canvas_right_clicked(x, y, canvas_x, canvas_y) => {
+                    key-handler.focus();
                     root.canvas_right_clicked(x, y, canvas_x, canvas_y);
                 }
                 
                 box_selection_start(x, y) => {
+                    key-handler.focus();
                     root.box_selection_start(x, y);
                 }
                 
