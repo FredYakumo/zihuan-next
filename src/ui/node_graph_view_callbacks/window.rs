@@ -182,6 +182,19 @@ fn extract_error_node_id(error_msg: &str) -> Option<String> {
     None
 }
 
+fn current_canvas_viewport_center(ui: &NodeGraphWindow) -> (f32, f32) {
+    let zoom = ui.get_canvas_zoom().max(0.2);
+    let pan_x = ui.get_canvas_pan_x();
+    let pan_y = ui.get_canvas_pan_y();
+    let viewport_width = ui.get_canvas_viewport_width().max(1.0);
+    let viewport_height = ui.get_canvas_viewport_height().max(1.0);
+
+    (
+        viewport_width / zoom / 2.0 - pan_x,
+        viewport_height / zoom / 2.0 - pan_y,
+    )
+}
+
 pub(crate) fn bind_window_callbacks(
     ui: &NodeGraphWindow,
     tabs: Arc<Mutex<Vec<GraphTabState>>>,
@@ -588,7 +601,12 @@ pub(crate) fn bind_window_callbacks(
     let last_context_canvas_pos_clone = Arc::clone(&last_context_canvas_pos);
     ui.on_paste_nodes_at_context(move || {
         let clipboard = node_clipboard_clone.lock().unwrap().clone();
-        let context_pos = *last_context_canvas_pos_clone.lock().unwrap();
+        let context_pos = last_context_canvas_pos_clone
+            .lock()
+            .unwrap()
+            .as_ref()
+            .copied()
+            .or_else(|| ui_handle.upgrade().map(|ui| current_canvas_viewport_center(&ui)));
 
         if let (Some(clipboard), Some((x, y))) = (clipboard, context_pos) {
             let mut tabs_guard = tabs_clone.lock().unwrap();
