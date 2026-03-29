@@ -1,5 +1,6 @@
 pub mod node_graph_view;
 pub(crate) mod node_graph_view_callbacks;
+pub(crate) mod node_graph_view_clipboard;
 pub(crate) mod node_graph_view_geometry;
 pub(crate) mod node_graph_view_inline;
 pub(crate) mod node_graph_view_vm;

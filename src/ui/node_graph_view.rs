@@ -26,6 +26,7 @@ use crate::ui::node_graph_view_callbacks::{
     bind_tool_editor_callbacks,
     bind_window_callbacks,
 };
+use crate::ui::node_graph_view_clipboard::NodeClipboard;
 use crate::ui::node_graph_view_geometry::{
     EDGE_THICKNESS_RATIO, GRID_SIZE,
 };
@@ -108,6 +109,7 @@ pub(crate) fn update_tabs_ui(ui: &NodeGraphWindow, tabs: &[GraphTabState], activ
 }
 
 pub(crate) fn refresh_active_tab_ui(ui: &NodeGraphWindow, tabs: &[GraphTabState], active_index: usize) {
+    ui.set_show_graph_context_menu(false);
     if let Some(tab) = tabs.get(active_index) {
         apply_graph_to_ui(
             ui,
@@ -262,6 +264,9 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: O
     ui.set_available_node_types(ModelRc::new(VecModel::from(node_types.clone())));
     
     let all_node_types = Arc::new(node_types);
+    let node_clipboard: Arc<Mutex<Option<NodeClipboard>>> = Arc::new(Mutex::new(None));
+    let last_context_canvas_pos: Arc<Mutex<Option<(f32, f32)>>> = Arc::new(Mutex::new(None));
+    let pending_add_node_pos: Arc<Mutex<Option<(f32, f32)>>> = Arc::new(Mutex::new(None));
     ui.set_grid_size(GRID_SIZE);
     ui.set_edge_thickness(GRID_SIZE * EDGE_THICKNESS_RATIO);
 
@@ -312,9 +317,18 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: O
         Arc::clone(&tabs),
         Arc::clone(&active_tab_index),
         Arc::clone(&all_node_types),
+        Arc::clone(&node_clipboard),
+        Arc::clone(&last_context_canvas_pos),
+        Arc::clone(&pending_add_node_pos),
     );
 
-    bind_canvas_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
+    bind_canvas_callbacks(
+        &ui,
+        Arc::clone(&tabs),
+        Arc::clone(&active_tab_index),
+        Arc::clone(&node_clipboard),
+        Arc::clone(&last_context_canvas_pos),
+    );
     bind_inline_port_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
     bind_message_list_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
     bind_qq_message_list_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
