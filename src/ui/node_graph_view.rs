@@ -138,6 +138,13 @@ pub(crate) fn refresh_active_tab_ui(ui: &NodeGraphWindow, tabs: &[GraphTabState]
     update_tabs_ui(ui, tabs, active_index);
 }
 
+fn persist_window_state(window: &slint::Window) {
+    let state = WindowState::from_window(window);
+    if let Err(e) = save_window_state(&state) {
+        eprintln!("Failed to save window state: {e}");
+    }
+}
+
 pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: Option<&std::path::Path>) -> Result<()> {
     register_cjk_fonts();
 
@@ -149,6 +156,16 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: O
 
     if let Some(state) = load_window_state() {
         apply_window_state(&ui.window(), &state);
+    }
+
+    {
+        let ui_weak = ui.as_weak();
+        ui.window().on_close_requested(move || {
+            if let Some(ui) = ui_weak.upgrade() {
+                persist_window_state(&ui.window());
+            }
+            slint::CloseRequestResponse::HideWindow
+        });
     }
 
     let mut next_untitled_index = 1usize;
@@ -386,10 +403,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: O
 
     let run_result = ui.run();
     if run_result.is_ok() {
-        let state = WindowState::from_window(&ui.window());
-        if let Err(e) = save_window_state(&state) {
-            eprintln!("Failed to save window state: {e}");
-        }
+        persist_window_state(&ui.window());
     }
 
     run_result.map_err(|e| crate::error::Error::StringError(format!("UI error: {e}")))

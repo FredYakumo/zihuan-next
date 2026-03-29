@@ -8,6 +8,8 @@ pub struct WindowState {
     pub height: f32,
     pub x: i32,
     pub y: i32,
+    #[serde(default)]
+    pub maximized: bool,
 }
 
 impl WindowState {
@@ -19,6 +21,7 @@ impl WindowState {
             height: size.height as f32,
             x: position.x,
             y: position.y,
+            maximized: window.is_maximized(),
         }
     }
 }
@@ -40,7 +43,9 @@ pub fn save_window_state(state: &WindowState) -> std::io::Result<()> {
     }
 
     let json = serde_json::to_string_pretty(state)
-        .unwrap_or_else(|_| "{\"width\":1200.0,\"height\":800.0,\"x\":0,\"y\":0}".to_string());
+        .unwrap_or_else(|_| {
+            "{\"width\":1200.0,\"height\":800.0,\"x\":0,\"y\":0,\"maximized\":false}".to_string()
+        });
     fs::write(path, json)
 }
 
@@ -52,6 +57,7 @@ pub fn apply_window_state(window: &slint::Window, state: &WindowState) {
 
     window.set_size(slint::LogicalSize::new(width, height));
     window.set_position(slint::PhysicalPosition::new(state.x, state.y));
+    window.set_maximized(state.maximized);
 }
 
 fn state_file_path() -> Option<PathBuf> {

@@ -23,6 +23,7 @@ export component NodeItem inherits Rectangle {
     in property <float> min_rows;
     in property <bool> is_selected;
     in property <bool> has_error;
+    in property <bool> has_cycle;
     in property <bool> is_running: false;
 
     callback node_moved(float, float);
@@ -113,8 +114,8 @@ export component NodeItem inherits Rectangle {
     ) * 1px;
     background: touch.pressed ? AppTheme.node-bg-pressed : AppTheme.node-bg;
     border-radius: 8px;
-    border-width: has_error ? 2px : (is_selected ? 2px : 1px);
-    border-color: has_error ? AppTheme.danger : (is_selected ? AppTheme.selection : AppTheme.border);
+    border-width: (has_error || has_cycle) ? 2px : (is_selected ? 2px : 1px);
+    border-color: has_error ? AppTheme.danger : (has_cycle ? AppTheme.warning : (is_selected ? AppTheme.selection : AppTheme.border));
 
     touch := TouchArea {
         clicked => {

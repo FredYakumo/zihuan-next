@@ -170,6 +170,7 @@ fn build_node_vm(
         output_ports: ModelRc::new(VecModel::from(output_ports)),
         is_selected,
         has_error: node.has_error,
+        has_cycle: node.has_cycle,
         is_event_producer,
     }
 }
