@@ -26,6 +26,7 @@ export component NodeItem inherits Rectangle {
     in property <bool> has_cycle;
     in property <bool> is_running: false;
 
+    callback node_pointer_down(string);
     callback node_moved(float, float);
     callback node_move_finished(float, float);
     callback port_clicked(string, string, bool);
@@ -52,8 +53,6 @@ export component NodeItem inherits Rectangle {
     callback edit_format_string_clicked(string);
     callback edit_json_extract_clicked(string);
 
-    property <float> offset-x: 0;
-    property <float> offset-y: 0;
     property <int> spin-frame: 0;
 
     // Pure position helpers: frame 0-9 = top edge, 10-19 = right, 20-29 = bottom (rtl), 30-39 = left (btt)
@@ -81,6 +80,7 @@ export component NodeItem inherits Rectangle {
     property <float> drag-start-pointer-y: 0;
     property <float> drag-start-node-x: 0;
     property <float> drag-start-node-y: 0;
+    property <bool> did-drag: false;
     property <bool> is-dragging: false;
     property <bool> is-resizing: false;
     property <float> resize-start-pointer-x: 0;
@@ -107,8 +107,8 @@ export component NodeItem inherits Rectangle {
     property <bool> has-json-extract-editor: root.node_type == "json_extract";
     property <bool> suppress-click: false;
 
-    x: (x_pos + offset-x) * 1px;
-    y: (y_pos + offset-y) * 1px;
+    x: x_pos * 1px;
+    y: y_pos * 1px;
     width: max(node_width, grid_size * node_width_cells) * 1px;
     height: max(
         node_height,
@@ -137,7 +137,9 @@ export component NodeItem inherits Rectangle {
                         (self.mouse-y / 1px) + root.y / 1px
                     );
                 } else if (event.button == PointerEventButton.left) {
+                    root.node_pointer_down(root.node_id);
                     root.suppress-click = false;
+                    did-drag = false;
                     is-dragging = true;
                     drag-start-pointer-x = (self.mouse-x / 1px) + root.x / 1px;
                     drag-start-pointer-y = (self.mouse-y / 1px) + root.y / 1px;
@@ -146,14 +148,16 @@ export component NodeItem inherits Rectangle {
                 }
             } else if (event.kind == PointerEventKind.up && event.button == PointerEventButton.left) {
                 is-dragging = false;
-                let pointer-x = (self.mouse-x / 1px) + root.x / 1px;
-                let pointer-y = (self.mouse-y / 1px) + root.y / 1px;
-                let new-x = drag-start-node-x + (pointer-x - drag-start-pointer-x);
-                let new-y = drag-start-node-y + (pointer-y - drag-start-pointer-y);
-                offset-x = new-x - root.x_pos;
-                offset-y = new-y - root.y_pos;
-                root.node_moved(root.x_pos + offset-x, root.y_pos + offset-y);
-                root.node_move_finished(root.x_pos + offset-x, root.y_pos + offset-y);
+                if did-drag {
+                    let pointer-x = (self.mouse-x / 1px) + root.x / 1px;
+                    let pointer-y = (self.mouse-y / 1px) + root.y / 1px;
+                    let new-x = drag-start-node-x + (pointer-x - drag-start-pointer-x);
+                    let new-y = drag-start-node-y + (pointer-y - drag-start-pointer-y);
+                    root.suppress-click = true;
+                    root.node_moved(new-x, new-y);
+                    root.node_move_finished(new-x, new-y);
+                }
+                did-drag = false;
             }
         }
 
@@ -161,11 +165,17 @@ export component NodeItem inherits Rectangle {
             if (self.pressed && is-dragging) {
                 let pointer-x = (self.mouse-x / 1px) + root.x / 1px;
                 let pointer-y = (self.mouse-y / 1px) + root.y / 1px;
+                let delta-x = pointer-x - drag-start-pointer-x;
+                let delta-y = pointer-y - drag-start-pointer-y;
+                if !did-drag && delta-x * delta-x + delta-y * delta-y > 16 {
+                    did-drag = true;
+                }
+                if !did-drag {
+                    return;
+                }
                 let new-x = drag-start-node-x + (pointer-x - drag-start-pointer-x);
                 let new-y = drag-start-node-y + (pointer-y - drag-start-pointer-y);
-                offset-x = new-x - root.x_pos;
-                offset-y = new-y - root.y_pos;
-                root.node_moved(root.x_pos + offset-x, root.y_pos + offset-y);
+                root.node_moved(new-x, new-y);
             }
         }
     }
