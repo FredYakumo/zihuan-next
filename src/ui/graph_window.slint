@@ -104,6 +104,7 @@ export component NodeGraphWindow inherits Window {
     callback port_clicked(string, string, bool);
     callback pointer_moved(float, float);
     callback cancel_connect();
+    callback node_pointer_down(string);
     callback node_clicked(string);
     callback node_right_clicked(string, float, float);
     callback edge_clicked(string, string, string, string);
@@ -354,6 +355,10 @@ export component NodeGraphWindow inherits Window {
                 box_selection_height: root.box_selection_height;
                 is_graph_running: root.is_graph_running;
                 
+                node_pointer_down(node_id) => {
+                    root.node_pointer_down(node_id);
+                }
+
                 node_moved(node_id, x, y) => {
                     root.node_moved(node_id, x, y);
                 }

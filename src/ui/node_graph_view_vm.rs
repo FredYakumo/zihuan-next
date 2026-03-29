@@ -35,24 +35,65 @@ pub(crate) fn apply_graph_to_ui(
     inline_inputs: &HashMap<String, InlinePortValue>,
     hyperparameter_values: &HashMap<String, serde_json::Value>,
 ) {
+    apply_graph_to_ui_with_options(
+        ui,
+        graph,
+        current_file,
+        selection_state,
+        inline_inputs,
+        hyperparameter_values,
+        true,
+    );
+}
+
+pub(crate) fn apply_graph_to_ui_live(
+    ui: &NodeGraphWindow,
+    graph: &NodeGraphDefinition,
+    current_file: Option<String>,
+    selection_state: &SelectionState,
+    inline_inputs: &HashMap<String, InlinePortValue>,
+    hyperparameter_values: &HashMap<String, serde_json::Value>,
+) {
+    apply_graph_to_ui_with_options(
+        ui,
+        graph,
+        current_file,
+        selection_state,
+        inline_inputs,
+        hyperparameter_values,
+        false,
+    );
+}
+
+fn apply_graph_to_ui_with_options(
+    ui: &NodeGraphWindow,
+    graph: &NodeGraphDefinition,
+    current_file: Option<String>,
+    selection_state: &SelectionState,
+    inline_inputs: &HashMap<String, InlinePortValue>,
+    hyperparameter_values: &HashMap<String, serde_json::Value>,
+    snap_positions: bool,
+) {
     let mut graph = graph.clone();
     ensure_positions(&mut graph);
 
-    for node in &mut graph.nodes {
-        if let Some(pos) = &mut node.position {
-            pos.x = snap_to_grid(pos.x);
-            pos.y = snap_to_grid(pos.y);
+    if snap_positions {
+        for node in &mut graph.nodes {
+            if let Some(pos) = &mut node.position {
+                pos.x = snap_to_grid(pos.x);
+                pos.y = snap_to_grid(pos.y);
+            }
         }
     }
 
     let nodes: Vec<NodeVm> = graph
         .nodes
         .iter()
-        .map(|node| build_node_vm(node, &graph, selection_state, inline_inputs))
+        .map(|node| build_node_vm(node, &graph, selection_state, inline_inputs, snap_positions))
         .collect();
 
-    let edges = build_edges(&graph, selection_state, true);
-    let (edge_segments, edge_corners, edge_labels) = build_edge_segments(&graph, true);
+    let edges = build_edges(&graph, selection_state, snap_positions);
+    let (edge_segments, edge_corners, edge_labels) = build_edge_segments(&graph, snap_positions);
 
     let label = current_file.unwrap_or_else(|| "已加载 JSON".to_string());
     let grid_lines = build_grid_lines(CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE);
@@ -94,6 +135,7 @@ fn build_node_vm(
     graph: &NodeGraphDefinition,
     selection_state: &SelectionState,
     inline_inputs: &HashMap<String, InlinePortValue>,
+    snap_position: bool,
 ) -> NodeVm {
     let position = node.position.as_ref();
     let (node_width, node_height) = node_dimensions(node);
@@ -162,8 +204,12 @@ fn build_node_vm(
         string_data_text: string_data_text.into(),
         message_event_filter_type: message_event_filter_type.into(),
         message_list: ModelRc::new(VecModel::from(message_list)),
-        x: position.map(|p| snap_to_grid(p.x)).unwrap_or(0.0),
-        y: position.map(|p| snap_to_grid(p.y)).unwrap_or(0.0),
+        x: position
+            .map(|p| if snap_position { snap_to_grid(p.x) } else { p.x })
+            .unwrap_or(0.0),
+        y: position
+            .map(|p| if snap_position { snap_to_grid(p.y) } else { p.y })
+            .unwrap_or(0.0),
         width: node_width,
         height: node_height,
         input_ports: ModelRc::new(VecModel::from(input_ports)),

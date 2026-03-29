@@ -42,16 +42,16 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": -620.0,
-        "y": -1280.0
+        "x": -1540.0,
+        "y": -1180.0
       },
       "size": {
         "width": 340.0,
         "height": 160.0
       },
       "inline_values": {
-        "bot_server_url": "ws://localhost:3001",
-        "qq_id": "2496875785"
+        "qq_id": "2496875785",
+        "bot_server_url": "ws://localhost:3001"
       },
       "port_bindings": {
         "bot_server_token": "BOT_SERVER_TOKEN",
@@ -96,8 +96,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": -140.0,
-        "y": -1120.0
+        "x": -960.0,
+        "y": -880.0
       },
       "size": {
         "width": 300.0,
@@ -168,8 +168,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 480.0,
-        "y": -1000.0
+        "x": -600.0,
+        "y": -1040.0
       },
       "size": null,
       "inline_values": {},
@@ -235,8 +235,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 500.0,
-        "y": 420.0
+        "x": -580.0,
+        "y": -600.0
       },
       "size": null,
       "inline_values": {},
@@ -268,8 +268,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": -140.0,
-        "y": -940.0
+        "x": -960.0,
+        "y": -640.0
       },
       "size": null,
       "inline_values": {},
@@ -294,8 +294,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1140.0,
-        "y": 80.0
+        "x": 1176.1282,
+        "y": 82.25812
       },
       "size": null,
       "inline_values": {},
@@ -388,55 +388,6 @@
       "has_cycle": false
     },
     {
-      "id": "node_10",
-      "name": "QQMessageList Data",
-      "description": "QQMessageList data source with inline UI editor",
-      "node_type": "qq_message_list_data",
-      "input_ports": [
-        {
-          "name": "messages",
-          "data_type": {
-            "Vec": "QQMessage"
-          },
-          "description": "Vec<QQMessage> provided by UI inline editor",
-          "required": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "messages",
-          "data_type": {
-            "Vec": "QQMessage"
-          },
-          "description": "Output Vec<QQMessage> from UI data source",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1860.0,
-        "y": -60.0
-      },
-      "size": {
-        "width": 340.0,
-        "height": 180.0
-      },
-      "inline_values": {
-        "messages": [
-          {
-            "data": {
-              "text": "已收到"
-            },
-            "type": "text"
-          }
-        ]
-      },
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
       "id": "node_11",
       "name": "MySQL连接",
       "description": "MySQL连接配置 - 构建MySQL连接URL并输出引用",
@@ -508,21 +459,21 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": -160.0,
-        "y": 100.0
+        "x": -1480.0,
+        "y": -220.0
       },
       "size": {
         "width": 280.0,
         "height": 200.0
       },
       "inline_values": {
+        "mysql_host": "127.0.0.1",
         "mysql_port": "3306",
-        "mysql_database": "zihuan_aibot",
-        "mysql_host": "127.0.0.1"
+        "mysql_database": "zihuan_aibot"
       },
       "port_bindings": {
-        "mysql_password": "MYSQL_PASSWORD",
-        "mysql_user": "MYSQL_USER"
+        "mysql_user": "MYSQL_USER",
+        "mysql_password": "MYSQL_PASSWORD"
       },
       "has_error": false,
       "has_cycle": false
@@ -563,8 +514,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 520.0,
-        "y": -400.0
+        "x": -1500.0,
+        "y": -800.0
       },
       "size": null,
       "inline_values": {},
@@ -744,8 +695,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 480.0,
-        "y": 800.0
+        "x": -504.97552,
+        "y": 598.8639
       },
       "size": null,
       "inline_values": {},
@@ -777,8 +728,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1360.0,
-        "y": 440.0
+        "x": 375.02448,
+        "y": 238.86386
       },
       "size": null,
       "inline_values": {},
@@ -863,8 +814,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1940.0,
-        "y": 800.0
+        "x": 955.0245,
+        "y": 598.8639
       },
       "size": null,
       "inline_values": {},
@@ -904,8 +855,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1120.0,
-        "y": 680.0
+        "x": 135.02448,
+        "y": 478.86386
       },
       "size": null,
       "inline_values": {
@@ -939,8 +890,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1280.0,
-        "y": 900.0
+        "x": 295.02448,
+        "y": 698.8639
       },
       "size": null,
       "inline_values": {},
@@ -972,8 +923,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1420.0,
-        "y": 720.0
+        "x": 435.02448,
+        "y": 518.8639
       },
       "size": null,
       "inline_values": {},
@@ -1005,8 +956,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1720.0,
-        "y": 700.0
+        "x": 735.0245,
+        "y": 498.86386
       },
       "size": null,
       "inline_values": {},
@@ -1062,13 +1013,13 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 160.0,
-        "y": 340.0
+        "x": -1480.0,
+        "y": 40.0
       },
       "size": null,
       "inline_values": {
-        "ttl_secs": "600",
-        "bucket_name": "cache"
+        "bucket_name": "cache",
+        "ttl_secs": "600"
       },
       "port_bindings": {},
       "has_error": false,
@@ -1116,8 +1067,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": -160.0,
-        "y": -400.0
+        "x": -1320.0,
+        "y": -1680.0
       },
       "size": {
         "width": 300.0,
@@ -1211,8 +1162,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 760.0,
-        "y": 740.0
+        "x": -224.97552,
+        "y": 538.8639
       },
       "size": null,
       "inline_values": {},
@@ -1367,7 +1318,7 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 80.0,
+        "x": 100.0,
         "y": -1380.0
       },
       "size": null,
