@@ -34,9 +34,12 @@ impl Node for LoopBreakNode {
 	node_input![
 		port! { name = "loop_control", ty = LoopControlRef, desc = "来自 LoopNode 的循环控制引用" },
 		port! { name = "condition", ty = Boolean, desc = "为 true 时触发退出循环" },
+		port! { name = "input", ty = Any, desc = "可选：循环结束后透传给后续节点的数据", optional },
 	];
 
-	node_output![];
+	node_output![
+		port! { name = "output", ty = Any, desc = "透传 input 的值，便于在循环结束后继续后续节点" },
+	];
 
 	fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
 		self.validate_inputs(&inputs)?;
@@ -61,6 +64,59 @@ impl Node for LoopBreakNode {
 			loop_control.request_break();
 		}
 
-		Ok(HashMap::new())
+		let mut outputs = HashMap::new();
+		if let Some(value) = inputs.get("input") {
+			outputs.insert("output".to_string(), value.clone());
+		}
+
+		self.validate_outputs(&outputs)?;
+		Ok(outputs)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::LoopBreakNode;
+	use crate::node::data_value::LoopControl;
+	use crate::node::{DataValue, Node};
+	use std::collections::HashMap;
+	use std::sync::Arc;
+
+	#[test]
+	fn loop_break_requests_break_and_forwards_optional_input() {
+		let mut node = LoopBreakNode::new("loop_break", "Loop Break");
+		let loop_control = Arc::new(LoopControl::new());
+		let mut inputs = HashMap::new();
+		inputs.insert(
+			"loop_control".to_string(),
+			DataValue::LoopControlRef(loop_control.clone()),
+		);
+		inputs.insert("condition".to_string(), DataValue::Boolean(true));
+		inputs.insert("input".to_string(), DataValue::String("done".to_string()));
+
+		let outputs = node.execute(inputs).expect("loop_break should execute");
+
+		assert!(loop_control.should_break());
+		match outputs.get("output") {
+			Some(DataValue::String(value)) => assert_eq!(value, "done"),
+			other => panic!("unexpected output: {other:?}"),
+		}
+	}
+
+	#[test]
+	fn loop_break_skips_output_when_optional_input_is_absent() {
+		let mut node = LoopBreakNode::new("loop_break", "Loop Break");
+		let loop_control = Arc::new(LoopControl::new());
+		let mut inputs = HashMap::new();
+		inputs.insert(
+			"loop_control".to_string(),
+			DataValue::LoopControlRef(loop_control.clone()),
+		);
+		inputs.insert("condition".to_string(), DataValue::Boolean(false));
+
+		let outputs = node.execute(inputs).expect("loop_break should execute");
+
+		assert!(!loop_control.should_break());
+		assert!(outputs.is_empty());
 	}
 }

@@ -147,7 +147,7 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util::{ArrayGetNode, ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode, LastMessageIsToolNode, JsonExtractNode, JsonParserNode, LoopBreakNode, LoopNode, LoopStateUpdateNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, PreviewMessageListNode, PreviewStringNode, PushBackVecNode, QQMessageListDataNode, StackNode, StringDataNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
+    use crate::node::util::{ArrayGetNode, ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode, LastMessageIsToolNode, JsonExtractNode, JsonParserNode, LoopBreakNode, LoopNode, LoopStateUpdateNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheSetNode, PreviewMessageListNode, PreviewStringNode, PushBackVecNode, QQMessageListDataNode, StackNode, StringDataNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
     use crate::llm::llm_api_node::LLMApiNode;
     use crate::llm::brain_node::BrainNode;
     use crate::llm::llm_infer_node::LLMInferNode;
@@ -489,6 +489,14 @@ pub fn init_node_registry() -> Result<()> {
         "消息存储",
         "根据 OpenAIMessage 会话缓存 Ref 和 sender_id 读取当前运行期累计的 Vec<OpenAIMessage>",
         OpenAIMessageSessionCacheGetNode
+    );
+
+    register_node!(
+        "openai_message_session_cache_set",
+        "覆写 OpenAIMessage 历史",
+        "消息存储",
+        "根据 OpenAIMessage 会话缓存 Ref、sender_id 和消息列表覆写当前运行期累计的 Vec<OpenAIMessage>",
+        OpenAIMessageSessionCacheSetNode
     );
 
     register_node!(
