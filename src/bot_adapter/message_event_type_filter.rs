@@ -10,14 +10,23 @@ pub struct MessageEventTypeFilterNode {
 
 impl MessageEventTypeFilterNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
-        Self { id: id.into(), name: name.into() }
+        Self {
+            id: id.into(),
+            name: name.into(),
+        }
     }
 }
 
 impl Node for MessageEventTypeFilterNode {
-    fn id(&self) -> &str { &self.id }
-    fn name(&self) -> &str { &self.name }
-    fn description(&self) -> Option<&str> { Some("根据消息类型（好友/群组）路由消息事件") }
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn description(&self) -> Option<&str> {
+        Some("根据消息类型（好友/群组）路由消息事件")
+    }
 
     node_input![
         port! { name = "message_event", ty = MessageEvent, desc = "输入的消息事件" },
@@ -29,7 +38,10 @@ impl Node for MessageEventTypeFilterNode {
         port! { name = "false_event", ty = MessageEvent, desc = "消息类型不匹配时的输出" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         let event = match inputs.get("message_event") {
             Some(DataValue::MessageEvent(e)) => e.clone(),
             _ => return Err("message_event input is required".into()),

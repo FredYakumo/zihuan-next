@@ -1,9 +1,16 @@
-use crate::{bot_adapter::{adapter::BotAdapter, models::MessageEvent}, llm::{OpenAIMessage, SystemMessage}};
+use crate::{
+    bot_adapter::{adapter::BotAdapter, models::MessageEvent},
+    llm::{OpenAIMessage, SystemMessage},
+};
 
 /// Build system message for chat agent based on bot profile and event context
-pub fn build_chat_system_message(bot_adapter: &BotAdapter, event: &MessageEvent, persona: &str) -> OpenAIMessage {
+pub fn build_chat_system_message(
+    bot_adapter: &BotAdapter,
+    event: &MessageEvent,
+    persona: &str,
+) -> OpenAIMessage {
     let bot_profile = bot_adapter.get_bot_profile();
-    
+
     if let Some(profile) = bot_profile {
         if event.is_group_message {
             SystemMessage(format!(
@@ -12,7 +19,11 @@ pub fn build_chat_system_message(bot_adapter: &BotAdapter, event: &MessageEvent,
                 profile.nickname,
                 profile.qq_id,
                 event.group_name.clone().unwrap_or_default(),
-                if !event.sender.card.is_empty() { event.sender.card.clone() } else { event.sender.nickname.clone() },
+                if !event.sender.card.is_empty() {
+                    event.sender.card.clone()
+                } else {
+                    event.sender.nickname.clone()
+                },
                 event.sender.user_id,
                 persona
             ))

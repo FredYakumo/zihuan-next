@@ -42,7 +42,10 @@ impl Node for SessionStateReleaseNode {
         port! { name = "released", ty = Boolean, desc = "是否成功释放当前 sender_id 的占用" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let session_ref: Arc<SessionStateRef> = inputs
@@ -51,14 +54,18 @@ impl Node for SessionStateReleaseNode {
                 DataValue::SessionStateRef(session_ref) => Some(session_ref.clone()),
                 _ => None,
             })
-            .ok_or_else(|| crate::error::Error::InvalidNodeInput("session_ref is required".to_string()))?;
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("session_ref is required".to_string())
+            })?;
         let sender_id = inputs
             .get("sender_id")
             .and_then(|value| match value {
                 DataValue::String(sender_id) => Some(sender_id.clone()),
                 _ => None,
             })
-            .ok_or_else(|| crate::error::Error::InvalidNodeInput("sender_id is required".to_string()))?;
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("sender_id is required".to_string())
+            })?;
 
         let claim_token = SESSION_CLAIM_CONTEXT
             .try_with(|context| {

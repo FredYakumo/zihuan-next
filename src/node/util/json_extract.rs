@@ -23,7 +23,9 @@ fn validate_field_definitions(field_definitions: &[JsonExtractFieldDef]) -> Resu
             return Err(Error::ValidationError("提取字段名不能为空".to_string()));
         }
         if !field_names.insert(field_name.to_string()) {
-            return Err(Error::ValidationError(format!("提取字段名重复：{field_name}")));
+            return Err(Error::ValidationError(format!(
+                "提取字段名重复：{field_name}"
+            )));
         }
     }
 
@@ -140,7 +142,10 @@ impl Node for JsonExtractNode {
         }
     }
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         if let Some(DataValue::Json(value)) = inputs.get(FIELDS_CONFIG_PORT) {
@@ -168,12 +173,13 @@ impl Node for JsonExtractNode {
                 Error::ValidationError(format!("JSON 中不存在字段 '{}'", field.name))
             })?;
 
-            let typed_value = json_value_to_data_value(raw_value, &field.data_type).ok_or_else(|| {
-                Error::ValidationError(format!(
-                    "字段 '{}' 无法转换为类型 {}",
-                    field.name, field.data_type
-                ))
-            })?;
+            let typed_value =
+                json_value_to_data_value(raw_value, &field.data_type).ok_or_else(|| {
+                    Error::ValidationError(format!(
+                        "字段 '{}' 无法转换为类型 {}",
+                        field.name, field.data_type
+                    ))
+                })?;
 
             outputs.insert(field.name.clone(), typed_value);
         }
@@ -250,8 +256,14 @@ mod tests {
         let result = node.apply_inline_config(&HashMap::from([(
             "fields_config".to_string(),
             DataValue::Json(serde_json::json!([
-                JsonExtractFieldDef { name: "name".to_string(), data_type: DataType::String },
-                JsonExtractFieldDef { name: "name".to_string(), data_type: DataType::Json }
+                JsonExtractFieldDef {
+                    name: "name".to_string(),
+                    data_type: DataType::String
+                },
+                JsonExtractFieldDef {
+                    name: "name".to_string(),
+                    data_type: DataType::Json
+                }
             ])),
         )]));
 

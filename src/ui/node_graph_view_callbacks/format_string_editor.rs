@@ -81,10 +81,7 @@ fn set_suggestions(ui: &NodeGraphWindow, suggestions: &[String]) {
     ui.set_format_string_editor_suggestions(ModelRc::new(VecModel::from(items)));
 }
 
-fn clear_autocomplete(
-    ui: &NodeGraphWindow,
-    suggestions_state: &Arc<Mutex<Vec<String>>>,
-) {
+fn clear_autocomplete(ui: &NodeGraphWindow, suggestions_state: &Arc<Mutex<Vec<String>>>) {
     *suggestions_state.lock().unwrap() = Vec::new();
     set_suggestions(ui, &[]);
     ui.set_format_string_show_autocomplete(false);
@@ -136,19 +133,14 @@ fn apply_suggestion(
         .map(|ctx| ctx.open_index + suggestion.len() + 3)
         .unwrap_or(cursor_offset);
 
-    let Some(new_text) = complete_incomplete_variable_at(current_text, cursor_offset, suggestion) else {
+    let Some(new_text) = complete_incomplete_variable_at(current_text, cursor_offset, suggestion)
+    else {
         return;
     };
 
     ui.set_format_string_editor_template(new_text.as_str().into());
     *cursor_offset_state.lock().unwrap() = new_cursor;
-    update_variables_and_autocomplete(
-        ui,
-        &new_text,
-        new_cursor,
-        existing_vars,
-        suggestions_state,
-    );
+    update_variables_and_autocomplete(ui, &new_text, new_cursor, existing_vars, suggestions_state);
 }
 
 pub(crate) fn bind_format_string_editor_callbacks(
@@ -179,7 +171,9 @@ pub(crate) fn bind_format_string_editor_callbacks(
         let cursor_offset_clone = Arc::clone(&cursor_offset_state);
         let suggestions_clone = Arc::clone(&suggestions_state);
         ui.on_open_format_string_editor(move |node_id| {
-            let Some(ui) = ui_handle.upgrade() else { return };
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
 
             let tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
@@ -222,7 +216,9 @@ pub(crate) fn bind_format_string_editor_callbacks(
         let cursor_offset_clone = Arc::clone(&cursor_offset_state);
         let suggestions_clone = Arc::clone(&suggestions_state);
         ui.on_close_format_string_editor(move || {
-            let Some(ui) = ui_handle.upgrade() else { return };
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
             ui.set_show_format_string_editor(false);
             ui.set_format_string_editor_node_id("".into());
             ui.set_format_string_editor_template("".into());
@@ -240,7 +236,9 @@ pub(crate) fn bind_format_string_editor_callbacks(
         let cursor_offset_clone = Arc::clone(&cursor_offset_state);
         let suggestions_clone = Arc::clone(&suggestions_state);
         ui.on_format_string_text_changed(move |text, cursor_offset| {
-            let Some(ui) = ui_handle.upgrade() else { return };
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
             let cursor = (cursor_offset as i64).max(0) as usize;
             *cursor_offset_clone.lock().unwrap() = cursor;
             let existing_vars = existing_vars_clone.lock().unwrap().clone();
@@ -261,7 +259,9 @@ pub(crate) fn bind_format_string_editor_callbacks(
         let cursor_offset_clone = Arc::clone(&cursor_offset_state);
         let suggestions_clone = Arc::clone(&suggestions_state);
         ui.on_format_string_autocomplete_select(move |suggestion| {
-            let Some(ui) = ui_handle.upgrade() else { return };
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
             let cursor = *cursor_offset_clone.lock().unwrap();
             let existing_vars = existing_vars_clone.lock().unwrap().clone();
             apply_suggestion(
@@ -280,7 +280,9 @@ pub(crate) fn bind_format_string_editor_callbacks(
         let ui_handle = ui.as_weak();
         let suggestions_clone = Arc::clone(&suggestions_state);
         ui.on_format_string_autocomplete_navigate(move |delta| {
-            let Some(ui) = ui_handle.upgrade() else { return };
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
             let suggestions = suggestions_clone.lock().unwrap().clone();
             if suggestions.is_empty() {
                 return;
@@ -288,7 +290,11 @@ pub(crate) fn bind_format_string_editor_callbacks(
 
             let len = suggestions.len() as i32;
             let current = ui.get_format_string_autocomplete_selected_index();
-            let base = if current >= 0 && current < len { current } else { 0 };
+            let base = if current >= 0 && current < len {
+                current
+            } else {
+                0
+            };
             let next = (base + delta).rem_euclid(len);
             ui.set_format_string_autocomplete_selected_index(next);
         });
@@ -301,7 +307,9 @@ pub(crate) fn bind_format_string_editor_callbacks(
         let cursor_offset_clone = Arc::clone(&cursor_offset_state);
         let suggestions_clone = Arc::clone(&suggestions_state);
         ui.on_format_string_autocomplete_accept(move || {
-            let Some(ui) = ui_handle.upgrade() else { return };
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
             let suggestions = suggestions_clone.lock().unwrap().clone();
             if suggestions.is_empty() {
                 return;
@@ -337,7 +345,9 @@ pub(crate) fn bind_format_string_editor_callbacks(
         let cursor_offset_clone = Arc::clone(&cursor_offset_state);
         let suggestions_clone = Arc::clone(&suggestions_state);
         ui.on_save_format_string_editor(move || {
-            let Some(ui) = ui_handle.upgrade() else { return };
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
 
             let template = ui.get_format_string_editor_template().to_string();
             let node_id = ui.get_format_string_editor_node_id().to_string();
@@ -380,4 +390,3 @@ pub(crate) fn bind_format_string_editor_callbacks(
         });
     }
 }
-

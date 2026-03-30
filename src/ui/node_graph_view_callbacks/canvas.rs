@@ -5,14 +5,13 @@ use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
 use crate::node::graph_io::{ensure_positions, GraphPosition};
 use crate::ui::graph_window::NodeGraphWindow;
-use crate::ui::node_graph_view_clipboard::NodeClipboard;
 use crate::ui::node_graph_view::{
     refresh_active_tab_ui, tab_display_title, update_tabs_ui, GraphTabState,
 };
+use crate::ui::node_graph_view_clipboard::NodeClipboard;
 use crate::ui::node_graph_view_geometry::{
-    build_edge_segments, get_port_center, node_dimensions, snap_to_grid,
-    snap_to_grid_center, GRID_SIZE, NODE_HEADER_ROWS, NODE_MIN_ROWS, NODE_PADDING_BOTTOM,
-    NODE_WIDTH_CELLS,
+    build_edge_segments, get_port_center, node_dimensions, snap_to_grid, snap_to_grid_center,
+    GRID_SIZE, NODE_HEADER_ROWS, NODE_MIN_ROWS, NODE_PADDING_BOTTOM, NODE_WIDTH_CELLS,
 };
 use crate::ui::node_graph_view_vm::{apply_graph_to_ui, apply_graph_to_ui_live};
 use crate::ui::selection::BoxSelection;
@@ -91,7 +90,10 @@ fn apply_drag_session(
             position.x = next_x;
             position.y = next_y;
         } else {
-            node.position = Some(GraphPosition { x: next_x, y: next_y });
+            node.position = Some(GraphPosition {
+                x: next_x,
+                y: next_y,
+            });
             changed = true;
         }
     }
@@ -177,12 +179,18 @@ pub(crate) fn bind_canvas_callbacks(
         let mut tabs_guard = tabs_clone.lock().unwrap();
         let active_index = *active_tab_clone.lock().unwrap();
         if let Some(tab) = tabs_guard.get_mut(active_index) {
-            if let Some(node) = tab.graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
+            if let Some(node) = tab
+                .graph
+                .nodes
+                .iter_mut()
+                .find(|n| n.id == node_id.as_str())
+            {
                 node.size = Some(crate::node::graph_io::GraphSize { width, height });
             }
 
             if let Some(ui) = ui_handle.upgrade() {
-                let (edge_segments, edge_corners, edge_labels) = build_edge_segments(&tab.graph, false);
+                let (edge_segments, edge_corners, edge_labels) =
+                    build_edge_segments(&tab.graph, false);
 
                 ui.set_edge_segments(ModelRc::new(VecModel::from(edge_segments)));
                 ui.set_edge_corners(ModelRc::new(VecModel::from(edge_corners)));
@@ -234,12 +242,17 @@ pub(crate) fn bind_canvas_callbacks(
         let active_index = *active_tab_clone.lock().unwrap();
         if let Some(tab) = tabs_guard.get_mut(active_index) {
             let snapped_width = snap_to_grid(width).max(GRID_SIZE * NODE_WIDTH_CELLS);
-            if let Some(node) = tab.graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
+            if let Some(node) = tab
+                .graph
+                .nodes
+                .iter_mut()
+                .find(|n| n.id == node_id.as_str())
+            {
                 let min_height = GRID_SIZE
-                    * (NODE_MIN_ROWS
-                        .max(NODE_HEADER_ROWS
-                            + node.input_ports.len().max(node.output_ports.len()) as f32)
-                        + NODE_PADDING_BOTTOM);
+                    * (NODE_MIN_ROWS.max(
+                        NODE_HEADER_ROWS
+                            + node.input_ports.len().max(node.output_ports.len()) as f32,
+                    ) + NODE_PADDING_BOTTOM);
                 let snapped_height = snap_to_grid(height).max(min_height);
                 node.size = Some(crate::node::graph_io::GraphSize {
                     width: snapped_width,
@@ -265,74 +278,76 @@ pub(crate) fn bind_canvas_callbacks(
     let tabs_clone = Arc::clone(&tabs);
     let active_tab_clone = Arc::clone(&active_tab_index);
 
-    ui.on_port_clicked(move |node_id: SharedString, port_name: SharedString, is_input: bool| {
-        let node_id_str = node_id.to_string();
-        let port_name_str = port_name.to_string();
+    ui.on_port_clicked(
+        move |node_id: SharedString, port_name: SharedString, is_input: bool| {
+            let node_id_str = node_id.to_string();
+            let port_name_str = port_name.to_string();
 
-        let mut selection = port_selection_for_click.lock().unwrap();
+            let mut selection = port_selection_for_click.lock().unwrap();
 
-        if let Some((prev_node, prev_port, prev_is_input)) = selection.take() {
-            if prev_is_input != is_input {
-                let mut tabs_guard = tabs_clone.lock().unwrap();
-                let active_index = *active_tab_clone.lock().unwrap();
-                if let Some(tab) = tabs_guard.get_mut(active_index) {
-                    ensure_positions(&mut tab.graph);
+            if let Some((prev_node, prev_port, prev_is_input)) = selection.take() {
+                if prev_is_input != is_input {
+                    let mut tabs_guard = tabs_clone.lock().unwrap();
+                    let active_index = *active_tab_clone.lock().unwrap();
+                    if let Some(tab) = tabs_guard.get_mut(active_index) {
+                        ensure_positions(&mut tab.graph);
 
-                    let (from_node, from_port, to_node, to_port) = if is_input {
-                        (prev_node, prev_port, node_id_str, port_name_str)
-                    } else {
-                        (node_id_str, port_name_str, prev_node, prev_port)
-                    };
+                        let (from_node, from_port, to_node, to_port) = if is_input {
+                            (prev_node, prev_port, node_id_str, port_name_str)
+                        } else {
+                            (node_id_str, port_name_str, prev_node, prev_port)
+                        };
 
-                    tab.graph.edges.push(crate::node::graph_io::EdgeDefinition {
-                        from_node_id: from_node,
-                        from_port,
-                        to_node_id: to_node,
-                        to_port,
-                    });
+                        tab.graph.edges.push(crate::node::graph_io::EdgeDefinition {
+                            from_node_id: from_node,
+                            from_port,
+                            to_node_id: to_node,
+                            to_port,
+                        });
 
-                    tab.is_dirty = true;
+                        tab.is_dirty = true;
 
-                    if let Some(ui) = ui_handle_for_click.upgrade() {
-                        ui.set_drag_line_visible(false);
-                        ui.set_show_port_hint(false);
-                        ui.set_port_hint_text("".into());
-                        refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+                        if let Some(ui) = ui_handle_for_click.upgrade() {
+                            ui.set_drag_line_visible(false);
+                            ui.set_show_port_hint(false);
+                            ui.set_port_hint_text("".into());
+                            refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+                        }
                     }
+                } else {
+                    *selection = Some((prev_node, prev_port, prev_is_input));
                 }
             } else {
-                *selection = Some((prev_node, prev_port, prev_is_input));
-            }
-        } else {
-            *selection = Some((node_id_str.clone(), port_name_str.clone(), is_input));
-            if let Some(ui) = ui_handle_for_click.upgrade() {
-                let mut tabs_guard = tabs_clone.lock().unwrap();
-                let active_index = *active_tab_clone.lock().unwrap();
-                if let Some(tab) = tabs_guard.get_mut(active_index) {
-                    ensure_positions(&mut tab.graph);
-                    if let Some((from_x, from_y)) = get_port_center(
-                        &tab.graph,
-                        node_id_str.as_str(),
-                        port_name_str.as_str(),
-                        is_input,
-                    ) {
-                        ui.set_drag_line_visible(true);
-                        ui.set_drag_line_from_x(from_x);
-                        ui.set_drag_line_from_y(from_y);
-                        ui.set_drag_line_to_x(from_x);
-                        ui.set_drag_line_to_y(from_y);
+                *selection = Some((node_id_str.clone(), port_name_str.clone(), is_input));
+                if let Some(ui) = ui_handle_for_click.upgrade() {
+                    let mut tabs_guard = tabs_clone.lock().unwrap();
+                    let active_index = *active_tab_clone.lock().unwrap();
+                    if let Some(tab) = tabs_guard.get_mut(active_index) {
+                        ensure_positions(&mut tab.graph);
+                        if let Some((from_x, from_y)) = get_port_center(
+                            &tab.graph,
+                            node_id_str.as_str(),
+                            port_name_str.as_str(),
+                            is_input,
+                        ) {
+                            ui.set_drag_line_visible(true);
+                            ui.set_drag_line_from_x(from_x);
+                            ui.set_drag_line_from_y(from_y);
+                            ui.set_drag_line_to_x(from_x);
+                            ui.set_drag_line_to_y(from_y);
+                        }
                     }
-                }
 
-                if is_input {
-                    ui.set_port_hint_text("连接到输出port,按右键取消".into());
-                } else {
-                    ui.set_port_hint_text("连接到输入port,按右键取消".into());
+                    if is_input {
+                        ui.set_port_hint_text("连接到输出port,按右键取消".into());
+                    } else {
+                        ui.set_port_hint_text("连接到输入port,按右键取消".into());
+                    }
+                    ui.set_show_port_hint(true);
                 }
-                ui.set_show_port_hint(true);
             }
-        }
-    });
+        },
+    );
 
     ui.on_pointer_moved(move |x: f32, y: f32| {
         if port_selection_for_move.lock().unwrap().is_none() {
@@ -357,16 +372,18 @@ pub(crate) fn bind_canvas_callbacks(
     let ui_handle = ui.as_weak();
     let node_clipboard_clone = Arc::clone(&node_clipboard);
     let last_context_canvas_pos_clone = Arc::clone(&last_context_canvas_pos);
-    ui.on_canvas_right_clicked(move |menu_x: f32, menu_y: f32, canvas_x: f32, canvas_y: f32| {
-        *last_context_canvas_pos_clone.lock().unwrap() = Some((canvas_x, canvas_y));
-        if let Some(ui) = ui_handle.upgrade() {
-            ui.set_graph_context_menu_x(menu_x);
-            ui.set_graph_context_menu_y(menu_y);
-            ui.set_graph_context_menu_mode("canvas".into());
-            ui.set_graph_context_menu_can_paste(node_clipboard_clone.lock().unwrap().is_some());
-            ui.set_show_graph_context_menu(true);
-        }
-    });
+    ui.on_canvas_right_clicked(
+        move |menu_x: f32, menu_y: f32, canvas_x: f32, canvas_y: f32| {
+            *last_context_canvas_pos_clone.lock().unwrap() = Some((canvas_x, canvas_y));
+            if let Some(ui) = ui_handle.upgrade() {
+                ui.set_graph_context_menu_x(menu_x);
+                ui.set_graph_context_menu_y(menu_y);
+                ui.set_graph_context_menu_mode("canvas".into());
+                ui.set_graph_context_menu_can_paste(node_clipboard_clone.lock().unwrap().is_some());
+                ui.set_show_graph_context_menu(true);
+            }
+        },
+    );
 
     let ui_handle = ui.as_weak();
     let tabs_clone = Arc::clone(&tabs);
@@ -424,30 +441,35 @@ pub(crate) fn bind_canvas_callbacks(
     let ui_handle = ui.as_weak();
     let tabs_clone = Arc::clone(&tabs);
     let active_tab_clone = Arc::clone(&active_tab_index);
-    ui.on_edge_clicked(move |from_node: SharedString, from_port: SharedString, to_node: SharedString, to_port: SharedString| {
-        if let Some(ui) = ui_handle.upgrade() {
-            hide_graph_context_menu(&ui);
-            let mut tabs_guard = tabs_clone.lock().unwrap();
-            let active_index = *active_tab_clone.lock().unwrap();
-            if let Some(tab) = tabs_guard.get_mut(active_index) {
-                tab.selection.select_edge(
-                    from_node.to_string(),
-                    from_port.to_string(),
-                    to_node.to_string(),
-                    to_port.to_string(),
-                );
-                tab.selection.apply_to_ui(&ui);
-                apply_graph_to_ui(
-                    &ui,
-                    &tab.graph,
-                    Some(tab_display_title(tab)),
-                    &tab.selection,
-                    &tab.inline_inputs,
-                    &tab.hyperparameter_values,
-                );
+    ui.on_edge_clicked(
+        move |from_node: SharedString,
+              from_port: SharedString,
+              to_node: SharedString,
+              to_port: SharedString| {
+            if let Some(ui) = ui_handle.upgrade() {
+                hide_graph_context_menu(&ui);
+                let mut tabs_guard = tabs_clone.lock().unwrap();
+                let active_index = *active_tab_clone.lock().unwrap();
+                if let Some(tab) = tabs_guard.get_mut(active_index) {
+                    tab.selection.select_edge(
+                        from_node.to_string(),
+                        from_port.to_string(),
+                        to_node.to_string(),
+                        to_port.to_string(),
+                    );
+                    tab.selection.apply_to_ui(&ui);
+                    apply_graph_to_ui(
+                        &ui,
+                        &tab.graph,
+                        Some(tab_display_title(tab)),
+                        &tab.selection,
+                        &tab.inline_inputs,
+                        &tab.hyperparameter_values,
+                    );
+                }
             }
-        }
-    });
+        },
+    );
 
     let ui_handle = ui.as_weak();
     let tabs_clone = Arc::clone(&tabs);
@@ -482,7 +504,9 @@ pub(crate) fn bind_canvas_callbacks(
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
                 if !tab.selection.selected_node_ids.is_empty() {
-                    tab.graph.nodes.retain(|n| !tab.selection.selected_node_ids.contains(&n.id));
+                    tab.graph
+                        .nodes
+                        .retain(|n| !tab.selection.selected_node_ids.contains(&n.id));
                     tab.graph.edges.retain(|e| {
                         !tab.selection.selected_node_ids.contains(&e.from_node_id)
                             && !tab.selection.selected_node_ids.contains(&e.to_node_id)

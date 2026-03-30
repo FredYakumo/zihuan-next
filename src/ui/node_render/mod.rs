@@ -1,13 +1,13 @@
 pub mod format_string;
-pub mod preview_string;
-pub mod string_data;
-pub mod preview_message_list;
 pub mod message_list_data;
+pub mod preview_message_list;
+pub mod preview_string;
 pub mod qq_message_list_data;
+pub mod string_data;
 
 use crate::node::graph_io::NodeGraphDefinition;
-use std::collections::HashMap;
 use serde_json::Value;
+use std::collections::HashMap;
 
 /// Trait for nodes with custom rendering
 pub trait NodeRenderer {
@@ -17,7 +17,7 @@ pub trait NodeRenderer {
         graph: &NodeGraphDefinition,
         inline_inputs: &HashMap<String, InlinePortValue>,
     ) -> String;
-    
+
     /// Check if this renderer should be used for the given node type
     fn handles_node_type(node_type: &str) -> bool;
 }
@@ -37,29 +37,49 @@ pub fn get_node_preview_text(
     inline_inputs: &HashMap<String, InlinePortValue>,
 ) -> String {
     if format_string::FormatStringRenderer::handles_node_type(node_type) {
-        return format_string::FormatStringRenderer::get_preview_text(node_id, graph, inline_inputs);
+        return format_string::FormatStringRenderer::get_preview_text(
+            node_id,
+            graph,
+            inline_inputs,
+        );
     }
 
     if preview_string::PreviewStringRenderer::handles_node_type(node_type) {
-        return preview_string::PreviewStringRenderer::get_preview_text(node_id, graph, inline_inputs);
+        return preview_string::PreviewStringRenderer::get_preview_text(
+            node_id,
+            graph,
+            inline_inputs,
+        );
     }
-    
+
     if string_data::StringDataRenderer::handles_node_type(node_type) {
         return string_data::StringDataRenderer::get_preview_text(node_id, graph, inline_inputs);
     }
-    
+
     if preview_message_list::PreviewMessageListRenderer::handles_node_type(node_type) {
-        return preview_message_list::PreviewMessageListRenderer::get_preview_text(node_id, graph, inline_inputs);
+        return preview_message_list::PreviewMessageListRenderer::get_preview_text(
+            node_id,
+            graph,
+            inline_inputs,
+        );
     }
 
     if message_list_data::MessageListDataRenderer::handles_node_type(node_type) {
-        return message_list_data::MessageListDataRenderer::get_preview_text(node_id, graph, inline_inputs);
+        return message_list_data::MessageListDataRenderer::get_preview_text(
+            node_id,
+            graph,
+            inline_inputs,
+        );
     }
 
     if qq_message_list_data::QQMessageListDataRenderer::handles_node_type(node_type) {
-        return qq_message_list_data::QQMessageListDataRenderer::get_preview_text(node_id, graph, inline_inputs);
+        return qq_message_list_data::QQMessageListDataRenderer::get_preview_text(
+            node_id,
+            graph,
+            inline_inputs,
+        );
     }
-    
+
     String::new()
 }
 

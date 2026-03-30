@@ -1,31 +1,35 @@
 mod bot_adapter;
-mod util;
-mod llm;
 mod config;
 mod error;
+mod llm;
 mod node;
 mod ui;
+mod util;
 
-use log::{info, error, warn};
-use log_util::log_util::LogUtil;
-use lazy_static::lazy_static;
 use clap::Parser;
 use config::load_config;
-
-
+use lazy_static::lazy_static;
+use log::{error, info, warn};
+use log_util::log_util::LogUtil;
 
 lazy_static! {
     static ref BASE_LOG: LogUtil = LogUtil::new_with_path("zihuan_next", "logs");
 }
 
-
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(long = "graph-json", value_name = "PATH", help = "节点图JSON文件路径（非GUI模式下必需）")]
+    #[arg(
+        long = "graph-json",
+        value_name = "PATH",
+        help = "节点图JSON文件路径（非GUI模式下必需）"
+    )]
     graph_json: Option<String>,
 
-    #[arg(long = "no-gui", help = "以非GUI模式运行节点图（需要--graph-json参数）")]
+    #[arg(
+        long = "no-gui",
+        help = "以非GUI模式运行节点图（需要--graph-json参数）"
+    )]
     no_gui: bool,
 }
 
@@ -60,7 +64,10 @@ fn main() {
                     &definition,
                 );
                 // Apply hyperparameter bindings before execution
-                ui::node_graph_view_inline::apply_hyperparameter_bindings_to_graph(&mut definition, &hp_values);
+                ui::node_graph_view_inline::apply_hyperparameter_bindings_to_graph(
+                    &mut definition,
+                    &hp_values,
+                );
                 if let Err(e) = execute_node_graph(definition) {
                     error!("节点图执行失败: {}", e);
                 }
@@ -89,13 +96,17 @@ fn main() {
         node::ensure_positions(graph);
     }
 
-    if let Err(err) = ui::node_graph_view::show_graph(graph, args.graph_json.as_deref().map(std::path::Path::new)) {
+    if let Err(err) =
+        ui::node_graph_view::show_graph(graph, args.graph_json.as_deref().map(std::path::Path::new))
+    {
         error!("UI渲染失败: {}", err);
     }
 }
 
 /// Execute a node graph loaded from JSON definition
-fn execute_node_graph(definition: node::NodeGraphDefinition) -> Result<(), Box<dyn std::error::Error>> {
+fn execute_node_graph(
+    definition: node::NodeGraphDefinition,
+) -> Result<(), Box<dyn std::error::Error>> {
     info!("构建节点图");
     let mut graph = node::registry::build_node_graph_from_definition(&definition)?;
 

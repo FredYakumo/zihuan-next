@@ -260,7 +260,12 @@ pub(crate) fn bind_json_extract_editor_callbacks(
             let mut tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
-                if let Some(node) = tab.graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
+                if let Some(node) = tab
+                    .graph
+                    .nodes
+                    .iter_mut()
+                    .find(|n| n.id == node_id.as_str())
+                {
                     node.inline_values
                         .insert(FIELDS_CONFIG_PORT.to_string(), fields_json.clone());
                     node.output_ports = json_extract_output_ports(&items);

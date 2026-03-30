@@ -36,7 +36,10 @@ impl SendQQMessageBatchesNode {
     }
 }
 
-pub fn qq_messages_from_data_value(value: Option<&DataValue>, input_name: &str) -> Result<Vec<Message>> {
+pub fn qq_messages_from_data_value(
+    value: Option<&DataValue>,
+    input_name: &str,
+) -> Result<Vec<Message>> {
     match value {
         Some(DataValue::Vec(_, items)) => Ok(items
             .iter()
@@ -45,7 +48,9 @@ pub fn qq_messages_from_data_value(value: Option<&DataValue>, input_name: &str) 
                 _ => None,
             })
             .collect()),
-        _ => Err(Error::InvalidNodeInput(format!("{input_name} input is required"))),
+        _ => Err(Error::InvalidNodeInput(format!(
+            "{input_name} input is required"
+        ))),
     }
 }
 
@@ -208,7 +213,11 @@ pub fn send_qq_message_batches(
     results
 }
 
-pub fn build_send_summary(target_type: &str, target_id: &str, results: &[SendBatchResult]) -> String {
+pub fn build_send_summary(
+    target_type: &str,
+    target_id: &str,
+    results: &[SendBatchResult],
+) -> String {
     let success_count = results.iter().filter(|result| result.success).count();
     let failure_count = results.len().saturating_sub(success_count);
     let lengths = results
@@ -282,12 +291,19 @@ impl Node for SendQQMessageBatchesNode {
         port! { name = "success", ty = Boolean, desc = "是否全部发送成功" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let bot_adapter_ref = match inputs.get("bot_adapter_ref") {
             Some(DataValue::BotAdapterRef(value)) => value.clone(),
-            _ => return Err(Error::InvalidNodeInput("bot_adapter_ref is required".to_string())),
+            _ => {
+                return Err(Error::InvalidNodeInput(
+                    "bot_adapter_ref is required".to_string(),
+                ))
+            }
         };
         let target_id = match inputs.get("target_id") {
             Some(DataValue::String(value)) => value.clone(),
@@ -297,7 +313,9 @@ impl Node for SendQQMessageBatchesNode {
         let batches = match inputs.get("message_batches") {
             Some(DataValue::Vec(_, batch_values)) => batch_values
                 .iter()
-                .map(|batch_value| qq_messages_from_data_value(Some(batch_value), "message_batches"))
+                .map(|batch_value| {
+                    qq_messages_from_data_value(Some(batch_value), "message_batches")
+                })
                 .collect::<Result<Vec<_>>>()?,
             _ => {
                 return Err(Error::InvalidNodeInput(
@@ -320,7 +338,10 @@ impl Node for SendQQMessageBatchesNode {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_send_summary, describe_message_segments, send_qq_message_batches, SendBatchResult, SendQQMessageBatchesNode};
+    use super::{
+        build_send_summary, describe_message_segments, send_qq_message_batches, SendBatchResult,
+        SendQQMessageBatchesNode,
+    };
     use crate::bot_adapter::adapter::{BotAdapter, BotAdapterConfig, SharedBotAdapter};
     use crate::bot_adapter::models::message::{AtTargetMessage, Message, PlainTextMessage};
     use crate::error::Result;
@@ -488,8 +509,14 @@ mod tests {
                 "bot_adapter_ref".to_string(),
                 DataValue::BotAdapterRef(adapter_ref.clone()),
             ),
-            ("target_id".to_string(), DataValue::String("123456".to_string())),
-            ("target_type".to_string(), DataValue::String("group".to_string())),
+            (
+                "target_id".to_string(),
+                DataValue::String("123456".to_string()),
+            ),
+            (
+                "target_type".to_string(),
+                DataValue::String("group".to_string()),
+            ),
             (
                 "message_batches".to_string(),
                 DataValue::Vec(
@@ -507,7 +534,10 @@ mod tests {
         drop(adapter_ref);
         handle.join().expect("mock bot thread should join");
 
-        assert!(matches!(outputs.get("success"), Some(DataValue::Boolean(true))));
+        assert!(matches!(
+            outputs.get("success"),
+            Some(DataValue::Boolean(true))
+        ));
         Ok(())
     }
 }

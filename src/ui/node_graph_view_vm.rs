@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use slint::{ModelRc, VecModel};
 
 use crate::node::graph_io::{ensure_positions, NodeDefinition, NodeGraphDefinition};
-use crate::ui::graph_window::{HyperParameterVm, MessageItemVm, NodeGraphWindow, NodeTypeVm, NodeVm, PortVm};
+use crate::ui::graph_window::{
+    HyperParameterVm, MessageItemVm, NodeGraphWindow, NodeTypeVm, NodeVm, PortVm,
+};
 use crate::ui::node_graph_view_geometry::{
     build_edge_segments, build_edges, build_grid_lines, node_dimensions, resolve_display_data_type,
     snap_to_grid, CANVAS_HEIGHT, CANVAS_WIDTH, GRID_SIZE,
@@ -177,7 +179,10 @@ fn build_node_vm(
         .map(|p| PortVm {
             name: p.name.clone().into(),
             is_input: false,
-            is_connected: graph.edges.iter().any(|e| e.from_node_id == node.id && e.from_port == p.name),
+            is_connected: graph
+                .edges
+                .iter()
+                .any(|e| e.from_node_id == node.id && e.from_port == p.name),
             is_required: false,
             has_value: false,
             data_type: resolve_display_data_type(graph, node, &p.name, false).into(),
@@ -212,7 +217,9 @@ fn build_node_vm(
             Some(InlinePortValue::Text(value)) => value.clone(),
             _ => "friend".to_string(),
         }
-    } else if node.node_type == "string_to_openai_message" || node.node_type == "as_system_openai_message" {
+    } else if node.node_type == "string_to_openai_message"
+        || node.node_type == "as_system_openai_message"
+    {
         let key = inline_port_key(&node.id, "role");
         match inline_inputs.get(&key) {
             Some(InlinePortValue::Text(value)) => value.clone(),
@@ -235,10 +242,22 @@ fn build_node_vm(
         message_event_filter_type: message_event_filter_type.into(),
         message_list: ModelRc::new(VecModel::from(message_list)),
         x: position
-            .map(|p| if snap_position { snap_to_grid(p.x) } else { p.x })
+            .map(|p| {
+                if snap_position {
+                    snap_to_grid(p.x)
+                } else {
+                    p.x
+                }
+            })
             .unwrap_or(0.0),
         y: position
-            .map(|p| if snap_position { snap_to_grid(p.y) } else { p.y })
+            .map(|p| {
+                if snap_position {
+                    snap_to_grid(p.y)
+                } else {
+                    p.y
+                }
+            })
             .unwrap_or(0.0),
         width: node_width,
         height: node_height,
@@ -262,7 +281,10 @@ fn build_input_port_vm(
         .get(&port.name)
         .cloned()
         .unwrap_or_default();
-    let is_connected = graph.edges.iter().any(|e| e.to_node_id == node.id && e.to_port == port.name);
+    let is_connected = graph
+        .edges
+        .iter()
+        .any(|e| e.to_node_id == node.id && e.to_port == port.name);
     let key = inline_port_key(&node.id, &port.name);
     let (inline_text, inline_bool, has_inline) = match &port.data_type {
         crate::node::DataType::Boolean => {
@@ -336,8 +358,18 @@ fn build_message_list_vm(
             .iter()
             .filter_map(|v| v.as_object())
             .map(|m| MessageItemVm {
-                role: m.get("role").and_then(|v| v.as_str()).unwrap_or("user").to_string().into(),
-                content: m.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string().into(),
+                role: m
+                    .get("role")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("user")
+                    .to_string()
+                    .into(),
+                content: m
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string()
+                    .into(),
             })
             .collect();
     }
@@ -347,11 +379,19 @@ fn build_message_list_vm(
             .iter()
             .filter_map(|v| v.as_object())
             .map(|m| {
-                let msg_type = m.get("type").and_then(|v| v.as_str()).unwrap_or("text").to_string();
+                let msg_type = m
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("text")
+                    .to_string();
                 let data = m.get("data").and_then(|v| v.as_object());
                 let content = data
                     .map(|d| match msg_type.as_str() {
-                        "text" => d.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        "text" => d
+                            .get("text")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
                         "at" => d
                             .get("qq")
                             .or_else(|| d.get("target"))

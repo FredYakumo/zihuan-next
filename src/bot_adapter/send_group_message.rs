@@ -1,4 +1,6 @@
-use crate::bot_adapter::send_qq_message_batches::{describe_message_segments, qq_messages_from_data_value};
+use crate::bot_adapter::send_qq_message_batches::{
+    describe_message_segments, qq_messages_from_data_value,
+};
 use crate::bot_adapter::ws_action::{
     json_i64, qq_message_list_to_json, response_message_id, response_success, ws_send_action,
 };
@@ -14,14 +16,23 @@ pub struct SendGroupMessageNode {
 
 impl SendGroupMessageNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
-        Self { id: id.into(), name: name.into() }
+        Self {
+            id: id.into(),
+            name: name.into(),
+        }
     }
 }
 
 impl Node for SendGroupMessageNode {
-    fn id(&self) -> &str { &self.id }
-    fn name(&self) -> &str { &self.name }
-    fn description(&self) -> Option<&str> { Some("向QQ群组发送消息") }
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn description(&self) -> Option<&str> {
+        Some("向QQ群组发送消息")
+    }
 
     node_input![
         port! { name = "bot_adapter", ty = BotAdapterRef, desc = "Bot适配器引用" },
@@ -34,7 +45,10 @@ impl Node for SendGroupMessageNode {
         port! { name = "message_id", ty = Integer, desc = "服务器返回的消息ID" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let adapter_ref = match inputs.get("bot_adapter") {
@@ -54,8 +68,7 @@ impl Node for SendGroupMessageNode {
         });
         info!(
             "[SendGroupMessageNode] Sending group message to {} with {}",
-            target_id,
-            segment_summary
+            target_id, segment_summary
         );
         let response = ws_send_action(&adapter_ref, "send_group_msg", params)?;
 

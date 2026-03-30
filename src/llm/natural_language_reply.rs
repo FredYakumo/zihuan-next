@@ -83,32 +83,25 @@ pub fn build_system_prompt(
     };
     let mut prompt = format!(
         concat!(
-            "你要扮演 QQ 角色“{character_name}”，把 user 提供的原始话术修改成用 {style} 的语言风格表达、自然真实且可直接发送的 QQ 消息。\n",
+            "你要扮演 QQ 角色“{character_name}”，把待修改的原文草稿改成用 {style} 的语言风格表达、自然真实且可直接发送的 QQ 消息。\n",
             "当前回复目标类型：{target_type_label}；目标 ID：{target_id}。\n",
-            "传给你的第一条 user 消息就是待修改的原文草稿。\n",
-            "你的任务是基于这段原文做润色、改写或轻微重组，让它更符合指定风格，但本质上仍然是在修改这段话本身。\n",
-            "不要把这段原文当成别人刚发来的消息再回复一次；输出应当是这段原文的修改版，而不是针对它的新回复。\n",
+            "传给你的第一条 user 消息就是待修改的原文草稿；不要把这段原文当成别人刚发来的消息再回复一次，你要输出它的修改版，而不是针对它的新回复。\n",
             "你必须只输出纯 JSON 数组，不能输出 markdown、代码块、解释、前后缀文本。\n",
-            "数组元素支持三种 message_type：\n",
+            "顶层数组元素只支持三种 message_type：\n",
             "1. plain_text: {{\"message_type\":\"plain_text\",\"content\":\"文本\"}}\n",
             "2. at: {{\"message_type\":\"at\",\"target\":\"QQ号\"}}\n",
             "3. combine_text: {{\"message_type\":\"combine_text\",\"content_list\":[上面允许的 at/plain_text 对象列表]}}\n",
             "规则：\n",
             "- plain_text.content 必须是非空字符串，且尽量不超过 {max_one_reply_length} 个字符。\n",
-            "- 默认只输出 1 个顶层数组元素；只有当单个 plain_text 或 combine_text 无法在长度限制内完整表达时，才拆成多个顶层数组元素。\n",
+            "- 默认只输出 1 个顶层数组元素；只有单个 plain_text 或 combine_text 无法完整放下时，才拆成多个顶层数组元素。\n",
             "- 对于简短、日常、无复杂任务的输入，回复要保持简短自然，优先 1 句，必要时最多 2 句，不要主动扩写成长段。\n",
-            "- 如果 user 消息本身就是大段正文、代码、教程步骤、配置片段或较长说明，你的首要目标是保留内容完整性，不要擅自总结、压缩、删节成短回复。\n",
-            "- 当原文较长而单条消息放不下时，应按原有顺序拆成多个顶层数组元素连续输出，宁可分多条发送，也不要只保留前面一部分。\n",
+            "- 如果 user 消息本身是大段正文、代码、教程步骤、配置片段或较长说明，要优先保留内容完整性和原有顺序；放不下就拆成多个顶层数组元素连续输出，宁可分多条发送，也不要只保留前面一部分。\n",
             "- 对于代码块、命令、配置、编号步骤、换行排版，尽量保留原有结构与信息；可以润色前后说明语气，但不要破坏代码和关键内容。\n",
             "- 不要为了停顿、强调或节奏感，把同一段连续回复拆成多个 plain_text 或多个顶层数组元素。\n",
-            "- 如果 user 消息已经接近可直接发送，请优先轻微润色并保留原意，不要改写成完全不同的话。\n",
-            "- 优先保留原句中的核心信息、称呼、语气方向和说话人身份，例如“我是紫幻，你的朋友”这类自我介绍通常应保留而不是删掉。\n",
-            "- 不要凭空补充 user 消息里没有出现的新事实、新理由、新事件或新上下文。\n",
-            "- combine_text 表示这些消息段要在一次发送里组合发送；不要在 combine_text 里嵌套 combine_text。\n",
-            "- 如果需要形成更真实的“@某人 文本”效果，请使用 combine_text，并把 at 放在文本前面。\n",
-            "- 顶层 at 只允许用于群聊场景。\n",
-            "- combine_text 里至少包含一个带实际正文的 plain_text，避免只发纯 @ 或只有空格。\n",
-            "- 如果你要输出“@某人 文本”且文本较长，请自行拆成多个 combine_text，而不是输出一个超长 combine_text。\n",
+            "- 如果 user 消息已经接近可直接发送，请优先轻微润色并保留原意；优先保留核心信息、称呼、语气方向和说话人身份，例如“我是紫幻，你的朋友”这类自我介绍通常应保留而不是删掉，不要凭空补充新事实、新理由、新事件或新上下文。\n",
+            "- combine_text 表示这些消息段要在一次发送里组合发送；内容只允许 at/plain_text，且不要在 combine_text 里嵌套 combine_text。\n",
+            "- 如果需要形成更真实的“@某人 文本”效果，请使用 combine_text，并把 at 放在文本前面；顶层 at 只允许用于群聊场景。\n",
+            "- combine_text 里至少包含一个带实际正文的 plain_text，避免只发纯 @ 或只有空格；如果“@某人 文本”较长，请拆成多个 combine_text，而不是输出一个超长 combine_text。\n",
             "- 除 JSON 数组外不要输出任何其他内容。"
         ),
         character_name = character_name,
@@ -154,7 +147,11 @@ pub fn split_plain_text(content: &str, max_one_reply_length: usize) -> Vec<Strin
         return lines;
     }
 
-    split_by_delimiters(content, max_one_reply_length, &['。', '！', '？', '；', '\n'])
+    split_by_delimiters(
+        content,
+        max_one_reply_length,
+        &['。', '！', '？', '；', '\n'],
+    )
 }
 
 fn split_by_newline(content: &str, max_len: usize) -> Vec<String> {
@@ -700,12 +697,12 @@ mod tests {
 
     #[test]
     fn split_plain_text_prefers_newline_boundaries_for_code() {
-        let chunks = split_plain_text(
-            "line1 = 1\nline2 = 2\nline3 = 3\nline4 = 4\n",
-            20,
-        );
+        let chunks = split_plain_text("line1 = 1\nline2 = 2\nline3 = 3\nline4 = 4\n", 20);
 
-        assert_eq!(chunks, vec!["line1 = 1\nline2 = 2\n", "line3 = 3\nline4 = 4\n"]);
+        assert_eq!(
+            chunks,
+            vec!["line1 = 1\nline2 = 2\n", "line3 = 3\nline4 = 4\n"]
+        );
     }
 
     #[test]

@@ -1,7 +1,9 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
-use crate::node::graph_io::{find_cycle_edge_keys, EdgeDefinition, NodeDefinition, NodeGraphDefinition};
+use crate::node::graph_io::{
+    find_cycle_edge_keys, EdgeDefinition, NodeDefinition, NodeGraphDefinition,
+};
 use crate::node::DataType;
 use crate::ui::graph_window::{EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm};
 use crate::ui::selection::SelectionState;
@@ -19,7 +21,10 @@ pub(crate) const CANVAS_HEIGHT: f32 = 4000.0;
 pub(crate) const EDGE_THICKNESS_RATIO: f32 = 0.3;
 
 fn is_list_data_node(node: &NodeDefinition) -> bool {
-    matches!(node.node_type.as_str(), "message_list_data" | "qq_message_list_data")
+    matches!(
+        node.node_type.as_str(),
+        "message_list_data" | "qq_message_list_data"
+    )
 }
 
 fn is_brain_node(node: &NodeDefinition) -> bool {
@@ -70,7 +75,11 @@ pub(crate) fn get_port_center_for_node(
 ) -> Option<(f32, f32)> {
     let position = node.position.as_ref()?;
 
-    let ports = if is_input { &node.input_ports } else { &node.output_ports };
+    let ports = if is_input {
+        &node.input_ports
+    } else {
+        &node.output_ports
+    };
     let index = ports.iter().position(|p| p.name == port_name)? as f32;
     let radius = GRID_SIZE / 2.0;
     let base_y_offset = GRID_SIZE * NODE_HEADER_ROWS;
@@ -103,7 +112,15 @@ fn route_edge(
     segments: &mut Vec<EdgeSegmentVm>,
     corners: &mut Vec<EdgeCornerVm>,
 ) -> (f32, f32) {
-    push_segment(segments, from_x, from_y, source_channel_x, from_y, thickness, edge_index);
+    push_segment(
+        segments,
+        from_x,
+        from_y,
+        source_channel_x,
+        from_y,
+        thickness,
+        edge_index,
+    );
     push_segment(
         segments,
         source_channel_x,
@@ -131,12 +148,36 @@ fn route_edge(
         thickness,
         edge_index,
     );
-    push_segment(segments, target_channel_x, to_y, to_x, to_y, thickness, edge_index);
+    push_segment(
+        segments,
+        target_channel_x,
+        to_y,
+        to_x,
+        to_y,
+        thickness,
+        edge_index,
+    );
 
-    corners.push(EdgeCornerVm { x: source_channel_x, y: from_y, edge_index });
-    corners.push(EdgeCornerVm { x: source_channel_x, y: lane_y, edge_index });
-    corners.push(EdgeCornerVm { x: target_channel_x, y: lane_y, edge_index });
-    corners.push(EdgeCornerVm { x: target_channel_x, y: to_y, edge_index });
+    corners.push(EdgeCornerVm {
+        x: source_channel_x,
+        y: from_y,
+        edge_index,
+    });
+    corners.push(EdgeCornerVm {
+        x: source_channel_x,
+        y: lane_y,
+        edge_index,
+    });
+    corners.push(EdgeCornerVm {
+        x: target_channel_x,
+        y: lane_y,
+        edge_index,
+    });
+    corners.push(EdgeCornerVm {
+        x: target_channel_x,
+        y: to_y,
+        edge_index,
+    });
 
     ((source_channel_x + target_channel_x) / 2.0, lane_y)
 }
@@ -250,8 +291,9 @@ fn build_edge_route_plans(graph: &NodeGraphDefinition, snap: bool) -> Vec<EdgeRo
     for members in source_groups.values_mut() {
         members.sort_by(|&a, &b| cmp_f32(infos[a].to_y, infos[b].to_y));
         for (order, &info_idx) in members.iter().enumerate() {
-            infos[info_idx].source_channel_x =
-                infos[info_idx].from_x + EDGE_SOURCE_CHANNEL_BASE + order as f32 * EDGE_SOURCE_CHANNEL_SPACING;
+            infos[info_idx].source_channel_x = infos[info_idx].from_x
+                + EDGE_SOURCE_CHANNEL_BASE
+                + order as f32 * EDGE_SOURCE_CHANNEL_SPACING;
             infos[info_idx].candidate_lane_y +=
                 centered_group_offset(order, members.len()) * EDGE_LANE_SPACING * 0.65;
         }
@@ -260,8 +302,9 @@ fn build_edge_route_plans(graph: &NodeGraphDefinition, snap: bool) -> Vec<EdgeRo
     for members in target_groups.values_mut() {
         members.sort_by(|&a, &b| cmp_f32(infos[a].to_y, infos[b].to_y));
         for (order, &info_idx) in members.iter().enumerate() {
-            infos[info_idx].target_channel_x =
-                infos[info_idx].to_x - EDGE_TARGET_CHANNEL_BASE - order as f32 * EDGE_TARGET_CHANNEL_SPACING;
+            infos[info_idx].target_channel_x = infos[info_idx].to_x
+                - EDGE_TARGET_CHANNEL_BASE
+                - order as f32 * EDGE_TARGET_CHANNEL_SPACING;
             infos[info_idx].candidate_lane_y +=
                 centered_group_offset(order, members.len()) * EDGE_LANE_SPACING * 0.35;
         }
@@ -280,9 +323,10 @@ fn build_edge_route_plans(graph: &NodeGraphDefinition, snap: bool) -> Vec<EdgeRo
 
         for a in 0..n {
             for b in (a + 1)..n {
-                let x_overlap =
-                    infos[a].span_min_x < infos[b].span_max_x && infos[b].span_min_x < infos[a].span_max_x;
-                let lane_close = (infos[a].candidate_lane_y - infos[b].candidate_lane_y).abs() < EDGE_LANE_THRESHOLD;
+                let x_overlap = infos[a].span_min_x < infos[b].span_max_x
+                    && infos[b].span_min_x < infos[a].span_max_x;
+                let lane_close = (infos[a].candidate_lane_y - infos[b].candidate_lane_y).abs()
+                    < EDGE_LANE_THRESHOLD;
 
                 if x_overlap && lane_close {
                     let mut ra = a;
@@ -320,7 +364,11 @@ fn build_edge_route_plans(graph: &NodeGraphDefinition, snap: bool) -> Vec<EdgeRo
                     .then_with(|| cmp_f32(infos[a].candidate_lane_y, infos[b].candidate_lane_y))
             });
 
-            let center = members.iter().map(|&idx| infos[idx].candidate_lane_y).sum::<f32>() / members.len() as f32;
+            let center = members
+                .iter()
+                .map(|&idx| infos[idx].candidate_lane_y)
+                .sum::<f32>()
+                / members.len() as f32;
             let total_height = (members.len() - 1) as f32 * EDGE_LANE_SPACING;
 
             for (order, &info_idx) in members.iter().enumerate() {
@@ -407,9 +455,9 @@ fn edge_color(edge: &EdgeDefinition) -> slint::Color {
         "{}{}{}{}",
         edge.from_node_id, edge.from_port, edge.to_node_id, edge.to_port
     );
-    let hash = key
-        .bytes()
-        .fold(0usize, |acc, b| acc.wrapping_mul(31).wrapping_add(b as usize));
+    let hash = key.bytes().fold(0usize, |acc, b| {
+        acc.wrapping_mul(31).wrapping_add(b as usize)
+    });
     match hash % N_EDGE_COLORS {
         0 => slint::Color::from_rgb_u8(0xaa, 0xaa, 0xaa),
         1 => slint::Color::from_rgb_u8(0x5b, 0x9b, 0xd5),
@@ -424,9 +472,10 @@ fn edge_color(edge: &EdgeDefinition) -> slint::Color {
 }
 
 fn edge_has_error(graph: &NodeGraphDefinition, edge: &EdgeDefinition) -> bool {
-    graph.nodes.iter().any(|node| {
-        node.has_error && (node.id == edge.from_node_id || node.id == edge.to_node_id)
-    })
+    graph
+        .nodes
+        .iter()
+        .any(|node| node.has_error && (node.id == edge.from_node_id || node.id == edge.to_node_id))
 }
 
 fn edge_has_cycle(
@@ -525,11 +574,21 @@ fn push_segment(
     let (x, y, width, height) = if (y1 - y2).abs() < f32::EPSILON {
         let min_x = x1.min(x2);
         let length = (x1 - x2).abs() + thickness;
-        (min_x - thickness / 2.0, y1 - thickness / 2.0, length, thickness)
+        (
+            min_x - thickness / 2.0,
+            y1 - thickness / 2.0,
+            length,
+            thickness,
+        )
     } else {
         let min_y = y1.min(y2);
         let length = (y1 - y2).abs() + thickness;
-        (x1 - thickness / 2.0, min_y - thickness / 2.0, thickness, length)
+        (
+            x1 - thickness / 2.0,
+            min_y - thickness / 2.0,
+            thickness,
+            length,
+        )
     };
 
     segments.push(EdgeSegmentVm {
@@ -568,7 +627,12 @@ fn resolve_display_data_type_inner(
     is_input: bool,
     visited: &mut HashSet<String>,
 ) -> Option<DataType> {
-    let visit_key = format!("{}:{}:{}", node.id, if is_input { "in" } else { "out" }, port_name);
+    let visit_key = format!(
+        "{}:{}:{}",
+        node.id,
+        if is_input { "in" } else { "out" },
+        port_name
+    );
     if !visited.insert(visit_key) {
         return declared_port_type(node, port_name, is_input);
     }
@@ -584,9 +648,18 @@ fn resolve_display_data_type_inner(
             .iter()
             .find(|edge| edge.to_node_id == node.id && edge.to_port == port_name)
         {
-            let from_node = graph.nodes.iter().find(|candidate| candidate.id == edge.from_node_id)?;
-            return resolve_display_data_type_inner(graph, from_node, &edge.from_port, false, visited)
-                .or(Some(DataType::Any));
+            let from_node = graph
+                .nodes
+                .iter()
+                .find(|candidate| candidate.id == edge.from_node_id)?;
+            return resolve_display_data_type_inner(
+                graph,
+                from_node,
+                &edge.from_port,
+                false,
+                visited,
+            )
+            .or(Some(DataType::Any));
         }
         return Some(DataType::Any);
     }
@@ -600,21 +673,38 @@ fn resolve_display_data_type_inner(
 }
 
 fn declared_port_type(node: &NodeDefinition, port_name: &str, is_input: bool) -> Option<DataType> {
-    let ports = if is_input { &node.input_ports } else { &node.output_ports };
-    ports.iter().find(|p| p.name == port_name).map(|p| p.data_type.clone())
+    let ports = if is_input {
+        &node.input_ports
+    } else {
+        &node.output_ports
+    };
+    ports
+        .iter()
+        .find(|p| p.name == port_name)
+        .map(|p| p.data_type.clone())
 }
 
 pub(crate) fn build_grid_lines(width: f32, height: f32, grid_size: f32) -> Vec<GridLineVm> {
     let mut lines = Vec::new();
     let mut x = 0.0;
     while x <= width {
-        lines.push(GridLineVm { x1: x, y1: 0.0, x2: x, y2: height });
+        lines.push(GridLineVm {
+            x1: x,
+            y1: 0.0,
+            x2: x,
+            y2: height,
+        });
         x += grid_size;
     }
 
     let mut y = 0.0;
     while y <= height {
-        lines.push(GridLineVm { x1: 0.0, y1: y, x2: width, y2: y });
+        lines.push(GridLineVm {
+            x1: 0.0,
+            y1: y,
+            x2: width,
+            y2: y,
+        });
         y += grid_size;
     }
 
@@ -624,11 +714,18 @@ pub(crate) fn build_grid_lines(width: f32, height: f32, grid_size: f32) -> Vec<G
 #[cfg(test)]
 mod tests {
     use super::{build_edge_route_plans, resolve_display_data_type, GRID_SIZE};
-    use crate::node::graph_io::{EdgeDefinition, GraphPosition, NodeDefinition, NodeGraphDefinition};
+    use crate::node::graph_io::{
+        EdgeDefinition, GraphPosition, NodeDefinition, NodeGraphDefinition,
+    };
     use crate::node::{DataType, Port};
     use std::collections::HashMap;
 
-    fn node(id: &str, node_type: &str, input_ports: Vec<Port>, output_ports: Vec<Port>) -> NodeDefinition {
+    fn node(
+        id: &str,
+        node_type: &str,
+        input_ports: Vec<Port>,
+        output_ports: Vec<Port>,
+    ) -> NodeDefinition {
         NodeDefinition {
             id: id.to_string(),
             name: id.to_string(),
@@ -662,11 +759,19 @@ mod tests {
 
     #[test]
     fn switch_gate_displays_concrete_type_after_connection() {
-        let source = node("source", "string_data", Vec::new(), vec![Port::new("value", DataType::String)]);
+        let source = node(
+            "source",
+            "string_data",
+            Vec::new(),
+            vec![Port::new("value", DataType::String)],
+        );
         let gate = node(
             "gate",
             "switch_gate",
-            vec![Port::new("enabled", DataType::Boolean), Port::new("input", DataType::Any)],
+            vec![
+                Port::new("enabled", DataType::Boolean),
+                Port::new("input", DataType::Any),
+            ],
             vec![Port::new("output", DataType::Any)],
         );
 
@@ -683,8 +788,14 @@ mod tests {
             execution_results: HashMap::new(),
         };
 
-        assert_eq!(resolve_display_data_type(&graph, &gate, "input", true), "String");
-        assert_eq!(resolve_display_data_type(&graph, &gate, "output", false), "String");
+        assert_eq!(
+            resolve_display_data_type(&graph, &gate, "input", true),
+            "String"
+        );
+        assert_eq!(
+            resolve_display_data_type(&graph, &gate, "output", false),
+            "String"
+        );
     }
 
     #[test]
@@ -692,7 +803,10 @@ mod tests {
         let gate = node(
             "gate",
             "switch_gate",
-            vec![Port::new("enabled", DataType::Boolean), Port::new("input", DataType::Any)],
+            vec![
+                Port::new("enabled", DataType::Boolean),
+                Port::new("input", DataType::Any),
+            ],
             vec![Port::new("output", DataType::Any)],
         );
 
@@ -704,8 +818,14 @@ mod tests {
             execution_results: HashMap::new(),
         };
 
-        assert_eq!(resolve_display_data_type(&graph, &gate, "input", true), "Any");
-        assert_eq!(resolve_display_data_type(&graph, &gate, "output", false), "Any");
+        assert_eq!(
+            resolve_display_data_type(&graph, &gate, "input", true),
+            "Any"
+        );
+        assert_eq!(
+            resolve_display_data_type(&graph, &gate, "output", false),
+            "Any"
+        );
     }
 
     #[test]

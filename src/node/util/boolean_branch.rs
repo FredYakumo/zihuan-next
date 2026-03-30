@@ -41,7 +41,10 @@ impl Node for BooleanBranchNode {
         port! { name = "branch_taken", ty = String, desc = "实际走到的分支：true 或 false" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let condition = match inputs.get("condition") {
@@ -53,9 +56,10 @@ impl Node for BooleanBranchNode {
             }
         };
 
-        let input = inputs.get("input").cloned().ok_or_else(|| {
-            crate::error::Error::ValidationError("input 输入不存在".to_string())
-        })?;
+        let input = inputs
+            .get("input")
+            .cloned()
+            .ok_or_else(|| crate::error::Error::ValidationError("input 输入不存在".to_string()))?;
 
         let mut outputs = HashMap::new();
         if condition {

@@ -1,7 +1,10 @@
+use log::{error, info};
 use serde_json::{json, Value};
 use std::future::Future;
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
-use log::{error, info};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use tokio::task::JoinHandle;
 
 /// NodeType enum for distinguishing node categories
@@ -10,7 +13,6 @@ pub enum NodeType {
     Simple,
     EventProducer,
 }
-
 
 #[derive(Debug, Clone)]
 pub struct ExecutionResult {
@@ -41,35 +43,30 @@ impl ExecutionResult {
     }
 }
 
+use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use crate::error::Result;
 
 type OutputPool = HashMap<String, HashMap<String, DataValue>>;
 type InputSourceMap = HashMap<String, HashMap<String, (String, String)>>;
 
 pub mod data_value;
-pub mod util;
-pub mod graph_io;
-pub mod registry;
 pub mod database;
-pub mod message_nodes;
+pub mod graph_io;
 pub mod message_cache;
+pub mod message_nodes;
+pub mod registry;
+pub mod util;
 
 #[allow(unused_imports)]
 pub use data_value::{DataType, DataValue};
 #[allow(unused_imports)]
-pub use node_macros::{node_input, node_output};
-#[allow(unused_imports)]
 pub use graph_io::{
-    NodeGraphDefinition,
-    NodeDefinition,
-    EdgeDefinition,
-    GraphPosition,
-    load_graph_definition_from_json,
-    save_graph_definition_to_json,
-    ensure_positions,
+    ensure_positions, load_graph_definition_from_json, save_graph_definition_to_json,
+    EdgeDefinition, GraphPosition, NodeDefinition, NodeGraphDefinition,
 };
+#[allow(unused_imports)]
+pub use node_macros::{node_input, node_output};
 
 /// Node input/output ports
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,9 +112,7 @@ pub trait Node: Send + Sync {
     }
     fn id(&self) -> &str;
 
-
     fn name(&self) -> &str;
-
 
     fn description(&self) -> Option<&str> {
         None
@@ -138,7 +133,8 @@ pub trait Node: Send + Sync {
     /// Execute the node's main logic
     /// inputs: input port name -> data value
     /// returns: output port name -> data value
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>>;
+    fn execute(&mut self, inputs: HashMap<String, DataValue>)
+        -> Result<HashMap<String, DataValue>>;
 
     /// Called once at the start of each graph execution.
     ///
@@ -196,7 +192,7 @@ pub trait Node: Send + Sync {
 
     fn validate_inputs(&self, inputs: &HashMap<String, DataValue>) -> Result<()> {
         let input_ports = self.input_ports();
-        
+
         for port in &input_ports {
             match inputs.get(&port.name) {
                 Some(value) => {
@@ -205,9 +201,7 @@ pub trait Node: Send + Sync {
                     if !port.data_type.is_compatible_with(&actual_type) {
                         return Err(crate::error::Error::ValidationError(format!(
                             "Input port '{}' expects type {}, got {}",
-                            port.name,
-                            port.data_type,
-                            actual_type
+                            port.name, port.data_type, actual_type
                         )));
                     }
                 }
@@ -221,27 +215,25 @@ pub trait Node: Send + Sync {
                 }
             }
         }
-        
+
         Ok(())
     }
 
     fn validate_outputs(&self, outputs: &HashMap<String, DataValue>) -> Result<()> {
         let output_ports = self.output_ports();
-        
+
         for port in &output_ports {
             if let Some(value) = outputs.get(&port.name) {
                 let actual_type = value.data_type();
                 if !port.data_type.is_compatible_with(&actual_type) {
                     return Err(crate::error::Error::ValidationError(format!(
                         "Output port '{}' expects type {}, got {}",
-                        port.name,
-                        port.data_type,
-                        actual_type
+                        port.name, port.data_type, actual_type
                     )));
                 }
             }
         }
-        
+
         Ok(())
     }
 }
@@ -251,7 +243,9 @@ pub struct NodeGraph {
     pub nodes: HashMap<String, Box<dyn Node>>,
     pub inline_values: HashMap<String, HashMap<String, DataValue>>,
     stop_flag: Arc<AtomicBool>,
-    execution_callback: Option<Arc<dyn Fn(&str, &HashMap<String, DataValue>, &HashMap<String, DataValue>) + Send + Sync>>,
+    execution_callback: Option<
+        Arc<dyn Fn(&str, &HashMap<String, DataValue>, &HashMap<String, DataValue>) + Send + Sync>,
+    >,
     edges: Vec<EdgeDefinition>,
     definition: Option<NodeGraphDefinition>,
     event_task_runtime: Option<tokio::runtime::Runtime>,
@@ -274,7 +268,10 @@ impl NodeGraph {
 
     pub fn set_execution_callback<F>(&mut self, callback: F)
     where
-        F: Fn(&str, &HashMap<String, DataValue>, &HashMap<String, DataValue>) + Send + Sync + 'static,
+        F: Fn(&str, &HashMap<String, DataValue>, &HashMap<String, DataValue>)
+            + Send
+            + Sync
+            + 'static,
     {
         self.execution_callback = Some(Arc::new(callback));
     }
@@ -432,7 +429,8 @@ impl NodeGraph {
         let mut output_producers: HashMap<String, String> = HashMap::new();
         for (node_id, node) in &self.nodes {
             for port in node.output_ports() {
-                if let Some(existing) = output_producers.insert(port.name.clone(), node_id.clone()) {
+                if let Some(existing) = output_producers.insert(port.name.clone(), node_id.clone())
+                {
                     return Err(crate::error::Error::ValidationError(format!(
                         "Output port '{}' is produced by both '{}' and '{}'",
                         port.name, existing, node_id
@@ -453,19 +451,26 @@ impl NodeGraph {
             for port in node.input_ports() {
                 if let Some(producer) = output_producers.get(&port.name) {
                     if producer != node_id {
-                        dependencies.entry(node_id.clone()).or_default().push(producer.clone());
-                        dependents.entry(producer.clone()).or_default().push(node_id.clone());
+                        dependencies
+                            .entry(node_id.clone())
+                            .or_default()
+                            .push(producer.clone());
+                        dependents
+                            .entry(producer.clone())
+                            .or_default()
+                            .push(node_id.clone());
                         if let Some(count) = in_degree.get_mut(node_id) {
                             *count += 1;
                         }
                     }
                 } else if port.required {
                     // Check if the port has an inline value
-                    let has_inline = self.inline_values
+                    let has_inline = self
+                        .inline_values
                         .get(node_id)
                         .map(|values| values.contains_key(&port.name))
                         .unwrap_or(false);
-                    
+
                     if !has_inline {
                         return Err(crate::error::Error::ValidationError(format!(
                             "Required input port '{}' for node '{}' is not bound",
@@ -534,7 +539,8 @@ impl NodeGraph {
                     &output_producers,
                     &node_id,
                     self.inline_values.get(&node_id),
-                )? else {
+                )?
+                else {
                     continue;
                 };
                 let outputs = node.execute(inputs)?;
@@ -592,7 +598,8 @@ impl NodeGraph {
                 &output_producers,
                 node_id,
                 self.inline_values.get(node_id),
-            )? else {
+            )?
+            else {
                 continue;
             };
             let outputs = node.execute(inputs)?;
@@ -636,7 +643,7 @@ impl NodeGraph {
     /// Execute the graph and capture results for each node
     pub fn execute_and_capture_results(&mut self) -> ExecutionResult {
         let mut node_results: HashMap<String, HashMap<String, DataValue>> = HashMap::new();
-        
+
         // Try to execute, if error occurs, return early with error info
         match self.execute_and_capture_results_internal(&mut node_results) {
             Ok(()) => ExecutionResult::success(node_results),
@@ -679,11 +686,12 @@ impl NodeGraph {
         if !self.edges.is_empty() {
             return self.execute_and_capture_results_with_edges(node_results);
         }
-        
+
         let mut output_producers: HashMap<String, String> = HashMap::new();
         for (node_id, node) in &self.nodes {
             for port in node.output_ports() {
-                if let Some(existing) = output_producers.insert(port.name.clone(), node_id.clone()) {
+                if let Some(existing) = output_producers.insert(port.name.clone(), node_id.clone())
+                {
                     return Err(crate::error::Error::ValidationError(format!(
                         "Output port '{}' is produced by both '{}' and '{}'",
                         port.name, existing, node_id
@@ -704,19 +712,26 @@ impl NodeGraph {
             for port in node.input_ports() {
                 if let Some(producer) = output_producers.get(&port.name) {
                     if producer != node_id {
-                        dependencies.entry(node_id.clone()).or_default().push(producer.clone());
-                        dependents.entry(producer.clone()).or_default().push(node_id.clone());
+                        dependencies
+                            .entry(node_id.clone())
+                            .or_default()
+                            .push(producer.clone());
+                        dependents
+                            .entry(producer.clone())
+                            .or_default()
+                            .push(node_id.clone());
                         if let Some(count) = in_degree.get_mut(node_id) {
                             *count += 1;
                         }
                     }
                 } else if port.required {
                     // Check if the port has an inline value
-                    let has_inline = self.inline_values
+                    let has_inline = self
+                        .inline_values
                         .get(node_id)
                         .map(|values| values.contains_key(&port.name))
                         .unwrap_or(false);
-                    
+
                     if !has_inline {
                         return Err(crate::error::Error::ValidationError(format!(
                             "Required input port '{}' for node '{}' is not bound",
@@ -785,25 +800,30 @@ impl NodeGraph {
                     &output_producers,
                     &node_id,
                     self.inline_values.get(&node_id),
-                )? else {
+                )?
+                else {
                     continue;
                 };
-                
-                let inputs_clone = if self.execution_callback.is_some() { Some(inputs.clone()) } else { None };
+
+                let inputs_clone = if self.execution_callback.is_some() {
+                    Some(inputs.clone())
+                } else {
+                    None
+                };
 
                 let outputs = node.execute(inputs.clone())?;
-                
+
                 if let Some(cb) = &self.execution_callback {
                     if let Some(inp) = inputs_clone {
                         cb(&node_id, &inp, &outputs);
                     }
                 }
-                
+
                 // Store both inputs and outputs for this node
                 let mut result = inputs;
                 result.extend(outputs.iter().map(|(k, v)| (k.clone(), v.clone())));
                 node_results.insert(node_id.clone(), result);
-                
+
                 for (key, value) in outputs {
                     if data_pool.contains_key(&key) {
                         return Err(crate::error::Error::ValidationError(format!(
@@ -820,7 +840,7 @@ impl NodeGraph {
 
         // For event producers, we still need to execute but won't capture all results
         self.execute()?;
-        
+
         Ok(())
     }
 
@@ -887,9 +907,7 @@ impl NodeGraph {
                 if !port.required {
                     continue;
                 }
-                let has_edge = input_map
-                    .and_then(|m| m.get(&port.name))
-                    .is_some();
+                let has_edge = input_map.and_then(|m| m.get(&port.name)).is_some();
                 let has_inline_value = has_inline
                     .map(|m| m.contains_key(&port.name))
                     .unwrap_or(false);
@@ -940,7 +958,11 @@ impl NodeGraph {
                     continue;
                 };
 
-                let inputs_clone = if self.execution_callback.is_some() { Some(inputs.clone()) } else { None };
+                let inputs_clone = if self.execution_callback.is_some() {
+                    Some(inputs.clone())
+                } else {
+                    None
+                };
                 let outputs = {
                     let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
                         crate::error::Error::ValidationError(format!(
@@ -1119,9 +1141,7 @@ impl NodeGraph {
                 if !port.required {
                     continue;
                 }
-                let has_edge = input_map
-                    .and_then(|m| m.get(&port.name))
-                    .is_some();
+                let has_edge = input_map.and_then(|m| m.get(&port.name)).is_some();
                 let has_inline_value = has_inline
                     .map(|m| m.contains_key(&port.name))
                     .unwrap_or(false);
@@ -1172,7 +1192,11 @@ impl NodeGraph {
                     continue;
                 };
 
-                let inputs_clone = if self.execution_callback.is_some() { Some(inputs.clone()) } else { None };
+                let inputs_clone = if self.execution_callback.is_some() {
+                    Some(inputs.clone())
+                } else {
+                    None
+                };
                 let outputs = {
                     let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
                         crate::error::Error::ValidationError(format!(
@@ -1323,7 +1347,12 @@ impl NodeGraph {
         Ok(Some(inputs))
     }
 
-    fn insert_outputs(&self, pool: &mut OutputPool, node_id: &str, outputs: HashMap<String, DataValue>) {
+    fn insert_outputs(
+        &self,
+        pool: &mut OutputPool,
+        node_id: &str,
+        outputs: HashMap<String, DataValue>,
+    ) {
         let entry = pool.entry(node_id.to_string()).or_default();
         for (key, value) in outputs {
             entry.insert(key, value);
@@ -1536,7 +1565,10 @@ impl NodeGraph {
             if ordered_id == producer_node_id {
                 continue;
             }
-            if skipped.contains(ordered_id) || !reachable.contains(ordered_id) || !connected_nodes.contains(ordered_id) {
+            if skipped.contains(ordered_id)
+                || !reachable.contains(ordered_id)
+                || !connected_nodes.contains(ordered_id)
+            {
                 continue;
             }
 
@@ -1587,7 +1619,10 @@ impl NodeGraph {
                     ))
                 })?;
                 node.execute(inputs).map_err(|e| {
-                    crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", ordered_id, e))
+                    crate::error::Error::ValidationError(format!(
+                        "[NODE_ERROR:{}] {}",
+                        ordered_id, e
+                    ))
                 })?
             };
 
@@ -1656,7 +1691,8 @@ impl NodeGraph {
                 output_producers,
                 ordered_id,
                 self.inline_values.get(ordered_id),
-            )? else {
+            )?
+            else {
                 continue;
             };
 
@@ -1846,7 +1882,8 @@ impl NodeGraph {
                 output_producers,
                 node_id,
                 self.inline_values.get(node_id),
-            )? else {
+            )?
+            else {
                 return Ok(false);
             };
             node.on_start(inputs).map_err(|e| {
@@ -1947,7 +1984,9 @@ impl Default for NodeGraph {
 
 #[cfg(test)]
 mod tests {
-    use super::{DataType, DataValue, EdgeDefinition, ExecutionResult, Node, NodeGraph, NodeType, Port};
+    use super::{
+        DataType, DataValue, EdgeDefinition, ExecutionResult, Node, NodeGraph, NodeType, Port,
+    };
     use crate::error::Result;
     use crate::node::graph_io::{NodeDefinition, NodeGraphDefinition};
     use crate::node::registry::NODE_REGISTRY;
@@ -1992,7 +2031,10 @@ mod tests {
             vec![Port::new(self.output_name.clone(), self.value.data_type())]
         }
 
-        fn execute(&mut self, _inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+        fn execute(
+            &mut self,
+            _inputs: HashMap<String, DataValue>,
+        ) -> Result<HashMap<String, DataValue>> {
             let mut outputs = HashMap::new();
             outputs.insert(self.output_name.clone(), self.value.clone());
             Ok(outputs)
@@ -2055,9 +2097,15 @@ mod tests {
             vec![Port::new("seen", DataType::Boolean)]
         }
 
-        fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+        fn execute(
+            &mut self,
+            inputs: HashMap<String, DataValue>,
+        ) -> Result<HashMap<String, DataValue>> {
             self.validate_inputs(&inputs)?;
-            Ok(HashMap::from([("seen".to_string(), DataValue::Boolean(true))]))
+            Ok(HashMap::from([(
+                "seen".to_string(),
+                DataValue::Boolean(true),
+            )]))
         }
     }
 
@@ -2078,9 +2126,15 @@ mod tests {
             vec![Port::new("seen", DataType::Boolean)]
         }
 
-        fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+        fn execute(
+            &mut self,
+            inputs: HashMap<String, DataValue>,
+        ) -> Result<HashMap<String, DataValue>> {
             self.validate_inputs(&inputs)?;
-            Ok(HashMap::from([("seen".to_string(), DataValue::Boolean(true))]))
+            Ok(HashMap::from([(
+                "seen".to_string(),
+                DataValue::Boolean(true),
+            )]))
         }
     }
 
@@ -2121,7 +2175,10 @@ mod tests {
             vec![Port::new("sender_id", DataType::String)]
         }
 
-        fn execute(&mut self, _inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+        fn execute(
+            &mut self,
+            _inputs: HashMap<String, DataValue>,
+        ) -> Result<HashMap<String, DataValue>> {
             Ok(HashMap::new())
         }
 
@@ -2168,7 +2225,10 @@ mod tests {
             vec![Port::new("done", DataType::String)]
         }
 
-        fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+        fn execute(
+            &mut self,
+            inputs: HashMap<String, DataValue>,
+        ) -> Result<HashMap<String, DataValue>> {
             let sender_id = match inputs.get("sender_id") {
                 Some(DataValue::String(sender_id)) => sender_id.clone(),
                 other => panic!("unexpected sender_id input: {other:?}"),
@@ -2201,7 +2261,9 @@ mod tests {
                     "Test Event Producer Async",
                     "测试",
                     "Produces two sender IDs for async execution tests",
-                    Arc::new(|id: String, name: String| Box::new(TestEventProducerNode::new(id, name))),
+                    Arc::new(|id: String, name: String| {
+                        Box::new(TestEventProducerNode::new(id, name))
+                    }),
                 )
                 .expect("test event producer should register");
             NODE_REGISTRY
@@ -2218,16 +2280,40 @@ mod tests {
     }
 
     fn assert_success(result: &ExecutionResult) {
-        assert!(result.error_message.is_none(), "unexpected execution error: {:?}", result.error_message);
+        assert!(
+            result.error_message.is_none(),
+            "unexpected execution error: {:?}",
+            result.error_message
+        );
     }
 
     #[test]
     fn switch_blocks_downstream_in_implicit_mode() {
         let mut graph = NodeGraph::new();
-        graph.add_node(Box::new(StaticOutputNode::new("toggle", "enabled", DataValue::Boolean(false)))).unwrap();
-        graph.add_node(Box::new(StaticOutputNode::new("source", "input", DataValue::String("hello".to_string())))).unwrap();
-        graph.add_node(Box::new(SwitchNode::new("gate", "Gate"))).unwrap();
-        graph.add_node(Box::new(SeenSinkNode::new("sink", "output", DataType::String))).unwrap();
+        graph
+            .add_node(Box::new(StaticOutputNode::new(
+                "toggle",
+                "enabled",
+                DataValue::Boolean(false),
+            )))
+            .unwrap();
+        graph
+            .add_node(Box::new(StaticOutputNode::new(
+                "source",
+                "input",
+                DataValue::String("hello".to_string()),
+            )))
+            .unwrap();
+        graph
+            .add_node(Box::new(SwitchNode::new("gate", "Gate")))
+            .unwrap();
+        graph
+            .add_node(Box::new(SeenSinkNode::new(
+                "sink",
+                "output",
+                DataType::String,
+            )))
+            .unwrap();
 
         let result = graph.execute_and_capture_results();
         assert_success(&result);
@@ -2238,10 +2324,30 @@ mod tests {
     #[test]
     fn switch_blocks_downstream_in_edge_mode() {
         let mut graph = NodeGraph::new();
-        graph.add_node(Box::new(StaticOutputNode::new("toggle", "enabled", DataValue::Boolean(false)))).unwrap();
-        graph.add_node(Box::new(StaticOutputNode::new("source", "value", DataValue::String("hello".to_string())))).unwrap();
-        graph.add_node(Box::new(SwitchNode::new("gate", "Gate"))).unwrap();
-        graph.add_node(Box::new(SeenSinkNode::new("sink", "value", DataType::String))).unwrap();
+        graph
+            .add_node(Box::new(StaticOutputNode::new(
+                "toggle",
+                "enabled",
+                DataValue::Boolean(false),
+            )))
+            .unwrap();
+        graph
+            .add_node(Box::new(StaticOutputNode::new(
+                "source",
+                "value",
+                DataValue::String("hello".to_string()),
+            )))
+            .unwrap();
+        graph
+            .add_node(Box::new(SwitchNode::new("gate", "Gate")))
+            .unwrap();
+        graph
+            .add_node(Box::new(SeenSinkNode::new(
+                "sink",
+                "value",
+                DataType::String,
+            )))
+            .unwrap();
         graph.set_edges(vec![
             EdgeDefinition {
                 from_node_id: "toggle".to_string(),
@@ -2272,10 +2378,30 @@ mod tests {
     #[test]
     fn switch_blocks_optional_downstream_in_edge_mode() {
         let mut graph = NodeGraph::new();
-        graph.add_node(Box::new(StaticOutputNode::new("toggle", "enabled", DataValue::Boolean(false)))).unwrap();
-        graph.add_node(Box::new(StaticOutputNode::new("source", "value", DataValue::Vec(Box::new(DataType::OpenAIMessage), Vec::new())))).unwrap();
-        graph.add_node(Box::new(SwitchNode::new("gate", "Gate"))).unwrap();
-        graph.add_node(Box::new(OptionalSeenSinkNode::new("preview", "messages", DataType::Vec(Box::new(DataType::OpenAIMessage))))).unwrap();
+        graph
+            .add_node(Box::new(StaticOutputNode::new(
+                "toggle",
+                "enabled",
+                DataValue::Boolean(false),
+            )))
+            .unwrap();
+        graph
+            .add_node(Box::new(StaticOutputNode::new(
+                "source",
+                "value",
+                DataValue::Vec(Box::new(DataType::OpenAIMessage), Vec::new()),
+            )))
+            .unwrap();
+        graph
+            .add_node(Box::new(SwitchNode::new("gate", "Gate")))
+            .unwrap();
+        graph
+            .add_node(Box::new(OptionalSeenSinkNode::new(
+                "preview",
+                "messages",
+                DataType::Vec(Box::new(DataType::OpenAIMessage)),
+            )))
+            .unwrap();
         graph.set_edges(vec![
             EdgeDefinition {
                 from_node_id: "toggle".to_string(),
@@ -2306,10 +2432,30 @@ mod tests {
     #[test]
     fn switch_blocks_optional_downstream_in_implicit_mode() {
         let mut graph = NodeGraph::new();
-        graph.add_node(Box::new(StaticOutputNode::new("toggle", "enabled", DataValue::Boolean(false)))).unwrap();
-        graph.add_node(Box::new(StaticOutputNode::new("source", "input", DataValue::Vec(Box::new(DataType::OpenAIMessage), Vec::new())))).unwrap();
-        graph.add_node(Box::new(SwitchNode::new("gate", "Gate"))).unwrap();
-        graph.add_node(Box::new(OptionalSeenSinkNode::new("preview", "output", DataType::Vec(Box::new(DataType::OpenAIMessage))))).unwrap();
+        graph
+            .add_node(Box::new(StaticOutputNode::new(
+                "toggle",
+                "enabled",
+                DataValue::Boolean(false),
+            )))
+            .unwrap();
+        graph
+            .add_node(Box::new(StaticOutputNode::new(
+                "source",
+                "input",
+                DataValue::Vec(Box::new(DataType::OpenAIMessage), Vec::new()),
+            )))
+            .unwrap();
+        graph
+            .add_node(Box::new(SwitchNode::new("gate", "Gate")))
+            .unwrap();
+        graph
+            .add_node(Box::new(OptionalSeenSinkNode::new(
+                "preview",
+                "output",
+                DataType::Vec(Box::new(DataType::OpenAIMessage)),
+            )))
+            .unwrap();
 
         let result = graph.execute_and_capture_results();
         assert_success(&result);
@@ -2320,17 +2466,29 @@ mod tests {
     #[test]
     fn switch_forwards_any_typed_values_in_edge_mode() {
         let mut graph = NodeGraph::new();
-        graph.add_node(Box::new(StaticOutputNode::new("toggle", "enabled", DataValue::Boolean(true)))).unwrap();
-        graph.add_node(Box::new(StaticOutputNode::new(
-            "source",
-            "value",
-            DataValue::Json(serde_json::json!({
-                "content": "hello",
-                "is_at_me": false,
-            })),
-        ))).unwrap();
-        graph.add_node(Box::new(SwitchNode::new("gate", "Gate"))).unwrap();
-        graph.add_node(Box::new(SeenSinkNode::new("sink", "value", DataType::Json))).unwrap();
+        graph
+            .add_node(Box::new(StaticOutputNode::new(
+                "toggle",
+                "enabled",
+                DataValue::Boolean(true),
+            )))
+            .unwrap();
+        graph
+            .add_node(Box::new(StaticOutputNode::new(
+                "source",
+                "value",
+                DataValue::Json(serde_json::json!({
+                    "content": "hello",
+                    "is_at_me": false,
+                })),
+            )))
+            .unwrap();
+        graph
+            .add_node(Box::new(SwitchNode::new("gate", "Gate")))
+            .unwrap();
+        graph
+            .add_node(Box::new(SeenSinkNode::new("sink", "value", DataType::Json)))
+            .unwrap();
         graph.set_edges(vec![
             EdgeDefinition {
                 from_node_id: "toggle".to_string(),
@@ -2360,11 +2518,37 @@ mod tests {
     #[test]
     fn boolean_branch_routes_only_true_branch_in_edge_mode() {
         let mut graph = NodeGraph::new();
-        graph.add_node(Box::new(StaticOutputNode::new("cond", "condition", DataValue::Boolean(true)))).unwrap();
-        graph.add_node(Box::new(StaticOutputNode::new("source", "value", DataValue::String("hello".to_string())))).unwrap();
-        graph.add_node(Box::new(BooleanBranchNode::new("branch", "Branch"))).unwrap();
-        graph.add_node(Box::new(SeenSinkNode::new("true_sink", "value", DataType::String))).unwrap();
-        graph.add_node(Box::new(SeenSinkNode::new("false_sink", "value", DataType::String))).unwrap();
+        graph
+            .add_node(Box::new(StaticOutputNode::new(
+                "cond",
+                "condition",
+                DataValue::Boolean(true),
+            )))
+            .unwrap();
+        graph
+            .add_node(Box::new(StaticOutputNode::new(
+                "source",
+                "value",
+                DataValue::String("hello".to_string()),
+            )))
+            .unwrap();
+        graph
+            .add_node(Box::new(BooleanBranchNode::new("branch", "Branch")))
+            .unwrap();
+        graph
+            .add_node(Box::new(SeenSinkNode::new(
+                "true_sink",
+                "value",
+                DataType::String,
+            )))
+            .unwrap();
+        graph
+            .add_node(Box::new(SeenSinkNode::new(
+                "false_sink",
+                "value",
+                DataType::String,
+            )))
+            .unwrap();
         graph.set_edges(vec![
             EdgeDefinition {
                 from_node_id: "cond".to_string(),
@@ -2402,11 +2586,37 @@ mod tests {
     #[test]
     fn boolean_branch_routes_only_false_branch_in_edge_mode() {
         let mut graph = NodeGraph::new();
-        graph.add_node(Box::new(StaticOutputNode::new("cond", "condition", DataValue::Boolean(false)))).unwrap();
-        graph.add_node(Box::new(StaticOutputNode::new("source", "value", DataValue::Integer(7)))).unwrap();
-        graph.add_node(Box::new(BooleanBranchNode::new("branch", "Branch"))).unwrap();
-        graph.add_node(Box::new(SeenSinkNode::new("true_sink", "value", DataType::Integer))).unwrap();
-        graph.add_node(Box::new(SeenSinkNode::new("false_sink", "value", DataType::Integer))).unwrap();
+        graph
+            .add_node(Box::new(StaticOutputNode::new(
+                "cond",
+                "condition",
+                DataValue::Boolean(false),
+            )))
+            .unwrap();
+        graph
+            .add_node(Box::new(StaticOutputNode::new(
+                "source",
+                "value",
+                DataValue::Integer(7),
+            )))
+            .unwrap();
+        graph
+            .add_node(Box::new(BooleanBranchNode::new("branch", "Branch")))
+            .unwrap();
+        graph
+            .add_node(Box::new(SeenSinkNode::new(
+                "true_sink",
+                "value",
+                DataType::Integer,
+            )))
+            .unwrap();
+        graph
+            .add_node(Box::new(SeenSinkNode::new(
+                "false_sink",
+                "value",
+                DataType::Integer,
+            )))
+            .unwrap();
         graph.set_edges(vec![
             EdgeDefinition {
                 from_node_id: "cond".to_string(),
@@ -2497,7 +2707,10 @@ mod tests {
 
         assert_eq!(log.len(), 4, "unexpected async execution log: {log:?}");
         assert!(start_user_1.is_some(), "missing first event start: {log:?}");
-        assert!(start_user_2.is_some(), "missing second event start: {log:?}");
+        assert!(
+            start_user_2.is_some(),
+            "missing second event start: {log:?}"
+        );
         assert!(end_user_1.is_some(), "missing first event end: {log:?}");
         assert!(
             start_user_2.unwrap() < end_user_1.unwrap(),

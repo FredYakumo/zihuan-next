@@ -1,7 +1,5 @@
 use crate::error::Result;
-use crate::node::data_value::{
-    SessionClaim, SessionStateRef, SESSION_CLAIM_CONTEXT,
-};
+use crate::node::data_value::{SessionClaim, SessionStateRef, SESSION_CLAIM_CONTEXT};
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::info;
 use serde_json::Value;
@@ -48,7 +46,10 @@ impl Node for SessionStateTryClaimNode {
         port! { name = "state_json", ty = Json, desc = "当前 sender_id 的附加 JSON 状态" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let session_ref: Arc<SessionStateRef> = inputs
@@ -57,14 +58,18 @@ impl Node for SessionStateTryClaimNode {
                 DataValue::SessionStateRef(session_ref) => Some(session_ref.clone()),
                 _ => None,
             })
-            .ok_or_else(|| crate::error::Error::InvalidNodeInput("session_ref is required".to_string()))?;
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("session_ref is required".to_string())
+            })?;
         let sender_id = inputs
             .get("sender_id")
             .and_then(|value| match value {
                 DataValue::String(sender_id) => Some(sender_id.clone()),
                 _ => None,
             })
-            .ok_or_else(|| crate::error::Error::InvalidNodeInput("sender_id is required".to_string()))?;
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("sender_id is required".to_string())
+            })?;
         let desired_state = inputs.get("state_json").and_then(|value| match value {
             DataValue::Json(value) => Some(value.clone()),
             _ => None,
@@ -73,9 +78,7 @@ impl Node for SessionStateTryClaimNode {
         let task_context = SESSION_CLAIM_CONTEXT.try_with(Arc::clone).ok();
         info!(
             "[SessionStateTryClaimNode:{}] Trying claim for sender_id={} on session_ref={}",
-            self.id,
-            sender_id,
-            session_ref.node_id
+            self.id, sender_id, session_ref.node_id
         );
         let session_ref_for_try = session_ref.clone();
         let sender_id_for_try = sender_id.clone();
@@ -118,7 +121,10 @@ impl Node for SessionStateTryClaimNode {
 
         let outputs = HashMap::from([
             ("claimed".to_string(), DataValue::Boolean(claimed)),
-            ("in_session".to_string(), DataValue::Boolean(state.in_session)),
+            (
+                "in_session".to_string(),
+                DataValue::Boolean(state.in_session),
+            ),
             (
                 "state_json".to_string(),
                 DataValue::Json(match state.state_json {
@@ -138,7 +144,8 @@ mod tests {
     use crate::error::Result;
     use crate::node::data_value::{SessionClaimContext, SESSION_CLAIM_CONTEXT};
     use crate::node::util::{
-        SessionStateClearNode, SessionStateGetNode, SessionStateProviderNode, SessionStateReleaseNode,
+        SessionStateClearNode, SessionStateGetNode, SessionStateProviderNode,
+        SessionStateReleaseNode,
     };
     use crate::node::{DataValue, Node};
     use serde_json::json;
@@ -171,7 +178,10 @@ mod tests {
         let claim_outputs = claim_node.execute(HashMap::from([
             ("session_ref".to_string(), session_ref.clone()),
             sender_input("user-1"),
-            ("state_json".to_string(), DataValue::Json(json!({"phase": "thinking"}))),
+            (
+                "state_json".to_string(),
+                DataValue::Json(json!({"phase": "thinking"})),
+            ),
         ]))?;
         assert!(matches!(
             claim_outputs.get("claimed"),
@@ -226,7 +236,10 @@ mod tests {
                     let first = claim_node.execute(HashMap::from([
                         ("session_ref".to_string(), session_ref.clone()),
                         sender_input("user-1"),
-                        ("state_json".to_string(), DataValue::Json(json!({"step": 1}))),
+                        (
+                            "state_json".to_string(),
+                            DataValue::Json(json!({"step": 1})),
+                        ),
                     ]))?;
                     assert!(matches!(
                         first.get("claimed"),

@@ -1,5 +1,5 @@
+use super::{inline_port_key, InlinePortValue, NodeRenderer};
 use crate::node::graph_io::NodeGraphDefinition;
-use super::{NodeRenderer, InlinePortValue, inline_port_key};
 use std::collections::HashMap;
 
 pub struct FormatStringRenderer;
@@ -27,7 +27,14 @@ impl NodeRenderer for FormatStringRenderer {
         if text.is_empty() {
             "(空模板)".to_string()
         } else if text.chars().count() > 40 {
-            format!("{}…", &text[..text.char_indices().nth(40).map(|(i, _)| i).unwrap_or(text.len())])
+            format!(
+                "{}…",
+                &text[..text
+                    .char_indices()
+                    .nth(40)
+                    .map(|(i, _)| i)
+                    .unwrap_or(text.len())]
+            )
         } else {
             text
         }

@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use serde::de::{self, Deserializer};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 fn deserialize_i64_from_string_or_number<'de, D>(deserializer: D) -> Result<i64, D::Error>
@@ -15,12 +15,14 @@ where
             .parse::<i64>()
             .map_err(|e| de::Error::custom(format!("failed to parse i64 from string: {e}"))),
         other => Err(de::Error::custom(format!(
-            "expected string or number for i64, got {other}" 
+            "expected string or number for i64, got {other}"
         ))),
     }
 }
 
-fn deserialize_option_i64_from_string_or_number<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+fn deserialize_option_i64_from_string_or_number<'de, D>(
+    deserializer: D,
+) -> Result<Option<i64>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -94,7 +96,6 @@ impl MessageBase for Message {
     }
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlainTextMessage {
     pub text: String,
@@ -116,7 +117,10 @@ impl MessageBase for PlainTextMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AtTargetMessage {
     #[serde(rename = "qq", alias = "target")]
-    #[serde(default, deserialize_with = "deserialize_option_string_from_string_or_number")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_option_string_from_string_or_number"
+    )]
     pub target: Option<String>,
 }
 
@@ -173,7 +177,7 @@ pub struct MessageProp {
     pub content: Option<String>,
     pub ref_content: Option<String>,
     pub is_at_me: bool,
-    pub at_target_list: Vec<String>
+    pub at_target_list: Vec<String>,
 }
 
 impl MessageProp {
@@ -214,12 +218,20 @@ impl MessageProp {
 
         let content = {
             let s = content_parts.join(" ");
-            if s.trim().is_empty() { None } else { Some(s) }
+            if s.trim().is_empty() {
+                None
+            } else {
+                Some(s)
+            }
         };
 
         let ref_content = {
             let s = ref_parts.join("\n");
-            if s.trim().is_empty() { None } else { Some(s) }
+            if s.trim().is_empty() {
+                None
+            } else {
+                Some(s)
+            }
         };
 
         let is_at_me = match bot_id {
@@ -243,8 +255,12 @@ mod tests {
     #[test]
     fn test_message_prop_from_messages_basic() {
         let msgs = vec![
-            Message::PlainText(PlainTextMessage { text: "Hello".into() }),
-            Message::At(AtTargetMessage { target: Some("42".into()) }),
+            Message::PlainText(PlainTextMessage {
+                text: "Hello".into(),
+            }),
+            Message::At(AtTargetMessage {
+                target: Some("42".into()),
+            }),
         ];
 
         let prop = MessageProp::from_messages(&msgs, Some("42"));
@@ -256,15 +272,24 @@ mod tests {
 
     #[test]
     fn test_message_prop_collects_reply_source() {
-        let reply_src = Message::PlainText(PlainTextMessage { text: "previous message".into() });
-        let reply = ReplyMessage { id: 123, message_source: Some(Box::new(reply_src)) };
+        let reply_src = Message::PlainText(PlainTextMessage {
+            text: "previous message".into(),
+        });
+        let reply = ReplyMessage {
+            id: 123,
+            message_source: Some(Box::new(reply_src)),
+        };
         let msgs = vec![
             Message::PlainText(PlainTextMessage { text: "Hi".into() }),
             Message::Reply(reply),
         ];
 
         let prop = MessageProp::from_messages(&msgs, None);
-        assert!(prop.content.as_deref().unwrap().contains("[Reply of message ID 123"));
+        assert!(prop
+            .content
+            .as_deref()
+            .unwrap()
+            .contains("[Reply of message ID 123"));
         assert_eq!(prop.ref_content.as_deref(), Some("previous message"));
         assert!(!prop.is_at_me);
     }
@@ -272,9 +297,15 @@ mod tests {
     #[test]
     fn test_message_prop_dedup_at_targets() {
         let msgs = vec![
-            Message::At(AtTargetMessage { target: Some("1".into()) }),
-            Message::At(AtTargetMessage { target: Some("2".into()) }),
-            Message::At(AtTargetMessage { target: Some("1".into()) }),
+            Message::At(AtTargetMessage {
+                target: Some("1".into()),
+            }),
+            Message::At(AtTargetMessage {
+                target: Some("2".into()),
+            }),
+            Message::At(AtTargetMessage {
+                target: Some("1".into()),
+            }),
         ];
         let prop = MessageProp::from_messages(&msgs, Some("99"));
         assert_eq!(prop.at_target_list, vec!["1".to_string(), "2".to_string()]);
@@ -283,7 +314,9 @@ mod tests {
 
     #[test]
     fn test_at_message_serializes_with_qq_field() {
-        let msg = Message::At(AtTargetMessage { target: Some("42".into()) });
+        let msg = Message::At(AtTargetMessage {
+            target: Some("42".into()),
+        });
         let json = serde_json::to_value(&msg).expect("at message should serialize");
 
         assert_eq!(json["type"], "at");
@@ -300,7 +333,8 @@ mod tests {
             }
         });
 
-        let msg: Message = serde_json::from_value(json).expect("legacy at payload should deserialize");
+        let msg: Message =
+            serde_json::from_value(json).expect("legacy at payload should deserialize");
         match msg {
             Message::At(at) => assert_eq!(at.target.as_deref(), Some("42")),
             other => panic!("unexpected message: {:?}", other),

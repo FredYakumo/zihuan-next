@@ -29,15 +29,14 @@ impl Node for StackNode {
         Some("将单个元素封装为单元素 List")
     }
 
-    node_input![
-        port! { name = "element", ty = Any, desc = "要封装到数组中的元素" },
-    ];
+    node_input![port! { name = "element", ty = Any, desc = "要封装到数组中的元素" },];
 
-    node_output![
-        port! { name = "array", ty = Any, desc = "包含单个元素的 List" },
-    ];
+    node_output![port! { name = "array", ty = Any, desc = "包含单个元素的 List" },];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let element = inputs
@@ -47,7 +46,10 @@ impl Node for StackNode {
 
         let element_type = element.data_type();
         let mut outputs = HashMap::new();
-        outputs.insert("array".to_string(), DataValue::Vec(Box::new(element_type), vec![element]));
+        outputs.insert(
+            "array".to_string(),
+            DataValue::Vec(Box::new(element_type), vec![element]),
+        );
 
         self.validate_outputs(&outputs)?;
         Ok(outputs)

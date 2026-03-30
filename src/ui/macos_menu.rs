@@ -29,11 +29,23 @@ fn menu_handler_class() -> *const Class {
             let mut decl = ClassDecl::new("ZihuanMenuHandler", superclass)
                 .expect("Failed to create ZihuanMenuHandler class");
             decl.add_ivar::<*mut c_void>("rustActions");
-            decl.add_method(sel!(openJson:), open_json as extern "C" fn(&Object, Sel, id));
-            decl.add_method(sel!(saveJson:), save_json as extern "C" fn(&Object, Sel, id));
-            decl.add_method(sel!(saveJsonAs:), save_json_as as extern "C" fn(&Object, Sel, id));
+            decl.add_method(
+                sel!(openJson:),
+                open_json as extern "C" fn(&Object, Sel, id),
+            );
+            decl.add_method(
+                sel!(saveJson:),
+                save_json as extern "C" fn(&Object, Sel, id),
+            );
+            decl.add_method(
+                sel!(saveJsonAs:),
+                save_json_as as extern "C" fn(&Object, Sel, id),
+            );
             decl.add_method(sel!(newTab:), new_tab as extern "C" fn(&Object, Sel, id));
-            decl.add_method(sel!(closeTab:), close_tab as extern "C" fn(&Object, Sel, id));
+            decl.add_method(
+                sel!(closeTab:),
+                close_tab as extern "C" fn(&Object, Sel, id),
+            );
             decl.add_method(sel!(quit:), quit as extern "C" fn(&Object, Sel, id));
             CLASS = decl.register();
         });
@@ -51,23 +63,33 @@ unsafe fn with_actions<F: FnOnce(&MenuActions)>(this: &Object, f: F) {
 }
 
 extern "C" fn open_json(this: &Object, _: Sel, _: id) {
-    unsafe { with_actions(this, |actions| (actions.open)()); }
+    unsafe {
+        with_actions(this, |actions| (actions.open)());
+    }
 }
 
 extern "C" fn save_json(this: &Object, _: Sel, _: id) {
-    unsafe { with_actions(this, |actions| (actions.save)()); }
+    unsafe {
+        with_actions(this, |actions| (actions.save)());
+    }
 }
 
 extern "C" fn save_json_as(this: &Object, _: Sel, _: id) {
-    unsafe { with_actions(this, |actions| (actions.save_as)()); }
+    unsafe {
+        with_actions(this, |actions| (actions.save_as)());
+    }
 }
 
 extern "C" fn new_tab(this: &Object, _: Sel, _: id) {
-    unsafe { with_actions(this, |actions| (actions.new_tab)()); }
+    unsafe {
+        with_actions(this, |actions| (actions.new_tab)());
+    }
 }
 
 extern "C" fn close_tab(this: &Object, _: Sel, _: id) {
-    unsafe { with_actions(this, |actions| (actions.close_tab)()); }
+    unsafe {
+        with_actions(this, |actions| (actions.close_tab)());
+    }
 }
 
 extern "C" fn quit(this: &Object, _: Sel, _: id) {

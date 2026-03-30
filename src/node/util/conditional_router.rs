@@ -41,7 +41,10 @@ impl Node for ConditionalRouterNode {
         port! { name = "branch_taken", ty = String, desc = "实际走到的分支：primary 或 fallback" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let condition = match inputs.get("condition") {

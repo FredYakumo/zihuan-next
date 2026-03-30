@@ -1,25 +1,21 @@
-use log::{info, error};
-use std::sync::Arc;
+use log::{error, info};
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use super::models::{MessageEvent, MessageType};
 use crate::bot_adapter::adapter::SharedBotAdapter;
 
 /// Process messages (both private and group)
 pub async fn process_message(bot_adapter: SharedBotAdapter, event: MessageEvent) {
-    let messages: Vec<String> = event.message_list.iter()
-        .map(|m| m.to_string())
-        .collect();
-    
+    let messages: Vec<String> = event.message_list.iter().map(|m| m.to_string()).collect();
+
     // Log based on message type
     match event.message_type {
         MessageType::Private => {
             info!(
                 "[Friend Message] [Sender: {}({})] Message: {:?}",
-                event.sender.nickname,
-                event.sender.user_id,
-                messages
+                event.sender.nickname, event.sender.user_id, messages
             );
         }
         MessageType::Group => {
@@ -61,7 +57,5 @@ pub async fn process_message(bot_adapter: SharedBotAdapter, event: MessageEvent)
 
 /// Event handler type alias
 pub type EventHandler = Arc<
-    dyn for<'a> Fn(&'a MessageEvent) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>
-        + Send
-        + Sync,
+    dyn for<'a> Fn(&'a MessageEvent) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> + Send + Sync,
 >;

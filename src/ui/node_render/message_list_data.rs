@@ -1,5 +1,5 @@
+use super::{inline_port_key, InlinePortValue, NodeRenderer};
 use crate::node::graph_io::NodeGraphDefinition;
-use super::{NodeRenderer, InlinePortValue, inline_port_key};
 use std::collections::HashMap;
 
 pub struct MessageListDataRenderer;

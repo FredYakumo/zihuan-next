@@ -3,12 +3,12 @@ use std::sync::Arc;
 
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 
 use crate::error::{Error, Result};
 use crate::llm::tooling::FunctionTool;
 use crate::llm::{InferenceParam, OpenAIMessage};
-use crate::node::{DataType, DataValue, Node, Port, node_input};
+use crate::node::{node_input, DataType, DataValue, Node, Port};
 
 const TOOLS_CONFIG_PORT: &str = "tools_config";
 
@@ -113,10 +113,14 @@ fn validate_tool_definitions(tool_definitions: &[ToolDefinition]) -> Result<()> 
     for tool in tool_definitions {
         let tool_name = tool.name.trim();
         if tool_name.is_empty() {
-            return Err(Error::ValidationError("Tool name cannot be empty".to_string()));
+            return Err(Error::ValidationError(
+                "Tool name cannot be empty".to_string(),
+            ));
         }
         if !seen_tool_names.insert(tool_name.to_string()) {
-            return Err(Error::ValidationError(format!("Duplicate tool name: {tool_name}")));
+            return Err(Error::ValidationError(format!(
+                "Duplicate tool name: {tool_name}"
+            )));
         }
 
         let mut seen_param_names = HashSet::new();
@@ -164,10 +168,12 @@ impl BrainNode {
 
     fn outputs_from_tool_definitions(tool_definitions: &[ToolDefinition]) -> Vec<Port> {
         let mut ports = vec![
-            Port::new("assistant_message", DataType::OpenAIMessage)
-                .with_description("LLM 返回的完整 assistant 消息（含 tool_calls，用于 agentic loop）"),
-            Port::new("has_tool_call", DataType::Boolean)
-                .with_description("LLM 返回的 assistant 消息是否包含 tool_calls，用于控制 agentic loop 继续或结束"),
+            Port::new("assistant_message", DataType::OpenAIMessage).with_description(
+                "LLM 返回的完整 assistant 消息（含 tool_calls，用于 agentic loop）",
+            ),
+            Port::new("has_tool_call", DataType::Boolean).with_description(
+                "LLM 返回的 assistant 消息是否包含 tool_calls，用于控制 agentic loop 继续或结束",
+            ),
         ];
 
         ports.extend(tool_definitions.iter().map(|tool| {
@@ -332,7 +338,10 @@ impl Node for BrainNode {
         }
     }
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         if let Some(DataValue::Json(value)) = inputs.get(TOOLS_CONFIG_PORT) {
@@ -373,7 +382,9 @@ impl Node for BrainNode {
             .tool_definitions
             .iter()
             .cloned()
-            .map(|definition| Arc::new(DynamicFunctionTool::new(definition)) as Arc<dyn FunctionTool>)
+            .map(|definition| {
+                Arc::new(DynamicFunctionTool::new(definition)) as Arc<dyn FunctionTool>
+            })
             .collect();
 
         let response = model.inference(&InferenceParam {
@@ -387,7 +398,10 @@ impl Node for BrainNode {
                 || content.starts_with("Error: Failed to parse response")
                 || content.starts_with("Error: Invalid response structure");
             if is_transport_error {
-                return Err(Error::ValidationError(format!("LLM request failed: {}", content)));
+                return Err(Error::ValidationError(format!(
+                    "LLM request failed: {}",
+                    content
+                )));
             }
         }
 
@@ -407,8 +421,7 @@ impl Node for BrainNode {
         for tool_call in response.tool_calls {
             info!(
                 "[BrainNode] tool call: {} args={}",
-                tool_call.function.name,
-                tool_call.function.arguments
+                tool_call.function.name, tool_call.function.arguments
             );
             tool_payloads
                 .entry(tool_call.function.name.clone())
@@ -431,7 +444,10 @@ impl Node for BrainNode {
         }
 
         for (name, _) in &tool_payloads {
-            warn!("[BrainNode] LLM returned tool call '{}' which does not match any tool definition", name);
+            warn!(
+                "[BrainNode] LLM returned tool call '{}' which does not match any tool definition",
+                name
+            );
         }
 
         self.validate_outputs(&outputs)?;
@@ -444,11 +460,11 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    use serde_json::{Map, json, Value};
+    use serde_json::{json, Map, Value};
 
     use super::{BrainNode, ToolDefinition, ToolParamDef};
-    use crate::llm::tooling::{FunctionTool, ToolCalls, ToolCallsFuncSpec};
     use crate::llm::llm_base::LLMBase;
+    use crate::llm::tooling::{FunctionTool, ToolCalls, ToolCallsFuncSpec};
     use crate::llm::{InferenceParam, MessageRole, OpenAIMessage};
     use crate::node::{DataType, DataValue, Node};
 
@@ -503,7 +519,10 @@ mod tests {
         node.apply_inline_config(&inline_values).unwrap();
 
         let output_names: Vec<String> = node.output_ports().into_iter().map(|p| p.name).collect();
-        assert_eq!(output_names, vec!["assistant_message", "has_tool_call", "search"]);
+        assert_eq!(
+            output_names,
+            vec!["assistant_message", "has_tool_call", "search"]
+        );
     }
 
     #[test]
@@ -521,7 +540,8 @@ mod tests {
                     ]
                 }
             ])),
-        )])).unwrap();
+        )]))
+        .unwrap();
 
         let llm = Arc::new(TestLlm {
             response: OpenAIMessage {
@@ -539,43 +559,47 @@ mod tests {
             },
         });
 
-        let outputs = node.execute(HashMap::from([
-            ("llm_model".to_string(), DataValue::LLModel(llm)),
-            (
-                "messages".to_string(),
-                DataValue::Vec(
-                    Box::new(DataType::OpenAIMessage),
-                    vec![
-                        DataValue::OpenAIMessage(OpenAIMessage::system("You are helpful")),
-                        DataValue::OpenAIMessage(OpenAIMessage::user("Find rust docs")),
-                    ],
+        let outputs = node
+            .execute(HashMap::from([
+                ("llm_model".to_string(), DataValue::LLModel(llm)),
+                (
+                    "messages".to_string(),
+                    DataValue::Vec(
+                        Box::new(DataType::OpenAIMessage),
+                        vec![
+                            DataValue::OpenAIMessage(OpenAIMessage::system("You are helpful")),
+                            DataValue::OpenAIMessage(OpenAIMessage::user("Find rust docs")),
+                        ],
+                    ),
                 ),
-            ),
-            (
-                "tools_config".to_string(),
-                DataValue::Json(json!([
-                    {
-                        "name": "search",
-                        "description": "Search docs",
-                        "parameters": [
-                            { "name": "query", "data_type": "String" },
-                            { "name": "limit", "data_type": "Integer" }
-                        ]
-                    }
-                ])),
-            ),
-        ])).unwrap();
+                (
+                    "tools_config".to_string(),
+                    DataValue::Json(json!([
+                        {
+                            "name": "search",
+                            "description": "Search docs",
+                            "parameters": [
+                                { "name": "query", "data_type": "String" },
+                                { "name": "limit", "data_type": "Integer" }
+                            ]
+                        }
+                    ])),
+                ),
+            ]))
+            .unwrap();
 
         assert!(matches!(
             outputs.get("has_tool_call"),
             Some(DataValue::Boolean(true))
         ));
-        assert!(matches!(outputs.get("search"), Some(DataValue::Json(value)) if *value == json!({
-            "tool_call_id": "tool_1",
-            "query": "rust",
-            "limit": 3,
-            "arguments": {"query": "rust", "limit": 3}
-        })));
+        assert!(
+            matches!(outputs.get("search"), Some(DataValue::Json(value)) if *value == json!({
+                "tool_call_id": "tool_1",
+                "query": "rust",
+                "limit": 3,
+                "arguments": {"query": "rust", "limit": 3}
+            }))
+        );
     }
 
     #[test]
@@ -590,19 +614,21 @@ mod tests {
             },
         });
 
-        let outputs = node.execute(HashMap::from([
-            ("llm_model".to_string(), DataValue::LLModel(llm)),
-            (
-                "messages".to_string(),
-                DataValue::Vec(
-                    Box::new(DataType::OpenAIMessage),
-                    vec![
-                        DataValue::OpenAIMessage(OpenAIMessage::system("You are helpful")),
-                        DataValue::OpenAIMessage(OpenAIMessage::user("Say hi")),
-                    ],
+        let outputs = node
+            .execute(HashMap::from([
+                ("llm_model".to_string(), DataValue::LLModel(llm)),
+                (
+                    "messages".to_string(),
+                    DataValue::Vec(
+                        Box::new(DataType::OpenAIMessage),
+                        vec![
+                            DataValue::OpenAIMessage(OpenAIMessage::system("You are helpful")),
+                            DataValue::OpenAIMessage(OpenAIMessage::user("Say hi")),
+                        ],
+                    ),
                 ),
-            ),
-        ])).unwrap();
+            ]))
+            .unwrap();
 
         assert!(matches!(
             outputs.get("has_tool_call"),
@@ -624,33 +650,35 @@ mod tests {
             },
         });
 
-        let outputs = node.execute(HashMap::from([
-            ("llm_model".to_string(), DataValue::LLModel(llm.clone())),
-            (
-                "messages".to_string(),
-                DataValue::Vec(
-                    Box::new(DataType::OpenAIMessage),
-                    vec![
-                        DataValue::OpenAIMessage(OpenAIMessage::system("You are helpful")),
-                        DataValue::OpenAIMessage(OpenAIMessage {
-                            role: MessageRole::Assistant,
-                            content: None,
-                            tool_calls: vec![ToolCalls {
-                                id: "call_1".to_string(),
-                                type_name: "function".to_string(),
-                                function: ToolCallsFuncSpec {
-                                    name: "natural_language_reply".to_string(),
-                                    arguments: json!({"content": "你好呀"}),
-                                },
-                            }],
-                            tool_call_id: None,
-                        }),
-                        DataValue::OpenAIMessage(OpenAIMessage::tool_result("call_1", "sent")),
-                        DataValue::OpenAIMessage(OpenAIMessage::user("?")),
-                    ],
+        let outputs = node
+            .execute(HashMap::from([
+                ("llm_model".to_string(), DataValue::LLModel(llm.clone())),
+                (
+                    "messages".to_string(),
+                    DataValue::Vec(
+                        Box::new(DataType::OpenAIMessage),
+                        vec![
+                            DataValue::OpenAIMessage(OpenAIMessage::system("You are helpful")),
+                            DataValue::OpenAIMessage(OpenAIMessage {
+                                role: MessageRole::Assistant,
+                                content: None,
+                                tool_calls: vec![ToolCalls {
+                                    id: "call_1".to_string(),
+                                    type_name: "function".to_string(),
+                                    function: ToolCallsFuncSpec {
+                                        name: "natural_language_reply".to_string(),
+                                        arguments: json!({"content": "你好呀"}),
+                                    },
+                                }],
+                                tool_call_id: None,
+                            }),
+                            DataValue::OpenAIMessage(OpenAIMessage::tool_result("call_1", "sent")),
+                            DataValue::OpenAIMessage(OpenAIMessage::user("?")),
+                        ],
+                    ),
                 ),
-            ),
-        ])).unwrap();
+            ]))
+            .unwrap();
 
         assert!(matches!(
             outputs.get("has_tool_call"),
@@ -682,21 +710,23 @@ mod tests {
             },
         });
 
-        let outputs = node.execute(HashMap::from([
-            ("llm_model".to_string(), DataValue::LLModel(llm.clone())),
-            (
-                "messages".to_string(),
-                DataValue::Vec(
-                    Box::new(DataType::OpenAIMessage),
-                    vec![
-                        DataValue::OpenAIMessage(OpenAIMessage::system("You are helpful")),
-                        DataValue::OpenAIMessage(OpenAIMessage::user("你好")),
-                        DataValue::OpenAIMessage(OpenAIMessage::tool_result("call_1", "sent")),
-                        DataValue::OpenAIMessage(OpenAIMessage::user("?")),
-                    ],
+        let outputs = node
+            .execute(HashMap::from([
+                ("llm_model".to_string(), DataValue::LLModel(llm.clone())),
+                (
+                    "messages".to_string(),
+                    DataValue::Vec(
+                        Box::new(DataType::OpenAIMessage),
+                        vec![
+                            DataValue::OpenAIMessage(OpenAIMessage::system("You are helpful")),
+                            DataValue::OpenAIMessage(OpenAIMessage::user("你好")),
+                            DataValue::OpenAIMessage(OpenAIMessage::tool_result("call_1", "sent")),
+                            DataValue::OpenAIMessage(OpenAIMessage::user("?")),
+                        ],
+                    ),
                 ),
-            ),
-        ])).unwrap();
+            ]))
+            .unwrap();
 
         assert!(matches!(
             outputs.get("has_tool_call"),
@@ -714,10 +744,8 @@ mod tests {
 
     #[test]
     fn build_tool_payload_flattens_object_arguments() {
-        let payload = BrainNode::build_tool_payload(
-            "tool_1".to_string(),
-            json!({ "content": "hello" }),
-        );
+        let payload =
+            BrainNode::build_tool_payload("tool_1".to_string(), json!({ "content": "hello" }));
 
         assert_eq!(
             payload,
@@ -731,10 +759,14 @@ mod tests {
 
     #[test]
     fn build_tool_payload_keeps_non_object_arguments_under_arguments() {
-        let payload = BrainNode::build_tool_payload("tool_1".to_string(), Value::String("hello".to_string()));
+        let payload =
+            BrainNode::build_tool_payload("tool_1".to_string(), Value::String("hello".to_string()));
 
         let mut expected = Map::new();
-        expected.insert("tool_call_id".to_string(), Value::String("tool_1".to_string()));
+        expected.insert(
+            "tool_call_id".to_string(),
+            Value::String("tool_1".to_string()),
+        );
         expected.insert("arguments".to_string(), Value::String("hello".to_string()));
 
         assert_eq!(payload, Value::Object(expected));

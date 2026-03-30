@@ -40,7 +40,10 @@ impl Node for ConditionalNode {
         port! { name = "branch_taken", ty = String, desc = "Which branch was taken" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();
@@ -48,18 +51,27 @@ impl Node for ConditionalNode {
         if let Some(DataValue::Boolean(condition)) = inputs.get("condition") {
             let (result, branch) = if *condition {
                 (
-                    inputs.get("true_value").cloned().unwrap_or(DataValue::Json(serde_json::json!(null))),
+                    inputs
+                        .get("true_value")
+                        .cloned()
+                        .unwrap_or(DataValue::Json(serde_json::json!(null))),
                     "true",
                 )
             } else {
                 (
-                    inputs.get("false_value").cloned().unwrap_or(DataValue::Json(serde_json::json!(null))),
+                    inputs
+                        .get("false_value")
+                        .cloned()
+                        .unwrap_or(DataValue::Json(serde_json::json!(null))),
                     "false",
                 )
             };
 
             outputs.insert("result".to_string(), result);
-            outputs.insert("branch_taken".to_string(), DataValue::String(branch.to_string()));
+            outputs.insert(
+                "branch_taken".to_string(),
+                DataValue::String(branch.to_string()),
+            );
         }
 
         self.validate_outputs(&outputs)?;
