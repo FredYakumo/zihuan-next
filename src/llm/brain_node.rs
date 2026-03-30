@@ -24,8 +24,6 @@ pub struct ToolDefinition {
     pub description: String,
     #[serde(default)]
     pub parameters: Vec<ToolParamDef>,
-    #[serde(default)]
-    pub terminal_on_success: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -93,8 +91,6 @@ fn data_type_to_json_schema_type(data_type: &DataType) -> &'static str {
         | DataType::RedisRef
         | DataType::MySqlRef
         | DataType::OpenAIMessageSessionCacheRef
-        | DataType::CurrentSessionRegistryRef
-        | DataType::CurrentSessionLeaseRef
         | DataType::LLModel
         | DataType::LoopControlRef
         | DataType::Custom(_) => "object",
@@ -165,8 +161,6 @@ impl BrainNode {
                 .with_description("LLM 返回的完整 assistant 消息（含 tool_calls，用于 agentic loop）"),
             Port::new("has_tool_call", DataType::Boolean)
                 .with_description("LLM 返回的 assistant 消息是否包含 tool_calls，用于控制 agentic loop 继续或结束"),
-            Port::new("terminal_tool_called", DataType::Boolean)
-                .with_description("LLM 返回的 assistant 消息是否调用了标记为 terminal_on_success 的工具"),
         ];
 
         ports.extend(tool_definitions.iter().map(|tool| {
@@ -301,16 +295,6 @@ impl Node for BrainNode {
         }
 
         let has_tool_call = !response.tool_calls.is_empty();
-        let terminal_tool_called = response
-            .tool_calls
-            .iter()
-            .any(|tool_call| {
-                self.tool_definitions
-                    .iter()
-                    .find(|tool| tool.name == tool_call.function.name)
-                    .map(|tool| tool.terminal_on_success)
-                    .unwrap_or(false)
-            });
 
         let mut outputs = HashMap::new();
         outputs.insert(
@@ -320,10 +304,6 @@ impl Node for BrainNode {
         outputs.insert(
             "has_tool_call".to_string(),
             DataValue::Boolean(has_tool_call),
-        );
-        outputs.insert(
-            "terminal_tool_called".to_string(),
-            DataValue::Boolean(terminal_tool_called),
         );
 
         let mut tool_payloads: HashMap<String, Vec<Value>> = HashMap::new();
@@ -397,8 +377,7 @@ mod tests {
                     "description": "Search docs",
                     "parameters": [
                         { "name": "query", "data_type": "String" }
-                    ],
-                    "terminal_on_success": true
+                    ]
                 }
             ])),
         )]);
@@ -406,15 +385,7 @@ mod tests {
         node.apply_inline_config(&inline_values).unwrap();
 
         let output_names: Vec<String> = node.output_ports().into_iter().map(|p| p.name).collect();
-        assert_eq!(
-            output_names,
-            vec![
-                "assistant_message",
-                "has_tool_call",
-                "terminal_tool_called",
-                "search",
-            ]
-        );
+        assert_eq!(output_names, vec!["assistant_message", "has_tool_call", "search"]);
     }
 
     #[test]
@@ -429,8 +400,7 @@ mod tests {
                     "parameters": [
                         { "name": "query", "data_type": "String" },
                         { "name": "limit", "data_type": "Integer" }
-                    ],
-                    "terminal_on_success": true
+                    ]
                 }
             ])),
         )])).unwrap();
@@ -472,8 +442,7 @@ mod tests {
                         "parameters": [
                             { "name": "query", "data_type": "String" },
                             { "name": "limit", "data_type": "Integer" }
-                        ],
-                        "terminal_on_success": true
+                        ]
                     }
                 ])),
             ),
@@ -481,10 +450,6 @@ mod tests {
 
         assert!(matches!(
             outputs.get("has_tool_call"),
-            Some(DataValue::Boolean(true))
-        ));
-        assert!(matches!(
-            outputs.get("terminal_tool_called"),
             Some(DataValue::Boolean(true))
         ));
         assert!(matches!(outputs.get("search"), Some(DataValue::Json(value)) if *value == json!({
@@ -525,10 +490,6 @@ mod tests {
             outputs.get("has_tool_call"),
             Some(DataValue::Boolean(false))
         ));
-        assert!(matches!(
-            outputs.get("terminal_tool_called"),
-            Some(DataValue::Boolean(false))
-        ));
         assert!(!outputs.contains_key("search"));
     }
 
@@ -565,7 +526,6 @@ mod tests {
         let definition = ToolDefinition {
             name: "search".to_string(),
             description: "Search docs".to_string(),
-            terminal_on_success: false,
             parameters: vec![
                 ToolParamDef {
                     name: "query".to_string(),

@@ -147,7 +147,7 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util::{ArrayGetNode, AtQQTargetMessageNode, BooleanNotNode, ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentSessionListProviderNode, CurrentSessionReleaseNode, CurrentSessionTryAcquireNode, CurrentTimeNode, FormatStringNode, JoinStringNode, JsonExtractNode, JsonParserNode, LoopBreakNode, LoopNode, LoopStateUpdateNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheProviderNode, OpenAIMessageSessionCacheSetNode, PreviewMessageListNode, PreviewStringNode, PushBackVecNode, QQMessageListDataNode, QQNaturalLanguageReplyNode, SenderIdInCurrentSessionNode, StackNode, StringDataNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
+    use crate::node::util::{ArrayGetNode, AtQQTargetMessageNode, BooleanNotNode, ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode, JoinStringNode, JsonExtractNode, JsonParserNode, LoopBreakNode, LoopNode, LoopStateUpdateNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheProviderNode, OpenAIMessageSessionCacheSetNode, PreviewMessageListNode, PreviewStringNode, PushBackVecNode, QQMessageListDataNode, QQNaturalLanguageReplyNode, StackNode, StringDataNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
     use crate::llm::llm_api_node::LLMApiNode;
     use crate::llm::brain_node::BrainNode;
     use crate::llm::llm_infer_node::LLMInferNode;
@@ -539,38 +539,6 @@ pub fn init_node_registry() -> Result<()> {
         OpenAIMessageSessionCacheClearNode
     );
 
-    register_node!(
-        "current_session_list_provider",
-        "当前会话列表 Provider",
-        "消息存储",
-        "创建单次节点图运行期的 sender 会话锁注册表引用",
-        CurrentSessionListProviderNode
-    );
-
-    register_node!(
-        "sender_id_in_current_session",
-        "sender_id 是否在会话中",
-        "消息存储",
-        "检查 sender_id 当前是否已处于活跃会话列表中",
-        SenderIdInCurrentSessionNode
-    );
-
-    register_node!(
-        "current_session_try_acquire",
-        "尝试获取当前会话锁",
-        "消息存储",
-        "原子尝试获取 sender_id 的会话锁，成功时返回租约引用",
-        CurrentSessionTryAcquireNode
-    );
-
-    register_node!(
-        "current_session_release",
-        "释放当前会话锁",
-        "消息存储",
-        "根据租约引用释放 sender_id 的当前会话锁",
-        CurrentSessionReleaseNode
-    );
-
     Ok(())
 }
 
@@ -579,7 +547,6 @@ pub fn build_node_graph_from_definition(
     definition: &crate::node::graph_io::NodeGraphDefinition,
 ) -> Result<crate::node::NodeGraph> {
     let mut graph = crate::node::NodeGraph::new();
-    graph.set_source_definition(definition.clone());
 
     if !definition.edges.is_empty() {
         graph.set_edges(definition.edges.clone());

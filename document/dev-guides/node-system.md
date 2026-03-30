@@ -184,8 +184,6 @@ pub enum DataType {
     RedisRef,
     MySqlRef,
     OpenAIMessageSessionCacheRef,
-    CurrentSessionRegistryRef,
-    CurrentSessionLeaseRef,
     LLModel,
     LoopControlRef,
 
@@ -212,17 +210,8 @@ pub enum DataType {
 | `DataType::RedisRef` | `DataValue::RedisRef(RedisConfig)` | Redis config |
 | `DataType::MySqlRef` | `DataValue::MySqlRef(MySqlConfig)` | MySQL config + pool |
 | `DataType::OpenAIMessageSessionCacheRef` | `DataValue::OpenAIMessageSessionCacheRef(...)` | Message cache |
-| `DataType::CurrentSessionRegistryRef` | `DataValue::CurrentSessionRegistryRef(Arc<CurrentSessionRegistryRef>)` | Run-scoped sender session lock registry |
-| `DataType::CurrentSessionLeaseRef` | `DataValue::CurrentSessionLeaseRef(Arc<CurrentSessionLeaseRef>)` | Lease used for precise session lock release |
 | `DataType::LLModel` | `DataValue::LLModel(...)` | Language model config |
 | `DataType::LoopControlRef` | `DataValue::LoopControlRef(Arc<LoopControl>)` | Loop break signal |
-
-Session lock helpers:
-
-- `current_session_list_provider` creates the shared run-scoped registry and a snapshot of active sender IDs.
-- `sender_id_in_current_session` only observes whether a sender is currently active.
-- `current_session_try_acquire` is the atomic operation that claims a sender lock and returns a lease.
-- `current_session_release` releases by lease, so a stale worker cannot accidentally unlock a newer session.
 
 **Compatibility rules:**
 
