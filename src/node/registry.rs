@@ -147,7 +147,7 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util::{ArrayGetNode, AtQQTargetMessageNode, BooleanNotNode, ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentSessionListProviderNode, CurrentSessionReleaseNode, CurrentSessionTryAcquireNode, CurrentTimeNode, FormatStringNode, JoinStringNode, JsonExtractNode, JsonParserNode, LoopBreakNode, LoopNode, LoopStateUpdateNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheProviderNode, OpenAIMessageSessionCacheSetNode, PreviewMessageListNode, PreviewStringNode, PushBackVecNode, QQMessageListDataNode, SenderIdInCurrentSessionNode, StackNode, StringDataNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
+    use crate::node::util::{ArrayGetNode, AtQQTargetMessageNode, BooleanNotNode, ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentSessionListProviderNode, CurrentSessionReleaseNode, CurrentSessionTryAcquireNode, CurrentTimeNode, FormatStringNode, JoinStringNode, JsonExtractNode, JsonParserNode, LoopBreakNode, LoopNode, LoopStateUpdateNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheProviderNode, OpenAIMessageSessionCacheSetNode, PreviewMessageListNode, PreviewStringNode, PushBackVecNode, QQMessageListDataNode, QQNaturalLanguageReplyNode, SenderIdInCurrentSessionNode, StackNode, StringDataNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
     use crate::llm::llm_api_node::LLMApiNode;
     use crate::llm::brain_node::BrainNode;
     use crate::llm::llm_infer_node::LLMInferNode;
@@ -382,6 +382,14 @@ pub fn init_node_registry() -> Result<()> {
         "AI",
         "使用LLModel引用对消息列表进行一次推理",
         LLMInferNode
+    );
+
+    register_node!(
+        "qq_natural_language_reply",
+        "QQ自然语言回复",
+        "AI",
+        "调用 LLM 生成结构化 QQ 自然语言回复，并按好友/群组目标逐批发送",
+        QQNaturalLanguageReplyNode
     );
 
     register_node!(
