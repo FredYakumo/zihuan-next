@@ -2939,22 +2939,10 @@
       "to_port": "condition"
     },
     {
-      "from_node_id": "node_34",
-      "from_port": "output",
-      "to_node_id": "node_36",
-      "to_port": "vec"
-    },
-    {
       "from_node_id": "node_33",
       "from_port": "message",
       "to_node_id": "node_36",
       "to_port": "element"
-    },
-    {
-      "from_node_id": "node_36",
-      "from_port": "result",
-      "to_node_id": "node_42",
-      "to_port": "new_state"
     },
     {
       "from_node_id": "node_17",
@@ -2970,6 +2958,18 @@
     },
     {
       "from_node_id": "node_38",
+      "from_port": "result",
+      "to_node_id": "node_36",
+      "to_port": "vec"
+    },
+    {
+      "from_node_id": "node_36",
+      "from_port": "result",
+      "to_node_id": "node_42",
+      "to_port": "new_state"
+    },
+    {
+      "from_node_id": "node_36",
       "from_port": "result",
       "to_node_id": "node_35",
       "to_port": "input"
@@ -3059,22 +3059,10 @@
       "to_port": "tool_call"
     },
     {
-      "from_node_id": "node_22",
-      "from_port": "output",
-      "to_node_id": "node_47",
-      "to_port": "vec"
-    },
-    {
       "from_node_id": "node_20",
       "from_port": "message",
       "to_node_id": "node_47",
       "to_port": "element"
-    },
-    {
-      "from_node_id": "node_47",
-      "from_port": "result",
-      "to_node_id": "node_51",
-      "to_port": "new_state"
     },
     {
       "from_node_id": "node_22",
@@ -3156,6 +3144,18 @@
     },
     {
       "from_node_id": "node_58",
+      "from_port": "result",
+      "to_node_id": "node_47",
+      "to_port": "vec"
+    },
+    {
+      "from_node_id": "node_47",
+      "from_port": "result",
+      "to_node_id": "node_51",
+      "to_port": "new_state"
+    },
+    {
+      "from_node_id": "node_47",
       "from_port": "result",
       "to_node_id": "node_52",
       "to_port": "input"
