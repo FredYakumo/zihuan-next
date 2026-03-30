@@ -122,7 +122,7 @@ impl Node for FormatStringNode {
                 .optional(),
         ];
         ports.extend(self.variables.iter().map(|var| {
-            Port::new(var.clone(), DataType::String)
+            Port::new(var.clone(), DataType::Any)
                 .with_description(format!("变量 {var}"))
         }));
         ports
@@ -152,8 +152,7 @@ impl Node for FormatStringNode {
         let mut result = self.template.clone();
         for var in &self.variables {
             let value = match inputs.get(var) {
-                Some(DataValue::String(s)) => s.clone(),
-                Some(v) => format!("{v:?}"),
+                Some(v) => v.to_display_string(),
                 None => String::new(),
             };
             result = result.replace(&format!("${{{var}}}"), &value);
@@ -231,6 +230,50 @@ mod tests {
         let outputs = node.execute(inputs).unwrap();
         match outputs.get("output") {
             Some(DataValue::String(s)) => assert_eq!(s, "Hi World!"),
+            other => panic!("unexpected output: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn input_ports_use_any_for_dynamic_variables() {
+        let mut node = FormatStringNode::new("id", "name");
+        node.template = "Hi ${name} ${count}".to_string();
+        node.variables = vec!["name".to_string(), "count".to_string()];
+
+        let ports = node.input_ports();
+        let dynamic_ports: Vec<_> = ports
+            .into_iter()
+            .filter(|port| port.name != "template")
+            .collect();
+
+        assert_eq!(dynamic_ports.len(), 2);
+        assert!(dynamic_ports.iter().all(|port| port.data_type == DataType::Any));
+    }
+
+    #[test]
+    fn execute_stringifies_any_inputs() {
+        let mut node = FormatStringNode::new("id", "name");
+        node.template = "count=${count}, enabled=${enabled}, meta=${meta}".to_string();
+        node.variables = vec![
+            "count".to_string(),
+            "enabled".to_string(),
+            "meta".to_string(),
+        ];
+
+        let inputs = HashMap::from([
+            ("count".to_string(), DataValue::Integer(42)),
+            ("enabled".to_string(), DataValue::Boolean(true)),
+            (
+                "meta".to_string(),
+                DataValue::Json(serde_json::json!({"name":"alice"})),
+            ),
+        ]);
+
+        let outputs = node.execute(inputs).unwrap();
+        match outputs.get("output") {
+            Some(DataValue::String(s)) => {
+                assert_eq!(s, r#"count=42, enabled=true, meta={"name":"alice"}"#)
+            }
             other => panic!("unexpected output: {:?}", other),
         }
     }
