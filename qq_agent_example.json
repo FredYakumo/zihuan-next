@@ -50,12 +50,12 @@
         "height": 160.0
       },
       "inline_values": {
-        "qq_id": "2496875785",
-        "bot_server_url": "ws://localhost:3001"
+        "bot_server_url": "ws://localhost:3001",
+        "qq_id": "2496875785"
       },
       "port_bindings": {
-        "qq_id": "BOT_ID",
-        "bot_server_token": "BOT_SERVER_TOKEN"
+        "bot_server_token": "BOT_SERVER_TOKEN",
+        "qq_id": "BOT_ID"
       },
       "has_error": false,
       "has_cycle": false
@@ -358,8 +358,8 @@
       },
       "inline_values": {
         "mysql_database": "zihuan_aibot",
-        "mysql_port": "3306",
-        "mysql_host": "127.0.0.1"
+        "mysql_host": "127.0.0.1",
+        "mysql_port": "3306"
       },
       "port_bindings": {
         "mysql_password": "MYSQL_PASSWORD",
@@ -541,8 +541,8 @@
         "height": 140.0
       },
       "inline_values": {
-        "ttl_secs": "600",
-        "bucket_name": "message_id_cache"
+        "bucket_name": "message_id_cache",
+        "ttl_secs": "600"
       },
       "port_bindings": {},
       "has_error": false,
@@ -601,9 +601,9 @@
         "timeout_secs": "600"
       },
       "port_bindings": {
+        "model_name": "LLM_MODEL_NAME",
         "api_endpoint": "LLM_API_ENDPOINT",
-        "api_key": "LLM_API_KEY",
-        "model_name": "LLM_MODEL_NAME"
+        "api_key": "LLM_API_KEY"
       },
       "has_error": false,
       "has_cycle": false
@@ -1201,9 +1201,9 @@
           "required": true
         },
         {
-          "name": "natural_lanuage_reply",
+          "name": "natural_language_reply",
           "data_type": "Json",
-          "description": "Tool 'natural_lanuage_reply' 的调用参数 JSON",
+          "description": "Tool 'natural_language_reply' 的调用参数 JSON",
           "required": true
         }
       ],
@@ -1218,7 +1218,7 @@
         "tools_config": [
           {
             "description": "回复对方",
-            "name": "natural_lanuage_reply",
+            "name": "natural_language_reply",
             "parameters": [
               {
                 "data_type": "String",
@@ -1742,8 +1742,8 @@
         "target_type": "group"
       },
       "port_bindings": {
-        "max_one_reply_length": "MAX_ONE_REPLAY_LENGTH",
-        "character_name": "BOT_NAME"
+        "character_name": "BOT_NAME",
+        "max_one_reply_length": "MAX_ONE_REPLAY_LENGTH"
       },
       "has_error": false,
       "has_cycle": false
@@ -1887,8 +1887,8 @@
         "target_type": "friend"
       },
       "port_bindings": {
-        "character_name": "BOT_NAME",
-        "max_one_reply_length": "MAX_ONE_REPLAY_LENGTH"
+        "max_one_reply_length": "MAX_ONE_REPLAY_LENGTH",
+        "character_name": "BOT_NAME"
       },
       "has_error": false,
       "has_cycle": false
@@ -2749,13 +2749,13 @@
     },
     {
       "from_node_id": "node_23",
-      "from_port": "natural_lanuage_reply",
+      "from_port": "natural_language_reply",
       "to_node_id": "node_13",
       "to_port": "json"
     },
     {
       "from_node_id": "node_23",
-      "from_port": "natural_lanuage_reply",
+      "from_port": "natural_language_reply",
       "to_node_id": "node_20",
       "to_port": "tool_call"
     },

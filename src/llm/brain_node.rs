@@ -430,6 +430,10 @@ impl Node for BrainNode {
             }
         }
 
+        for (name, _) in &tool_payloads {
+            warn!("[BrainNode] LLM returned tool call '{}' which does not match any tool definition", name);
+        }
+
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }

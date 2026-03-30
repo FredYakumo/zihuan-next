@@ -333,7 +333,7 @@ pub fn validate_graph_definition(graph: &NodeGraphDefinition) -> Vec<ValidationI
 /// current registry. Does NOT write anything to disk.
 ///
 /// Fix strategy:
-/// - Unregistered node type → mark `has_error = true` (preserved for user inspection)
+/// - Unregistered node type → remove node and all connected edges
 /// - Missing ports vs registry → add the canonical port definition
 /// - Extra ports not in registry → remove them; also drop any edges and inline_values referencing them
 /// - Invalid edges (bad node/port reference) → remove
@@ -341,7 +341,29 @@ pub fn validate_graph_definition(graph: &NodeGraphDefinition) -> Vec<ValidationI
 pub fn auto_fix_graph_definition(graph: &mut NodeGraphDefinition) {
     use crate::node::registry::NODE_REGISTRY;
 
-    // Track (node_id, port_name, is_input) of ports that no longer exist after fix –
+    // Phase 0: collect and remove nodes with unknown types, along with their edges.
+    let mut unknown_node_ids: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+    for node in &graph.nodes {
+        if NODE_REGISTRY.get_node_ports(&node.node_type).is_none() {
+            log::info!(
+                "[auto_fix] Removing node '{}' with unknown type '{}' (id={})",
+                node.name,
+                node.node_type,
+                node.id
+            );
+            unknown_node_ids.insert(node.id.clone());
+        }
+    }
+    if !unknown_node_ids.is_empty() {
+        graph.nodes.retain(|n| !unknown_node_ids.contains(&n.id));
+        graph.edges.retain(|e| {
+            !unknown_node_ids.contains(&e.from_node_id)
+                && !unknown_node_ids.contains(&e.to_node_id)
+        });
+    }
+
+    // Track (node_id, port_name) of ports that no longer exist after fix –
     // used to prune dangling edges.
     let mut removed_output_ports: Vec<(String, String)> = Vec::new();
     let mut removed_input_ports: Vec<(String, String)> = Vec::new();
@@ -349,7 +371,7 @@ pub fn auto_fix_graph_definition(graph: &mut NodeGraphDefinition) {
     for node in &mut graph.nodes {
         match NODE_REGISTRY.get_node_ports(&node.node_type) {
             None => {
-                // Unknown node type — preserve it but flag the error
+                // Should not happen — unknown nodes were removed in Phase 0.
                 node.has_error = true;
             }
             Some((canonical_inputs, canonical_outputs)) => {

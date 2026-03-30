@@ -50,12 +50,12 @@ pub fn save_window_state(state: &WindowState) -> std::io::Result<()> {
 }
 
 pub fn apply_window_state(window: &slint::Window, state: &WindowState) {
-    let min_width = 800.0;
-    let min_height = 600.0;
-    let width = state.width.max(min_width);
-    let height = state.height.max(min_height);
+    let min_width = 800u32;
+    let min_height = 600u32;
+    let width = state.width.max(min_width as f32).round() as u32;
+    let height = state.height.max(min_height as f32).round() as u32;
 
-    window.set_size(slint::LogicalSize::new(width, height));
+    window.set_size(slint::PhysicalSize::new(width, height));
     window.set_position(slint::PhysicalPosition::new(state.x, state.y));
     window.set_maximized(state.maximized);
 }
