@@ -343,7 +343,12 @@ fn build_message_list_vm(
                 let content = data
                     .map(|d| match msg_type.as_str() {
                         "text" => d.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        "at" => d.get("target").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        "at" => d
+                            .get("qq")
+                            .or_else(|| d.get("target"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
                         _ => d.get("id").map(|v| v.to_string()).unwrap_or_default(),
                     })
                     .unwrap_or_default();
