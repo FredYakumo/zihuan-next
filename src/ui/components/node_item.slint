@@ -820,6 +820,7 @@ export component NodeItem inherits Rectangle {
         border-radius: (grid_size * 0.3) * 1px;
         visible: !root.is-list-data-node &&
                  !(root.node_type == "message_event_type_filter" && port.name == "filter_type") &&
+                 !(root.node_type == "qq_natural_language_reply" && port.name == "target_type") &&
                  !((root.node_type == "string_to_openai_message" || root.node_type == "as_system_openai_message") && port.name == "role") &&
                  !(root.node_type == "format_string" && port.name == "template") &&
                  !(root.node_type == "json_extract" && port.name == "fields_config");
@@ -845,6 +846,7 @@ export component NodeItem inherits Rectangle {
         height: (grid_size) * 1px;
         visible: !root.is-list-data-node &&
                  !(root.node_type == "message_event_type_filter" && port.name == "filter_type") &&
+                 !(root.node_type == "qq_natural_language_reply" && port.name == "target_type") &&
                  !((root.node_type == "string_to_openai_message" || root.node_type == "as_system_openai_message") && port.name == "role") &&
                  !(root.node_type == "format_string" && port.name == "template") &&
                  !(root.node_type == "json_extract" && port.name == "fields_config");
@@ -996,6 +998,41 @@ export component NodeItem inherits Rectangle {
                                root.message_event_filter_type == "tool" ? 3 : 0;
                 selected(value) => {
                     root.inline_port_text_changed(root.node_id, "role", value);
+                }
+            }
+        }
+    }
+
+    if root.node_type == "qq_natural_language_reply": Rectangle {
+        x: (grid_size) * 1px;
+        y: (grid_size * (header_rows + 3)) * 1px;
+        width: root.width - (grid_size * 2.5) * 1px;
+        height: (grid_size) * 1px;
+
+        HorizontalLayout {
+            alignment: start;
+            spacing: 5px;
+
+            CjkText {
+                text: "target_type";
+                color: AppTheme.text-secondary;
+                font-size: grid_size * 0.5 * 1px;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 0;
+            }
+
+            ComboBox {
+                width: min(parent.width * 0.65, 120px);
+                height: (grid_size * 0.85) * 1px;
+                model: ["好友", "群组"];
+                current-index: root.message_event_filter_type == "group" ? 1 : 0;
+                selected(value) => {
+                    root.inline_port_text_changed(
+                        root.node_id,
+                        "target_type",
+                        value == "群组" ? "group" : "friend"
+                    );
                 }
             }
         }

@@ -203,6 +203,12 @@ fn build_node_vm(
             Some(InlinePortValue::Text(value)) => value.clone(),
             _ => "private".to_string(),
         }
+    } else if node.node_type == "qq_natural_language_reply" {
+        let key = inline_port_key(&node.id, "target_type");
+        match inline_inputs.get(&key) {
+            Some(InlinePortValue::Text(value)) => value.clone(),
+            _ => "friend".to_string(),
+        }
     } else if node.node_type == "string_to_openai_message" || node.node_type == "as_system_openai_message" {
         let key = inline_port_key(&node.id, "role");
         match inline_inputs.get(&key) {
