@@ -361,7 +361,7 @@ pub fn init_node_registry() -> Result<()> {
 
     register_node!(
         "at_qq_target_message",
-        "构造QQ艾特消息",
+        "构造QQAt消息",
         "消息",
         "输入 QQ 目标 id 字符串，输出 @ 目标的 QQ 消息段",
         AtQQTargetMessageNode
