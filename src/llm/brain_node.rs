@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use log::info;
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
@@ -16,6 +16,8 @@ const TOOLS_CONFIG_PORT: &str = "tools_config";
 pub struct ToolParamDef {
     pub name: String,
     pub data_type: DataType,
+    #[serde(default)]
+    pub desc: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -59,7 +61,11 @@ impl FunctionTool for DynamicFunctionTool {
                 param.name.clone(),
                 json!({
                     "type": data_type_to_json_schema_type(&param.data_type),
-                    "description": format!("参数 {}", param.name),
+                    "description": if param.desc.trim().is_empty() {
+                        format!("参数 {}", param.name)
+                    } else {
+                        param.desc.clone()
+                    },
                 }),
             );
         }
@@ -184,6 +190,95 @@ impl BrainNode {
         payload.insert("arguments".to_string(), arguments);
         Value::Object(payload)
     }
+
+    fn sanitize_messages_for_inference(messages: Vec<OpenAIMessage>) -> Vec<OpenAIMessage> {
+        let mut sanitized = Vec::with_capacity(messages.len());
+        let mut pending_tool_calls: Option<(usize, HashSet<String>)> = None;
+
+        for message in messages {
+            if !message.tool_calls.is_empty() {
+                if let Some((start_index, unresolved_ids)) = pending_tool_calls.take() {
+                    warn!(
+                        "[BrainNode] Dropping incomplete assistant tool-call segment before a new assistant tool-call message: unresolved_ids={:?}",
+                        unresolved_ids
+                    );
+                    sanitized.truncate(start_index);
+                }
+
+                let tool_call_ids = message
+                    .tool_calls
+                    .iter()
+                    .map(|tool_call| tool_call.id.clone())
+                    .collect::<HashSet<_>>();
+                let start_index = sanitized.len();
+                sanitized.push(message);
+
+                if !tool_call_ids.is_empty() {
+                    pending_tool_calls = Some((start_index, tool_call_ids));
+                }
+                continue;
+            }
+
+            if matches!(message.role, crate::llm::MessageRole::Tool) {
+                let tool_call_id = message.tool_call_id.clone();
+                let mut should_keep_tool_message = false;
+
+                if let Some((_, unresolved_ids)) = pending_tool_calls.as_mut() {
+                    if let Some(tool_call_id) = tool_call_id.as_ref() {
+                        if unresolved_ids.remove(tool_call_id) {
+                            should_keep_tool_message = true;
+                        }
+                    }
+                }
+
+                if should_keep_tool_message {
+                    sanitized.push(message);
+                    if pending_tool_calls
+                        .as_ref()
+                        .is_some_and(|(_, unresolved_ids)| unresolved_ids.is_empty())
+                    {
+                        pending_tool_calls = None;
+                    }
+                } else {
+                    match pending_tool_calls.as_ref() {
+                        Some(_) => {
+                            warn!(
+                                "[BrainNode] Dropping orphan tool message without matching pending tool_call_id: {:?}",
+                                tool_call_id
+                            );
+                        }
+                        None => {
+                            warn!(
+                                "[BrainNode] Dropping tool message because no assistant tool-call message is pending: {:?}",
+                                tool_call_id
+                            );
+                        }
+                    }
+                }
+                continue;
+            }
+
+            if let Some((start_index, unresolved_ids)) = pending_tool_calls.take() {
+                warn!(
+                    "[BrainNode] Dropping incomplete assistant tool-call segment before non-tool message: unresolved_ids={:?}",
+                    unresolved_ids
+                );
+                sanitized.truncate(start_index);
+            }
+
+            sanitized.push(message);
+        }
+
+        if let Some((start_index, unresolved_ids)) = pending_tool_calls {
+            warn!(
+                "[BrainNode] Dropping dangling assistant tool-call segment at end of history: unresolved_ids={:?}",
+                unresolved_ids
+            );
+            sanitized.truncate(start_index);
+        }
+
+        sanitized
+    }
 }
 
 impl Node for BrainNode {
@@ -271,6 +366,7 @@ impl Node for BrainNode {
                 ));
             }
         };
+        let messages = Self::sanitize_messages_for_inference(messages);
 
         let tools: Vec<Arc<dyn FunctionTool>> = self
             .tool_definitions
@@ -362,6 +458,23 @@ mod tests {
         }
 
         fn inference(&self, _param: &InferenceParam) -> OpenAIMessage {
+            self.response.clone()
+        }
+    }
+
+    #[derive(Debug)]
+    struct RecordingLlm {
+        seen_messages: std::sync::Mutex<Vec<OpenAIMessage>>,
+        response: OpenAIMessage,
+    }
+
+    impl LLMBase for RecordingLlm {
+        fn get_model_name(&self) -> &str {
+            "recording-model"
+        }
+
+        fn inference(&self, param: &InferenceParam) -> OpenAIMessage {
+            *self.seen_messages.lock().unwrap() = param.messages.to_vec();
             self.response.clone()
         }
     }
@@ -494,6 +607,107 @@ mod tests {
     }
 
     #[test]
+    fn execute_drops_dangling_tool_conversation_before_inference() {
+        let mut node = BrainNode::new("brain_1", "Brain");
+        let llm = Arc::new(RecordingLlm {
+            seen_messages: std::sync::Mutex::new(Vec::new()),
+            response: OpenAIMessage {
+                role: MessageRole::Assistant,
+                content: Some("done".to_string()),
+                tool_calls: Vec::new(),
+                tool_call_id: None,
+            },
+        });
+
+        let outputs = node.execute(HashMap::from([
+            ("llm_model".to_string(), DataValue::LLModel(llm.clone())),
+            (
+                "messages".to_string(),
+                DataValue::Vec(
+                    Box::new(DataType::OpenAIMessage),
+                    vec![
+                        DataValue::OpenAIMessage(OpenAIMessage::system("You are helpful")),
+                        DataValue::OpenAIMessage(OpenAIMessage {
+                            role: MessageRole::Assistant,
+                            content: None,
+                            tool_calls: vec![ToolCalls {
+                                id: "call_1".to_string(),
+                                type_name: "function".to_string(),
+                                function: ToolCallsFuncSpec {
+                                    name: "natural_language_reply".to_string(),
+                                    arguments: json!({"content": "你好呀"}),
+                                },
+                            }],
+                            tool_call_id: None,
+                        }),
+                        DataValue::OpenAIMessage(OpenAIMessage::tool_result("call_1", "sent")),
+                        DataValue::OpenAIMessage(OpenAIMessage::user("?")),
+                    ],
+                ),
+            ),
+        ])).unwrap();
+
+        assert!(matches!(
+            outputs.get("has_tool_call"),
+            Some(DataValue::Boolean(false))
+        ));
+
+        let seen_messages = llm.seen_messages.lock().unwrap().clone();
+        assert_eq!(seen_messages.len(), 4);
+        assert!(matches!(seen_messages[0].role, MessageRole::System));
+        assert_eq!(seen_messages[0].content.as_deref(), Some("You are helpful"));
+        assert!(matches!(seen_messages[1].role, MessageRole::Assistant));
+        assert_eq!(seen_messages[1].tool_calls.len(), 1);
+        assert!(matches!(seen_messages[2].role, MessageRole::Tool));
+        assert_eq!(seen_messages[2].tool_call_id.as_deref(), Some("call_1"));
+        assert!(matches!(seen_messages[3].role, MessageRole::User));
+        assert_eq!(seen_messages[3].content.as_deref(), Some("?"));
+    }
+
+    #[test]
+    fn execute_drops_orphan_tool_message_without_matching_assistant_tool_call() {
+        let mut node = BrainNode::new("brain_1", "Brain");
+        let llm = Arc::new(RecordingLlm {
+            seen_messages: std::sync::Mutex::new(Vec::new()),
+            response: OpenAIMessage {
+                role: MessageRole::Assistant,
+                content: Some("done".to_string()),
+                tool_calls: Vec::new(),
+                tool_call_id: None,
+            },
+        });
+
+        let outputs = node.execute(HashMap::from([
+            ("llm_model".to_string(), DataValue::LLModel(llm.clone())),
+            (
+                "messages".to_string(),
+                DataValue::Vec(
+                    Box::new(DataType::OpenAIMessage),
+                    vec![
+                        DataValue::OpenAIMessage(OpenAIMessage::system("You are helpful")),
+                        DataValue::OpenAIMessage(OpenAIMessage::user("你好")),
+                        DataValue::OpenAIMessage(OpenAIMessage::tool_result("call_1", "sent")),
+                        DataValue::OpenAIMessage(OpenAIMessage::user("?")),
+                    ],
+                ),
+            ),
+        ])).unwrap();
+
+        assert!(matches!(
+            outputs.get("has_tool_call"),
+            Some(DataValue::Boolean(false))
+        ));
+
+        let seen_messages = llm.seen_messages.lock().unwrap().clone();
+        assert_eq!(seen_messages.len(), 3);
+        assert!(matches!(seen_messages[0].role, MessageRole::System));
+        assert!(matches!(seen_messages[1].role, MessageRole::User));
+        assert_eq!(seen_messages[1].content.as_deref(), Some("你好"));
+        assert!(matches!(seen_messages[2].role, MessageRole::User));
+        assert_eq!(seen_messages[2].content.as_deref(), Some("?"));
+    }
+
+    #[test]
     fn build_tool_payload_flattens_object_arguments() {
         let payload = BrainNode::build_tool_payload(
             "tool_1".to_string(),
@@ -530,10 +744,12 @@ mod tests {
                 ToolParamDef {
                     name: "query".to_string(),
                     data_type: DataType::String,
+                    desc: "搜索关键词".to_string(),
                 },
                 ToolParamDef {
                     name: "limit".to_string(),
                     data_type: DataType::Integer,
+                    desc: "".to_string(),
                 },
             ],
         };
@@ -541,6 +757,8 @@ mod tests {
         let tool = super::DynamicFunctionTool::new(definition);
         let schema = tool.parameters();
         assert_eq!(schema["properties"]["query"]["type"], "string");
+        assert_eq!(schema["properties"]["query"]["description"], "搜索关键词");
         assert_eq!(schema["properties"]["limit"]["type"], "integer");
+        assert_eq!(schema["properties"]["limit"]["description"], "参数 limit");
     }
 }

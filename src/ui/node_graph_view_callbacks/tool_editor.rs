@@ -15,6 +15,7 @@ fn default_param_vm() -> ToolParamVm {
     ToolParamVm {
         name: "param".into(),
         data_type: "String".into(),
+        description: "".into(),
     }
 }
 
@@ -52,6 +53,12 @@ fn tool_items_from_json(value: &serde_json::Value) -> Vec<ToolDefinitionVm> {
                         .and_then(|v| v.as_str())
                         .unwrap_or("String")
                         .into(),
+                    description: param
+                        .get("desc")
+                        .or_else(|| param.get("description"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .into(),
                 })
                 .collect::<Vec<_>>();
 
@@ -79,6 +86,7 @@ fn params_to_json(params: ModelRc<ToolParamVm>) -> Vec<serde_json::Value> {
             serde_json::json!({
                 "name": param.name.as_str(),
                 "data_type": param.data_type.as_str(),
+                "desc": param.description.as_str(),
             })
         })
         .collect()
@@ -348,6 +356,24 @@ pub(crate) fn bind_tool_editor_callbacks(
                     let params_model = item.params.clone();
                     if let Some(mut param) = params_model.row_data(p_idx) {
                         param.data_type = value;
+                        params_model.set_row_data(p_idx, param);
+                    }
+                }
+            }
+        });
+    }
+
+    {
+        let ui_handle = ui.as_weak();
+        ui.on_tool_editor_set_param_description(move |tool_index, param_index, value| {
+            if let Some(ui) = ui_handle.upgrade() {
+                let t_idx = tool_index.max(0) as usize;
+                let p_idx = param_index.max(0) as usize;
+                let model = ui.get_tool_editor_items();
+                if let Some(item) = model.row_data(t_idx) {
+                    let params_model = item.params.clone();
+                    if let Some(mut param) = params_model.row_data(p_idx) {
+                        param.description = value;
                         params_model.set_row_data(p_idx, param);
                     }
                 }

@@ -151,7 +151,8 @@ pub fn init_node_registry() -> Result<()> {
     use crate::llm::llm_api_node::LLMApiNode;
     use crate::llm::brain_node::BrainNode;
     use crate::llm::llm_infer_node::LLMInferNode;
-    use crate::bot_adapter::{BotAdapterNode, ExtractSenderIdFromEventNode, MessageEventTypeFilterNode, SendFriendMessageNode, SendGroupMessageNode};
+    use crate::llm::natural_language_reply::NaturalLanguageReplyNode;
+    use crate::bot_adapter::{BotAdapterNode, ExtractSenderIdFromEventNode, MessageEventTypeFilterNode, SendFriendMessageNode, SendGroupMessageNode, SendQQMessageBatchesNode};
     use crate::bot_adapter::extract_group_id_from_event::ExtractGroupIdFromEventNode;
     use crate::bot_adapter::extract_message_from_event::ExtractMessageFromEventNode;
     use crate::node::database::{RedisNode, MySqlNode};
@@ -393,6 +394,14 @@ pub fn init_node_registry() -> Result<()> {
     );
 
     register_node!(
+        "llm_qq_natural_language_reply",
+        "LLM QQ自然语言回复",
+        "AI",
+        "调用 LLM 生成结构化 QQ 回复消息批次，不负责实际发送",
+        NaturalLanguageReplyNode
+    );
+
+    register_node!(
         "brain",
         "Brain",
         "AI",
@@ -431,6 +440,14 @@ pub fn init_node_registry() -> Result<()> {
         "Bot适配器",
         "向QQ群组发送消息",
         SendGroupMessageNode
+    );
+
+    register_node!(
+        "send_qq_message_batches",
+        "发送QQ消息批次",
+        "Bot适配器",
+        "将 QQ 消息批次逐批发送到好友或群组，并输出发送汇总",
+        SendQQMessageBatchesNode
     );
 
     register_node!(

@@ -1960,6 +1960,7 @@ export component ToolEditorDialog inherits Rectangle {
     callback delete_param(int, int);
     callback set_param_name(int, int, string);
     callback set_param_type(int, int, string);
+    callback set_param_description(int, int, string);
     callback save();
     callback close();
 
@@ -2236,7 +2237,7 @@ export component ToolEditorDialog inherits Rectangle {
                                 border-color: AppTheme.border-light;
 
                                 ScrollView {
-                                    viewport-height: max(80px, tool.params.length * 54px);
+                                    viewport-height: max(80px, tool.params.length * 78px);
 
                                     VerticalLayout {
                                         padding: 8px;
@@ -2250,53 +2251,63 @@ export component ToolEditorDialog inherits Rectangle {
                                         }
 
                                         for param[j] in tool.params: Rectangle {
-                                            height: 46px;
+                                            height: 70px;
                                             background: AppTheme.surface-overlay;
                                             border-radius: 6px;
                                             border-width: 1px;
                                             border-color: AppTheme.border;
 
-                                            HorizontalLayout {
+                                            VerticalLayout {
                                                 padding: 8px;
                                                 spacing: 8px;
 
-                                                LineEdit {
-                                                    width: 180px;
-                                                    height: 30px;
-                                                    text: param.name;
-                                                    placeholder-text: "参数名";
-                                                    edited(text) => { root.set_param_name(i, j, text); }
-                                                }
+                                                HorizontalLayout {
+                                                    spacing: 8px;
 
-                                                ComboBox {
-                                                    width: 100px;
-                                                    height: 30px;
-                                                    model: ["String", "Integer", "Float", "Boolean", "Json"];
-                                                    current-value: param.data_type;
-                                                    selected(value) => { root.set_param_type(i, j, value); }
-                                                }
-
-                                                Rectangle { horizontal-stretch: 1; }
-
-                                                Rectangle {
-                                                    width: 24px;
-                                                    height: 24px;
-                                                    background: AppTheme.danger-bg;
-                                                    border-radius: 4px;
-                                                    border-width: 1px;
-                                                    border-color: AppTheme.danger;
-
-                                                    TouchArea {
-                                                        clicked => { root.delete_param(i, j); }
+                                                    LineEdit {
+                                                        width: 180px;
+                                                        height: 30px;
+                                                        text: param.name;
+                                                        placeholder-text: "参数名";
+                                                        edited(text) => { root.set_param_name(i, j, text); }
                                                     }
 
-                                                    CjkText {
-                                                        text: "×";
-                                                        color: AppTheme.danger;
-                                                        horizontal-alignment: center;
-                                                        vertical-alignment: center;
-                                                        font-size: 14px;
-                                                        font-weight: 700;
+                                                    ComboBox {
+                                                        width: 100px;
+                                                        height: 30px;
+                                                        model: ["String", "Integer", "Float", "Boolean", "Json"];
+                                                        current-value: param.data_type;
+                                                        selected(value) => { root.set_param_type(i, j, value); }
+                                                    }
+
+                                                    LineEdit {
+                                                        horizontal-stretch: 1;
+                                                        height: 30px;
+                                                        text: param.description;
+                                                        placeholder-text: "参数描述";
+                                                        edited(text) => { root.set_param_description(i, j, text); }
+                                                    }
+
+                                                    Rectangle {
+                                                        width: 24px;
+                                                        height: 24px;
+                                                        background: AppTheme.danger-bg;
+                                                        border-radius: 4px;
+                                                        border-width: 1px;
+                                                        border-color: AppTheme.danger;
+
+                                                        TouchArea {
+                                                            clicked => { root.delete_param(i, j); }
+                                                        }
+
+                                                        CjkText {
+                                                            text: "×";
+                                                            color: AppTheme.danger;
+                                                            horizontal-alignment: center;
+                                                            vertical-alignment: center;
+                                                            font-size: 14px;
+                                                            font-weight: 700;
+                                                        }
                                                     }
                                                 }
                                             }
