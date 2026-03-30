@@ -1,6 +1,9 @@
-use crate::bot_adapter::ws_action::{qq_message_list_to_json, ws_send_action};
+use crate::bot_adapter::ws_action::{
+    json_i64, qq_message_list_to_json, response_message_id, response_success, ws_send_action,
+};
 use crate::error::Result;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
+use log::{info, warn};
 use std::collections::HashMap;
 
 pub struct SendFriendMessageNode {
@@ -54,10 +57,30 @@ impl Node for SendFriendMessageNode {
         });
         let response = ws_send_action(&adapter_ref, "send_private_msg", params)?;
 
-        let success = response.get("retcode").and_then(|v| v.as_i64()).unwrap_or(-1) == 0;
-        let message_id = response
-            .get("data").and_then(|d| d.get("message_id")).and_then(|v| v.as_i64())
-            .unwrap_or(-1);
+        let success = response_success(&response);
+        let message_id = response_message_id(&response).unwrap_or(-1);
+        let retcode = json_i64(response.get("retcode"));
+        let status = response.get("status").and_then(|value| value.as_str());
+        let wording = response.get("wording").and_then(|value| value.as_str());
+
+        if success {
+            info!(
+                "[SendFriendMessageNode] Sent private message to {} (message_id={}, retcode={:?}, status={:?})",
+                target_id,
+                message_id,
+                retcode,
+                status
+            );
+        } else {
+            warn!(
+                "[SendFriendMessageNode] Failed to send private message to {} (retcode={:?}, status={:?}, wording={:?}, response={})",
+                target_id,
+                retcode,
+                status,
+                wording,
+                response
+            );
+        }
 
         let mut outputs = HashMap::new();
         outputs.insert("success".to_string(), DataValue::Boolean(success));
