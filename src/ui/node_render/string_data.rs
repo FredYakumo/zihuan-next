@@ -1,5 +1,5 @@
+use super::{inline_port_key, InlinePortValue, NodeRenderer};
 use crate::node::graph_io::NodeGraphDefinition;
-use super::{NodeRenderer, InlinePortValue, inline_port_key};
 use std::collections::HashMap;
 
 pub struct StringDataRenderer;
@@ -19,7 +19,7 @@ impl NodeRenderer for StringDataRenderer {
             None => "(empty...)".to_string(),
         }
     }
-    
+
     fn handles_node_type(node_type: &str) -> bool {
         node_type == "string_data"
     }

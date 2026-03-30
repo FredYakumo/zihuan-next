@@ -37,11 +37,12 @@ impl Node for StringDataNode {
 
     node_input![];
 
-    node_output![
-        port! { name = "text", ty = String, desc = "Output string from UI input" },
-    ];
+    node_output![port! { name = "text", ty = String, desc = "Output string from UI input" },];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         // StringDataNode gets its value from the global context (set by UI layer before execution)

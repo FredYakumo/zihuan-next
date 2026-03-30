@@ -31,15 +31,14 @@ impl Node for AtQQTargetMessageNode {
         Some("将 QQ 目标 id 字符串转换为 @ 消息段")
     }
 
-    node_input![
-        port! { name = "id", ty = String, desc = "要 @ 的 QQ 目标 id" },
-    ];
+    node_input![port! { name = "id", ty = String, desc = "要 @ 的 QQ 目标 id" },];
 
-    node_output![
-        port! { name = "result", ty = QQMessage, desc = "输出 QQMessage At 消息段" },
-    ];
+    node_output![port! { name = "result", ty = QQMessage, desc = "输出 QQMessage At 消息段" },];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let id = match inputs.get("id") {

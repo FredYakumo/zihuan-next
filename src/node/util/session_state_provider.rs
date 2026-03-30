@@ -36,11 +36,12 @@ impl Node for SessionStateProviderNode {
 
     node_input![];
 
-    node_output![
-        port! { name = "session_ref", ty = SessionStateRef, desc = "运行时会话状态引用" },
-    ];
+    node_output![port! { name = "session_ref", ty = SessionStateRef, desc = "运行时会话状态引用" },];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let outputs = HashMap::from([(

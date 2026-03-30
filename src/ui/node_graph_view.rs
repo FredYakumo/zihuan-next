@@ -1,40 +1,33 @@
-use slint::{Model, ModelRc, VecModel, SharedString, ComponentHandle};
+use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::AtomicBool;
-use std::cell::Cell;
 use std::rc::Rc;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crate::error::Result;
-use crate::node::graph_io::{
-    NodeGraphDefinition, validate_graph_definition,
-};
-use crate::ui::graph_window::ValidationIssueVm;
+use crate::node::graph_io::{validate_graph_definition, NodeGraphDefinition};
 use crate::node::registry::NODE_REGISTRY;
+use crate::ui::graph_window::ValidationIssueVm;
 
-use crate::ui::graph_window::{
-    NodeGraphWindow, NodeTypeVm, PortHelpVm, LogEntryVm,
-};
+use crate::ui::canvas_state::{load_canvas_view_state, save_canvas_view_state, CanvasViewState};
+use crate::ui::graph_window::{LogEntryVm, NodeGraphWindow, NodeTypeVm, PortHelpVm};
 use crate::ui::node_graph_view_callbacks::{
     bind_canvas_callbacks, bind_format_string_editor_callbacks, bind_hyperparameter_callbacks,
-    bind_inline_port_callbacks, bind_message_list_callbacks,
-    bind_json_extract_editor_callbacks,
-    bind_qq_message_list_callbacks,
-    bind_tab_callbacks,
-    bind_tool_editor_callbacks,
+    bind_inline_port_callbacks, bind_json_extract_editor_callbacks, bind_message_list_callbacks,
+    bind_qq_message_list_callbacks, bind_tab_callbacks, bind_tool_editor_callbacks,
     bind_window_callbacks,
 };
 use crate::ui::node_graph_view_clipboard::NodeClipboard;
-use crate::ui::node_graph_view_geometry::{
-    EDGE_THICKNESS_RATIO, GRID_SIZE,
-};
+use crate::ui::node_graph_view_geometry::{EDGE_THICKNESS_RATIO, GRID_SIZE};
 use crate::ui::node_graph_view_inline::build_inline_inputs_from_graph;
 use crate::ui::node_graph_view_vm::apply_graph_to_ui;
 use crate::ui::selection::SelectionState;
-use crate::ui::window_state::{apply_window_state, load_window_state, save_window_state, WindowState};
-use crate::ui::canvas_state::{load_canvas_view_state, save_canvas_view_state, CanvasViewState};
+use crate::ui::window_state::{
+    apply_window_state, load_window_state, save_window_state, WindowState,
+};
 
 use crate::ui::node_render::InlinePortValue;
 
@@ -111,7 +104,11 @@ pub(crate) fn update_tabs_ui(ui: &NodeGraphWindow, tabs: &[GraphTabState], activ
     ui.set_active_tab_index(active_index as i32);
 }
 
-pub(crate) fn refresh_active_tab_ui(ui: &NodeGraphWindow, tabs: &[GraphTabState], active_index: usize) {
+pub(crate) fn refresh_active_tab_ui(
+    ui: &NodeGraphWindow,
+    tabs: &[GraphTabState],
+    active_index: usize,
+) {
     ui.set_show_graph_context_menu(false);
     if let Some(tab) = tabs.get(active_index) {
         apply_graph_to_ui(
@@ -184,14 +181,21 @@ pub(crate) fn persist_tab_canvas_state(tab: &GraphTabState) {
     }
 }
 
-fn persist_all_canvas_states(ui: &NodeGraphWindow, tabs: &mut [GraphTabState], active_index: usize) {
+fn persist_all_canvas_states(
+    ui: &NodeGraphWindow,
+    tabs: &mut [GraphTabState],
+    active_index: usize,
+) {
     sync_active_tab_canvas_state(ui, tabs, active_index);
     for tab in tabs.iter() {
         persist_tab_canvas_state(tab);
     }
 }
 
-pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: Option<&std::path::Path>) -> Result<()> {
+pub fn show_graph(
+    initial_graph: Option<NodeGraphDefinition>,
+    graph_file_path: Option<&std::path::Path>,
+) -> Result<()> {
     register_cjk_fonts();
 
     let ui = NodeGraphWindow::new()
@@ -221,7 +225,10 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: O
             initial_tab.inline_inputs = build_inline_inputs_from_graph(&graph);
             if let Some(path) = graph_file_path {
                 initial_tab.hyperparameter_values =
-                    crate::util::hyperparam_store::load_hyperparameter_values(path, &initial_tab.graph);
+                    crate::util::hyperparam_store::load_hyperparameter_values(
+                        path,
+                        &initial_tab.graph,
+                    );
                 initial_tab.canvas_view_state = load_canvas_view_state(path).unwrap_or_default();
                 initial_tab.file_path = Some(path.to_path_buf());
                 initial_tab.title = path
@@ -309,10 +316,10 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: O
         .collect::<Vec<_>>();
     categories.sort();
     categories.dedup();
-    
+
     ui.set_node_categories(ModelRc::new(VecModel::from(categories)));
     ui.set_available_node_types(ModelRc::new(VecModel::from(node_types.clone())));
-    
+
     let all_node_types = Arc::new(node_types);
     let node_clipboard: Arc<Mutex<Option<NodeClipboard>>> = Arc::new(Mutex::new(None));
     let last_context_canvas_pos: Arc<Mutex<Option<(f32, f32)>>> = Arc::new(Mutex::new(None));
@@ -356,9 +363,9 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: O
                     .collect();
                 drop(guard);
                 if let Some(ui) = ui_weak.upgrade() {
-                    ui.set_validation_issues(slint::ModelRc::from(
-                        std::rc::Rc::new(slint::VecModel::from(issue_vms)),
-                    ));
+                    ui.set_validation_issues(slint::ModelRc::from(std::rc::Rc::new(
+                        slint::VecModel::from(issue_vms),
+                    )));
                     ui.set_show_validation_fix_dialog(true);
                 }
             }
@@ -458,7 +465,9 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: O
                     // Clear entries after fade completes (~5.6 s total)
                     if elapsed >= std::time::Duration::from_millis(5600) {
                         if let Some(ui) = ui_weak_log.upgrade() {
-                            ui.set_log_entries(ModelRc::new(VecModel::from(Vec::<LogEntryVm>::new())));
+                            ui.set_log_entries(ModelRc::new(VecModel::from(
+                                Vec::<LogEntryVm>::new(),
+                            )));
                         }
                         last_log_time_clone.set(None);
                     }
@@ -521,4 +530,3 @@ fn register_cjk_fonts() {
         collection.append_fallbacks(kana, ids.iter().copied());
     }
 }
-

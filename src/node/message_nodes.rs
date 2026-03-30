@@ -1,11 +1,11 @@
-use crate::error::Result;
-use crate::node::{node_input, node_output, DataType, DataValue, Node, Port, NodeType};
 use crate::bot_adapter::models::message::Message;
+use crate::error::Result;
+use crate::node::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
+use chrono::Local;
+use log::{debug, error, info, warn};
+use sqlx;
 use std::collections::HashMap;
 use tokio::task::block_in_place;
-use log::{debug, error, info, warn};
-use chrono::Local;
-use sqlx;
 
 /// Returns true for errors that indicate a dropped/stale connection rather than
 /// a SQL-level problem (constraint violation, syntax error, etc.).
@@ -14,9 +14,7 @@ use sqlx;
 fn is_connection_error(e: &sqlx::Error) -> bool {
     matches!(
         e,
-        sqlx::Error::PoolTimedOut
-            | sqlx::Error::PoolClosed
-            | sqlx::Error::Io(_)
+        sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed | sqlx::Error::Io(_)
     )
 }
 
@@ -65,16 +63,29 @@ impl Node for MessageMySQLPersistenceNode {
         port! { name = "message_event", ty = MessageEvent, desc = "传递输入的消息事件" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
-        let message_event = inputs.get("message_event").and_then(|v| match v {
-            DataValue::MessageEvent(e) => Some(e.clone()),
-            _ => None,
-        }).ok_or_else(|| crate::error::Error::InvalidNodeInput("message_event is required".to_string()))?;
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
+        let message_event = inputs
+            .get("message_event")
+            .and_then(|v| match v {
+                DataValue::MessageEvent(e) => Some(e.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("message_event is required".to_string())
+            })?;
 
-        let mysql_config = inputs.get("mysql_ref").and_then(|v| match v {
-            DataValue::MySqlRef(r) => Some(r.clone()),
-            _ => None,
-        }).ok_or_else(|| crate::error::Error::InvalidNodeInput("mysql_ref is required".to_string()))?;
+        let mysql_config = inputs
+            .get("mysql_ref")
+            .and_then(|v| match v {
+                DataValue::MySqlRef(r) => Some(r.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("mysql_ref is required".to_string())
+            })?;
 
         // Obtain the live pool from MySqlRef (maintained by the upstream MySqlNode).
         let pool = match mysql_config.pool.clone() {
@@ -100,7 +111,10 @@ impl Node for MessageMySQLPersistenceNode {
                 error!("[MessageMySQLPersistenceNode] mysql_ref has no active pool — ensure the MySqlNode is connected");
                 let mut outputs = HashMap::new();
                 outputs.insert("success".to_string(), DataValue::Boolean(false));
-                outputs.insert("message_event".to_string(), DataValue::MessageEvent(message_event));
+                outputs.insert(
+                    "message_event".to_string(),
+                    DataValue::MessageEvent(message_event),
+                );
                 self.validate_outputs(&outputs)?;
                 return Ok(outputs);
             }
@@ -117,12 +131,22 @@ impl Node for MessageMySQLPersistenceNode {
         let send_time = Local::now().naive_local();
         let group_id = message_event.group_id.map(|id| id.to_string());
         let group_name = message_event.group_name.clone();
-        let content: String = message_event.message_list.iter()
+        let content: String = message_event
+            .message_list
+            .iter()
             .map(|m| m.to_string())
             .collect::<Vec<_>>()
             .join("");
-        let at_targets: Vec<String> = message_event.message_list.iter()
-            .filter_map(|m| if let Message::At(at) = m { Some(at.target_id()) } else { None })
+        let at_targets: Vec<String> = message_event
+            .message_list
+            .iter()
+            .filter_map(|m| {
+                if let Message::At(at) = m {
+                    Some(at.target_id())
+                } else {
+                    None
+                }
+            })
             .collect();
         let at_target_list: Option<String> = if at_targets.is_empty() {
             None
@@ -135,9 +159,7 @@ impl Node for MessageMySQLPersistenceNode {
 
         info!(
             "[MessageMySQLPersistenceNode] Inserting message {} (sender={}, group={:?}) into MySQL",
-            message_id_log,
-            sender_id,
-            group_id,
+            message_id_log, sender_id, group_id,
         );
 
         // Retry once on connection-level errors (PoolTimedOut, Io, etc.).
@@ -186,7 +208,10 @@ impl Node for MessageMySQLPersistenceNode {
                             message_id_log, attempt
                         );
                     } else {
-                        info!("[MessageMySQLPersistenceNode] Message {} inserted successfully", message_id_log);
+                        info!(
+                            "[MessageMySQLPersistenceNode] Message {} inserted successfully",
+                            message_id_log
+                        );
                     }
                     success = true;
                     break;
@@ -222,10 +247,11 @@ impl Node for MessageMySQLPersistenceNode {
         }
         let mut outputs = HashMap::new();
         outputs.insert("success".to_string(), DataValue::Boolean(success));
-        outputs.insert("message_event".to_string(), DataValue::MessageEvent(message_event));
+        outputs.insert(
+            "message_event".to_string(),
+            DataValue::MessageEvent(message_event),
+        );
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
-
-

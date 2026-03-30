@@ -1,6 +1,6 @@
+use crate::bot_adapter::models::message::{Message, PlainTextMessage};
 use crate::error::Result;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
-use crate::bot_adapter::models::message::{Message, PlainTextMessage};
 use std::collections::HashMap;
 
 /// Converts a String input into a QQMessage PlainText variant.
@@ -31,20 +31,25 @@ impl Node for StringToPlainTextNode {
         Some("将字符串转换为 QQ 消息中的纯文本（PlainText）消息段")
     }
 
-    node_input![
-        port! { name = "text", ty = String, desc = "输入字符串" },
-    ];
+    node_input![port! { name = "text", ty = String, desc = "输入字符串" },];
 
     node_output![
         port! { name = "result", ty = QQMessage, desc = "输出 QQMessage PlainText 消息段" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let text = match inputs.get("text") {
             Some(DataValue::String(s)) => s.clone(),
-            _ => return Err(crate::error::Error::InvalidNodeInput("text is required".to_string())),
+            _ => {
+                return Err(crate::error::Error::InvalidNodeInput(
+                    "text is required".to_string(),
+                ))
+            }
         };
 
         let qq_message = Message::PlainText(PlainTextMessage { text });

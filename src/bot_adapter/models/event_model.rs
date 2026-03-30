@@ -51,9 +51,8 @@ pub struct MessageEvent {
     pub message_list: Vec<Message>,
     pub group_id: Option<i64>,
     pub group_name: Option<String>,
-    pub is_group_message: bool
+    pub is_group_message: bool,
 }
-
 
 /// Raw message event structure for deserialization and serialization
 #[derive(Debug, Clone, Serialize, Deserialize)]

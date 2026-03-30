@@ -1,5 +1,5 @@
-use std::collections::HashSet;
 use slint::{ComponentHandle, SharedString};
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use crate::node::graph_io::NodeGraphDefinition;
@@ -34,7 +34,7 @@ impl SelectionState {
         }
         self.selected_node_ids.insert(node_id);
     }
-    
+
     pub fn toggle_node_selection(&mut self, node_id: String) {
         if self.selected_node_ids.contains(&node_id) {
             self.selected_node_ids.remove(&node_id);
@@ -48,7 +48,13 @@ impl SelectionState {
         self.selected_edge_to_port.clear();
     }
 
-    pub fn select_edge(&mut self, from_node: String, from_port: String, to_node: String, to_port: String) {
+    pub fn select_edge(
+        &mut self,
+        from_node: String,
+        from_port: String,
+        to_node: String,
+        to_port: String,
+    ) {
         self.selected_node_ids.clear();
         self.selected_edge_from_node = from_node;
         self.selected_edge_from_port = from_port;
@@ -84,7 +90,7 @@ pub fn setup_selection_callbacks(
     let apply_graph_fn_1 = Arc::new(apply_graph_fn);
     let apply_graph_fn_clone = Arc::clone(&apply_graph_fn_1);
     let selection_state_clone = Arc::clone(&selection_state);
-    
+
     ui.on_node_clicked(move |node_id: SharedString, shift_pressed: bool| {
         if let Some(ui) = ui_handle.upgrade() {
             {
@@ -92,7 +98,7 @@ pub fn setup_selection_callbacks(
                 selection.select_node(node_id.to_string(), shift_pressed);
                 selection.apply_to_ui(&ui);
             }
-            
+
             let graph = graph_state_clone.lock().unwrap();
             let label = current_file_clone.lock().unwrap().clone();
             apply_graph_fn_clone(&ui, &graph, Some(label));
@@ -106,24 +112,29 @@ pub fn setup_selection_callbacks(
     let apply_graph_fn_clone = Arc::clone(&apply_graph_fn_1);
     let selection_state_clone = Arc::clone(&selection_state);
 
-    ui.on_edge_clicked(move |from_node: SharedString, from_port: SharedString, to_node: SharedString, to_port: SharedString| {
-        if let Some(ui) = ui_handle.upgrade() {
-            {
-                let mut selection = selection_state_clone.lock().unwrap();
-                selection.select_edge(
-                    from_node.to_string(),
-                    from_port.to_string(),
-                    to_node.to_string(),
-                    to_port.to_string(),
-                );
-                selection.apply_to_ui(&ui);
+    ui.on_edge_clicked(
+        move |from_node: SharedString,
+              from_port: SharedString,
+              to_node: SharedString,
+              to_port: SharedString| {
+            if let Some(ui) = ui_handle.upgrade() {
+                {
+                    let mut selection = selection_state_clone.lock().unwrap();
+                    selection.select_edge(
+                        from_node.to_string(),
+                        from_port.to_string(),
+                        to_node.to_string(),
+                        to_port.to_string(),
+                    );
+                    selection.apply_to_ui(&ui);
+                }
+
+                let graph = graph_state_clone.lock().unwrap();
+                let label = current_file_clone.lock().unwrap().clone();
+                apply_graph_fn_clone(&ui, &graph, Some(label));
             }
-            
-            let graph = graph_state_clone.lock().unwrap();
-            let label = current_file_clone.lock().unwrap().clone();
-            apply_graph_fn_clone(&ui, &graph, Some(label));
-        }
-    });
+        },
+    );
 
     // Handle canvas click to clear selection
     let ui_handle = ui.as_weak();
@@ -139,7 +150,7 @@ pub fn setup_selection_callbacks(
                 selection.clear();
                 selection.apply_to_ui(&ui);
             }
-            
+
             let graph = graph_state_clone.lock().unwrap();
             let label = current_file_clone.lock().unwrap().clone();
             apply_graph_fn_clone(&ui, &graph, Some(label));
@@ -158,28 +169,30 @@ pub fn setup_selection_callbacks(
             let mut graph = graph_state_clone.lock().unwrap();
             {
                 let mut selection = selection_state_clone.lock().unwrap();
-                
+
                 if !selection.selected_node_ids.is_empty() {
                     // Delete nodes and all connected edges
-                    graph.nodes.retain(|n| !selection.selected_node_ids.contains(&n.id));
+                    graph
+                        .nodes
+                        .retain(|n| !selection.selected_node_ids.contains(&n.id));
                     graph.edges.retain(|e| {
-                        !selection.selected_node_ids.contains(&e.from_node_id) 
-                        && !selection.selected_node_ids.contains(&e.to_node_id)
+                        !selection.selected_node_ids.contains(&e.from_node_id)
+                            && !selection.selected_node_ids.contains(&e.to_node_id)
                     });
                 } else if !selection.selected_edge_from_node.is_empty() {
                     // Delete edge
                     graph.edges.retain(|e| {
                         !(e.from_node_id == selection.selected_edge_from_node
-                        && e.from_port == selection.selected_edge_from_port
-                        && e.to_node_id == selection.selected_edge_to_node
-                        && e.to_port == selection.selected_edge_to_port)
+                            && e.from_port == selection.selected_edge_from_port
+                            && e.to_node_id == selection.selected_edge_to_node
+                            && e.to_port == selection.selected_edge_to_port)
                     });
                 }
-                
+
                 selection.clear();
                 selection.apply_to_ui(&ui);
             }
-            
+
             let label = "已修改(未保存)".to_string();
             *current_file_clone.lock().unwrap() = label.clone();
             apply_graph_fn_clone(&ui, &graph, Some(label));
@@ -237,9 +250,15 @@ impl BoxSelection {
         x >= min_x && x <= max_x && y >= min_y && y <= max_y
     }
 
-    pub fn contains_rect(&self, rect_x: f32, rect_y: f32, rect_width: f32, rect_height: f32) -> bool {
+    pub fn contains_rect(
+        &self,
+        rect_x: f32,
+        rect_y: f32,
+        rect_width: f32,
+        rect_height: f32,
+    ) -> bool {
         let (min_x, min_y, max_x, max_y) = self.get_bounds();
-        
+
         // Check if any corner of the rectangle is inside the selection box
         self.contains_point(rect_x, rect_y)
             || self.contains_point(rect_x + rect_width, rect_y)

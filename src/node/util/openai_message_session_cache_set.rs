@@ -39,11 +39,12 @@ impl Node for OpenAIMessageSessionCacheSetNode {
         port! { name = "messages", ty = Vec(OpenAIMessage), desc = "要写回并覆写到缓存中的 Vec<OpenAIMessage>" },
     ];
 
-    node_output![
-        port! { name = "success", ty = Boolean, desc = "是否成功覆写历史消息" },
-    ];
+    node_output![port! { name = "success", ty = Boolean, desc = "是否成功覆写历史消息" },];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let cache_ref: Arc<OpenAIMessageSessionCacheRef> = inputs
@@ -52,7 +53,9 @@ impl Node for OpenAIMessageSessionCacheSetNode {
                 DataValue::OpenAIMessageSessionCacheRef(cache_ref) => Some(cache_ref.clone()),
                 _ => None,
             })
-            .ok_or_else(|| crate::error::Error::InvalidNodeInput("cache_ref is required".to_string()))?;
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("cache_ref is required".to_string())
+            })?;
 
         let sender_id = inputs
             .get("sender_id")
@@ -60,18 +63,22 @@ impl Node for OpenAIMessageSessionCacheSetNode {
                 DataValue::String(sender_id) => Some(sender_id.clone()),
                 _ => None,
             })
-            .ok_or_else(|| crate::error::Error::InvalidNodeInput("sender_id is required".to_string()))?;
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("sender_id is required".to_string())
+            })?;
 
         let messages: Vec<OpenAIMessage> = match inputs.get("messages") {
-            Some(DataValue::Vec(inner_type, items)) if **inner_type == DataType::OpenAIMessage => items
-                .iter()
-                .map(|item| match item {
-                    DataValue::OpenAIMessage(message) => Ok(message.clone()),
-                    _ => Err(crate::error::Error::InvalidNodeInput(
-                        "messages must contain OpenAIMessage items".to_string(),
-                    )),
-                })
-                .collect::<Result<Vec<_>>>()?,
+            Some(DataValue::Vec(inner_type, items)) if **inner_type == DataType::OpenAIMessage => {
+                items
+                    .iter()
+                    .map(|item| match item {
+                        DataValue::OpenAIMessage(message) => Ok(message.clone()),
+                        _ => Err(crate::error::Error::InvalidNodeInput(
+                            "messages must contain OpenAIMessage items".to_string(),
+                        )),
+                    })
+                    .collect::<Result<Vec<_>>>()?
+            }
             _ => {
                 return Err(crate::error::Error::InvalidNodeInput(
                     "messages is required".to_string(),
@@ -151,7 +158,10 @@ mod tests {
 
         let cache_outputs = cache_node.execute(HashMap::from([
             ("cache_ref".to_string(), cache_ref.clone()),
-            ("messages".to_string(), vec_value(vec![message(MessageRole::User, "旧消息")])),
+            (
+                "messages".to_string(),
+                vec_value(vec![message(MessageRole::User, "旧消息")]),
+            ),
             (
                 "sender_id".to_string(),
                 DataValue::String("user-1".to_string()),

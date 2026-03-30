@@ -4,7 +4,6 @@ use crate::bot_adapter::models::event_model::MessageType;
 use crate::error::Result;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 
-
 pub struct ExtractGroupIdFromEventNode {
     id: String,
     name: String,
@@ -36,11 +35,12 @@ impl Node for ExtractGroupIdFromEventNode {
         port! { name = "message_event", ty = crate::bot_adapter::models::event_model::MessageEvent, desc = "输入的消息事件" },
     ];
 
-    node_output![
-        port! { name = "result", ty = String, desc = "群号字符串" },
-    ];
+    node_output![port! { name = "result", ty = String, desc = "群号字符串" },];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         let event = match inputs.get("message_event") {
             Some(DataValue::MessageEvent(event)) => event,
             _ => return Err("message_event input is required".into()),
@@ -55,7 +55,10 @@ impl Node for ExtractGroupIdFromEventNode {
             .ok_or("group_id is missing in group message event")?;
 
         let mut outputs = HashMap::new();
-        outputs.insert("result".to_string(), DataValue::String(group_id.to_string()));
+        outputs.insert(
+            "result".to_string(),
+            DataValue::String(group_id.to_string()),
+        );
         Ok(outputs)
     }
 }
@@ -110,7 +113,9 @@ mod tests {
             DataValue::MessageEvent(make_event(MessageType::Private, None)),
         );
 
-        let err = node.execute(inputs).expect_err("should reject private message");
+        let err = node
+            .execute(inputs)
+            .expect_err("should reject private message");
         assert!(err.to_string().contains("group message"));
     }
 }

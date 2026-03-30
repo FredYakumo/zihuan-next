@@ -42,7 +42,10 @@ impl Node for OpenAIMessageSessionCacheGetNode {
         port! { name = "messages", ty = Vec(OpenAIMessage), desc = "读取到的历史 Vec<OpenAIMessage>" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let cache_ref: Arc<OpenAIMessageSessionCacheRef> = inputs
@@ -51,7 +54,9 @@ impl Node for OpenAIMessageSessionCacheGetNode {
                 DataValue::OpenAIMessageSessionCacheRef(cache_ref) => Some(cache_ref.clone()),
                 _ => None,
             })
-            .ok_or_else(|| crate::error::Error::InvalidNodeInput("cache_ref is required".to_string()))?;
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("cache_ref is required".to_string())
+            })?;
 
         let sender_id = inputs
             .get("sender_id")
@@ -59,21 +64,26 @@ impl Node for OpenAIMessageSessionCacheGetNode {
                 DataValue::String(sender_id) => Some(sender_id.clone()),
                 _ => None,
             })
-            .ok_or_else(|| crate::error::Error::InvalidNodeInput("sender_id is required".to_string()))?;
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("sender_id is required".to_string())
+            })?;
 
         let fallback_messages = inputs
             .get("fallback")
             .and_then(|value| match value {
-                DataValue::Vec(inner_type, items) if **inner_type == DataType::OpenAIMessage => Some(
-                    items.iter()
-                        .map(|item| match item {
-                            DataValue::OpenAIMessage(message) => Ok(message.clone()),
-                            _ => Err(crate::error::Error::InvalidNodeInput(
-                                "fallback must contain OpenAIMessage items".to_string(),
-                            )),
-                        })
-                        .collect::<Result<Vec<_>>>(),
-                ),
+                DataValue::Vec(inner_type, items) if **inner_type == DataType::OpenAIMessage => {
+                    Some(
+                        items
+                            .iter()
+                            .map(|item| match item {
+                                DataValue::OpenAIMessage(message) => Ok(message.clone()),
+                                _ => Err(crate::error::Error::InvalidNodeInput(
+                                    "fallback must contain OpenAIMessage items".to_string(),
+                                )),
+                            })
+                            .collect::<Result<Vec<_>>>(),
+                    )
+                }
                 _ => None,
             })
             .transpose()?

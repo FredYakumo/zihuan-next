@@ -36,7 +36,10 @@ impl Node for CurrentTimeNode {
         port! { name = "time", ty = String, desc = "当前本地时间字符串，格式为 YYYY-MM-DD HH:MM:SS" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();

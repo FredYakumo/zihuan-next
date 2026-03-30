@@ -29,16 +29,17 @@ impl Node for JsonParserNode {
         Some("Parse JSON string to structured data")
     }
 
-    node_input![
-        port! { name = "json_string", ty = String, desc = "JSON string to parse" },
-    ];
+    node_input![port! { name = "json_string", ty = String, desc = "JSON string to parse" },];
 
     node_output![
         port! { name = "parsed", ty = Json, desc = "Parsed JSON object" },
         port! { name = "success", ty = Boolean, desc = "Whether parsing was successful" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();
@@ -50,7 +51,10 @@ impl Node for JsonParserNode {
                     outputs.insert("success".to_string(), DataValue::Boolean(true));
                 }
                 Err(_) => {
-                    outputs.insert("parsed".to_string(), DataValue::Json(serde_json::json!(null)));
+                    outputs.insert(
+                        "parsed".to_string(),
+                        DataValue::Json(serde_json::json!(null)),
+                    );
                     outputs.insert("success".to_string(), DataValue::Boolean(false));
                 }
             }

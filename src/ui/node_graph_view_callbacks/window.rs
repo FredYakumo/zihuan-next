@@ -6,14 +6,14 @@ use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 
 use crate::node::graph_io::NodeGraphDefinition;
 use crate::ui::graph_window::{NodeGraphWindow, NodeTypeVm};
+use crate::ui::node_graph_view::{refresh_active_tab_ui, tab_display_title, GraphTabState};
 use crate::ui::node_graph_view_clipboard::{
     copy_selected_nodes_to_clipboard, paste_nodes_from_clipboard, NodeClipboard,
 };
-use crate::ui::node_graph_view::{
-    refresh_active_tab_ui, tab_display_title, GraphTabState,
-};
 use crate::ui::node_graph_view_geometry::{node_dimensions, snap_to_grid};
-use crate::ui::node_graph_view_inline::{add_node_to_graph, apply_hyperparameter_bindings_to_graph, apply_inline_inputs_to_graph};
+use crate::ui::node_graph_view_inline::{
+    add_node_to_graph, apply_hyperparameter_bindings_to_graph, apply_inline_inputs_to_graph,
+};
 use crate::ui::node_graph_view_vm::{apply_graph_to_ui, matches_node_type_search};
 use crate::ui::node_render::{inline_port_key, InlinePortValue};
 
@@ -37,7 +37,9 @@ fn build_node_help_data(
                         .nodes
                         .iter()
                         .find(|candidate| candidate.id == edge.from_node_id)
-                        .map(|source_node| format!("已连接自：{} · {}", source_node.name, edge.from_port))
+                        .map(|source_node| {
+                            format!("已连接自：{} · {}", source_node.name, edge.from_port)
+                        })
                 })
                 .unwrap_or_default();
 
@@ -64,7 +66,9 @@ fn build_node_help_data(
                         .nodes
                         .iter()
                         .find(|candidate| candidate.id == edge.to_node_id)
-                        .map(|target_node| format!("已连接到：{} · {}", target_node.name, edge.to_port))
+                        .map(|target_node| {
+                            format!("已连接到：{} · {}", target_node.name, edge.to_port)
+                        })
                 })
                 .collect::<Vec<_>>();
 
@@ -107,7 +111,10 @@ fn clear_graph_error_state(graph: &mut NodeGraphDefinition) {
     }
 }
 
-fn collect_error_related_node_ids(_graph: &NodeGraphDefinition, error_node_id: &str) -> HashSet<String> {
+fn collect_error_related_node_ids(
+    _graph: &NodeGraphDefinition,
+    error_node_id: &str,
+) -> HashSet<String> {
     let mut related_node_ids = HashSet::new();
     related_node_ids.insert(error_node_id.to_string());
     related_node_ids
@@ -117,7 +124,11 @@ fn mark_graph_error_path(graph: &mut NodeGraphDefinition, error_node_id: &str) {
     clear_graph_error_state(graph);
 
     for related_node_id in collect_error_related_node_ids(graph, error_node_id) {
-        if let Some(node) = graph.nodes.iter_mut().find(|node| node.id == related_node_id) {
+        if let Some(node) = graph
+            .nodes
+            .iter_mut()
+            .find(|node| node.id == related_node_id)
+        {
             node.has_error = true;
         }
     }
@@ -275,7 +286,12 @@ pub(crate) fn bind_window_callbacks(
                 return;
             }
 
-            (tab.id, tab.graph.clone(), tab.inline_inputs.clone(), tab.hyperparameter_values.clone())
+            (
+                tab.id,
+                tab.graph.clone(),
+                tab.inline_inputs.clone(),
+                tab.hyperparameter_values.clone(),
+            )
         };
 
         let mut graph_def = graph_def;
@@ -300,7 +316,9 @@ pub(crate) fn bind_window_callbacks(
             if hp.required && !hyperparameter_values.contains_key(&hp.name) {
                 if let Some(ui) = ui_handle.upgrade() {
                     ui.set_show_error_dialog(true);
-                    ui.set_error_dialog_message(format!("必填超参数 '{}' 未设置值，无法运行节点图", hp.name).into());
+                    ui.set_error_dialog_message(
+                        format!("必填超参数 '{}' 未设置值，无法运行节点图", hp.name).into(),
+                    );
                 }
                 return;
             }
@@ -413,7 +431,11 @@ pub(crate) fn bind_window_callbacks(
                                         .clone()
                                         .unwrap_or_else(|| "unknown".to_string());
                                     mark_graph_error_path(&mut tab.graph, &error_node_id);
-                                    format_execution_error_message(&tab.graph, &error_node_id, &error_msg)
+                                    format_execution_error_message(
+                                        &tab.graph,
+                                        &error_node_id,
+                                        &error_msg,
+                                    )
                                 };
 
                                 if let Some(ui) = ui_weak.upgrade() {
@@ -427,7 +449,9 @@ pub(crate) fn bind_window_callbacks(
                                             &hp_values_bg,
                                         );
                                         ui.invoke_show_error(display_error.clone().into());
-                                        ui.set_connection_status(format!("❌ {}", display_error).into());
+                                        ui.set_connection_status(
+                                            format!("❌ {}", display_error).into(),
+                                        );
                                     }
                                 }
                             } else {
@@ -535,7 +559,13 @@ pub(crate) fn bind_window_callbacks(
                     let error_msg = e.to_string();
                     ui.invoke_show_error(
                         extract_error_node_id(&error_msg)
-                            .map(|error_node_id| format_execution_error_message(&graph_def, &error_node_id, &error_msg))
+                            .map(|error_node_id| {
+                                format_execution_error_message(
+                                    &graph_def,
+                                    &error_node_id,
+                                    &error_msg,
+                                )
+                            })
                             .unwrap_or_else(|| format!("构建节点图失败：{}", error_msg))
                             .into(),
                     );
@@ -606,7 +636,11 @@ pub(crate) fn bind_window_callbacks(
             .unwrap()
             .as_ref()
             .copied()
-            .or_else(|| ui_handle.upgrade().map(|ui| current_canvas_viewport_center(&ui)));
+            .or_else(|| {
+                ui_handle
+                    .upgrade()
+                    .map(|ui| current_canvas_viewport_center(&ui))
+            });
 
         if let (Some(clipboard), Some((x, y))) = (clipboard, context_pos) {
             let mut tabs_guard = tabs_clone.lock().unwrap();
@@ -678,7 +712,9 @@ pub(crate) fn bind_window_callbacks(
     ui.on_show_node_type_menu(move || {
         pending_add_node_pos_clone.lock().unwrap().take();
         if let Some(ui) = ui_handle.upgrade() {
-            ui.set_available_node_types(ModelRc::new(VecModel::from(all_node_types_clone.as_ref().clone())));
+            ui.set_available_node_types(ModelRc::new(VecModel::from(
+                all_node_types_clone.as_ref().clone(),
+            )));
             ui.set_show_graph_context_menu(false);
             ui.set_show_node_selector(true);
         }

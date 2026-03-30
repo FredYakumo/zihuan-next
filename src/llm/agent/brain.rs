@@ -3,13 +3,13 @@ use std::sync::Arc;
 use log::info;
 
 use crate::bot_adapter::adapter::BotAdapter;
-use crate::bot_adapter::models::MessageEvent;
 use crate::bot_adapter::models::message::MessageProp;
-use crate::llm::agent::Agent;
-use crate::llm::{InferenceParam, OpenAIMessage, UserMessage};
+use crate::bot_adapter::models::MessageEvent;
 use crate::error::Result;
-use crate::llm::tooling::FunctionTool;
+use crate::llm::agent::Agent;
 use crate::llm::llm_base::LLMBase;
+use crate::llm::tooling::FunctionTool;
+use crate::llm::{InferenceParam, OpenAIMessage, UserMessage};
 
 #[derive(Clone)]
 pub struct BrainAgent {
@@ -19,17 +19,34 @@ pub struct BrainAgent {
 }
 
 impl BrainAgent {
-    pub fn new(llm: Arc<dyn LLMBase + Send + Sync>, tools: Vec<Arc<dyn FunctionTool>>, persona: String) -> Self {
-        Self { llm, tools, persona }
+    pub fn new(
+        llm: Arc<dyn LLMBase + Send + Sync>,
+        tools: Vec<Arc<dyn FunctionTool>>,
+        persona: String,
+    ) -> Self {
+        Self {
+            llm,
+            tools,
+            persona,
+        }
     }
 }
 
-
-
-fn should_reply(response_content: Option<&str>, msg_prop: &MessageProp, event: &MessageEvent) -> bool {
+fn should_reply(
+    response_content: Option<&str>,
+    msg_prop: &MessageProp,
+    event: &MessageEvent,
+) -> bool {
     let content = response_content.unwrap_or("").trim();
     if !content.is_empty() {
-        let negative_markers = ["无反应", "不回复", "无需回复", "不用回复", "无需回应", "不需要回复"];
+        let negative_markers = [
+            "无反应",
+            "不回复",
+            "无需回复",
+            "不用回复",
+            "无需回应",
+            "不需要回复",
+        ];
         if negative_markers.iter().any(|m| content.contains(m)) {
             return false;
         }
@@ -52,10 +69,15 @@ impl Agent for BrainAgent {
     type Output = Result<()>;
 
     fn on_event(&self, bot_adapter: &mut BotAdapter, event: &MessageEvent) -> Self::Output {
-        let msg_prop = MessageProp::from_messages(&event.message_list, Some(bot_adapter.get_bot_id()));
+        let msg_prop =
+            MessageProp::from_messages(&event.message_list, Some(bot_adapter.get_bot_id()));
 
         // Build system prompt with conversation context
-        let system_msg = crate::llm::prompt::brain::build_system_message(bot_adapter, event, self.persona.as_str());
+        let system_msg = crate::llm::prompt::brain::build_system_message(
+            bot_adapter,
+            event,
+            self.persona.as_str(),
+        );
 
         // Build user message from incoming MessageEvent
         let mut user_text = msg_prop.content.clone().unwrap_or_default();
@@ -76,16 +98,22 @@ impl Agent for BrainAgent {
         let _user_text_for_reply = user_text.clone();
         let mut brain_message_list = vec![system_msg, UserMessage(user_text)];
 
-        info!("[BrainAgent] llm [{}] inference...", self.llm.get_model_name());
-        
+        info!(
+            "[BrainAgent] llm [{}] inference...",
+            self.llm.get_model_name()
+        );
+
         // Tool calling loop: continue until LLM returns a response without tool calls
         let max_iterations = 5;
         let mut iteration = 0;
-        
+
         loop {
             iteration += 1;
             if iteration > max_iterations {
-                info!("[BrainAgent] reached max iterations ({}), stopping tool calling loop", max_iterations);
+                info!(
+                    "[BrainAgent] reached max iterations ({}), stopping tool calling loop",
+                    max_iterations
+                );
                 break;
             }
 
@@ -123,26 +151,38 @@ impl Agent for BrainAgent {
             }
 
             // Execute each tool call and collect results
-            info!("[BrainAgent] processing {} tool call(s)", response.tool_calls.len());
-            
+            info!(
+                "[BrainAgent] processing {} tool call(s)",
+                response.tool_calls.len()
+            );
+
             // Add assistant's response with tool calls to message history
             brain_message_list.push(response);
 
             // Clone tool_calls to avoid borrow checker issues when mutating message list
             let tool_calls_to_execute = brain_message_list.last().unwrap().tool_calls.clone();
-            
+
             // Execute tools and collect their results
             for tool_call in &tool_calls_to_execute {
-                info!("[BrainAgent] executing tool: {}({}) [{}]", 
-                    tool_call.function.name, 
+                info!(
+                    "[BrainAgent] executing tool: {}({}) [{}]",
+                    tool_call.function.name,
                     tool_call.function.arguments.to_string().as_str(),
-                    tool_call.id);
-                
-                if let Some(tool) = self.tools.iter().find(|t| t.name() == tool_call.function.name) {
+                    tool_call.id
+                );
+
+                if let Some(tool) = self
+                    .tools
+                    .iter()
+                    .find(|t| t.name() == tool_call.function.name)
+                {
                     match tool.call(tool_call.function.arguments.clone()) {
                         Ok(tool_response) => {
-                            info!("[BrainAgent] tool [{}] executed successfully", tool_call.function.name);
-                            
+                            info!(
+                                "[BrainAgent] tool [{}] executed successfully",
+                                tool_call.function.name
+                            );
+
                             // Add tool result as a tool message
                             let tool_msg = OpenAIMessage {
                                 role: crate::llm::MessageRole::Tool,
@@ -153,8 +193,11 @@ impl Agent for BrainAgent {
                             brain_message_list.push(tool_msg);
                         }
                         Err(e) => {
-                            info!("[BrainAgent] tool [{}] execution failed: {}", tool_call.function.name, e);
-                            
+                            info!(
+                                "[BrainAgent] tool [{}] execution failed: {}",
+                                tool_call.function.name, e
+                            );
+
                             // Add error message as tool result
                             let error_msg = OpenAIMessage {
                                 role: crate::llm::MessageRole::Tool,
@@ -167,7 +210,7 @@ impl Agent for BrainAgent {
                     }
                 } else {
                     info!("[BrainAgent] tool [{}] not found", tool_call.function.name);
-                    
+
                     // Add error message for missing tool
                     let error_msg = OpenAIMessage {
                         role: crate::llm::MessageRole::Tool,
@@ -178,19 +221,27 @@ impl Agent for BrainAgent {
                     brain_message_list.push(error_msg);
                 }
             }
-            
+
             // Continue loop to get next LLM response with tool results
-            info!("[BrainAgent] iteration {} complete, continuing with {} messages", 
-                iteration, brain_message_list.len());
+            info!(
+                "[BrainAgent] iteration {} complete, continuing with {} messages",
+                iteration,
+                brain_message_list.len()
+            );
         }
 
         Ok(())
     }
 
-    fn on_agent_input(&self, _adapter: &mut BotAdapter, _event: &MessageEvent, _messages: Vec<OpenAIMessage>) -> Self::Output {
+    fn on_agent_input(
+        &self,
+        _adapter: &mut BotAdapter,
+        _event: &MessageEvent,
+        _messages: Vec<OpenAIMessage>,
+    ) -> Self::Output {
         Ok(())
     }
-    
+
     fn name(&self) -> &'static str {
         "BrainAgent"
     }

@@ -1,12 +1,12 @@
-use crate::error::Result;
-use crate::node::{node_input, node_output, DataType, DataValue, Node, Port, NodeType};
 use crate::bot_adapter::models::message::Message;
+use crate::error::Result;
+use crate::node::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
+use log::{debug, info, warn};
+use redis::{aio::ConnectionManager, AsyncCommands};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::task::block_in_place;
-use log::{debug, info, warn};
-use redis::{aio::ConnectionManager, AsyncCommands};
 
 /// Message Cache Node — caches a MessageEvent to Redis (with optional TTL) or falls back to
 /// an in-process memory store when Redis is not provided or temporarily unavailable.
@@ -68,7 +68,10 @@ impl MessageCacheNode {
         format!("message_cache:{}:{}", bucket_name, logical_key)
     }
 
-    fn initialize_run(&mut self, redis_ref: Option<&Arc<crate::node::data_value::RedisConfig>>) -> Result<()> {
+    fn initialize_run(
+        &mut self,
+        redis_ref: Option<&Arc<crate::node::data_value::RedisConfig>>,
+    ) -> Result<()> {
         if self.run_initialized {
             return Ok(());
         }
@@ -210,7 +213,10 @@ impl Node for MessageCacheNode {
         port! { name = "message_event", ty = MessageEvent, desc = "传递输入的消息事件" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         let message_event = inputs
             .get("message_event")
             .and_then(|v| match v {
@@ -231,15 +237,18 @@ impl Node for MessageCacheNode {
             _ => None,
         });
 
-        let bucket_name = inputs.get("bucket_name").and_then(|v| match v {
-            DataValue::String(s) => Some(Self::normalize_bucket_name(Some(s.as_str()))),
-            _ => None,
-        }).unwrap_or_else(|| Self::normalize_bucket_name(None));
+        let bucket_name = inputs
+            .get("bucket_name")
+            .and_then(|v| match v {
+                DataValue::String(s) => Some(Self::normalize_bucket_name(Some(s.as_str()))),
+                _ => None,
+            })
+            .unwrap_or_else(|| Self::normalize_bucket_name(None));
 
         self.initialize_run(redis_ref.as_ref())?;
 
         // ── Build cache key ──────────────────────────────────────────────────────────
-        let sender_id  = message_event.sender.user_id.to_string();
+        let sender_id = message_event.sender.user_id.to_string();
         let message_id = message_event.message_id.to_string();
         let logical_key = if let Some(gid) = message_event.group_id {
             format!("group_{}_{}_{}", gid, sender_id, message_id)
@@ -295,21 +304,21 @@ impl Node for MessageCacheNode {
 
         if let Some(ref redis_config) = redis_ref {
             if let Some(ref url) = redis_config.url {
-                let url          = url.clone();
-                let redis_cm     = self.redis_cm.clone();
-                let cached_url   = self.cached_redis_url.clone();
-                let tracker_key  = self.redis_bucket_tracker_key(&bucket_name);
+                let url = url.clone();
+                let redis_cm = self.redis_cm.clone();
+                let cached_url = self.cached_redis_url.clone();
+                let tracker_key = self.redis_bucket_tracker_key(&bucket_name);
                 let tracker_registry_key = self.redis_tracker_registry_key();
-                let key          = cache_key.clone();
-                let value        = cache_value.clone();
+                let key = cache_key.clone();
+                let value = cache_value.clone();
 
                 let run = async move {
-                    let mut cm_guard  = redis_cm.lock().await;
+                    let mut cm_guard = redis_cm.lock().await;
                     let mut url_guard = cached_url.lock().await;
 
                     // Re-create connection manager when URL changes or on first call.
                     if url_guard.as_deref() != Some(url.as_str()) {
-                        *cm_guard  = None;
+                        *cm_guard = None;
                         *url_guard = Some(url.clone());
                     }
 
@@ -332,7 +341,8 @@ impl Node for MessageCacheNode {
                     }
 
                     cm.sadd::<_, _, ()>(&tracker_key, &key).await?;
-                    cm.sadd::<_, _, ()>(&tracker_registry_key, &tracker_key).await
+                    cm.sadd::<_, _, ()>(&tracker_registry_key, &tracker_key)
+                        .await
                 };
 
                 let result = if let Ok(handle) = tokio::runtime::Handle::try_current() {
@@ -369,7 +379,7 @@ impl Node for MessageCacheNode {
         // ── Memory fallback ──────────────────────────────────────────────────────────
         if !success {
             let memory_cache = self.memory_cache.clone();
-            let key   = cache_key.clone();
+            let key = cache_key.clone();
             let value = cache_value.clone();
 
             let run = async move {
@@ -391,7 +401,10 @@ impl Node for MessageCacheNode {
 
         let mut outputs = HashMap::new();
         outputs.insert("success".to_string(), DataValue::Boolean(success));
-        outputs.insert("message_event".to_string(), DataValue::MessageEvent(message_event));
+        outputs.insert(
+            "message_event".to_string(),
+            DataValue::MessageEvent(message_event),
+        );
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }

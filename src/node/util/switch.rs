@@ -34,11 +34,12 @@ impl Node for SwitchNode {
         port! { name = "input", ty = Any, desc = "Input value to forward when enabled" },
     ];
 
-    node_output![
-        port! { name = "output", ty = Any, desc = "Forwarded output value" },
-    ];
+    node_output![port! { name = "output", ty = Any, desc = "Forwarded output value" },];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();

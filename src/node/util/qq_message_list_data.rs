@@ -37,7 +37,10 @@ impl Node for QQMessageListDataNode {
         port! { name = "messages", ty = Vec(QQMessage), desc = "Output Vec<QQMessage> from UI data source" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();
@@ -45,7 +48,9 @@ impl Node for QQMessageListDataNode {
             .get("messages")
             .cloned()
             .filter(|v| matches!(v, DataValue::Vec(..)))
-            .unwrap_or_else(|| DataValue::Vec(Box::new(crate::node::DataType::QQMessage), Vec::new()));
+            .unwrap_or_else(|| {
+                DataValue::Vec(Box::new(crate::node::DataType::QQMessage), Vec::new())
+            });
         outputs.insert("messages".to_string(), value);
 
         self.validate_outputs(&outputs)?;

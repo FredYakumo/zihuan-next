@@ -40,15 +40,15 @@ impl Node for MessageSenderNode {
         port! { name = "response", ty = Json, desc = "Response from the server" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();
 
-        outputs.insert(
-            "success".to_string(),
-            DataValue::Boolean(true),
-        );
+        outputs.insert("success".to_string(), DataValue::Boolean(true));
         outputs.insert(
             "response".to_string(),
             DataValue::Json(serde_json::json!({

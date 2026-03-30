@@ -38,7 +38,10 @@ impl Node for PushBackVecNode {
         port! { name = "result", ty = Any, desc = "追加元素后的新列表，元素类型与输入列表一致" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let (vec_type, vec_items) = match inputs.get("vec") {
@@ -50,10 +53,9 @@ impl Node for PushBackVecNode {
             }
         };
 
-        let element = inputs
-            .get("element")
-            .cloned()
-            .ok_or_else(|| crate::error::Error::ValidationError("element 输入不存在".to_string()))?;
+        let element = inputs.get("element").cloned().ok_or_else(|| {
+            crate::error::Error::ValidationError("element 输入不存在".to_string())
+        })?;
 
         let element_type = element.data_type();
         if vec_type != element_type {
@@ -96,10 +98,7 @@ mod tests {
                     vec![DataValue::String("a".to_string())],
                 ),
             ),
-            (
-                "element".to_string(),
-                DataValue::String("b".to_string()),
-            ),
+            ("element".to_string(), DataValue::String("b".to_string())),
         ]);
 
         let outputs = node.execute(inputs)?;
@@ -127,13 +126,12 @@ mod tests {
                     vec![DataValue::String("a".to_string())],
                 ),
             ),
-            (
-                "element".to_string(),
-                DataValue::Integer(1),
-            ),
+            ("element".to_string(), DataValue::Integer(1)),
         ]);
 
-        let error = node.execute(inputs).expect_err("should reject mismatched element type");
+        let error = node
+            .execute(inputs)
+            .expect_err("should reject mismatched element type");
         assert!(error
             .to_string()
             .contains("vec 与 element 的元素类型不一致"));

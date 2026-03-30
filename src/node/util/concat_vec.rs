@@ -34,11 +34,12 @@ impl Node for ConcatVecNode {
         port! { name = "vec2", ty = Vec(Any), desc = "后半部分列表，将拼接到 vec1 后面" },
     ];
 
-    node_output![
-        port! { name = "vec", ty = Any, desc = "拼接后的列表，元素类型与输入列表一致" },
-    ];
+    node_output![port! { name = "vec", ty = Any, desc = "拼接后的列表，元素类型与输入列表一致" },];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let (vec1_type, vec1_items) = match inputs.get("vec1") {
@@ -135,16 +136,13 @@ mod tests {
             ),
             (
                 "vec2".to_string(),
-                DataValue::Vec(
-                    Box::new(DataType::Integer),
-                    vec![DataValue::Integer(1)],
-                ),
+                DataValue::Vec(Box::new(DataType::Integer), vec![DataValue::Integer(1)]),
             ),
         ]);
 
-        let error = node.execute(inputs).expect_err("should reject mismatched vector types");
-        assert!(error
-            .to_string()
-            .contains("vec1 与 vec2 的元素类型不一致"));
+        let error = node
+            .execute(inputs)
+            .expect_err("should reject mismatched vector types");
+        assert!(error.to_string().contains("vec1 与 vec2 的元素类型不一致"));
     }
 }

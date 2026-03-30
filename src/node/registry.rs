@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use crate::error::Result;
+use crate::node::{DataType, DataValue, Node};
 use once_cell::sync::Lazy;
 use serde_json::Value;
-use crate::node::{Node, DataValue, DataType};
-use crate::error::Result;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 /// Node factory function type
 pub type NodeFactory = Arc<dyn Fn(String, String) -> Box<dyn Node> + Send + Sync>;
@@ -47,7 +47,10 @@ impl NodeRegistry {
             description: description.into(),
         };
 
-        self.factories.write().unwrap().insert(type_id.clone(), factory);
+        self.factories
+            .write()
+            .unwrap()
+            .insert(type_id.clone(), factory);
         self.metadata.write().unwrap().insert(type_id, metadata);
         Ok(())
     }
@@ -69,7 +72,10 @@ impl NodeRegistry {
 
     /// Return the canonical input and output ports for a registered node type.
     /// Returns `None` if the type is not registered.
-    pub fn get_node_ports(&self, type_id: &str) -> Option<(Vec<crate::node::Port>, Vec<crate::node::Port>)> {
+    pub fn get_node_ports(
+        &self,
+        type_id: &str,
+    ) -> Option<(Vec<crate::node::Port>, Vec<crate::node::Port>)> {
         let factories = self.factories.read().unwrap();
         let factory = factories.get(type_id)?;
         let node = factory("__probe__".to_string(), "__probe__".to_string());
@@ -80,7 +86,10 @@ impl NodeRegistry {
         let factories = self.factories.read().unwrap();
         let factory = factories.get(type_id)?;
         let node = factory("__probe__".to_string(), "__probe__".to_string());
-        Some((node.has_dynamic_input_ports(), node.has_dynamic_output_ports()))
+        Some((
+            node.has_dynamic_input_ports(),
+            node.has_dynamic_output_ports(),
+        ))
     }
 
     /// Returns true if the registered node type is an EventProducer.
@@ -147,17 +156,32 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util::{AndThenNode, ArrayGetNode, AtQQTargetMessageNode, BooleanBranchNode, BooleanNotNode, ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode, JoinStringNode, JsonExtractNode, JsonParserNode, LoopBreakNode, LoopNode, LoopStateUpdateNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheProviderNode, OpenAIMessageSessionCacheSetNode, PreviewMessageListNode, PreviewStringNode, PushBackVecNode, QQMessageListDataNode, QQNaturalLanguageReplyNode, SessionStateClearNode, SessionStateGetNode, SessionStateProviderNode, SessionStateReleaseNode, SessionStateTryClaimNode, StackNode, StringDataNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
-    use crate::llm::llm_api_node::LLMApiNode;
-    use crate::llm::brain_node::BrainNode;
-    use crate::llm::llm_infer_node::LLMInferNode;
-    use crate::llm::natural_language_reply::NaturalLanguageReplyNode;
-    use crate::bot_adapter::{BotAdapterNode, ExtractSenderIdFromEventNode, MessageEventTypeFilterNode, SendFriendMessageNode, SendGroupMessageNode, SendQQMessageBatchesNode};
     use crate::bot_adapter::extract_group_id_from_event::ExtractGroupIdFromEventNode;
     use crate::bot_adapter::extract_message_from_event::ExtractMessageFromEventNode;
-    use crate::node::database::{RedisNode, MySqlNode};
-    use crate::node::message_nodes::MessageMySQLPersistenceNode;
+    use crate::bot_adapter::{
+        BotAdapterNode, ExtractSenderIdFromEventNode, MessageEventTypeFilterNode,
+        SendFriendMessageNode, SendGroupMessageNode, SendQQMessageBatchesNode,
+    };
+    use crate::llm::brain_node::BrainNode;
+    use crate::llm::llm_api_node::LLMApiNode;
+    use crate::llm::llm_infer_node::LLMInferNode;
+    use crate::llm::natural_language_reply::NaturalLanguageReplyNode;
+    use crate::node::database::{MySqlNode, RedisNode};
     use crate::node::message_cache::MessageCacheNode;
+    use crate::node::message_nodes::MessageMySQLPersistenceNode;
+    use crate::node::util::{
+        AndThenNode, ArrayGetNode, AtQQTargetMessageNode, BooleanBranchNode, BooleanNotNode,
+        ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode,
+        JoinStringNode, JsonExtractNode, JsonParserNode, LoopBreakNode, LoopNode,
+        LoopStateUpdateNode, MessageContentNode, MessageListDataNode,
+        OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode,
+        OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheProviderNode,
+        OpenAIMessageSessionCacheSetNode, PreviewMessageListNode, PreviewStringNode,
+        PushBackVecNode, QQMessageListDataNode, QQNaturalLanguageReplyNode, SessionStateClearNode,
+        SessionStateGetNode, SessionStateProviderNode, SessionStateReleaseNode,
+        SessionStateTryClaimNode, StackNode, StringDataNode, StringToOpenAIMessageNode,
+        StringToPlainTextNode, SwitchNode, ToolResultNode,
+    };
 
     // Utility nodes
     register_node!(
@@ -346,17 +370,17 @@ pub fn init_node_registry() -> Result<()> {
 
     register_node!(
         "preview_message_list",
-            "Preview OpenAIMessage List",
+        "Preview OpenAIMessage List",
         "工具",
-            "在节点卡片内预览 OpenAIMessage 列表",
+        "在节点卡片内预览 OpenAIMessage 列表",
         PreviewMessageListNode
     );
 
     register_node!(
         "message_list_data",
-            "OpenAIMessage List Data",
+        "OpenAIMessage List Data",
         "数据",
-            "OpenAIMessage 列表数据源，通过 UI 容器编辑器提供列表数据",
+        "OpenAIMessage 列表数据源，通过 UI 容器编辑器提供列表数据",
         MessageListDataNode
     );
 
@@ -468,9 +492,9 @@ pub fn init_node_registry() -> Result<()> {
 
     register_node!(
         "extract_message_from_event",
-            "事件提取 OpenAIMessage 列表",
+        "事件提取 OpenAIMessage 列表",
         "Bot适配器",
-            "从消息事件中提取 OpenAIMessage 列表",
+        "从消息事件中提取 OpenAIMessage 列表",
         ExtractMessageFromEventNode
     );
 
@@ -637,11 +661,12 @@ pub fn build_node_graph_from_definition(
         // Parse inline values
         if !node_def.inline_values.is_empty() {
             let mut values = HashMap::new();
-            let ports: HashMap<String, DataType> = node.input_ports()
+            let ports: HashMap<String, DataType> = node
+                .input_ports()
                 .into_iter()
                 .map(|p| (p.name, p.data_type))
                 .collect();
-            
+
             for (port_name, json_val) in &node_def.inline_values {
                 if let Some(data_type) = ports.get(port_name) {
                     if let Some(val) = json_to_data_value(json_val, data_type) {
@@ -695,11 +720,19 @@ pub fn build_node_graph_from_definition(
                     }
                 }
             }
-            if extra.is_empty() { None } else { Some((node_def.id.clone(), extra)) }
+            if extra.is_empty() {
+                None
+            } else {
+                Some((node_def.id.clone(), extra))
+            }
         })
         .collect();
     for (node_id, extra_values) in extra_inline {
-        graph.inline_values.entry(node_id).or_default().extend(extra_values);
+        graph
+            .inline_values
+            .entry(node_id)
+            .or_default()
+            .extend(extra_values);
     }
 
     Ok(graph)
@@ -711,22 +744,26 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
         (Value::String(s), DataType::String) => Some(DataValue::String(s.clone())),
         (Value::String(s), DataType::Password) => Some(DataValue::Password(s.clone())),
         (Value::String(s), DataType::Boolean) => {
-             if s == "true" { Some(DataValue::Boolean(true)) }
-             else if s == "false" { Some(DataValue::Boolean(false)) }
-             else { None }
-        },
+            if s == "true" {
+                Some(DataValue::Boolean(true))
+            } else if s == "false" {
+                Some(DataValue::Boolean(false))
+            } else {
+                None
+            }
+        }
         (Value::String(s), DataType::Integer) => s.parse().ok().map(DataValue::Integer),
         (Value::String(s), DataType::Float) => s.parse().ok().map(DataValue::Float),
         (Value::String(s), DataType::Json) => match serde_json::from_str(s) {
             Ok(v) => Some(DataValue::Json(v)),
             Err(_) => Some(DataValue::String(s.clone())), // Fallback? or Error? Or maybe just create Json string
         },
-        
+
         (Value::Number(n), DataType::Integer) => n.as_i64().map(DataValue::Integer),
         (Value::Number(n), DataType::Float) => n.as_f64().map(DataValue::Float),
-        
+
         (Value::Bool(b), DataType::Boolean) => Some(DataValue::Boolean(*b)),
-        
+
         (v, DataType::Json) => Some(DataValue::Json(v.clone())),
 
         // Single OpenAIMessage from a JSON object: {"role": "user", "content": "..."}
@@ -741,7 +778,10 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
                 }
             }
 
-            let role = map.get("role").map(|v| parse_role(v)).unwrap_or(crate::llm::MessageRole::User);
+            let role = map
+                .get("role")
+                .map(|v| parse_role(v))
+                .unwrap_or(crate::llm::MessageRole::User);
             let content = match map.get("content") {
                 Some(Value::String(s)) => Some(s.clone()),
                 Some(Value::Null) | None => None,

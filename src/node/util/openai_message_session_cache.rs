@@ -40,11 +40,12 @@ impl Node for OpenAIMessageSessionCacheNode {
         port! { name = "messages", ty = Vec(OpenAIMessage), desc = "要暂存并追加到会话缓存中的 Vec<OpenAIMessage>" },
     ];
 
-    node_output![
-        port! { name = "success", ty = Boolean, desc = "是否成功写入 Redis 或内存缓存" },
-    ];
+    node_output![port! { name = "success", ty = Boolean, desc = "是否成功写入 Redis 或内存缓存" },];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let cache_ref: Arc<OpenAIMessageSessionCacheRef> = inputs
@@ -53,7 +54,9 @@ impl Node for OpenAIMessageSessionCacheNode {
                 DataValue::OpenAIMessageSessionCacheRef(cache_ref) => Some(cache_ref.clone()),
                 _ => None,
             })
-            .ok_or_else(|| crate::error::Error::InvalidNodeInput("cache_ref is required".to_string()))?;
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("cache_ref is required".to_string())
+            })?;
 
         let sender_id = inputs
             .get("sender_id")
@@ -61,18 +64,22 @@ impl Node for OpenAIMessageSessionCacheNode {
                 DataValue::String(sender_id) => Some(sender_id.clone()),
                 _ => None,
             })
-            .ok_or_else(|| crate::error::Error::InvalidNodeInput("sender_id is required".to_string()))?;
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("sender_id is required".to_string())
+            })?;
 
         let messages: Vec<OpenAIMessage> = match inputs.get("messages") {
-            Some(DataValue::Vec(inner_type, items)) if **inner_type == DataType::OpenAIMessage => items
-                .iter()
-                .map(|item| match item {
-                    DataValue::OpenAIMessage(message) => Ok(message.clone()),
-                    _ => Err(crate::error::Error::InvalidNodeInput(
-                        "messages must contain OpenAIMessage items".to_string(),
-                    )),
-                })
-                .collect::<Result<Vec<_>>>()?,
+            Some(DataValue::Vec(inner_type, items)) if **inner_type == DataType::OpenAIMessage => {
+                items
+                    .iter()
+                    .map(|item| match item {
+                        DataValue::OpenAIMessage(message) => Ok(message.clone()),
+                        _ => Err(crate::error::Error::InvalidNodeInput(
+                            "messages must contain OpenAIMessage items".to_string(),
+                        )),
+                    })
+                    .collect::<Result<Vec<_>>>()?
+            }
             _ => {
                 return Err(crate::error::Error::InvalidNodeInput(
                     "messages is required".to_string(),
@@ -173,7 +180,8 @@ mod tests {
 
     #[test]
     fn accumulates_messages_for_same_sender_within_one_run() -> Result<()> {
-        let mut provider = OpenAIMessageSessionCacheProviderNode::new("cache_provider", "Cache Provider");
+        let mut provider =
+            OpenAIMessageSessionCacheProviderNode::new("cache_provider", "Cache Provider");
         let mut node = OpenAIMessageSessionCacheNode::new("cache", "Cache");
 
         let provider_outputs = provider.execute(provider_input())?;
@@ -184,7 +192,10 @@ mod tests {
             "user-1",
             vec![message(MessageRole::User, "你好")],
         ))?;
-        assert!(matches!(first_outputs.get("success"), Some(DataValue::Boolean(true))));
+        assert!(matches!(
+            first_outputs.get("success"),
+            Some(DataValue::Boolean(true))
+        ));
         assert_eq!(load_contents(&cache_ref, "user-1")?, vec!["你好"]);
 
         let second_outputs = node.execute(input(
@@ -192,7 +203,10 @@ mod tests {
             "user-1",
             vec![message(MessageRole::Assistant, "你好呀")],
         ))?;
-        assert!(matches!(second_outputs.get("success"), Some(DataValue::Boolean(true))));
+        assert!(matches!(
+            second_outputs.get("success"),
+            Some(DataValue::Boolean(true))
+        ));
         assert_eq!(load_contents(&cache_ref, "user-1")?, vec!["你好", "你好呀"]);
 
         let third_outputs = node.execute(input(
@@ -200,7 +214,10 @@ mod tests {
             "user-2",
             vec![message(MessageRole::User, "另一位用户")],
         ))?;
-        assert!(matches!(third_outputs.get("success"), Some(DataValue::Boolean(true))));
+        assert!(matches!(
+            third_outputs.get("success"),
+            Some(DataValue::Boolean(true))
+        ));
         assert_eq!(load_contents(&cache_ref, "user-2")?, vec!["另一位用户"]);
 
         Ok(())
@@ -208,7 +225,8 @@ mod tests {
 
     #[test]
     fn clears_history_when_graph_restarts() -> Result<()> {
-        let mut provider = OpenAIMessageSessionCacheProviderNode::new("cache_provider", "Cache Provider");
+        let mut provider =
+            OpenAIMessageSessionCacheProviderNode::new("cache_provider", "Cache Provider");
         let mut node = OpenAIMessageSessionCacheNode::new("cache", "Cache");
 
         let provider_outputs = provider.execute(provider_input())?;
@@ -224,8 +242,14 @@ mod tests {
             "user-1",
             vec![message(MessageRole::Assistant, "第二条")],
         ))?;
-        assert!(matches!(before_reset.get("success"), Some(DataValue::Boolean(true))));
-        assert_eq!(load_contents(&cache_ref, "user-1")?, vec!["第一条", "第二条"]);
+        assert!(matches!(
+            before_reset.get("success"),
+            Some(DataValue::Boolean(true))
+        ));
+        assert_eq!(
+            load_contents(&cache_ref, "user-1")?,
+            vec!["第一条", "第二条"]
+        );
 
         provider.on_graph_start()?;
 
@@ -237,8 +261,14 @@ mod tests {
             "user-1",
             vec![message(MessageRole::User, "重启后")],
         ))?;
-        assert!(matches!(after_reset.get("success"), Some(DataValue::Boolean(true))));
-        assert_eq!(load_contents(&refreshed_cache_ref, "user-1")?, vec!["重启后"]);
+        assert!(matches!(
+            after_reset.get("success"),
+            Some(DataValue::Boolean(true))
+        ));
+        assert_eq!(
+            load_contents(&refreshed_cache_ref, "user-1")?,
+            vec!["重启后"]
+        );
 
         Ok(())
     }

@@ -38,7 +38,10 @@ impl Node for ArrayGetNode {
         port! { name = "element", ty = Any, desc = "提取出的元素，类型与列表中元素的类型一致" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let list = match inputs.get("array") {

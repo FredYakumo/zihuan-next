@@ -4,16 +4,20 @@ use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 
 use super::event;
 use super::models::{MessageEvent, MessageType, Profile, RawMessageEvent};
-use crate::util::url_utils::extract_host;
 use crate::error::Result;
+use crate::util::url_utils::extract_host;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{mpsc, oneshot};
 use tokio::sync::Mutex as TokioMutex;
+use tokio::sync::{mpsc, oneshot};
 
 /// Trait for brain agents that handle event processing
 pub trait BrainAgentTrait: Send + Sync {
-    fn on_event(&self, bot_adapter: &mut BotAdapter, event: &super::models::MessageEvent) -> Result<()>;
+    fn on_event(
+        &self,
+        bot_adapter: &mut BotAdapter,
+        event: &super::models::MessageEvent,
+    ) -> Result<()>;
     fn name(&self) -> &'static str;
     fn clone_box(&self) -> AgentBox;
 }
@@ -35,11 +39,7 @@ pub struct BotAdapterConfig {
 }
 
 impl BotAdapterConfig {
-    pub fn new(
-        url: impl Into<String>,
-        token: impl Into<String>,
-        qq_id: impl Into<String>,
-    ) -> Self {
+    pub fn new(url: impl Into<String>, token: impl Into<String>, qq_id: impl Into<String>) -> Self {
         Self {
             url: url.into(),
             token: token.into(),
@@ -139,9 +139,7 @@ impl BotAdapter {
     }
 
     /// Start the WebSocket connection and begin processing events using a shared handle
-    pub async fn start(
-        adapter: SharedBotAdapter,
-    ) -> Result<()> {
+    pub async fn start(adapter: SharedBotAdapter) -> Result<()> {
         let (url, token) = {
             let guard = adapter.lock().await;
             (guard.url.clone(), guard.token.clone())
@@ -168,13 +166,11 @@ impl BotAdapter {
 
         let (mut write, mut read) = ws_stream.split();
 
-
         let (action_tx, mut action_rx) = mpsc::unbounded_channel::<String>();
         {
             let mut guard = adapter.lock().await;
             guard.action_tx = Some(action_tx);
         }
-
 
         tokio::spawn(async move {
             while let Some(msg) = action_rx.recv().await {

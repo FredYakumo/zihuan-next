@@ -35,16 +35,18 @@ impl Node for AndThenNode {
         port! { name = "second", ty = Any, desc = "在两个输入都到齐后原样透传的值" },
     ];
 
-    node_output![
-        port! { name = "output", ty = Any, desc = "second 的原样输出" },
-    ];
+    node_output![port! { name = "output", ty = Any, desc = "second 的原样输出" },];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
-        let output = inputs.get("second").cloned().ok_or_else(|| {
-            crate::error::Error::ValidationError("second 输入不存在".to_string())
-        })?;
+        let output = inputs
+            .get("second")
+            .cloned()
+            .ok_or_else(|| crate::error::Error::ValidationError("second 输入不存在".to_string()))?;
 
         let outputs = HashMap::from([("output".to_string(), output)]);
         self.validate_outputs(&outputs)?;
