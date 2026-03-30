@@ -3,13 +3,17 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use crate::llm::tooling::FunctionTool;
 use crate::bot_adapter::adapter::SharedBotAdapter;
 use crate::bot_adapter::models::event_model::MessageEvent;
 use redis::{aio::ConnectionManager, AsyncCommands};
 use sqlx::mysql::MySqlPool;
 use tokio::sync::Mutex as TokioMutex;
+
+tokio::task_local! {
+    pub static SESSION_CLAIM_CONTEXT: Arc<SessionClaimContext>;
+}
 
 /// Redis connection configuration, passed between nodes as a reference
 #[derive(Debug, Clone)]
@@ -44,6 +48,141 @@ impl fmt::Debug for MySqlConfig {
             .field("reconnect_interval_secs", &self.reconnect_interval_secs)
             .field("pool", &self.pool.as_ref().map(|_| "<MySqlPool>"))
             .field("runtime_handle", &self.runtime_handle.as_ref().map(|_| "<Handle>"))
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SessionStateEntry {
+    pub in_session: bool,
+    pub state_json: Value,
+    pub(crate) claim_token: Option<u64>,
+}
+
+#[derive(Clone)]
+pub struct SessionStateRef {
+    pub node_id: String,
+    pub entries: Arc<TokioMutex<HashMap<String, SessionStateEntry>>>,
+    pub next_claim_token: Arc<AtomicU64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SessionClaim {
+    pub session_ref: Arc<SessionStateRef>,
+    pub sender_id: String,
+    pub claim_token: u64,
+}
+
+#[derive(Debug, Default)]
+pub struct SessionClaimContext {
+    claims: Mutex<HashMap<(String, String), SessionClaim>>,
+}
+
+impl SessionClaimContext {
+    pub fn register_claim(&self, claim: SessionClaim) {
+        self.claims.lock().unwrap().insert(
+            (claim.session_ref.node_id.clone(), claim.sender_id.clone()),
+            claim,
+        );
+    }
+
+    pub fn unregister_claim(&self, session_node_id: &str, sender_id: &str) -> Option<SessionClaim> {
+        self.claims
+            .lock()
+            .unwrap()
+            .remove(&(session_node_id.to_string(), sender_id.to_string()))
+    }
+
+    pub fn claim_token_for(&self, session_node_id: &str, sender_id: &str) -> Option<u64> {
+        self.claims
+            .lock()
+            .unwrap()
+            .get(&(session_node_id.to_string(), sender_id.to_string()))
+            .map(|claim| claim.claim_token)
+    }
+
+    pub fn drain_claims(&self) -> Vec<SessionClaim> {
+        self.claims.lock().unwrap().drain().map(|(_, claim)| claim).collect()
+    }
+}
+
+impl SessionStateRef {
+    pub fn new(node_id: impl Into<String>) -> Self {
+        Self {
+            node_id: node_id.into(),
+            entries: Arc::new(TokioMutex::new(HashMap::new())),
+            next_claim_token: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    pub async fn get_state(&self, sender_id: &str) -> SessionStateEntry {
+        self.entries
+            .lock()
+            .await
+            .get(sender_id)
+            .cloned()
+            .unwrap_or(SessionStateEntry {
+                in_session: false,
+                state_json: Value::Null,
+                claim_token: None,
+            })
+    }
+
+    pub async fn clear_state(&self, sender_id: &str) -> bool {
+        self.entries.lock().await.remove(sender_id).is_some()
+    }
+
+    pub async fn try_claim(
+        &self,
+        sender_id: &str,
+        state_json: Option<Value>,
+    ) -> (SessionStateEntry, bool) {
+        let mut entries = self.entries.lock().await;
+        if let Some(existing) = entries.get(sender_id) {
+            if existing.in_session {
+                return (existing.clone(), false);
+            }
+        }
+
+        let claim_token = self.next_claim_token.fetch_add(1, Ordering::Relaxed) + 1;
+        let entry = SessionStateEntry {
+            in_session: true,
+            state_json: state_json.unwrap_or(Value::Null),
+            claim_token: Some(claim_token),
+        };
+        entries.insert(sender_id.to_string(), entry.clone());
+        (entry, true)
+    }
+
+    pub async fn release(&self, sender_id: &str, claim_token: Option<u64>) -> bool {
+        let mut entries = self.entries.lock().await;
+        let Some(existing) = entries.get(sender_id) else {
+            return false;
+        };
+
+        if let Some(expected_token) = claim_token {
+            if existing.claim_token != Some(expected_token) {
+                return false;
+            }
+        }
+
+        entries.insert(
+            sender_id.to_string(),
+            SessionStateEntry {
+                in_session: false,
+                state_json: Value::Null,
+                claim_token: None,
+            },
+        );
+        true
+    }
+}
+
+impl fmt::Debug for SessionStateRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SessionStateRef")
+            .field("node_id", &self.node_id)
+            .field("entries", &"<TokioMutex<HashMap<...>>>")
             .finish()
     }
 }
@@ -404,6 +543,7 @@ pub enum DataType {
     BotAdapterRef,
     RedisRef,
     MySqlRef,
+    SessionStateRef,
     OpenAIMessageSessionCacheRef,
     Password,
     LLModel,
@@ -439,6 +579,7 @@ impl fmt::Display for DataType {
             DataType::BotAdapterRef => write!(f, "BotAdapterRef"),
             DataType::RedisRef => write!(f, "RedisRef"),
             DataType::MySqlRef => write!(f, "MySqlRef"),
+            DataType::SessionStateRef => write!(f, "SessionStateRef"),
             DataType::OpenAIMessageSessionCacheRef => write!(f, "OpenAIMessageSessionCacheRef"),
             DataType::Password => write!(f, "Password"),
             DataType::LLModel => write!(f, "LLModel"),
@@ -478,6 +619,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "BotAdapterRef" => Ok(DataType::BotAdapterRef),
                     "RedisRef" => Ok(DataType::RedisRef),
                     "MySqlRef" => Ok(DataType::MySqlRef),
+                    "SessionStateRef" => Ok(DataType::SessionStateRef),
                     "OpenAIMessageSessionCacheRef" => Ok(DataType::OpenAIMessageSessionCacheRef),
                     "Password" => Ok(DataType::Password),
                     "LLModel" => Ok(DataType::LLModel),
@@ -487,7 +629,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                         &["Any", "String", "Integer", "Float", "Boolean", "Json",
                               "Binary", "Vec", "MessageEvent", "OpenAIMessage", "Message",
                           "QQMessage", "FunctionTools", "BotAdapterRef", "RedisRef",
-                          "MySqlRef", "OpenAIMessageSessionCacheRef", "Password", "LLModel",
+                          "MySqlRef", "SessionStateRef", "OpenAIMessageSessionCacheRef", "Password", "LLModel",
                           "LoopControlRef", "Custom"],
                     )),
                 }
@@ -544,6 +686,7 @@ pub enum DataValue {
     BotAdapterRef(SharedBotAdapter),
     RedisRef(Arc<RedisConfig>),
     MySqlRef(Arc<MySqlConfig>),
+    SessionStateRef(Arc<SessionStateRef>),
     OpenAIMessageSessionCacheRef(Arc<OpenAIMessageSessionCacheRef>),
     Password(String),
     LLModel(Arc<dyn crate::llm::llm_base::LLMBase>),
@@ -567,6 +710,7 @@ impl DataValue {
             DataValue::BotAdapterRef(_) => DataType::BotAdapterRef,
             DataValue::RedisRef(_) => DataType::RedisRef,
             DataValue::MySqlRef(_) => DataType::MySqlRef,
+            DataValue::SessionStateRef(_) => DataType::SessionStateRef,
             DataValue::OpenAIMessageSessionCacheRef(_) => DataType::OpenAIMessageSessionCacheRef,
             DataValue::Password(_) => DataType::Password,
             DataValue::LLModel(_) => DataType::LLModel,
@@ -645,6 +789,10 @@ impl DataValue {
                 "reconnect_max_attempts": config.reconnect_max_attempts,
                 "reconnect_interval_secs": config.reconnect_interval_secs,
             }),
+            DataValue::SessionStateRef(session_ref) => serde_json::json!({
+                "type": "SessionStateRef",
+                "node_id": session_ref.node_id,
+            }),
             DataValue::OpenAIMessageSessionCacheRef(cache_ref) => serde_json::json!({
                 "type": "OpenAIMessageSessionCacheRef",
                 "node_id": cache_ref.node_id,
@@ -671,6 +819,7 @@ impl fmt::Debug for DataValue {
             DataValue::BotAdapterRef(_) => f.debug_tuple("BotAdapterRef").finish(),
             DataValue::RedisRef(config) => f.debug_tuple("RedisRef").field(config).finish(),
             DataValue::MySqlRef(config) => f.debug_tuple("MySqlRef").field(config).finish(),
+            DataValue::SessionStateRef(session_ref) => f.debug_tuple("SessionStateRef").field(session_ref).finish(),
             DataValue::OpenAIMessageSessionCacheRef(cache_ref) => f.debug_tuple("OpenAIMessageSessionCacheRef").field(cache_ref).finish(),
             DataValue::Password(value) => f.debug_tuple("Password").field(value).finish(),
             DataValue::LLModel(m) => f.debug_tuple("LLModel").field(&m.get_model_name()).finish(),
