@@ -1,6 +1,8 @@
 use serde_json::{json, Value};
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::future::Future;
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use log::{error, info};
+use tokio::task::JoinHandle;
 
 /// NodeType enum for distinguishing node categories
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -249,8 +251,11 @@ pub struct NodeGraph {
     pub nodes: HashMap<String, Box<dyn Node>>,
     pub inline_values: HashMap<String, HashMap<String, DataValue>>,
     stop_flag: Arc<AtomicBool>,
-    execution_callback: Option<Box<dyn Fn(&str, &HashMap<String, DataValue>, &HashMap<String, DataValue>) + Send + Sync>>,
+    execution_callback: Option<Arc<dyn Fn(&str, &HashMap<String, DataValue>, &HashMap<String, DataValue>) + Send + Sync>>,
     edges: Vec<EdgeDefinition>,
+    definition: Option<NodeGraphDefinition>,
+    event_task_runtime: Option<tokio::runtime::Runtime>,
+    event_task_handles: Vec<JoinHandle<()>>,
 }
 
 impl NodeGraph {
@@ -261,6 +266,9 @@ impl NodeGraph {
             stop_flag: Arc::new(AtomicBool::new(false)),
             execution_callback: None,
             edges: Vec::new(),
+            definition: None,
+            event_task_runtime: None,
+            event_task_handles: Vec::new(),
         }
     }
 
@@ -268,11 +276,15 @@ impl NodeGraph {
     where
         F: Fn(&str, &HashMap<String, DataValue>, &HashMap<String, DataValue>) + Send + Sync + 'static,
     {
-        self.execution_callback = Some(Box::new(callback));
+        self.execution_callback = Some(Arc::new(callback));
     }
 
     pub fn set_edges(&mut self, edges: Vec<EdgeDefinition>) {
         self.edges = edges;
+    }
+
+    pub fn set_definition(&mut self, definition: NodeGraphDefinition) {
+        self.definition = Some(definition);
     }
 
     pub fn get_stop_flag(&self) -> Arc<AtomicBool> {
@@ -322,6 +334,7 @@ impl NodeGraph {
 
     fn prepare_for_execution(&mut self) -> Result<()> {
         self.stop_flag.store(false, Ordering::Relaxed);
+        self.event_task_handles.clear();
 
         for (node_id, node) in self.nodes.iter_mut() {
             node.on_graph_start().map_err(|e| {
@@ -329,6 +342,83 @@ impl NodeGraph {
             })?;
         }
 
+        Ok(())
+    }
+
+    fn block_on_future<F>(&mut self, future: F) -> Result<F::Output>
+    where
+        F: Future,
+    {
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            Ok(tokio::task::block_in_place(|| handle.block_on(future)))
+        } else {
+            if self.event_task_runtime.is_none() {
+                self.event_task_runtime = Some(tokio::runtime::Runtime::new()?);
+            }
+            Ok(self
+                .event_task_runtime
+                .as_mut()
+                .expect("runtime should exist")
+                .block_on(future))
+        }
+    }
+
+    fn event_task_handle(&mut self) -> Result<tokio::runtime::Handle> {
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            return Ok(handle);
+        }
+
+        if self.event_task_runtime.is_none() {
+            self.event_task_runtime = Some(tokio::runtime::Runtime::new()?);
+        }
+
+        Ok(self
+            .event_task_runtime
+            .as_ref()
+            .expect("runtime should exist")
+            .handle()
+            .clone())
+    }
+
+    fn wait_for_event_tasks(&mut self) -> Result<()> {
+        if self.event_task_handles.is_empty() {
+            return Ok(());
+        }
+
+        let handles = std::mem::take(&mut self.event_task_handles);
+        self.block_on_future(async move {
+            for handle in handles {
+                let _ = handle.await;
+            }
+        })?;
+        Ok(())
+    }
+
+    fn reap_finished_event_tasks(&mut self) -> Result<()> {
+        if self.event_task_handles.is_empty() {
+            return Ok(());
+        }
+
+        let mut pending = Vec::new();
+        let mut completed = Vec::new();
+
+        for handle in std::mem::take(&mut self.event_task_handles) {
+            if handle.is_finished() {
+                completed.push(handle);
+            } else {
+                pending.push(handle);
+            }
+        }
+
+        if !completed.is_empty() {
+            self.block_on_future(async move {
+                for handle in completed {
+                    let _ = handle.await;
+                }
+            })?;
+        }
+
+        self.event_task_handles = pending;
         Ok(())
     }
 
@@ -1240,6 +1330,361 @@ impl NodeGraph {
         }
     }
 
+    fn spawn_event_task_with_edges(
+        &mut self,
+        node_id: &str,
+        base_data_pool: &OutputPool,
+        outputs: HashMap<String, DataValue>,
+        reachable_map: &HashMap<String, HashSet<String>>,
+        event_producer_set: &HashSet<String>,
+        ordered: &[String],
+        connected_nodes: &HashSet<String>,
+        input_sources: &InputSourceMap,
+        task_error: Arc<Mutex<Option<crate::error::Error>>>,
+    ) -> Result<()> {
+        let Some(definition) = self.definition.clone() else {
+            let mut event_pool = base_data_pool.clone();
+            self.insert_outputs(&mut event_pool, node_id, outputs);
+            self.execute_single_event_with_edges(
+                node_id,
+                event_pool,
+                reachable_map,
+                event_producer_set,
+                ordered,
+                connected_nodes,
+                input_sources,
+            )?;
+            return Ok(());
+        };
+
+        let stop_flag = Arc::clone(&self.stop_flag);
+        let callback = self.execution_callback.clone();
+        let node_id = node_id.to_string();
+        let base_data_pool = base_data_pool.clone();
+        let reachable_map = reachable_map.clone();
+        let event_producer_set = event_producer_set.clone();
+        let ordered = ordered.to_vec();
+        let connected_nodes = connected_nodes.clone();
+        let input_sources = input_sources.clone();
+        let handle = self.event_task_handle()?;
+
+        let join = handle.spawn(async move {
+            let claim_context = Arc::new(crate::node::data_value::SessionClaimContext::default());
+            crate::node::data_value::SESSION_CLAIM_CONTEXT
+                .scope(claim_context.clone(), async move {
+                    let result = tokio::task::block_in_place(|| -> Result<()> {
+                        let mut event_graph = crate::node::registry::build_node_graph_from_definition(&definition)?;
+                        if let Some(callback) = callback {
+                            event_graph.execution_callback = Some(callback);
+                        }
+                        event_graph.stop_flag = stop_flag.clone();
+                        event_graph.execute_single_event_with_edges(
+                            &node_id,
+                            {
+                                let mut event_pool = base_data_pool.clone();
+                                if !outputs.is_empty() {
+                                    event_pool.insert(node_id.clone(), outputs);
+                                }
+                                event_pool
+                            },
+                            &reachable_map,
+                            &event_producer_set,
+                            &ordered,
+                            &connected_nodes,
+                            &input_sources,
+                        )
+                    });
+
+                    for claim in claim_context.drain_claims() {
+                        info!(
+                            "[NodeGraph] Auto-releasing claim after event task: session_ref={}, sender_id={}, claim_token={}",
+                            claim.session_ref.node_id,
+                            claim.sender_id,
+                            claim.claim_token
+                        );
+                        let _ = claim
+                            .session_ref
+                            .release(&claim.sender_id, Some(claim.claim_token))
+                            .await;
+                    }
+
+                    if let Err(err) = result {
+                        error!("Async event task for '{}' failed: {}", node_id, err);
+                        stop_flag.store(true, Ordering::Relaxed);
+                        let mut guard = task_error.lock().unwrap();
+                        if guard.is_none() {
+                            *guard = Some(err);
+                        }
+                    }
+                })
+                .await;
+        });
+
+        self.event_task_handles.push(join);
+        Ok(())
+    }
+
+    fn spawn_event_task(
+        &mut self,
+        node_id: &str,
+        base_data_pool: &HashMap<String, DataValue>,
+        outputs: HashMap<String, DataValue>,
+        output_producers: &HashMap<String, String>,
+        reachable_map: &HashMap<String, HashSet<String>>,
+        event_producer_set: &HashSet<String>,
+        ordered: &[String],
+        task_error: Arc<Mutex<Option<crate::error::Error>>>,
+    ) -> Result<()> {
+        let Some(definition) = self.definition.clone() else {
+            let mut event_pool = base_data_pool.clone();
+            for (key, value) in outputs {
+                event_pool.insert(key, value);
+            }
+            self.execute_single_event(
+                node_id,
+                event_pool,
+                output_producers,
+                reachable_map,
+                event_producer_set,
+                ordered,
+            )?;
+            return Ok(());
+        };
+
+        let stop_flag = Arc::clone(&self.stop_flag);
+        let callback = self.execution_callback.clone();
+        let node_id = node_id.to_string();
+        let base_data_pool = base_data_pool.clone();
+        let output_producers = output_producers.clone();
+        let reachable_map = reachable_map.clone();
+        let event_producer_set = event_producer_set.clone();
+        let ordered = ordered.to_vec();
+        let handle = self.event_task_handle()?;
+
+        let join = handle.spawn(async move {
+            let claim_context = Arc::new(crate::node::data_value::SessionClaimContext::default());
+            crate::node::data_value::SESSION_CLAIM_CONTEXT
+                .scope(claim_context.clone(), async move {
+                    let result = tokio::task::block_in_place(|| -> Result<()> {
+                        let mut event_graph = crate::node::registry::build_node_graph_from_definition(&definition)?;
+                        if let Some(callback) = callback {
+                            event_graph.execution_callback = Some(callback);
+                        }
+                        event_graph.stop_flag = stop_flag.clone();
+                        event_graph.execute_single_event(
+                            &node_id,
+                            {
+                                let mut event_pool = base_data_pool.clone();
+                                for (key, value) in outputs {
+                                    event_pool.insert(key, value);
+                                }
+                                event_pool
+                            },
+                            &output_producers,
+                            &reachable_map,
+                            &event_producer_set,
+                            &ordered,
+                        )
+                    });
+
+                    for claim in claim_context.drain_claims() {
+                        info!(
+                            "[NodeGraph] Auto-releasing claim after event task: session_ref={}, sender_id={}, claim_token={}",
+                            claim.session_ref.node_id,
+                            claim.sender_id,
+                            claim.claim_token
+                        );
+                        let _ = claim
+                            .session_ref
+                            .release(&claim.sender_id, Some(claim.claim_token))
+                            .await;
+                    }
+
+                    if let Err(err) = result {
+                        error!("Async event task for '{}' failed: {}", node_id, err);
+                        stop_flag.store(true, Ordering::Relaxed);
+                        let mut guard = task_error.lock().unwrap();
+                        if guard.is_none() {
+                            *guard = Some(err);
+                        }
+                    }
+                })
+                .await;
+        });
+
+        self.event_task_handles.push(join);
+        Ok(())
+    }
+
+    fn execute_single_event_with_edges(
+        &mut self,
+        producer_node_id: &str,
+        mut event_pool: OutputPool,
+        reachable_map: &HashMap<String, HashSet<String>>,
+        event_producer_set: &HashSet<String>,
+        ordered: &[String],
+        connected_nodes: &HashSet<String>,
+        input_sources: &InputSourceMap,
+    ) -> Result<()> {
+        let reachable = reachable_map
+            .get(producer_node_id)
+            .cloned()
+            .unwrap_or_default();
+        let mut skipped: HashSet<String> = HashSet::new();
+
+        for ordered_id in ordered {
+            if ordered_id == producer_node_id {
+                continue;
+            }
+            if skipped.contains(ordered_id) || !reachable.contains(ordered_id) || !connected_nodes.contains(ordered_id) {
+                continue;
+            }
+
+            if event_producer_set.contains(ordered_id) {
+                let ran = self.run_event_producer_with_edges(
+                    ordered_id,
+                    &event_pool,
+                    reachable_map,
+                    event_producer_set,
+                    ordered,
+                    connected_nodes,
+                    input_sources,
+                )?;
+                if ran {
+                    if let Some(skip_set) = reachable_map.get(ordered_id) {
+                        skipped.extend(skip_set.iter().cloned());
+                    }
+                }
+                continue;
+            }
+
+            let inputs = {
+                let node = self.nodes.get(ordered_id).ok_or_else(|| {
+                    crate::error::Error::ValidationError(format!(
+                        "Node '{}' not found during execution",
+                        ordered_id
+                    ))
+                })?;
+                self.collect_inputs_with_edges_if_available(
+                    node.as_ref(),
+                    &event_pool,
+                    input_sources,
+                    ordered_id,
+                    self.inline_values.get(ordered_id),
+                )?
+            };
+
+            let Some(inputs) = inputs else {
+                continue;
+            };
+
+            let inputs_clone = self.execution_callback.as_ref().map(|_| inputs.clone());
+            let outputs = {
+                let node = self.nodes.get_mut(ordered_id).ok_or_else(|| {
+                    crate::error::Error::ValidationError(format!(
+                        "Node '{}' not found during execution",
+                        ordered_id
+                    ))
+                })?;
+                node.execute(inputs).map_err(|e| {
+                    crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", ordered_id, e))
+                })?
+            };
+
+            if let Some(cb) = &self.execution_callback {
+                if let Some(inp) = inputs_clone {
+                    cb(ordered_id, &inp, &outputs);
+                }
+            }
+
+            self.insert_outputs(&mut event_pool, ordered_id, outputs);
+        }
+
+        Ok(())
+    }
+
+    fn execute_single_event(
+        &mut self,
+        producer_node_id: &str,
+        mut event_pool: HashMap<String, DataValue>,
+        output_producers: &HashMap<String, String>,
+        reachable_map: &HashMap<String, HashSet<String>>,
+        event_producer_set: &HashSet<String>,
+        ordered: &[String],
+    ) -> Result<()> {
+        let reachable = reachable_map
+            .get(producer_node_id)
+            .cloned()
+            .unwrap_or_default();
+        let mut skipped: HashSet<String> = HashSet::new();
+
+        for ordered_id in ordered {
+            if ordered_id == producer_node_id {
+                continue;
+            }
+            if skipped.contains(ordered_id) || !reachable.contains(ordered_id) {
+                continue;
+            }
+
+            if event_producer_set.contains(ordered_id) {
+                let ran = self.run_event_producer(
+                    ordered_id,
+                    &event_pool,
+                    output_producers,
+                    reachable_map,
+                    event_producer_set,
+                    ordered,
+                )?;
+                if ran {
+                    if let Some(skip_set) = reachable_map.get(ordered_id) {
+                        skipped.extend(skip_set.iter().cloned());
+                    }
+                }
+                continue;
+            }
+
+            let node = self.nodes.get_mut(ordered_id).ok_or_else(|| {
+                crate::error::Error::ValidationError(format!(
+                    "Node '{}' not found during execution",
+                    ordered_id
+                ))
+            })?;
+
+            let Some(inputs) = Self::collect_inputs_if_available(
+                node.as_ref(),
+                &event_pool,
+                output_producers,
+                ordered_id,
+                self.inline_values.get(ordered_id),
+            )? else {
+                continue;
+            };
+
+            let inputs_clone = self.execution_callback.as_ref().map(|_| inputs.clone());
+            let outputs = node.execute(inputs).map_err(|e| {
+                crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", ordered_id, e))
+            })?;
+
+            if let Some(cb) = &self.execution_callback {
+                if let Some(inp) = inputs_clone {
+                    cb(ordered_id, &inp, &outputs);
+                }
+            }
+
+            for (key, value) in outputs {
+                if event_pool.contains_key(&key) {
+                    return Err(crate::error::Error::ValidationError(format!(
+                        "Output key '{}' from node '{}' conflicts with existing data",
+                        key, ordered_id
+                    )));
+                }
+                event_pool.insert(key, value);
+            }
+        }
+
+        Ok(())
+    }
+
     fn collect_inputs_if_available(
         node: &dyn Node,
         data_pool: &HashMap<String, DataValue>,
@@ -1273,11 +1718,7 @@ impl NodeGraph {
         connected_nodes: &HashSet<String>,
         input_sources: &InputSourceMap,
     ) -> Result<bool> {
-        let reachable = reachable_map
-            .get(node_id)
-            .cloned()
-            .unwrap_or_default();
-
+        let task_error: Arc<Mutex<Option<crate::error::Error>>> = Arc::new(Mutex::new(None));
         {
             let inputs = {
                 let node = self.nodes.get(node_id).ok_or_else(|| {
@@ -1313,6 +1754,7 @@ impl NodeGraph {
         }
 
         loop {
+            self.reap_finished_event_tasks()?;
             if self.stop_flag.load(Ordering::Relaxed) {
                 info!("Event producer '{}' stopped by user request", node_id);
                 break;
@@ -1350,94 +1792,20 @@ impl NodeGraph {
             if let Some(cb) = &self.execution_callback {
                 cb(node_id, &HashMap::new(), &outputs);
             }
-
-            let mut event_pool = base_data_pool.clone();
-            self.insert_outputs(&mut event_pool, node_id, outputs);
-
-            let mut skipped: HashSet<String> = HashSet::new();
-            for ordered_id in ordered {
-                if ordered_id == node_id {
-                    continue;
-                }
-                if skipped.contains(ordered_id) {
-                    continue;
-                }
-                if !reachable.contains(ordered_id) {
-                    continue;
-                }
-                if !connected_nodes.contains(ordered_id) {
-                    continue;
-                }
-
-                if event_producer_set.contains(ordered_id) {
-                    let ran = self.run_event_producer_with_edges(
-                        ordered_id,
-                        &event_pool,
-                        reachable_map,
-                        event_producer_set,
-                        ordered,
-                        connected_nodes,
-                        input_sources,
-                    )?;
-                    if ran {
-                        if let Some(skip_set) = reachable_map.get(ordered_id) {
-                            skipped.extend(skip_set.iter().cloned());
-                        }
-                    }
-                    continue;
-                }
-
-                let inputs = {
-                    let node = self.nodes.get(ordered_id).ok_or_else(|| {
-                        crate::error::Error::ValidationError(format!(
-                            "Node '{}' not found during execution",
-                            ordered_id
-                        ))
-                    })?;
-                    self.collect_inputs_with_edges_if_available(
-                        node.as_ref(),
-                        &event_pool,
-                        input_sources,
-                        ordered_id,
-                        self.inline_values.get(ordered_id),
-                    )?
-                };
-
-                let Some(inputs) = inputs else {
-                    continue;
-                };
-
-                let inputs_clone = if self.execution_callback.is_some() { Some(inputs.clone()) } else { None };
-                let outputs = {
-                    let node = self.nodes.get_mut(ordered_id).ok_or_else(|| {
-                        crate::error::Error::ValidationError(format!(
-                            "Node '{}' not found during execution",
-                            ordered_id
-                        ))
-                    })?;
-                    let exec_result = node.execute(inputs).map_err(|e| {
-                        crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", ordered_id, e))
-                    });
-                    match exec_result {
-                        Ok(value) => value,
-                        Err(err) => {
-                            if self.stop_current_event_producer_on_error(node_id, &err) {
-                                break;
-                            }
-                            return Err(err);
-                        }
-                    }
-                };
-
-                if let Some(cb) = &self.execution_callback {
-                    if let Some(inp) = inputs_clone {
-                        cb(ordered_id, &inp, &outputs);
-                    }
-                }
-
-                self.insert_outputs(&mut event_pool, ordered_id, outputs);
-            }
+            self.spawn_event_task_with_edges(
+                node_id,
+                base_data_pool,
+                outputs,
+                reachable_map,
+                event_producer_set,
+                ordered,
+                connected_nodes,
+                input_sources,
+                Arc::clone(&task_error),
+            )?;
         }
+
+        self.wait_for_event_tasks()?;
 
         let node = self.nodes.get_mut(node_id).ok_or_else(|| {
             crate::error::Error::ValidationError(format!(
@@ -1446,6 +1814,10 @@ impl NodeGraph {
             ))
         })?;
         node.on_cleanup()?;
+
+        if let Some(err) = task_error.lock().unwrap().take() {
+            return Err(err);
+        }
 
         Ok(true)
     }
@@ -1459,11 +1831,7 @@ impl NodeGraph {
         event_producer_set: &HashSet<String>,
         ordered: &[String],
     ) -> Result<bool> {
-        let reachable = reachable_map
-            .get(node_id)
-            .cloned()
-            .unwrap_or_default();
-
+        let task_error: Arc<Mutex<Option<crate::error::Error>>> = Arc::new(Mutex::new(None));
         {
             let node = self.nodes.get_mut(node_id).ok_or_else(|| {
                 crate::error::Error::ValidationError(format!(
@@ -1488,6 +1856,7 @@ impl NodeGraph {
         }
 
         loop {
+            self.reap_finished_event_tasks()?;
             if self.stop_flag.load(Ordering::Relaxed) {
                 info!("Event producer '{}' stopped by user request", node_id);
                 break;
@@ -1525,90 +1894,19 @@ impl NodeGraph {
             if let Some(cb) = &self.execution_callback {
                 cb(node_id, &HashMap::new(), &outputs);
             }
-
-            let mut event_pool = base_data_pool.clone();
-            for (key, value) in outputs {
-                event_pool.insert(key, value);
-            }
-
-            let mut skipped: HashSet<String> = HashSet::new();
-            for ordered_id in ordered {
-                if ordered_id == node_id {
-                    continue;
-                }
-                if skipped.contains(ordered_id) {
-                    continue;
-                }
-                if !reachable.contains(ordered_id) {
-                    continue;
-                }
-
-                if event_producer_set.contains(ordered_id) {
-                    let ran = self.run_event_producer(
-                        ordered_id,
-                        &event_pool,
-                        output_producers,
-                        reachable_map,
-                        event_producer_set,
-                        ordered,
-                    )?;
-                    if ran {
-                        if let Some(skip_set) = reachable_map.get(ordered_id) {
-                            skipped.extend(skip_set.iter().cloned());
-                        }
-                    }
-                    continue;
-                }
-
-                let node = self.nodes.get_mut(ordered_id).ok_or_else(|| {
-                    crate::error::Error::ValidationError(format!(
-                        "Node '{}' not found during execution",
-                        ordered_id
-                    ))
-                })?;
-
-                let Some(inputs) = Self::collect_inputs_if_available(
-                    node.as_ref(),
-                    &event_pool,
-                    output_producers,
-                    ordered_id,
-                    self.inline_values.get(ordered_id),
-                )? else {
-                    continue;
-                };
-                
-                let inputs_clone = if self.execution_callback.is_some() { Some(inputs.clone()) } else { None };
-
-                let exec_result = node.execute(inputs).map_err(|e| {
-                    crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", ordered_id, e))
-                });
-                let outputs = match exec_result {
-                    Ok(value) => value,
-                    Err(err) => {
-                        if self.stop_current_event_producer_on_error(node_id, &err) {
-                            break;
-                        }
-                        return Err(err);
-                    }
-                };
-                
-                if let Some(cb) = &self.execution_callback {
-                    if let Some(inp) = inputs_clone {
-                        cb(ordered_id, &inp, &outputs);
-                    }
-                }
-
-                for (key, value) in outputs {
-                    if event_pool.contains_key(&key) {
-                        return Err(crate::error::Error::ValidationError(format!(
-                            "Output key '{}' from node '{}' conflicts with existing data",
-                            key, ordered_id
-                        )));
-                    }
-                    event_pool.insert(key, value);
-                }
-            }
+            self.spawn_event_task(
+                node_id,
+                base_data_pool,
+                outputs,
+                output_producers,
+                reachable_map,
+                event_producer_set,
+                ordered,
+                Arc::clone(&task_error),
+            )?;
         }
+
+        self.wait_for_event_tasks()?;
 
         let node = self.nodes.get_mut(node_id).ok_or_else(|| {
             crate::error::Error::ValidationError(format!(
@@ -1617,6 +1915,10 @@ impl NodeGraph {
             ))
         })?;
         node.on_cleanup()?;
+
+        if let Some(err) = task_error.lock().unwrap().take() {
+            return Err(err);
+        }
 
         Ok(true)
     }
@@ -1645,10 +1947,15 @@ impl Default for NodeGraph {
 
 #[cfg(test)]
 mod tests {
-    use super::{DataType, DataValue, EdgeDefinition, ExecutionResult, Node, NodeGraph, Port};
+    use super::{DataType, DataValue, EdgeDefinition, ExecutionResult, Node, NodeGraph, NodeType, Port};
     use crate::error::Result;
-    use crate::node::util::SwitchNode;
+    use crate::node::graph_io::{NodeDefinition, NodeGraphDefinition};
+    use crate::node::registry::NODE_REGISTRY;
+    use crate::node::util::{BooleanBranchNode, SwitchNode};
+    use once_cell::sync::Lazy;
     use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
 
     struct StaticOutputNode {
         id: String,
@@ -1705,6 +2012,9 @@ mod tests {
         input_name: String,
         input_type: DataType,
     }
+
+    static ASYNC_TEST_LOG: Lazy<Arc<Mutex<Vec<String>>>> =
+        Lazy::new(|| Arc::new(Mutex::new(Vec::new())));
 
     impl OptionalSeenSinkNode {
         fn new(id: &str, input_name: &str, input_type: DataType) -> Self {
@@ -1772,6 +2082,139 @@ mod tests {
             self.validate_inputs(&inputs)?;
             Ok(HashMap::from([("seen".to_string(), DataValue::Boolean(true))]))
         }
+    }
+
+    struct TestEventProducerNode {
+        id: String,
+        name: String,
+        events: Vec<String>,
+    }
+
+    impl TestEventProducerNode {
+        fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+            Self {
+                id: id.into(),
+                name: name.into(),
+                events: vec!["user-1".to_string(), "user-2".to_string()],
+            }
+        }
+    }
+
+    impl Node for TestEventProducerNode {
+        fn node_type(&self) -> NodeType {
+            NodeType::EventProducer
+        }
+
+        fn id(&self) -> &str {
+            &self.id
+        }
+
+        fn name(&self) -> &str {
+            &self.name
+        }
+
+        fn input_ports(&self) -> Vec<Port> {
+            Vec::new()
+        }
+
+        fn output_ports(&self) -> Vec<Port> {
+            vec![Port::new("sender_id", DataType::String)]
+        }
+
+        fn execute(&mut self, _inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+            Ok(HashMap::new())
+        }
+
+        fn on_update(&mut self) -> Result<Option<HashMap<String, DataValue>>> {
+            let Some(next_sender) = self.events.first().cloned() else {
+                return Ok(None);
+            };
+            self.events.remove(0);
+            Ok(Some(HashMap::from([(
+                "sender_id".to_string(),
+                DataValue::String(next_sender),
+            )])))
+        }
+    }
+
+    struct TestBlockingNode {
+        id: String,
+        name: String,
+    }
+
+    impl TestBlockingNode {
+        fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+            Self {
+                id: id.into(),
+                name: name.into(),
+            }
+        }
+    }
+
+    impl Node for TestBlockingNode {
+        fn id(&self) -> &str {
+            &self.id
+        }
+
+        fn name(&self) -> &str {
+            &self.name
+        }
+
+        fn input_ports(&self) -> Vec<Port> {
+            vec![Port::new("sender_id", DataType::String)]
+        }
+
+        fn output_ports(&self) -> Vec<Port> {
+            vec![Port::new("done", DataType::String)]
+        }
+
+        fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+            let sender_id = match inputs.get("sender_id") {
+                Some(DataValue::String(sender_id)) => sender_id.clone(),
+                other => panic!("unexpected sender_id input: {other:?}"),
+            };
+
+            ASYNC_TEST_LOG
+                .lock()
+                .expect("async test log should lock")
+                .push(format!("start:{sender_id}"));
+            if sender_id == "user-1" {
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            ASYNC_TEST_LOG
+                .lock()
+                .expect("async test log should lock")
+                .push(format!("end:{sender_id}"));
+
+            Ok(HashMap::from([(
+                "done".to_string(),
+                DataValue::String(sender_id),
+            )]))
+        }
+    }
+
+    fn register_async_test_nodes() {
+        static REGISTERED: Lazy<()> = Lazy::new(|| {
+            NODE_REGISTRY
+                .register(
+                    "test_event_producer_async",
+                    "Test Event Producer Async",
+                    "测试",
+                    "Produces two sender IDs for async execution tests",
+                    Arc::new(|id: String, name: String| Box::new(TestEventProducerNode::new(id, name))),
+                )
+                .expect("test event producer should register");
+            NODE_REGISTRY
+                .register(
+                    "test_blocking_async",
+                    "Test Blocking Async",
+                    "测试",
+                    "Sleeps for the first sender to validate async fan-out",
+                    Arc::new(|id: String, name: String| Box::new(TestBlockingNode::new(id, name))),
+                )
+                .expect("test blocking node should register");
+        });
+        Lazy::force(&REGISTERED);
     }
 
     fn assert_success(result: &ExecutionResult) {
@@ -1912,5 +2355,155 @@ mod tests {
         let result = graph.execute_and_capture_results();
         assert_success(&result);
         assert!(result.node_results.contains_key("sink"));
+    }
+
+    #[test]
+    fn boolean_branch_routes_only_true_branch_in_edge_mode() {
+        let mut graph = NodeGraph::new();
+        graph.add_node(Box::new(StaticOutputNode::new("cond", "condition", DataValue::Boolean(true)))).unwrap();
+        graph.add_node(Box::new(StaticOutputNode::new("source", "value", DataValue::String("hello".to_string())))).unwrap();
+        graph.add_node(Box::new(BooleanBranchNode::new("branch", "Branch"))).unwrap();
+        graph.add_node(Box::new(SeenSinkNode::new("true_sink", "value", DataType::String))).unwrap();
+        graph.add_node(Box::new(SeenSinkNode::new("false_sink", "value", DataType::String))).unwrap();
+        graph.set_edges(vec![
+            EdgeDefinition {
+                from_node_id: "cond".to_string(),
+                from_port: "condition".to_string(),
+                to_node_id: "branch".to_string(),
+                to_port: "condition".to_string(),
+            },
+            EdgeDefinition {
+                from_node_id: "source".to_string(),
+                from_port: "value".to_string(),
+                to_node_id: "branch".to_string(),
+                to_port: "input".to_string(),
+            },
+            EdgeDefinition {
+                from_node_id: "branch".to_string(),
+                from_port: "true_output".to_string(),
+                to_node_id: "true_sink".to_string(),
+                to_port: "value".to_string(),
+            },
+            EdgeDefinition {
+                from_node_id: "branch".to_string(),
+                from_port: "false_output".to_string(),
+                to_node_id: "false_sink".to_string(),
+                to_port: "value".to_string(),
+            },
+        ]);
+
+        let result = graph.execute_and_capture_results();
+        assert_success(&result);
+        assert!(result.node_results.contains_key("branch"));
+        assert!(result.node_results.contains_key("true_sink"));
+        assert!(!result.node_results.contains_key("false_sink"));
+    }
+
+    #[test]
+    fn boolean_branch_routes_only_false_branch_in_edge_mode() {
+        let mut graph = NodeGraph::new();
+        graph.add_node(Box::new(StaticOutputNode::new("cond", "condition", DataValue::Boolean(false)))).unwrap();
+        graph.add_node(Box::new(StaticOutputNode::new("source", "value", DataValue::Integer(7)))).unwrap();
+        graph.add_node(Box::new(BooleanBranchNode::new("branch", "Branch"))).unwrap();
+        graph.add_node(Box::new(SeenSinkNode::new("true_sink", "value", DataType::Integer))).unwrap();
+        graph.add_node(Box::new(SeenSinkNode::new("false_sink", "value", DataType::Integer))).unwrap();
+        graph.set_edges(vec![
+            EdgeDefinition {
+                from_node_id: "cond".to_string(),
+                from_port: "condition".to_string(),
+                to_node_id: "branch".to_string(),
+                to_port: "condition".to_string(),
+            },
+            EdgeDefinition {
+                from_node_id: "source".to_string(),
+                from_port: "value".to_string(),
+                to_node_id: "branch".to_string(),
+                to_port: "input".to_string(),
+            },
+            EdgeDefinition {
+                from_node_id: "branch".to_string(),
+                from_port: "true_output".to_string(),
+                to_node_id: "true_sink".to_string(),
+                to_port: "value".to_string(),
+            },
+            EdgeDefinition {
+                from_node_id: "branch".to_string(),
+                from_port: "false_output".to_string(),
+                to_node_id: "false_sink".to_string(),
+                to_port: "value".to_string(),
+            },
+        ]);
+
+        let result = graph.execute_and_capture_results();
+        assert_success(&result);
+        assert!(result.node_results.contains_key("branch"));
+        assert!(!result.node_results.contains_key("true_sink"));
+        assert!(result.node_results.contains_key("false_sink"));
+    }
+
+    #[test]
+    fn event_producer_spawns_independent_event_tasks() -> Result<()> {
+        register_async_test_nodes();
+        ASYNC_TEST_LOG.lock().unwrap().clear();
+
+        let definition = NodeGraphDefinition {
+            nodes: vec![
+                NodeDefinition {
+                    id: "producer".to_string(),
+                    name: "Producer".to_string(),
+                    description: None,
+                    node_type: "test_event_producer_async".to_string(),
+                    input_ports: Vec::new(),
+                    output_ports: vec![Port::new("sender_id", DataType::String)],
+                    dynamic_input_ports: false,
+                    dynamic_output_ports: false,
+                    position: None,
+                    size: None,
+                    inline_values: HashMap::new(),
+                    port_bindings: HashMap::new(),
+                    has_error: false,
+                    has_cycle: false,
+                },
+                NodeDefinition {
+                    id: "blocking".to_string(),
+                    name: "Blocking".to_string(),
+                    description: None,
+                    node_type: "test_blocking_async".to_string(),
+                    input_ports: vec![Port::new("sender_id", DataType::String)],
+                    output_ports: vec![Port::new("done", DataType::String)],
+                    dynamic_input_ports: false,
+                    dynamic_output_ports: false,
+                    position: None,
+                    size: None,
+                    inline_values: HashMap::new(),
+                    port_bindings: HashMap::new(),
+                    has_error: false,
+                    has_cycle: false,
+                },
+            ],
+            edges: Vec::new(),
+            hyperparameter_groups: Vec::new(),
+            hyperparameters: Vec::new(),
+            execution_results: HashMap::new(),
+        };
+
+        let mut graph = crate::node::registry::build_node_graph_from_definition(&definition)?;
+        graph.execute()?;
+
+        let log = ASYNC_TEST_LOG.lock().unwrap().clone();
+        let start_user_1 = log.iter().position(|entry| entry == "start:user-1");
+        let start_user_2 = log.iter().position(|entry| entry == "start:user-2");
+        let end_user_1 = log.iter().position(|entry| entry == "end:user-1");
+
+        assert_eq!(log.len(), 4, "unexpected async execution log: {log:?}");
+        assert!(start_user_1.is_some(), "missing first event start: {log:?}");
+        assert!(start_user_2.is_some(), "missing second event start: {log:?}");
+        assert!(end_user_1.is_some(), "missing first event end: {log:?}");
+        assert!(
+            start_user_2.unwrap() < end_user_1.unwrap(),
+            "second event should start before first event finishes: {log:?}"
+        );
+
+        Ok(())
     }
 }

@@ -147,7 +147,7 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util::{ArrayGetNode, AtQQTargetMessageNode, BooleanNotNode, ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode, JoinStringNode, JsonExtractNode, JsonParserNode, LoopBreakNode, LoopNode, LoopStateUpdateNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheProviderNode, OpenAIMessageSessionCacheSetNode, PreviewMessageListNode, PreviewStringNode, PushBackVecNode, QQMessageListDataNode, QQNaturalLanguageReplyNode, StackNode, StringDataNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
+    use crate::node::util::{AndThenNode, ArrayGetNode, AtQQTargetMessageNode, BooleanBranchNode, BooleanNotNode, ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode, JoinStringNode, JsonExtractNode, JsonParserNode, LoopBreakNode, LoopNode, LoopStateUpdateNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheProviderNode, OpenAIMessageSessionCacheSetNode, PreviewMessageListNode, PreviewStringNode, PushBackVecNode, QQMessageListDataNode, QQNaturalLanguageReplyNode, SessionStateClearNode, SessionStateGetNode, SessionStateProviderNode, SessionStateReleaseNode, SessionStateTryClaimNode, StackNode, StringDataNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
     use crate::llm::llm_api_node::LLMApiNode;
     use crate::llm::brain_node::BrainNode;
     use crate::llm::llm_infer_node::LLMInferNode;
@@ -160,6 +160,14 @@ pub fn init_node_registry() -> Result<()> {
     use crate::node::message_cache::MessageCacheNode;
 
     // Utility nodes
+    register_node!(
+        "and_then",
+        "And Then",
+        "工具",
+        "等待两个输入都到齐后，原样透传第二个输入",
+        AndThenNode
+    );
+
     register_node!(
         "format_string",
         "格式化字符串",
@@ -190,6 +198,14 @@ pub fn init_node_registry() -> Result<()> {
         "工具",
         "当 enabled 为 true 时透传输入，否则阻断后续数据流",
         SwitchNode
+    );
+
+    register_node!(
+        "boolean_branch",
+        "布尔分路",
+        "工具",
+        "根据 condition 将 input 送到 true 或 false 分支，未选中的分支不会输出",
+        BooleanBranchNode
     );
 
     register_node!(
@@ -556,6 +572,46 @@ pub fn init_node_registry() -> Result<()> {
         OpenAIMessageSessionCacheClearNode
     );
 
+    register_node!(
+        "session_state_provider",
+        "运行时会话状态提供器",
+        "消息存储",
+        "创建跨事件共享的运行时会话状态引用",
+        SessionStateProviderNode
+    );
+
+    register_node!(
+        "session_state_get",
+        "读取会话状态",
+        "消息存储",
+        "读取 sender_id 当前是否处于会话中以及附加状态",
+        SessionStateGetNode
+    );
+
+    register_node!(
+        "session_state_clear",
+        "清除会话状态",
+        "消息存储",
+        "清除 sender_id 当前会话状态",
+        SessionStateClearNode
+    );
+
+    register_node!(
+        "session_state_try_claim",
+        "尝试占用会话",
+        "消息存储",
+        "原子检查并占用 sender_id 会话状态",
+        SessionStateTryClaimNode
+    );
+
+    register_node!(
+        "session_state_release",
+        "释放会话占用",
+        "消息存储",
+        "释放 sender_id 当前持有的会话占用",
+        SessionStateReleaseNode
+    );
+
     Ok(())
 }
 
@@ -564,6 +620,7 @@ pub fn build_node_graph_from_definition(
     definition: &crate::node::graph_io::NodeGraphDefinition,
 ) -> Result<crate::node::NodeGraph> {
     let mut graph = crate::node::NodeGraph::new();
+    graph.set_definition(definition.clone());
 
     if !definition.edges.is_empty() {
         graph.set_edges(definition.edges.clone());

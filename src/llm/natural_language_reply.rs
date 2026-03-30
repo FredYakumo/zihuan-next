@@ -149,20 +149,119 @@ pub fn split_plain_text(content: &str, max_one_reply_length: usize) -> Vec<Strin
         return vec![content.to_string()];
     }
 
+    let lines = split_by_newline(content, max_one_reply_length);
+    if lines.len() > 1 {
+        return lines;
+    }
+
+    split_by_delimiters(content, max_one_reply_length, &['。', '！', '？', '；', '\n'])
+}
+
+fn split_by_newline(content: &str, max_len: usize) -> Vec<String> {
     let mut chunks = Vec::new();
     let mut current = String::new();
     let mut current_len = 0usize;
-    for ch in content.chars() {
-        current.push(ch);
-        current_len += 1;
-        if current_len >= max_one_reply_length {
+
+    for line in content.split_inclusive('\n') {
+        let line_len = line.chars().count();
+        if line_len > max_len {
+            if !current.is_empty() {
+                chunks.push(std::mem::take(&mut current));
+                current_len = 0;
+            }
+            chunks.extend(split_by_delimiters(
+                line,
+                max_len,
+                &['\n', '。', '！', '？', '；', '，', ',', '、', ' '],
+            ));
+            continue;
+        }
+
+        if current_len + line_len > max_len && !current.is_empty() {
             chunks.push(std::mem::take(&mut current));
             current_len = 0;
         }
+
+        current.push_str(line);
+        current_len += line_len;
     }
+
     if !current.is_empty() {
         chunks.push(current);
     }
+
+    chunks
+}
+
+fn split_by_delimiters(content: &str, max_len: usize, delimiters: &[char]) -> Vec<String> {
+    let mut parts = split_with_delimiters(content, delimiters);
+    if parts.len() <= 1 {
+        parts = split_with_delimiters(content, &['，', ',', '、', ' ']);
+    }
+
+    let mut chunks = Vec::new();
+    let mut current = String::new();
+
+    for part in parts {
+        let part_len = part.chars().count();
+        let current_len = current.chars().count();
+
+        if current_len + part_len <= max_len {
+            current.push_str(&part);
+            continue;
+        }
+
+        if !current.is_empty() {
+            chunks.push(std::mem::take(&mut current));
+        }
+
+        if part_len <= max_len {
+            current.push_str(&part);
+        } else {
+            chunks.extend(split_long_token(&part, max_len));
+        }
+    }
+
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+
+    chunks
+}
+
+fn split_with_delimiters(content: &str, delimiters: &[char]) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+
+    for ch in content.chars() {
+        current.push(ch);
+        if delimiters.contains(&ch) {
+            parts.push(std::mem::take(&mut current));
+        }
+    }
+
+    if !current.is_empty() {
+        parts.push(current);
+    }
+
+    parts
+}
+
+fn split_long_token(content: &str, max_len: usize) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut current = String::new();
+
+    for ch in content.chars() {
+        current.push(ch);
+        if current.chars().count() >= max_len {
+            chunks.push(std::mem::take(&mut current));
+        }
+    }
+
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+
     chunks
 }
 
@@ -441,7 +540,7 @@ impl Node for NaturalLanguageReplyNode {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_system_prompt, infer_qq_reply_batches, normalize_target_type,
+        build_system_prompt, infer_qq_reply_batches, normalize_target_type, split_plain_text,
         NaturalLanguageReplyNode, TARGET_TYPE_FRIEND, TARGET_TYPE_GROUP,
     };
     use crate::bot_adapter::models::message::Message;
@@ -597,6 +696,23 @@ mod tests {
             .collect();
         assert_eq!(lengths, vec![4, 4, 1]);
         Ok(())
+    }
+
+    #[test]
+    fn split_plain_text_prefers_newline_boundaries_for_code() {
+        let chunks = split_plain_text(
+            "line1 = 1\nline2 = 2\nline3 = 3\nline4 = 4\n",
+            20,
+        );
+
+        assert_eq!(chunks, vec!["line1 = 1\nline2 = 2\n", "line3 = 3\nline4 = 4\n"]);
+    }
+
+    #[test]
+    fn split_plain_text_prefers_sentence_boundaries() {
+        let chunks = split_plain_text("第一句。第二句。第三句。", 8);
+
+        assert_eq!(chunks, vec!["第一句。第二句。", "第三句。"]);
     }
 
     #[test]
