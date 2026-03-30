@@ -96,6 +96,7 @@ fn data_type_to_json_schema_type(data_type: &DataType) -> &'static str {
         | DataType::BotAdapterRef
         | DataType::RedisRef
         | DataType::MySqlRef
+        | DataType::SessionStateRef
         | DataType::OpenAIMessageSessionCacheRef
         | DataType::LLModel
         | DataType::LoopControlRef

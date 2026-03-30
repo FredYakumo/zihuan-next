@@ -5,6 +5,7 @@ use crate::error::Result;
 use crate::llm::{OpenAIMessage, SystemMessage};
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
+use tokio::task::block_in_place;
 
 /// Node that converts a MessageEvent to an LLM prompt message list
 /// 
@@ -70,11 +71,19 @@ impl Node for ExtractMessageFromEventNode {
                 })
                 .ok_or("bot_adapter input is required")?;
 
-            // Lock adapter and extract all needed information at the beginning
-            let adapter = bot_adapter_ref.blocking_lock();
-            let bot_id = adapter.get_bot_id();
+            // This node still has a sync execute() API, so if we're already on a Tokio
+            // worker thread we must move the blocking lock into block_in_place.
+            let bot_id = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                block_in_place(|| {
+                    let adapter = bot_adapter_ref.blocking_lock();
+                    adapter.get_bot_id().to_string()
+                })
+            } else {
+                let adapter = bot_adapter_ref.blocking_lock();
+                adapter.get_bot_id().to_string()
+            };
             
-            let msg_prop = MessageProp::from_messages(&event.message_list, Some(bot_id));
+            let msg_prop = MessageProp::from_messages(&event.message_list, Some(&bot_id));
 
             // Build user message from incoming MessageEvent
             let mut user_text = msg_prop.content.clone().unwrap_or_default();

@@ -1,5 +1,7 @@
+pub mod and_then;
 pub mod at_qq_target_message;
 pub mod array_get;
+pub mod boolean_branch;
 pub mod boolean_not;
 pub mod concat_vec;
 pub mod format_string;
@@ -23,6 +25,11 @@ pub mod preview_string;
 pub mod push_back_vec;
 pub mod qq_message_list_data;
 pub mod qq_natural_language_reply;
+pub mod session_state_clear;
+pub mod session_state_get;
+pub mod session_state_provider;
+pub mod session_state_release;
+pub mod session_state_try_claim;
 pub mod stack;
 pub mod string_to_openai_message;
 pub mod string_data;
@@ -226,8 +233,10 @@ pub mod openai_message_session_cache_clear {
 	}
 }
 
+pub use and_then::AndThenNode;
 pub use at_qq_target_message::AtQQTargetMessageNode;
 pub use array_get::ArrayGetNode;
+pub use boolean_branch::BooleanBranchNode;
 pub use boolean_not::BooleanNotNode;
 pub use format_string::FormatStringNode;
 pub use join_string::JoinStringNode;
@@ -252,6 +261,11 @@ pub use preview_string::PreviewStringNode;
 pub use push_back_vec::PushBackVecNode;
 pub use qq_message_list_data::QQMessageListDataNode;
 pub use qq_natural_language_reply::QQNaturalLanguageReplyNode;
+pub use session_state_clear::SessionStateClearNode;
+pub use session_state_get::SessionStateGetNode;
+pub use session_state_provider::SessionStateProviderNode;
+pub use session_state_release::SessionStateReleaseNode;
+pub use session_state_try_claim::SessionStateTryClaimNode;
 pub use stack::StackNode;
 pub use string_to_openai_message::StringToOpenAIMessageNode;
 pub use string_data::{StringDataNode, STRING_DATA_CONTEXT};
