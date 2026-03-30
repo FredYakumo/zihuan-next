@@ -182,6 +182,7 @@ export component NodeGraphWindow inherits Window {
     callback tool_editor_delete_param(int, int);
     callback tool_editor_set_param_name(int, int, string);
     callback tool_editor_set_param_type(int, int, string);
+    callback tool_editor_set_param_description(int, int, string);
 
     // JSON extract editor
     in property <bool> show_json_extract_editor_dialog: false;
@@ -819,6 +820,7 @@ export component NodeGraphWindow inherits Window {
         delete_param(tool_index, param_index) => { root.tool_editor_delete_param(tool_index, param_index); }
         set_param_name(tool_index, param_index, value) => { root.tool_editor_set_param_name(tool_index, param_index, value); }
         set_param_type(tool_index, param_index, value) => { root.tool_editor_set_param_type(tool_index, param_index, value); }
+        set_param_description(tool_index, param_index, value) => { root.tool_editor_set_param_description(tool_index, param_index, value); }
         save => { root.save_tool_editor(); }
         close => { root.close_tool_editor(); }
     }
