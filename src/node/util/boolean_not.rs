@@ -29,15 +29,14 @@ impl Node for BooleanNotNode {
         Some("对 Boolean 输入取反")
     }
 
-    node_input![
-        port! { name = "input", ty = Boolean, desc = "输入布尔值" },
-    ];
+    node_input![port! { name = "input", ty = Boolean, desc = "输入布尔值" },];
 
-    node_output![
-        port! { name = "result", ty = Boolean, desc = "取反后的布尔值" },
-    ];
+    node_output![port! { name = "result", ty = Boolean, desc = "取反后的布尔值" },];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let input = match inputs.get("input") {

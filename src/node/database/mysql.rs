@@ -1,13 +1,13 @@
+use crate::config::pct_encode;
 use crate::error::Result;
 use crate::node::data_value::MySqlConfig;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
-use crate::config::pct_encode;
+use log::{debug, info, warn};
+use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
 use tokio::task::block_in_place;
-use log::{debug, info, warn};
 
 /// MySQL node - builds a persistent connection pool from input ports and
 /// passes it downstream via MySqlRef. The pool is cached keyed on the
@@ -112,7 +112,9 @@ impl MySqlNode {
         info!(
             "[MySqlNode] Pool ready (max_connections={}, min_connections=1, acquire_timeout={}s, \
              idle_timeout=600s, max_lifetime=1800s, initial size={})",
-            max_connections, acquire_timeout_secs, pool.size()
+            max_connections,
+            acquire_timeout_secs,
+            pool.size()
         );
         self.pool = Some(pool.clone());
         self.last_url = Some(url_str);
@@ -145,54 +147,89 @@ impl Node for MySqlNode {
         port! { name = "reconnect_interval_secs", ty = Integer, desc = "重连间隔秒数 (默认: 60)", optional },
     ];
 
-    node_output![
-        port! { name = "mysql_ref", ty = MySqlRef, desc = "MySQL连接配置引用" },
-    ];
+    node_output![port! { name = "mysql_ref", ty = MySqlRef, desc = "MySQL连接配置引用" },];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         // Extract required parameters
-        let host = inputs.get("mysql_host").and_then(|v| match v {
-            DataValue::String(s) => Some(s.clone()),
-            _ => None,
-        }).ok_or_else(|| crate::error::Error::InvalidNodeInput("mysql_host is required".to_string()))?;
+        let host = inputs
+            .get("mysql_host")
+            .and_then(|v| match v {
+                DataValue::String(s) => Some(s.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("mysql_host is required".to_string())
+            })?;
 
-        let port = inputs.get("mysql_port").and_then(|v| match v {
-            DataValue::Integer(i) => Some(*i as u16),
-            _ => None,
-        }).ok_or_else(|| crate::error::Error::InvalidNodeInput("mysql_port is required".to_string()))?;
+        let port = inputs
+            .get("mysql_port")
+            .and_then(|v| match v {
+                DataValue::Integer(i) => Some(*i as u16),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("mysql_port is required".to_string())
+            })?;
 
-        let user = inputs.get("mysql_user").and_then(|v| match v {
-            DataValue::String(s) => Some(s.clone()),
-            _ => None,
-        }).ok_or_else(|| crate::error::Error::InvalidNodeInput("mysql_user is required".to_string()))?;
+        let user = inputs
+            .get("mysql_user")
+            .and_then(|v| match v {
+                DataValue::String(s) => Some(s.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("mysql_user is required".to_string())
+            })?;
 
-        let password = inputs.get("mysql_password").and_then(|v| match v {
-            DataValue::String(s) => Some(s.clone()),
-            _ => None,
-        }).ok_or_else(|| crate::error::Error::InvalidNodeInput("mysql_password is required".to_string()))?;
+        let password = inputs
+            .get("mysql_password")
+            .and_then(|v| match v {
+                DataValue::String(s) => Some(s.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("mysql_password is required".to_string())
+            })?;
 
-        let database = inputs.get("mysql_database").and_then(|v| match v {
-            DataValue::String(s) => Some(s.clone()),
-            _ => None,
-        }).ok_or_else(|| crate::error::Error::InvalidNodeInput("mysql_database is required".to_string()))?;
+        let database = inputs
+            .get("mysql_database")
+            .and_then(|v| match v {
+                DataValue::String(s) => Some(s.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("mysql_database is required".to_string())
+            })?;
 
         // Build URL from components
         let url = if !password.is_empty() {
             let enc = pct_encode(&password);
-            Some(format!("mysql://{}:{}@{}:{}/{}", user, enc, host, port, database))
+            Some(format!(
+                "mysql://{}:{}@{}:{}/{}",
+                user, enc, host, port, database
+            ))
         } else {
             Some(format!("mysql://{}@{}:{}/{}", user, host, port, database))
         };
 
-        let max_connections = inputs.get("max_connections").and_then(|v| match v {
-            DataValue::Integer(i) => Some(*i as u32),
-            _ => None,
-        }).unwrap_or(10);
+        let max_connections = inputs
+            .get("max_connections")
+            .and_then(|v| match v {
+                DataValue::Integer(i) => Some(*i as u32),
+                _ => None,
+            })
+            .unwrap_or(10);
 
-        let acquire_timeout_secs = inputs.get("acquire_timeout_secs").and_then(|v| match v {
-            DataValue::Integer(i) => Some(*i as u64),
-            _ => None,
-        }).unwrap_or(30);
+        let acquire_timeout_secs = inputs
+            .get("acquire_timeout_secs")
+            .and_then(|v| match v {
+                DataValue::Integer(i) => Some(*i as u64),
+                _ => None,
+            })
+            .unwrap_or(30);
 
         let max_attempts = inputs.get("reconnect_max_attempts").and_then(|v| match v {
             DataValue::Integer(i) => Some(*i as u32),
@@ -210,7 +247,9 @@ impl Node for MySqlNode {
         let idle = pool.num_idle();
         debug!(
             "[MySqlNode] Passing pool to downstream node (size={}, idle={}, in-use={})",
-            size, idle, size.saturating_sub(idle as u32)
+            size,
+            idle,
+            size.saturating_sub(idle as u32)
         );
 
         let config = MySqlConfig {

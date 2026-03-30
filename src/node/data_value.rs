@@ -1,14 +1,14 @@
-use serde::Serialize;
-use serde_json::Value;
-use std::collections::HashMap;
-use std::fmt;
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use crate::llm::tooling::FunctionTool;
 use crate::bot_adapter::adapter::SharedBotAdapter;
 use crate::bot_adapter::models::event_model::MessageEvent;
+use crate::llm::tooling::FunctionTool;
 use redis::{aio::ConnectionManager, AsyncCommands};
+use serde::Serialize;
+use serde_json::Value;
 use sqlx::mysql::MySqlPool;
+use std::collections::HashMap;
+use std::fmt;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as TokioMutex;
 
 tokio::task_local! {
@@ -47,7 +47,10 @@ impl fmt::Debug for MySqlConfig {
             .field("reconnect_max_attempts", &self.reconnect_max_attempts)
             .field("reconnect_interval_secs", &self.reconnect_interval_secs)
             .field("pool", &self.pool.as_ref().map(|_| "<MySqlPool>"))
-            .field("runtime_handle", &self.runtime_handle.as_ref().map(|_| "<Handle>"))
+            .field(
+                "runtime_handle",
+                &self.runtime_handle.as_ref().map(|_| "<Handle>"),
+            )
             .finish()
     }
 }
@@ -102,7 +105,12 @@ impl SessionClaimContext {
     }
 
     pub fn drain_claims(&self) -> Vec<SessionClaim> {
-        self.claims.lock().unwrap().drain().map(|(_, claim)| claim).collect()
+        self.claims
+            .lock()
+            .unwrap()
+            .drain()
+            .map(|(_, claim)| claim)
+            .collect()
     }
 }
 
@@ -327,7 +335,10 @@ impl OpenAIMessageSessionCacheRef {
 
             if let Some(cm) = cm_guard.as_mut() {
                 let deleted_count: i32 = cm.del(&key).await?;
-                let tracker_key = format!("openai_message_session:{}:bucket:{}:keys", self.node_id, bucket_name);
+                let tracker_key = format!(
+                    "openai_message_session:{}:bucket:{}:keys",
+                    self.node_id, bucket_name
+                );
                 let _: () = cm.srem(&tracker_key, &key).await?;
                 cleared |= deleted_count > 0;
             }
@@ -381,8 +392,10 @@ impl OpenAIMessageSessionCacheRef {
             if let Some(cm) = cm_guard.as_mut() {
                 let serialized = serde_json::to_string(&messages)?;
                 cm.set::<_, _, ()>(&key, serialized).await?;
-                let tracker_key =
-                    format!("openai_message_session:{}:bucket:{}:keys", self.node_id, bucket_name);
+                let tracker_key = format!(
+                    "openai_message_session:{}:bucket:{}:keys",
+                    self.node_id, bucket_name
+                );
                 let tracker_registry_key =
                     format!("openai_message_session:{}:tracker_sets", self.node_id);
                 cm.sadd::<_, _, ()>(&tracker_key, &key).await?;
@@ -447,8 +460,10 @@ impl OpenAIMessageSessionCacheRef {
 
                 let serialized = serde_json::to_string(&existing_messages)?;
                 cm.set::<_, _, ()>(&key, serialized).await?;
-                let tracker_key =
-                    format!("openai_message_session:{}:bucket:{}:keys", self.node_id, bucket_name);
+                let tracker_key = format!(
+                    "openai_message_session:{}:bucket:{}:keys",
+                    self.node_id, bucket_name
+                );
                 let tracker_registry_key =
                     format!("openai_message_session:{}:tracker_sets", self.node_id);
                 cm.sadd::<_, _, ()>(&tracker_key, &key).await?;
@@ -573,7 +588,7 @@ impl fmt::Display for DataType {
             DataType::Binary => write!(f, "Binary"),
             DataType::Vec(inner) => write!(f, "Vec<{}>", inner),
             DataType::MessageEvent => write!(f, "MessageEvent"),
-                DataType::OpenAIMessage => write!(f, "OpenAIMessage"),
+            DataType::OpenAIMessage => write!(f, "OpenAIMessage"),
             DataType::QQMessage => write!(f, "QQMessage"),
             DataType::FunctionTools => write!(f, "FunctionTools"),
             DataType::BotAdapterRef => write!(f, "BotAdapterRef"),
@@ -612,7 +627,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "Json" => Ok(DataType::Json),
                     "Binary" => Ok(DataType::Binary),
                     "MessageEvent" => Ok(DataType::MessageEvent),
-                        "OpenAIMessage" => Ok(DataType::OpenAIMessage),
+                    "OpenAIMessage" => Ok(DataType::OpenAIMessage),
                     "Message" => Ok(DataType::OpenAIMessage),
                     "QQMessage" => Ok(DataType::QQMessage),
                     "FunctionTools" => Ok(DataType::FunctionTools),
@@ -626,11 +641,30 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "LoopControlRef" => Ok(DataType::LoopControlRef),
                     other => Err(de::Error::unknown_variant(
                         other,
-                        &["Any", "String", "Integer", "Float", "Boolean", "Json",
-                              "Binary", "Vec", "MessageEvent", "OpenAIMessage", "Message",
-                          "QQMessage", "FunctionTools", "BotAdapterRef", "RedisRef",
-                          "MySqlRef", "SessionStateRef", "OpenAIMessageSessionCacheRef", "Password", "LLModel",
-                          "LoopControlRef", "Custom"],
+                        &[
+                            "Any",
+                            "String",
+                            "Integer",
+                            "Float",
+                            "Boolean",
+                            "Json",
+                            "Binary",
+                            "Vec",
+                            "MessageEvent",
+                            "OpenAIMessage",
+                            "Message",
+                            "QQMessage",
+                            "FunctionTools",
+                            "BotAdapterRef",
+                            "RedisRef",
+                            "MySqlRef",
+                            "SessionStateRef",
+                            "OpenAIMessageSessionCacheRef",
+                            "Password",
+                            "LLModel",
+                            "LoopControlRef",
+                            "Custom",
+                        ],
                     )),
                 }
             }
@@ -726,8 +760,9 @@ impl DataValue {
             DataValue::Boolean(value) => value.to_string(),
             DataValue::BotAdapterRef(_) => "BotAdapterRef".to_string(),
             DataValue::LoopControlRef(_) => "LoopControlRef".to_string(),
-            other => serde_json::to_string(&other.to_json())
-                .unwrap_or_else(|_| format!("{other:?}")),
+            other => {
+                serde_json::to_string(&other.to_json()).unwrap_or_else(|_| format!("{other:?}"))
+            }
         }
     }
 
@@ -738,7 +773,9 @@ impl DataValue {
             DataValue::Float(f) => serde_json::json!(f),
             DataValue::Boolean(b) => Value::Bool(*b),
             DataValue::Json(v) => v.clone(),
-            DataValue::Binary(bytes) => Value::Array(bytes.iter().map(|b| Value::Number((*b).into())).collect()),
+            DataValue::Binary(bytes) => {
+                Value::Array(bytes.iter().map(|b| Value::Number((*b).into())).collect())
+            }
             DataValue::Vec(_, items) => {
                 Value::Array(items.iter().map(|item| item.to_json()).collect())
             }
@@ -766,9 +803,7 @@ impl DataValue {
                 })
             }
             DataValue::FunctionTools(tools) => {
-                let tool_defs: Vec<Value> = tools.iter()
-                    .map(|t| t.get_json())
-                    .collect();
+                let tool_defs: Vec<Value> = tools.iter().map(|t| t.get_json()).collect();
                 Value::Array(tool_defs)
             }
             DataValue::Password(value) => Value::String(value.clone()),
@@ -812,15 +847,20 @@ impl fmt::Debug for DataValue {
             DataValue::Json(value) => f.debug_tuple("Json").field(value).finish(),
             DataValue::Binary(value) => f.debug_tuple("Binary").field(value).finish(),
             DataValue::Vec(ty, value) => f.debug_tuple("Vec").field(ty).field(value).finish(),
-                DataValue::OpenAIMessage(value) => f.debug_tuple("OpenAIMessage").field(value).finish(),
+            DataValue::OpenAIMessage(value) => f.debug_tuple("OpenAIMessage").field(value).finish(),
             DataValue::QQMessage(value) => f.debug_tuple("QQMessage").field(value).finish(),
             DataValue::MessageEvent(value) => f.debug_tuple("MessageEvent").field(value).finish(),
             DataValue::FunctionTools(value) => f.debug_tuple("FunctionTools").field(value).finish(),
             DataValue::BotAdapterRef(_) => f.debug_tuple("BotAdapterRef").finish(),
             DataValue::RedisRef(config) => f.debug_tuple("RedisRef").field(config).finish(),
             DataValue::MySqlRef(config) => f.debug_tuple("MySqlRef").field(config).finish(),
-            DataValue::SessionStateRef(session_ref) => f.debug_tuple("SessionStateRef").field(session_ref).finish(),
-            DataValue::OpenAIMessageSessionCacheRef(cache_ref) => f.debug_tuple("OpenAIMessageSessionCacheRef").field(cache_ref).finish(),
+            DataValue::SessionStateRef(session_ref) => {
+                f.debug_tuple("SessionStateRef").field(session_ref).finish()
+            }
+            DataValue::OpenAIMessageSessionCacheRef(cache_ref) => f
+                .debug_tuple("OpenAIMessageSessionCacheRef")
+                .field(cache_ref)
+                .finish(),
             DataValue::Password(value) => f.debug_tuple("Password").field(value).finish(),
             DataValue::LLModel(m) => f.debug_tuple("LLModel").field(&m.get_model_name()).finish(),
             DataValue::LoopControlRef(_) => f.debug_tuple("LoopControlRef").finish(),

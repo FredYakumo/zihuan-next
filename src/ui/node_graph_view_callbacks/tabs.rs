@@ -8,7 +8,10 @@ use crate::node::graph_io::{
     auto_fix_graph_definition, load_graph_definition_from_json, validate_graph_definition,
     NodeGraphDefinition,
 };
+use crate::ui::canvas_state::load_canvas_view_state;
 use crate::ui::graph_window::{NodeGraphWindow, ValidationIssueVm};
+#[cfg(target_os = "macos")]
+use crate::ui::macos_menu::{install_menu, MenuActions};
 use crate::ui::node_graph_view::{
     apply_canvas_view_state, new_blank_tab, persist_tab_canvas_state, refresh_active_tab_ui,
     sync_active_tab_canvas_state, GraphTabState,
@@ -16,10 +19,7 @@ use crate::ui::node_graph_view::{
 use crate::ui::node_graph_view_inline::{
     apply_inline_inputs_to_graph, build_inline_inputs_from_graph,
 };
-use crate::ui::canvas_state::load_canvas_view_state;
 use crate::util::hyperparam_store::{load_hyperparameter_values, save_hyperparameter_values};
-#[cfg(target_os = "macos")]
-use crate::ui::macos_menu::{install_menu, MenuActions};
 
 pub(crate) fn bind_tab_callbacks(
     ui: &NodeGraphWindow,
@@ -30,8 +30,7 @@ pub(crate) fn bind_tab_callbacks(
     pending_close_tab_id: Arc<Mutex<Option<u64>>>,
     pending_open_graph: Arc<Mutex<Option<(PathBuf, NodeGraphDefinition)>>>,
 ) {
-    let pending_save_as: Arc<Mutex<Option<(std::path::PathBuf, u64)>>> =
-        Arc::new(Mutex::new(None));
+    let pending_save_as: Arc<Mutex<Option<(std::path::PathBuf, u64)>>> = Arc::new(Mutex::new(None));
 
     let ui_handle = ui.as_weak();
     let tabs_clone = Arc::clone(&tabs);
@@ -60,9 +59,9 @@ pub(crate) fn bind_tab_callbacks(
                         })
                         .collect();
                     if let Some(ui) = ui_handle.upgrade() {
-                        ui.set_validation_issues(slint::ModelRc::from(
-                            std::rc::Rc::new(slint::VecModel::from(issue_vms)),
-                        ));
+                        ui.set_validation_issues(slint::ModelRc::from(std::rc::Rc::new(
+                            slint::VecModel::from(issue_vms),
+                        )));
                         ui.set_show_validation_fix_dialog(true);
                     }
                     return;
@@ -78,8 +77,10 @@ pub(crate) fn bind_tab_callbacks(
                     if let Some(tab) = tabs_guard.get_mut(active_index) {
                         tab.graph = graph.clone();
                         tab.inline_inputs = build_inline_inputs_from_graph(&graph);
-                        tab.hyperparameter_values = load_hyperparameter_values(&selected_path, &tab.graph);
-                        tab.canvas_view_state = load_canvas_view_state(&selected_path).unwrap_or_default();
+                        tab.hyperparameter_values =
+                            load_hyperparameter_values(&selected_path, &tab.graph);
+                        tab.canvas_view_state =
+                            load_canvas_view_state(&selected_path).unwrap_or_default();
                         tab.selection.clear();
                         tab.file_path = Some(selected_path.clone());
                         tab.title = selected_path
@@ -200,14 +201,20 @@ pub(crate) fn bind_tab_callbacks(
             let tab = &mut tabs_guard[tab_index];
             apply_inline_inputs_to_graph(&mut tab.graph, &tab.inline_inputs);
 
-            if let Err(e) = crate::node::graph_io::save_graph_definition_to_json(&path, &tab.graph) {
+            if let Err(e) = crate::node::graph_io::save_graph_definition_to_json(&path, &tab.graph)
+            {
                 eprintln!("Failed to save graph: {}", e);
                 return false;
             }
 
             // Save hyperparameter values to a separate YAML file in the data directory
-            if let Err(e) = save_hyperparameter_values(&path, &tab.graph, &tab.hyperparameter_values) {
-                log::warn!("[HyperParamStore] Failed to save hyperparameter values: {}", e);
+            if let Err(e) =
+                save_hyperparameter_values(&path, &tab.graph, &tab.hyperparameter_values)
+            {
+                log::warn!(
+                    "[HyperParamStore] Failed to save hyperparameter values: {}",
+                    e
+                );
             }
 
             tab.file_path = Some(path.clone());
@@ -517,7 +524,10 @@ pub(crate) fn bind_tab_callbacks(
     let pending_close_tab_id_for_running_cancel = Arc::clone(&pending_close_tab_id);
     let ui_handle = ui.as_weak();
     ui.on_running_confirm_cancel(move || {
-        pending_close_tab_id_for_running_cancel.lock().unwrap().take();
+        pending_close_tab_id_for_running_cancel
+            .lock()
+            .unwrap()
+            .take();
         if let Some(ui) = ui_handle.upgrade() {
             ui.set_show_running_confirm(false);
         }
@@ -546,13 +556,19 @@ pub(crate) fn bind_tab_callbacks(
             let tab = &mut tabs_guard[tab_index];
             apply_inline_inputs_to_graph(&mut tab.graph, &tab.inline_inputs);
 
-            if let Err(e) = crate::node::graph_io::save_graph_definition_to_json(&path, &tab.graph) {
+            if let Err(e) = crate::node::graph_io::save_graph_definition_to_json(&path, &tab.graph)
+            {
                 log::error!("Failed to save graph: {}", e);
                 return false;
             }
 
-            if let Err(e) = save_hyperparameter_values(&path, &tab.graph, &tab.hyperparameter_values) {
-                log::warn!("[HyperParamStore] Failed to save hyperparameter values: {}", e);
+            if let Err(e) =
+                save_hyperparameter_values(&path, &tab.graph, &tab.hyperparameter_values)
+            {
+                log::warn!(
+                    "[HyperParamStore] Failed to save hyperparameter values: {}",
+                    e
+                );
             }
 
             tab.file_path = Some(path.clone());

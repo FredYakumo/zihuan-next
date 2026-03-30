@@ -42,10 +42,9 @@ pub fn save_window_state(state: &WindowState) -> std::io::Result<()> {
         fs::create_dir_all(parent)?;
     }
 
-    let json = serde_json::to_string_pretty(state)
-        .unwrap_or_else(|_| {
-            "{\"width\":1200.0,\"height\":800.0,\"x\":0,\"y\":0,\"maximized\":false}".to_string()
-        });
+    let json = serde_json::to_string_pretty(state).unwrap_or_else(|_| {
+        "{\"width\":1200.0,\"height\":800.0,\"x\":0,\"y\":0,\"maximized\":false}".to_string()
+    });
     fs::write(path, json)
 }
 

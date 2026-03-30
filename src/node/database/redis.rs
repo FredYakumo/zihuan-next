@@ -1,7 +1,7 @@
+use crate::config::pct_encode;
 use crate::error::Result;
 use crate::node::data_value::RedisConfig;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
-use crate::config::pct_encode;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -42,26 +42,40 @@ impl Node for RedisNode {
         port! { name = "reconnect_interval_secs", ty = Integer, desc = "重连间隔秒数 (默认: 60)", optional },
     ];
 
-    node_output![
-        port! { name = "redis_ref", ty = RedisRef, desc = "Redis连接配置引用" },
-    ];
+    node_output![port! { name = "redis_ref", ty = RedisRef, desc = "Redis连接配置引用" },];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         // Extract required parameters
-        let host = inputs.get("redis_host").and_then(|v| match v {
-            DataValue::String(s) => Some(s.clone()),
-            _ => None,
-        }).ok_or_else(|| crate::error::Error::InvalidNodeInput("redis_host is required".to_string()))?;
+        let host = inputs
+            .get("redis_host")
+            .and_then(|v| match v {
+                DataValue::String(s) => Some(s.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("redis_host is required".to_string())
+            })?;
 
-        let port = inputs.get("redis_port").and_then(|v| match v {
-            DataValue::Integer(i) => Some(*i as u16),
-            _ => None,
-        }).ok_or_else(|| crate::error::Error::InvalidNodeInput("redis_port is required".to_string()))?;
+        let port = inputs
+            .get("redis_port")
+            .and_then(|v| match v {
+                DataValue::Integer(i) => Some(*i as u16),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("redis_port is required".to_string())
+            })?;
 
-        let db = inputs.get("redis_db").and_then(|v| match v {
-            DataValue::Integer(i) => Some(*i as u8),
-            _ => None,
-        }).unwrap_or(0);
+        let db = inputs
+            .get("redis_db")
+            .and_then(|v| match v {
+                DataValue::Integer(i) => Some(*i as u8),
+                _ => None,
+            })
+            .unwrap_or(0);
 
         let password = inputs.get("redis_password").and_then(|v| match v {
             DataValue::String(s) => Some(s.clone()),

@@ -80,24 +80,24 @@ pub fn ws_send_action(
         let (tx, rx) = oneshot::channel::<serde_json::Value>();
         pending_actions.lock().await.insert(echo.clone(), tx);
 
-        action_tx
-            .send(payload.to_string())
-            .map_err(|_| crate::error::Error::ValidationError(
-                "Failed to enqueue WebSocket action".to_string(),
-            ))?;
+        action_tx.send(payload.to_string()).map_err(|_| {
+            crate::error::Error::ValidationError("Failed to enqueue WebSocket action".to_string())
+        })?;
 
         // Wait for the response (30 s timeout).
-        let response = tokio::time::timeout(
-            std::time::Duration::from_secs(30),
-            rx,
-        )
-        .await
-        .map_err(|_| crate::error::Error::ValidationError(
-            format!("Action '{}' timed out after 30 s", action_name),
-        ))?
-        .map_err(|_| crate::error::Error::ValidationError(
-            "Response channel closed unexpectedly".to_string(),
-        ))?;
+        let response = tokio::time::timeout(std::time::Duration::from_secs(30), rx)
+            .await
+            .map_err(|_| {
+                crate::error::Error::ValidationError(format!(
+                    "Action '{}' timed out after 30 s",
+                    action_name
+                ))
+            })?
+            .map_err(|_| {
+                crate::error::Error::ValidationError(
+                    "Response channel closed unexpectedly".to_string(),
+                )
+            })?;
 
         Ok(response)
     };

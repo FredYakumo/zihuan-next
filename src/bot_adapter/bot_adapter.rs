@@ -5,11 +5,14 @@ use crate::error::Result;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 use log::{error, info};
 use std::collections::HashMap;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use tokio::select;
+use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::block_in_place;
-use tokio::sync::Mutex as TokioMutex;
-use tokio::select;
 
 pub struct BotAdapterNode {
     id: String,
@@ -63,7 +66,10 @@ impl Node for BotAdapterNode {
         port! { name = "bot_adapter", ty = BotAdapterRef, desc = "Shared reference to the bot adapter instance" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.on_start(inputs)?;
         let outputs = self.on_update()?.ok_or_else(|| {
             crate::error::Error::ValidationError("No message event received".to_string())
@@ -105,12 +111,8 @@ impl Node for BotAdapterNode {
             })
             .unwrap_or_else(|| std::env::var("BOT_SERVER_TOKEN").unwrap_or_default());
 
-        let adapter_config = BotAdapterConfig::new(
-            bot_server_url,
-            bot_server_token,
-            qq_id,
-        )
-        .with_brain_agent(None);
+        let adapter_config =
+            BotAdapterConfig::new(bot_server_url, bot_server_token, qq_id).with_brain_agent(None);
 
         let (event_tx, event_rx) = mpsc::unbounded_channel::<MessageEvent>();
         let (adapter_tx, adapter_rx) = oneshot::channel();
@@ -278,8 +280,14 @@ impl Node for BotAdapterNode {
         };
 
         let mut outputs = HashMap::new();
-        outputs.insert("message_event".to_string(), DataValue::MessageEvent(event.clone()));
-        outputs.insert("bot_adapter".to_string(), DataValue::BotAdapterRef(self.adapter_handle.clone().unwrap()));
+        outputs.insert(
+            "message_event".to_string(),
+            DataValue::MessageEvent(event.clone()),
+        );
+        outputs.insert(
+            "bot_adapter".to_string(),
+            DataValue::BotAdapterRef(self.adapter_handle.clone().unwrap()),
+        );
         self.validate_outputs(&outputs)?;
 
         Ok(Some(outputs))

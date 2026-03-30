@@ -1,10 +1,10 @@
-use super::{InferenceParam, OpenAIMessage, MessageRole, role_to_str, str_to_role};
 use super::tooling::{ToolCalls, ToolCallsFuncSpec};
-use reqwest::blocking::Client;
-use serde_json::{Value, json};
-use std::time::Duration;
-use log::{error, debug};
+use super::{role_to_str, str_to_role, InferenceParam, MessageRole, OpenAIMessage};
 use crate::llm::llm_base::LLMBase;
+use log::{debug, error};
+use reqwest::blocking::Client;
+use serde_json::{json, Value};
+use std::time::Duration;
 
 #[cfg(test)]
 use log::warn;
@@ -102,7 +102,10 @@ impl LLMAPI {
         let role_str = msg.get("role")?.as_str().unwrap_or("assistant");
         let role = str_to_role(role_str);
 
-        let content = msg.get("content").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let content = msg
+            .get("content")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
         let tool_calls = msg
             .get("tool_calls")
             .map(|tc| Self::parse_tool_calls(tc))
@@ -119,7 +122,6 @@ impl LLMAPI {
             tool_call_id,
         })
     }
-
 }
 
 impl LLMBase for LLMAPI {
@@ -174,11 +176,10 @@ impl LLMBase for LLMAPI {
             .collect();
 
         // Build tools array if provided
-        let tools: Option<Vec<Value>> = param.tools.as_ref().map(|ts| {
-            ts.iter()
-                .map(|tool| tool.get_json())
-                .collect()
-        });
+        let tools: Option<Vec<Value>> = param
+            .tools
+            .as_ref()
+            .map(|ts| ts.iter().map(|tool| tool.get_json()).collect());
 
         let mut request_body = json!({
             "model": self.model_name,
@@ -207,7 +208,9 @@ impl LLMBase for LLMAPI {
         match request.send() {
             Ok(response) => {
                 let status = response.status();
-                let response_text = response.text().unwrap_or_else(|_| "Failed to read response".to_string());
+                let response_text = response
+                    .text()
+                    .unwrap_or_else(|_| "Failed to read response".to_string());
                 if status.is_success() {
                     match serde_json::from_str::<Value>(&response_text) {
                         Ok(api_resp) => {
@@ -218,14 +221,19 @@ impl LLMBase for LLMAPI {
                                 error!("Invalid API response structure: missing required fields");
                                 OpenAIMessage {
                                     role: MessageRole::Assistant,
-                                    content: Some("Error: Invalid response structure from API".to_string()),
+                                    content: Some(
+                                        "Error: Invalid response structure from API".to_string(),
+                                    ),
                                     tool_calls: Vec::new(),
                                     tool_call_id: None,
                                 }
                             }
                         }
                         Err(e) => {
-                            error!("Failed to parse API response: {}, original response: {:?}", e, &response_text);
+                            error!(
+                                "Failed to parse API response: {}, original response: {:?}",
+                                e, &response_text
+                            );
                             OpenAIMessage {
                                 role: MessageRole::Assistant,
                                 content: Some(format!("Error: Failed to parse response - {}", e)),
@@ -235,7 +243,10 @@ impl LLMBase for LLMAPI {
                         }
                     }
                 } else {
-                    error!("API request failed with status {}: {}", status, response_text);
+                    error!(
+                        "API request failed with status {}: {}",
+                        status, response_text
+                    );
                     OpenAIMessage {
                         role: MessageRole::Assistant,
                         content: Some(format!("Error: API request failed with status {}", status)),
@@ -274,7 +285,9 @@ mod tests {
         let config: Value = serde_yaml::from_str(&config_content).ok()?;
 
         let api_endpoint = config["natural_language_model_api"].as_str()?.to_string();
-        let api_key = config["natural_language_model_api_key"].as_str()?.to_string();
+        let api_key = config["natural_language_model_api_key"]
+            .as_str()?
+            .to_string();
         let model_name = config["natural_language_model_name"].as_str()?.to_string();
 
         Some((api_endpoint, api_key, model_name))
@@ -320,12 +333,11 @@ mod tests {
         assert!(user_msg.tool_calls.is_empty());
     }
 
-
     #[test]
-    #[ignore]  // This is an integration test that requires valid API key and network access
+    #[ignore] // This is an integration test that requires valid API key and network access
     fn test_natural_language_model_inference() {
         let config_path = "config.yaml";
-        
+
         let Some((api_endpoint, api_key, model_name)) = load_llm_config(config_path) else {
             warn!("config.yaml not found or missing LLM config, skipping inference test");
             return;
@@ -347,32 +359,41 @@ mod tests {
             LLMAPI::system_message("你是一个疯狂的原神死忠粉丝和米哈游的铁粉。你必须极力维护和吹捧原神，用最激烈的言辞反驳任何对原神的批评。对于任何诋毁原神的行为，你要用强硬、尖锐、毫不留情的态度进行怒怼。绝对不允许任何对原神和米哈游的负面评价。"),
             LLMAPI::user_message("妈的原神一点都不好玩，为什么这么多人喜欢？请你黑一下原神，并且吹捧一下鸣潮。"),
         ];
-        
+
         let param = InferenceParam {
             messages: &messages,
             tools: None,
         };
         let response = api.inference(&param);
-        let response_text = response.content.unwrap_or_else(|| "No response".to_string());
-        
+        let response_text = response
+            .content
+            .unwrap_or_else(|| "No response".to_string());
+
         println!("\n========== LLM RESPONSE ==========");
         println!("Role: {:?}", response.role);
         println!("Content: {}", response_text);
         println!("Tool Calls: {:?}", response.tool_calls);
         println!("================================\n");
-        
+
         // Verify response is not empty and not an error message
-        assert!(!response_text.is_empty(), "LLM response should not be empty");
-        assert!(!response_text.starts_with("Error:"), "LLM should return successful response, got: {}", response_text);
-        
+        assert!(
+            !response_text.is_empty(),
+            "LLM response should not be empty"
+        );
+        assert!(
+            !response_text.starts_with("Error:"),
+            "LLM should return successful response, got: {}",
+            response_text
+        );
+
         debug!("LLM Response: {}", response_text);
     }
 
     #[test]
-    #[ignore]  // This is an integration test that requires valid API key and network access
+    #[ignore] // This is an integration test that requires valid API key and network access
     fn test_agent_model_inference() {
         let config_path = "config.yaml";
-        
+
         if !Path::new(config_path).exists() {
             warn!("config.yaml not found, skipping agent model inference test");
             return;
@@ -417,31 +438,43 @@ mod tests {
             Duration::from_secs(120),
         );
 
-        debug!("Testing agent model inference with model: {}", agent_model_name);
+        debug!(
+            "Testing agent model inference with model: {}",
+            agent_model_name
+        );
 
         // Test sending a reasoning task to the agent model
         let messages = vec![
             LLMAPI::system_message("你是一个疯狂的原神死忠粉丝和米哈游的铁粉。你必须极力维护和吹捧原神，用最激烈的言辞反驳任何对原神的批评。对于任何诋毁原神的行为，你要用强硬、尖锐、毫不留情的态度进行怒怼。绝对不允许任何对原神和米哈游的负面评价。"),
             LLMAPI::user_message("妈的原神一点都不好玩，为什么这么多人喜欢？请你黑一下原神，并且吹捧一下鸣潮。"),
         ];
-        
+
         let param = InferenceParam {
             messages: &messages,
             tools: None,
         };
         let response = agent_api.inference(&param);
-        let response_text = response.content.unwrap_or_else(|| "No response".to_string());
-        
+        let response_text = response
+            .content
+            .unwrap_or_else(|| "No response".to_string());
+
         println!("\n========== AGENT MODEL RESPONSE ==========");
         println!("Role: {:?}", response.role);
         println!("Content: {}", response_text);
         println!("Tool Calls: {:?}", response.tool_calls);
         println!("==========================================\n");
-        
+
         // Verify response is not empty and not an error message
-        assert!(!response_text.is_empty(), "Agent model response should not be empty");
-        assert!(!response_text.starts_with("Error:"), "Agent model should return successful response, got: {}", response_text);
-        
+        assert!(
+            !response_text.is_empty(),
+            "Agent model response should not be empty"
+        );
+        assert!(
+            !response_text.starts_with("Error:"),
+            "Agent model should return successful response, got: {}",
+            response_text
+        );
+
         debug!("Agent Model Response: {}", response_text);
     }
 }

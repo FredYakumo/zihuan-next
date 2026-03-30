@@ -40,7 +40,10 @@ impl Node for ToolResultNode {
         port! { name = "message", ty = OpenAIMessage, desc = "role=tool 的结果消息，可拼入对话列表后重新送入 BrainNode" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let tool_call_id = match inputs.get("tool_call") {
@@ -48,7 +51,9 @@ impl Node for ToolResultNode {
                 .get("tool_call_id")
                 .and_then(|id| id.as_str())
                 .map(|s| s.to_string())
-                .ok_or_else(|| Error::ValidationError("tool_call missing 'tool_call_id' field".to_string()))?,
+                .ok_or_else(|| {
+                    Error::ValidationError("tool_call missing 'tool_call_id' field".to_string())
+                })?,
             _ => return Err(Error::ValidationError("tool_call is required".to_string())),
         };
 
@@ -104,8 +109,14 @@ mod tests {
         let mut node = ToolResultNode::new("tr1", "ToolResult");
         let err = node
             .execute(HashMap::from([
-                ("tool_call".to_string(), DataValue::Json(json!({ "arguments": {} }))),
-                ("content".to_string(), DataValue::String("result".to_string())),
+                (
+                    "tool_call".to_string(),
+                    DataValue::Json(json!({ "arguments": {} })),
+                ),
+                (
+                    "content".to_string(),
+                    DataValue::String("result".to_string()),
+                ),
             ]))
             .unwrap_err();
 

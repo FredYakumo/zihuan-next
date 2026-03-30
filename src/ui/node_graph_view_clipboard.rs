@@ -2,7 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use crate::node::graph_io::{EdgeDefinition, NodeDefinition, NodeGraphDefinition};
 use crate::ui::node_graph_view_geometry::snap_to_grid;
-use crate::ui::node_graph_view_inline::{apply_inline_inputs_to_graph, build_inline_inputs_from_graph};
+use crate::ui::node_graph_view_inline::{
+    apply_inline_inputs_to_graph, build_inline_inputs_from_graph,
+};
 use crate::ui::node_render::InlinePortValue;
 
 #[derive(Debug, Clone)]
@@ -170,7 +172,9 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     use crate::node::data_value::DataType;
-    use crate::node::graph_io::{EdgeDefinition, GraphPosition, HyperParameter, NodeDefinition, NodeGraphDefinition};
+    use crate::node::graph_io::{
+        EdgeDefinition, GraphPosition, HyperParameter, NodeDefinition, NodeGraphDefinition,
+    };
     use crate::node::Port;
     use crate::ui::node_render::InlinePortValue;
 
@@ -198,7 +202,11 @@ mod tests {
     #[test]
     fn copy_keeps_only_internal_edges() {
         let graph = NodeGraphDefinition {
-            nodes: vec![node_at("node_1", 40.0, 40.0), node_at("node_2", 140.0, 40.0), node_at("node_3", 240.0, 40.0)],
+            nodes: vec![
+                node_at("node_1", 40.0, 40.0),
+                node_at("node_2", 140.0, 40.0),
+                node_at("node_3", 240.0, 40.0),
+            ],
             edges: vec![
                 EdgeDefinition {
                     from_node_id: "node_1".to_string(),
@@ -219,7 +227,8 @@ mod tests {
         };
 
         let selected = HashSet::from(["node_1".to_string(), "node_2".to_string()]);
-        let clipboard = copy_selected_nodes_to_clipboard(&graph, &HashMap::new(), &selected).unwrap();
+        let clipboard =
+            copy_selected_nodes_to_clipboard(&graph, &HashMap::new(), &selected).unwrap();
 
         assert_eq!(clipboard.nodes.len(), 2);
         assert_eq!(clipboard.edges.len(), 1);
@@ -230,7 +239,10 @@ mod tests {
     #[test]
     fn paste_remaps_ids_and_preserves_relative_layout() {
         let clipboard_graph = NodeGraphDefinition {
-            nodes: vec![node_at("node_1", 40.0, 60.0), node_at("node_2", 140.0, 160.0)],
+            nodes: vec![
+                node_at("node_1", 40.0, 60.0),
+                node_at("node_2", 140.0, 160.0),
+            ],
             edges: vec![EdgeDefinition {
                 from_node_id: "node_1".to_string(),
                 from_port: "value".to_string(),

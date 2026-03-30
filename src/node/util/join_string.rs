@@ -34,11 +34,12 @@ impl Node for JoinStringNode {
         port! { name = "delimiter", ty = String, desc = "字符串之间使用的分隔符" },
     ];
 
-    node_output![
-        port! { name = "result", ty = String, desc = "拼接后的字符串" },
-    ];
+    node_output![port! { name = "result", ty = String, desc = "拼接后的字符串" },];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let strings = match inputs.get("strings") {
@@ -106,10 +107,7 @@ mod tests {
                     ],
                 ),
             ),
-            (
-                "delimiter".to_string(),
-                DataValue::String(", ".to_string()),
-            ),
+            ("delimiter".to_string(), DataValue::String(", ".to_string())),
         ]);
 
         let outputs = node.execute(inputs).expect("join should succeed");
@@ -127,10 +125,7 @@ mod tests {
                 "strings".to_string(),
                 DataValue::Vec(Box::new(DataType::String), vec![]),
             ),
-            (
-                "delimiter".to_string(),
-                DataValue::String("-".to_string()),
-            ),
+            ("delimiter".to_string(), DataValue::String("-".to_string())),
         ]);
 
         let outputs = node.execute(inputs).expect("join should succeed");

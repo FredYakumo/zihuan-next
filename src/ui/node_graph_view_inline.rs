@@ -5,7 +5,9 @@ use crate::node::graph_io::NodeGraphDefinition;
 use crate::node::registry::NODE_REGISTRY;
 use crate::ui::node_render::{inline_port_key, InlinePortValue};
 
-pub(crate) fn build_inline_inputs_from_graph(graph: &NodeGraphDefinition) -> HashMap<String, InlinePortValue> {
+pub(crate) fn build_inline_inputs_from_graph(
+    graph: &NodeGraphDefinition,
+) -> HashMap<String, InlinePortValue> {
     let mut map = HashMap::new();
     for node in &graph.nodes {
         for (port_name, val) in &node.inline_values {
@@ -46,10 +48,12 @@ pub(crate) fn apply_inline_inputs_to_graph(
             if let Some(val) = inline_inputs.get(&key) {
                 match val {
                     InlinePortValue::Text(s) => {
-                        node.inline_values.insert(port.name.clone(), serde_json::Value::String(s.clone()));
+                        node.inline_values
+                            .insert(port.name.clone(), serde_json::Value::String(s.clone()));
                     }
                     InlinePortValue::Bool(b) => {
-                        node.inline_values.insert(port.name.clone(), serde_json::Value::Bool(*b));
+                        node.inline_values
+                            .insert(port.name.clone(), serde_json::Value::Bool(*b));
                     }
                     InlinePortValue::Json(v) => {
                         node.inline_values.insert(port.name.clone(), v.clone());

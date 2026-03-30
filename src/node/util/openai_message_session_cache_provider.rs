@@ -181,7 +181,10 @@ impl Node for OpenAIMessageSessionCacheProviderNode {
         port! { name = "cache_ref", ty = OpenAIMessageSessionCacheRef, desc = "当前运行期的会话缓存引用，可供后续暂存/读取/覆写节点复用" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let redis_ref = inputs.get("redis_ref").and_then(|v| match v {
@@ -189,12 +192,10 @@ impl Node for OpenAIMessageSessionCacheProviderNode {
             _ => None,
         });
 
-        let bucket_name = inputs
-            .get("bucket_name")
-            .and_then(|v| match v {
-                DataValue::String(s) => Some(Self::normalize_bucket_name(Some(s.as_str()))),
-                _ => None,
-            });
+        let bucket_name = inputs.get("bucket_name").and_then(|v| match v {
+            DataValue::String(s) => Some(Self::normalize_bucket_name(Some(s.as_str()))),
+            _ => None,
+        });
 
         self.initialize_run(redis_ref.as_ref())?;
 

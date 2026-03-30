@@ -42,7 +42,10 @@ impl Node for SessionStateGetNode {
         port! { name = "state_json", ty = Json, desc = "当前 sender_id 的附加 JSON 状态" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let session_ref: Arc<SessionStateRef> = inputs
@@ -51,14 +54,18 @@ impl Node for SessionStateGetNode {
                 DataValue::SessionStateRef(session_ref) => Some(session_ref.clone()),
                 _ => None,
             })
-            .ok_or_else(|| crate::error::Error::InvalidNodeInput("session_ref is required".to_string()))?;
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("session_ref is required".to_string())
+            })?;
         let sender_id = inputs
             .get("sender_id")
             .and_then(|value| match value {
                 DataValue::String(sender_id) => Some(sender_id.clone()),
                 _ => None,
             })
-            .ok_or_else(|| crate::error::Error::InvalidNodeInput("sender_id is required".to_string()))?;
+            .ok_or_else(|| {
+                crate::error::Error::InvalidNodeInput("sender_id is required".to_string())
+            })?;
 
         let read_state = async move { session_ref.get_state(&sender_id).await };
         let state = if let Ok(handle) = tokio::runtime::Handle::try_current() {
@@ -68,7 +75,10 @@ impl Node for SessionStateGetNode {
         };
 
         let outputs = HashMap::from([
-            ("in_session".to_string(), DataValue::Boolean(state.in_session)),
+            (
+                "in_session".to_string(),
+                DataValue::Boolean(state.in_session),
+            ),
             ("state_json".to_string(), DataValue::Json(state.state_json)),
         ]);
         self.validate_outputs(&outputs)?;

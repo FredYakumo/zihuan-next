@@ -48,29 +48,51 @@ impl Node for LLMApiNode {
         port! { name = "llm_model", ty = LLModel, desc = "LLM模型引用，传递给LLMInfer等节点使用" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let model_name = match inputs.get("model_name") {
             Some(DataValue::String(s)) => s.clone(),
-            _ => return Err(crate::error::Error::ValidationError("Missing required input: model_name".to_string())),
+            _ => {
+                return Err(crate::error::Error::ValidationError(
+                    "Missing required input: model_name".to_string(),
+                ))
+            }
         };
 
         let api_endpoint = match inputs.get("api_endpoint") {
             Some(DataValue::String(s)) => s.clone(),
-            _ => return Err(crate::error::Error::ValidationError("Missing required input: api_endpoint".to_string())),
+            _ => {
+                return Err(crate::error::Error::ValidationError(
+                    "Missing required input: api_endpoint".to_string(),
+                ))
+            }
         };
 
         let api_key = inputs.get("api_key").and_then(|v| {
             if let DataValue::Password(s) = v {
-                if s.is_empty() { None } else { Some(s.clone()) }
+                if s.is_empty() {
+                    None
+                } else {
+                    Some(s.clone())
+                }
             } else {
                 None
             }
         });
 
-        let timeout_secs = inputs.get("timeout_secs")
-            .and_then(|v| if let DataValue::Integer(i) = v { Some(*i as u64) } else { None })
+        let timeout_secs = inputs
+            .get("timeout_secs")
+            .and_then(|v| {
+                if let DataValue::Integer(i) = v {
+                    Some(*i as u64)
+                } else {
+                    None
+                }
+            })
             .unwrap_or(120);
 
         let llm: Arc<dyn crate::llm::llm_base::LLMBase> = Arc::new(LLMAPI::new(

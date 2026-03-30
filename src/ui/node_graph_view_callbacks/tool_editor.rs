@@ -6,8 +6,8 @@ use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use crate::node::DataType;
 use crate::node::Port;
 use crate::ui::graph_window::{NodeGraphWindow, ToolDefinitionVm, ToolParamVm};
-use crate::ui::node_graph_view::{GraphTabState, refresh_active_tab_ui};
-use crate::ui::node_render::{InlinePortValue, inline_port_key};
+use crate::ui::node_graph_view::{refresh_active_tab_ui, GraphTabState};
+use crate::ui::node_render::{inline_port_key, InlinePortValue};
 
 const TOOLS_CONFIG_PORT: &str = "tools_config";
 
@@ -153,8 +153,9 @@ fn brain_output_ports(items: &[ToolDefinitionVm]) -> Vec<Port> {
     let mut ports = vec![
         Port::new("assistant_message", DataType::OpenAIMessage)
             .with_description("LLM 返回的完整 assistant 消息（含 tool_calls，用于 agentic loop）"),
-        Port::new("has_tool_call", DataType::Boolean)
-            .with_description("LLM 返回的 assistant 消息是否包含 tool_calls，用于控制 agentic loop 继续或结束"),
+        Port::new("has_tool_call", DataType::Boolean).with_description(
+            "LLM 返回的 assistant 消息是否包含 tool_calls，用于控制 agentic loop 继续或结束",
+        ),
     ];
     ports.extend(items.iter().map(|tool| {
         Port::new(tool.name.as_str(), DataType::Json)
@@ -403,10 +404,17 @@ pub(crate) fn bind_tool_editor_callbacks(
             let mut tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
-                if let Some(node) = tab.graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
-                    node.inline_values.insert(TOOLS_CONFIG_PORT.to_string(), tools_json.clone());
+                if let Some(node) = tab
+                    .graph
+                    .nodes
+                    .iter_mut()
+                    .find(|n| n.id == node_id.as_str())
+                {
+                    node.inline_values
+                        .insert(TOOLS_CONFIG_PORT.to_string(), tools_json.clone());
                     node.output_ports = brain_output_ports(&items);
-                    let output_names: HashSet<&str> = node.output_ports.iter().map(|p| p.name.as_str()).collect();
+                    let output_names: HashSet<&str> =
+                        node.output_ports.iter().map(|p| p.name.as_str()).collect();
                     tab.graph.edges.retain(|edge| {
                         if edge.from_node_id == node.id {
                             output_names.contains(edge.from_port.as_str())

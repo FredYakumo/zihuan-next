@@ -48,7 +48,11 @@ pub(crate) fn bind_message_list_callbacks(
         if let Some(tab) = tabs_guard.get_mut(active_index) {
             let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
             let len = items.len();
-            let mut insert_at = if index < 0 { 0 } else { (index as usize).saturating_add(1) };
+            let mut insert_at = if index < 0 {
+                0
+            } else {
+                (index as usize).saturating_add(1)
+            };
             if insert_at > len {
                 insert_at = len;
             }
@@ -170,10 +174,7 @@ pub(crate) fn bind_message_list_callbacks(
             if index >= 0 {
                 let idx = index as usize;
                 if let Some(serde_json::Value::Object(map)) = items.get_mut(idx) {
-                    let current = map
-                        .get("role")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("user");
+                    let current = map.get("role").and_then(|v| v.as_str()).unwrap_or("user");
                     map.insert(
                         "role".to_string(),
                         serde_json::Value::String(cycle_role(current).to_string()),
@@ -199,25 +200,27 @@ pub(crate) fn bind_message_list_callbacks(
     let tabs_clone = Arc::clone(&tabs);
     let active_tab_clone = Arc::clone(&active_tab_index);
     let ui_handle = ui.as_weak();
-    ui.on_message_list_set_content(move |node_id: SharedString, index: i32, value: SharedString| {
-        let mut tabs_guard = tabs_clone.lock().unwrap();
-        let active_index = *active_tab_clone.lock().unwrap();
-        if let Some(tab) = tabs_guard.get_mut(active_index) {
-            let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
-            if index >= 0 {
-                let idx = index as usize;
-                if let Some(serde_json::Value::Object(map)) = items.get_mut(idx) {
-                    map.insert(
-                        "content".to_string(),
-                        serde_json::Value::String(value.to_string()),
-                    );
+    ui.on_message_list_set_content(
+        move |node_id: SharedString, index: i32, value: SharedString| {
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let active_index = *active_tab_clone.lock().unwrap();
+            if let Some(tab) = tabs_guard.get_mut(active_index) {
+                let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
+                if index >= 0 {
+                    let idx = index as usize;
+                    if let Some(serde_json::Value::Object(map)) = items.get_mut(idx) {
+                        map.insert(
+                            "content".to_string(),
+                            serde_json::Value::String(value.to_string()),
+                        );
+                    }
+                }
+                set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
+                tab.is_dirty = true;
+                if let Some(ui) = ui_handle.upgrade() {
+                    update_tabs_ui(&ui, &tabs_guard, active_index);
                 }
             }
-            set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
-            tab.is_dirty = true;
-            if let Some(ui) = ui_handle.upgrade() {
-                update_tabs_ui(&ui, &tabs_guard, active_index);
-            }
-        }
-    });
+        },
+    );
 }

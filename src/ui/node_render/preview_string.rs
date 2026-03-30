@@ -1,6 +1,6 @@
+use super::{InlinePortValue, NodeRenderer};
 use crate::node::graph_io::NodeGraphDefinition;
 use crate::node::DataValue;
-use super::{NodeRenderer, InlinePortValue};
 use std::collections::HashMap;
 
 pub struct PreviewStringRenderer;
@@ -30,7 +30,7 @@ impl NodeRenderer for PreviewStringRenderer {
 
         String::new()
     }
-    
+
     fn handles_node_type(node_type: &str) -> bool {
         node_type == "preview_string"
     }

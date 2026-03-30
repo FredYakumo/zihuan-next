@@ -26,16 +26,19 @@ impl Node for PreviewMessageListNode {
     }
 
     fn description(&self) -> Option<&str> {
-            Some("Preview OpenAIMessage list inside the node card with scrollable message items")
+        Some("Preview OpenAIMessage list inside the node card with scrollable message items")
     }
 
     node_input![
-            port! { name = "messages", ty = Vec(OpenAIMessage), desc = "Vec<OpenAIMessage> to preview inside the node", optional },
+        port! { name = "messages", ty = Vec(OpenAIMessage), desc = "Vec<OpenAIMessage> to preview inside the node", optional },
     ];
 
     node_output![];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();

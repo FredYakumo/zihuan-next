@@ -26,18 +26,21 @@ impl Node for MessageListDataNode {
     }
 
     fn description(&self) -> Option<&str> {
-            Some("OpenAIMessage 列表数据源，支持内联 UI 编辑")
+        Some("OpenAIMessage 列表数据源，支持内联 UI 编辑")
     }
 
     node_input![
-            port! { name = "messages", ty = Vec(OpenAIMessage), desc = "Vec<OpenAIMessage> provided by UI inline editor", optional },
+        port! { name = "messages", ty = Vec(OpenAIMessage), desc = "Vec<OpenAIMessage> provided by UI inline editor", optional },
     ];
 
     node_output![
-            port! { name = "messages", ty = Vec(OpenAIMessage), desc = "Output Vec<OpenAIMessage> from UI data source" },
+        port! { name = "messages", ty = Vec(OpenAIMessage), desc = "Output Vec<OpenAIMessage> from UI data source" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();
@@ -45,7 +48,9 @@ impl Node for MessageListDataNode {
             .get("messages")
             .cloned()
             .filter(|v| matches!(v, DataValue::Vec(..)))
-            .unwrap_or_else(|| DataValue::Vec(Box::new(crate::node::DataType::OpenAIMessage), Vec::new()));
+            .unwrap_or_else(|| {
+                DataValue::Vec(Box::new(crate::node::DataType::OpenAIMessage), Vec::new())
+            });
         outputs.insert("messages".to_string(), value);
 
         self.validate_outputs(&outputs)?;

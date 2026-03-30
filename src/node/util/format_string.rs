@@ -116,26 +116,18 @@ impl Node for FormatStringNode {
     fn input_ports(&self) -> Vec<Port> {
         // "template" must always be present so the registry can pass it to
         // apply_inline_config before the dynamic variable ports are known.
-        let mut ports = vec![
-            Port::new("template", DataType::String)
-                .with_description("格式化模板字符串，使用 ${变量名} 语法引用输入变量")
-                .optional(),
-        ];
+        let mut ports = vec![Port::new("template", DataType::String)
+            .with_description("格式化模板字符串，使用 ${变量名} 语法引用输入变量")
+            .optional()];
         ports.extend(self.variables.iter().map(|var| {
-            Port::new(var.clone(), DataType::Any)
-                .with_description(format!("变量 {var}"))
+            Port::new(var.clone(), DataType::Any).with_description(format!("变量 {var}"))
         }));
         ports
     }
 
-    node_output![
-        port! { name = "output", ty = String, desc = "格式化后的字符串" },
-    ];
+    node_output![port! { name = "output", ty = String, desc = "格式化后的字符串" },];
 
-    fn apply_inline_config(
-        &mut self,
-        inline_values: &HashMap<String, DataValue>,
-    ) -> Result<()> {
+    fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
         if let Some(DataValue::String(template)) = inline_values.get("template") {
             self.template = template.clone();
             self.variables = extract_variables(template);
@@ -247,7 +239,9 @@ mod tests {
             .collect();
 
         assert_eq!(dynamic_ports.len(), 2);
-        assert!(dynamic_ports.iter().all(|port| port.data_type == DataType::Any));
+        assert!(dynamic_ports
+            .iter()
+            .all(|port| port.data_type == DataType::Any));
     }
 
     #[test]

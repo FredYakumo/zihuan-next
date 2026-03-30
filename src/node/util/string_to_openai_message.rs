@@ -37,11 +37,12 @@ impl Node for StringToOpenAIMessageNode {
         port! { name = "role", ty = String, desc = "OpenAIMessage 角色，可选 system / user / assistant / tool" },
     ];
 
-    node_output![
-        port! { name = "message", ty = OpenAIMessage, desc = "封装后的 OpenAIMessage" },
-    ];
+    node_output![port! { name = "message", ty = OpenAIMessage, desc = "封装后的 OpenAIMessage" },];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let content = match inputs.get("content") {
@@ -102,10 +103,7 @@ mod tests {
         let mut node = StringToOpenAIMessageNode::new("msg_2", "StringToOpenAIMessage");
         let outputs = node
             .execute(HashMap::from([
-                (
-                    "content".to_string(),
-                    DataValue::String("你好".to_string()),
-                ),
+                ("content".to_string(), DataValue::String("你好".to_string())),
                 (
                     "role".to_string(),
                     DataValue::String("assistant".to_string()),

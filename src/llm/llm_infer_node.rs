@@ -41,23 +41,39 @@ impl Node for LLMInferNode {
         port! { name = "messages",  ty = Vec(OpenAIMessage), desc = "输入消息列表，包含系统消息和用户消息" },
     ];
 
-    node_output![
-        port! { name = "response", ty = Vec(OpenAIMessage), desc = "LLM返回的消息列表" },
-    ];
+    node_output![port! { name = "response", ty = Vec(OpenAIMessage), desc = "LLM返回的消息列表" },];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let model = match inputs.get("llm_model") {
             Some(DataValue::LLModel(m)) => m.clone(),
-            _ => return Err(crate::error::Error::ValidationError("Missing required input: llm_model".to_string())),
+            _ => {
+                return Err(crate::error::Error::ValidationError(
+                    "Missing required input: llm_model".to_string(),
+                ))
+            }
         };
 
         let messages: Vec<OpenAIMessage> = match inputs.get("messages") {
-            Some(DataValue::Vec(_, items)) => items.iter().filter_map(|item| {
-                if let DataValue::OpenAIMessage(m) = item { Some(m.clone()) } else { None }
-            }).collect(),
-            _ => return Err(crate::error::Error::ValidationError("Missing required input: messages".to_string())),
+            Some(DataValue::Vec(_, items)) => items
+                .iter()
+                .filter_map(|item| {
+                    if let DataValue::OpenAIMessage(m) = item {
+                        Some(m.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            _ => {
+                return Err(crate::error::Error::ValidationError(
+                    "Missing required input: messages".to_string(),
+                ))
+            }
         };
 
         let param = InferenceParam {

@@ -46,11 +46,18 @@ pub(crate) fn bind_qq_message_list_callbacks(
         if let Some(tab) = tabs_guard.get_mut(active_index) {
             let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
             let len = items.len();
-            let mut insert_at = if index < 0 { 0 } else { (index as usize).saturating_add(1) };
+            let mut insert_at = if index < 0 {
+                0
+            } else {
+                (index as usize).saturating_add(1)
+            };
             if insert_at > len {
                 insert_at = len;
             }
-            items.insert(insert_at, serde_json::json!({"type": "text", "data": {"text": ""}}));
+            items.insert(
+                insert_at,
+                serde_json::json!({"type": "text", "data": {"text": ""}}),
+            );
             set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
             tab.is_dirty = true;
             if let Some(ui) = ui_handle.upgrade() {
@@ -84,7 +91,10 @@ pub(crate) fn bind_qq_message_list_callbacks(
                         "at" => ("reply", serde_json::json!({"id": 0})),
                         _ => ("text", serde_json::json!({"text": ""})),
                     };
-                    map.insert("type".to_string(), serde_json::Value::String(next_type.to_string()));
+                    map.insert(
+                        "type".to_string(),
+                        serde_json::Value::String(next_type.to_string()),
+                    );
                     map.insert("data".to_string(), next_data);
                 }
             }
@@ -107,39 +117,51 @@ pub(crate) fn bind_qq_message_list_callbacks(
     let tabs_clone = Arc::clone(&tabs);
     let active_tab_clone = Arc::clone(&active_tab_index);
     let ui_handle = ui.as_weak();
-    ui.on_qq_message_list_set_content(move |node_id: SharedString, index: i32, value: SharedString| {
-        let mut tabs_guard = tabs_clone.lock().unwrap();
-        let active_index = *active_tab_clone.lock().unwrap();
-        if let Some(tab) = tabs_guard.get_mut(active_index) {
-            let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
-            if index >= 0 {
-                let idx = index as usize;
-                if let Some(serde_json::Value::Object(map)) = items.get_mut(idx) {
-                    let msg_type = map.get("type").and_then(|v| v.as_str()).unwrap_or("text").to_string();
-                    let data_obj = map.entry("data").or_insert_with(|| serde_json::json!({}));
-                    if let serde_json::Value::Object(data) = data_obj {
-                        match msg_type.as_str() {
-                            "text" => {
-                                data.insert("text".to_string(), serde_json::Value::String(value.to_string()));
+    ui.on_qq_message_list_set_content(
+        move |node_id: SharedString, index: i32, value: SharedString| {
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let active_index = *active_tab_clone.lock().unwrap();
+            if let Some(tab) = tabs_guard.get_mut(active_index) {
+                let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
+                if index >= 0 {
+                    let idx = index as usize;
+                    if let Some(serde_json::Value::Object(map)) = items.get_mut(idx) {
+                        let msg_type = map
+                            .get("type")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("text")
+                            .to_string();
+                        let data_obj = map.entry("data").or_insert_with(|| serde_json::json!({}));
+                        if let serde_json::Value::Object(data) = data_obj {
+                            match msg_type.as_str() {
+                                "text" => {
+                                    data.insert(
+                                        "text".to_string(),
+                                        serde_json::Value::String(value.to_string()),
+                                    );
+                                }
+                                "at" => {
+                                    data.remove("target");
+                                    data.insert(
+                                        "qq".to_string(),
+                                        serde_json::Value::String(value.to_string()),
+                                    );
+                                }
+                                "reply" => {
+                                    let id: i64 = value.as_str().parse().unwrap_or(0);
+                                    data.insert("id".to_string(), serde_json::json!(id));
+                                }
+                                _ => {}
                             }
-                            "at" => {
-                                data.remove("target");
-                                data.insert("qq".to_string(), serde_json::Value::String(value.to_string()));
-                            }
-                            "reply" => {
-                                let id: i64 = value.as_str().parse().unwrap_or(0);
-                                data.insert("id".to_string(), serde_json::json!(id));
-                            }
-                            _ => {}
                         }
                     }
                 }
+                set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
+                tab.is_dirty = true;
+                if let Some(ui) = ui_handle.upgrade() {
+                    update_tabs_ui(&ui, &tabs_guard, active_index);
+                }
             }
-            set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
-            tab.is_dirty = true;
-            if let Some(ui) = ui_handle.upgrade() {
-                update_tabs_ui(&ui, &tabs_guard, active_index);
-            }
-        }
-    });
+        },
+    );
 }

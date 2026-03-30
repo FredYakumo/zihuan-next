@@ -8,11 +8,11 @@ use std::collections::HashMap;
 use tokio::task::block_in_place;
 
 /// Node that converts a MessageEvent to an LLM prompt message list
-/// 
+///
 /// Inputs:
 ///   - message_event: MessageEvent containing message data
 ///   - bot_adapter: BotAdapterRef for building context-aware system message
-/// 
+///
 /// Outputs:
 ///   - messages: Vec<OpenAIMessage>: One user message
 pub struct ExtractMessageFromEventNode {
@@ -55,13 +55,17 @@ impl Node for ExtractMessageFromEventNode {
         port! { name = "at_target_list", ty = Vec(String), desc = "List of all @ targets in the message" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();
 
         if let Some(DataValue::MessageEvent(event)) = inputs.get("message_event") {
-            let bot_adapter_ref = inputs.get("bot_adapter")
+            let bot_adapter_ref = inputs
+                .get("bot_adapter")
                 .and_then(|v| {
                     if let DataValue::BotAdapterRef(adapter_ref) = v {
                         Some(adapter_ref.clone())
@@ -82,7 +86,7 @@ impl Node for ExtractMessageFromEventNode {
                 let adapter = bot_adapter_ref.blocking_lock();
                 adapter.get_bot_id().to_string()
             };
-            
+
             let msg_prop = MessageProp::from_messages(&event.message_list, Some(&bot_id));
 
             // Build user message from incoming MessageEvent
@@ -103,17 +107,36 @@ impl Node for ExtractMessageFromEventNode {
             let user_msg = OpenAIMessage::user(user_text);
 
             let messages = vec![user_msg];
-            outputs.insert("messages".to_string(), DataValue::Vec(
-                Box::new(crate::node::DataType::OpenAIMessage),
-                messages.into_iter().map(DataValue::OpenAIMessage).collect(),
-            ));
-            outputs.insert("content".to_string(), DataValue::String(msg_prop.content.unwrap_or_default()));
-            outputs.insert("ref_content".to_string(), DataValue::String(msg_prop.ref_content.unwrap_or_default()));
-            outputs.insert("is_at_me".to_string(), DataValue::Boolean(msg_prop.is_at_me));
-            outputs.insert("at_target_list".to_string(), DataValue::Vec(
-                Box::new(DataType::String),
-                msg_prop.at_target_list.into_iter().map(DataValue::String).collect(),
-            ));
+            outputs.insert(
+                "messages".to_string(),
+                DataValue::Vec(
+                    Box::new(crate::node::DataType::OpenAIMessage),
+                    messages.into_iter().map(DataValue::OpenAIMessage).collect(),
+                ),
+            );
+            outputs.insert(
+                "content".to_string(),
+                DataValue::String(msg_prop.content.unwrap_or_default()),
+            );
+            outputs.insert(
+                "ref_content".to_string(),
+                DataValue::String(msg_prop.ref_content.unwrap_or_default()),
+            );
+            outputs.insert(
+                "is_at_me".to_string(),
+                DataValue::Boolean(msg_prop.is_at_me),
+            );
+            outputs.insert(
+                "at_target_list".to_string(),
+                DataValue::Vec(
+                    Box::new(DataType::String),
+                    msg_prop
+                        .at_target_list
+                        .into_iter()
+                        .map(DataValue::String)
+                        .collect(),
+                ),
+            );
         } else {
             return Err("message_event input is required and must be MessageEvent type".into());
         }

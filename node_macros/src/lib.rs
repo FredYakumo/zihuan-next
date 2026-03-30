@@ -6,8 +6,8 @@ use syn::{
     ext::IdentExt,
     parse::{Parse, ParseStream},
     parse_macro_input,
-    spanned::Spanned,
     punctuated::Punctuated,
+    spanned::Spanned,
     token, Expr, Ident, LitBool, LitStr, Result, Token,
 };
 
@@ -207,9 +207,11 @@ fn parse_bool(input: ParseStream) -> Result<bool> {
 fn datatype_tokens(expr: Expr) -> Result<proc_macro2::TokenStream> {
     match expr {
         Expr::Path(path) => {
-            let last = path.path.segments.last().ok_or_else(|| {
-                syn::Error::new(path.span(), "Invalid type path")
-            })?;
+            let last = path
+                .path
+                .segments
+                .last()
+                .ok_or_else(|| syn::Error::new(path.span(), "Invalid type path"))?;
 
             let ident = &last.ident;
             if path.path.segments.len() == 1 {
@@ -247,7 +249,10 @@ fn datatype_tokens(expr: Expr) -> Result<proc_macro2::TokenStream> {
 
             if func_name == "Custom" {
                 if call.args.len() != 1 {
-                    return Err(syn::Error::new(call.span(), "Custom() expects one argument"));
+                    return Err(syn::Error::new(
+                        call.span(),
+                        "Custom() expects one argument",
+                    ));
                 }
                 let inner = call.args.first().cloned().unwrap();
                 if let Expr::Lit(lit) = inner {
@@ -255,7 +260,10 @@ fn datatype_tokens(expr: Expr) -> Result<proc_macro2::TokenStream> {
                         return Ok(quote! { DataType::Custom(#lit_str.to_string()) });
                     }
                 }
-                return Err(syn::Error::new(call.span(), "Custom() expects a string literal"));
+                return Err(syn::Error::new(
+                    call.span(),
+                    "Custom() expects a string literal",
+                ));
             }
 
             Err(syn::Error::new(call.span(), "Unsupported type constructor"))
