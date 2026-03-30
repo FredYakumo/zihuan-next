@@ -33,7 +33,7 @@ impl Node for OpenAIMessageSessionCacheGetNode {
     }
 
     node_input![
-        port! { name = "cache_ref", ty = OpenAIMessageSessionCacheRef, desc = "OpenAIMessage 会话暂存节点输出的缓存引用" },
+        port! { name = "cache_ref", ty = OpenAIMessageSessionCacheRef, desc = "OpenAIMessage 会话暂存器输出的缓存引用" },
         port! { name = "sender_id", ty = String, desc = "要读取历史消息的 sender_id" },
         port! { name = "fallback", ty = Vec(OpenAIMessage), desc = "可选：未读取到 sender_id 历史消息时输出的回退消息列表", optional },
     ];
@@ -112,7 +112,7 @@ mod tests {
     use super::OpenAIMessageSessionCacheGetNode;
     use crate::error::Result;
     use crate::llm::{MessageRole, OpenAIMessage};
-    use crate::node::util::OpenAIMessageSessionCacheNode;
+    use crate::node::util::{OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheProviderNode};
     use crate::node::{DataType, DataValue, Node};
     use std::collections::HashMap;
 
@@ -125,8 +125,17 @@ mod tests {
         }
     }
 
-    fn cache_input(sender_id: &str, messages: Vec<OpenAIMessage>) -> HashMap<String, DataValue> {
+    fn provider_input() -> HashMap<String, DataValue> {
+        HashMap::new()
+    }
+
+    fn cache_input(
+        cache_ref: DataValue,
+        sender_id: &str,
+        messages: Vec<OpenAIMessage>,
+    ) -> HashMap<String, DataValue> {
         HashMap::from([
+            ("cache_ref".to_string(), cache_ref),
             (
                 "messages".to_string(),
                 DataValue::Vec(
@@ -156,22 +165,31 @@ mod tests {
 
     #[test]
     fn reads_history_by_sender_from_cache_ref() -> Result<()> {
+        let mut provider_node = OpenAIMessageSessionCacheProviderNode::new("provider", "Provider");
         let mut cache_node = OpenAIMessageSessionCacheNode::new("cache", "Cache");
         let mut get_node = OpenAIMessageSessionCacheGetNode::new("getter", "Getter");
 
+        let provider_outputs = provider_node.execute(provider_input())?;
+        let cache_ref = provider_outputs
+            .get("cache_ref")
+            .cloned()
+            .expect("cache_ref output should exist");
+
         let _ = cache_node.execute(cache_input(
+            cache_ref.clone(),
             "user-1",
             vec![message(MessageRole::User, "第一条")],
         ))?;
         let cache_outputs = cache_node.execute(cache_input(
+            cache_ref.clone(),
             "user-1",
             vec![message(MessageRole::Assistant, "第二条")],
         ))?;
 
-        let cache_ref = cache_outputs
-            .get("cache_ref")
-            .cloned()
-            .expect("cache_ref output should exist");
+        assert!(matches!(
+            cache_outputs.get("success"),
+            Some(DataValue::Boolean(true))
+        ));
 
         let outputs = get_node.execute(HashMap::from([
             ("cache_ref".to_string(), cache_ref),
@@ -187,18 +205,26 @@ mod tests {
 
     #[test]
     fn returns_fallback_when_sender_history_is_missing() -> Result<()> {
+        let mut provider_node = OpenAIMessageSessionCacheProviderNode::new("provider", "Provider");
         let mut cache_node = OpenAIMessageSessionCacheNode::new("cache", "Cache");
         let mut get_node = OpenAIMessageSessionCacheGetNode::new("getter", "Getter");
 
+        let provider_outputs = provider_node.execute(provider_input())?;
+        let cache_ref = provider_outputs
+            .get("cache_ref")
+            .cloned()
+            .expect("cache_ref output should exist");
+
         let cache_outputs = cache_node.execute(cache_input(
+            cache_ref.clone(),
             "user-1",
             vec![message(MessageRole::User, "第一条")],
         ))?;
 
-        let cache_ref = cache_outputs
-            .get("cache_ref")
-            .cloned()
-            .expect("cache_ref output should exist");
+        assert!(matches!(
+            cache_outputs.get("success"),
+            Some(DataValue::Boolean(true))
+        ));
 
         let outputs = get_node.execute(HashMap::from([
             ("cache_ref".to_string(), cache_ref),
@@ -224,18 +250,26 @@ mod tests {
 
     #[test]
     fn returns_empty_when_sender_history_is_missing_and_no_fallback() -> Result<()> {
+        let mut provider_node = OpenAIMessageSessionCacheProviderNode::new("provider", "Provider");
         let mut cache_node = OpenAIMessageSessionCacheNode::new("cache", "Cache");
         let mut get_node = OpenAIMessageSessionCacheGetNode::new("getter", "Getter");
 
+        let provider_outputs = provider_node.execute(provider_input())?;
+        let cache_ref = provider_outputs
+            .get("cache_ref")
+            .cloned()
+            .expect("cache_ref output should exist");
+
         let cache_outputs = cache_node.execute(cache_input(
+            cache_ref.clone(),
             "user-1",
             vec![message(MessageRole::User, "第一条")],
         ))?;
 
-        let cache_ref = cache_outputs
-            .get("cache_ref")
-            .cloned()
-            .expect("cache_ref output should exist");
+        assert!(matches!(
+            cache_outputs.get("success"),
+            Some(DataValue::Boolean(true))
+        ));
 
         let outputs = get_node.execute(HashMap::from([
             ("cache_ref".to_string(), cache_ref),

@@ -50,7 +50,7 @@ impl fmt::Debug for MySqlConfig {
 
 /// Run-scoped OpenAI message session cache reference, passed between nodes.
 ///
-/// This reference points at the live storage owned by `OpenAIMessageSessionCacheNode`.
+/// This reference points at the live storage owned by `OpenAIMessageSessionCacheProviderNode`.
 /// The storage persists for the duration of a single graph execution and is reset
 /// by the node on the next graph start.
 #[derive(Clone)]
@@ -60,9 +60,21 @@ pub struct OpenAIMessageSessionCacheRef {
     pub redis_cm: Arc<TokioMutex<Option<ConnectionManager>>>,
     pub cached_redis_url: Arc<TokioMutex<Option<String>>>,
     pub sender_bucket_map: Arc<TokioMutex<HashMap<String, String>>>,
+    pub default_bucket_name: Arc<TokioMutex<String>>,
 }
 
 impl OpenAIMessageSessionCacheRef {
+    pub fn new(node_id: impl Into<String>) -> Self {
+        Self {
+            node_id: node_id.into(),
+            memory_cache: Arc::new(TokioMutex::new(HashMap::new())),
+            redis_cm: Arc::new(TokioMutex::new(None)),
+            cached_redis_url: Arc::new(TokioMutex::new(None)),
+            sender_bucket_map: Arc::new(TokioMutex::new(HashMap::new())),
+            default_bucket_name: Arc::new(TokioMutex::new(Self::normalize_bucket_name(None))),
+        }
+    }
+
     fn normalize_bucket_name(bucket_name: Option<&str>) -> String {
         let bucket_name = bucket_name.unwrap_or("default").trim();
         if bucket_name.is_empty() {
@@ -79,16 +91,26 @@ impl OpenAIMessageSessionCacheRef {
         )
     }
 
+    async fn default_bucket_name(&self) -> String {
+        self.default_bucket_name.lock().await.clone()
+    }
+
+    pub async fn set_default_bucket_name(&self, bucket_name: Option<&str>) {
+        let bucket_name = Self::normalize_bucket_name(bucket_name);
+        *self.default_bucket_name.lock().await = bucket_name;
+    }
+
     pub async fn get_messages(
         &self,
         sender_id: &str,
     ) -> crate::error::Result<Vec<crate::llm::OpenAIMessage>> {
+        let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
             let sender_bucket_map = self.sender_bucket_map.lock().await;
             sender_bucket_map
                 .get(sender_id)
                 .cloned()
-                .unwrap_or_else(|| Self::normalize_bucket_name(None))
+                .unwrap_or(default_bucket_name)
         };
         let key = self.storage_key(&bucket_name, sender_id);
 
@@ -130,11 +152,12 @@ impl OpenAIMessageSessionCacheRef {
     }
 
     pub async fn clear_messages(&self, sender_id: &str) -> crate::error::Result<bool> {
+        let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
             let mut sender_bucket_map = self.sender_bucket_map.lock().await;
             sender_bucket_map
                 .remove(sender_id)
-                .unwrap_or_else(|| Self::normalize_bucket_name(None))
+                .unwrap_or(default_bucket_name)
         };
         let key = self.storage_key(&bucket_name, sender_id);
         let mut cleared = false;
@@ -182,11 +205,12 @@ impl OpenAIMessageSessionCacheRef {
         sender_id: &str,
         messages: Vec<crate::llm::OpenAIMessage>,
     ) -> crate::error::Result<()> {
+        let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
             let mut sender_bucket_map = self.sender_bucket_map.lock().await;
             sender_bucket_map
                 .entry(sender_id.to_string())
-                .or_insert_with(|| Self::normalize_bucket_name(None))
+                .or_insert(default_bucket_name)
                 .clone()
         };
         let key = self.storage_key(&bucket_name, sender_id);
@@ -233,6 +257,73 @@ impl OpenAIMessageSessionCacheRef {
 
         Ok(())
     }
+
+    pub async fn append_messages(
+        &self,
+        sender_id: &str,
+        incoming_messages: Vec<crate::llm::OpenAIMessage>,
+    ) -> crate::error::Result<()> {
+        let default_bucket_name = self.default_bucket_name().await;
+        let bucket_name = {
+            let mut sender_bucket_map = self.sender_bucket_map.lock().await;
+            sender_bucket_map
+                .entry(sender_id.to_string())
+                .or_insert(default_bucket_name)
+                .clone()
+        };
+        let key = self.storage_key(&bucket_name, sender_id);
+
+        let redis_url = {
+            let url_guard = self.cached_redis_url.lock().await;
+            url_guard.clone()
+        };
+
+        if let Some(url) = redis_url {
+            let mut cm_guard = self.redis_cm.lock().await;
+            let mut url_guard = self.cached_redis_url.lock().await;
+
+            if url_guard.as_deref() != Some(url.as_str()) {
+                *cm_guard = None;
+                *url_guard = Some(url.clone());
+            }
+
+            if cm_guard.is_none() {
+                let client = redis::Client::open(url.as_str())?;
+                match ConnectionManager::new(client).await {
+                    Ok(cm) => {
+                        *cm_guard = Some(cm);
+                    }
+                    Err(e) => return Err(e.into()),
+                }
+            }
+
+            if let Some(cm) = cm_guard.as_mut() {
+                let existing_json: Option<String> = cm.get(&key).await?;
+                let mut existing_messages: Vec<crate::llm::OpenAIMessage> = existing_json
+                    .as_deref()
+                    .map(serde_json::from_str)
+                    .transpose()?
+                    .unwrap_or_default();
+                existing_messages.extend(incoming_messages.clone());
+
+                let serialized = serde_json::to_string(&existing_messages)?;
+                cm.set::<_, _, ()>(&key, serialized).await?;
+                let tracker_key =
+                    format!("openai_message_session:{}:bucket:{}:keys", self.node_id, bucket_name);
+                let tracker_registry_key =
+                    format!("openai_message_session:{}:tracker_sets", self.node_id);
+                cm.sadd::<_, _, ()>(&tracker_key, &key).await?;
+                cm.sadd::<_, _, ()>(&tracker_registry_key, &tracker_key)
+                    .await?;
+            }
+        }
+
+        let mut memory_cache = self.memory_cache.lock().await;
+        let entry = memory_cache.entry(key).or_default();
+        entry.extend(incoming_messages);
+
+        Ok(())
+    }
 }
 
 impl fmt::Debug for OpenAIMessageSessionCacheRef {
@@ -243,6 +334,7 @@ impl fmt::Debug for OpenAIMessageSessionCacheRef {
             .field("redis_cm", &"<TokioMutex<Option<ConnectionManager>>>")
             .field("cached_redis_url", &"<TokioMutex<Option<String>>>")
             .field("sender_bucket_map", &"<TokioMutex<HashMap<...>>>")
+            .field("default_bucket_name", &"<TokioMutex<String>>")
             .finish()
     }
 }

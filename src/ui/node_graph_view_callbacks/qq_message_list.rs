@@ -80,7 +80,7 @@ pub(crate) fn bind_qq_message_list_callbacks(
                 if let Some(serde_json::Value::Object(map)) = items.get_mut(idx) {
                     let current = map.get("type").and_then(|v| v.as_str()).unwrap_or("text");
                     let (next_type, next_data) = match current {
-                        "text" => ("at", serde_json::json!({"target": ""})),
+                        "text" => ("at", serde_json::json!({"qq": ""})),
                         "at" => ("reply", serde_json::json!({"id": 0})),
                         _ => ("text", serde_json::json!({"text": ""})),
                     };
@@ -123,7 +123,8 @@ pub(crate) fn bind_qq_message_list_callbacks(
                                 data.insert("text".to_string(), serde_json::Value::String(value.to_string()));
                             }
                             "at" => {
-                                data.insert("target".to_string(), serde_json::Value::String(value.to_string()));
+                                data.remove("target");
+                                data.insert("qq".to_string(), serde_json::Value::String(value.to_string()));
                             }
                             "reply" => {
                                 let id: i64 = value.as_str().parse().unwrap_or(0);

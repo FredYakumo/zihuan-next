@@ -147,7 +147,7 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util::{ArrayGetNode, AtQQTargetMessageNode, BooleanNotNode, ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode, JoinStringNode, JsonExtractNode, JsonParserNode, LoopBreakNode, LoopNode, LoopStateUpdateNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheSetNode, PreviewMessageListNode, PreviewStringNode, PushBackVecNode, QQMessageListDataNode, StackNode, StringDataNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
+    use crate::node::util::{ArrayGetNode, AtQQTargetMessageNode, BooleanNotNode, ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode, JoinStringNode, JsonExtractNode, JsonParserNode, LoopBreakNode, LoopNode, LoopStateUpdateNode, MessageContentNode, MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheProviderNode, OpenAIMessageSessionCacheSetNode, PreviewMessageListNode, PreviewStringNode, PushBackVecNode, QQMessageListDataNode, StackNode, StringDataNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode};
     use crate::llm::llm_api_node::LLMApiNode;
     use crate::llm::brain_node::BrainNode;
     use crate::llm::llm_infer_node::LLMInferNode;
@@ -492,10 +492,18 @@ pub fn init_node_registry() -> Result<()> {
     );
 
     register_node!(
+        "openai_message_session_cache_provider",
+        "OpenAIMessage 会话暂存器",
+        "消息存储",
+        "创建单次节点图运行期的 OpenAIMessage 会话暂存引用，支持 Redis 或内存回退",
+        OpenAIMessageSessionCacheProviderNode
+    );
+
+    register_node!(
         "openai_message_session_cache",
         "OpenAIMessage 会话暂存",
         "消息存储",
-        "按 sender_id 在单次节点图运行内暂存并累积 Vec<OpenAIMessage>，支持 Redis 或内存回退",
+        "根据缓存 Ref、sender_id 和消息列表向当前运行期会话历史追加 Vec<OpenAIMessage>",
         OpenAIMessageSessionCacheNode
     );
 
