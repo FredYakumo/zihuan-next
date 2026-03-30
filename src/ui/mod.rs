@@ -1,4 +1,5 @@
 pub mod node_graph_view;
+pub mod canvas_state;
 pub(crate) mod node_graph_view_callbacks;
 pub(crate) mod node_graph_view_clipboard;
 pub(crate) mod node_graph_view_geometry;
