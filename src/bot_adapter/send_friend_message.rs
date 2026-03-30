@@ -1,3 +1,4 @@
+use crate::bot_adapter::send_qq_message_batches::{describe_message_segments, qq_messages_from_data_value};
 use crate::bot_adapter::ws_action::{
     json_i64, qq_message_list_to_json, response_message_id, response_success, ws_send_action,
 };
@@ -44,17 +45,18 @@ impl Node for SendFriendMessageNode {
             Some(DataValue::String(s)) => s.clone(),
             _ => return Err("target_id input is required".into()),
         };
-        let messages: Vec<crate::bot_adapter::models::message::Message> = match inputs.get("message") {
-            Some(DataValue::Vec(_, items)) => items.iter().filter_map(|item| {
-                if let DataValue::QQMessage(m) = item { Some(m.clone()) } else { None }
-            }).collect(),
-            _ => return Err("message input is required".into()),
-        };
+        let messages = qq_messages_from_data_value(inputs.get("message"), "message")?;
+        let segment_summary = describe_message_segments(&messages);
 
         let params = serde_json::json!({
             "user_id": target_id,
             "message": qq_message_list_to_json(&messages),
         });
+        info!(
+            "[SendFriendMessageNode] Sending private message to {} with {}",
+            target_id,
+            segment_summary
+        );
         let response = ws_send_action(&adapter_ref, "send_private_msg", params)?;
 
         let success = response_success(&response);
@@ -65,19 +67,21 @@ impl Node for SendFriendMessageNode {
 
         if success {
             info!(
-                "[SendFriendMessageNode] Sent private message to {} (message_id={}, retcode={:?}, status={:?})",
+                "[SendFriendMessageNode] Sent private message to {} (message_id={}, retcode={:?}, status={:?}, {})",
                 target_id,
                 message_id,
                 retcode,
-                status
+                status,
+                segment_summary
             );
         } else {
             warn!(
-                "[SendFriendMessageNode] Failed to send private message to {} (retcode={:?}, status={:?}, wording={:?}, response={})",
+                "[SendFriendMessageNode] Failed to send private message to {} (retcode={:?}, status={:?}, wording={:?}, {}, response={})",
                 target_id,
                 retcode,
                 status,
                 wording,
+                segment_summary,
                 response
             );
         }
