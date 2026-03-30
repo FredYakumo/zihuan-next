@@ -3879,8 +3879,8 @@
       "to_port": "condition"
     },
     {
-      "from_node_id": "node_9",
-      "from_port": "success",
+      "from_node_id": "node_17",
+      "from_port": "terminal_tool_called",
       "to_node_id": "node_74",
       "to_port": "primary"
     },
@@ -4077,8 +4077,8 @@
       "to_port": "condition"
     },
     {
-      "from_node_id": "node_21",
-      "from_port": "success",
+      "from_node_id": "node_23",
+      "from_port": "terminal_tool_called",
       "to_node_id": "node_77",
       "to_port": "primary"
     },
