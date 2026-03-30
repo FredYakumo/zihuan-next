@@ -22,6 +22,7 @@ fn default_tool_vm() -> ToolDefinitionVm {
     ToolDefinitionVm {
         name: "new_tool".into(),
         description: "".into(),
+        terminal_on_success: false,
         params: ModelRc::new(VecModel::from(vec![default_param_vm()])),
     }
 }
@@ -66,6 +67,10 @@ fn tool_items_from_json(value: &serde_json::Value) -> Vec<ToolDefinitionVm> {
                     .and_then(|v| v.as_str())
                     .unwrap_or_default()
                     .into(),
+                terminal_on_success: tool
+                    .get("terminal_on_success")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
                 params: ModelRc::new(VecModel::from(params)),
             }
         })
@@ -92,6 +97,7 @@ fn tool_items_to_json(items: &[ToolDefinitionVm]) -> serde_json::Value {
                 serde_json::json!({
                     "name": tool.name.as_str(),
                     "description": tool.description.as_str(),
+                    "terminal_on_success": tool.terminal_on_success,
                     "parameters": params_to_json(tool.params.clone()),
                 })
             })
@@ -147,6 +153,8 @@ fn brain_output_ports(items: &[ToolDefinitionVm]) -> Vec<Port> {
             .with_description("LLM 返回的完整 assistant 消息（含 tool_calls，用于 agentic loop）"),
         Port::new("has_tool_call", DataType::Boolean)
             .with_description("LLM 返回的 assistant 消息是否包含 tool_calls，用于控制 agentic loop 继续或结束"),
+        Port::new("terminal_tool_called", DataType::Boolean)
+            .with_description("LLM 返回的 assistant 消息是否调用了标记为 terminal_on_success 的工具"),
     ];
     ports.extend(items.iter().map(|tool| {
         Port::new(tool.name.as_str(), DataType::Json)
