@@ -482,6 +482,19 @@ impl DataValue {
         }
     }
 
+    pub fn to_display_string(&self) -> String {
+        match self {
+            DataValue::String(value) | DataValue::Password(value) => value.clone(),
+            DataValue::Integer(value) => value.to_string(),
+            DataValue::Float(value) => value.to_string(),
+            DataValue::Boolean(value) => value.to_string(),
+            DataValue::BotAdapterRef(_) => "BotAdapterRef".to_string(),
+            DataValue::LoopControlRef(_) => "LoopControlRef".to_string(),
+            other => serde_json::to_string(&other.to_json())
+                .unwrap_or_else(|_| format!("{other:?}")),
+        }
+    }
+
     pub fn to_json(&self) -> Value {
         match self {
             DataValue::String(s) => Value::String(s.clone()),
