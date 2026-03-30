@@ -39,7 +39,7 @@ export component ValidationFixDialog inherits Rectangle {
             }
 
             CjkText {
-                text: "检测到以下节点定义与当前程序不符，是否自动修复？\n修复仅在内存中生效，不会保存文件。";
+                text: "检测到以下节点定义与当前程序不符，是否自动修复？\n• 未知类型的节点将被移除（含相关连线）\n• 其他端口不兼容问题将自动修正\n修复仅在内存中生效，不会保存文件。";
                 font-size: 12px;
                 color: AppTheme.text-secondary;
                 wrap: word-wrap;

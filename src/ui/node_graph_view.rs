@@ -34,6 +34,7 @@ use crate::ui::node_graph_view_inline::build_inline_inputs_from_graph;
 use crate::ui::node_graph_view_vm::apply_graph_to_ui;
 use crate::ui::selection::SelectionState;
 use crate::ui::window_state::{apply_window_state, load_window_state, save_window_state, WindowState};
+use crate::ui::canvas_state::{load_canvas_view_state, save_canvas_view_state, CanvasViewState};
 
 use crate::ui::node_render::InlinePortValue;
 
@@ -69,6 +70,7 @@ pub(crate) struct GraphTabState {
     /// Hyperparameter values for this graph – stored in a separate YAML file,
     /// not serialised into the node-graph JSON.
     pub(crate) hyperparameter_values: HashMap<String, serde_json::Value>,
+    pub(crate) canvas_view_state: CanvasViewState,
     pub(crate) is_dirty: bool,
     pub(crate) is_running: bool,
     pub(crate) stop_flag: Option<Arc<AtomicBool>>,
@@ -96,6 +98,7 @@ pub(crate) fn new_blank_tab(next_untitled: &mut usize, next_id: &mut u64) -> Gra
         selection: SelectionState::default(),
         inline_inputs: HashMap::new(),
         hyperparameter_values: HashMap::new(),
+        canvas_view_state: CanvasViewState::default(),
         is_dirty: false,
         is_running: false,
         stop_flag: None,
@@ -147,6 +150,47 @@ fn persist_window_state(window: &slint::Window) {
     }
 }
 
+pub(crate) fn capture_canvas_view_state(ui: &NodeGraphWindow) -> CanvasViewState {
+    CanvasViewState {
+        pan_x: ui.get_canvas_pan_x(),
+        pan_y: ui.get_canvas_pan_y(),
+        zoom: ui.get_canvas_zoom(),
+    }
+}
+
+pub(crate) fn apply_canvas_view_state(ui: &NodeGraphWindow, state: &CanvasViewState) {
+    ui.set_canvas_pan_x(state.pan_x);
+    ui.set_canvas_pan_y(state.pan_y);
+    ui.set_canvas_zoom(state.zoom.max(0.2));
+}
+
+pub(crate) fn sync_active_tab_canvas_state(
+    ui: &NodeGraphWindow,
+    tabs: &mut [GraphTabState],
+    active_index: usize,
+) {
+    if let Some(tab) = tabs.get_mut(active_index) {
+        tab.canvas_view_state = capture_canvas_view_state(ui);
+    }
+}
+
+pub(crate) fn persist_tab_canvas_state(tab: &GraphTabState) {
+    let Some(path) = tab.file_path.as_ref() else {
+        return;
+    };
+
+    if let Err(e) = save_canvas_view_state(path, &tab.canvas_view_state) {
+        eprintln!("Failed to save canvas state for {}: {e}", path.display());
+    }
+}
+
+fn persist_all_canvas_states(ui: &NodeGraphWindow, tabs: &mut [GraphTabState], active_index: usize) {
+    sync_active_tab_canvas_state(ui, tabs, active_index);
+    for tab in tabs.iter() {
+        persist_tab_canvas_state(tab);
+    }
+}
+
 pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: Option<&std::path::Path>) -> Result<()> {
     register_cjk_fonts();
 
@@ -158,16 +202,6 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: O
 
     if let Some(state) = load_window_state() {
         apply_window_state(&ui.window(), &state);
-    }
-
-    {
-        let ui_weak = ui.as_weak();
-        ui.window().on_close_requested(move || {
-            if let Some(ui) = ui_weak.upgrade() {
-                persist_window_state(&ui.window());
-            }
-            slint::CloseRequestResponse::HideWindow
-        });
     }
 
     let mut next_untitled_index = 1usize;
@@ -188,6 +222,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: O
             if let Some(path) = graph_file_path {
                 initial_tab.hyperparameter_values =
                     crate::util::hyperparam_store::load_hyperparameter_values(path, &initial_tab.graph);
+                initial_tab.canvas_view_state = load_canvas_view_state(path).unwrap_or_default();
                 initial_tab.file_path = Some(path.to_path_buf());
                 initial_tab.title = path
                     .file_name()
@@ -210,6 +245,21 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: O
     let next_untitled_index = Arc::new(Mutex::new(next_untitled_index));
     let next_tab_id = Arc::new(Mutex::new(next_tab_id));
     let pending_close_tab_id: Arc<Mutex<Option<u64>>> = Arc::new(Mutex::new(None));
+
+    {
+        let ui_weak = ui.as_weak();
+        let tabs_clone = Arc::clone(&tabs);
+        let active_tab_index_clone = Arc::clone(&active_tab_index);
+        ui.window().on_close_requested(move || {
+            if let Some(ui) = ui_weak.upgrade() {
+                let active_index = *active_tab_index_clone.lock().unwrap();
+                let mut tabs_guard = tabs_clone.lock().unwrap();
+                persist_all_canvas_states(&ui, &mut tabs_guard, active_index);
+                persist_window_state(&ui.window());
+            }
+            slint::CloseRequestResponse::HideWindow
+        });
+    }
 
     // Load available node types from registry
     let node_types: Vec<NodeTypeVm> = NODE_REGISTRY
@@ -274,6 +324,9 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: O
         let tabs_guard = tabs.lock().unwrap();
         let active_index = *active_tab_index.lock().unwrap();
         refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+        if let Some(tab) = tabs_guard.get(active_index) {
+            apply_canvas_view_state(&ui, &tab.canvas_view_state);
+        }
     }
 
     bind_tab_callbacks(
@@ -417,6 +470,9 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>, graph_file_path: O
 
     let run_result = ui.run();
     if run_result.is_ok() {
+        let active_index = *active_tab_index.lock().unwrap();
+        let mut tabs_guard = tabs.lock().unwrap();
+        persist_all_canvas_states(&ui, &mut tabs_guard, active_index);
         persist_window_state(&ui.window());
     }
 

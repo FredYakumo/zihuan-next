@@ -10,11 +10,13 @@ use crate::node::graph_io::{
 };
 use crate::ui::graph_window::{NodeGraphWindow, ValidationIssueVm};
 use crate::ui::node_graph_view::{
-    new_blank_tab, refresh_active_tab_ui, GraphTabState,
+    apply_canvas_view_state, new_blank_tab, persist_tab_canvas_state, refresh_active_tab_ui,
+    sync_active_tab_canvas_state, GraphTabState,
 };
 use crate::ui::node_graph_view_inline::{
     apply_inline_inputs_to_graph, build_inline_inputs_from_graph,
 };
+use crate::ui::canvas_state::load_canvas_view_state;
 use crate::util::hyperparam_store::{load_hyperparameter_values, save_hyperparameter_values};
 #[cfg(target_os = "macos")]
 use crate::ui::macos_menu::{install_menu, MenuActions};
@@ -66,23 +68,31 @@ pub(crate) fn bind_tab_callbacks(
                     return;
                 }
                 // No issues — load immediately
-                let mut tabs_guard = tabs_clone.lock().unwrap();
-                let active_index = *active_tab_clone.lock().unwrap();
-                if let Some(tab) = tabs_guard.get_mut(active_index) {
-                    tab.graph = graph.clone();
-                    tab.inline_inputs = build_inline_inputs_from_graph(&graph);
-                    tab.hyperparameter_values = load_hyperparameter_values(&selected_path, &tab.graph);
-                    tab.selection.clear();
-                    tab.file_path = Some(selected_path.clone());
-                    tab.title = selected_path
-                        .file_name()
-                        .map(|name| name.to_string_lossy().to_string())
-                        .unwrap_or_else(|| selected_path.display().to_string());
-                    tab.is_dirty = false;
-                }
-
                 if let Some(ui) = ui_handle.upgrade() {
+                    let mut tabs_guard = tabs_clone.lock().unwrap();
+                    let active_index = *active_tab_clone.lock().unwrap();
+                    sync_active_tab_canvas_state(&ui, &mut tabs_guard, active_index);
+                    if let Some(current_tab) = tabs_guard.get(active_index) {
+                        persist_tab_canvas_state(current_tab);
+                    }
+                    if let Some(tab) = tabs_guard.get_mut(active_index) {
+                        tab.graph = graph.clone();
+                        tab.inline_inputs = build_inline_inputs_from_graph(&graph);
+                        tab.hyperparameter_values = load_hyperparameter_values(&selected_path, &tab.graph);
+                        tab.canvas_view_state = load_canvas_view_state(&selected_path).unwrap_or_default();
+                        tab.selection.clear();
+                        tab.file_path = Some(selected_path.clone());
+                        tab.title = selected_path
+                            .file_name()
+                            .map(|name| name.to_string_lossy().to_string())
+                            .unwrap_or_else(|| selected_path.display().to_string());
+                        tab.is_dirty = false;
+                    }
+
                     refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+                    if let Some(tab) = tabs_guard.get(active_index) {
+                        apply_canvas_view_state(&ui, &tab.canvas_view_state);
+                    }
                 }
             }
             Err(e) => {
@@ -109,22 +119,30 @@ pub(crate) fn bind_tab_callbacks(
             None => return,
         };
         auto_fix_graph_definition(&mut graph);
-        let mut tabs_guard = tabs_for_confirm.lock().unwrap();
-        let active_index = *active_tab_for_confirm.lock().unwrap();
-        if let Some(tab) = tabs_guard.get_mut(active_index) {
-            tab.inline_inputs = build_inline_inputs_from_graph(&graph);
-            tab.hyperparameter_values = load_hyperparameter_values(&selected_path, &tab.graph);
-            tab.selection.clear();
-            tab.file_path = Some(selected_path.clone());
-            tab.title = selected_path
-                .file_name()
-                .map(|name| name.to_string_lossy().to_string())
-                .unwrap_or_else(|| selected_path.display().to_string());
-            tab.is_dirty = true; // mark dirty since we fixed but haven't saved
-            tab.graph = graph;
-        }
         if let Some(ui) = ui_handle_confirm.upgrade() {
+            let mut tabs_guard = tabs_for_confirm.lock().unwrap();
+            let active_index = *active_tab_for_confirm.lock().unwrap();
+            sync_active_tab_canvas_state(&ui, &mut tabs_guard, active_index);
+            if let Some(current_tab) = tabs_guard.get(active_index) {
+                persist_tab_canvas_state(current_tab);
+            }
+            if let Some(tab) = tabs_guard.get_mut(active_index) {
+                tab.inline_inputs = build_inline_inputs_from_graph(&graph);
+                tab.hyperparameter_values = load_hyperparameter_values(&selected_path, &graph);
+                tab.canvas_view_state = load_canvas_view_state(&selected_path).unwrap_or_default();
+                tab.selection.clear();
+                tab.file_path = Some(selected_path.clone());
+                tab.title = selected_path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().to_string())
+                    .unwrap_or_else(|| selected_path.display().to_string());
+                tab.is_dirty = true; // mark dirty since we fixed but haven't saved
+                tab.graph = graph;
+            }
             refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+            if let Some(tab) = tabs_guard.get(active_index) {
+                apply_canvas_view_state(&ui, &tab.canvas_view_state);
+            }
         }
     });
 
@@ -172,6 +190,13 @@ pub(crate) fn bind_tab_callbacks(
                 None => return false,
             };
 
+            if let Some(ui) = ui_handle.upgrade() {
+                let active_index = *active_tab_clone.lock().unwrap();
+                if active_index == tab_index {
+                    sync_active_tab_canvas_state(&ui, &mut tabs_guard, active_index);
+                }
+            }
+
             let tab = &mut tabs_guard[tab_index];
             apply_inline_inputs_to_graph(&mut tab.graph, &tab.inline_inputs);
 
@@ -191,6 +216,7 @@ pub(crate) fn bind_tab_callbacks(
                 .map(|name| name.to_string_lossy().to_string())
                 .unwrap_or_else(|| path.display().to_string());
             tab.is_dirty = false;
+            persist_tab_canvas_state(tab);
 
             if let Some(ui) = ui_handle.upgrade() {
                 let active_index = *active_tab_clone.lock().unwrap();
@@ -229,6 +255,15 @@ pub(crate) fn bind_tab_callbacks(
                 None => return,
             };
 
+            if let Some(ui) = ui_handle.upgrade() {
+                if remove_index == active_index {
+                    sync_active_tab_canvas_state(&ui, &mut tabs_guard, active_index);
+                }
+                if let Some(tab) = tabs_guard.get(remove_index) {
+                    persist_tab_canvas_state(tab);
+                }
+            }
+
             tabs_guard.remove(remove_index);
 
             if tabs_guard.is_empty() {
@@ -245,6 +280,9 @@ pub(crate) fn bind_tab_callbacks(
             *active_tab_clone.lock().unwrap() = active_index;
             if let Some(ui) = ui_handle.upgrade() {
                 refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+                if let Some(tab) = tabs_guard.get(active_index) {
+                    apply_canvas_view_state(&ui, &tab.canvas_view_state);
+                }
             }
         }
     });
@@ -300,14 +338,23 @@ pub(crate) fn bind_tab_callbacks(
     let next_tab_id_clone = Arc::clone(&next_tab_id);
     let ui_handle = ui.as_weak();
     ui.on_new_tab(move || {
-        let mut tabs_guard = tabs_clone.lock().unwrap();
-        let mut next_untitled = next_untitled_index_clone.lock().unwrap();
-        let mut next_id = next_tab_id_clone.lock().unwrap();
-        tabs_guard.push(new_blank_tab(&mut *next_untitled, &mut *next_id));
-        let active_index = tabs_guard.len() - 1;
-        *active_tab_clone.lock().unwrap() = active_index;
         if let Some(ui) = ui_handle.upgrade() {
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let previous_active = *active_tab_clone.lock().unwrap();
+            sync_active_tab_canvas_state(&ui, &mut tabs_guard, previous_active);
+            if let Some(tab) = tabs_guard.get(previous_active) {
+                persist_tab_canvas_state(tab);
+            }
+
+            let mut next_untitled = next_untitled_index_clone.lock().unwrap();
+            let mut next_id = next_tab_id_clone.lock().unwrap();
+            tabs_guard.push(new_blank_tab(&mut *next_untitled, &mut *next_id));
+            let active_index = tabs_guard.len() - 1;
+            *active_tab_clone.lock().unwrap() = active_index;
             refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+            if let Some(tab) = tabs_guard.get(active_index) {
+                apply_canvas_view_state(&ui, &tab.canvas_view_state);
+            }
         }
     });
 
@@ -375,14 +422,22 @@ pub(crate) fn bind_tab_callbacks(
         if index < 0 {
             return;
         }
-        let tabs_guard = tabs_clone.lock().unwrap();
-        let index = index as usize;
-        if index >= tabs_guard.len() {
-            return;
-        }
-        *active_tab_clone.lock().unwrap() = index;
         if let Some(ui) = ui_handle.upgrade() {
+            let mut tabs_guard = tabs_clone.lock().unwrap();
+            let index = index as usize;
+            if index >= tabs_guard.len() {
+                return;
+            }
+            let previous_active = *active_tab_clone.lock().unwrap();
+            sync_active_tab_canvas_state(&ui, &mut tabs_guard, previous_active);
+            if let Some(tab) = tabs_guard.get(previous_active) {
+                persist_tab_canvas_state(tab);
+            }
+            *active_tab_clone.lock().unwrap() = index;
             refresh_active_tab_ui(&ui, &tabs_guard, index);
+            if let Some(tab) = tabs_guard.get(index) {
+                apply_canvas_view_state(&ui, &tab.canvas_view_state);
+            }
         }
     });
 
@@ -481,6 +536,13 @@ pub(crate) fn bind_tab_callbacks(
                 None => return false,
             };
 
+            if let Some(ui) = ui_handle.upgrade() {
+                let active_index = *active_tab_clone.lock().unwrap();
+                if active_index == tab_index {
+                    sync_active_tab_canvas_state(&ui, &mut tabs_guard, active_index);
+                }
+            }
+
             let tab = &mut tabs_guard[tab_index];
             apply_inline_inputs_to_graph(&mut tab.graph, &tab.inline_inputs);
 
@@ -499,6 +561,7 @@ pub(crate) fn bind_tab_callbacks(
                 .map(|name| name.to_string_lossy().to_string())
                 .unwrap_or_else(|| path.display().to_string());
             tab.is_dirty = false;
+            persist_tab_canvas_state(tab);
 
             if let Some(ui) = ui_handle.upgrade() {
                 let active_index = *active_tab_clone.lock().unwrap();
