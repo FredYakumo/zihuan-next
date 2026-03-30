@@ -42,6 +42,8 @@ impl Node for ConditionalRouterNode {
     ];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+        self.validate_inputs(&inputs)?;
+
         let condition = match inputs.get("condition") {
             Some(DataValue::Boolean(value)) => *value,
             _ => {
@@ -172,31 +174,6 @@ mod tests {
                 if **inner == DataType::OpenAIMessage
                 && items.len() == 1
                 && matches!(&items[0], DataValue::OpenAIMessage(msg) if msg.content.as_deref() == Some("next"))
-        ));
-
-        Ok(())
-    }
-
-    #[test]
-    fn allows_missing_unselected_branch() -> Result<()> {
-        let mut node = ConditionalRouterNode::new("router", "Router");
-
-        let true_outputs = node.execute(HashMap::from([
-            ("condition".to_string(), DataValue::Boolean(true)),
-            ("primary".to_string(), DataValue::Integer(7)),
-        ]))?;
-        assert!(matches!(
-            true_outputs.get("result"),
-            Some(DataValue::Integer(7))
-        ));
-
-        let false_outputs = node.execute(HashMap::from([
-            ("condition".to_string(), DataValue::Boolean(false)),
-            ("fallback".to_string(), DataValue::String("old".to_string())),
-        ]))?;
-        assert!(matches!(
-            false_outputs.get("result"),
-            Some(DataValue::String(value)) if value == "old"
         ));
 
         Ok(())

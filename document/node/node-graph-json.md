@@ -167,21 +167,8 @@ Serialized as a JSON object with key `"Vec"`:
 | `"RedisRef"` | Redis configuration + connection manager |
 | `"MySqlRef"` | MySQL configuration + connection pool |
 | `"OpenAIMessageSessionCacheRef"` | Per-sender message history cache |
-| `"CurrentSessionRegistryRef"` | Run-scoped sender session lock registry |
-| `"CurrentSessionLeaseRef"` | Lease returned by `current_session_try_acquire` |
 | `"LLModel"` | Language model configuration |
 | `"LoopControlRef"` | Loop break signal |
-
-### Session lock nodes
-
-These built-in node types are serialized like any other `node_type` and use the domain ref types above:
-
-- `current_session_list_provider` -> outputs `session_registry_ref`, `current_sender_ids`
-- `sender_id_in_current_session` -> inputs `session_registry_ref`, `sender_id`; outputs `in_session`
-- `current_session_try_acquire` -> inputs `session_registry_ref`, `sender_id`; outputs `acquired`, `lease_ref`
-- `current_session_release` -> inputs `lease_ref`; outputs `released`
-
-`sender_id_in_current_session` is observational only. Mutual exclusion correctness should rely on `current_session_try_acquire`, which performs the lock acquisition atomically.
 
 ### Backward-compatible aliases
 

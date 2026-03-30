@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use crate::llm::tooling::FunctionTool;
 use crate::bot_adapter::adapter::SharedBotAdapter;
 use crate::bot_adapter::models::event_model::MessageEvent;
@@ -339,123 +339,6 @@ impl fmt::Debug for OpenAIMessageSessionCacheRef {
     }
 }
 
-/// Run-scoped registry of active sender sessions, used by graph-level locking nodes.
-#[derive(Clone)]
-pub struct CurrentSessionRegistryRef {
-    pub node_id: String,
-    active_sessions: Arc<Mutex<HashMap<String, u64>>>,
-    next_lease_id: Arc<AtomicU64>,
-}
-
-impl CurrentSessionRegistryRef {
-    pub fn new(node_id: impl Into<String>) -> Self {
-        Self {
-            node_id: node_id.into(),
-            active_sessions: Arc::new(Mutex::new(HashMap::new())),
-            next_lease_id: Arc::new(AtomicU64::new(1)),
-        }
-    }
-
-    pub fn clear(&self) {
-        self.active_sessions.lock().unwrap().clear();
-    }
-
-    pub fn current_sender_ids(&self) -> Vec<String> {
-        let mut sender_ids: Vec<String> = self
-            .active_sessions
-            .lock()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect();
-        sender_ids.sort();
-        sender_ids
-    }
-
-    pub fn contains_sender_id(&self, sender_id: &str) -> bool {
-        self.active_sessions.lock().unwrap().contains_key(sender_id)
-    }
-
-    pub fn try_acquire(self: &Arc<Self>, sender_id: &str) -> Option<Arc<CurrentSessionLeaseRef>> {
-        let mut active_sessions = self.active_sessions.lock().unwrap();
-        if active_sessions.contains_key(sender_id) {
-            return None;
-        }
-
-        let lease_id = self.next_lease_id.fetch_add(1, Ordering::SeqCst);
-        active_sessions.insert(sender_id.to_string(), lease_id);
-
-        Some(Arc::new(CurrentSessionLeaseRef {
-            registry: self.clone(),
-            sender_id: sender_id.to_string(),
-            lease_id,
-            released: AtomicBool::new(false),
-        }))
-    }
-
-    fn release_by_lease(&self, sender_id: &str, lease_id: u64) -> bool {
-        let mut active_sessions = self.active_sessions.lock().unwrap();
-        match active_sessions.get(sender_id).copied() {
-            Some(current_lease_id) if current_lease_id == lease_id => {
-                active_sessions.remove(sender_id);
-                true
-            }
-            _ => false,
-        }
-    }
-}
-
-impl fmt::Debug for CurrentSessionRegistryRef {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("CurrentSessionRegistryRef")
-            .field("node_id", &self.node_id)
-            .field("active_sessions", &"<Mutex<HashMap<...>>>")
-            .field("next_lease_id", &self.next_lease_id.load(Ordering::Relaxed))
-            .finish()
-    }
-}
-
-pub struct CurrentSessionLeaseRef {
-    registry: Arc<CurrentSessionRegistryRef>,
-    sender_id: String,
-    lease_id: u64,
-    released: AtomicBool,
-}
-
-impl CurrentSessionLeaseRef {
-    pub fn sender_id(&self) -> &str {
-        &self.sender_id
-    }
-
-    pub fn lease_id(&self) -> u64 {
-        self.lease_id
-    }
-
-    pub fn release(&self) -> bool {
-        if self.released.swap(true, Ordering::SeqCst) {
-            return false;
-        }
-
-        self.registry.release_by_lease(&self.sender_id, self.lease_id)
-    }
-}
-
-impl fmt::Debug for CurrentSessionLeaseRef {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("CurrentSessionLeaseRef")
-            .field("sender_id", &self.sender_id)
-            .field("lease_id", &self.lease_id)
-            .field("released", &self.released.load(Ordering::Relaxed))
-            .finish()
-    }
-}
-
-impl Drop for CurrentSessionLeaseRef {
-    fn drop(&mut self) {
-        let _ = self.release();
-    }
-}
-
 /// Shared loop control state, passed from LoopNode to LoopBreakNode via LoopControlRef ports.
 pub struct LoopControl {
     break_flag: AtomicBool,
@@ -522,8 +405,6 @@ pub enum DataType {
     RedisRef,
     MySqlRef,
     OpenAIMessageSessionCacheRef,
-    CurrentSessionRegistryRef,
-    CurrentSessionLeaseRef,
     Password,
     LLModel,
     LoopControlRef,
@@ -559,8 +440,6 @@ impl fmt::Display for DataType {
             DataType::RedisRef => write!(f, "RedisRef"),
             DataType::MySqlRef => write!(f, "MySqlRef"),
             DataType::OpenAIMessageSessionCacheRef => write!(f, "OpenAIMessageSessionCacheRef"),
-            DataType::CurrentSessionRegistryRef => write!(f, "CurrentSessionRegistryRef"),
-            DataType::CurrentSessionLeaseRef => write!(f, "CurrentSessionLeaseRef"),
             DataType::Password => write!(f, "Password"),
             DataType::LLModel => write!(f, "LLModel"),
             DataType::LoopControlRef => write!(f, "LoopControlRef"),
@@ -600,8 +479,6 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "RedisRef" => Ok(DataType::RedisRef),
                     "MySqlRef" => Ok(DataType::MySqlRef),
                     "OpenAIMessageSessionCacheRef" => Ok(DataType::OpenAIMessageSessionCacheRef),
-                    "CurrentSessionRegistryRef" => Ok(DataType::CurrentSessionRegistryRef),
-                    "CurrentSessionLeaseRef" => Ok(DataType::CurrentSessionLeaseRef),
                     "Password" => Ok(DataType::Password),
                     "LLModel" => Ok(DataType::LLModel),
                     "LoopControlRef" => Ok(DataType::LoopControlRef),
@@ -610,9 +487,8 @@ impl<'de> serde::Deserialize<'de> for DataType {
                         &["Any", "String", "Integer", "Float", "Boolean", "Json",
                               "Binary", "Vec", "MessageEvent", "OpenAIMessage", "Message",
                           "QQMessage", "FunctionTools", "BotAdapterRef", "RedisRef",
-                          "MySqlRef", "OpenAIMessageSessionCacheRef",
-                          "CurrentSessionRegistryRef", "CurrentSessionLeaseRef",
-                          "Password", "LLModel", "LoopControlRef", "Custom"],
+                          "MySqlRef", "OpenAIMessageSessionCacheRef", "Password", "LLModel",
+                          "LoopControlRef", "Custom"],
                     )),
                 }
             }
@@ -669,8 +545,6 @@ pub enum DataValue {
     RedisRef(Arc<RedisConfig>),
     MySqlRef(Arc<MySqlConfig>),
     OpenAIMessageSessionCacheRef(Arc<OpenAIMessageSessionCacheRef>),
-    CurrentSessionRegistryRef(Arc<CurrentSessionRegistryRef>),
-    CurrentSessionLeaseRef(Arc<CurrentSessionLeaseRef>),
     Password(String),
     LLModel(Arc<dyn crate::llm::llm_base::LLMBase>),
     LoopControlRef(Arc<LoopControl>),
@@ -694,8 +568,6 @@ impl DataValue {
             DataValue::RedisRef(_) => DataType::RedisRef,
             DataValue::MySqlRef(_) => DataType::MySqlRef,
             DataValue::OpenAIMessageSessionCacheRef(_) => DataType::OpenAIMessageSessionCacheRef,
-            DataValue::CurrentSessionRegistryRef(_) => DataType::CurrentSessionRegistryRef,
-            DataValue::CurrentSessionLeaseRef(_) => DataType::CurrentSessionLeaseRef,
             DataValue::Password(_) => DataType::Password,
             DataValue::LLModel(_) => DataType::LLModel,
             DataValue::LoopControlRef(_) => DataType::LoopControlRef,
@@ -709,8 +581,6 @@ impl DataValue {
             DataValue::Float(value) => value.to_string(),
             DataValue::Boolean(value) => value.to_string(),
             DataValue::BotAdapterRef(_) => "BotAdapterRef".to_string(),
-            DataValue::CurrentSessionRegistryRef(_) => "CurrentSessionRegistryRef".to_string(),
-            DataValue::CurrentSessionLeaseRef(_) => "CurrentSessionLeaseRef".to_string(),
             DataValue::LoopControlRef(_) => "LoopControlRef".to_string(),
             other => serde_json::to_string(&other.to_json())
                 .unwrap_or_else(|_| format!("{other:?}")),
@@ -779,16 +649,6 @@ impl DataValue {
                 "type": "OpenAIMessageSessionCacheRef",
                 "node_id": cache_ref.node_id,
             }),
-            DataValue::CurrentSessionRegistryRef(registry_ref) => serde_json::json!({
-                "type": "CurrentSessionRegistryRef",
-                "node_id": registry_ref.node_id,
-                "current_sender_ids": registry_ref.current_sender_ids(),
-            }),
-            DataValue::CurrentSessionLeaseRef(lease_ref) => serde_json::json!({
-                "type": "CurrentSessionLeaseRef",
-                "sender_id": lease_ref.sender_id(),
-                "lease_id": lease_ref.lease_id(),
-            }),
             DataValue::LoopControlRef(_) => Value::Null,
         }
     }
@@ -812,8 +672,6 @@ impl fmt::Debug for DataValue {
             DataValue::RedisRef(config) => f.debug_tuple("RedisRef").field(config).finish(),
             DataValue::MySqlRef(config) => f.debug_tuple("MySqlRef").field(config).finish(),
             DataValue::OpenAIMessageSessionCacheRef(cache_ref) => f.debug_tuple("OpenAIMessageSessionCacheRef").field(cache_ref).finish(),
-            DataValue::CurrentSessionRegistryRef(registry_ref) => f.debug_tuple("CurrentSessionRegistryRef").field(registry_ref).finish(),
-            DataValue::CurrentSessionLeaseRef(lease_ref) => f.debug_tuple("CurrentSessionLeaseRef").field(lease_ref).finish(),
             DataValue::Password(value) => f.debug_tuple("Password").field(value).finish(),
             DataValue::LLModel(m) => f.debug_tuple("LLModel").field(&m.get_model_name()).finish(),
             DataValue::LoopControlRef(_) => f.debug_tuple("LoopControlRef").finish(),
@@ -832,9 +690,7 @@ impl Serialize for DataValue {
 
 #[cfg(test)]
 mod tests {
-    use super::{CurrentSessionRegistryRef, DataType};
-    use std::sync::{Arc, Barrier};
-    use std::thread;
+    use super::DataType;
 
     #[test]
     fn any_type_is_compatible_with_concrete_types() {
@@ -849,46 +705,5 @@ mod tests {
         assert!(!DataType::String.is_compatible_with(&DataType::Integer));
         assert!(!DataType::Vec(Box::new(DataType::String))
             .is_compatible_with(&DataType::Vec(Box::new(DataType::Integer))));
-    }
-
-    #[test]
-    fn current_session_try_acquire_is_atomic_for_same_sender() {
-        let registry = Arc::new(CurrentSessionRegistryRef::new("registry"));
-        let barrier = Arc::new(Barrier::new(8));
-        let mut handles = Vec::new();
-
-        for _ in 0..8 {
-            let registry = registry.clone();
-            let barrier = barrier.clone();
-            handles.push(thread::spawn(move || {
-                barrier.wait();
-                registry.try_acquire("sender-1")
-            }));
-        }
-
-        let leases: Vec<_> = handles
-            .into_iter()
-            .filter_map(|handle| handle.join().ok().flatten())
-            .collect();
-
-        assert_eq!(leases.len(), 1);
-        assert!(registry.contains_sender_id("sender-1"));
-        drop(leases);
-        assert!(
-            registry.try_acquire("sender-1").is_some(),
-            "sender should be acquirable again after the prior lease drops"
-        );
-    }
-
-    #[test]
-    fn current_session_lease_drop_releases_sender() {
-        let registry = Arc::new(CurrentSessionRegistryRef::new("registry"));
-        let lease = registry
-            .try_acquire("sender-1")
-            .expect("first acquire should succeed");
-
-        assert!(registry.contains_sender_id("sender-1"));
-        drop(lease);
-        assert!(!registry.contains_sender_id("sender-1"));
     }
 }

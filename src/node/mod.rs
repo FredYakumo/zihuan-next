@@ -1,6 +1,5 @@
 use serde_json::{json, Value};
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
-use std::thread::JoinHandle;
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use log::{error, info};
 
 /// NodeType enum for distinguishing node categories
@@ -46,7 +45,6 @@ use crate::error::Result;
 
 type OutputPool = HashMap<String, HashMap<String, DataValue>>;
 type InputSourceMap = HashMap<String, HashMap<String, (String, String)>>;
-type ExecutionCallback = dyn Fn(&str, &HashMap<String, DataValue>, &HashMap<String, DataValue>) + Send + Sync;
 
 pub mod data_value;
 pub mod util;
@@ -251,10 +249,8 @@ pub struct NodeGraph {
     pub nodes: HashMap<String, Box<dyn Node>>,
     pub inline_values: HashMap<String, HashMap<String, DataValue>>,
     stop_flag: Arc<AtomicBool>,
-    execution_callback: Option<Arc<ExecutionCallback>>,
-    live_node_results: Arc<Mutex<HashMap<String, HashMap<String, DataValue>>>>,
+    execution_callback: Option<Box<dyn Fn(&str, &HashMap<String, DataValue>, &HashMap<String, DataValue>) + Send + Sync>>,
     edges: Vec<EdgeDefinition>,
-    source_definition: Option<Arc<NodeGraphDefinition>>,
 }
 
 impl NodeGraph {
@@ -264,9 +260,7 @@ impl NodeGraph {
             inline_values: HashMap::new(),
             stop_flag: Arc::new(AtomicBool::new(false)),
             execution_callback: None,
-            live_node_results: Arc::new(Mutex::new(HashMap::new())),
             edges: Vec::new(),
-            source_definition: None,
         }
     }
 
@@ -274,11 +268,7 @@ impl NodeGraph {
     where
         F: Fn(&str, &HashMap<String, DataValue>, &HashMap<String, DataValue>) + Send + Sync + 'static,
     {
-        self.execution_callback = Some(Arc::new(callback));
-    }
-
-    pub fn set_source_definition(&mut self, definition: NodeGraphDefinition) {
-        self.source_definition = Some(Arc::new(definition));
+        self.execution_callback = Some(Box::new(callback));
     }
 
     pub fn set_edges(&mut self, edges: Vec<EdgeDefinition>) {
@@ -330,7 +320,9 @@ impl NodeGraph {
         Ok(())
     }
 
-    fn initialize_nodes_for_execution(&mut self) -> Result<()> {
+    fn prepare_for_execution(&mut self) -> Result<()> {
+        self.stop_flag.store(false, Ordering::Relaxed);
+
         for (node_id, node) in self.nodes.iter_mut() {
             node.on_graph_start().map_err(|e| {
                 crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
@@ -338,69 +330,6 @@ impl NodeGraph {
         }
 
         Ok(())
-    }
-
-    fn clear_live_node_results(&self) {
-        self.live_node_results.lock().unwrap().clear();
-    }
-
-    fn snapshot_live_node_results(&self) -> HashMap<String, HashMap<String, DataValue>> {
-        self.live_node_results.lock().unwrap().clone()
-    }
-
-    fn prepare_for_execution(&mut self) -> Result<()> {
-        self.stop_flag.store(false, Ordering::Relaxed);
-        self.clear_live_node_results();
-        self.initialize_nodes_for_execution()
-    }
-
-    fn sanitize_for_recording(value: &DataValue) -> Option<DataValue> {
-        match value {
-            DataValue::CurrentSessionLeaseRef(_) => None,
-            DataValue::Vec(inner, items) => Some(DataValue::Vec(
-                inner.clone(),
-                items
-                    .iter()
-                    .filter_map(Self::sanitize_for_recording)
-                    .collect(),
-            )),
-            other => Some(other.clone()),
-        }
-    }
-
-    fn sanitize_map_for_recording(
-        values: &HashMap<String, DataValue>,
-    ) -> HashMap<String, DataValue> {
-        values
-            .iter()
-            .filter_map(|(key, value)| {
-                Self::sanitize_for_recording(value).map(|sanitized| (key.clone(), sanitized))
-            })
-            .collect()
-    }
-
-    fn record_node_execution(
-        &self,
-        node_id: &str,
-        inputs: &HashMap<String, DataValue>,
-        outputs: &HashMap<String, DataValue>,
-    ) {
-        let sanitized_inputs = Self::sanitize_map_for_recording(inputs);
-        let sanitized_outputs = Self::sanitize_map_for_recording(outputs);
-
-        let mut combined = sanitized_inputs.clone();
-        for (key, value) in &sanitized_outputs {
-            combined.insert(key.clone(), value.clone());
-        }
-
-        self.live_node_results
-            .lock()
-            .unwrap()
-            .insert(node_id.to_string(), combined);
-
-        if let Some(cb) = &self.execution_callback {
-            cb(node_id, &sanitized_inputs, &sanitized_outputs);
-        }
     }
 
     pub fn execute(&mut self) -> Result<()> {
@@ -518,8 +447,7 @@ impl NodeGraph {
                 )? else {
                     continue;
                 };
-                let outputs = node.execute(inputs.clone())?;
-                self.record_node_execution(&node_id, &inputs, &outputs);
+                let outputs = node.execute(inputs)?;
                 for (key, value) in outputs {
                     if data_pool.contains_key(&key) {
                         return Err(crate::error::Error::ValidationError(format!(
@@ -577,8 +505,7 @@ impl NodeGraph {
             )? else {
                 continue;
             };
-            let outputs = node.execute(inputs.clone())?;
-            self.record_node_execution(node_id, &inputs, &outputs);
+            let outputs = node.execute(inputs)?;
             for (key, value) in outputs {
                 if base_data_pool.contains_key(&key) {
                     return Err(crate::error::Error::ValidationError(format!(
@@ -603,22 +530,14 @@ impl NodeGraph {
         event_producer_roots.sort();
 
         for root_id in event_producer_roots {
-            if self.source_definition.is_some() {
-                self.dispatch_root_event_producer(
-                    &root_id,
-                    &base_data_pool,
-                    &output_producers,
-                )?;
-            } else {
-                self.run_event_producer(
-                    &root_id,
-                    &base_data_pool,
-                    &output_producers,
-                    &reachable_map,
-                    &event_producer_set,
-                    &ordered,
-                )?;
-            }
+            self.run_event_producer(
+                &root_id,
+                &base_data_pool,
+                &output_producers,
+                &reachable_map,
+                &event_producer_set,
+                &ordered,
+            )?;
         }
 
         Ok(())
@@ -630,13 +549,13 @@ impl NodeGraph {
         
         // Try to execute, if error occurs, return early with error info
         match self.execute_and_capture_results_internal(&mut node_results) {
-            Ok(()) => ExecutionResult::success(self.snapshot_live_node_results()),
+            Ok(()) => ExecutionResult::success(node_results),
             Err(e) => {
                 // Extract node ID from error if possible
                 let error_msg = e.to_string();
                 let error_node_id = self.extract_error_node_id(&error_msg);
                 ExecutionResult::with_error(
-                    self.snapshot_live_node_results(),
+                    node_results,
                     error_node_id.unwrap_or_else(|| "unknown".to_string()),
                     error_msg,
                 )
@@ -780,8 +699,15 @@ impl NodeGraph {
                     continue;
                 };
                 
+                let inputs_clone = if self.execution_callback.is_some() { Some(inputs.clone()) } else { None };
+
                 let outputs = node.execute(inputs.clone())?;
-                self.record_node_execution(&node_id, &inputs, &outputs);
+                
+                if let Some(cb) = &self.execution_callback {
+                    if let Some(inp) = inputs_clone {
+                        cb(&node_id, &inp, &outputs);
+                    }
+                }
                 
                 // Store both inputs and outputs for this node
                 let mut result = inputs;
@@ -924,6 +850,7 @@ impl NodeGraph {
                     continue;
                 };
 
+                let inputs_clone = if self.execution_callback.is_some() { Some(inputs.clone()) } else { None };
                 let outputs = {
                     let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
                         crate::error::Error::ValidationError(format!(
@@ -931,9 +858,14 @@ impl NodeGraph {
                             node_id
                         ))
                     })?;
-                    node.execute(inputs.clone())?
+                    node.execute(inputs)?
                 };
-                self.record_node_execution(&node_id, &inputs, &outputs);
+
+                if let Some(cb) = &self.execution_callback {
+                    if let Some(inp) = inputs_clone {
+                        cb(&node_id, &inp, &outputs);
+                    }
+                }
 
                 self.insert_outputs(&mut data_pool, &node_id, outputs);
             }
@@ -998,9 +930,8 @@ impl NodeGraph {
                         node_id
                     ))
                 })?;
-                node.execute(inputs.clone())?
+                node.execute(inputs)?
             };
-            self.record_node_execution(node_id, &inputs, &outputs);
             self.insert_outputs(&mut base_data_pool, node_id, outputs);
         }
 
@@ -1018,23 +949,15 @@ impl NodeGraph {
         event_producer_roots.sort();
 
         for root_id in event_producer_roots {
-            if self.source_definition.is_some() {
-                self.dispatch_root_event_producer_with_edges(
-                    &root_id,
-                    &base_data_pool,
-                    &input_sources,
-                )?;
-            } else {
-                self.run_event_producer_with_edges(
-                    &root_id,
-                    &base_data_pool,
-                    &reachable_map,
-                    &event_producer_set,
-                    &ordered,
-                    &connected_nodes,
-                    &input_sources,
-                )?;
-            }
+            self.run_event_producer_with_edges(
+                &root_id,
+                &base_data_pool,
+                &reachable_map,
+                &event_producer_set,
+                &ordered,
+                &connected_nodes,
+                &input_sources,
+            )?;
         }
 
         Ok(())
@@ -1159,6 +1082,7 @@ impl NodeGraph {
                     continue;
                 };
 
+                let inputs_clone = if self.execution_callback.is_some() { Some(inputs.clone()) } else { None };
                 let outputs = {
                     let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
                         crate::error::Error::ValidationError(format!(
@@ -1168,7 +1092,12 @@ impl NodeGraph {
                     })?;
                     node.execute(inputs.clone())?
                 };
-                self.record_node_execution(&node_id, &inputs, &outputs);
+
+                if let Some(cb) = &self.execution_callback {
+                    if let Some(inp) = inputs_clone {
+                        cb(&node_id, &inp, &outputs);
+                    }
+                }
 
                 let mut result = inputs;
                 result.extend(outputs.iter().map(|(k, v)| (k.clone(), v.clone())));
@@ -1334,605 +1263,6 @@ impl NodeGraph {
         Ok(Some(inputs))
     }
 
-    fn build_worker_graph_from_definition(
-        definition: Arc<NodeGraphDefinition>,
-        execution_callback: Option<Arc<ExecutionCallback>>,
-        live_node_results: Arc<Mutex<HashMap<String, HashMap<String, DataValue>>>>,
-        stop_flag: Arc<AtomicBool>,
-    ) -> Result<NodeGraph> {
-        let mut graph = crate::node::registry::build_node_graph_from_definition(definition.as_ref())?;
-        graph.execution_callback = execution_callback;
-        graph.live_node_results = live_node_results;
-        graph.stop_flag = stop_flag;
-        graph.source_definition = None;
-        graph.initialize_nodes_for_execution()?;
-        Ok(graph)
-    }
-
-    fn log_worker_result(result: std::thread::Result<Result<()>>) {
-        match result {
-            Ok(Ok(())) => {}
-            Ok(Err(err)) => {
-                error!("Event worker failed: {}", err);
-            }
-            Err(_) => {
-                error!("Event worker panicked");
-            }
-        }
-    }
-
-    fn reap_worker_handles(handles: &mut Vec<JoinHandle<Result<()>>>) {
-        let mut index = 0;
-        while index < handles.len() {
-            if handles[index].is_finished() {
-                let handle = handles.remove(index);
-                Self::log_worker_result(handle.join());
-            } else {
-                index += 1;
-            }
-        }
-    }
-
-    fn join_worker_handles(handles: Vec<JoinHandle<Result<()>>>) {
-        for handle in handles {
-            Self::log_worker_result(handle.join());
-        }
-    }
-
-    fn execute_from_root_event_with_edges(
-        &mut self,
-        root_id: &str,
-        base_data_pool: &OutputPool,
-        root_outputs: HashMap<String, DataValue>,
-    ) -> Result<()> {
-        let (connected_nodes, dependents, dependencies, input_sources) = self.build_edge_maps()?;
-
-        let mut in_degree: HashMap<String, usize> = HashMap::new();
-        for node_id in self.nodes.keys() {
-            in_degree.insert(node_id.clone(), 0);
-        }
-
-        for (node_id, deps) in &dependencies {
-            if let Some(count) = in_degree.get_mut(node_id) {
-                *count += deps.len();
-            }
-        }
-
-        let mut ready: Vec<String> = in_degree
-            .iter()
-            .filter_map(|(id, degree)| if *degree == 0 { Some(id.clone()) } else { None })
-            .collect();
-        ready.sort();
-
-        let mut ordered: Vec<String> = Vec::with_capacity(self.nodes.len());
-        while !ready.is_empty() {
-            let node_id = ready.remove(0);
-            ordered.push(node_id.clone());
-
-            if let Some(next_nodes) = dependents.get(&node_id) {
-                for next_id in next_nodes {
-                    if let Some(count) = in_degree.get_mut(next_id) {
-                        *count = count.saturating_sub(1);
-                        if *count == 0 {
-                            ready.push(next_id.clone());
-                        }
-                    }
-                }
-                ready.sort();
-            }
-        }
-
-        let event_producer_set: HashSet<String> = self
-            .nodes
-            .iter()
-            .filter_map(|(id, node)| {
-                if node.node_type() == NodeType::EventProducer {
-                    Some(id.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        let mut reachable_map: HashMap<String, HashSet<String>> = HashMap::new();
-        for event_id in &event_producer_set {
-            let mut visited: HashSet<String> = HashSet::new();
-            let mut stack: Vec<String> = vec![event_id.clone()];
-            while let Some(current) = stack.pop() {
-                if !visited.insert(current.clone()) {
-                    continue;
-                }
-                if let Some(children) = dependents.get(&current) {
-                    for child in children {
-                        if !visited.contains(child) {
-                            stack.push(child.clone());
-                        }
-                    }
-                }
-            }
-            reachable_map.insert(event_id.clone(), visited);
-        }
-
-        let reachable = reachable_map
-            .get(root_id)
-            .cloned()
-            .unwrap_or_default();
-
-        let mut event_pool = base_data_pool.clone();
-        self.insert_outputs(&mut event_pool, root_id, root_outputs);
-
-        let mut skipped: HashSet<String> = HashSet::new();
-        for ordered_id in &ordered {
-            if ordered_id == root_id {
-                continue;
-            }
-            if skipped.contains(ordered_id) {
-                continue;
-            }
-            if !reachable.contains(ordered_id) {
-                continue;
-            }
-            if !connected_nodes.contains(ordered_id) {
-                continue;
-            }
-
-            if event_producer_set.contains(ordered_id) {
-                let ran = self.run_event_producer_with_edges(
-                    ordered_id,
-                    &event_pool,
-                    &reachable_map,
-                    &event_producer_set,
-                    &ordered,
-                    &connected_nodes,
-                    &input_sources,
-                )?;
-                if ran {
-                    if let Some(skip_set) = reachable_map.get(ordered_id) {
-                        skipped.extend(skip_set.iter().cloned());
-                    }
-                }
-                continue;
-            }
-
-            let inputs = {
-                let node = self.nodes.get(ordered_id).ok_or_else(|| {
-                    crate::error::Error::ValidationError(format!(
-                        "Node '{}' not found during execution",
-                        ordered_id
-                    ))
-                })?;
-                self.collect_inputs_with_edges_if_available(
-                    node.as_ref(),
-                    &event_pool,
-                    &input_sources,
-                    ordered_id,
-                    self.inline_values.get(ordered_id),
-                )?
-            };
-
-            let Some(inputs) = inputs else {
-                continue;
-            };
-
-            let outputs = {
-                let node = self.nodes.get_mut(ordered_id).ok_or_else(|| {
-                    crate::error::Error::ValidationError(format!(
-                        "Node '{}' not found during execution",
-                        ordered_id
-                    ))
-                })?;
-                node.execute(inputs.clone()).map_err(|e| {
-                    crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", ordered_id, e))
-                })?
-            };
-
-            self.record_node_execution(ordered_id, &inputs, &outputs);
-            self.insert_outputs(&mut event_pool, ordered_id, outputs);
-        }
-
-        Ok(())
-    }
-
-    fn execute_from_root_event_implicit(
-        &mut self,
-        root_id: &str,
-        base_data_pool: &HashMap<String, DataValue>,
-        root_outputs: HashMap<String, DataValue>,
-    ) -> Result<()> {
-        let mut output_producers: HashMap<String, String> = HashMap::new();
-        for (node_id, node) in &self.nodes {
-            for port in node.output_ports() {
-                if let Some(existing) = output_producers.insert(port.name.clone(), node_id.clone()) {
-                    return Err(crate::error::Error::ValidationError(format!(
-                        "Output port '{}' is produced by both '{}' and '{}'",
-                        port.name, existing, node_id
-                    )));
-                }
-            }
-        }
-
-        let mut in_degree: HashMap<String, usize> = HashMap::new();
-        let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
-        let mut dependencies: HashMap<String, Vec<String>> = HashMap::new();
-
-        for node_id in self.nodes.keys() {
-            in_degree.insert(node_id.clone(), 0);
-        }
-
-        for (node_id, node) in &self.nodes {
-            for port in node.input_ports() {
-                if let Some(producer) = output_producers.get(&port.name) {
-                    if producer != node_id {
-                        dependencies.entry(node_id.clone()).or_default().push(producer.clone());
-                        dependents.entry(producer.clone()).or_default().push(node_id.clone());
-                        if let Some(count) = in_degree.get_mut(node_id) {
-                            *count += 1;
-                        }
-                    }
-                }
-            }
-        }
-
-        let mut ready: Vec<String> = in_degree
-            .iter()
-            .filter_map(|(id, degree)| if *degree == 0 { Some(id.clone()) } else { None })
-            .collect();
-        ready.sort();
-
-        let mut ordered: Vec<String> = Vec::with_capacity(self.nodes.len());
-        while !ready.is_empty() {
-            let node_id = ready.remove(0);
-            ordered.push(node_id.clone());
-
-            if let Some(next_nodes) = dependents.get(&node_id) {
-                for next_id in next_nodes {
-                    if let Some(count) = in_degree.get_mut(next_id) {
-                        *count = count.saturating_sub(1);
-                        if *count == 0 {
-                            ready.push(next_id.clone());
-                        }
-                    }
-                }
-                ready.sort();
-            }
-        }
-
-        let event_producer_set: HashSet<String> = self
-            .nodes
-            .iter()
-            .filter_map(|(id, node)| {
-                if node.node_type() == NodeType::EventProducer {
-                    Some(id.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        let mut reachable_map: HashMap<String, HashSet<String>> = HashMap::new();
-        for event_id in &event_producer_set {
-            let mut visited: HashSet<String> = HashSet::new();
-            let mut stack: Vec<String> = vec![event_id.clone()];
-            while let Some(current) = stack.pop() {
-                if !visited.insert(current.clone()) {
-                    continue;
-                }
-                if let Some(children) = dependents.get(&current) {
-                    for child in children {
-                        if !visited.contains(child) {
-                            stack.push(child.clone());
-                        }
-                    }
-                }
-            }
-            reachable_map.insert(event_id.clone(), visited);
-        }
-
-        let reachable = reachable_map
-            .get(root_id)
-            .cloned()
-            .unwrap_or_default();
-
-        let mut event_pool = base_data_pool.clone();
-        for (key, value) in root_outputs {
-            event_pool.insert(key, value);
-        }
-
-        let mut skipped: HashSet<String> = HashSet::new();
-        for ordered_id in &ordered {
-            if ordered_id == root_id {
-                continue;
-            }
-            if skipped.contains(ordered_id) {
-                continue;
-            }
-            if !reachable.contains(ordered_id) {
-                continue;
-            }
-
-            if event_producer_set.contains(ordered_id) {
-                let ran = self.run_event_producer(
-                    ordered_id,
-                    &event_pool,
-                    &output_producers,
-                    &reachable_map,
-                    &event_producer_set,
-                    &ordered,
-                )?;
-                if ran {
-                    if let Some(skip_set) = reachable_map.get(ordered_id) {
-                        skipped.extend(skip_set.iter().cloned());
-                    }
-                }
-                continue;
-            }
-
-            let node = self.nodes.get_mut(ordered_id).ok_or_else(|| {
-                crate::error::Error::ValidationError(format!(
-                    "Node '{}' not found during execution",
-                    ordered_id
-                ))
-            })?;
-
-            let Some(inputs) = Self::collect_inputs_if_available(
-                node.as_ref(),
-                &event_pool,
-                &output_producers,
-                ordered_id,
-                self.inline_values.get(ordered_id),
-            )? else {
-                continue;
-            };
-
-            let outputs = node.execute(inputs.clone()).map_err(|e| {
-                crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", ordered_id, e))
-            })?;
-            self.record_node_execution(&ordered_id, &inputs, &outputs);
-
-            for (key, value) in outputs {
-                if event_pool.contains_key(&key) {
-                    return Err(crate::error::Error::ValidationError(format!(
-                        "Output key '{}' from node '{}' conflicts with existing data",
-                        key, ordered_id
-                    )));
-                }
-                event_pool.insert(key, value);
-            }
-        }
-
-        Ok(())
-    }
-
-    fn dispatch_root_event_producer_with_edges(
-        &mut self,
-        node_id: &str,
-        base_data_pool: &OutputPool,
-        input_sources: &InputSourceMap,
-    ) -> Result<bool> {
-        let definition = self.source_definition.clone().ok_or_else(|| {
-            crate::error::Error::ValidationError(
-                "concurrent event dispatch requires source graph definition".to_string(),
-            )
-        })?;
-
-        {
-            let inputs = {
-                let node = self.nodes.get(node_id).ok_or_else(|| {
-                    crate::error::Error::ValidationError(format!(
-                        "Node '{}' not found during execution",
-                        node_id
-                    ))
-                })?;
-                self.collect_inputs_with_edges_if_available(
-                    node.as_ref(),
-                    base_data_pool,
-                    input_sources,
-                    node_id,
-                    self.inline_values.get(node_id),
-                )?
-            };
-
-            let Some(inputs) = inputs else {
-                return Ok(false);
-            };
-
-            let node = self.nodes.get_mut(node_id).ok_or_else(|| {
-                crate::error::Error::ValidationError(format!(
-                    "Node '{}' not found during execution",
-                    node_id
-                ))
-            })?;
-            node.on_start(inputs).map_err(|e| {
-                crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
-            })?;
-            node.set_stop_flag(Arc::clone(&self.stop_flag));
-        }
-
-        let mut worker_handles: Vec<JoinHandle<Result<()>>> = Vec::new();
-        loop {
-            if self.stop_flag.load(Ordering::Relaxed) {
-                info!("Event producer '{}' stopped by user request", node_id);
-                break;
-            }
-
-            let outputs = {
-                let node = self.nodes.get_mut(node_id).ok_or_else(|| {
-                    crate::error::Error::ValidationError(format!(
-                        "Node '{}' not found during execution",
-                        node_id
-                    ))
-                })?;
-
-                let update_result = node.on_update().map_err(|e| {
-                    crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
-                });
-                let update_result = match update_result {
-                    Ok(value) => value,
-                    Err(err) => {
-                        if self.stop_current_event_producer_on_error(node_id, &err) {
-                            break;
-                        }
-                        return Err(err);
-                    }
-                };
-                match update_result {
-                    Some(outputs) => {
-                        node.validate_outputs(&outputs)?;
-                        outputs
-                    }
-                    None => break,
-                }
-            };
-
-            self.record_node_execution(node_id, &HashMap::new(), &outputs);
-
-            let worker_definition = definition.clone();
-            let worker_callback = self.execution_callback.clone();
-            let worker_live_results = Arc::clone(&self.live_node_results);
-            let worker_stop_flag = Arc::clone(&self.stop_flag);
-            let worker_root_id = node_id.to_string();
-            let worker_base_data_pool = base_data_pool.clone();
-            let worker_outputs = outputs;
-
-            worker_handles.push(std::thread::spawn(move || {
-                let mut worker_graph = Self::build_worker_graph_from_definition(
-                    worker_definition,
-                    worker_callback,
-                    worker_live_results,
-                    worker_stop_flag,
-                )?;
-                worker_graph.execute_from_root_event_with_edges(
-                    &worker_root_id,
-                    &worker_base_data_pool,
-                    worker_outputs,
-                )
-            }));
-            Self::reap_worker_handles(&mut worker_handles);
-        }
-
-        Self::join_worker_handles(worker_handles);
-
-        let node = self.nodes.get_mut(node_id).ok_or_else(|| {
-            crate::error::Error::ValidationError(format!(
-                "Node '{}' not found during cleanup",
-                node_id
-            ))
-        })?;
-        node.on_cleanup()?;
-
-        Ok(true)
-    }
-
-    fn dispatch_root_event_producer(
-        &mut self,
-        node_id: &str,
-        base_data_pool: &HashMap<String, DataValue>,
-        output_producers: &HashMap<String, String>,
-    ) -> Result<bool> {
-        let definition = self.source_definition.clone().ok_or_else(|| {
-            crate::error::Error::ValidationError(
-                "concurrent event dispatch requires source graph definition".to_string(),
-            )
-        })?;
-
-        {
-            let node = self.nodes.get_mut(node_id).ok_or_else(|| {
-                crate::error::Error::ValidationError(format!(
-                    "Node '{}' not found during execution",
-                    node_id
-                ))
-            })?;
-
-            let Some(inputs) = Self::collect_inputs_if_available(
-                node.as_ref(),
-                base_data_pool,
-                output_producers,
-                node_id,
-                self.inline_values.get(node_id),
-            )? else {
-                return Ok(false);
-            };
-            node.on_start(inputs).map_err(|e| {
-                crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
-            })?;
-            node.set_stop_flag(Arc::clone(&self.stop_flag));
-        }
-
-        let mut worker_handles: Vec<JoinHandle<Result<()>>> = Vec::new();
-        loop {
-            if self.stop_flag.load(Ordering::Relaxed) {
-                info!("Event producer '{}' stopped by user request", node_id);
-                break;
-            }
-
-            let outputs = {
-                let node = self.nodes.get_mut(node_id).ok_or_else(|| {
-                    crate::error::Error::ValidationError(format!(
-                        "Node '{}' not found during execution",
-                        node_id
-                    ))
-                })?;
-
-                let update_result = node.on_update().map_err(|e| {
-                    crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
-                });
-                let update_result = match update_result {
-                    Ok(value) => value,
-                    Err(err) => {
-                        if self.stop_current_event_producer_on_error(node_id, &err) {
-                            break;
-                        }
-                        return Err(err);
-                    }
-                };
-                match update_result {
-                    Some(outputs) => {
-                        node.validate_outputs(&outputs)?;
-                        outputs
-                    }
-                    None => break,
-                }
-            };
-
-            self.record_node_execution(node_id, &HashMap::new(), &outputs);
-
-            let worker_definition = definition.clone();
-            let worker_callback = self.execution_callback.clone();
-            let worker_live_results = Arc::clone(&self.live_node_results);
-            let worker_stop_flag = Arc::clone(&self.stop_flag);
-            let worker_root_id = node_id.to_string();
-            let worker_base_data_pool = base_data_pool.clone();
-            let worker_outputs = outputs;
-
-            worker_handles.push(std::thread::spawn(move || {
-                let mut worker_graph = Self::build_worker_graph_from_definition(
-                    worker_definition,
-                    worker_callback,
-                    worker_live_results,
-                    worker_stop_flag,
-                )?;
-                worker_graph.execute_from_root_event_implicit(
-                    &worker_root_id,
-                    &worker_base_data_pool,
-                    worker_outputs,
-                )
-            }));
-            Self::reap_worker_handles(&mut worker_handles);
-        }
-
-        Self::join_worker_handles(worker_handles);
-
-        let node = self.nodes.get_mut(node_id).ok_or_else(|| {
-            crate::error::Error::ValidationError(format!(
-                "Node '{}' not found during cleanup",
-                node_id
-            ))
-        })?;
-        node.on_cleanup()?;
-
-        Ok(true)
-    }
-
     fn run_event_producer_with_edges(
         &mut self,
         node_id: &str,
@@ -2017,7 +1347,9 @@ impl NodeGraph {
                 }
             };
 
-            self.record_node_execution(node_id, &HashMap::new(), &outputs);
+            if let Some(cb) = &self.execution_callback {
+                cb(node_id, &HashMap::new(), &outputs);
+            }
 
             let mut event_pool = base_data_pool.clone();
             self.insert_outputs(&mut event_pool, node_id, outputs);
@@ -2075,6 +1407,7 @@ impl NodeGraph {
                     continue;
                 };
 
+                let inputs_clone = if self.execution_callback.is_some() { Some(inputs.clone()) } else { None };
                 let outputs = {
                     let node = self.nodes.get_mut(ordered_id).ok_or_else(|| {
                         crate::error::Error::ValidationError(format!(
@@ -2082,7 +1415,7 @@ impl NodeGraph {
                             ordered_id
                         ))
                     })?;
-                    let exec_result = node.execute(inputs.clone()).map_err(|e| {
+                    let exec_result = node.execute(inputs).map_err(|e| {
                         crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", ordered_id, e))
                     });
                     match exec_result {
@@ -2095,7 +1428,12 @@ impl NodeGraph {
                         }
                     }
                 };
-                self.record_node_execution(ordered_id, &inputs, &outputs);
+
+                if let Some(cb) = &self.execution_callback {
+                    if let Some(inp) = inputs_clone {
+                        cb(ordered_id, &inp, &outputs);
+                    }
+                }
 
                 self.insert_outputs(&mut event_pool, ordered_id, outputs);
             }
@@ -2184,7 +1522,9 @@ impl NodeGraph {
                 }
             };
 
-            self.record_node_execution(node_id, &HashMap::new(), &outputs);
+            if let Some(cb) = &self.execution_callback {
+                cb(node_id, &HashMap::new(), &outputs);
+            }
 
             let mut event_pool = base_data_pool.clone();
             for (key, value) in outputs {
@@ -2237,7 +1577,9 @@ impl NodeGraph {
                     continue;
                 };
                 
-                let exec_result = node.execute(inputs.clone()).map_err(|e| {
+                let inputs_clone = if self.execution_callback.is_some() { Some(inputs.clone()) } else { None };
+
+                let exec_result = node.execute(inputs).map_err(|e| {
                     crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", ordered_id, e))
                 });
                 let outputs = match exec_result {
@@ -2249,7 +1591,12 @@ impl NodeGraph {
                         return Err(err);
                     }
                 };
-                self.record_node_execution(ordered_id, &inputs, &outputs);
+                
+                if let Some(cb) = &self.execution_callback {
+                    if let Some(inp) = inputs_clone {
+                        cb(ordered_id, &inp, &outputs);
+                    }
+                }
 
                 for (key, value) in outputs {
                     if event_pool.contains_key(&key) {
@@ -2298,17 +1645,10 @@ impl Default for NodeGraph {
 
 #[cfg(test)]
 mod tests {
-    use super::{DataType, DataValue, EdgeDefinition, ExecutionResult, Node, NodeGraph, NodeType, Port};
+    use super::{DataType, DataValue, EdgeDefinition, ExecutionResult, Node, NodeGraph, Port};
     use crate::error::Result;
-    use crate::node::graph_io::{load_graph_definition_from_json, NodeGraphDefinition};
-    use crate::node::registry::{build_node_graph_from_definition, init_node_registry, NODE_REGISTRY};
     use crate::node::util::SwitchNode;
-    use once_cell::sync::Lazy;
     use std::collections::HashMap;
-    use std::path::PathBuf;
-    use std::sync::{Arc, Mutex, Once};
-    use std::thread;
-    use std::time::Duration;
 
     struct StaticOutputNode {
         id: String,
@@ -2436,164 +1776,6 @@ mod tests {
 
     fn assert_success(result: &ExecutionResult) {
         assert!(result.error_message.is_none(), "unexpected execution error: {:?}", result.error_message);
-    }
-
-    #[derive(Debug, Default)]
-    struct DispatchStats {
-        in_flight: usize,
-        max_in_flight: usize,
-        seen_sender_ids: Vec<String>,
-    }
-
-    static TEST_DISPATCH_STATS: Lazy<Mutex<DispatchStats>> =
-        Lazy::new(|| Mutex::new(DispatchStats::default()));
-    static TEST_DISPATCH_NODE_REGISTRATION: Once = Once::new();
-
-    fn ensure_test_dispatch_nodes_registered() {
-        TEST_DISPATCH_NODE_REGISTRATION.call_once(|| {
-            NODE_REGISTRY
-                .register(
-                    "__test_full_concurrent_event_producer",
-                    "Test Concurrent Producer",
-                    "test",
-                    "test root event producer",
-                    Arc::new(|id: String, name: String| {
-                        Box::new(TestConcurrentEventProducerNode::new(id, name))
-                    }),
-                )
-                .unwrap();
-            NODE_REGISTRY
-                .register(
-                    "__test_full_concurrent_sleep_sink",
-                    "Test Concurrent Sleep Sink",
-                    "test",
-                    "test sink that records in-flight worker count",
-                    Arc::new(|id: String, name: String| {
-                        Box::new(TestConcurrentSleepSinkNode::new(id, name))
-                    }),
-                )
-                .unwrap();
-        });
-    }
-
-    fn reset_dispatch_stats() {
-        *TEST_DISPATCH_STATS.lock().unwrap() = DispatchStats::default();
-    }
-
-    struct TestConcurrentEventProducerNode {
-        id: String,
-        name: String,
-        emitted: usize,
-    }
-
-    impl TestConcurrentEventProducerNode {
-        fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
-            Self {
-                id: id.into(),
-                name: name.into(),
-                emitted: 0,
-            }
-        }
-    }
-
-    impl Node for TestConcurrentEventProducerNode {
-        fn node_type(&self) -> NodeType {
-            NodeType::EventProducer
-        }
-
-        fn id(&self) -> &str {
-            &self.id
-        }
-
-        fn name(&self) -> &str {
-            &self.name
-        }
-
-        fn input_ports(&self) -> Vec<Port> {
-            Vec::new()
-        }
-
-        fn output_ports(&self) -> Vec<Port> {
-            vec![Port::new("sender_id", DataType::String)]
-        }
-
-        fn execute(&mut self, _inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
-            Ok(HashMap::new())
-        }
-
-        fn on_start(&mut self, _inputs: HashMap<String, DataValue>) -> Result<()> {
-            self.emitted = 0;
-            Ok(())
-        }
-
-        fn on_update(&mut self) -> Result<Option<HashMap<String, DataValue>>> {
-            if self.emitted >= 2 {
-                return Ok(None);
-            }
-
-            self.emitted += 1;
-            Ok(Some(HashMap::from([(
-                "sender_id".to_string(),
-                DataValue::String("same-sender".to_string()),
-            )])))
-        }
-    }
-
-    struct TestConcurrentSleepSinkNode {
-        id: String,
-        name: String,
-    }
-
-    impl TestConcurrentSleepSinkNode {
-        fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
-            Self {
-                id: id.into(),
-                name: name.into(),
-            }
-        }
-    }
-
-    impl Node for TestConcurrentSleepSinkNode {
-        fn id(&self) -> &str {
-            &self.id
-        }
-
-        fn name(&self) -> &str {
-            &self.name
-        }
-
-        fn input_ports(&self) -> Vec<Port> {
-            vec![Port::new("sender_id", DataType::String)]
-        }
-
-        fn output_ports(&self) -> Vec<Port> {
-            vec![Port::new("done", DataType::Boolean)]
-        }
-
-        fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
-            self.validate_inputs(&inputs)?;
-
-            let sender_id = match inputs.get("sender_id") {
-                Some(DataValue::String(sender_id)) => sender_id.clone(),
-                other => panic!("unexpected sender_id input: {other:?}"),
-            };
-
-            {
-                let mut stats = TEST_DISPATCH_STATS.lock().unwrap();
-                stats.in_flight += 1;
-                stats.max_in_flight = stats.max_in_flight.max(stats.in_flight);
-                stats.seen_sender_ids.push(sender_id);
-            }
-
-            thread::sleep(Duration::from_millis(150));
-
-            {
-                let mut stats = TEST_DISPATCH_STATS.lock().unwrap();
-                stats.in_flight = stats.in_flight.saturating_sub(1);
-            }
-
-            Ok(HashMap::from([("done".to_string(), DataValue::Boolean(true))]))
-        }
     }
 
     #[test]
@@ -2730,76 +1912,5 @@ mod tests {
         let result = graph.execute_and_capture_results();
         assert_success(&result);
         assert!(result.node_results.contains_key("sink"));
-    }
-
-    #[test]
-    fn root_event_dispatch_runs_same_sender_workers_concurrently() {
-        ensure_test_dispatch_nodes_registered();
-        reset_dispatch_stats();
-
-        let definition: NodeGraphDefinition = serde_json::from_value(serde_json::json!({
-            "nodes": [
-                {
-                    "id": "root",
-                    "name": "Root",
-                    "node_type": "__test_full_concurrent_event_producer",
-                    "input_ports": [],
-                    "output_ports": [
-                        {
-                            "name": "sender_id",
-                            "data_type": "String",
-                            "required": true
-                        }
-                    ],
-                    "inline_values": {}
-                },
-                {
-                    "id": "sink",
-                    "name": "Sink",
-                    "node_type": "__test_full_concurrent_sleep_sink",
-                    "input_ports": [
-                        {
-                            "name": "sender_id",
-                            "data_type": "String",
-                            "required": true
-                        }
-                    ],
-                    "output_ports": [
-                        {
-                            "name": "done",
-                            "data_type": "Boolean",
-                            "required": true
-                        }
-                    ],
-                    "inline_values": {}
-                }
-            ],
-            "edges": []
-        }))
-        .expect("test graph definition should deserialize");
-
-        let mut graph = build_node_graph_from_definition(&definition)
-            .expect("test graph should build");
-        graph.execute().expect("test graph should execute");
-
-        let stats = TEST_DISPATCH_STATS.lock().unwrap();
-        assert_eq!(stats.seen_sender_ids.len(), 2);
-        assert!(stats.seen_sender_ids.iter().all(|sender_id| sender_id == "same-sender"));
-        assert!(
-            stats.max_in_flight >= 2,
-            "expected same-sender workers to overlap, got stats: {:?}",
-            *stats
-        );
-    }
-
-    #[test]
-    fn qq_agent_example_graph_builds_with_session_lock_nodes() {
-        init_node_registry().expect("built-in node registry should initialize");
-
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("qq_agent_example.json");
-        let definition = load_graph_definition_from_json(&path)
-            .expect("example graph JSON should load");
-        build_node_graph_from_definition(&definition)
-            .expect("example graph should rebuild into a runnable NodeGraph");
     }
 }
