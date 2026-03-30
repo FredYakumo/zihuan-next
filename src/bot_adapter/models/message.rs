@@ -115,7 +115,7 @@ impl MessageBase for PlainTextMessage {
 /// @ mention message
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AtTargetMessage {
-    #[serde(alias = "qq")]
+    #[serde(rename = "qq", alias = "target")]
     #[serde(default, deserialize_with = "deserialize_option_string_from_string_or_number")]
     pub target: Option<String>,
 }
@@ -279,5 +279,31 @@ mod tests {
         let prop = MessageProp::from_messages(&msgs, Some("99"));
         assert_eq!(prop.at_target_list, vec!["1".to_string(), "2".to_string()]);
         assert!(!prop.is_at_me);
+    }
+
+    #[test]
+    fn test_at_message_serializes_with_qq_field() {
+        let msg = Message::At(AtTargetMessage { target: Some("42".into()) });
+        let json = serde_json::to_value(&msg).expect("at message should serialize");
+
+        assert_eq!(json["type"], "at");
+        assert_eq!(json["data"]["qq"], "42");
+        assert!(json["data"].get("target").is_none());
+    }
+
+    #[test]
+    fn test_at_message_deserializes_legacy_target_field() {
+        let json = serde_json::json!({
+            "type": "at",
+            "data": {
+                "target": "42"
+            }
+        });
+
+        let msg: Message = serde_json::from_value(json).expect("legacy at payload should deserialize");
+        match msg {
+            Message::At(at) => assert_eq!(at.target.as_deref(), Some("42")),
+            other => panic!("unexpected message: {:?}", other),
+        }
     }
 }

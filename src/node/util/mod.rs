@@ -15,6 +15,7 @@ pub mod json_extract;
 pub mod message_content;
 pub mod message_list_data;
 pub mod openai_message_session_cache;
+pub mod openai_message_session_cache_provider;
 pub mod openai_message_session_cache_set;
 pub mod openai_message_session_cache_get;
 pub mod preview_message_list;
@@ -64,7 +65,7 @@ pub mod openai_message_session_cache_clear {
 		}
 
 		node_input![
-			port! { name = "cache_ref", ty = OpenAIMessageSessionCacheRef, desc = "OpenAIMessage 会话暂存节点输出的缓存引用" },
+			port! { name = "cache_ref", ty = OpenAIMessageSessionCacheRef, desc = "OpenAIMessage 会话暂存器输出的缓存引用" },
 			port! { name = "sender_id", ty = String, desc = "要清空历史消息的 sender_id" },
 		];
 
@@ -112,7 +113,10 @@ pub mod openai_message_session_cache_clear {
 		use super::OpenAIMessageSessionCacheClearNode;
 		use crate::error::Result;
 		use crate::llm::{MessageRole, OpenAIMessage};
-		use crate::node::util::{OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode};
+		use crate::node::util::{
+			OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode,
+			OpenAIMessageSessionCacheProviderNode,
+		};
 		use crate::node::{DataType, DataValue, Node};
 		use std::collections::HashMap;
 
@@ -125,8 +129,17 @@ pub mod openai_message_session_cache_clear {
 			}
 		}
 
-		fn cache_input(sender_id: &str, messages: Vec<OpenAIMessage>) -> HashMap<String, DataValue> {
+		fn provider_input() -> HashMap<String, DataValue> {
+			HashMap::new()
+		}
+
+		fn cache_input(
+			cache_ref: DataValue,
+			sender_id: &str,
+			messages: Vec<OpenAIMessage>,
+		) -> HashMap<String, DataValue> {
 			HashMap::from([
+				("cache_ref".to_string(), cache_ref),
 				(
 					"messages".to_string(),
 					DataValue::Vec(
@@ -168,11 +181,19 @@ pub mod openai_message_session_cache_clear {
 
 		#[test]
 		fn clears_history_by_sender_from_cache_ref() -> Result<()> {
+			let mut provider_node = OpenAIMessageSessionCacheProviderNode::new("provider", "Provider");
 			let mut cache_node = OpenAIMessageSessionCacheNode::new("cache", "Cache");
 			let mut get_node = OpenAIMessageSessionCacheGetNode::new("getter", "Getter");
 			let mut clear_node = OpenAIMessageSessionCacheClearNode::new("clear", "Clear");
 
+			let provider_outputs = provider_node.execute(provider_input())?;
+			let cache_ref = provider_outputs
+				.get("cache_ref")
+				.cloned()
+				.expect("cache_ref output should exist");
+
 			let cache_outputs = cache_node.execute(cache_input(
+				cache_ref.clone(),
 				"user-1",
 				vec![
 					message(MessageRole::User, "第一条"),
@@ -180,10 +201,10 @@ pub mod openai_message_session_cache_clear {
 				],
 			))?;
 
-			let cache_ref = cache_outputs
-				.get("cache_ref")
-				.cloned()
-				.expect("cache_ref output should exist");
+			assert!(matches!(
+				cache_outputs.get("success"),
+				Some(DataValue::Boolean(true))
+			));
 
 			let clear_outputs = clear_node.execute(HashMap::from([
 				("cache_ref".to_string(), cache_ref.clone()),
@@ -221,6 +242,7 @@ pub use json_extract::JsonExtractNode;
 pub use message_content::MessageContentNode;
 pub use message_list_data::MessageListDataNode;
 pub use openai_message_session_cache::OpenAIMessageSessionCacheNode;
+pub use openai_message_session_cache_provider::OpenAIMessageSessionCacheProviderNode;
 pub use openai_message_session_cache_clear::OpenAIMessageSessionCacheClearNode;
 pub use openai_message_session_cache_get::OpenAIMessageSessionCacheGetNode;
 pub use openai_message_session_cache_set::OpenAIMessageSessionCacheSetNode;

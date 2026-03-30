@@ -34,7 +34,7 @@ impl Node for OpenAIMessageSessionCacheSetNode {
     }
 
     node_input![
-        port! { name = "cache_ref", ty = OpenAIMessageSessionCacheRef, desc = "OpenAIMessage 会话暂存节点输出的缓存引用" },
+        port! { name = "cache_ref", ty = OpenAIMessageSessionCacheRef, desc = "OpenAIMessage 会话暂存器输出的缓存引用" },
         port! { name = "sender_id", ty = String, desc = "要覆写历史消息的 sender_id" },
         port! { name = "messages", ty = Vec(OpenAIMessage), desc = "要写回并覆写到缓存中的 Vec<OpenAIMessage>" },
     ];
@@ -100,7 +100,10 @@ mod tests {
     use super::OpenAIMessageSessionCacheSetNode;
     use crate::error::Result;
     use crate::llm::{MessageRole, OpenAIMessage};
-    use crate::node::util::{OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode};
+    use crate::node::util::{
+        OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode,
+        OpenAIMessageSessionCacheProviderNode,
+    };
     use crate::node::{DataType, DataValue, Node};
     use std::collections::HashMap;
 
@@ -135,11 +138,19 @@ mod tests {
 
     #[test]
     fn overwrites_history_by_sender_from_cache_ref() -> Result<()> {
+        let mut provider_node = OpenAIMessageSessionCacheProviderNode::new("provider", "Provider");
         let mut cache_node = OpenAIMessageSessionCacheNode::new("cache", "Cache");
         let mut get_node = OpenAIMessageSessionCacheGetNode::new("getter", "Getter");
         let mut set_node = OpenAIMessageSessionCacheSetNode::new("setter", "Setter");
 
+        let provider_outputs = provider_node.execute(HashMap::new())?;
+        let cache_ref = provider_outputs
+            .get("cache_ref")
+            .cloned()
+            .expect("cache_ref output should exist");
+
         let cache_outputs = cache_node.execute(HashMap::from([
+            ("cache_ref".to_string(), cache_ref.clone()),
             ("messages".to_string(), vec_value(vec![message(MessageRole::User, "旧消息")])),
             (
                 "sender_id".to_string(),
@@ -147,10 +158,10 @@ mod tests {
             ),
         ]))?;
 
-        let cache_ref = cache_outputs
-            .get("cache_ref")
-            .cloned()
-            .expect("cache_ref output should exist");
+        assert!(matches!(
+            cache_outputs.get("success"),
+            Some(DataValue::Boolean(true))
+        ));
 
         let set_outputs = set_node.execute(HashMap::from([
             ("cache_ref".to_string(), cache_ref.clone()),
