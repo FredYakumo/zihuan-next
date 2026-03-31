@@ -42,8 +42,6 @@ fn is_visible_input_port(node_type: &str, port_name: &str) -> bool {
         ("brain", "tools_config")
             | ("brain", "shared_inputs")
             | ("message_event_type_filter", "filter_type")
-            | ("qq_natural_language_reply", "target_type")
-            | ("llm_qq_natural_language_reply", "target_type")
             | ("send_qq_message_batches", "target_type")
             | ("string_to_openai_message", "role")
             | ("as_system_openai_message", "role")

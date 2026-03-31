@@ -8,7 +8,9 @@ pub mod message_event_type_filter;
 pub mod message_sender;
 pub mod models;
 pub mod send_friend_message;
+pub mod send_friend_message_batches;
 pub mod send_group_message;
+pub mod send_group_message_batches;
 pub mod send_qq_message_batches;
 pub mod ws_action;
 
@@ -17,5 +19,7 @@ pub use extract_sender_id_from_event::ExtractSenderIdFromEventNode;
 pub use message_event_type_filter::MessageEventTypeFilterNode;
 pub use message_sender::MessageSenderNode;
 pub use send_friend_message::SendFriendMessageNode;
+pub use send_friend_message_batches::SendFriendMessageBatchesNode;
 pub use send_group_message::SendGroupMessageNode;
+pub use send_group_message_batches::SendGroupMessageBatchesNode;
 pub use send_qq_message_batches::SendQQMessageBatchesNode;

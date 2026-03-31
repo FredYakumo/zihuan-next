@@ -160,12 +160,12 @@ pub fn init_node_registry() -> Result<()> {
     use crate::bot_adapter::extract_message_from_event::ExtractMessageFromEventNode;
     use crate::bot_adapter::{
         BotAdapterNode, ExtractSenderIdFromEventNode, MessageEventTypeFilterNode,
-        SendFriendMessageNode, SendGroupMessageNode, SendQQMessageBatchesNode,
+        SendFriendMessageBatchesNode, SendFriendMessageNode, SendGroupMessageBatchesNode,
+        SendGroupMessageNode, SendQQMessageBatchesNode,
     };
     use crate::llm::brain_node::BrainNode;
     use crate::llm::llm_api_node::LLMApiNode;
     use crate::llm::llm_infer_node::LLMInferNode;
-    use crate::llm::natural_language_reply::NaturalLanguageReplyNode;
     use crate::node::database::{MySqlNode, RedisNode};
     use crate::node::message_cache::MessageCacheNode;
     use crate::node::message_mysql_get_group_history::MessageMySQLGetGroupHistoryNode;
@@ -174,15 +174,18 @@ pub fn init_node_registry() -> Result<()> {
     use crate::node::util::{
         AndThenNode, ArrayGetNode, AtQQTargetMessageNode, BooleanBranchNode, BooleanNotNode,
         ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode,
-        FunctionInputsNode, FunctionNode, FunctionOutputsNode, JoinStringNode, JsonExtractNode,
-        JsonParserNode, LoopBreakNode, LoopNode, LoopStateUpdateNode, MessageContentNode,
-        MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode,
+        FunctionInputsNode, FunctionNode, FunctionOutputsNode, JoinStringNode,
+        JsonExtractNode, JsonParserNode, JsonToQQMessageVecNode, LoopBreakNode, LoopNode,
+        LoopStateUpdateNode, MessageContentNode, MessageListDataNode,
+        OpenAIMessageContentAsJsonNode,
+        OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode,
         OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheProviderNode,
         OpenAIMessageSessionCacheSetNode, PreviewMessageListNode, PreviewStringNode,
-        PushBackVecNode, QQMessageListDataNode, QQNaturalLanguageReplyNode, SessionStateClearNode,
-        SessionStateGetNode, SessionStateProviderNode, SessionStateReleaseNode,
-        SessionStateTryClaimNode, SetVariableNode, StackNode, StringDataNode,
-        StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode,
+        PushBackVecNode, QQMessageJsonOutputSystemPromptProviderNode, QQMessageListDataNode,
+        SessionStateClearNode, SessionStateGetNode, SessionStateProviderNode,
+        SessionStateReleaseNode, SessionStateTryClaimNode, SetVariableNode, StackNode,
+        StringDataNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode,
+        ToolResultNode,
     };
 
     // Utility nodes
@@ -371,6 +374,14 @@ pub fn init_node_registry() -> Result<()> {
     );
 
     register_node!(
+        "openai_message_content_as_json",
+        "OpenAIMessage内容转JSON",
+        "消息",
+        "将 OpenAIMessage 的 content 字符串解析为 JSON",
+        OpenAIMessageContentAsJsonNode
+    );
+
+    register_node!(
         "as_system_openai_message",
         "字符串转 OpenAIMessage",
         "消息",
@@ -442,6 +453,14 @@ pub fn init_node_registry() -> Result<()> {
         AtQQTargetMessageNode
     );
 
+    register_node!(
+        "json_to_qq_message_vec",
+        "JSON转QQMessage列表",
+        "消息",
+        "将 LLM 输出的 QQ 消息 JSON 二维数组转换为 Vec<Vec<QQMessage>>",
+        JsonToQQMessageVecNode
+    );
+
     // LLM nodes
     register_node!(
         "llm_api",
@@ -460,19 +479,11 @@ pub fn init_node_registry() -> Result<()> {
     );
 
     register_node!(
-        "qq_natural_language_reply",
-        "QQ自然语言回复",
+        "qq_message_json_output_system_prompt_provider",
+        "QQ消息JSON输出格式Prompt",
         "AI",
-        "调用 LLM 生成结构化 QQ 自然语言回复，并按好友/群组目标逐批发送",
-        QQNaturalLanguageReplyNode
-    );
-
-    register_node!(
-        "llm_qq_natural_language_reply",
-        "LLM QQ自然语言回复",
-        "AI",
-        "调用 LLM 生成结构化 QQ 回复消息批次，不负责实际发送",
-        NaturalLanguageReplyNode
+        "输出固定的 system prompt，要求 LLM 只返回 QQ 消息二维 JSON 数组",
+        QQMessageJsonOutputSystemPromptProviderNode
     );
 
     register_node!(
@@ -514,6 +525,22 @@ pub fn init_node_registry() -> Result<()> {
         "Bot适配器",
         "向QQ群组发送消息",
         SendGroupMessageNode
+    );
+
+    register_node!(
+        "send_friend_message_batches",
+        "批量发送好友消息",
+        "Bot适配器",
+        "向QQ好友逐批发送 Vec<Vec<QQMessage>>，支持两次发送之间延迟",
+        SendFriendMessageBatchesNode
+    );
+
+    register_node!(
+        "send_group_message_batches",
+        "批量发送群组消息",
+        "Bot适配器",
+        "向QQ群组逐批发送 Vec<Vec<QQMessage>>，支持两次发送之间延迟",
+        SendGroupMessageBatchesNode
     );
 
     register_node!(

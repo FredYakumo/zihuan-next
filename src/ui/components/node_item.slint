@@ -844,7 +844,7 @@ export component NodeItem inherits Rectangle {
         border-radius: (grid_size * 0.3) * 1px;
         visible: !root.is-list-data-node &&
                  !(root.node_type == "message_event_type_filter" && port.name == "filter_type") &&
-                 !((root.node_type == "qq_natural_language_reply" || root.node_type == "llm_qq_natural_language_reply" || root.node_type == "send_qq_message_batches") && port.name == "target_type") &&
+                 !(root.node_type == "send_qq_message_batches" && port.name == "target_type") &&
                  !((root.node_type == "string_to_openai_message" || root.node_type == "as_system_openai_message") && port.name == "role") &&
                  !(root.node_type == "format_string" && port.name == "template") &&
                  !(root.node_type == "json_extract" && port.name == "fields_config");
@@ -875,7 +875,7 @@ export component NodeItem inherits Rectangle {
         height: (grid_size) * 1px;
         visible: !root.is-list-data-node &&
                  !(root.node_type == "message_event_type_filter" && port.name == "filter_type") &&
-                 !((root.node_type == "qq_natural_language_reply" || root.node_type == "llm_qq_natural_language_reply" || root.node_type == "send_qq_message_batches") && port.name == "target_type") &&
+                 !(root.node_type == "send_qq_message_batches" && port.name == "target_type") &&
                  !((root.node_type == "string_to_openai_message" || root.node_type == "as_system_openai_message") && port.name == "role") &&
                  !(root.node_type == "format_string" && port.name == "template") &&
                  !(root.node_type == "json_extract" && port.name == "fields_config");
@@ -1061,7 +1061,7 @@ export component NodeItem inherits Rectangle {
         }
     }
 
-    if root.node_type == "qq_natural_language_reply" || root.node_type == "llm_qq_natural_language_reply" || root.node_type == "send_qq_message_batches": Rectangle {
+    if root.node_type == "send_qq_message_batches": Rectangle {
         x: (grid_size) * 1px;
         y: (grid_size * (header_rows + 3)) * 1px;
         width: root.width - (grid_size * 2.5) * 1px;
