@@ -8,7 +8,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crate::error::Result;
-use crate::llm::brain_tool::BrainToolDefinition;
+use crate::llm::brain_tool::{
+    brain_shared_inputs_from_value, brain_tool_input_signature, BrainToolDefinition,
+    BRAIN_SHARED_INPUTS_PORT, BRAIN_TOOLS_CONFIG_PORT,
+};
 use crate::node::function_graph::{
     default_embedded_function_config, embedded_function_config_from_node,
     sync_function_node_definition, sync_function_subgraph_signature, FUNCTION_CONFIG_PORT,
@@ -337,7 +340,12 @@ fn embed_subgraph_into_page(
             let Some(node) = page.graph.nodes.iter_mut().find(|node| node.id == node_id) else {
                 return;
             };
-            let Some(value) = node.inline_values.get("tools_config").cloned() else {
+            let shared_inputs = node
+                .inline_values
+                .get(BRAIN_SHARED_INPUTS_PORT)
+                .and_then(brain_shared_inputs_from_value)
+                .unwrap_or_default();
+            let Some(value) = node.inline_values.get(BRAIN_TOOLS_CONFIG_PORT).cloned() else {
                 return;
             };
             let Ok(mut tools) = serde_json::from_value::<Vec<BrainToolDefinition>>(value) else {
@@ -346,7 +354,7 @@ fn embed_subgraph_into_page(
             for tool in &mut tools {
                 if tool.id == tool_id {
                     tool.subgraph = child_graph.clone();
-                    let input_signature = tool.input_signature();
+                    let input_signature = brain_tool_input_signature(&shared_inputs, tool);
                     sync_function_subgraph_signature(
                         &mut tool.subgraph,
                         &input_signature,
@@ -355,13 +363,223 @@ fn embed_subgraph_into_page(
                 }
             }
             if let Ok(value) = serde_json::to_value(&tools) {
-                node.inline_values.insert("tools_config".to_string(), value.clone());
+                node.inline_values
+                    .insert(BRAIN_TOOLS_CONFIG_PORT.to_string(), value.clone());
                 page.inline_inputs.insert(
-                    inline_port_key(&node.id, "tools_config"),
+                    inline_port_key(&node.id, BRAIN_TOOLS_CONFIG_PORT),
                     InlinePortValue::Json(value),
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use serde_json::json;
+
+    use super::{
+        embed_subgraph_into_page, new_blank_tab, GraphPageState, SubgraphOwner,
+    };
+    use crate::llm::brain_tool::{
+        BrainToolDefinition, ToolParamDef, BRAIN_SHARED_INPUTS_PORT, BRAIN_TOOLS_CONFIG_PORT,
+    };
+    use crate::node::function_graph::{
+        function_signature_from_inline_values, sync_function_subgraph_signature, FunctionPortDef,
+        FUNCTION_INPUTS_NODE_ID,
+    };
+    use crate::node::graph_io::{EdgeDefinition, NodeDefinition, NodeGraphDefinition};
+    use crate::node::{DataType, Port};
+    use crate::ui::canvas_state::CanvasViewState;
+    use crate::ui::node_graph_view_inline::build_inline_inputs_from_graph;
+
+    fn inner_string_node() -> NodeDefinition {
+        NodeDefinition {
+            id: "inner_1".to_string(),
+            name: "inner_1".to_string(),
+            description: None,
+            node_type: "string_data".to_string(),
+            input_ports: vec![Port::new("text", DataType::String)],
+            output_ports: Vec::new(),
+            dynamic_input_ports: false,
+            dynamic_output_ports: false,
+            position: None,
+            size: None,
+            inline_values: HashMap::new(),
+            port_bindings: HashMap::new(),
+            has_error: false,
+            has_cycle: false,
+        }
+    }
+
+    fn tool_subgraph_with_shared_input_edge() -> NodeGraphDefinition {
+        let shared_inputs = vec![FunctionPortDef {
+            name: "context".to_string(),
+            data_type: DataType::String,
+        }];
+        let tool = BrainToolDefinition {
+            id: "tool_1".to_string(),
+            name: "tool_1".to_string(),
+            description: String::new(),
+            parameters: vec![ToolParamDef {
+                name: "query".to_string(),
+                data_type: DataType::String,
+                desc: String::new(),
+            }],
+            outputs: Vec::new(),
+            subgraph: crate::node::function_graph::default_function_subgraph(),
+        };
+        let mut subgraph = tool.subgraph.clone();
+        sync_function_subgraph_signature(
+            &mut subgraph,
+            &crate::llm::brain_tool::brain_tool_input_signature(&shared_inputs, &tool),
+            &tool.outputs,
+        );
+        subgraph.nodes.push(inner_string_node());
+        subgraph.edges.push(EdgeDefinition {
+            from_node_id: FUNCTION_INPUTS_NODE_ID.to_string(),
+            from_port: "context".to_string(),
+            to_node_id: "inner_1".to_string(),
+            to_port: "text".to_string(),
+        });
+        subgraph
+    }
+
+    fn brain_page_with_tool_subgraph(subgraph: NodeGraphDefinition) -> GraphPageState {
+        let tool = BrainToolDefinition {
+            id: "tool_1".to_string(),
+            name: "tool_1".to_string(),
+            description: String::new(),
+            parameters: vec![ToolParamDef {
+                name: "query".to_string(),
+                data_type: DataType::String,
+                desc: String::new(),
+            }],
+            outputs: Vec::new(),
+            subgraph,
+        };
+        let brain_node = NodeDefinition {
+            id: "brain_1".to_string(),
+            name: "brain_1".to_string(),
+            description: None,
+            node_type: "brain".to_string(),
+            input_ports: Vec::new(),
+            output_ports: Vec::new(),
+            dynamic_input_ports: true,
+            dynamic_output_ports: false,
+            position: None,
+            size: None,
+            inline_values: HashMap::from([
+                (
+                    BRAIN_SHARED_INPUTS_PORT.to_string(),
+                    json!([{ "name": "context", "data_type": "String" }]),
+                ),
+                (
+                    BRAIN_TOOLS_CONFIG_PORT.to_string(),
+                    serde_json::to_value(vec![tool]).expect("tools_config"),
+                ),
+            ]),
+            port_bindings: HashMap::new(),
+            has_error: false,
+            has_cycle: false,
+        };
+        let graph = NodeGraphDefinition {
+            nodes: vec![brain_node],
+            edges: Vec::new(),
+            hyperparameter_groups: Vec::new(),
+            hyperparameters: Vec::new(),
+            execution_results: HashMap::new(),
+        };
+
+        GraphPageState::new_root(graph, CanvasViewState::default())
+    }
+
+    fn saved_tool_subgraph(page: &GraphPageState) -> NodeGraphDefinition {
+        let brain = page
+            .graph
+            .nodes
+            .iter()
+            .find(|node| node.id == "brain_1")
+            .expect("brain node");
+        let tools = serde_json::from_value::<Vec<BrainToolDefinition>>(
+            brain.inline_values[BRAIN_TOOLS_CONFIG_PORT].clone(),
+        )
+        .expect("brain tools");
+        tools
+            .into_iter()
+            .find(|tool| tool.id == "tool_1")
+            .expect("tool")
+            .subgraph
+    }
+
+    #[test]
+    fn embed_brain_tool_subgraph_keeps_shared_input_edges() {
+        let child_graph = tool_subgraph_with_shared_input_edge();
+        let mut page = brain_page_with_tool_subgraph(child_graph.clone());
+
+        embed_subgraph_into_page(
+            &mut page,
+            SubgraphOwner::BrainTool {
+                node_id: "brain_1".to_string(),
+                tool_id: "tool_1".to_string(),
+            },
+            child_graph,
+        );
+
+        let saved = saved_tool_subgraph(&page);
+        let input_boundary = saved
+            .nodes
+            .iter()
+            .find(|node| node.id == FUNCTION_INPUTS_NODE_ID)
+            .expect("function_inputs");
+        let signature = function_signature_from_inline_values(&input_boundary.inline_values)
+            .expect("signature");
+
+        assert_eq!(
+            signature.iter().map(|port| port.name.as_str()).collect::<Vec<_>>(),
+            vec!["context", "content", "query"]
+        );
+        assert!(saved.edges.iter().any(|edge| {
+            edge.from_node_id == FUNCTION_INPUTS_NODE_ID
+                && edge.from_port == "context"
+                && edge.to_node_id == "inner_1"
+                && edge.to_port == "text"
+        }));
+    }
+
+    #[test]
+    fn return_to_root_page_preserves_brain_shared_input_edges() {
+        let subgraph = tool_subgraph_with_shared_input_edge();
+        let root_page = brain_page_with_tool_subgraph(subgraph.clone());
+        let root_graph = root_page.graph.clone();
+
+        let mut next_untitled = 1usize;
+        let mut next_id = 1u64;
+        let mut tab = new_blank_tab(&mut next_untitled, &mut next_id);
+        tab.root_page = root_page;
+        tab.graph = root_graph.clone();
+        tab.inline_inputs = build_inline_inputs_from_graph(&root_graph);
+
+        tab.push_subgraph_page(
+            SubgraphOwner::BrainTool {
+                node_id: "brain_1".to_string(),
+                tool_id: "tool_1".to_string(),
+            },
+            "tool_1",
+            subgraph,
+        );
+
+        assert!(tab.return_to_root_page());
+
+        let saved = saved_tool_subgraph(&tab.root_page);
+        assert!(saved.edges.iter().any(|edge| {
+            edge.from_node_id == FUNCTION_INPUTS_NODE_ID
+                && edge.from_port == "context"
+                && edge.to_node_id == "inner_1"
+                && edge.to_port == "text"
+        }));
     }
 }
 

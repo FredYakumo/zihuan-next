@@ -6,6 +6,10 @@ use crate::node::function_graph::{
 use crate::node::graph_io::NodeGraphDefinition;
 use crate::node::DataType;
 
+pub const BRAIN_TOOLS_CONFIG_PORT: &str = "tools_config";
+pub const BRAIN_SHARED_INPUTS_PORT: &str = "shared_inputs";
+pub const BRAIN_TOOL_FIXED_CONTENT_INPUT: &str = "content";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ToolParamDef {
     pub name: String,
@@ -56,4 +60,21 @@ impl BrainToolDefinition {
             })
             .collect()
     }
+}
+
+pub fn brain_shared_inputs_from_value(value: &serde_json::Value) -> Option<Vec<FunctionPortDef>> {
+    serde_json::from_value::<Vec<FunctionPortDef>>(value.clone()).ok()
+}
+
+pub fn brain_tool_input_signature(
+    shared_inputs: &[FunctionPortDef],
+    tool: &BrainToolDefinition,
+) -> Vec<FunctionPortDef> {
+    let mut signature = shared_inputs.to_vec();
+    signature.push(FunctionPortDef {
+        name: BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(),
+        data_type: DataType::String,
+    });
+    signature.extend(tool.input_signature());
+    signature
 }

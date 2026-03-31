@@ -295,7 +295,7 @@ Some node types require custom dialog editors that modify `inline_values` and re
 
 - Dialog with a table of tool definitions (id, name, description, parameters, outputs)
 - On save: serializes tool config to JSON and stores it in `inline_values["tools_config"]`
-- `brain` output ports stay static; only `assistant_message` remains visible
+- `brain` output ports stay static; only `output` remains visible, with type `Vec<OpenAIMessage>`
 - Each tool row can open its own embedded subgraph editor page
 
 The key invariant: whatever the editor saves into `inline_values` must produce exactly the same visible port list as the node's `apply_inline_config()` + `input_ports()` / `output_ports()` methods would compute at runtime.

@@ -32,6 +32,26 @@ fn is_brain_node(node: &NodeDefinition) -> bool {
     node.node_type == "brain"
 }
 
+fn is_visible_input_port(node_type: &str, port_name: &str) -> bool {
+    if is_hidden_function_port(node_type, port_name) {
+        return false;
+    }
+
+    !matches!(
+        (node_type, port_name),
+        ("brain", "tools_config")
+            | ("brain", "shared_inputs")
+            | ("message_event_type_filter", "filter_type")
+            | ("qq_natural_language_reply", "target_type")
+            | ("llm_qq_natural_language_reply", "target_type")
+            | ("send_qq_message_batches", "target_type")
+            | ("string_to_openai_message", "role")
+            | ("as_system_openai_message", "role")
+            | ("format_string", "template")
+            | ("json_extract", "fields_config")
+    )
+}
+
 pub(crate) fn snap_to_grid(value: f32) -> f32 {
     (value / GRID_SIZE).round() * GRID_SIZE
 }
@@ -45,7 +65,7 @@ pub(crate) fn node_dimensions(node: &NodeDefinition) -> (f32, f32) {
     let visible_input_count = node
         .input_ports
         .iter()
-        .filter(|port| !is_hidden_function_port(&node.node_type, &port.name))
+        .filter(|port| is_visible_input_port(&node.node_type, &port.name))
         .count();
     let port_rows = visible_input_count.max(node.output_ports.len()) as f32;
     let default_min_height =
@@ -84,7 +104,7 @@ pub(crate) fn get_port_center_for_node(
     let ports = if is_input {
         node.input_ports
             .iter()
-            .filter(|port| !is_hidden_function_port(&node.node_type, &port.name))
+            .filter(|port| is_visible_input_port(&node.node_type, &port.name))
             .collect::<Vec<_>>()
     } else {
         node.output_ports.iter().collect::<Vec<_>>()
@@ -722,7 +742,10 @@ pub(crate) fn build_grid_lines(width: f32, height: f32, grid_size: f32) -> Vec<G
 
 #[cfg(test)]
 mod tests {
-    use super::{build_edge_route_plans, resolve_display_data_type, GRID_SIZE};
+    use super::{
+        build_edge_route_plans, get_port_center_for_node, resolve_display_data_type, GRID_SIZE,
+        NODE_HEADER_ROWS,
+    };
     use crate::node::graph_io::{
         EdgeDefinition, GraphPosition, NodeDefinition, NodeGraphDefinition,
     };
@@ -946,5 +969,60 @@ mod tests {
         assert_eq!(plans.len(), 2);
         assert_ne!(plans[0].target_channel_x, plans[1].target_channel_x);
         assert!((plans[0].target_channel_x - plans[1].target_channel_x).abs() >= GRID_SIZE * 0.5);
+    }
+
+    #[test]
+    fn brain_shared_input_port_center_uses_visible_port_index() {
+        let node = node_at(
+            "brain_1",
+            "brain",
+            100.0,
+            200.0,
+            vec![
+                Port::new("llm_model", DataType::LLModel),
+                Port::new(
+                    "messages",
+                    DataType::Vec(Box::new(DataType::OpenAIMessage)),
+                ),
+                Port::new("tools_config", DataType::Json),
+                Port::new("shared_inputs", DataType::Json),
+                Port::new("target_id", DataType::String),
+                Port::new("llm_ref", DataType::LLModel),
+                Port::new("bot_ref", DataType::BotAdapterRef),
+            ],
+            vec![Port::new(
+                "output",
+                DataType::Vec(Box::new(DataType::OpenAIMessage)),
+            )],
+        );
+
+        let (_, target_y) =
+            get_port_center_for_node(&node, "target_id", true).expect("target_id should be visible");
+        let (_, bot_y) =
+            get_port_center_for_node(&node, "bot_ref", true).expect("bot_ref should be visible");
+
+        assert_eq!(target_y, 200.0 + GRID_SIZE * NODE_HEADER_ROWS + GRID_SIZE * 2.0 + GRID_SIZE / 2.0);
+        assert_eq!(bot_y, target_y + GRID_SIZE * 2.0);
+    }
+
+    #[test]
+    fn function_boundary_hidden_port_does_not_shift_visible_port_center() {
+        let node = node_at(
+            "__function_inputs__",
+            "function_inputs",
+            40.0,
+            60.0,
+            vec![
+                Port::new("signature", DataType::Json),
+                Port::new("runtime_values", DataType::Json),
+                Port::new("user_input", DataType::String),
+            ],
+            Vec::new(),
+        );
+
+        let (_, center_y) = get_port_center_for_node(&node, "user_input", true)
+            .expect("user_input should be the first visible port");
+
+        assert_eq!(center_y, 60.0 + GRID_SIZE * NODE_HEADER_ROWS + GRID_SIZE / 2.0);
     }
 }

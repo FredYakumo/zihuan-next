@@ -5,7 +5,10 @@ use log::{info, warn};
 use serde_json::{json, Map, Value};
 
 use crate::error::{Error, Result};
-use crate::llm::brain_tool::{BrainToolDefinition, ToolParamDef};
+use crate::llm::brain_tool::{
+    brain_shared_inputs_from_value, brain_tool_input_signature, BrainToolDefinition, ToolParamDef,
+    BRAIN_SHARED_INPUTS_PORT, BRAIN_TOOLS_CONFIG_PORT, BRAIN_TOOL_FIXED_CONTENT_INPUT,
+};
 use crate::llm::tooling::FunctionTool;
 use crate::llm::{InferenceParam, OpenAIMessage};
 use crate::node::function_graph::{
@@ -14,10 +17,9 @@ use crate::node::function_graph::{
 };
 use crate::node::graph_io::refresh_port_types;
 use crate::node::registry::{build_node_graph_from_definition, NODE_REGISTRY};
-use crate::node::{node_input, DataType, DataValue, Node, Port};
+use crate::node::{DataType, DataValue, Node, Port};
 
-const TOOLS_CONFIG_PORT: &str = "tools_config";
-const MAX_TOOL_ITERATIONS: usize = 5;
+const MAX_TOOL_ITERATIONS: usize = 25;
 
 #[derive(Debug, Clone)]
 struct BrainFunctionTool {
@@ -103,19 +105,48 @@ fn tool_parameters_to_json_schema(parameters: &[ToolParamDef]) -> Value {
     })
 }
 
-fn tool_input_signature(tool: &BrainToolDefinition) -> Vec<FunctionPortDef> {
-    tool.parameters
+fn shared_inputs_ports(shared_inputs: &[FunctionPortDef]) -> Vec<Port> {
+    shared_inputs
         .iter()
-        .map(|param| FunctionPortDef {
-            name: param.name.clone(),
-            data_type: param.data_type.clone(),
-        })
+        .map(|port| port.to_port(format!("Brain 共享输入 '{}'", port.name)))
         .collect()
 }
 
-fn validate_tool_definitions(tool_definitions: &[BrainToolDefinition]) -> Result<Vec<BrainToolDefinition>> {
+fn validate_shared_inputs(shared_inputs: &[FunctionPortDef]) -> Result<Vec<FunctionPortDef>> {
+    let mut seen_names = HashSet::new();
+    let mut normalized = Vec::with_capacity(shared_inputs.len());
+
+    for port in shared_inputs.iter().cloned() {
+        let name = port.name.trim();
+        if name.is_empty() {
+            return Err(Error::ValidationError(
+                "Brain shared input name cannot be empty".to_string(),
+            ));
+        }
+        if !seen_names.insert(name.to_string()) {
+            return Err(Error::ValidationError(format!(
+                "Duplicate Brain shared input name: {name}"
+            )));
+        }
+        normalized.push(FunctionPortDef {
+            name: name.to_string(),
+            data_type: port.data_type,
+        });
+    }
+
+    Ok(normalized)
+}
+
+fn validate_tool_definitions(
+    tool_definitions: &[BrainToolDefinition],
+    shared_inputs: &[FunctionPortDef],
+) -> Result<Vec<BrainToolDefinition>> {
     let mut seen_ids = HashSet::new();
     let mut seen_names = HashSet::new();
+    let shared_input_names = shared_inputs
+        .iter()
+        .map(|port| port.name.trim().to_string())
+        .collect::<HashSet<_>>();
     let mut normalized = Vec::with_capacity(tool_definitions.len());
 
     for (index, tool) in tool_definitions.iter().cloned().enumerate() {
@@ -146,6 +177,18 @@ fn validate_tool_definitions(tool_definitions: &[BrainToolDefinition]) -> Result
                     tool_name
                 )));
             }
+            if shared_input_names.contains(param_name) {
+                return Err(Error::ValidationError(format!(
+                    "Tool '{}' parameter '{}' conflicts with Brain shared input",
+                    tool_name, param_name
+                )));
+            }
+            if param_name == BRAIN_TOOL_FIXED_CONTENT_INPUT {
+                return Err(Error::ValidationError(format!(
+                    "Tool '{}' parameter '{}' is reserved for Brain tool-call content",
+                    tool_name, param_name
+                )));
+            }
             if !seen_param_names.insert(param_name.to_string()) {
                 return Err(Error::ValidationError(format!(
                     "Tool '{}' has duplicate parameter '{}'",
@@ -154,7 +197,7 @@ fn validate_tool_definitions(tool_definitions: &[BrainToolDefinition]) -> Result
             }
         }
 
-        let input_signature = tool_input_signature(&tool);
+        let input_signature = brain_tool_input_signature(shared_inputs, &tool);
         sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &tool.outputs);
         normalized.push(tool);
     }
@@ -166,6 +209,7 @@ fn validate_tool_definitions(tool_definitions: &[BrainToolDefinition]) -> Result
 pub struct BrainNode {
     id: String,
     name: String,
+    shared_inputs: Vec<FunctionPortDef>,
     tool_definitions: Vec<BrainToolDefinition>,
 }
 
@@ -174,18 +218,25 @@ impl BrainNode {
         Self {
             id: id.into(),
             name: name.into(),
+            shared_inputs: Vec::new(),
             tool_definitions: Vec::new(),
         }
     }
 
+    fn set_shared_inputs(&mut self, shared_inputs: Vec<FunctionPortDef>) -> Result<()> {
+        self.shared_inputs = validate_shared_inputs(&shared_inputs)?;
+        self.tool_definitions = validate_tool_definitions(&self.tool_definitions, &self.shared_inputs)?;
+        Ok(())
+    }
+
     fn set_tool_definitions(&mut self, tool_definitions: Vec<BrainToolDefinition>) -> Result<()> {
-        self.tool_definitions = validate_tool_definitions(&tool_definitions)?;
+        self.tool_definitions = validate_tool_definitions(&tool_definitions, &self.shared_inputs)?;
         Ok(())
     }
 
     fn output_ports_static() -> Vec<Port> {
-        vec![Port::new("assistant_message", DataType::OpenAIMessage)
-            .with_description("完成工具调用循环后的 assistant 最终消息")]
+        vec![Port::new("output", DataType::Vec(Box::new(DataType::OpenAIMessage)))
+            .with_description("本次 Brain 运行新增的 assistant/tool 消息轨迹")]
     }
 
     fn sanitize_messages_for_inference(messages: Vec<OpenAIMessage>) -> Vec<OpenAIMessage> {
@@ -284,6 +335,8 @@ impl BrainNode {
     fn execute_tool_subgraph(
         &self,
         tool: &BrainToolDefinition,
+        shared_runtime_values: Map<String, Value>,
+        tool_call_content: String,
         arguments: Value,
     ) -> Result<String> {
         for node in &tool.subgraph.nodes {
@@ -295,7 +348,7 @@ impl BrainNode {
             }
         }
 
-        let runtime_values = match arguments {
+        let tool_runtime_values = match arguments {
             Value::Object(map) => map,
             Value::Null => Map::new(),
             other => {
@@ -306,7 +359,22 @@ impl BrainNode {
             }
         };
 
-        let input_signature = tool_input_signature(tool);
+        let mut runtime_values = shared_runtime_values;
+        runtime_values.insert(
+            BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(),
+            Value::String(tool_call_content),
+        );
+        for (key, value) in tool_runtime_values {
+            if runtime_values.contains_key(&key) {
+                return Err(self.wrap_error(format!(
+                    "Tool '{}' 参数 '{}' 与 Brain 共享输入重名",
+                    tool.name, key
+                )));
+            }
+            runtime_values.insert(key, value);
+        }
+
+        let input_signature = brain_tool_input_signature(&self.shared_inputs, tool);
         let mut subgraph = tool.subgraph.clone();
         sync_function_subgraph_signature(&mut subgraph, &input_signature, &tool.outputs);
         refresh_port_types(&mut subgraph);
@@ -402,6 +470,20 @@ impl BrainNode {
             )),
         }
     }
+
+    fn parse_shared_inputs_input(
+        &self,
+        inputs: &HashMap<String, DataValue>,
+    ) -> Result<Map<String, Value>> {
+        let mut values = Map::new();
+        for port in &self.shared_inputs {
+            let value = inputs
+                .get(&port.name)
+                .ok_or_else(|| self.wrap_error(format!("缺少必填共享输入 {}", port.name)))?;
+            values.insert(port.name.clone(), value.to_json());
+        }
+        Ok(values)
+    }
 }
 
 impl Node for BrainNode {
@@ -417,18 +499,55 @@ impl Node for BrainNode {
         Some("使用 LLModel 和内置 Tool Loop 执行多轮工具调用推理")
     }
 
-    node_input![
-        port! { name = "llm_model", ty = LLModel, desc = "LLM 模型引用，由 LLM API 节点提供" },
-        port! { name = "messages", ty = Vec(OpenAIMessage), desc = "消息列表（包含 system/user/assistant/tool 等角色）" },
-        port! { name = "tools_config", ty = Json, desc = "Tools 配置，由工具编辑器维护", optional },
-    ];
+    fn input_ports(&self) -> Vec<Port> {
+        let mut ports = vec![
+            Port::new("llm_model", DataType::LLModel)
+                .with_description("LLM 模型引用，由 LLM API 节点提供"),
+            Port::new("messages", DataType::Vec(Box::new(DataType::OpenAIMessage)))
+                .with_description("消息列表（包含 system/user/assistant/tool 等角色）"),
+            Port::new(BRAIN_TOOLS_CONFIG_PORT, DataType::Json)
+                .with_description("Tools 配置，由工具编辑器维护")
+                .optional(),
+            Port::new(BRAIN_SHARED_INPUTS_PORT, DataType::Json)
+                .with_description("Brain 共享输入签名，由工具编辑器维护")
+                .optional(),
+        ];
+        ports.extend(shared_inputs_ports(&self.shared_inputs));
+        ports
+    }
 
     fn output_ports(&self) -> Vec<Port> {
         Self::output_ports_static()
     }
 
+    fn has_dynamic_input_ports(&self) -> bool {
+        true
+    }
+
     fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
-        match inline_values.get(TOOLS_CONFIG_PORT) {
+        match inline_values.get(BRAIN_SHARED_INPUTS_PORT) {
+            Some(DataValue::Json(value)) => {
+                if value.is_null() {
+                    self.set_shared_inputs(Vec::new())?;
+                } else {
+                    let shared_inputs = brain_shared_inputs_from_value(value).ok_or_else(|| {
+                        Error::ValidationError("Invalid shared_inputs".to_string())
+                    })?;
+                    self.set_shared_inputs(shared_inputs)?;
+                }
+            }
+            Some(other) => {
+                return Err(Error::ValidationError(format!(
+                    "shared_inputs expects Json, got {}",
+                    other.data_type()
+                )));
+            }
+            None => {
+                self.set_shared_inputs(Vec::new())?;
+            }
+        }
+
+        match inline_values.get(BRAIN_TOOLS_CONFIG_PORT) {
             Some(DataValue::Json(value)) => {
                 if value.is_null() {
                     self.tool_definitions.clear();
@@ -452,7 +571,13 @@ impl Node for BrainNode {
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
-        if let Some(DataValue::Json(value)) = inputs.get(TOOLS_CONFIG_PORT) {
+        if let Some(DataValue::Json(value)) = inputs.get(BRAIN_SHARED_INPUTS_PORT) {
+            let shared_inputs = brain_shared_inputs_from_value(value)
+                .ok_or_else(|| Error::ValidationError("Invalid shared_inputs".to_string()))?;
+            self.set_shared_inputs(shared_inputs)?;
+        }
+
+        if let Some(DataValue::Json(value)) = inputs.get(BRAIN_TOOLS_CONFIG_PORT) {
             let parsed = serde_json::from_value::<Vec<BrainToolDefinition>>(value.clone())
                 .map_err(|e| Error::ValidationError(format!("Invalid tools_config: {e}")))?;
             self.set_tool_definitions(parsed)?;
@@ -465,7 +590,10 @@ impl Node for BrainNode {
             }
         };
 
-        let mut conversation = Self::sanitize_messages_for_inference(Self::parse_messages_input(&inputs)?);
+        let mut conversation =
+            Self::sanitize_messages_for_inference(Self::parse_messages_input(&inputs)?);
+        let mut output_messages = Vec::new();
+        let shared_runtime_values = self.parse_shared_inputs_input(&inputs)?;
         let tool_specs = self.tool_specs();
 
         for iteration in 0..MAX_TOOL_ITERATIONS {
@@ -485,10 +613,17 @@ impl Node for BrainNode {
             }
 
             if response.tool_calls.is_empty() {
+                output_messages.push(response);
                 let mut outputs = HashMap::new();
                 outputs.insert(
-                    "assistant_message".to_string(),
-                    DataValue::OpenAIMessage(response.clone()),
+                    "output".to_string(),
+                    DataValue::Vec(
+                        Box::new(DataType::OpenAIMessage),
+                        output_messages
+                            .into_iter()
+                            .map(DataValue::OpenAIMessage)
+                            .collect(),
+                    ),
                 );
                 self.validate_outputs(&outputs)?;
                 return Ok(outputs);
@@ -501,6 +636,8 @@ impl Node for BrainNode {
             );
 
             conversation.push(response.clone());
+            output_messages.push(response.clone());
+            let tool_call_content = response.content.clone().unwrap_or_default();
 
             for tool_call in response.tool_calls {
                 let tool_result_content = if let Some(tool) = self
@@ -508,7 +645,12 @@ impl Node for BrainNode {
                     .iter()
                     .find(|tool| tool.name == tool_call.function.name)
                 {
-                    match self.execute_tool_subgraph(tool, tool_call.function.arguments.clone()) {
+                    match self.execute_tool_subgraph(
+                        tool,
+                        shared_runtime_values.clone(),
+                        tool_call_content.clone(),
+                        tool_call.function.arguments.clone(),
+                    ) {
                         Ok(result) => result,
                         Err(error) => self.build_tool_error_message(error.to_string()),
                     }
@@ -526,10 +668,12 @@ impl Node for BrainNode {
                     tool_result_content
                 );
 
-                conversation.push(OpenAIMessage::tool_result(
+                let tool_result_message = OpenAIMessage::tool_result(
                     tool_call.id.clone(),
                     tool_result_content,
-                ));
+                );
+                conversation.push(tool_result_message.clone());
+                output_messages.push(tool_result_message);
             }
         }
 
@@ -547,7 +691,9 @@ mod tests {
     use serde_json::json;
 
     use super::BrainNode;
-    use crate::llm::brain_tool::{BrainToolDefinition, ToolParamDef};
+    use crate::llm::brain_tool::{
+        BrainToolDefinition, ToolParamDef, BRAIN_SHARED_INPUTS_PORT, BRAIN_TOOLS_CONFIG_PORT,
+    };
     use crate::llm::llm_base::LLMBase;
     use crate::llm::tooling::{ToolCalls, ToolCallsFuncSpec};
     use crate::llm::{InferenceParam, MessageRole, OpenAIMessage};
@@ -633,6 +779,56 @@ mod tests {
         }
     }
 
+    fn tool_using_shared_input(name: &str) -> BrainToolDefinition {
+        let mut subgraph = default_function_subgraph();
+        let input_signature = vec![
+            FunctionPortDef {
+                name: "context".to_string(),
+                data_type: DataType::Json,
+            },
+            FunctionPortDef {
+                name: "query".to_string(),
+                data_type: DataType::String,
+            },
+        ];
+        let output_signature = vec![
+            FunctionPortDef {
+                name: "context".to_string(),
+                data_type: DataType::Json,
+            },
+            FunctionPortDef {
+                name: "query".to_string(),
+                data_type: DataType::String,
+            },
+        ];
+        sync_function_subgraph_signature(&mut subgraph, &input_signature, &output_signature);
+        subgraph.edges.push(EdgeDefinition {
+            from_node_id: FUNCTION_INPUTS_NODE_ID.to_string(),
+            from_port: "context".to_string(),
+            to_node_id: FUNCTION_OUTPUTS_NODE_ID.to_string(),
+            to_port: "context".to_string(),
+        });
+        subgraph.edges.push(EdgeDefinition {
+            from_node_id: FUNCTION_INPUTS_NODE_ID.to_string(),
+            from_port: "query".to_string(),
+            to_node_id: FUNCTION_OUTPUTS_NODE_ID.to_string(),
+            to_port: "query".to_string(),
+        });
+
+        BrainToolDefinition {
+            id: format!("{name}_id"),
+            name: name.to_string(),
+            description: format!("tool {name}"),
+            parameters: vec![ToolParamDef {
+                name: "query".to_string(),
+                data_type: DataType::String,
+                desc: "query".to_string(),
+            }],
+            outputs: output_signature,
+            subgraph,
+        }
+    }
+
     fn messages_input() -> DataValue {
         DataValue::Vec(
             Box::new(DataType::OpenAIMessage),
@@ -641,15 +837,37 @@ mod tests {
     }
 
     #[test]
-    fn brain_output_is_static_assistant_message_only() {
+    fn brain_output_is_static_output_message_list_only() {
         ensure_registry_initialized();
         let node = BrainNode::new("brain_1", "Brain");
         let output_names: Vec<String> = node.output_ports().into_iter().map(|port| port.name).collect();
-        assert_eq!(output_names, vec!["assistant_message"]);
+        assert_eq!(output_names, vec!["output"]);
     }
 
     #[test]
-    fn execute_runs_internal_tool_loop_and_returns_final_assistant_message() {
+    fn brain_input_ports_include_shared_inputs() {
+        ensure_registry_initialized();
+        let mut node = BrainNode::new("brain_1", "Brain");
+        node.apply_inline_config(&HashMap::from([(
+            BRAIN_SHARED_INPUTS_PORT.to_string(),
+            DataValue::Json(json!([
+                { "name": "context", "data_type": "Json" },
+                { "name": "sender_id", "data_type": "String" }
+            ])),
+        )]))
+        .unwrap();
+
+        let input_names: Vec<String> = node.input_ports().into_iter().map(|port| port.name).collect();
+        assert!(input_names.contains(&"llm_model".to_string()));
+        assert!(input_names.contains(&"messages".to_string()));
+        assert!(input_names.contains(&"tools_config".to_string()));
+        assert!(input_names.contains(&"shared_inputs".to_string()));
+        assert!(input_names.contains(&"context".to_string()));
+        assert!(input_names.contains(&"sender_id".to_string()));
+    }
+
+    #[test]
+    fn execute_runs_internal_tool_loop_and_returns_output_message_list() {
         ensure_registry_initialized();
         let tool_call_message = OpenAIMessage {
             role: MessageRole::Assistant,
@@ -677,7 +895,7 @@ mod tests {
 
         let mut node = BrainNode::new("brain_1", "Brain");
         node.apply_inline_config(&HashMap::from([(
-            "tools_config".to_string(),
+            BRAIN_TOOLS_CONFIG_PORT.to_string(),
             DataValue::Json(json!([passthrough_tool_definition("search")])),
         )]))
         .unwrap();
@@ -689,12 +907,32 @@ mod tests {
             ]))
             .unwrap();
 
-        match outputs.get("assistant_message") {
-            Some(DataValue::OpenAIMessage(message)) => {
-                assert_eq!(message.content.as_deref(), Some("done"));
-                assert!(message.tool_calls.is_empty());
+        match outputs.get("output") {
+            Some(DataValue::Vec(_, items)) => {
+                assert_eq!(items.len(), 3);
+                match &items[0] {
+                    DataValue::OpenAIMessage(message) => {
+                        assert_eq!(message.content.as_deref(), Some("calling tool"));
+                        assert_eq!(message.role, MessageRole::Assistant);
+                    }
+                    other => panic!("unexpected first output item: {other:?}"),
+                }
+                match &items[1] {
+                    DataValue::OpenAIMessage(message) => {
+                        assert_eq!(message.role, MessageRole::Tool);
+                        assert_eq!(message.content.as_deref(), Some("{\"query\":\"rust\"}"));
+                    }
+                    other => panic!("unexpected second output item: {other:?}"),
+                }
+                match &items[2] {
+                    DataValue::OpenAIMessage(message) => {
+                        assert_eq!(message.content.as_deref(), Some("done"));
+                        assert!(message.tool_calls.is_empty());
+                    }
+                    other => panic!("unexpected third output item: {other:?}"),
+                }
             }
-            other => panic!("unexpected assistant_message output: {other:?}"),
+            other => panic!("unexpected output: {other:?}"),
         }
 
         let seen_messages = llm.seen_messages.lock().unwrap();
@@ -738,15 +976,21 @@ mod tests {
             .execute(HashMap::from([
                 ("llm_model".to_string(), DataValue::LLModel(llm.clone())),
                 ("messages".to_string(), messages_input()),
-                ("tools_config".to_string(), DataValue::Json(json!([]))),
+                (BRAIN_TOOLS_CONFIG_PORT.to_string(), DataValue::Json(json!([]))),
             ]))
             .unwrap();
 
-        match outputs.get("assistant_message") {
-            Some(DataValue::OpenAIMessage(message)) => {
-                assert_eq!(message.content.as_deref(), Some("recovered"));
+        match outputs.get("output") {
+            Some(DataValue::Vec(_, items)) => {
+                assert_eq!(items.len(), 3);
+                match &items[2] {
+                    DataValue::OpenAIMessage(message) => {
+                        assert_eq!(message.content.as_deref(), Some("recovered"));
+                    }
+                    other => panic!("unexpected last output item: {other:?}"),
+                }
             }
-            other => panic!("unexpected assistant_message output: {other:?}"),
+            other => panic!("unexpected output: {other:?}"),
         }
 
         let seen_messages = llm.seen_messages.lock().unwrap();
@@ -775,11 +1019,296 @@ mod tests {
             ]))
             .unwrap();
 
-        match outputs.get("assistant_message") {
-            Some(DataValue::OpenAIMessage(message)) => {
-                assert_eq!(message.content.as_deref(), Some("plain reply"));
+        match outputs.get("output") {
+            Some(DataValue::Vec(_, items)) => {
+                assert_eq!(items.len(), 1);
+                match &items[0] {
+                    DataValue::OpenAIMessage(message) => {
+                        assert_eq!(message.content.as_deref(), Some("plain reply"));
+                    }
+                    other => panic!("unexpected output item: {other:?}"),
+                }
             }
-            other => panic!("unexpected assistant_message output: {other:?}"),
+            other => panic!("unexpected output: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tool_specs_expose_only_tool_parameters_to_llm() {
+        ensure_registry_initialized();
+        let mut node = BrainNode::new("brain_1", "Brain");
+        node.apply_inline_config(&HashMap::from([
+            (
+                BRAIN_SHARED_INPUTS_PORT.to_string(),
+                DataValue::Json(json!([{ "name": "context", "data_type": "Json" }])),
+            ),
+            (
+                BRAIN_TOOLS_CONFIG_PORT.to_string(),
+                DataValue::Json(json!([tool_using_shared_input("search")])),
+            ),
+        ]))
+        .unwrap();
+
+        let tools = node.tool_specs();
+        let params = tools[0].parameters();
+        assert!(params["properties"].get("query").is_some());
+        assert!(params["properties"].get("context").is_none());
+    }
+
+    #[test]
+    fn execute_injects_shared_inputs_into_tool_subgraph() {
+        ensure_registry_initialized();
+        let llm = Arc::new(SequenceLlm::new(vec![
+            OpenAIMessage {
+                role: MessageRole::Assistant,
+                content: Some("calling tool".to_string()),
+                tool_calls: vec![ToolCalls {
+                    id: "tool_call_1".to_string(),
+                    type_name: "function".to_string(),
+                    function: ToolCallsFuncSpec {
+                        name: "search".to_string(),
+                        arguments: json!({"query": "rust"}),
+                    },
+                }],
+                tool_call_id: None,
+            },
+            OpenAIMessage {
+                role: MessageRole::Assistant,
+                content: Some("done".to_string()),
+                tool_calls: Vec::new(),
+                tool_call_id: None,
+            },
+        ]));
+
+        let mut node = BrainNode::new("brain_1", "Brain");
+        node.apply_inline_config(&HashMap::from([
+            (
+                BRAIN_SHARED_INPUTS_PORT.to_string(),
+                DataValue::Json(json!([{ "name": "context", "data_type": "Json" }])),
+            ),
+            (
+                BRAIN_TOOLS_CONFIG_PORT.to_string(),
+                DataValue::Json(json!([tool_using_shared_input("search")])),
+            ),
+        ]))
+        .unwrap();
+
+        node.execute(HashMap::from([
+            ("llm_model".to_string(), DataValue::LLModel(llm.clone())),
+            ("messages".to_string(), messages_input()),
+            (
+                "context".to_string(),
+                DataValue::Json(json!({"scope": "global"})),
+            ),
+        ]))
+        .unwrap();
+
+        let seen_messages = llm.seen_messages.lock().unwrap();
+        assert_eq!(
+            seen_messages[1][2].content.as_deref(),
+            Some("{\"context\":{\"scope\":\"global\"},\"query\":\"rust\"}")
+        );
+    }
+
+    #[test]
+    fn shared_inputs_and_tool_parameters_cannot_conflict() {
+        ensure_registry_initialized();
+        let mut node = BrainNode::new("brain_1", "Brain");
+        let error = node
+            .apply_inline_config(&HashMap::from([
+                (
+                    BRAIN_SHARED_INPUTS_PORT.to_string(),
+                    DataValue::Json(json!([{ "name": "query", "data_type": "Json" }])),
+                ),
+                (
+                    BRAIN_TOOLS_CONFIG_PORT.to_string(),
+                    DataValue::Json(json!([passthrough_tool_definition("search")])),
+                ),
+            ]))
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("conflicts with Brain shared input"));
+    }
+
+    #[test]
+    fn tool_parameters_cannot_use_reserved_content_name() {
+        ensure_registry_initialized();
+        let mut node = BrainNode::new("brain_1", "Brain");
+        let error = node
+            .apply_inline_config(&HashMap::from([(
+                BRAIN_TOOLS_CONFIG_PORT.to_string(),
+                DataValue::Json(json!([{
+                    "id": "tool_1",
+                    "name": "search",
+                    "parameters": [
+                        { "name": "content", "data_type": "String" }
+                    ]
+                }])),
+            )]))
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("reserved for Brain tool-call content"));
+    }
+
+    #[test]
+    fn execute_injects_tool_call_content_into_tool_subgraph() {
+        ensure_registry_initialized();
+        let mut subgraph = crate::node::function_graph::default_function_subgraph();
+        let input_signature = vec![
+            FunctionPortDef {
+                name: "content".to_string(),
+                data_type: DataType::String,
+            },
+            FunctionPortDef {
+                name: "query".to_string(),
+                data_type: DataType::String,
+            },
+        ];
+        let output_signature = vec![FunctionPortDef {
+            name: "content".to_string(),
+            data_type: DataType::String,
+        }];
+        sync_function_subgraph_signature(&mut subgraph, &input_signature, &output_signature);
+        subgraph.edges.push(EdgeDefinition {
+            from_node_id: FUNCTION_INPUTS_NODE_ID.to_string(),
+            from_port: "content".to_string(),
+            to_node_id: FUNCTION_OUTPUTS_NODE_ID.to_string(),
+            to_port: "content".to_string(),
+        });
+        let tool = BrainToolDefinition {
+            id: "search_id".to_string(),
+            name: "search".to_string(),
+            description: "tool search".to_string(),
+            parameters: vec![ToolParamDef {
+                name: "query".to_string(),
+                data_type: DataType::String,
+                desc: "query".to_string(),
+            }],
+            outputs: output_signature,
+            subgraph,
+        };
+        let llm = Arc::new(SequenceLlm::new(vec![
+            OpenAIMessage {
+                role: MessageRole::Assistant,
+                content: Some("call with context".to_string()),
+                tool_calls: vec![ToolCalls {
+                    id: "tool_call_1".to_string(),
+                    type_name: "function".to_string(),
+                    function: ToolCallsFuncSpec {
+                        name: "search".to_string(),
+                        arguments: json!({"query": "rust"}),
+                    },
+                }],
+                tool_call_id: None,
+            },
+            OpenAIMessage {
+                role: MessageRole::Assistant,
+                content: Some("done".to_string()),
+                tool_calls: Vec::new(),
+                tool_call_id: None,
+            },
+        ]));
+
+        let mut node = BrainNode::new("brain_1", "Brain");
+        node.apply_inline_config(&HashMap::from([(
+            BRAIN_TOOLS_CONFIG_PORT.to_string(),
+            DataValue::Json(json!([tool])),
+        )]))
+        .unwrap();
+
+        let outputs = node
+            .execute(HashMap::from([
+                ("llm_model".to_string(), DataValue::LLModel(llm)),
+                ("messages".to_string(), messages_input()),
+            ]))
+            .unwrap();
+
+        match outputs.get("output") {
+            Some(DataValue::Vec(_, items)) => match &items[1] {
+                DataValue::OpenAIMessage(message) => {
+                    assert_eq!(message.role, MessageRole::Tool);
+                    assert_eq!(message.content.as_deref(), Some("{\"content\":\"call with context\"}"));
+                }
+                other => panic!("unexpected tool result item: {other:?}"),
+            },
+            other => panic!("unexpected output: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn execute_injects_empty_string_when_tool_call_content_is_null() {
+        ensure_registry_initialized();
+        let mut subgraph = crate::node::function_graph::default_function_subgraph();
+        let input_signature = vec![FunctionPortDef {
+            name: "content".to_string(),
+            data_type: DataType::String,
+        }];
+        let output_signature = vec![FunctionPortDef {
+            name: "content".to_string(),
+            data_type: DataType::String,
+        }];
+        sync_function_subgraph_signature(&mut subgraph, &input_signature, &output_signature);
+        subgraph.edges.push(EdgeDefinition {
+            from_node_id: FUNCTION_INPUTS_NODE_ID.to_string(),
+            from_port: "content".to_string(),
+            to_node_id: FUNCTION_OUTPUTS_NODE_ID.to_string(),
+            to_port: "content".to_string(),
+        });
+        let tool = BrainToolDefinition {
+            id: "search_id".to_string(),
+            name: "search".to_string(),
+            description: "tool search".to_string(),
+            parameters: Vec::new(),
+            outputs: output_signature,
+            subgraph,
+        };
+        let llm = Arc::new(SequenceLlm::new(vec![
+            OpenAIMessage {
+                role: MessageRole::Assistant,
+                content: None,
+                tool_calls: vec![ToolCalls {
+                    id: "tool_call_1".to_string(),
+                    type_name: "function".to_string(),
+                    function: ToolCallsFuncSpec {
+                        name: "search".to_string(),
+                        arguments: json!({}),
+                    },
+                }],
+                tool_call_id: None,
+            },
+            OpenAIMessage {
+                role: MessageRole::Assistant,
+                content: Some("done".to_string()),
+                tool_calls: Vec::new(),
+                tool_call_id: None,
+            },
+        ]));
+
+        let mut node = BrainNode::new("brain_1", "Brain");
+        node.apply_inline_config(&HashMap::from([(
+            BRAIN_TOOLS_CONFIG_PORT.to_string(),
+            DataValue::Json(json!([tool])),
+        )]))
+        .unwrap();
+
+        let outputs = node
+            .execute(HashMap::from([
+                ("llm_model".to_string(), DataValue::LLModel(llm)),
+                ("messages".to_string(), messages_input()),
+            ]))
+            .unwrap();
+
+        match outputs.get("output") {
+            Some(DataValue::Vec(_, items)) => match &items[1] {
+                DataValue::OpenAIMessage(message) => {
+                    assert_eq!(message.role, MessageRole::Tool);
+                    assert_eq!(message.content.as_deref(), Some("{\"content\":\"\"}"));
+                }
+                other => panic!("unexpected tool result item: {other:?}"),
+            },
+            other => panic!("unexpected output: {other:?}"),
         }
     }
 }
