@@ -11,7 +11,8 @@ Documentation for developing and extending zihuan-next — a Rust + Slint node-g
 | Understand the overall system | [node-system.md](./node-system.md) |
 | Build a new node | [../node/node-development.md](../node/node-development.md) |
 | Build a node with config-driven ports | [../node/dynamic-port-nodes.md](../node/dynamic-port-nodes.md) |
-| Understand embedded function subgraphs and Brain tool subgraphs | [../node/function-subgraphs.md](../node/function-subgraphs.md) |
+| Understand embedded function subgraphs | [../node/function-subgraphs.md](../node/function-subgraphs.md) |
+| Understand the Brain agentic runtime and tool subgraphs | [../llm/brain.md](../llm/brain.md) |
 | Understand the JSON graph file format | [../node/node-graph-json.md](../node/node-graph-json.md) |
 | Understand how the UI talks to nodes | [ui-architecture.md](./ui-architecture.md) |
 | Look up naming and coding conventions | [code-conventions.md](./code-conventions.md) |
@@ -37,6 +38,7 @@ Documentation for developing and extending zihuan-next — a Rust + Slint node-g
 |----------|----------|
 | [../node/node-development.md](../node/node-development.md) | Node implementation outline and quick checklist; detailed contracts live in `node-system.md` |
 | [../node/dynamic-port-nodes.md](../node/dynamic-port-nodes.md) | Dynamic-port nodes: implementation pattern, UI coordination, JSON markers |
-| [../node/function-subgraphs.md](../node/function-subgraphs.md) | Embedded function graphs, boundary nodes, Brain internal tool loop, subgraph UI navigation |
+| [../node/function-subgraphs.md](../node/function-subgraphs.md) | Embedded function graphs, boundary nodes, and subgraph UI navigation |
+| [../llm/brain.md](../llm/brain.md) | Brain agentic loop, tool contracts, embedded tool subgraphs, and Brain-specific JSON behavior |
 | [../node/node-graph-json.md](../node/node-graph-json.md) | Complete node graph JSON specification with all field and data type descriptions |
 | [../node/node-lifecycle.md](../node/node-lifecycle.md) | Node lifecycle detail: on_graph_start, execute, on_start/update/cleanup |

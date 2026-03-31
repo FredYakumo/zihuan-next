@@ -171,11 +171,16 @@ export component NodeGraphWindow inherits Window {
     in property <bool> show_tool_editor_dialog: false;
     in property <string> tool_editor_node_id: "";
     in property <int> tool_editor_selected_index: -1;
+    in property <[FunctionPortVm]> tool_editor_shared_inputs;
     in property <[ToolDefinitionVm]> tool_editor_items;
     callback open_tool_editor(string);
     callback close_tool_editor();
     callback save_tool_editor();
     callback tool_editor_select(int);
+    callback tool_editor_add_shared_input();
+    callback tool_editor_delete_shared_input(int);
+    callback tool_editor_set_shared_input_name(int, string);
+    callback tool_editor_set_shared_input_type(int, string);
     callback tool_editor_add_tool();
     callback tool_editor_delete_tool(int);
     callback tool_editor_set_tool_name(int, string);
@@ -920,9 +925,14 @@ export component NodeGraphWindow inherits Window {
     }
 
     if root.show_tool_editor_dialog: ToolEditorDialog {
+        shared-inputs: root.tool_editor_shared_inputs;
         tools: root.tool_editor_items;
         selected_tool_index: root.tool_editor_selected_index;
         select_tool(index) => { root.tool_editor_select(index); }
+        add_shared_input() => { root.tool_editor_add_shared_input(); }
+        delete_shared_input(index) => { root.tool_editor_delete_shared_input(index); }
+        set_shared_input_name(index, value) => { root.tool_editor_set_shared_input_name(index, value); }
+        set_shared_input_type(index, value) => { root.tool_editor_set_shared_input_type(index, value); }
         add_tool() => { root.tool_editor_add_tool(); }
         delete_tool(index) => { root.tool_editor_delete_tool(index); }
         set_tool_name(index, value) => { root.tool_editor_set_tool_name(index, value); }

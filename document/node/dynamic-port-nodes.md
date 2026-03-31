@@ -160,7 +160,7 @@ After this, call `refresh_active_tab_ui()` to re-render.
 
 Today:
 
-- `brain` has a static `assistant_message` output
+- `brain` has a static `output` output of type `Vec<OpenAIMessage>`
 - tool definitions still live in `tools_config`
 - each tool owns an embedded subgraph instead of creating external dynamic output ports
 
