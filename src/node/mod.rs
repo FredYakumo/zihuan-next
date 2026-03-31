@@ -152,6 +152,17 @@ pub trait Node: Send + Sync {
         Ok(())
     }
 
+    /// Inject runtime values for a function-input boundary node without forcing
+    /// opaque runtime references through a JSON round-trip.
+    fn set_function_runtime_values(
+        &mut self,
+        _values: HashMap<String, DataValue>,
+    ) -> Result<()> {
+        Err(crate::error::Error::ValidationError(
+            "Node does not accept function runtime values".to_string(),
+        ))
+    }
+
     /// Event producer lifecycle: called before update loop
     fn on_start(&mut self, _inputs: HashMap<String, DataValue>) -> Result<()> {
         Ok(())

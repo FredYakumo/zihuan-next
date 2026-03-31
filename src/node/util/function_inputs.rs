@@ -15,6 +15,7 @@ pub struct FunctionInputsNode {
     id: String,
     name: String,
     signature: Vec<FunctionPortDef>,
+    runtime_values: Option<HashMap<String, DataValue>>,
 }
 
 impl FunctionInputsNode {
@@ -23,6 +24,7 @@ impl FunctionInputsNode {
             id: id.into(),
             name: name.into(),
             signature: Vec::new(),
+            runtime_values: None,
         }
     }
 
@@ -70,33 +72,52 @@ impl Node for FunctionInputsNode {
         }
     }
 
+    fn set_function_runtime_values(
+        &mut self,
+        values: HashMap<String, DataValue>,
+    ) -> Result<()> {
+        self.runtime_values = Some(values);
+        Ok(())
+    }
+
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
         if let Some(DataValue::Json(value)) = inputs.get(FUNCTION_SIGNATURE_PORT) {
             self.apply_signature_json(value)?;
         }
         self.validate_inputs(&inputs)?;
 
-        let runtime_values = match inputs.get(FUNCTION_RUNTIME_VALUES_PORT) {
-            Some(DataValue::Json(Value::Object(map))) => map,
-            Some(DataValue::Json(Value::Null)) | None => {
-                return Ok(HashMap::new());
-            }
-            Some(DataValue::Json(other)) => {
-                return Err(Error::ValidationError(format!(
-                    "function_inputs.runtime_values 需要 JSON 对象，实际为 {}",
-                    other
-                )));
-            }
-            Some(other) => {
-                return Err(Error::ValidationError(format!(
-                    "function_inputs.runtime_values 需要 Json，实际为 {}",
-                    other.data_type()
-                )));
-            }
-        };
-
         let mut outputs = HashMap::new();
         for port in &self.signature {
+            if let Some(runtime_values) = &self.runtime_values {
+                let value = runtime_values.get(&port.name).ok_or_else(|| {
+                    Error::ValidationError(format!(
+                        "函数输入 '{}' 在 runtime_values 中缺失",
+                        port.name
+                    ))
+                })?;
+                outputs.insert(port.name.clone(), value.clone());
+                continue;
+            }
+
+            let runtime_values = match inputs.get(FUNCTION_RUNTIME_VALUES_PORT) {
+                Some(DataValue::Json(Value::Object(map))) => map,
+                Some(DataValue::Json(Value::Null)) | None => {
+                    return Ok(HashMap::new());
+                }
+                Some(DataValue::Json(other)) => {
+                    return Err(Error::ValidationError(format!(
+                        "function_inputs.runtime_values 需要 JSON 对象，实际为 {}",
+                        other
+                    )));
+                }
+                Some(other) => {
+                    return Err(Error::ValidationError(format!(
+                        "function_inputs.runtime_values 需要 Json，实际为 {}",
+                        other.data_type()
+                    )));
+                }
+            };
+
             let value = runtime_values.get(&port.name).ok_or_else(|| {
                 Error::ValidationError(format!("函数输入 '{}' 在 runtime_values 中缺失", port.name))
             })?;

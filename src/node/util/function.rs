@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use crate::error::{Error, Result};
 use crate::node::function_graph::{
@@ -51,14 +51,17 @@ impl FunctionNode {
         Ok(())
     }
 
-    fn runtime_values_from_inputs(&self, inputs: &HashMap<String, DataValue>) -> Map<String, Value> {
+    fn runtime_values_from_inputs(
+        &self,
+        inputs: &HashMap<String, DataValue>,
+    ) -> HashMap<String, DataValue> {
         self.config
             .inputs
             .iter()
             .filter_map(|port| {
                 inputs
                     .get(&port.name)
-                    .map(|value| (port.name.clone(), value.to_json()))
+                    .map(|value| (port.name.clone(), value.clone()))
             })
             .collect()
     }
@@ -173,10 +176,6 @@ impl Node for FunctionNode {
             crate::node::function_graph::FUNCTION_SIGNATURE_PORT.to_string(),
             serde_json::to_value(&self.config.inputs).unwrap_or(Value::Null),
         );
-        function_inputs_node.inline_values.insert(
-            crate::node::function_graph::FUNCTION_RUNTIME_VALUES_PORT.to_string(),
-            Value::Object(runtime_values),
-        );
 
         let function_outputs_node = subgraph
             .nodes
@@ -190,6 +189,8 @@ impl Node for FunctionNode {
 
         let mut graph = build_node_graph_from_definition(&subgraph)
             .map_err(|e| self.wrap_error(format!("构建函数子图失败: {e}")))?;
+        inject_runtime_values_into_function_inputs_node(&mut graph, runtime_values)
+            .map_err(|e| self.wrap_error(format!("注入函数运行时输入失败: {e}")))?;
         let execution_result = graph.execute_and_capture_results();
         if let Some(error_message) = execution_result.error_message {
             return Err(self.wrap_error(format!("函数子图执行失败: {error_message}")));
@@ -213,12 +214,27 @@ pub(crate) fn data_value_from_json_with_declared_type(
     })
 }
 
+pub(crate) fn inject_runtime_values_into_function_inputs_node(
+    graph: &mut crate::node::NodeGraph,
+    runtime_values: HashMap<String, DataValue>,
+) -> Result<()> {
+    let function_inputs_node = graph
+        .nodes
+        .get_mut(FUNCTION_INPUTS_NODE_ID)
+        .ok_or_else(|| {
+            Error::ValidationError("函数子图缺少 function_inputs 边界节点".to_string())
+        })?;
+    function_inputs_node.set_function_runtime_values(runtime_values)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::sync::Once;
+    use std::sync::{Arc, Once};
 
     use super::FunctionNode;
+    use crate::llm::llm_base::LLMBase;
+    use crate::llm::{InferenceParam, OpenAIMessage};
     use crate::node::function_graph::{
         default_embedded_function_config, sync_function_subgraph_signature, FunctionPortDef,
         FUNCTION_CONFIG_PORT, FUNCTION_INPUTS_NODE_ID, FUNCTION_OUTPUTS_NODE_ID,
@@ -251,6 +267,19 @@ mod tests {
             to_port: "result".to_string(),
         });
         config
+    }
+
+    #[derive(Debug)]
+    struct StubLlm;
+
+    impl LLMBase for StubLlm {
+        fn get_model_name(&self) -> &str {
+            "stub-llm"
+        }
+
+        fn inference(&self, _param: &InferenceParam) -> OpenAIMessage {
+            OpenAIMessage::system("unused")
+        }
     }
 
     #[test]
@@ -310,5 +339,49 @@ mod tests {
         let error_text = error.to_string();
         assert!(error_text.contains("[NODE_ERROR:outer_fn]"));
         assert!(error_text.contains("函数子图执行失败"));
+    }
+
+    #[test]
+    fn execute_preserves_runtime_reference_inputs_in_subgraph() {
+        ensure_registry_initialized();
+
+        let mut config = default_embedded_function_config("RefEcho");
+        config.inputs = vec![FunctionPortDef {
+            name: "llm_ref".to_string(),
+            data_type: DataType::LLModel,
+        }];
+        config.outputs = vec![FunctionPortDef {
+            name: "llm_ref".to_string(),
+            data_type: DataType::LLModel,
+        }];
+        sync_function_subgraph_signature(&mut config.subgraph, &config.inputs, &config.outputs);
+        config.subgraph.edges.push(EdgeDefinition {
+            from_node_id: FUNCTION_INPUTS_NODE_ID.to_string(),
+            from_port: "llm_ref".to_string(),
+            to_node_id: FUNCTION_OUTPUTS_NODE_ID.to_string(),
+            to_port: "llm_ref".to_string(),
+        });
+
+        let mut node = FunctionNode::new("outer_fn", "RefEcho");
+        node.apply_inline_config(&HashMap::from([(
+            FUNCTION_CONFIG_PORT.to_string(),
+            DataValue::Json(serde_json::to_value(&config).unwrap()),
+        )]))
+        .expect("function config should apply");
+
+        let llm_ref = Arc::new(StubLlm) as Arc<dyn LLMBase>;
+        let outputs = node
+            .execute(HashMap::from([(
+                "llm_ref".to_string(),
+                DataValue::LLModel(llm_ref.clone()),
+            )]))
+            .expect("function should preserve runtime references");
+
+        match outputs.get("llm_ref") {
+            Some(DataValue::LLModel(output_ref)) => {
+                assert_eq!(output_ref.get_model_name(), llm_ref.get_model_name());
+            }
+            other => panic!("unexpected function output: {other:?}"),
+        }
     }
 }
