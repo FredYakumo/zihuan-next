@@ -102,6 +102,17 @@ pub(crate) fn apply_hyperparameter_bindings_to_graph(
     }
 }
 
+pub(crate) fn materialize_graph_for_execution(
+    graph: &mut NodeGraphDefinition,
+    inline_inputs: &HashMap<String, InlinePortValue>,
+    hyperparameter_values: &HashMap<String, serde_json::Value>,
+) {
+    // Inline JSON configs can contain embedded subgraph payloads like function_config/tools_config.
+    // Apply them first, then inject hyperparameter-bound values so nested bindings are preserved.
+    apply_inline_inputs_to_graph(graph, inline_inputs);
+    apply_hyperparameter_bindings_to_graph(graph, hyperparameter_values);
+}
+
 fn message_list_key(node_id: &str) -> String {
     inline_port_key(node_id, "messages")
 }
@@ -204,7 +215,10 @@ mod tests {
 
     use serde_json::json;
 
-    use super::apply_hyperparameter_bindings_to_graph;
+    use super::{
+        apply_hyperparameter_bindings_to_graph, build_inline_inputs_from_graph,
+        materialize_graph_for_execution,
+    };
     use crate::llm::brain_tool::{BrainToolDefinition, ToolParamDef};
     use crate::node::function_graph::{
         default_embedded_function_config, sync_function_node_definition, FunctionPortDef,
@@ -321,6 +335,113 @@ mod tests {
         let values = HashMap::from([("hp_name".to_string(), json!("alice"))]);
 
         apply_hyperparameter_bindings_to_graph(&mut graph, &values);
+
+        let tools = graph.nodes[0]
+            .inline_values
+            .get("tools_config")
+            .and_then(|value| serde_json::from_value::<Vec<BrainToolDefinition>>(value.clone()).ok())
+            .expect("tools config");
+        let inner = tools[0]
+            .subgraph
+            .nodes
+            .iter()
+            .find(|node| node.id == "inner_tool_1")
+            .expect("inner tool node");
+        assert_eq!(inner.inline_values.get("text"), Some(&json!("alice")));
+    }
+
+    #[test]
+    fn materialize_graph_for_execution_preserves_function_subgraph_bindings() {
+        let mut function_node = NodeDefinition {
+            id: "fn_1".to_string(),
+            name: "fn_1".to_string(),
+            description: None,
+            node_type: "function".to_string(),
+            input_ports: Vec::new(),
+            output_ports: Vec::new(),
+            dynamic_input_ports: true,
+            dynamic_output_ports: true,
+            position: None,
+            size: None,
+            inline_values: HashMap::new(),
+            port_bindings: HashMap::new(),
+            has_error: false,
+            has_cycle: false,
+        };
+        let mut config = default_embedded_function_config("demo");
+        config.inputs = vec![FunctionPortDef {
+            name: "name".to_string(),
+            data_type: DataType::String,
+        }];
+        config.subgraph.nodes.push(binding_node("inner_1", "text", "hp_name"));
+        sync_function_node_definition(&mut function_node, &config);
+
+        let mut graph = crate::node::graph_io::NodeGraphDefinition {
+            nodes: vec![function_node],
+            ..Default::default()
+        };
+        let inline_inputs = build_inline_inputs_from_graph(&graph);
+        let values = HashMap::from([("hp_name".to_string(), json!("alice"))]);
+
+        materialize_graph_for_execution(&mut graph, &inline_inputs, &values);
+
+        let config = crate::node::function_graph::embedded_function_config_from_node(&graph.nodes[0])
+            .expect("function config");
+        let inner = config
+            .subgraph
+            .nodes
+            .iter()
+            .find(|node| node.id == "inner_1")
+            .expect("inner node");
+        assert_eq!(inner.inline_values.get("text"), Some(&json!("alice")));
+    }
+
+    #[test]
+    fn materialize_graph_for_execution_preserves_brain_tool_subgraph_bindings() {
+        let mut brain_node = NodeDefinition {
+            id: "brain_1".to_string(),
+            name: "brain_1".to_string(),
+            description: None,
+            node_type: "brain".to_string(),
+            input_ports: Vec::new(),
+            output_ports: Vec::new(),
+            dynamic_input_ports: false,
+            dynamic_output_ports: false,
+            position: None,
+            size: None,
+            inline_values: HashMap::new(),
+            port_bindings: HashMap::new(),
+            has_error: false,
+            has_cycle: false,
+        };
+        let mut tool = BrainToolDefinition {
+            id: "tool_1".to_string(),
+            name: "tool_1".to_string(),
+            description: String::new(),
+            parameters: vec![ToolParamDef {
+                name: "arg".to_string(),
+                data_type: DataType::String,
+                desc: String::new(),
+            }],
+            outputs: Vec::new(),
+            subgraph: crate::node::function_graph::default_function_subgraph(),
+        };
+        tool.subgraph
+            .nodes
+            .push(binding_node("inner_tool_1", "text", "hp_name"));
+        brain_node.inline_values.insert(
+            "tools_config".to_string(),
+            serde_json::to_value(vec![tool]).expect("serialize tools"),
+        );
+
+        let mut graph = crate::node::graph_io::NodeGraphDefinition {
+            nodes: vec![brain_node],
+            ..Default::default()
+        };
+        let inline_inputs = build_inline_inputs_from_graph(&graph);
+        let values = HashMap::from([("hp_name".to_string(), json!("alice"))]);
+
+        materialize_graph_for_execution(&mut graph, &inline_inputs, &values);
 
         let tools = graph.nodes[0]
             .inline_values
