@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use slint::{ModelRc, VecModel};
 
-use crate::node::graph_io::{ensure_positions, NodeDefinition, NodeGraphDefinition};
+use crate::node::graph_io::{ensure_positions, GraphVariable, NodeDefinition, NodeGraphDefinition, PortBindingKind};
 use crate::node::function_graph::is_hidden_function_port;
 use crate::ui::graph_window::{
     HyperParameterVm, MessageItemVm, NodeGraphWindow, NodeTypeVm, NodeVm, PortVm,
@@ -33,6 +33,7 @@ pub(crate) fn matches_node_type_search(node_type: &NodeTypeVm, search_text: &str
 pub(crate) fn apply_graph_to_ui(
     ui: &NodeGraphWindow,
     graph: &NodeGraphDefinition,
+    root_variables: &[GraphVariable],
     current_file: Option<String>,
     selection_state: &SelectionState,
     inline_inputs: &HashMap<String, InlinePortValue>,
@@ -41,6 +42,7 @@ pub(crate) fn apply_graph_to_ui(
     apply_graph_to_ui_with_options(
         ui,
         graph,
+        root_variables,
         current_file,
         selection_state,
         inline_inputs,
@@ -52,6 +54,7 @@ pub(crate) fn apply_graph_to_ui(
 pub(crate) fn apply_graph_to_ui_live(
     ui: &NodeGraphWindow,
     graph: &NodeGraphDefinition,
+    root_variables: &[GraphVariable],
     current_file: Option<String>,
     selection_state: &SelectionState,
     inline_inputs: &HashMap<String, InlinePortValue>,
@@ -60,6 +63,7 @@ pub(crate) fn apply_graph_to_ui_live(
     apply_graph_to_ui_with_options(
         ui,
         graph,
+        root_variables,
         current_file,
         selection_state,
         inline_inputs,
@@ -71,6 +75,7 @@ pub(crate) fn apply_graph_to_ui_live(
 fn apply_graph_to_ui_with_options(
     ui: &NodeGraphWindow,
     graph: &NodeGraphDefinition,
+    root_variables: &[GraphVariable],
     current_file: Option<String>,
     selection_state: &SelectionState,
     inline_inputs: &HashMap<String, InlinePortValue>,
@@ -92,7 +97,7 @@ fn apply_graph_to_ui_with_options(
     let nodes: Vec<NodeVm> = graph
         .nodes
         .iter()
-        .map(|node| build_node_vm(node, &graph, selection_state, inline_inputs, snap_positions))
+        .map(|node| build_node_vm(node, &graph, root_variables, selection_state, inline_inputs, snap_positions))
         .collect();
 
     let edges = build_edges(&graph, selection_state, snap_positions);
@@ -157,6 +162,7 @@ fn update_nodes_model_in_place(ui: &NodeGraphWindow, nodes: Vec<NodeVm>) {
 fn build_node_vm(
     node: &NodeDefinition,
     graph: &NodeGraphDefinition,
+    root_variables: &[GraphVariable],
     selection_state: &SelectionState,
     inline_inputs: &HashMap<String, InlinePortValue>,
     snap_position: bool,
@@ -192,7 +198,8 @@ fn build_node_vm(
             data_type: resolve_display_data_type(graph, node, &p.name, false).into(),
             inline_text: "".into(),
             inline_bool: false,
-            bound_hyperparameter: "".into(),
+            bound_name: "".into(),
+            bound_kind: "".into(),
         })
         .collect();
 
@@ -236,6 +243,23 @@ fn build_node_vm(
     let message_list = build_message_list_vm(node, graph, inline_inputs);
 
     let is_event_producer = crate::node::registry::NODE_REGISTRY.is_event_producer(&node.node_type);
+    let set_variable_name = if node.node_type == "set_variable" {
+        node.inline_values
+            .get(crate::node::util::set_variable::SET_VARIABLE_NAME_PORT)
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .to_string()
+    } else {
+        String::new()
+    };
+    let set_variable_options = if node.node_type == "set_variable" {
+        root_variables
+            .iter()
+            .map(|variable| variable.name.clone().into())
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     NodeVm {
         id: node.id.clone().into(),
@@ -245,6 +269,8 @@ fn build_node_vm(
         string_data_text: string_data_text.into(),
         message_event_filter_type: message_event_filter_type.into(),
         message_list: ModelRc::new(VecModel::from(message_list)),
+        set_variable_name: set_variable_name.into(),
+        set_variable_options: ModelRc::new(VecModel::from(set_variable_options)),
         x: position
             .map(|p| {
                 if snap_position {
@@ -280,11 +306,7 @@ fn build_input_port_vm(
     graph: &NodeGraphDefinition,
     inline_inputs: &HashMap<String, InlinePortValue>,
 ) -> PortVm {
-    let bound_hp = node
-        .port_bindings
-        .get(&port.name)
-        .cloned()
-        .unwrap_or_default();
+    let bound = node.port_bindings.get(&port.name).cloned();
     let is_connected = graph
         .edges
         .iter()
@@ -333,11 +355,22 @@ fn build_input_port_vm(
         is_input: true,
         is_connected,
         is_required: port.required,
-        has_value: has_inline || !bound_hp.is_empty(),
+        has_value: has_inline || bound.is_some(),
         data_type: resolve_display_data_type(graph, node, &port.name, true).into(),
         inline_text: inline_text.into(),
         inline_bool,
-        bound_hyperparameter: bound_hp.into(),
+        bound_name: bound
+            .as_ref()
+            .map(|binding| binding.name.clone())
+            .unwrap_or_default()
+            .into(),
+        bound_kind: bound
+            .map(|binding| match binding.kind {
+                PortBindingKind::Hyperparameter => "hyperparameter",
+                PortBindingKind::Variable => "variable",
+            })
+            .unwrap_or_default()
+            .into(),
     }
 }
 

@@ -1,6 +1,6 @@
 import { HorizontalBox, VerticalBox, ScrollView, LineEdit, CheckBox, ComboBox } from "std-widgets.slint";
 import { AppTheme } from "theme.slint";
-import { FunctionPortVm, JsonExtractFieldVm, NodeTypeVm, PortHelpVm, HyperParameterVm, LogEntryVm, ToolDefinitionVm, ValidationIssueVm } from "types.slint";
+import { FunctionPortVm, GraphVariableVm, JsonExtractFieldVm, NodeTypeVm, PortHelpVm, HyperParameterVm, LogEntryVm, ToolDefinitionVm, ValidationIssueVm } from "types.slint";
 import { CjkButton, CjkDeleteButton, CjkText } from "components/buttons.slint";
 
 export component ValidationFixDialog inherits Rectangle {
@@ -1475,6 +1475,250 @@ export component HyperParameterManagerDialog inherits Rectangle {
     }
 }
 
+export component VariableManagerDialog inherits Rectangle {
+    in property <[GraphVariableVm]> variables;
+    callback add(string, string, string);
+    callback delete(string);
+    callback set_initial_value(string, string);
+    callback close();
+
+    property <string> new_name: "";
+    property <string> new_type: "String";
+    property <string> new_initial_value: "";
+
+    background: AppTheme.overlay-mask;
+
+    TouchArea {
+        clicked => { root.close(); }
+    }
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 640px;
+        height: 520px;
+        background: AppTheme.node-bg;
+        border-radius: 12px;
+        border-width: 2px;
+        border-color: AppTheme.border;
+        clip: true;
+
+        TouchArea {}
+
+        VerticalBox {
+            padding: 20px;
+            spacing: 12px;
+
+            HorizontalLayout {
+                spacing: 12px;
+                CjkText {
+                    text: "节点图变量";
+                    font-size: 18px;
+                    font-weight: 700;
+                    color: AppTheme.text-primary;
+                    horizontal-stretch: 1;
+                }
+                Rectangle {
+                    width: 26px;
+                    height: 26px;
+                    background: AppTheme.category-bg;
+                    border-radius: 13px;
+                    border-width: 1px;
+                    border-color: AppTheme.border-light;
+                    TouchArea { clicked => { root.close(); } }
+                    CjkText {
+                        text: "×";
+                        color: AppTheme.text-secondary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        font-size: 16px;
+                        font-weight: 700;
+                    }
+                }
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
+                background: AppTheme.background;
+                border-radius: 6px;
+                border-color: AppTheme.border-light;
+                border-width: 1px;
+
+                ScrollView {
+                    viewport-height: max(100px, root.variables.length * 64px);
+
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 6px;
+
+                        if root.variables.length == 0: CjkText {
+                            text: "暂无变量";
+                            color: AppTheme.text-muted;
+                            font-size: 13px;
+                            horizontal-alignment: center;
+                        }
+
+                        for variable in root.variables: Rectangle {
+                            height: 52px;
+                            background: AppTheme.surface-overlay;
+                            border-radius: 6px;
+                            border-width: 1px;
+                            border-color: AppTheme.border;
+
+                            HorizontalLayout {
+                                padding: 8px;
+                                spacing: 8px;
+
+                                Rectangle {
+                                    background: #0f766e20;
+                                    border-radius: 4px;
+                                    border-width: 1px;
+                                    border-color: #14b8a640;
+                                    width: 120px;
+                                    HorizontalLayout {
+                                        padding-left: 6px; padding-right: 6px;
+                                        padding-top: 4px; padding-bottom: 4px;
+                                        CjkText {
+                                            text: variable.name;
+                                            font-size: 11px;
+                                            font-weight: 700;
+                                            color: #5eead4;
+                                            overflow: elide;
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    background: AppTheme.category-bg;
+                                    border-radius: 4px;
+                                    width: 70px;
+                                    HorizontalLayout {
+                                        padding-left: 6px; padding-right: 6px;
+                                        padding-top: 4px; padding-bottom: 4px;
+                                        CjkText {
+                                            text: variable.data_type;
+                                            font-size: 10px;
+                                            color: AppTheme.text-muted;
+                                        }
+                                    }
+                                }
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    horizontal-stretch: 1;
+                                    if variable.data_type != "Boolean" && variable.data_type != "Password": LineEdit {
+                                        height: 28px;
+                                        text: variable.initial_value;
+                                        placeholder-text: "输入初始值";
+                                        edited(text) => {
+                                            root.set_initial_value(variable.name, text);
+                                        }
+                                    }
+                                    if variable.data_type == "Password": LineEdit {
+                                        height: 28px;
+                                        input-type: password;
+                                        text: variable.initial_value;
+                                        placeholder-text: "输入初始值";
+                                        edited(text) => {
+                                            root.set_initial_value(variable.name, text);
+                                        }
+                                    }
+                                    if variable.data_type == "Boolean": HorizontalLayout {
+                                        spacing: 4px;
+                                        CheckBox {
+                                            checked: variable.initial_value == "true";
+                                            toggled => {
+                                                root.set_initial_value(variable.name, self.checked ? "true" : "false");
+                                            }
+                                        }
+                                        CjkText {
+                                            text: variable.initial_value == "true" ? "true" : "false";
+                                            color: AppTheme.text-secondary;
+                                            font-size: 12px;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    width: 24px;
+                                    height: 24px;
+                                    background: AppTheme.danger-bg;
+                                    border-radius: 4px;
+                                    border-width: 1px;
+                                    border-color: AppTheme.danger;
+                                    TouchArea {
+                                        clicked => { root.delete(variable.name); }
+                                    }
+                                    CjkText {
+                                        text: "×";
+                                        color: AppTheme.danger;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        font-size: 14px;
+                                        font-weight: 700;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle { height: 1px; background: AppTheme.border; }
+
+            VerticalLayout {
+                spacing: 8px;
+
+                CjkText {
+                    text: "新增变量";
+                    font-size: 13px;
+                    font-weight: 700;
+                    color: AppTheme.text-secondary;
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+
+                    LineEdit {
+                        horizontal-stretch: 1;
+                        height: 32px;
+                        placeholder-text: "变量名称";
+                        text <=> root.new_name;
+                    }
+
+                    ComboBox {
+                        width: 90px;
+                        height: 32px;
+                        model: ["String", "Integer", "Float", "Boolean", "Password"];
+                        current-value: root.new_type;
+                        selected(val) => { root.new_type = val; }
+                    }
+
+                    LineEdit {
+                        width: 180px;
+                        height: 32px;
+                        placeholder-text: "初始值";
+                        text <=> root.new_initial_value;
+                        input-type: root.new_type == "Password" ? password : text;
+                    }
+
+                    CjkButton {
+                        text: "添加";
+                        clicked => {
+                            if (root.new_name != "") {
+                                root.add(root.new_name, root.new_type, root.new_initial_value);
+                                root.new_name = "";
+                                root.new_initial_value = "";
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 export component GroupManagerDialog inherits Rectangle {
     in property <[string]> groups;
     in-out property <string> current_group: "default";
@@ -1798,6 +2042,164 @@ export component PortBindHyperparamDialog inherits Rectangle {
             CjkButton {
                 text: "取消";
                 clicked => { root.close(); }
+            }
+        }
+    }
+}
+
+export component PortBindVariableDialog inherits Rectangle {
+    in property <[GraphVariableVm]> compatible_variables;
+    in property <string> current_binding;
+    in property <string> port_name;
+    callback bind(string);
+    callback clear_binding();
+    callback close();
+
+    background: AppTheme.overlay-mask;
+
+    TouchArea {
+        clicked => { root.close(); }
+    }
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 480px;
+        height: 420px;
+        background: AppTheme.node-bg;
+        border-radius: 12px;
+        border-width: 2px;
+        border-color: AppTheme.border;
+        clip: true;
+
+        TouchArea {}
+
+        VerticalBox {
+            padding: 20px;
+            spacing: 12px;
+
+            HorizontalLayout {
+                spacing: 12px;
+                VerticalLayout {
+                    alignment: center;
+                    CjkText {
+                        text: "绑定变量";
+                        font-size: 18px;
+                        font-weight: 700;
+                        color: AppTheme.text-primary;
+                    }
+                    CjkText {
+                        text: "端口: " + root.port_name;
+                        font-size: 12px;
+                        color: AppTheme.text-muted;
+                    }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Rectangle {
+                    width: 26px;
+                    height: 26px;
+                    background: AppTheme.category-bg;
+                    border-radius: 13px;
+                    border-width: 1px;
+                    border-color: AppTheme.border-light;
+                    TouchArea { clicked => { root.close(); } }
+                    CjkText {
+                        text: "×";
+                        color: AppTheme.text-secondary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        font-size: 16px;
+                        font-weight: 700;
+                    }
+                }
+            }
+
+            if root.current_binding != "": HorizontalLayout {
+                spacing: 8px;
+                VerticalLayout {
+                    alignment: center;
+                    CjkText {
+                        text: "当前绑定: " + root.current_binding;
+                        font-size: 12px;
+                        color: #5eead4;
+                    }
+                }
+                CjkDeleteButton {
+                    text: "清除绑定";
+                    clicked => { root.clear_binding(); }
+                }
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
+                background: AppTheme.background;
+                border-radius: 6px;
+                border-color: AppTheme.border-light;
+                border-width: 1px;
+
+                ScrollView {
+                    viewport-height: max(60px, root.compatible_variables.length * 56px);
+
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 6px;
+                        alignment: start;
+
+                        if root.compatible_variables.length == 0: CjkText {
+                            text: "无兼容变量（类型不匹配）";
+                            color: AppTheme.text-muted;
+                            font-size: 13px;
+                            horizontal-alignment: center;
+                        }
+
+                        for variable in root.compatible_variables: Rectangle {
+                            height: 44px;
+                            background: root.current_binding == variable.name ? #0f766e20 : AppTheme.surface-overlay;
+                            border-radius: 6px;
+                            border-width: root.current_binding == variable.name ? 2px : 1px;
+                            border-color: root.current_binding == variable.name ? #14b8a6 : AppTheme.border;
+
+                            TouchArea {
+                                clicked => { root.bind(variable.name); }
+                            }
+
+                            HorizontalLayout {
+                                padding: 10px;
+                                spacing: 8px;
+
+                                CjkText {
+                                    text: variable.name;
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                    color: root.current_binding == variable.name ? #5eead4 : AppTheme.text-primary;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                }
+
+                                Rectangle {
+                                    background: AppTheme.category-bg;
+                                    border-radius: 4px;
+                                    HorizontalLayout {
+                                        padding-left: 6px; padding-right: 6px;
+                                        padding-top: 2px; padding-bottom: 2px;
+                                        CjkText {
+                                            text: variable.data_type;
+                                            font-size: 10px;
+                                            color: AppTheme.text-muted;
+                                        }
+                                    }
+                                }
+
+                                if variable.initial_value != "": CjkText {
+                                    text: variable.data_type == "Password" ? "= ****" : "= " + variable.initial_value;
+                                    font-size: 11px;
+                                    color: AppTheme.text-muted;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

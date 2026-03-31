@@ -24,7 +24,7 @@ use crate::ui::canvas_state::{load_canvas_view_state, save_canvas_view_state, Ca
 use crate::ui::graph_window::{LogEntryVm, NodeGraphWindow, NodeTypeVm, PortHelpVm};
 use crate::ui::node_graph_view_callbacks::{
     bind_canvas_callbacks, bind_format_string_editor_callbacks, bind_function_editor_callbacks,
-    bind_hyperparameter_callbacks, bind_inline_port_callbacks,
+    bind_hyperparameter_callbacks, bind_inline_port_callbacks, bind_variable_callbacks,
     bind_json_extract_editor_callbacks, bind_message_list_callbacks,
     bind_qq_message_list_callbacks, bind_tab_callbacks, bind_tool_editor_callbacks,
     bind_window_callbacks,
@@ -60,6 +60,16 @@ pub(crate) fn collect_hyperparameter_groups(graph: &NodeGraphDefinition) -> Vec<
         }
     }
     groups
+}
+
+fn value_to_ui_string(value: Option<&serde_json::Value>) -> String {
+    match value {
+        Some(serde_json::Value::String(value)) => value.clone(),
+        Some(serde_json::Value::Bool(value)) => value.to_string(),
+        Some(serde_json::Value::Number(value)) => value.to_string(),
+        Some(other) => other.to_string(),
+        None => String::new(),
+    }
 }
 
 pub(crate) struct GraphTabState {
@@ -490,6 +500,7 @@ mod tests {
             edges: Vec::new(),
             hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
+            variables: Vec::new(),
             execution_results: HashMap::new(),
         };
 
@@ -630,6 +641,7 @@ pub(crate) fn refresh_active_tab_ui(
         apply_graph_to_ui(
             ui,
             tab.graph(),
+            tab.root_graph().variables.as_slice(),
             Some(tab_display_title(tab)),
             tab.selection(),
             tab.inline_inputs(),
@@ -646,12 +658,7 @@ pub(crate) fn refresh_active_tab_ui(
                 value: tab
                     .hyperparameter_values
                     .get(&hp.name)
-                    .map(|v| match v {
-                        serde_json::Value::String(s) => s.clone(),
-                        serde_json::Value::Bool(b) => b.to_string(),
-                        serde_json::Value::Number(n) => n.to_string(),
-                        other => other.to_string(),
-                    })
+                    .map(|v| value_to_ui_string(Some(v)))
                     .unwrap_or_default()
                     .into(),
                 required: hp.required,
@@ -659,6 +666,17 @@ pub(crate) fn refresh_active_tab_ui(
             })
             .collect();
         ui.set_hyperparameters(ModelRc::new(VecModel::from(hyperparameter_vms)));
+        let variable_vms: Vec<crate::ui::graph_window::GraphVariableVm> = tab
+            .root_graph()
+            .variables
+            .iter()
+            .map(|variable| crate::ui::graph_window::GraphVariableVm {
+                name: variable.name.clone().into(),
+                data_type: variable.data_type.to_string().into(),
+                initial_value: value_to_ui_string(variable.initial_value.as_ref()).into(),
+            })
+            .collect();
+        ui.set_graph_variables(ModelRc::new(VecModel::from(variable_vms)));
         let groups = collect_hyperparameter_groups(tab.root_graph());
         ui.set_hyperparameter_groups(ModelRc::new(VecModel::from(
             groups
@@ -944,6 +962,7 @@ pub fn show_graph(
     bind_message_list_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
     bind_qq_message_list_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
     bind_hyperparameter_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
+    bind_variable_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
     bind_tool_editor_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
     bind_function_editor_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));
     bind_format_string_editor_callbacks(&ui, Arc::clone(&tabs), Arc::clone(&active_tab_index));

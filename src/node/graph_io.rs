@@ -9,12 +9,49 @@ use crate::llm::brain_tool::{
     brain_shared_inputs_from_value, brain_tool_input_signature, BrainToolDefinition,
     BRAIN_SHARED_INPUTS_PORT, BRAIN_TOOLS_CONFIG_PORT,
 };
+use crate::node::data_value::DataType;
 use crate::node::function_graph::{
     default_embedded_function_config, embedded_function_config_from_node,
     sync_function_node_definition, sync_function_subgraph_signature,
 };
-use crate::node::data_value::DataType;
 use crate::node::{DataValue, Node, NodeGraph, Port};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PortBindingKind {
+    Hyperparameter,
+    Variable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PortBinding {
+    pub kind: PortBindingKind,
+    pub name: String,
+}
+
+impl PortBinding {
+    pub fn hyperparameter(name: impl Into<String>) -> Self {
+        Self {
+            kind: PortBindingKind::Hyperparameter,
+            name: name.into(),
+        }
+    }
+
+    pub fn variable(name: impl Into<String>) -> Self {
+        Self {
+            kind: PortBindingKind::Variable,
+            name: name.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphVariable {
+    pub name: String,
+    pub data_type: DataType,
+    #[serde(default)]
+    pub initial_value: Option<Value>,
+}
 
 /// A graph-level hyperparameter (variable) that can be bound to node input ports.
 /// Values are NOT stored here – they live in a separate per-graph YAML file
@@ -47,6 +84,8 @@ pub struct NodeGraphDefinition {
     pub hyperparameter_groups: Vec<String>,
     #[serde(default)]
     pub hyperparameters: Vec<HyperParameter>,
+    #[serde(default)]
+    pub variables: Vec<GraphVariable>,
     #[serde(skip)]
     pub execution_results: HashMap<String, HashMap<String, DataValue>>,
 }
@@ -73,12 +112,38 @@ pub struct NodeDefinition {
     pub size: Option<GraphSize>,
     #[serde(default)]
     pub inline_values: HashMap<String, Value>,
-    #[serde(default)]
-    pub port_bindings: HashMap<String, String>,
+    #[serde(default, deserialize_with = "deserialize_port_bindings")]
+    pub port_bindings: HashMap<String, PortBinding>,
     #[serde(default)]
     pub has_error: bool,
     #[serde(default)]
     pub has_cycle: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+enum PortBindingDef {
+    Legacy(String),
+    Structured(PortBinding),
+}
+
+fn deserialize_port_bindings<'de, D>(
+    deserializer: D,
+) -> std::result::Result<HashMap<String, PortBinding>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let bindings = HashMap::<String, PortBindingDef>::deserialize(deserializer)?;
+    Ok(bindings
+        .into_iter()
+        .map(|(port_name, binding)| {
+            let binding = match binding {
+                PortBindingDef::Legacy(name) => PortBinding::hyperparameter(name),
+                PortBindingDef::Structured(binding) => binding,
+            };
+            (port_name, binding)
+        })
+        .collect())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,7 +202,11 @@ pub fn load_graph_definition_from_json_with_migration(
     let before_refresh = serde_json::to_value(&graph).ok();
     refresh_port_types(&mut graph);
     let migrated = before_refresh
-        .and_then(|before| serde_json::to_value(&graph).ok().map(|after| before != after))
+        .and_then(|before| {
+            serde_json::to_value(&graph)
+                .ok()
+                .map(|after| before != after)
+        })
         .unwrap_or(false);
     Ok(LoadedGraphDefinition { graph, migrated })
 }
@@ -163,8 +232,11 @@ fn refresh_port_types_internal(graph: &mut NodeGraphDefinition) {
             }
 
             if !node.dynamic_input_ports {
-                node.input_ports
-                    .retain(|port| canonical_inputs.iter().any(|canonical| canonical.name == port.name));
+                node.input_ports.retain(|port| {
+                    canonical_inputs
+                        .iter()
+                        .any(|canonical| canonical.name == port.name)
+                });
             }
             for canon in &canonical_inputs {
                 if !node.input_ports.iter().any(|p| p.name == canon.name) {
@@ -314,7 +386,10 @@ fn fix_function_node_input_types_from_edges(graph: &mut NodeGraphDefinition) {
                 if &port_def.data_type != correct_type {
                     log::debug!(
                         "[graph_io] 迁移 function 节点 '{}' 输入端口 '{}' 类型: {} → {}",
-                        node.name, port_name, port_def.data_type, correct_type
+                        node.name,
+                        port_name,
+                        port_def.data_type,
+                        correct_type
                     );
                     port_def.data_type = correct_type.clone();
                     changed = true;
@@ -711,8 +786,10 @@ fn validate_embedded_subgraphs(graph: &NodeGraphDefinition) -> Vec<ValidationIss
             match serde_json::from_value::<Vec<BrainToolDefinition>>(value.clone()) {
                 Ok(tools) => {
                     for tool in tools {
-                        let prefix =
-                            format!("Brain 节点 \"{}\" 的 Tool \"{}\" 子图", node.name, tool.name);
+                        let prefix = format!(
+                            "Brain 节点 \"{}\" 的 Tool \"{}\" 子图",
+                            node.name, tool.name
+                        );
                         issues.extend(
                             validate_graph_definition(&tool.subgraph)
                                 .into_iter()
@@ -1197,6 +1274,7 @@ pub fn build_definition_from_graph(graph: &NodeGraph) -> NodeGraphDefinition {
         edges,
         hyperparameter_groups: Vec::new(),
         hyperparameters: Vec::new(),
+        variables: Vec::new(),
         execution_results: HashMap::new(),
     }
 }
@@ -1239,6 +1317,29 @@ mod tests {
         let _ = crate::node::registry::init_node_registry();
     }
 
+    #[test]
+    fn deserializes_legacy_string_port_bindings_as_hyperparameters() {
+        let node: NodeDefinition = serde_json::from_value(json!({
+            "id": "node_1",
+            "name": "Preview",
+            "description": null,
+            "node_type": "preview_string",
+            "input_ports": [],
+            "output_ports": [],
+            "position": null,
+            "size": null,
+            "inline_values": {},
+            "port_bindings": {
+                "text": "legacy_hp"
+            }
+        }))
+        .expect("node definition should deserialize");
+
+        let binding = node.port_bindings.get("text").expect("binding");
+        assert_eq!(binding.kind, PortBindingKind::Hyperparameter);
+        assert_eq!(binding.name, "legacy_hp");
+    }
+
     fn format_string_node(input_ports: Vec<Port>) -> NodeDefinition {
         NodeDefinition {
             id: "node_1".to_string(),
@@ -1273,6 +1374,7 @@ mod tests {
             edges: vec![],
             hyperparameter_groups: vec![],
             hyperparameters: vec![],
+            variables: vec![],
             execution_results: HashMap::new(),
         };
 
@@ -1299,6 +1401,7 @@ mod tests {
             edges: vec![],
             hyperparameter_groups: vec![],
             hyperparameters: vec![],
+            variables: vec![],
             execution_results: HashMap::new(),
         };
 
@@ -1330,22 +1433,21 @@ mod tests {
             dynamic_output_ports: true,
             position: None,
             size: None,
-            inline_values: HashMap::from([(
-                BRAIN_TOOLS_CONFIG_PORT.to_string(),
-                json!([
-                    {
-                        "name": "search",
-                        "description": "Search docs",
-                        "parameters": [
-                            { "name": "query", "data_type": "String" }
-                        ]
-                    }
-                ]),
-            ),
-            (
-                BRAIN_SHARED_INPUTS_PORT.to_string(),
-                json!([]),
-            )]),
+            inline_values: HashMap::from([
+                (
+                    BRAIN_TOOLS_CONFIG_PORT.to_string(),
+                    json!([
+                        {
+                            "name": "search",
+                            "description": "Search docs",
+                            "parameters": [
+                                { "name": "query", "data_type": "String" }
+                            ]
+                        }
+                    ]),
+                ),
+                (BRAIN_SHARED_INPUTS_PORT.to_string(), json!([])),
+            ]),
             port_bindings: HashMap::new(),
             has_error: false,
             has_cycle: false,
@@ -1383,6 +1485,7 @@ mod tests {
             edges: vec![],
             hyperparameter_groups: vec![],
             hyperparameters: vec![],
+            variables: vec![],
             execution_results: HashMap::new(),
         };
 
@@ -1409,6 +1512,7 @@ mod tests {
             edges: vec![],
             hyperparameter_groups: vec![],
             hyperparameters: vec![],
+            variables: vec![],
             execution_results: HashMap::new(),
         };
 
@@ -1447,6 +1551,7 @@ mod tests {
             }],
             hyperparameter_groups: vec![],
             hyperparameters: vec![],
+            variables: vec![],
             execution_results: HashMap::new(),
         };
 
@@ -1477,6 +1582,7 @@ mod tests {
             edges: vec![],
             hyperparameter_groups: vec![],
             hyperparameters: vec![],
+            variables: vec![],
             execution_results: HashMap::new(),
         };
         graph.nodes[0].inline_values.insert(
@@ -1502,6 +1608,7 @@ mod tests {
             edges: vec![],
             hyperparameter_groups: vec![],
             hyperparameters: vec![],
+            variables: vec![],
             execution_results: HashMap::new(),
         };
         graph.nodes[0].inline_values.insert(
@@ -1608,6 +1715,7 @@ mod tests {
             ],
             hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
+            variables: Vec::new(),
             execution_results: HashMap::new(),
         };
 
@@ -1637,3 +1745,4 @@ mod tests {
         )));
     }
 }
+

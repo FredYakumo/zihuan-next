@@ -53,12 +53,13 @@ export component GraphCanvas inherits Rectangle {
     callback node_resized(string, float, float);
     callback node_resize_finished(string, float, float);
     callback show_node_help(string, string);
-    callback port_right_clicked(string, string);
+    callback port_right_clicked(string, string, float, float);
     callback edit_tools_clicked(string);
     callback edit_function_clicked(string);
     callback enter_function_subgraph_clicked(string);
     callback edit_format_string_clicked(string);
     callback edit_json_extract_clicked(string);
+    callback set_variable_node_selected(string, string);
 
     in-out property <bool> dragging: false;
     in-out property <string> drag_from_node_id: "";
@@ -325,6 +326,8 @@ export component GraphCanvas inherits Rectangle {
         string_data_text: node.string_data_text;
         message_event_filter_type: node.message_event_filter_type;
         message_list: node.message_list;
+        set_variable_name: node.set_variable_name;
+        set_variable_options: node.set_variable_options;
         x_pos: (node.x + root.canvas_pan_x) * root.canvas_zoom;
         y_pos: (node.y + root.canvas_pan_y) * root.canvas_zoom;
         node_width: node.width * root.canvas_zoom;
@@ -428,8 +431,8 @@ export component GraphCanvas inherits Rectangle {
             root.show_node_help(node_id, node_type);
         }
 
-        port_right_clicked(nid, pn) => {
-            root.port_right_clicked(nid, pn);
+        port_right_clicked(nid, pn, x, y) => {
+            root.port_right_clicked(nid, pn, x, y);
         }
 
         edit_tools_clicked(node_id) => {
@@ -450,6 +453,10 @@ export component GraphCanvas inherits Rectangle {
 
         edit_json_extract_clicked(node_id) => {
             root.edit_json_extract_clicked(node_id);
+        }
+
+        set_variable_node_selected(node_id, variable_name) => {
+            root.set_variable_node_selected(node_id, variable_name);
         }
     }
 

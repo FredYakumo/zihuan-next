@@ -7,11 +7,9 @@ use crate::llm::brain_tool::BrainToolDefinition;
 use crate::node::function_graph::{
     embedded_function_config_from_node, FUNCTION_CONFIG_PORT,
 };
-use crate::node::graph_io::HyperParameter;
+use crate::node::graph_io::{HyperParameter, PortBindingKind};
 use crate::ui::graph_window::NodeGraphWindow;
-use crate::ui::node_graph_view::{
-    collect_hyperparameter_groups, refresh_active_tab_ui, update_tabs_ui, GraphTabState,
-};
+use crate::ui::node_graph_view::{refresh_active_tab_ui, update_tabs_ui, GraphTabState};
 use crate::util::hyperparam_store::save_hyperparameter_values;
 
 fn parse_hp_data_type(type_str: &str) -> DataType {
@@ -70,7 +68,9 @@ fn remove_hyperparameter_bindings_from_graph(
     name: &str,
 ) {
     for node in &mut graph.nodes {
-        node.port_bindings.retain(|_, hp_name| hp_name != name);
+        node.port_bindings.retain(|_, binding| {
+            !(binding.kind == PortBindingKind::Hyperparameter && binding.name == name)
+        });
 
         if let Some(mut config) = embedded_function_config_from_node(node) {
             remove_hyperparameter_bindings_from_graph(&mut config.subgraph, name);
@@ -443,157 +443,4 @@ pub(crate) fn bind_hyperparameter_callbacks(
         });
     }
 
-    // Port right-clicked: populate and show bind dialog
-    {
-        let ui_handle = ui.as_weak();
-        let tabs_clone = Arc::clone(&tabs);
-        let active_tab_clone = Arc::clone(&active_tab_index);
-        ui.on_port_right_clicked(move |node_id, port_name| {
-            let ui = match ui_handle.upgrade() {
-                Some(ui) => ui,
-                None => return,
-            };
-
-            let tabs_guard = tabs_clone.lock().unwrap();
-            let active_index = *active_tab_clone.lock().unwrap();
-            let tab = match tabs_guard.get(active_index) {
-                Some(tab) => tab,
-                None => return,
-            };
-
-            // Find the port DataType
-            let port_type = tab
-                .graph()
-                .nodes
-                .iter()
-                .find(|n| n.id == node_id.as_str())
-                .and_then(|node| {
-                    node.input_ports
-                        .iter()
-                        .find(|p| p.name == port_name.as_str())
-                        .map(|p| p.data_type.clone())
-                });
-
-            let port_type = match port_type {
-                Some(t) => t,
-                None => return,
-            };
-
-            // Find current binding for this port
-            let current_binding = tab
-                .graph()
-                .nodes
-                .iter()
-                .find(|n| n.id == node_id.as_str())
-                .and_then(|n| n.port_bindings.get(port_name.as_str()))
-                .cloned()
-                .unwrap_or_default();
-
-            // Filter compatible hyperparameters
-            use crate::ui::graph_window::HyperParameterVm;
-            use slint::{ModelRc, VecModel};
-            let compatible: Vec<HyperParameterVm> = tab
-                .root_graph()
-                .hyperparameters
-                .iter()
-                .filter(|hp| is_hp_type_compatible(&hp.data_type, &port_type))
-                .map(|hp| HyperParameterVm {
-                    name: hp.name.clone().into(),
-                    group: hp.group.clone().into(),
-                    data_type: hp.data_type.to_string().into(),
-                    value: tab
-                        .hyperparameter_values
-                        .get(&hp.name)
-                        .map(|v| match v {
-                            serde_json::Value::String(s) => s.clone(),
-                            serde_json::Value::Bool(b) => b.to_string(),
-                            serde_json::Value::Number(n) => n.to_string(),
-                            other => other.to_string(),
-                        })
-                        .unwrap_or_default()
-                        .into(),
-                    required: hp.required,
-                    description: hp.description.clone().unwrap_or_default().into(),
-                })
-                .collect();
-
-            ui.set_port_bind_node_id(node_id.clone());
-            ui.set_port_bind_port_name(port_name.clone());
-            ui.set_port_bind_current_binding(current_binding.into());
-            ui.set_port_bind_compatible_params(ModelRc::new(VecModel::from(compatible)));
-            ui.set_show_port_bind_dialog(true);
-            let groups = collect_hyperparameter_groups(tab.root_graph());
-            if !groups
-                .iter()
-                .any(|group| group == &ui.get_selected_hyperparameter_group().to_string())
-            {
-                ui.set_selected_hyperparameter_group("default".into());
-            }
-        });
-    }
-
-    // Bind a port to a hyperparameter
-    {
-        let ui_handle = ui.as_weak();
-        let tabs_clone = Arc::clone(&tabs);
-        let active_tab_clone = Arc::clone(&active_tab_index);
-        ui.on_bind_port_hyperparameter(move |node_id, port_name, hp_name| {
-            let mut tabs_guard = tabs_clone.lock().unwrap();
-            let active_index = *active_tab_clone.lock().unwrap();
-            if let Some(tab) = tabs_guard.get_mut(active_index) {
-                if let Some(node) = tab
-                    .graph_mut()
-                    .nodes
-                    .iter_mut()
-                    .find(|n| n.id == node_id.as_str())
-                {
-                    node.port_bindings
-                        .insert(port_name.to_string(), hp_name.to_string());
-                    tab.commit_current_page_to_parent();
-                    tab.is_dirty = true;
-                }
-            }
-            if let Some(ui) = ui_handle.upgrade() {
-                refresh_active_tab_ui(&ui, &tabs_guard, active_index);
-                ui.set_show_port_bind_dialog(false);
-            }
-        });
-    }
-
-    // Unbind a port from its hyperparameter
-    {
-        let ui_handle = ui.as_weak();
-        let tabs_clone = Arc::clone(&tabs);
-        let active_tab_clone = Arc::clone(&active_tab_index);
-        ui.on_unbind_port_hyperparameter(move |node_id, port_name| {
-            let mut tabs_guard = tabs_clone.lock().unwrap();
-            let active_index = *active_tab_clone.lock().unwrap();
-            if let Some(tab) = tabs_guard.get_mut(active_index) {
-                if let Some(node) = tab
-                    .graph_mut()
-                    .nodes
-                    .iter_mut()
-                    .find(|n| n.id == node_id.as_str())
-                {
-                    node.port_bindings.remove(port_name.as_str());
-                    tab.commit_current_page_to_parent();
-                    tab.is_dirty = true;
-                }
-            }
-            if let Some(ui) = ui_handle.upgrade() {
-                refresh_active_tab_ui(&ui, &tabs_guard, active_index);
-                ui.set_show_port_bind_dialog(false);
-            }
-        });
-    }
-
-    // Close the port bind dialog
-    {
-        let ui_handle = ui.as_weak();
-        ui.on_close_port_bind_dialog(move || {
-            if let Some(ui) = ui_handle.upgrade() {
-                ui.set_show_port_bind_dialog(false);
-            }
-        });
-    }
 }

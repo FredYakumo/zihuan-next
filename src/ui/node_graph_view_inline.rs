@@ -7,7 +7,7 @@ use crate::node::function_graph::{
     sync_function_node_definition, FUNCTION_CONFIG_PORT, FUNCTION_INPUTS_NODE_TYPE,
     FUNCTION_OUTPUTS_NODE_TYPE,
 };
-use crate::node::graph_io::NodeGraphDefinition;
+use crate::node::graph_io::{NodeGraphDefinition, PortBindingKind};
 use crate::node::registry::NODE_REGISTRY;
 use crate::ui::node_render::{inline_port_key, InlinePortValue};
 
@@ -75,8 +75,11 @@ pub(crate) fn apply_hyperparameter_bindings_to_graph(
     values: &std::collections::HashMap<String, serde_json::Value>,
 ) {
     for node in &mut graph.nodes {
-        for (port_name, hp_name) in &node.port_bindings {
-            if let Some(value) = values.get(hp_name.as_str()) {
+        for (port_name, binding) in &node.port_bindings {
+            if binding.kind != PortBindingKind::Hyperparameter {
+                continue;
+            }
+            if let Some(value) = values.get(binding.name.as_str()) {
                 node.inline_values.insert(port_name.clone(), value.clone());
             }
         }
@@ -223,7 +226,7 @@ mod tests {
     use crate::node::function_graph::{
         default_embedded_function_config, sync_function_node_definition, FunctionPortDef,
     };
-    use crate::node::graph_io::NodeDefinition;
+    use crate::node::graph_io::{NodeDefinition, PortBinding};
     use crate::node::DataType;
 
     fn binding_node(id: &str, port_name: &str, hp_name: &str) -> NodeDefinition {
@@ -239,7 +242,10 @@ mod tests {
             position: None,
             size: None,
             inline_values: HashMap::new(),
-            port_bindings: HashMap::from([(port_name.to_string(), hp_name.to_string())]),
+            port_bindings: HashMap::from([(
+                port_name.to_string(),
+                PortBinding::hyperparameter(hp_name.to_string()),
+            )]),
             has_error: false,
             has_cycle: false,
         }
