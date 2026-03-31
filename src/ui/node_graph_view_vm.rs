@@ -171,7 +171,7 @@ fn build_node_vm(
         .input_ports
         .iter()
         .filter(|p| {
-            !(node.node_type == "brain" && p.name == "tools_config")
+            !(node.node_type == "brain" && (p.name == "tools_config" || p.name == "shared_inputs"))
                 && !is_hidden_function_port(&node.node_type, &p.name)
         })
         .map(|p| build_input_port_vm(node, p, graph, inline_inputs))

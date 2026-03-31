@@ -5,7 +5,10 @@ use std::fs;
 use std::path::Path;
 
 use crate::error::Result;
-use crate::llm::brain_tool::BrainToolDefinition;
+use crate::llm::brain_tool::{
+    brain_shared_inputs_from_value, brain_tool_input_signature, BrainToolDefinition,
+    BRAIN_SHARED_INPUTS_PORT, BRAIN_TOOLS_CONFIG_PORT,
+};
 use crate::node::function_graph::{
     default_embedded_function_config, embedded_function_config_from_node,
     sync_function_node_definition, sync_function_subgraph_signature,
@@ -585,7 +588,13 @@ fn refresh_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
             continue;
         }
 
-        let Some(value) = node.inline_values.get("tools_config").cloned() else {
+        let shared_inputs = node
+            .inline_values
+            .get(BRAIN_SHARED_INPUTS_PORT)
+            .and_then(brain_shared_inputs_from_value)
+            .unwrap_or_default();
+
+        let Some(value) = node.inline_values.get(BRAIN_TOOLS_CONFIG_PORT).cloned() else {
             continue;
         };
         let Ok(mut tools) = serde_json::from_value::<Vec<BrainToolDefinition>>(value) else {
@@ -595,12 +604,13 @@ fn refresh_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
         for (index, tool) in tools.iter_mut().enumerate() {
             tool.ensure_defaults(index + 1);
             refresh_port_types_internal(&mut tool.subgraph);
-            let input_signature = tool.input_signature();
+            let input_signature = brain_tool_input_signature(&shared_inputs, tool);
             sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &tool.outputs);
         }
 
         if let Ok(value) = serde_json::to_value(&tools) {
-            node.inline_values.insert("tools_config".to_string(), value);
+            node.inline_values
+                .insert(BRAIN_TOOLS_CONFIG_PORT.to_string(), value);
         }
     }
 }
@@ -627,7 +637,7 @@ fn validate_embedded_subgraphs(graph: &NodeGraphDefinition) -> Vec<ValidationIss
             continue;
         }
 
-        if let Some(value) = node.inline_values.get("tools_config") {
+        if let Some(value) = node.inline_values.get(BRAIN_TOOLS_CONFIG_PORT) {
             match serde_json::from_value::<Vec<BrainToolDefinition>>(value.clone()) {
                 Ok(tools) => {
                     for tool in tools {
@@ -666,7 +676,13 @@ fn auto_fix_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
             continue;
         }
 
-        let Some(value) = node.inline_values.get("tools_config").cloned() else {
+        let shared_inputs = node
+            .inline_values
+            .get(BRAIN_SHARED_INPUTS_PORT)
+            .and_then(brain_shared_inputs_from_value)
+            .unwrap_or_default();
+
+        let Some(value) = node.inline_values.get(BRAIN_TOOLS_CONFIG_PORT).cloned() else {
             continue;
         };
         let Ok(mut tools) = serde_json::from_value::<Vec<BrainToolDefinition>>(value) else {
@@ -676,12 +692,13 @@ fn auto_fix_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
         for (index, tool) in tools.iter_mut().enumerate() {
             tool.ensure_defaults(index + 1);
             auto_fix_graph_definition(&mut tool.subgraph);
-            let input_signature = tool.input_signature();
+            let input_signature = brain_tool_input_signature(&shared_inputs, tool);
             sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &tool.outputs);
         }
 
         if let Ok(value) = serde_json::to_value(&tools) {
-            node.inline_values.insert("tools_config".to_string(), value);
+            node.inline_values
+                .insert(BRAIN_TOOLS_CONFIG_PORT.to_string(), value);
         }
     }
 }
@@ -1235,15 +1252,16 @@ mod tests {
             input_ports: vec![
                 Port::new("llm_model", DataType::LLModel),
                 Port::new("messages", DataType::Vec(Box::new(DataType::OpenAIMessage))),
-                Port::new("tools_config", DataType::Json).optional(),
+                Port::new(BRAIN_TOOLS_CONFIG_PORT, DataType::Json).optional(),
+                Port::new(BRAIN_SHARED_INPUTS_PORT, DataType::Json).optional(),
             ],
             output_ports,
-            dynamic_input_ports: false,
+            dynamic_input_ports: true,
             dynamic_output_ports: true,
             position: None,
             size: None,
             inline_values: HashMap::from([(
-                "tools_config".to_string(),
+                BRAIN_TOOLS_CONFIG_PORT.to_string(),
                 json!([
                     {
                         "name": "search",
@@ -1253,6 +1271,10 @@ mod tests {
                         ]
                     }
                 ]),
+            ),
+            (
+                BRAIN_SHARED_INPUTS_PORT.to_string(),
+                json!([]),
             )]),
             port_bindings: HashMap::new(),
             has_error: false,
@@ -1306,7 +1328,7 @@ mod tests {
     }
 
     #[test]
-    fn auto_fix_replaces_legacy_brain_tool_outputs_with_static_assistant_output() {
+    fn auto_fix_replaces_legacy_brain_tool_outputs_with_static_output() {
         ensure_registry_initialized();
         let mut graph = NodeGraphDefinition {
             nodes: vec![brain_node(vec![
@@ -1328,7 +1350,11 @@ mod tests {
             .iter()
             .map(|port| port.name.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(output_names, vec!["assistant_message"]);
+        assert_eq!(output_names, vec!["output"]);
+        assert_eq!(
+            fixed.output_ports[0].data_type,
+            DataType::Vec(Box::new(DataType::OpenAIMessage))
+        );
         assert!(!fixed.dynamic_output_ports);
     }
 
@@ -1362,8 +1388,79 @@ mod tests {
             .iter()
             .map(|port| port.name.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(output_names, vec!["assistant_message"]);
+        assert_eq!(output_names, vec!["output"]);
+        assert_eq!(
+            fixed.output_ports[0].data_type,
+            DataType::Vec(Box::new(DataType::OpenAIMessage))
+        );
         assert!(graph.edges.is_empty());
+    }
+
+    #[test]
+    fn refresh_port_types_rebuilds_brain_shared_input_ports() {
+        ensure_registry_initialized();
+        let mut graph = NodeGraphDefinition {
+            nodes: vec![brain_node(vec![Port::new(
+                "assistant_message",
+                DataType::OpenAIMessage,
+            )])],
+            edges: vec![],
+            hyperparameter_groups: vec![],
+            hyperparameters: vec![],
+            execution_results: HashMap::new(),
+        };
+        graph.nodes[0].inline_values.insert(
+            BRAIN_SHARED_INPUTS_PORT.to_string(),
+            json!([{ "name": "context", "data_type": "Json" }]),
+        );
+
+        refresh_port_types(&mut graph);
+
+        let fixed = &graph.nodes[0];
+        assert!(fixed.input_ports.iter().any(|port| port.name == "context"));
+        assert!(fixed.dynamic_input_ports);
+    }
+
+    #[test]
+    fn refresh_port_types_syncs_brain_tool_subgraph_with_shared_inputs() {
+        ensure_registry_initialized();
+        let mut graph = NodeGraphDefinition {
+            nodes: vec![brain_node(vec![Port::new(
+                "assistant_message",
+                DataType::OpenAIMessage,
+            )])],
+            edges: vec![],
+            hyperparameter_groups: vec![],
+            hyperparameters: vec![],
+            execution_results: HashMap::new(),
+        };
+        graph.nodes[0].inline_values.insert(
+            BRAIN_SHARED_INPUTS_PORT.to_string(),
+            json!([{ "name": "context", "data_type": "Json" }]),
+        );
+
+        refresh_port_types(&mut graph);
+
+        let tools = serde_json::from_value::<Vec<BrainToolDefinition>>(
+            graph.nodes[0].inline_values[BRAIN_TOOLS_CONFIG_PORT].clone(),
+        )
+        .expect("tools_config");
+        let input_boundary = tools[0]
+            .subgraph
+            .nodes
+            .iter()
+            .find(|node| node.id == crate::node::function_graph::FUNCTION_INPUTS_NODE_ID)
+            .expect("function_inputs");
+        let signature = crate::node::function_graph::function_signature_from_inline_values(
+            &input_boundary.inline_values,
+        )
+        .expect("signature");
+        let names = signature
+            .iter()
+            .map(|port| port.name.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, vec!["context", "content", "query"]);
     }
 
     #[test]
