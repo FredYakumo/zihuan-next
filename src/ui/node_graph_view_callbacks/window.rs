@@ -127,6 +127,13 @@ fn clear_graph_error_state(graph: &mut NodeGraphDefinition) {
     }
 }
 
+fn graph_has_error_state(graph: &NodeGraphDefinition) -> bool {
+    graph
+        .nodes
+        .iter()
+        .any(|node| node.has_error || node.has_cycle)
+}
+
 fn collect_error_related_node_ids(
     _graph: &NodeGraphDefinition,
     error_node_id: &str,
@@ -413,6 +420,9 @@ pub(crate) fn bind_window_callbacks(
                             let active_index = *active_tab_cb.lock().unwrap();
                             let active_tab_id = tabs_guard.get(active_index).map(|t| t.id);
                             if let Some(tab) = tabs_guard.iter_mut().find(|t| t.id == tab_id) {
+                                if graph_has_error_state(&tab.graph) {
+                                    clear_graph_error_state(&mut tab.graph);
+                                }
                                 tab.graph.execution_results.insert(node_id, result);
                                 if let Some(ui) = ui_weak_cb.upgrade() {
                                     if active_tab_id == Some(tab_id) {
