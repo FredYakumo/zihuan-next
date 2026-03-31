@@ -2593,6 +2593,7 @@ export component FunctionEditorDialog inherits Rectangle {
     in property <string> function_description: "";
     in property <[FunctionPortVm]> inputs;
     in property <[FunctionPortVm]> outputs;
+    in property <[string]> data_types;
     callback set_function_name(string);
     callback set_function_description(string);
     callback add_input();
@@ -2761,7 +2762,7 @@ export component FunctionEditorDialog inherits Rectangle {
                                         ComboBox {
                                             width: 140px;
                                             height: 30px;
-                                            model: ["String", "Integer", "Float", "Boolean", "Json", "OpenAIMessage", "QQMessage", "MessageEvent"];
+                                            model: root.data_types;
                                             current-value: input.data_type;
                                             selected(value) => { root.set_input_type(i, value); }
                                         }
@@ -2858,7 +2859,7 @@ export component FunctionEditorDialog inherits Rectangle {
                                         ComboBox {
                                             width: 140px;
                                             height: 30px;
-                                            model: ["String", "Integer", "Float", "Boolean", "Json", "OpenAIMessage", "QQMessage", "MessageEvent"];
+                                            model: root.data_types;
                                             current-value: output.data_type;
                                             selected(value) => { root.set_output_type(i, value); }
                                         }

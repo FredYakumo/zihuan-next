@@ -54,8 +54,8 @@
         "qq_id": "2496875785"
       },
       "port_bindings": {
-        "bot_server_token": "BOT_SERVER_TOKEN",
-        "qq_id": "BOT_ID"
+        "qq_id": "BOT_ID",
+        "bot_server_token": "BOT_SERVER_TOKEN"
       },
       "has_error": false,
       "has_cycle": false
@@ -106,173 +106,6 @@
       "inline_values": {
         "filter_type": "private"
       },
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_3",
-      "name": "事件提取message列表",
-      "description": "Converts MessageEvent to LLM prompt string",
-      "node_type": "extract_message_from_event",
-      "input_ports": [
-        {
-          "name": "message_event",
-          "data_type": "MessageEvent",
-          "description": "MessageEvent containing message data",
-          "required": true
-        },
-        {
-          "name": "bot_adapter",
-          "data_type": "BotAdapterRef",
-          "description": "BotAdapter reference for context-aware system message",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "messages",
-          "data_type": {
-            "Vec": "OpenAIMessage"
-          },
-          "description": "MessageList containing system and user messages",
-          "required": true
-        },
-        {
-          "name": "content",
-          "data_type": "String",
-          "description": "Merged readable message body",
-          "required": true
-        },
-        {
-          "name": "ref_content",
-          "data_type": "String",
-          "description": "Referenced/replied message content",
-          "required": true
-        },
-        {
-          "name": "is_at_me",
-          "data_type": "Boolean",
-          "description": "Whether the message @'s the bot",
-          "required": true
-        },
-        {
-          "name": "at_target_list",
-          "data_type": {
-            "Vec": "String"
-          },
-          "description": "List of all @ targets in the message",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": -600.0,
-        "y": -1040.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_4",
-      "name": "事件提取message列表",
-      "description": "Converts MessageEvent to LLM prompt string",
-      "node_type": "extract_message_from_event",
-      "input_ports": [
-        {
-          "name": "message_event",
-          "data_type": "MessageEvent",
-          "description": "MessageEvent containing message data",
-          "required": true
-        },
-        {
-          "name": "bot_adapter",
-          "data_type": "BotAdapterRef",
-          "description": "BotAdapter reference for context-aware system message",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "messages",
-          "data_type": {
-            "Vec": "OpenAIMessage"
-          },
-          "description": "MessageList containing system and user messages",
-          "required": true
-        },
-        {
-          "name": "content",
-          "data_type": "String",
-          "description": "Merged readable message body",
-          "required": true
-        },
-        {
-          "name": "ref_content",
-          "data_type": "String",
-          "description": "Referenced/replied message content",
-          "required": true
-        },
-        {
-          "name": "is_at_me",
-          "data_type": "Boolean",
-          "description": "Whether the message @'s the bot",
-          "required": true
-        },
-        {
-          "name": "at_target_list",
-          "data_type": {
-            "Vec": "String"
-          },
-          "description": "List of all @ targets in the message",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": -540.0,
-        "y": -640.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_5",
-      "name": "提取发送者ID",
-      "description": "从消息事件中提取发送者的QQ号（字符串）",
-      "node_type": "extract_sender_id_from_event",
-      "input_ports": [
-        {
-          "name": "message_event",
-          "data_type": "MessageEvent",
-          "description": "输入的消息事件",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "result",
-          "data_type": "String",
-          "description": "发送者的QQ号字符串",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": -680.0,
-        "y": -1460.0
-      },
-      "size": null,
-      "inline_values": {},
       "port_bindings": {},
       "has_error": false,
       "has_cycle": false
@@ -357,9 +190,9 @@
         "height": 200.0
       },
       "inline_values": {
-        "mysql_port": "3306",
+        "mysql_database": "zihuan_aibot",
         "mysql_host": "127.0.0.1",
-        "mysql_database": "zihuan_aibot"
+        "mysql_port": "3306"
       },
       "port_bindings": {
         "mysql_user": "MYSQL_USER",
@@ -406,78 +239,6 @@
       "position": {
         "x": -1520.0,
         "y": -800.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_18",
-      "name": "开关器",
-      "description": "Forward input only when enabled is true",
-      "node_type": "switch_gate",
-      "input_ports": [
-        {
-          "name": "enabled",
-          "data_type": "Boolean",
-          "description": "Whether the switch is open",
-          "required": true
-        },
-        {
-          "name": "input",
-          "data_type": "Any",
-          "description": "Input value to forward when enabled",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "output",
-          "data_type": "Any",
-          "description": "Forwarded output value",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 540.0,
-        "y": -660.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_19",
-      "name": "提取群号",
-      "description": "从群消息事件中提取群号（字符串）",
-      "node_type": "extract_group_id_from_event",
-      "input_ports": [
-        {
-          "name": "message_event",
-          "data_type": "MessageEvent",
-          "description": "输入的消息事件",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "result",
-          "data_type": "String",
-          "description": "群号字符串",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": -540.0,
-        "y": -740.0
       },
       "size": null,
       "inline_values": {},
@@ -541,8 +302,8 @@
         "height": 140.0
       },
       "inline_values": {
-        "ttl_secs": "600",
-        "bucket_name": "message_id_cache"
+        "bucket_name": "message_id_cache",
+        "ttl_secs": "600"
       },
       "port_bindings": {},
       "has_error": false,
@@ -609,451 +370,6 @@
       "has_cycle": false
     },
     {
-      "id": "node_17",
-      "name": "Brain",
-      "description": "使用 system prompt 和 user message 发起一次带动态 Tools 的 LLM 推理",
-      "node_type": "brain",
-      "input_ports": [
-        {
-          "name": "llm_model",
-          "data_type": "LLModel",
-          "description": "LLM 模型引用，由 LLM API 节点提供",
-          "required": true
-        },
-        {
-          "name": "messages",
-          "data_type": {
-            "Vec": "OpenAIMessage"
-          },
-          "description": "消息列表（包含 system/user/assistant/tool 等角色）",
-          "required": true
-        },
-        {
-          "name": "tools_config",
-          "data_type": "Json",
-          "description": "Tools 配置，由工具编辑器维护",
-          "required": false
-        },
-        {
-          "name": "shared_inputs",
-          "data_type": "Json",
-          "description": "Brain 共享输入签名，由工具编辑器维护",
-          "required": false
-        },
-        {
-          "name": "target_id",
-          "data_type": "String",
-          "description": "Brain 共享输入 'target_id'",
-          "required": true
-        },
-        {
-          "name": "llm_ref",
-          "data_type": "LLModel",
-          "description": "Brain 共享输入 'llm_ref'",
-          "required": true
-        },
-        {
-          "name": "bot_ref",
-          "data_type": "BotAdapterRef",
-          "description": "Brain 共享输入 'bot_ref'",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "output",
-          "data_type": {
-            "Vec": "OpenAIMessage"
-          },
-          "description": "本次 Brain 运行新增的 assistant/tool 消息轨迹",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": true,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1260.0,
-        "y": -1500.0
-      },
-      "size": null,
-      "inline_values": {
-        "shared_inputs": [
-          {
-            "data_type": "String",
-            "name": "target_id"
-          },
-          {
-            "data_type": "LLModel",
-            "name": "llm_ref"
-          },
-          {
-            "data_type": "BotAdapterRef",
-            "name": "bot_ref"
-          }
-        ],
-        "tools_config": [
-          {
-            "description": "回复对方",
-            "id": "tool",
-            "name": "natural_language_reply",
-            "outputs": [
-              {
-                "data_type": "String",
-                "name": "result"
-              }
-            ],
-            "parameters": [
-              {
-                "data_type": "String",
-                "desc": "回复内容",
-                "name": "message"
-              },
-              {
-                "data_type": "String",
-                "desc": "语言风格，比如心情，语气等",
-                "name": "style"
-              }
-            ],
-            "subgraph": {
-              "edges": [
-                {
-                  "from_node_id": "__function_inputs__",
-                  "from_port": "style",
-                  "to_node_id": "node_1",
-                  "to_port": "style"
-                },
-                {
-                  "from_node_id": "__function_inputs__",
-                  "from_port": "target_id",
-                  "to_node_id": "node_1",
-                  "to_port": "target_id"
-                },
-                {
-                  "from_node_id": "__function_inputs__",
-                  "from_port": "llm_ref",
-                  "to_node_id": "node_1",
-                  "to_port": "llm_ref"
-                },
-                {
-                  "from_node_id": "__function_inputs__",
-                  "from_port": "bot_ref",
-                  "to_node_id": "node_1",
-                  "to_port": "bot_adapter_ref"
-                },
-                {
-                  "from_node_id": "node_1",
-                  "from_port": "summary",
-                  "to_node_id": "__function_outputs__",
-                  "to_port": "result"
-                },
-                {
-                  "from_node_id": "__function_inputs__",
-                  "from_port": "message",
-                  "to_node_id": "node_1",
-                  "to_port": "content"
-                }
-              ],
-              "hyperparameter_groups": [],
-              "hyperparameters": [],
-              "nodes": [
-                {
-                  "description": "函数子图的输入边界节点",
-                  "dynamic_input_ports": false,
-                  "dynamic_output_ports": true,
-                  "has_cycle": false,
-                  "has_error": false,
-                  "id": "__function_inputs__",
-                  "inline_values": {
-                    "signature": [
-                      {
-                        "data_type": "String",
-                        "name": "target_id"
-                      },
-                      {
-                        "data_type": "LLModel",
-                        "name": "llm_ref"
-                      },
-                      {
-                        "data_type": "BotAdapterRef",
-                        "name": "bot_ref"
-                      },
-                      {
-                        "data_type": "String",
-                        "name": "content"
-                      },
-                      {
-                        "data_type": "String",
-                        "name": "message"
-                      },
-                      {
-                        "data_type": "String",
-                        "name": "style"
-                      }
-                    ]
-                  },
-                  "input_ports": [
-                    {
-                      "data_type": "Json",
-                      "description": "隐藏的函数签名 JSON",
-                      "name": "signature",
-                      "required": false
-                    },
-                    {
-                      "data_type": "Json",
-                      "description": "运行时注入的函数输入 JSON",
-                      "name": "runtime_values",
-                      "required": false
-                    }
-                  ],
-                  "name": "函数输入",
-                  "node_type": "function_inputs",
-                  "output_ports": [
-                    {
-                      "data_type": "String",
-                      "description": "函数输入 'target_id'",
-                      "name": "target_id",
-                      "required": true
-                    },
-                    {
-                      "data_type": "LLModel",
-                      "description": "函数输入 'llm_ref'",
-                      "name": "llm_ref",
-                      "required": true
-                    },
-                    {
-                      "data_type": "BotAdapterRef",
-                      "description": "函数输入 'bot_ref'",
-                      "name": "bot_ref",
-                      "required": true
-                    },
-                    {
-                      "data_type": "String",
-                      "description": "函数输入 'content'",
-                      "name": "content",
-                      "required": true
-                    },
-                    {
-                      "data_type": "String",
-                      "description": "函数输入 'message'",
-                      "name": "message",
-                      "required": true
-                    },
-                    {
-                      "data_type": "String",
-                      "description": "函数输入 'style'",
-                      "name": "style",
-                      "required": true
-                    }
-                  ],
-                  "port_bindings": {},
-                  "position": {
-                    "x": 60.0,
-                    "y": 120.0
-                  },
-                  "size": {
-                    "height": 120.0,
-                    "width": 220.0
-                  }
-                },
-                {
-                  "description": "函数子图的输出边界节点",
-                  "dynamic_input_ports": true,
-                  "dynamic_output_ports": false,
-                  "has_cycle": false,
-                  "has_error": false,
-                  "id": "__function_outputs__",
-                  "inline_values": {
-                    "signature": [
-                      {
-                        "data_type": "String",
-                        "name": "result"
-                      }
-                    ]
-                  },
-                  "input_ports": [
-                    {
-                      "data_type": "Json",
-                      "description": "隐藏的函数签名 JSON",
-                      "name": "signature",
-                      "required": false
-                    },
-                    {
-                      "data_type": "String",
-                      "description": "函数输出 'result'",
-                      "name": "result",
-                      "required": true
-                    }
-                  ],
-                  "name": "函数输出",
-                  "node_type": "function_outputs",
-                  "output_ports": [],
-                  "port_bindings": {},
-                  "position": {
-                    "x": 1280.0,
-                    "y": 160.0
-                  },
-                  "size": {
-                    "height": 120.0,
-                    "width": 220.0
-                  }
-                },
-                {
-                  "description": "调用 LLM 生成结构化 QQ 自然语言回复，并按好友/群组目标逐批发送",
-                  "dynamic_input_ports": false,
-                  "dynamic_output_ports": false,
-                  "has_cycle": false,
-                  "has_error": false,
-                  "id": "node_1",
-                  "inline_values": {
-                    "max_one_reply_length": "200",
-                    "target_type": "friend"
-                  },
-                  "input_ports": [
-                    {
-                      "data_type": "String",
-                      "description": "回复意图、要点、草稿或上下文提示，将作为第一条 user 消息传给二次 LLM",
-                      "name": "content",
-                      "required": true
-                    },
-                    {
-                      "data_type": "String",
-                      "description": "角色名字",
-                      "name": "character_name",
-                      "required": true
-                    },
-                    {
-                      "data_type": "String",
-                      "description": "目标 QQ 号或群号",
-                      "name": "target_id",
-                      "required": true
-                    },
-                    {
-                      "data_type": "String",
-                      "description": "可选：群聊中优先 @ 的成员 QQ 号，仅用于提示 LLM",
-                      "name": "mention_target_id",
-                      "required": false
-                    },
-                    {
-                      "data_type": "String",
-                      "description": "目标类型：friend 或 group",
-                      "name": "target_type",
-                      "required": false
-                    },
-                    {
-                      "data_type": "String",
-                      "description": "语言风格或情绪",
-                      "name": "style",
-                      "required": true
-                    },
-                    {
-                      "data_type": "Integer",
-                      "description": "单条 plain_text 最多字符数",
-                      "name": "max_one_reply_length",
-                      "required": true
-                    },
-                    {
-                      "data_type": "LLModel",
-                      "description": "LLMBase 引用",
-                      "name": "llm_ref",
-                      "required": true
-                    },
-                    {
-                      "data_type": "BotAdapterRef",
-                      "description": "Bot 适配器引用",
-                      "name": "bot_adapter_ref",
-                      "required": true
-                    }
-                  ],
-                  "name": "QQ自然语言回复",
-                  "node_type": "qq_natural_language_reply",
-                  "output_ports": [
-                    {
-                      "data_type": "String",
-                      "description": "已发送消息的一句话总结",
-                      "name": "summary",
-                      "required": true
-                    }
-                  ],
-                  "port_bindings": {
-                    "character_name": "BOT_NAME"
-                  },
-                  "position": {
-                    "x": 660.0,
-                    "y": 100.0
-                  },
-                  "size": {
-                    "height": 240.0,
-                    "width": 520.0
-                  }
-                }
-              ]
-            }
-          }
-        ]
-      },
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_28",
-      "name": "格式化字符串",
-      "description": "通过 ${变量名} 模板语法将输入变量格式化为字符串",
-      "node_type": "format_string",
-      "input_ports": [
-        {
-          "name": "template",
-          "data_type": "String",
-          "description": "格式化模板字符串，使用 ${变量名} 语法引用输入变量",
-          "required": false
-        },
-        {
-          "name": "角色名称",
-          "data_type": "Any",
-          "description": "变量 角色名称",
-          "required": true
-        },
-        {
-          "name": "time",
-          "data_type": "Any",
-          "description": "变量 time",
-          "required": true
-        },
-        {
-          "name": "sender_id",
-          "data_type": "Any",
-          "description": "变量 sender_id",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "output",
-          "data_type": "String",
-          "description": "格式化后的字符串",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": true,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 0.0,
-        "y": -1680.0
-      },
-      "size": {
-        "width": 540.0,
-        "height": 120.0
-      },
-      "inline_values": {
-        "template": "你的角色是${角色名称}。现在时间是${time}，你的好友${sender_id}向你发送了一条消息。\r\n\r\n你可以按需调用工具来获取信息或执行动作，包括“自然语言回复”工具。\r\n\r\n规则：\r\n1. 你需要先判断是否有必要回复对方。\r\n2. 如果决定回复，使用“自然语言回复”工具发送完整回复。\r\n3. 一次完整回复发送完成后，就视为任务已经完成，不要再次调用“自然语言回复”工具。\r\n4. 只有在单次内容超过工具长度限制，或者确实需要分成多句分开发送时，才允许多次调用“自然语言回复”工具。\r\n5. 不要为了确认、重复表达、补一句客套话、或者自言自语而再次调用“自然语言回复”工具。\r\n6. 当你已经完成要说的话后，立即停止后续工具调用。\r\n7. 如果你决定不回复，则不要调用“自然语言回复”工具。\n"
-      },
-      "port_bindings": {
-        "角色名称": "BOT_NAME"
-      },
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
       "id": "node_30",
       "name": "当前时间",
       "description": "输出当前本地时间的字符串表示",
@@ -1072,486 +388,6 @@
       "position": {
         "x": -1320.0,
         "y": -1300.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_31",
-      "name": "字符串转 System OpenAIMessage",
-      "description": "将字符串封装为 role=system 的 OpenAIMessage",
-      "node_type": "as_system_openai_message",
-      "input_ports": [
-        {
-          "name": "content",
-          "data_type": "String",
-          "description": "系统提示词内容",
-          "required": true
-        },
-        {
-          "name": "role",
-          "data_type": "String",
-          "description": "OpenAIMessage 角色，可选 system / user / assistant / tool",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "message",
-          "data_type": "OpenAIMessage",
-          "description": "role=system 的 OpenAIMessage",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 540.0,
-        "y": -1680.0
-      },
-      "size": {
-        "width": 320.0,
-        "height": 140.0
-      },
-      "inline_values": {
-        "role": "system"
-      },
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_32",
-      "name": "拼接两个列表",
-      "description": "将 vec2 拼接到 vec1 之后，要求两个 Vec 的元素类型一致",
-      "node_type": "concat_vec",
-      "input_ports": [
-        {
-          "name": "vec1",
-          "data_type": {
-            "Vec": "Any"
-          },
-          "description": "前半部分列表",
-          "required": true
-        },
-        {
-          "name": "vec2",
-          "data_type": {
-            "Vec": "Any"
-          },
-          "description": "后半部分列表，将拼接到 vec1 后面",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "vec",
-          "data_type": "Any",
-          "description": "拼接后的列表，元素类型与输入列表一致",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 640.0,
-        "y": -1420.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_41",
-      "name": "封装元素为数组",
-      "description": "将单个元素封装为单元素 List",
-      "node_type": "stack",
-      "input_ports": [
-        {
-          "name": "element",
-          "data_type": "Any",
-          "description": "要封装到数组中的元素",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "array",
-          "data_type": "Any",
-          "description": "包含单个元素的 List",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 860.0,
-        "y": -1680.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_45",
-      "name": "获取 OpenAIMessage 历史",
-      "description": "根据缓存 Ref 和 sender_id 读取当前运行期累计的 Vec<OpenAIMessage>",
-      "node_type": "openai_message_session_cache_get",
-      "input_ports": [
-        {
-          "name": "cache_ref",
-          "data_type": "OpenAIMessageSessionCacheRef",
-          "description": "OpenAIMessage 会话暂存节点输出的缓存引用",
-          "required": true
-        },
-        {
-          "name": "sender_id",
-          "data_type": "String",
-          "description": "要读取历史消息的 sender_id",
-          "required": true
-        },
-        {
-          "name": "fallback",
-          "data_type": {
-            "Vec": "OpenAIMessage"
-          },
-          "description": "可选：未读取到 sender_id 历史消息时输出的回退消息列表",
-          "required": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "messages",
-          "data_type": {
-            "Vec": "OpenAIMessage"
-          },
-          "description": "读取到的历史 Vec<OpenAIMessage>",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": -160.0,
-        "y": -1460.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_46",
-      "name": "拼接两个列表",
-      "description": "将 vec2 拼接到 vec1 之后，要求两个 Vec 的元素类型一致",
-      "node_type": "concat_vec",
-      "input_ports": [
-        {
-          "name": "vec1",
-          "data_type": {
-            "Vec": "Any"
-          },
-          "description": "前半部分列表",
-          "required": true
-        },
-        {
-          "name": "vec2",
-          "data_type": {
-            "Vec": "Any"
-          },
-          "description": "后半部分列表，将拼接到 vec1 后面",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "vec",
-          "data_type": "Any",
-          "description": "拼接后的列表，元素类型与输入列表一致",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 280.0,
-        "y": -1440.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_10",
-      "name": "格式化字符串",
-      "description": "通过 ${变量名} 模板语法将输入变量格式化为字符串",
-      "node_type": "format_string",
-      "input_ports": [
-        {
-          "name": "template",
-          "data_type": "String",
-          "description": "格式化模板字符串，使用 ${变量名} 语法引用输入变量",
-          "required": false
-        },
-        {
-          "name": "角色名称",
-          "data_type": "Any",
-          "description": "变量 角色名称",
-          "required": true
-        },
-        {
-          "name": "time",
-          "data_type": "Any",
-          "description": "变量 time",
-          "required": true
-        },
-        {
-          "name": "sender_id",
-          "data_type": "Any",
-          "description": "变量 sender_id",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "output",
-          "data_type": "String",
-          "description": "格式化后的字符串",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": true,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": -220.0,
-        "y": -900.0
-      },
-      "size": {
-        "width": 540.0,
-        "height": 120.0
-      },
-      "inline_values": {
-        "template": "你的角色是${角色名称}。现在时间是${time},你的好友${sender_id}向你发送了一条消息。\r\n\r\n你可以按需调用工具来获取信息或执行动作，包括“自然语言回复”工具。一次对话中,自然语言回复工具不能调用次数过多.\n规则：\r\n1. 你需要先判断是否有必要回复对方。\r\n2. 如果决定回复，使用“自然语言回复”工具发送完整回复。\r\n3. 一次完整回复发送完成后，就视为任务已经完成，不要再次调用“自然语言回复”工具。\r\n4. 只有在单次内容超过工具长度限制，或者确实需要分成多句分开发送时，才允许多次调用“自然语言回复”工具。\r\n5. 不要为了确认、重复表达、补一句客套话、或者自言自语而再次调用“自然语言回复”工具。\r\n6. 当你已经完成要说的话后，立即停止后续工具调用。\r\n7. 如果你决定不回复，则不要调用“自然语言回复”工具。\n"
-      },
-      "port_bindings": {
-        "角色名称": "BOT_NAME"
-      },
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_49",
-      "name": "字符串转 System OpenAIMessage",
-      "description": "将字符串封装为 role=system 的 OpenAIMessage",
-      "node_type": "as_system_openai_message",
-      "input_ports": [
-        {
-          "name": "content",
-          "data_type": "String",
-          "description": "系统提示词内容",
-          "required": true
-        },
-        {
-          "name": "role",
-          "data_type": "String",
-          "description": "OpenAIMessage 角色，可选 system / user / assistant / tool",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "message",
-          "data_type": "OpenAIMessage",
-          "description": "role=system 的 OpenAIMessage",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 400.0,
-        "y": -880.0
-      },
-      "size": {
-        "width": 320.0,
-        "height": 140.0
-      },
-      "inline_values": {
-        "role": "system"
-      },
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_50",
-      "name": "封装元素为数组",
-      "description": "将单个元素封装为单元素 List",
-      "node_type": "stack",
-      "input_ports": [
-        {
-          "name": "element",
-          "data_type": "Any",
-          "description": "要封装到数组中的元素",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "array",
-          "data_type": "Any",
-          "description": "包含单个元素的 List",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 780.0,
-        "y": -880.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_8",
-      "name": "拼接两个列表",
-      "description": "将 vec2 拼接到 vec1 之后，要求两个 Vec 的元素类型一致",
-      "node_type": "concat_vec",
-      "input_ports": [
-        {
-          "name": "vec1",
-          "data_type": {
-            "Vec": "Any"
-          },
-          "description": "前半部分列表",
-          "required": true
-        },
-        {
-          "name": "vec2",
-          "data_type": {
-            "Vec": "Any"
-          },
-          "description": "后半部分列表，将拼接到 vec1 后面",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "vec",
-          "data_type": "Any",
-          "description": "拼接后的列表，元素类型与输入列表一致",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1080.0,
-        "y": -880.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_6",
-      "name": "拼接两个列表",
-      "description": "将 vec2 拼接到 vec1 之后，要求两个 Vec 的元素类型一致",
-      "node_type": "concat_vec",
-      "input_ports": [
-        {
-          "name": "vec1",
-          "data_type": {
-            "Vec": "Any"
-          },
-          "description": "前半部分列表",
-          "required": true
-        },
-        {
-          "name": "vec2",
-          "data_type": {
-            "Vec": "Any"
-          },
-          "description": "后半部分列表，将拼接到 vec1 后面",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "vec",
-          "data_type": "Any",
-          "description": "拼接后的列表，元素类型与输入列表一致",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1240.0,
-        "y": -740.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_55",
-      "name": "覆写 OpenAIMessage 历史",
-      "description": "根据缓存 Ref、sender_id 与消息列表，覆写当前运行期累计的 Vec<OpenAIMessage>",
-      "node_type": "openai_message_session_cache_set",
-      "input_ports": [
-        {
-          "name": "cache_ref",
-          "data_type": "OpenAIMessageSessionCacheRef",
-          "description": "OpenAIMessage 会话暂存节点输出的缓存引用",
-          "required": true
-        },
-        {
-          "name": "sender_id",
-          "data_type": "String",
-          "description": "要覆写历史消息的 sender_id",
-          "required": true
-        },
-        {
-          "name": "messages",
-          "data_type": {
-            "Vec": "OpenAIMessage"
-          },
-          "description": "要写回并覆写到缓存中的 Vec<OpenAIMessage>",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "success",
-          "data_type": "Boolean",
-          "description": "是否成功覆写历史消息",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1860.0,
-        "y": -740.0
       },
       "size": null,
       "inline_values": {},
@@ -1585,88 +421,6 @@
         "width": 440.0,
         "height": 280.0
       },
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_57",
-      "name": "提取发送者ID",
-      "description": "从消息事件中提取发送者的QQ号（字符串）",
-      "node_type": "extract_sender_id_from_event",
-      "input_ports": [
-        {
-          "name": "message_event",
-          "data_type": "MessageEvent",
-          "description": "输入的消息事件",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "result",
-          "data_type": "String",
-          "description": "发送者的QQ号字符串",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": -540.0,
-        "y": -820.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_59",
-      "name": "获取 OpenAIMessage 历史",
-      "description": "根据缓存 Ref 和 sender_id 读取当前运行期累计的 Vec<OpenAIMessage>",
-      "node_type": "openai_message_session_cache_get",
-      "input_ports": [
-        {
-          "name": "cache_ref",
-          "data_type": "OpenAIMessageSessionCacheRef",
-          "description": "OpenAIMessage 会话暂存节点输出的缓存引用",
-          "required": true
-        },
-        {
-          "name": "sender_id",
-          "data_type": "String",
-          "description": "要读取历史消息的 sender_id",
-          "required": true
-        },
-        {
-          "name": "fallback",
-          "data_type": {
-            "Vec": "OpenAIMessage"
-          },
-          "description": "可选：未读取到 sender_id 历史消息时输出的回退消息列表",
-          "required": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "messages",
-          "data_type": {
-            "Vec": "OpenAIMessage"
-          },
-          "description": "读取到的历史 Vec<OpenAIMessage>",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 780.0,
-        "y": -800.0
-      },
-      "size": null,
       "inline_values": {},
       "port_bindings": {},
       "has_error": false,
@@ -1714,53 +468,6 @@
       "has_cycle": false
     },
     {
-      "id": "node_16",
-      "name": "覆写 OpenAIMessage 历史",
-      "description": "根据缓存 Ref、sender_id 与消息列表，覆写当前运行期累计的 Vec<OpenAIMessage>",
-      "node_type": "openai_message_session_cache_set",
-      "input_ports": [
-        {
-          "name": "cache_ref",
-          "data_type": "OpenAIMessageSessionCacheRef",
-          "description": "OpenAIMessage 会话暂存节点输出的缓存引用",
-          "required": true
-        },
-        {
-          "name": "sender_id",
-          "data_type": "String",
-          "description": "要覆写历史消息的 sender_id",
-          "required": true
-        },
-        {
-          "name": "messages",
-          "data_type": {
-            "Vec": "OpenAIMessage"
-          },
-          "description": "要写回并覆写到缓存中的 Vec<OpenAIMessage>",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "success",
-          "data_type": "Boolean",
-          "description": "是否成功覆写历史消息",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1780.0,
-        "y": -1500.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
       "id": "node_26",
       "name": "运行时会话状态提供器",
       "description": "创建跨事件共享的运行时会话状态引用",
@@ -1787,974 +494,3133 @@
       "has_cycle": false
     },
     {
-      "id": "node_33",
-      "name": "尝试占用会话",
-      "description": "原子检查并占用 sender_id 会话状态",
-      "node_type": "session_state_try_claim",
+      "id": "node_14",
+      "name": "群聊消息处理",
+      "description": null,
+      "node_type": "function",
       "input_ports": [
+        {
+          "name": "message_event",
+          "data_type": "MessageEvent",
+          "description": "函数输入 'message_event'",
+          "required": true
+        },
+        {
+          "name": "qq_bot_adapter",
+          "data_type": "String",
+          "description": "函数输入 'qq_bot_adapter'",
+          "required": true
+        },
+        {
+          "name": "time",
+          "data_type": "String",
+          "description": "函数输入 'time'",
+          "required": true
+        },
+        {
+          "name": "cache_ref",
+          "data_type": "String",
+          "description": "函数输入 'cache_ref'",
+          "required": true
+        },
         {
           "name": "session_ref",
-          "data_type": "SessionStateRef",
-          "description": "运行时会话状态引用",
-          "required": true
-        },
-        {
-          "name": "sender_id",
           "data_type": "String",
-          "description": "会话发送者 ID",
+          "description": "函数输入 'session_ref'",
           "required": true
         },
         {
-          "name": "state_json",
-          "data_type": "Json",
-          "description": "成功占用时写入的附加 JSON 状态",
-          "required": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "claimed",
-          "data_type": "Boolean",
-          "description": "本次是否成功占用",
-          "required": true
-        },
-        {
-          "name": "in_session",
-          "data_type": "Boolean",
-          "description": "当前 sender_id 是否正在处理中",
-          "required": true
-        },
-        {
-          "name": "state_json",
-          "data_type": "Json",
-          "description": "当前 sender_id 的附加 JSON 状态",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": -420.0,
-        "y": -1840.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_34",
-      "name": "布尔分路",
-      "description": "根据 Boolean 输入将同一份数据分流到 true 或 false 分支，另一分支不输出",
-      "node_type": "boolean_branch",
-      "input_ports": [
-        {
-          "name": "condition",
-          "data_type": "Boolean",
-          "description": "为 true 时走 true_output，否则走 false_output",
-          "required": true
-        },
-        {
-          "name": "input",
-          "data_type": "Any",
-          "description": "要分流到某个分支的输入值",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "true_output",
-          "data_type": "Any",
-          "description": "condition=true 时输出",
-          "required": true
-        },
-        {
-          "name": "false_output",
-          "data_type": "Any",
-          "description": "condition=false 时输出",
-          "required": true
-        },
-        {
-          "name": "branch_taken",
+          "name": "llm_api_llm_model",
           "data_type": "String",
-          "description": "实际走到的分支：true 或 false",
+          "description": "函数输入 'llm_api_llm_model'",
           "required": true
         }
       ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": -160.0,
-        "y": -1940.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_35",
-      "name": "发送好友消息",
-      "description": "向QQ好友发送消息",
-      "node_type": "send_friend_message",
-      "input_ports": [
-        {
-          "name": "bot_adapter",
-          "data_type": "BotAdapterRef",
-          "description": "Bot适配器引用",
-          "required": true
-        },
-        {
-          "name": "target_id",
-          "data_type": "String",
-          "description": "目标好友的QQ号",
-          "required": true
-        },
-        {
-          "name": "message",
-          "data_type": {
-            "Vec": "QQMessage"
-          },
-          "description": "要发送的QQ消息段列表",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "success",
-          "data_type": "Boolean",
-          "description": "是否发送成功",
-          "required": true
-        },
-        {
-          "name": "message_id",
-          "data_type": "Integer",
-          "description": "服务器返回的消息ID",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1040.0,
-        "y": -1840.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_36",
-      "name": "QQMessageList Data",
-      "description": "QQMessageList data source with inline UI editor",
-      "node_type": "qq_message_list_data",
-      "input_ports": [
-        {
-          "name": "messages",
-          "data_type": {
-            "Vec": "QQMessage"
-          },
-          "description": "Vec<QQMessage> provided by UI inline editor",
-          "required": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "messages",
-          "data_type": {
-            "Vec": "QQMessage"
-          },
-          "description": "Output Vec<QQMessage> from UI data source",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 320.0,
-        "y": -1960.0
-      },
-      "size": {
-        "width": 400.0,
-        "height": 160.0
-      },
-      "inline_values": {
-        "messages": [
-          {
-            "data": {
-              "text": "我还在思考，你别急"
-            },
-            "type": "text"
-          }
-        ]
-      },
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_37",
-      "name": "释放会话占用",
-      "description": "释放 sender_id 的会话占用状态",
-      "node_type": "session_state_release",
-      "input_ports": [
-        {
-          "name": "session_ref",
-          "data_type": "SessionStateRef",
-          "description": "运行时会话状态引用",
-          "required": true
-        },
-        {
-          "name": "sender_id",
-          "data_type": "String",
-          "description": "会话发送者 ID",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "released",
-          "data_type": "Boolean",
-          "description": "是否成功释放当前 sender_id 的占用",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 2320.0,
-        "y": -1500.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_38",
-      "name": "释放会话占用",
-      "description": "释放 sender_id 的会话占用状态",
-      "node_type": "session_state_release",
-      "input_ports": [
-        {
-          "name": "session_ref",
-          "data_type": "SessionStateRef",
-          "description": "运行时会话状态引用",
-          "required": true
-        },
-        {
-          "name": "sender_id",
-          "data_type": "String",
-          "description": "会话发送者 ID",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "released",
-          "data_type": "Boolean",
-          "description": "是否成功释放当前 sender_id 的占用",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 2380.0,
-        "y": -740.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_39",
-      "name": "尝试占用会话",
-      "description": "原子检查并占用 sender_id 会话状态",
-      "node_type": "session_state_try_claim",
-      "input_ports": [
-        {
-          "name": "session_ref",
-          "data_type": "SessionStateRef",
-          "description": "运行时会话状态引用",
-          "required": true
-        },
-        {
-          "name": "sender_id",
-          "data_type": "String",
-          "description": "会话发送者 ID",
-          "required": true
-        },
-        {
-          "name": "state_json",
-          "data_type": "Json",
-          "description": "成功占用时写入的附加 JSON 状态",
-          "required": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "claimed",
-          "data_type": "Boolean",
-          "description": "本次是否成功占用",
-          "required": true
-        },
-        {
-          "name": "in_session",
-          "data_type": "Boolean",
-          "description": "当前 sender_id 是否正在处理中",
-          "required": true
-        },
-        {
-          "name": "state_json",
-          "data_type": "Json",
-          "description": "当前 sender_id 的附加 JSON 状态",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": -60.0,
-        "y": -440.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_40",
-      "name": "布尔分路",
-      "description": "根据 Boolean 输入将同一份数据分流到 true 或 false 分支，另一分支不输出",
-      "node_type": "boolean_branch",
-      "input_ports": [
-        {
-          "name": "condition",
-          "data_type": "Boolean",
-          "description": "为 true 时走 true_output，否则走 false_output",
-          "required": true
-        },
-        {
-          "name": "input",
-          "data_type": "Any",
-          "description": "要分流到某个分支的输入值",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "true_output",
-          "data_type": "Any",
-          "description": "condition=true 时输出",
-          "required": true
-        },
-        {
-          "name": "false_output",
-          "data_type": "Any",
-          "description": "condition=false 时输出",
-          "required": true
-        },
-        {
-          "name": "branch_taken",
-          "data_type": "String",
-          "description": "实际走到的分支：true 或 false",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 220.0,
-        "y": -420.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_42",
-      "name": "And Then",
-      "description": "等待 first 和 second 都到齐后，原样透传 second",
-      "node_type": "and_then",
-      "input_ports": [
-        {
-          "name": "first",
-          "data_type": "Any",
-          "description": "用于串联依赖的前置输入，仅用于等待其到齐",
-          "required": true
-        },
-        {
-          "name": "second",
-          "data_type": "Any",
-          "description": "在两个输入都到齐后原样透传的值",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "output",
-          "data_type": "Any",
-          "description": "second 的原样输出",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 2080.0,
-        "y": -1500.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_43",
-      "name": "And Then",
-      "description": "等待 first 和 second 都到齐后，原样透传 second",
-      "node_type": "and_then",
-      "input_ports": [
-        {
-          "name": "first",
-          "data_type": "Any",
-          "description": "用于串联依赖的前置输入，仅用于等待其到齐",
-          "required": true
-        },
-        {
-          "name": "second",
-          "data_type": "Any",
-          "description": "在两个输入都到齐后原样透传的值",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "output",
-          "data_type": "Any",
-          "description": "second 的原样输出",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 2120.0,
-        "y": -740.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_9",
-      "name": "拼接两个列表",
-      "description": "将 vec2 拼接到 vec1 之后，要求两个 Vec 的元素类型一致",
-      "node_type": "concat_vec",
-      "input_ports": [
-        {
-          "name": "vec1",
-          "data_type": {
-            "Vec": "Any"
-          },
-          "description": "前半部分列表",
-          "required": true
-        },
-        {
-          "name": "vec2",
-          "data_type": {
-            "Vec": "Any"
-          },
-          "description": "后半部分列表，将拼接到 vec1 后面",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "vec",
-          "data_type": "Any",
-          "description": "拼接后的列表，元素类型与输入列表一致",
-          "required": true
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1520.0,
-        "y": -1500.0
-      },
-      "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_7",
-      "name": "Brain",
-      "description": "使用 system prompt 和 user message 发起一次带动态 Tools 的 LLM 推理",
-      "node_type": "brain",
-      "input_ports": [
-        {
-          "name": "llm_model",
-          "data_type": "LLModel",
-          "description": "LLM 模型引用，由 LLM API 节点提供",
-          "required": true
-        },
-        {
-          "name": "messages",
-          "data_type": {
-            "Vec": "OpenAIMessage"
-          },
-          "description": "消息列表（包含 system/user/assistant/tool 等角色）",
-          "required": true
-        },
-        {
-          "name": "tools_config",
-          "data_type": "Json",
-          "description": "Tools 配置，由工具编辑器维护",
-          "required": false
-        },
-        {
-          "name": "shared_inputs",
-          "data_type": "Json",
-          "description": "Brain 共享输入签名，由工具编辑器维护",
-          "required": false
-        },
-        {
-          "name": "target_id",
-          "data_type": "String",
-          "description": "Brain 共享输入 'target_id'",
-          "required": true
-        },
-        {
-          "name": "llm_ref",
-          "data_type": "LLModel",
-          "description": "Brain 共享输入 'llm_ref'",
-          "required": true
-        },
-        {
-          "name": "bot_ref",
-          "data_type": "BotAdapterRef",
-          "description": "Brain 共享输入 'bot_ref'",
-          "required": true
-        },
-        {
-          "name": "metion_target_id",
-          "data_type": "String",
-          "description": "Brain 共享输入 'metion_target_id'",
-          "required": true
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "output",
-          "data_type": {
-            "Vec": "OpenAIMessage"
-          },
-          "description": "本次 Brain 运行新增的 assistant/tool 消息轨迹",
-          "required": true
-        }
-      ],
+      "output_ports": [],
       "dynamic_input_ports": true,
-      "dynamic_output_ports": false,
+      "dynamic_output_ports": true,
       "position": {
-        "x": 1560.0,
-        "y": -740.0
+        "x": -540.0,
+        "y": -900.0
       },
       "size": null,
       "inline_values": {
-        "shared_inputs": [
-          {
-            "data_type": "String",
-            "name": "target_id"
-          },
-          {
-            "data_type": "LLModel",
-            "name": "llm_ref"
-          },
-          {
-            "data_type": "BotAdapterRef",
-            "name": "bot_ref"
-          },
-          {
-            "data_type": "String",
-            "name": "metion_target_id"
-          }
-        ],
-        "tools_config": [
-          {
-            "description": "回复对方",
-            "id": "tool",
-            "name": "natural_language_reply",
-            "outputs": [
+        "function_config": {
+          "description": "",
+          "inputs": [
+            {
+              "data_type": "MessageEvent",
+              "name": "message_event"
+            },
+            {
+              "data_type": "String",
+              "name": "qq_bot_adapter"
+            },
+            {
+              "data_type": "String",
+              "name": "time"
+            },
+            {
+              "data_type": "String",
+              "name": "cache_ref"
+            },
+            {
+              "data_type": "String",
+              "name": "session_ref"
+            },
+            {
+              "data_type": "String",
+              "name": "llm_api_llm_model"
+            }
+          ],
+          "name": "群聊消息处理",
+          "outputs": [],
+          "subgraph": {
+            "edges": [
               {
-                "data_type": "String",
-                "name": "result"
-              }
-            ],
-            "parameters": [
-              {
-                "data_type": "String",
-                "desc": "回复内容",
-                "name": "message"
+                "from_node_id": "node_4",
+                "from_port": "is_at_me",
+                "to_node_id": "node_18",
+                "to_port": "enabled"
               },
               {
-                "data_type": "String",
-                "desc": "语言风格，比如心情，语气等",
-                "name": "style"
+                "from_node_id": "node_4",
+                "from_port": "messages",
+                "to_node_id": "node_18",
+                "to_port": "input"
+              },
+              {
+                "from_node_id": "node_10",
+                "from_port": "output",
+                "to_node_id": "node_49",
+                "to_port": "content"
+              },
+              {
+                "from_node_id": "node_49",
+                "from_port": "message",
+                "to_node_id": "node_50",
+                "to_port": "element"
+              },
+              {
+                "from_node_id": "node_50",
+                "from_port": "array",
+                "to_node_id": "node_8",
+                "to_port": "vec1"
+              },
+              {
+                "from_node_id": "node_8",
+                "from_port": "vec",
+                "to_node_id": "node_6",
+                "to_port": "vec1"
+              },
+              {
+                "from_node_id": "node_18",
+                "from_port": "output",
+                "to_node_id": "node_6",
+                "to_port": "vec2"
+              },
+              {
+                "from_node_id": "node_59",
+                "from_port": "messages",
+                "to_node_id": "node_8",
+                "to_port": "vec2"
+              },
+              {
+                "from_node_id": "node_57",
+                "from_port": "result",
+                "to_node_id": "node_39",
+                "to_port": "sender_id"
+              },
+              {
+                "from_node_id": "node_57",
+                "from_port": "result",
+                "to_node_id": "node_40",
+                "to_port": "input"
+              },
+              {
+                "from_node_id": "node_40",
+                "from_port": "true_output",
+                "to_node_id": "node_59",
+                "to_port": "sender_id"
+              },
+              {
+                "from_node_id": "node_39",
+                "from_port": "claimed",
+                "to_node_id": "node_40",
+                "to_port": "condition"
+              },
+              {
+                "from_node_id": "node_40",
+                "from_port": "true_output",
+                "to_node_id": "node_10",
+                "to_port": "sender_id"
+              },
+              {
+                "from_node_id": "node_40",
+                "from_port": "true_output",
+                "to_node_id": "node_55",
+                "to_port": "sender_id"
+              },
+              {
+                "from_node_id": "node_55",
+                "from_port": "success",
+                "to_node_id": "node_43",
+                "to_port": "first"
+              },
+              {
+                "from_node_id": "node_43",
+                "from_port": "output",
+                "to_node_id": "node_38",
+                "to_port": "sender_id"
+              },
+              {
+                "from_node_id": "node_40",
+                "from_port": "true_output",
+                "to_node_id": "node_43",
+                "to_port": "second"
+              },
+              {
+                "from_node_id": "node_6",
+                "from_port": "vec",
+                "to_node_id": "node_7",
+                "to_port": "messages"
+              },
+              {
+                "from_node_id": "node_19",
+                "from_port": "result",
+                "to_node_id": "node_7",
+                "to_port": "target_id"
+              },
+              {
+                "from_node_id": "node_59",
+                "from_port": "messages",
+                "to_node_id": "node_13",
+                "to_port": "vec1"
+              },
+              {
+                "from_node_id": "node_7",
+                "from_port": "output",
+                "to_node_id": "node_13",
+                "to_port": "vec2"
+              },
+              {
+                "from_node_id": "node_13",
+                "from_port": "vec",
+                "to_node_id": "node_55",
+                "to_port": "messages"
+              },
+              {
+                "from_node_id": "node_57",
+                "from_port": "result",
+                "to_node_id": "node_7",
+                "to_port": "metion_target_id"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "message_event",
+                "to_node_id": "node_4",
+                "to_port": "message_event"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "message_event",
+                "to_node_id": "node_19",
+                "to_port": "message_event"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "message_event",
+                "to_node_id": "node_57",
+                "to_port": "message_event"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "qq_bot_adapter",
+                "to_node_id": "node_4",
+                "to_port": "bot_adapter"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "qq_bot_adapter",
+                "to_node_id": "node_7",
+                "to_port": "bot_ref"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "time",
+                "to_node_id": "node_10",
+                "to_port": "time"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "cache_ref",
+                "to_node_id": "node_59",
+                "to_port": "cache_ref"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "cache_ref",
+                "to_node_id": "node_55",
+                "to_port": "cache_ref"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "session_ref",
+                "to_node_id": "node_39",
+                "to_port": "session_ref"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "session_ref",
+                "to_node_id": "node_38",
+                "to_port": "session_ref"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "llm_api_llm_model",
+                "to_node_id": "node_7",
+                "to_port": "llm_model"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "llm_api_llm_model",
+                "to_node_id": "node_7",
+                "to_port": "llm_ref"
               }
             ],
-            "subgraph": {
-              "edges": [
-                {
-                  "from_node_id": "__function_inputs__",
-                  "from_port": "style",
-                  "to_node_id": "node_1",
-                  "to_port": "style"
-                },
-                {
-                  "from_node_id": "__function_inputs__",
-                  "from_port": "target_id",
-                  "to_node_id": "node_1",
-                  "to_port": "target_id"
-                },
-                {
-                  "from_node_id": "__function_inputs__",
-                  "from_port": "llm_ref",
-                  "to_node_id": "node_1",
-                  "to_port": "llm_ref"
-                },
-                {
-                  "from_node_id": "__function_inputs__",
-                  "from_port": "bot_ref",
-                  "to_node_id": "node_1",
-                  "to_port": "bot_adapter_ref"
-                },
-                {
-                  "from_node_id": "node_1",
-                  "from_port": "summary",
-                  "to_node_id": "__function_outputs__",
-                  "to_port": "result"
-                },
-                {
-                  "from_node_id": "__function_inputs__",
-                  "from_port": "message",
-                  "to_node_id": "node_1",
-                  "to_port": "content"
-                },
-                {
-                  "from_node_id": "__function_inputs__",
-                  "from_port": "metion_target_id",
-                  "to_node_id": "node_1",
-                  "to_port": "mention_target_id"
-                }
-              ],
-              "hyperparameter_groups": [],
-              "hyperparameters": [],
-              "nodes": [
-                {
-                  "description": "函数子图的输入边界节点",
-                  "dynamic_input_ports": false,
-                  "dynamic_output_ports": true,
-                  "has_cycle": false,
-                  "has_error": false,
-                  "id": "__function_inputs__",
-                  "inline_values": {
-                    "signature": [
-                      {
-                        "data_type": "String",
-                        "name": "target_id"
-                      },
-                      {
-                        "data_type": "LLModel",
-                        "name": "llm_ref"
-                      },
-                      {
-                        "data_type": "BotAdapterRef",
-                        "name": "bot_ref"
-                      },
-                      {
-                        "data_type": "String",
-                        "name": "metion_target_id"
-                      },
-                      {
-                        "data_type": "String",
-                        "name": "content"
-                      },
-                      {
-                        "data_type": "String",
-                        "name": "message"
-                      },
-                      {
-                        "data_type": "String",
-                        "name": "style"
-                      }
-                    ]
+            "hyperparameter_groups": [],
+            "hyperparameters": [],
+            "nodes": [
+              {
+                "description": "Converts MessageEvent to LLM prompt string",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_4",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "MessageEvent",
+                    "description": "MessageEvent containing message data",
+                    "name": "message_event",
+                    "required": true
                   },
-                  "input_ports": [
-                    {
-                      "data_type": "Json",
-                      "description": "隐藏的函数签名 JSON",
-                      "name": "signature",
-                      "required": false
+                  {
+                    "data_type": "BotAdapterRef",
+                    "description": "BotAdapter reference for context-aware system message",
+                    "name": "bot_adapter",
+                    "required": true
+                  }
+                ],
+                "name": "事件提取message列表",
+                "node_type": "extract_message_from_event",
+                "output_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "OpenAIMessage"
                     },
-                    {
-                      "data_type": "Json",
-                      "description": "运行时注入的函数输入 JSON",
-                      "name": "runtime_values",
-                      "required": false
-                    }
-                  ],
-                  "name": "函数输入",
-                  "node_type": "function_inputs",
-                  "output_ports": [
+                    "description": "MessageList containing system and user messages",
+                    "name": "messages",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "Merged readable message body",
+                    "name": "content",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "Referenced/replied message content",
+                    "name": "ref_content",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Boolean",
+                    "description": "Whether the message @'s the bot",
+                    "name": "is_at_me",
+                    "required": true
+                  },
+                  {
+                    "data_type": {
+                      "Vec": "String"
+                    },
+                    "description": "List of all @ targets in the message",
+                    "name": "at_target_list",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 220.0,
+                  "y": 340.0
+                },
+                "size": null
+              },
+              {
+                "description": "Forward input only when enabled is true",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_18",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "Boolean",
+                    "description": "Whether the switch is open",
+                    "name": "enabled",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "Input value to forward when enabled",
+                    "name": "input",
+                    "required": true
+                  }
+                ],
+                "name": "开关器",
+                "node_type": "switch_gate",
+                "output_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "Forwarded output value",
+                    "name": "output",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 1300.0,
+                  "y": 320.0
+                },
+                "size": null
+              },
+              {
+                "description": "从群消息事件中提取群号（字符串）",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_19",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "MessageEvent",
+                    "description": "输入的消息事件",
+                    "name": "message_event",
+                    "required": true
+                  }
+                ],
+                "name": "提取群号",
+                "node_type": "extract_group_id_from_event",
+                "output_ports": [
+                  {
+                    "data_type": "String",
+                    "description": "群号字符串",
+                    "name": "result",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 220.0,
+                  "y": 240.0
+                },
+                "size": null
+              },
+              {
+                "description": "通过 ${变量名} 模板语法将输入变量格式化为字符串",
+                "dynamic_input_ports": true,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_10",
+                "inline_values": {
+                  "template": "你的角色是${角色名称}。现在时间是${time},你的好友${sender_id}向你发送了一条消息。\r\n\r\n你可以按需调用工具来获取信息或执行动作，包括“自然语言回复”工具。一次对话中,自然语言回复工具不能调用次数过多.\n规则：\r\n1. 你需要先判断是否有必要回复对方。\r\n2. 如果决定回复，使用“自然语言回复”工具发送完整回复。\r\n3. 一次完整回复发送完成后，就视为任务已经完成，不要再次调用“自然语言回复”工具。\r\n4. 只有在单次内容超过工具长度限制，或者确实需要分成多句分开发送时，才允许多次调用“自然语言回复”工具。\r\n5. 不要为了确认、重复表达、补一句客套话、或者自言自语而再次调用“自然语言回复”工具。\r\n6. 当你已经完成要说的话后，立即停止后续工具调用。\r\n7. 如果你决定不回复，则不要调用“自然语言回复”工具。\n"
+                },
+                "input_ports": [
+                  {
+                    "data_type": "String",
+                    "description": "格式化模板字符串，使用 ${变量名} 语法引用输入变量",
+                    "name": "template",
+                    "required": false
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "变量 角色名称",
+                    "name": "角色名称",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "变量 time",
+                    "name": "time",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "变量 sender_id",
+                    "name": "sender_id",
+                    "required": true
+                  }
+                ],
+                "name": "格式化字符串",
+                "node_type": "format_string",
+                "output_ports": [
+                  {
+                    "data_type": "String",
+                    "description": "格式化后的字符串",
+                    "name": "output",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {
+                  "角色名称": "BOT_NAME"
+                },
+                "position": {
+                  "x": 540.0,
+                  "y": 80.0
+                },
+                "size": {
+                  "height": 120.0,
+                  "width": 540.0
+                }
+              },
+              {
+                "description": "将字符串封装为 role=system 的 OpenAIMessage",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_49",
+                "inline_values": {
+                  "role": "system"
+                },
+                "input_ports": [
+                  {
+                    "data_type": "String",
+                    "description": "系统提示词内容",
+                    "name": "content",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "OpenAIMessage 角色，可选 system / user / assistant / tool",
+                    "name": "role",
+                    "required": true
+                  }
+                ],
+                "name": "字符串转 System OpenAIMessage",
+                "node_type": "as_system_openai_message",
+                "output_ports": [
+                  {
+                    "data_type": "OpenAIMessage",
+                    "description": "role=system 的 OpenAIMessage",
+                    "name": "message",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 1160.0,
+                  "y": 100.0
+                },
+                "size": {
+                  "height": 140.0,
+                  "width": 320.0
+                }
+              },
+              {
+                "description": "将单个元素封装为单元素 List",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_50",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "要封装到数组中的元素",
+                    "name": "element",
+                    "required": true
+                  }
+                ],
+                "name": "封装元素为数组",
+                "node_type": "stack",
+                "output_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "包含单个元素的 List",
+                    "name": "array",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 1540.0,
+                  "y": 100.0
+                },
+                "size": null
+              },
+              {
+                "description": "将 vec2 拼接到 vec1 之后，要求两个 Vec 的元素类型一致",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_8",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "Any"
+                    },
+                    "description": "前半部分列表",
+                    "name": "vec1",
+                    "required": true
+                  },
+                  {
+                    "data_type": {
+                      "Vec": "Any"
+                    },
+                    "description": "后半部分列表，将拼接到 vec1 后面",
+                    "name": "vec2",
+                    "required": true
+                  }
+                ],
+                "name": "拼接两个列表",
+                "node_type": "concat_vec",
+                "output_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "拼接后的列表，元素类型与输入列表一致",
+                    "name": "vec",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 1840.0,
+                  "y": 100.0
+                },
+                "size": null
+              },
+              {
+                "description": "将 vec2 拼接到 vec1 之后，要求两个 Vec 的元素类型一致",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_6",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "Any"
+                    },
+                    "description": "前半部分列表",
+                    "name": "vec1",
+                    "required": true
+                  },
+                  {
+                    "data_type": {
+                      "Vec": "Any"
+                    },
+                    "description": "后半部分列表，将拼接到 vec1 后面",
+                    "name": "vec2",
+                    "required": true
+                  }
+                ],
+                "name": "拼接两个列表",
+                "node_type": "concat_vec",
+                "output_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "拼接后的列表，元素类型与输入列表一致",
+                    "name": "vec",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 2000.0,
+                  "y": 240.0
+                },
+                "size": null
+              },
+              {
+                "description": "根据缓存 Ref、sender_id 与消息列表，覆写当前运行期累计的 Vec<OpenAIMessage>",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_55",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "OpenAIMessageSessionCacheRef",
+                    "description": "OpenAIMessage 会话暂存节点输出的缓存引用",
+                    "name": "cache_ref",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "要覆写历史消息的 sender_id",
+                    "name": "sender_id",
+                    "required": true
+                  },
+                  {
+                    "data_type": {
+                      "Vec": "OpenAIMessage"
+                    },
+                    "description": "要写回并覆写到缓存中的 Vec<OpenAIMessage>",
+                    "name": "messages",
+                    "required": true
+                  }
+                ],
+                "name": "覆写 OpenAIMessage 历史",
+                "node_type": "openai_message_session_cache_set",
+                "output_ports": [
+                  {
+                    "data_type": "Boolean",
+                    "description": "是否成功覆写历史消息",
+                    "name": "success",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 2620.0,
+                  "y": 240.0
+                },
+                "size": null
+              },
+              {
+                "description": "从消息事件中提取发送者的QQ号（字符串）",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_57",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "MessageEvent",
+                    "description": "输入的消息事件",
+                    "name": "message_event",
+                    "required": true
+                  }
+                ],
+                "name": "提取发送者ID",
+                "node_type": "extract_sender_id_from_event",
+                "output_ports": [
+                  {
+                    "data_type": "String",
+                    "description": "发送者的QQ号字符串",
+                    "name": "result",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 220.0,
+                  "y": 160.0
+                },
+                "size": null
+              },
+              {
+                "description": "根据缓存 Ref 和 sender_id 读取当前运行期累计的 Vec<OpenAIMessage>",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_59",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "OpenAIMessageSessionCacheRef",
+                    "description": "OpenAIMessage 会话暂存节点输出的缓存引用",
+                    "name": "cache_ref",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "要读取历史消息的 sender_id",
+                    "name": "sender_id",
+                    "required": true
+                  },
+                  {
+                    "data_type": {
+                      "Vec": "OpenAIMessage"
+                    },
+                    "description": "可选：未读取到 sender_id 历史消息时输出的回退消息列表",
+                    "name": "fallback",
+                    "required": false
+                  }
+                ],
+                "name": "获取 OpenAIMessage 历史",
+                "node_type": "openai_message_session_cache_get",
+                "output_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "OpenAIMessage"
+                    },
+                    "description": "读取到的历史 Vec<OpenAIMessage>",
+                    "name": "messages",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 1540.0,
+                  "y": 180.0
+                },
+                "size": null
+              },
+              {
+                "description": "释放 sender_id 的会话占用状态",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_38",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "SessionStateRef",
+                    "description": "运行时会话状态引用",
+                    "name": "session_ref",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "会话发送者 ID",
+                    "name": "sender_id",
+                    "required": true
+                  }
+                ],
+                "name": "释放会话占用",
+                "node_type": "session_state_release",
+                "output_ports": [
+                  {
+                    "data_type": "Boolean",
+                    "description": "是否成功释放当前 sender_id 的占用",
+                    "name": "released",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 3140.0,
+                  "y": 240.0
+                },
+                "size": null
+              },
+              {
+                "description": "原子检查并占用 sender_id 会话状态",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_39",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "SessionStateRef",
+                    "description": "运行时会话状态引用",
+                    "name": "session_ref",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "会话发送者 ID",
+                    "name": "sender_id",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Json",
+                    "description": "成功占用时写入的附加 JSON 状态",
+                    "name": "state_json",
+                    "required": false
+                  }
+                ],
+                "name": "尝试占用会话",
+                "node_type": "session_state_try_claim",
+                "output_ports": [
+                  {
+                    "data_type": "Boolean",
+                    "description": "本次是否成功占用",
+                    "name": "claimed",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Boolean",
+                    "description": "当前 sender_id 是否正在处理中",
+                    "name": "in_session",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Json",
+                    "description": "当前 sender_id 的附加 JSON 状态",
+                    "name": "state_json",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 700.0,
+                  "y": 540.0
+                },
+                "size": null
+              },
+              {
+                "description": "根据 Boolean 输入将同一份数据分流到 true 或 false 分支，另一分支不输出",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_40",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "Boolean",
+                    "description": "为 true 时走 true_output，否则走 false_output",
+                    "name": "condition",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "要分流到某个分支的输入值",
+                    "name": "input",
+                    "required": true
+                  }
+                ],
+                "name": "布尔分路",
+                "node_type": "boolean_branch",
+                "output_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "condition=true 时输出",
+                    "name": "true_output",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "condition=false 时输出",
+                    "name": "false_output",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "实际走到的分支：true 或 false",
+                    "name": "branch_taken",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 980.0,
+                  "y": 560.0
+                },
+                "size": null
+              },
+              {
+                "description": "等待 first 和 second 都到齐后，原样透传 second",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_43",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "用于串联依赖的前置输入，仅用于等待其到齐",
+                    "name": "first",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "在两个输入都到齐后原样透传的值",
+                    "name": "second",
+                    "required": true
+                  }
+                ],
+                "name": "And Then",
+                "node_type": "and_then",
+                "output_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "second 的原样输出",
+                    "name": "output",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 2880.0,
+                  "y": 240.0
+                },
+                "size": null
+              },
+              {
+                "description": "使用 system prompt 和 user message 发起一次带动态 Tools 的 LLM 推理",
+                "dynamic_input_ports": true,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_7",
+                "inline_values": {
+                  "shared_inputs": [
                     {
                       "data_type": "String",
-                      "description": "函数输入 'target_id'",
-                      "name": "target_id",
-                      "required": true
+                      "name": "target_id"
                     },
                     {
                       "data_type": "LLModel",
-                      "description": "函数输入 'llm_ref'",
-                      "name": "llm_ref",
-                      "required": true
+                      "name": "llm_ref"
                     },
                     {
                       "data_type": "BotAdapterRef",
-                      "description": "函数输入 'bot_ref'",
-                      "name": "bot_ref",
-                      "required": true
+                      "name": "bot_ref"
                     },
                     {
                       "data_type": "String",
-                      "description": "函数输入 'metion_target_id'",
-                      "name": "metion_target_id",
-                      "required": true
-                    },
-                    {
-                      "data_type": "String",
-                      "description": "函数输入 'content'",
-                      "name": "content",
-                      "required": true
-                    },
-                    {
-                      "data_type": "String",
-                      "description": "函数输入 'message'",
-                      "name": "message",
-                      "required": true
-                    },
-                    {
-                      "data_type": "String",
-                      "description": "函数输入 'style'",
-                      "name": "style",
-                      "required": true
+                      "name": "metion_target_id"
                     }
                   ],
-                  "port_bindings": {},
-                  "position": {
-                    "x": 60.0,
-                    "y": 120.0
-                  },
-                  "size": {
-                    "height": 120.0,
-                    "width": 220.0
-                  }
-                },
-                {
-                  "description": "函数子图的输出边界节点",
-                  "dynamic_input_ports": true,
-                  "dynamic_output_ports": false,
-                  "has_cycle": false,
-                  "has_error": false,
-                  "id": "__function_outputs__",
-                  "inline_values": {
-                    "signature": [
-                      {
-                        "data_type": "String",
-                        "name": "result"
+                  "tools_config": [
+                    {
+                      "description": "回复对方",
+                      "id": "tool",
+                      "name": "natural_language_reply",
+                      "outputs": [
+                        {
+                          "data_type": "String",
+                          "name": "result"
+                        }
+                      ],
+                      "parameters": [
+                        {
+                          "data_type": "String",
+                          "desc": "回复内容",
+                          "name": "message"
+                        },
+                        {
+                          "data_type": "String",
+                          "desc": "语言风格，比如心情，语气等",
+                          "name": "style"
+                        }
+                      ],
+                      "subgraph": {
+                        "edges": [
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "style",
+                            "to_node_id": "node_1",
+                            "to_port": "style"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "target_id",
+                            "to_node_id": "node_1",
+                            "to_port": "target_id"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "llm_ref",
+                            "to_node_id": "node_1",
+                            "to_port": "llm_ref"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "bot_ref",
+                            "to_node_id": "node_1",
+                            "to_port": "bot_adapter_ref"
+                          },
+                          {
+                            "from_node_id": "node_1",
+                            "from_port": "summary",
+                            "to_node_id": "__function_outputs__",
+                            "to_port": "result"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "message",
+                            "to_node_id": "node_1",
+                            "to_port": "content"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "metion_target_id",
+                            "to_node_id": "node_1",
+                            "to_port": "mention_target_id"
+                          }
+                        ],
+                        "hyperparameter_groups": [],
+                        "hyperparameters": [],
+                        "nodes": [
+                          {
+                            "description": "函数子图的输入边界节点",
+                            "dynamic_input_ports": false,
+                            "dynamic_output_ports": true,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "__function_inputs__",
+                            "inline_values": {
+                              "signature": [
+                                {
+                                  "data_type": "String",
+                                  "name": "target_id"
+                                },
+                                {
+                                  "data_type": "LLModel",
+                                  "name": "llm_ref"
+                                },
+                                {
+                                  "data_type": "BotAdapterRef",
+                                  "name": "bot_ref"
+                                },
+                                {
+                                  "data_type": "String",
+                                  "name": "metion_target_id"
+                                },
+                                {
+                                  "data_type": "String",
+                                  "name": "content"
+                                },
+                                {
+                                  "data_type": "String",
+                                  "name": "message"
+                                },
+                                {
+                                  "data_type": "String",
+                                  "name": "style"
+                                }
+                              ]
+                            },
+                            "input_ports": [
+                              {
+                                "data_type": "Json",
+                                "description": "隐藏的函数签名 JSON",
+                                "name": "signature",
+                                "required": false
+                              },
+                              {
+                                "data_type": "Json",
+                                "description": "运行时注入的函数输入 JSON",
+                                "name": "runtime_values",
+                                "required": false
+                              }
+                            ],
+                            "name": "函数输入",
+                            "node_type": "function_inputs",
+                            "output_ports": [
+                              {
+                                "data_type": "String",
+                                "description": "函数输入 'target_id'",
+                                "name": "target_id",
+                                "required": true
+                              },
+                              {
+                                "data_type": "LLModel",
+                                "description": "函数输入 'llm_ref'",
+                                "name": "llm_ref",
+                                "required": true
+                              },
+                              {
+                                "data_type": "BotAdapterRef",
+                                "description": "函数输入 'bot_ref'",
+                                "name": "bot_ref",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "函数输入 'metion_target_id'",
+                                "name": "metion_target_id",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "函数输入 'content'",
+                                "name": "content",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "函数输入 'message'",
+                                "name": "message",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "函数输入 'style'",
+                                "name": "style",
+                                "required": true
+                              }
+                            ],
+                            "port_bindings": {},
+                            "position": {
+                              "x": 60.0,
+                              "y": 120.0
+                            },
+                            "size": {
+                              "height": 120.0,
+                              "width": 220.0
+                            }
+                          },
+                          {
+                            "description": "函数子图的输出边界节点",
+                            "dynamic_input_ports": true,
+                            "dynamic_output_ports": false,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "__function_outputs__",
+                            "inline_values": {
+                              "signature": [
+                                {
+                                  "data_type": "String",
+                                  "name": "result"
+                                }
+                              ]
+                            },
+                            "input_ports": [
+                              {
+                                "data_type": "Json",
+                                "description": "隐藏的函数签名 JSON",
+                                "name": "signature",
+                                "required": false
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "函数输出 'result'",
+                                "name": "result",
+                                "required": true
+                              }
+                            ],
+                            "name": "函数输出",
+                            "node_type": "function_outputs",
+                            "output_ports": [],
+                            "port_bindings": {},
+                            "position": {
+                              "x": 1280.0,
+                              "y": 160.0
+                            },
+                            "size": {
+                              "height": 120.0,
+                              "width": 220.0
+                            }
+                          },
+                          {
+                            "description": "调用 LLM 生成结构化 QQ 自然语言回复，并按好友/群组目标逐批发送",
+                            "dynamic_input_ports": false,
+                            "dynamic_output_ports": false,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "node_1",
+                            "inline_values": {
+                              "max_one_reply_length": "200",
+                              "target_type": "group"
+                            },
+                            "input_ports": [
+                              {
+                                "data_type": "String",
+                                "description": "回复意图、要点、草稿或上下文提示，将作为第一条 user 消息传给二次 LLM",
+                                "name": "content",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "角色名字",
+                                "name": "character_name",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "目标 QQ 号或群号",
+                                "name": "target_id",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "可选：群聊中优先 @ 的成员 QQ 号，仅用于提示 LLM",
+                                "name": "mention_target_id",
+                                "required": false
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "目标类型：friend 或 group",
+                                "name": "target_type",
+                                "required": false
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "语言风格或情绪",
+                                "name": "style",
+                                "required": true
+                              },
+                              {
+                                "data_type": "Integer",
+                                "description": "单条 plain_text 最多字符数",
+                                "name": "max_one_reply_length",
+                                "required": true
+                              },
+                              {
+                                "data_type": "LLModel",
+                                "description": "LLMBase 引用",
+                                "name": "llm_ref",
+                                "required": true
+                              },
+                              {
+                                "data_type": "BotAdapterRef",
+                                "description": "Bot 适配器引用",
+                                "name": "bot_adapter_ref",
+                                "required": true
+                              }
+                            ],
+                            "name": "QQ自然语言回复",
+                            "node_type": "qq_natural_language_reply",
+                            "output_ports": [
+                              {
+                                "data_type": "String",
+                                "description": "已发送消息的一句话总结",
+                                "name": "summary",
+                                "required": true
+                              }
+                            ],
+                            "port_bindings": {
+                              "character_name": "BOT_NAME"
+                            },
+                            "position": {
+                              "x": 660.0,
+                              "y": 100.0
+                            },
+                            "size": {
+                              "height": 240.0,
+                              "width": 520.0
+                            }
+                          }
+                        ]
                       }
-                    ]
-                  },
-                  "input_ports": [
-                    {
-                      "data_type": "Json",
-                      "description": "隐藏的函数签名 JSON",
-                      "name": "signature",
-                      "required": false
-                    },
-                    {
-                      "data_type": "String",
-                      "description": "函数输出 'result'",
-                      "name": "result",
-                      "required": true
                     }
-                  ],
-                  "name": "函数输出",
-                  "node_type": "function_outputs",
-                  "output_ports": [],
-                  "port_bindings": {},
-                  "position": {
-                    "x": 1280.0,
-                    "y": 160.0
-                  },
-                  "size": {
-                    "height": 120.0,
-                    "width": 220.0
-                  }
+                  ]
                 },
-                {
-                  "description": "调用 LLM 生成结构化 QQ 自然语言回复，并按好友/群组目标逐批发送",
-                  "dynamic_input_ports": false,
-                  "dynamic_output_ports": false,
-                  "has_cycle": false,
-                  "has_error": false,
-                  "id": "node_1",
-                  "inline_values": {
-                    "max_one_reply_length": "200",
-                    "target_type": "group"
+                "input_ports": [
+                  {
+                    "data_type": "LLModel",
+                    "description": "LLM 模型引用，由 LLM API 节点提供",
+                    "name": "llm_model",
+                    "required": true
                   },
-                  "input_ports": [
-                    {
-                      "data_type": "String",
-                      "description": "回复意图、要点、草稿或上下文提示，将作为第一条 user 消息传给二次 LLM",
-                      "name": "content",
-                      "required": true
+                  {
+                    "data_type": {
+                      "Vec": "OpenAIMessage"
                     },
-                    {
-                      "data_type": "String",
-                      "description": "角色名字",
-                      "name": "character_name",
-                      "required": true
-                    },
-                    {
-                      "data_type": "String",
-                      "description": "目标 QQ 号或群号",
-                      "name": "target_id",
-                      "required": true
-                    },
-                    {
-                      "data_type": "String",
-                      "description": "可选：群聊中优先 @ 的成员 QQ 号，仅用于提示 LLM",
-                      "name": "mention_target_id",
-                      "required": false
-                    },
-                    {
-                      "data_type": "String",
-                      "description": "目标类型：friend 或 group",
-                      "name": "target_type",
-                      "required": false
-                    },
-                    {
-                      "data_type": "String",
-                      "description": "语言风格或情绪",
-                      "name": "style",
-                      "required": true
-                    },
-                    {
-                      "data_type": "Integer",
-                      "description": "单条 plain_text 最多字符数",
-                      "name": "max_one_reply_length",
-                      "required": true
-                    },
-                    {
-                      "data_type": "LLModel",
-                      "description": "LLMBase 引用",
-                      "name": "llm_ref",
-                      "required": true
-                    },
-                    {
-                      "data_type": "BotAdapterRef",
-                      "description": "Bot 适配器引用",
-                      "name": "bot_adapter_ref",
-                      "required": true
-                    }
-                  ],
-                  "name": "QQ自然语言回复",
-                  "node_type": "qq_natural_language_reply",
-                  "output_ports": [
-                    {
-                      "data_type": "String",
-                      "description": "已发送消息的一句话总结",
-                      "name": "summary",
-                      "required": true
-                    }
-                  ],
-                  "port_bindings": {
-                    "character_name": "BOT_NAME"
+                    "description": "消息列表（包含 system/user/assistant/tool 等角色）",
+                    "name": "messages",
+                    "required": true
                   },
-                  "position": {
-                    "x": 660.0,
-                    "y": 100.0
+                  {
+                    "data_type": "Json",
+                    "description": "Tools 配置，由工具编辑器维护",
+                    "name": "tools_config",
+                    "required": false
                   },
-                  "size": {
-                    "height": 240.0,
-                    "width": 520.0
+                  {
+                    "data_type": "Json",
+                    "description": "Brain 共享输入签名，由工具编辑器维护",
+                    "name": "shared_inputs",
+                    "required": false
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "Brain 共享输入 'target_id'",
+                    "name": "target_id",
+                    "required": true
+                  },
+                  {
+                    "data_type": "LLModel",
+                    "description": "Brain 共享输入 'llm_ref'",
+                    "name": "llm_ref",
+                    "required": true
+                  },
+                  {
+                    "data_type": "BotAdapterRef",
+                    "description": "Brain 共享输入 'bot_ref'",
+                    "name": "bot_ref",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "Brain 共享输入 'metion_target_id'",
+                    "name": "metion_target_id",
+                    "required": true
                   }
+                ],
+                "name": "Brain",
+                "node_type": "brain",
+                "output_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "OpenAIMessage"
+                    },
+                    "description": "本次 Brain 运行新增的 assistant/tool 消息轨迹",
+                    "name": "output",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 2320.0,
+                  "y": 240.0
+                },
+                "size": null
+              },
+              {
+                "description": "将 vec2 拼接到 vec1 之后，要求两个 Vec 的元素类型一致",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_13",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "Any"
+                    },
+                    "description": "前半部分列表",
+                    "name": "vec1",
+                    "required": true
+                  },
+                  {
+                    "data_type": {
+                      "Vec": "Any"
+                    },
+                    "description": "后半部分列表，将拼接到 vec1 后面",
+                    "name": "vec2",
+                    "required": true
+                  }
+                ],
+                "name": "拼接两个列表",
+                "node_type": "concat_vec",
+                "output_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "拼接后的列表，元素类型与输入列表一致",
+                    "name": "vec",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 2340.0,
+                  "y": 500.0
+                },
+                "size": null
+              },
+              {
+                "description": "函数子图的输入边界节点",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": true,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "__function_inputs__",
+                "inline_values": {
+                  "signature": [
+                    {
+                      "data_type": "MessageEvent",
+                      "name": "message_event"
+                    },
+                    {
+                      "data_type": "String",
+                      "name": "qq_bot_adapter"
+                    },
+                    {
+                      "data_type": "String",
+                      "name": "time"
+                    },
+                    {
+                      "data_type": "String",
+                      "name": "cache_ref"
+                    },
+                    {
+                      "data_type": "String",
+                      "name": "session_ref"
+                    },
+                    {
+                      "data_type": "String",
+                      "name": "llm_api_llm_model"
+                    }
+                  ]
+                },
+                "input_ports": [
+                  {
+                    "data_type": "Json",
+                    "description": "隐藏的函数签名 JSON",
+                    "name": "signature",
+                    "required": false
+                  },
+                  {
+                    "data_type": "Json",
+                    "description": "运行时注入的函数输入 JSON",
+                    "name": "runtime_values",
+                    "required": false
+                  }
+                ],
+                "name": "函数输入",
+                "node_type": "function_inputs",
+                "output_ports": [
+                  {
+                    "data_type": "MessageEvent",
+                    "description": "函数输入 'message_event'",
+                    "name": "message_event",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "函数输入 'qq_bot_adapter'",
+                    "name": "qq_bot_adapter",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "函数输入 'time'",
+                    "name": "time",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "函数输入 'cache_ref'",
+                    "name": "cache_ref",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "函数输入 'session_ref'",
+                    "name": "session_ref",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "函数输入 'llm_api_llm_model'",
+                    "name": "llm_api_llm_model",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": -180.0,
+                  "y": 80.0
+                },
+                "size": {
+                  "height": 120.0,
+                  "width": 220.0
                 }
-              ]
-            }
+              },
+              {
+                "description": "函数子图的输出边界节点",
+                "dynamic_input_ports": true,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "__function_outputs__",
+                "inline_values": {
+                  "signature": []
+                },
+                "input_ports": [
+                  {
+                    "data_type": "Json",
+                    "description": "隐藏的函数签名 JSON",
+                    "name": "signature",
+                    "required": false
+                  }
+                ],
+                "name": "函数输出",
+                "node_type": "function_outputs",
+                "output_ports": [],
+                "port_bindings": {},
+                "position": {
+                  "x": 3400.0,
+                  "y": 80.0
+                },
+                "size": {
+                  "height": 120.0,
+                  "width": 220.0
+                }
+              }
+            ]
           }
-        ]
+        }
       },
       "port_bindings": {},
-      "has_error": false,
+      "has_error": true,
       "has_cycle": false
     },
     {
-      "id": "node_13",
-      "name": "拼接两个列表",
-      "description": "将 vec2 拼接到 vec1 之后，要求两个 Vec 的元素类型一致",
-      "node_type": "concat_vec",
+      "id": "node_4",
+      "name": "好友消息处理",
+      "description": null,
+      "node_type": "function",
       "input_ports": [
         {
-          "name": "vec1",
-          "data_type": {
-            "Vec": "Any"
-          },
-          "description": "前半部分列表",
+          "name": "message_event",
+          "data_type": "MessageEvent",
+          "description": "函数输入 'message_event'",
           "required": true
         },
         {
-          "name": "vec2",
-          "data_type": {
-            "Vec": "Any"
-          },
-          "description": "后半部分列表，将拼接到 vec1 后面",
+          "name": "qq_bot_adapter",
+          "data_type": "String",
+          "description": "函数输入 'qq_bot_adapter'",
           "required": true
-        }
-      ],
-      "output_ports": [
+        },
         {
-          "name": "vec",
-          "data_type": "Any",
-          "description": "拼接后的列表，元素类型与输入列表一致",
+          "name": "time",
+          "data_type": "String",
+          "description": "函数输入 'time'",
+          "required": true
+        },
+        {
+          "name": "cache_ref",
+          "data_type": "String",
+          "description": "函数输入 'cache_ref'",
+          "required": true
+        },
+        {
+          "name": "session_ref",
+          "data_type": "String",
+          "description": "函数输入 'session_ref'",
+          "required": true
+        },
+        {
+          "name": "llm_api_llm_model",
+          "data_type": "String",
+          "description": "函数输入 'llm_api_llm_model'",
           "required": true
         }
       ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
+      "output_ports": [],
+      "dynamic_input_ports": true,
+      "dynamic_output_ports": true,
       "position": {
-        "x": 1580.0,
-        "y": -480.0
+        "x": -580.0,
+        "y": -1480.0
       },
       "size": null,
-      "inline_values": {},
+      "inline_values": {
+        "function_config": {
+          "description": "",
+          "inputs": [
+            {
+              "data_type": "MessageEvent",
+              "name": "message_event"
+            },
+            {
+              "data_type": "String",
+              "name": "qq_bot_adapter"
+            },
+            {
+              "data_type": "String",
+              "name": "time"
+            },
+            {
+              "data_type": "String",
+              "name": "cache_ref"
+            },
+            {
+              "data_type": "String",
+              "name": "session_ref"
+            },
+            {
+              "data_type": "String",
+              "name": "llm_api_llm_model"
+            }
+          ],
+          "name": "好友消息处理",
+          "outputs": [],
+          "subgraph": {
+            "edges": [
+              {
+                "from_node_id": "node_28",
+                "from_port": "output",
+                "to_node_id": "node_31",
+                "to_port": "content"
+              },
+              {
+                "from_node_id": "node_3",
+                "from_port": "messages",
+                "to_node_id": "node_32",
+                "to_port": "vec2"
+              },
+              {
+                "from_node_id": "node_31",
+                "from_port": "message",
+                "to_node_id": "node_41",
+                "to_port": "element"
+              },
+              {
+                "from_node_id": "node_45",
+                "from_port": "messages",
+                "to_node_id": "node_46",
+                "to_port": "vec2"
+              },
+              {
+                "from_node_id": "node_41",
+                "from_port": "array",
+                "to_node_id": "node_46",
+                "to_port": "vec1"
+              },
+              {
+                "from_node_id": "node_46",
+                "from_port": "vec",
+                "to_node_id": "node_32",
+                "to_port": "vec1"
+              },
+              {
+                "from_node_id": "node_32",
+                "from_port": "vec",
+                "to_node_id": "node_17",
+                "to_port": "messages"
+              },
+              {
+                "from_node_id": "node_5",
+                "from_port": "result",
+                "to_node_id": "node_33",
+                "to_port": "sender_id"
+              },
+              {
+                "from_node_id": "node_5",
+                "from_port": "result",
+                "to_node_id": "node_34",
+                "to_port": "input"
+              },
+              {
+                "from_node_id": "node_36",
+                "from_port": "messages",
+                "to_node_id": "node_35",
+                "to_port": "message"
+              },
+              {
+                "from_node_id": "node_33",
+                "from_port": "claimed",
+                "to_node_id": "node_34",
+                "to_port": "condition"
+              },
+              {
+                "from_node_id": "node_34",
+                "from_port": "true_output",
+                "to_node_id": "node_28",
+                "to_port": "sender_id"
+              },
+              {
+                "from_node_id": "node_34",
+                "from_port": "true_output",
+                "to_node_id": "node_45",
+                "to_port": "sender_id"
+              },
+              {
+                "from_node_id": "node_34",
+                "from_port": "true_output",
+                "to_node_id": "node_16",
+                "to_port": "sender_id"
+              },
+              {
+                "from_node_id": "node_16",
+                "from_port": "success",
+                "to_node_id": "node_42",
+                "to_port": "first"
+              },
+              {
+                "from_node_id": "node_42",
+                "from_port": "output",
+                "to_node_id": "node_37",
+                "to_port": "sender_id"
+              },
+              {
+                "from_node_id": "node_34",
+                "from_port": "true_output",
+                "to_node_id": "node_42",
+                "to_port": "second"
+              },
+              {
+                "from_node_id": "node_34",
+                "from_port": "false_output",
+                "to_node_id": "node_35",
+                "to_port": "target_id"
+              },
+              {
+                "from_node_id": "node_34",
+                "from_port": "true_output",
+                "to_node_id": "node_17",
+                "to_port": "target_id"
+              },
+              {
+                "from_node_id": "node_45",
+                "from_port": "messages",
+                "to_node_id": "node_9",
+                "to_port": "vec1"
+              },
+              {
+                "from_node_id": "node_17",
+                "from_port": "output",
+                "to_node_id": "node_9",
+                "to_port": "vec2"
+              },
+              {
+                "from_node_id": "node_9",
+                "from_port": "vec",
+                "to_node_id": "node_16",
+                "to_port": "messages"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "message_event",
+                "to_node_id": "node_3",
+                "to_port": "message_event"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "message_event",
+                "to_node_id": "node_5",
+                "to_port": "message_event"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "qq_bot_adapter",
+                "to_node_id": "node_3",
+                "to_port": "bot_adapter"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "qq_bot_adapter",
+                "to_node_id": "node_35",
+                "to_port": "bot_adapter"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "qq_bot_adapter",
+                "to_node_id": "node_17",
+                "to_port": "bot_ref"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "time",
+                "to_node_id": "node_28",
+                "to_port": "time"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "cache_ref",
+                "to_node_id": "node_45",
+                "to_port": "cache_ref"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "cache_ref",
+                "to_node_id": "node_16",
+                "to_port": "cache_ref"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "session_ref",
+                "to_node_id": "node_33",
+                "to_port": "session_ref"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "session_ref",
+                "to_node_id": "node_37",
+                "to_port": "session_ref"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "llm_api_llm_model",
+                "to_node_id": "node_17",
+                "to_port": "llm_model"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "llm_api_llm_model",
+                "to_node_id": "node_17",
+                "to_port": "llm_ref"
+              }
+            ],
+            "hyperparameter_groups": [],
+            "hyperparameters": [],
+            "nodes": [
+              {
+                "description": "Converts MessageEvent to LLM prompt string",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_3",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "MessageEvent",
+                    "description": "MessageEvent containing message data",
+                    "name": "message_event",
+                    "required": true
+                  },
+                  {
+                    "data_type": "BotAdapterRef",
+                    "description": "BotAdapter reference for context-aware system message",
+                    "name": "bot_adapter",
+                    "required": true
+                  }
+                ],
+                "name": "事件提取message列表",
+                "node_type": "extract_message_from_event",
+                "output_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "OpenAIMessage"
+                    },
+                    "description": "MessageList containing system and user messages",
+                    "name": "messages",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "Merged readable message body",
+                    "name": "content",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "Referenced/replied message content",
+                    "name": "ref_content",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Boolean",
+                    "description": "Whether the message @'s the bot",
+                    "name": "is_at_me",
+                    "required": true
+                  },
+                  {
+                    "data_type": {
+                      "Vec": "String"
+                    },
+                    "description": "List of all @ targets in the message",
+                    "name": "at_target_list",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 440.0,
+                  "y": 660.0
+                },
+                "size": null
+              },
+              {
+                "description": "从消息事件中提取发送者的QQ号（字符串）",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_5",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "MessageEvent",
+                    "description": "输入的消息事件",
+                    "name": "message_event",
+                    "required": true
+                  }
+                ],
+                "name": "提取发送者ID",
+                "node_type": "extract_sender_id_from_event",
+                "output_ports": [
+                  {
+                    "data_type": "String",
+                    "description": "发送者的QQ号字符串",
+                    "name": "result",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 220.0,
+                  "y": 580.0
+                },
+                "size": null
+              },
+              {
+                "description": "使用 system prompt 和 user message 发起一次带动态 Tools 的 LLM 推理",
+                "dynamic_input_ports": true,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_17",
+                "inline_values": {
+                  "shared_inputs": [
+                    {
+                      "data_type": "String",
+                      "name": "target_id"
+                    },
+                    {
+                      "data_type": "LLModel",
+                      "name": "llm_ref"
+                    },
+                    {
+                      "data_type": "BotAdapterRef",
+                      "name": "bot_ref"
+                    }
+                  ],
+                  "tools_config": [
+                    {
+                      "description": "回复对方",
+                      "id": "tool",
+                      "name": "natural_language_reply",
+                      "outputs": [
+                        {
+                          "data_type": "String",
+                          "name": "result"
+                        }
+                      ],
+                      "parameters": [
+                        {
+                          "data_type": "String",
+                          "desc": "回复内容",
+                          "name": "message"
+                        },
+                        {
+                          "data_type": "String",
+                          "desc": "语言风格，比如心情，语气等",
+                          "name": "style"
+                        }
+                      ],
+                      "subgraph": {
+                        "edges": [
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "style",
+                            "to_node_id": "node_1",
+                            "to_port": "style"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "target_id",
+                            "to_node_id": "node_1",
+                            "to_port": "target_id"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "llm_ref",
+                            "to_node_id": "node_1",
+                            "to_port": "llm_ref"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "bot_ref",
+                            "to_node_id": "node_1",
+                            "to_port": "bot_adapter_ref"
+                          },
+                          {
+                            "from_node_id": "node_1",
+                            "from_port": "summary",
+                            "to_node_id": "__function_outputs__",
+                            "to_port": "result"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "message",
+                            "to_node_id": "node_1",
+                            "to_port": "content"
+                          }
+                        ],
+                        "hyperparameter_groups": [],
+                        "hyperparameters": [],
+                        "nodes": [
+                          {
+                            "description": "函数子图的输入边界节点",
+                            "dynamic_input_ports": false,
+                            "dynamic_output_ports": true,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "__function_inputs__",
+                            "inline_values": {
+                              "signature": [
+                                {
+                                  "data_type": "String",
+                                  "name": "target_id"
+                                },
+                                {
+                                  "data_type": "LLModel",
+                                  "name": "llm_ref"
+                                },
+                                {
+                                  "data_type": "BotAdapterRef",
+                                  "name": "bot_ref"
+                                },
+                                {
+                                  "data_type": "String",
+                                  "name": "content"
+                                },
+                                {
+                                  "data_type": "String",
+                                  "name": "message"
+                                },
+                                {
+                                  "data_type": "String",
+                                  "name": "style"
+                                }
+                              ]
+                            },
+                            "input_ports": [
+                              {
+                                "data_type": "Json",
+                                "description": "隐藏的函数签名 JSON",
+                                "name": "signature",
+                                "required": false
+                              },
+                              {
+                                "data_type": "Json",
+                                "description": "运行时注入的函数输入 JSON",
+                                "name": "runtime_values",
+                                "required": false
+                              }
+                            ],
+                            "name": "函数输入",
+                            "node_type": "function_inputs",
+                            "output_ports": [
+                              {
+                                "data_type": "String",
+                                "description": "函数输入 'target_id'",
+                                "name": "target_id",
+                                "required": true
+                              },
+                              {
+                                "data_type": "LLModel",
+                                "description": "函数输入 'llm_ref'",
+                                "name": "llm_ref",
+                                "required": true
+                              },
+                              {
+                                "data_type": "BotAdapterRef",
+                                "description": "函数输入 'bot_ref'",
+                                "name": "bot_ref",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "函数输入 'content'",
+                                "name": "content",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "函数输入 'message'",
+                                "name": "message",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "函数输入 'style'",
+                                "name": "style",
+                                "required": true
+                              }
+                            ],
+                            "port_bindings": {},
+                            "position": {
+                              "x": 60.0,
+                              "y": 120.0
+                            },
+                            "size": {
+                              "height": 120.0,
+                              "width": 220.0
+                            }
+                          },
+                          {
+                            "description": "函数子图的输出边界节点",
+                            "dynamic_input_ports": true,
+                            "dynamic_output_ports": false,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "__function_outputs__",
+                            "inline_values": {
+                              "signature": [
+                                {
+                                  "data_type": "String",
+                                  "name": "result"
+                                }
+                              ]
+                            },
+                            "input_ports": [
+                              {
+                                "data_type": "Json",
+                                "description": "隐藏的函数签名 JSON",
+                                "name": "signature",
+                                "required": false
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "函数输出 'result'",
+                                "name": "result",
+                                "required": true
+                              }
+                            ],
+                            "name": "函数输出",
+                            "node_type": "function_outputs",
+                            "output_ports": [],
+                            "port_bindings": {},
+                            "position": {
+                              "x": 1280.0,
+                              "y": 160.0
+                            },
+                            "size": {
+                              "height": 120.0,
+                              "width": 220.0
+                            }
+                          },
+                          {
+                            "description": "调用 LLM 生成结构化 QQ 自然语言回复，并按好友/群组目标逐批发送",
+                            "dynamic_input_ports": false,
+                            "dynamic_output_ports": false,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "node_1",
+                            "inline_values": {
+                              "max_one_reply_length": "200",
+                              "target_type": "friend"
+                            },
+                            "input_ports": [
+                              {
+                                "data_type": "String",
+                                "description": "回复意图、要点、草稿或上下文提示，将作为第一条 user 消息传给二次 LLM",
+                                "name": "content",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "角色名字",
+                                "name": "character_name",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "目标 QQ 号或群号",
+                                "name": "target_id",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "可选：群聊中优先 @ 的成员 QQ 号，仅用于提示 LLM",
+                                "name": "mention_target_id",
+                                "required": false
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "目标类型：friend 或 group",
+                                "name": "target_type",
+                                "required": false
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "语言风格或情绪",
+                                "name": "style",
+                                "required": true
+                              },
+                              {
+                                "data_type": "Integer",
+                                "description": "单条 plain_text 最多字符数",
+                                "name": "max_one_reply_length",
+                                "required": true
+                              },
+                              {
+                                "data_type": "LLModel",
+                                "description": "LLMBase 引用",
+                                "name": "llm_ref",
+                                "required": true
+                              },
+                              {
+                                "data_type": "BotAdapterRef",
+                                "description": "Bot 适配器引用",
+                                "name": "bot_adapter_ref",
+                                "required": true
+                              }
+                            ],
+                            "name": "QQ自然语言回复",
+                            "node_type": "qq_natural_language_reply",
+                            "output_ports": [
+                              {
+                                "data_type": "String",
+                                "description": "已发送消息的一句话总结",
+                                "name": "summary",
+                                "required": true
+                              }
+                            ],
+                            "port_bindings": {
+                              "character_name": "BOT_NAME"
+                            },
+                            "position": {
+                              "x": 660.0,
+                              "y": 100.0
+                            },
+                            "size": {
+                              "height": 240.0,
+                              "width": 520.0
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                },
+                "input_ports": [
+                  {
+                    "data_type": "LLModel",
+                    "description": "LLM 模型引用，由 LLM API 节点提供",
+                    "name": "llm_model",
+                    "required": true
+                  },
+                  {
+                    "data_type": {
+                      "Vec": "OpenAIMessage"
+                    },
+                    "description": "消息列表（包含 system/user/assistant/tool 等角色）",
+                    "name": "messages",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Json",
+                    "description": "Tools 配置，由工具编辑器维护",
+                    "name": "tools_config",
+                    "required": false
+                  },
+                  {
+                    "data_type": "Json",
+                    "description": "Brain 共享输入签名，由工具编辑器维护",
+                    "name": "shared_inputs",
+                    "required": false
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "Brain 共享输入 'target_id'",
+                    "name": "target_id",
+                    "required": true
+                  },
+                  {
+                    "data_type": "LLModel",
+                    "description": "Brain 共享输入 'llm_ref'",
+                    "name": "llm_ref",
+                    "required": true
+                  },
+                  {
+                    "data_type": "BotAdapterRef",
+                    "description": "Brain 共享输入 'bot_ref'",
+                    "name": "bot_ref",
+                    "required": true
+                  }
+                ],
+                "name": "Brain",
+                "node_type": "brain",
+                "output_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "OpenAIMessage"
+                    },
+                    "description": "本次 Brain 运行新增的 assistant/tool 消息轨迹",
+                    "name": "output",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 2160.0,
+                  "y": 540.0
+                },
+                "size": null
+              },
+              {
+                "description": "通过 ${变量名} 模板语法将输入变量格式化为字符串",
+                "dynamic_input_ports": true,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_28",
+                "inline_values": {
+                  "template": "你的角色是${角色名称}。现在时间是${time}，你的好友${sender_id}向你发送了一条消息。\r\n\r\n你可以按需调用工具来获取信息或执行动作，包括“自然语言回复”工具。\r\n\r\n规则：\r\n1. 你需要先判断是否有必要回复对方。\r\n2. 如果决定回复，使用“自然语言回复”工具发送完整回复。\r\n3. 一次完整回复发送完成后，就视为任务已经完成，不要再次调用“自然语言回复”工具。\r\n4. 只有在单次内容超过工具长度限制，或者确实需要分成多句分开发送时，才允许多次调用“自然语言回复”工具。\r\n5. 不要为了确认、重复表达、补一句客套话、或者自言自语而再次调用“自然语言回复”工具。\r\n6. 当你已经完成要说的话后，立即停止后续工具调用。\r\n7. 如果你决定不回复，则不要调用“自然语言回复”工具。\n"
+                },
+                "input_ports": [
+                  {
+                    "data_type": "String",
+                    "description": "格式化模板字符串，使用 ${变量名} 语法引用输入变量",
+                    "name": "template",
+                    "required": false
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "变量 角色名称",
+                    "name": "角色名称",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "变量 time",
+                    "name": "time",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "变量 sender_id",
+                    "name": "sender_id",
+                    "required": true
+                  }
+                ],
+                "name": "格式化字符串",
+                "node_type": "format_string",
+                "output_ports": [
+                  {
+                    "data_type": "String",
+                    "description": "格式化后的字符串",
+                    "name": "output",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {
+                  "角色名称": "BOT_NAME"
+                },
+                "position": {
+                  "x": 900.0,
+                  "y": 360.0
+                },
+                "size": {
+                  "height": 120.0,
+                  "width": 540.0
+                }
+              },
+              {
+                "description": "将字符串封装为 role=system 的 OpenAIMessage",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_31",
+                "inline_values": {
+                  "role": "system"
+                },
+                "input_ports": [
+                  {
+                    "data_type": "String",
+                    "description": "系统提示词内容",
+                    "name": "content",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "OpenAIMessage 角色，可选 system / user / assistant / tool",
+                    "name": "role",
+                    "required": true
+                  }
+                ],
+                "name": "字符串转 System OpenAIMessage",
+                "node_type": "as_system_openai_message",
+                "output_ports": [
+                  {
+                    "data_type": "OpenAIMessage",
+                    "description": "role=system 的 OpenAIMessage",
+                    "name": "message",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 1440.0,
+                  "y": 360.0
+                },
+                "size": {
+                  "height": 140.0,
+                  "width": 320.0
+                }
+              },
+              {
+                "description": "将 vec2 拼接到 vec1 之后，要求两个 Vec 的元素类型一致",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_32",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "Any"
+                    },
+                    "description": "前半部分列表",
+                    "name": "vec1",
+                    "required": true
+                  },
+                  {
+                    "data_type": {
+                      "Vec": "Any"
+                    },
+                    "description": "后半部分列表，将拼接到 vec1 后面",
+                    "name": "vec2",
+                    "required": true
+                  }
+                ],
+                "name": "拼接两个列表",
+                "node_type": "concat_vec",
+                "output_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "拼接后的列表，元素类型与输入列表一致",
+                    "name": "vec",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 1540.0,
+                  "y": 620.0
+                },
+                "size": null
+              },
+              {
+                "description": "将单个元素封装为单元素 List",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_41",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "要封装到数组中的元素",
+                    "name": "element",
+                    "required": true
+                  }
+                ],
+                "name": "封装元素为数组",
+                "node_type": "stack",
+                "output_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "包含单个元素的 List",
+                    "name": "array",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 1760.0,
+                  "y": 360.0
+                },
+                "size": null
+              },
+              {
+                "description": "根据缓存 Ref 和 sender_id 读取当前运行期累计的 Vec<OpenAIMessage>",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_45",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "OpenAIMessageSessionCacheRef",
+                    "description": "OpenAIMessage 会话暂存节点输出的缓存引用",
+                    "name": "cache_ref",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "要读取历史消息的 sender_id",
+                    "name": "sender_id",
+                    "required": true
+                  },
+                  {
+                    "data_type": {
+                      "Vec": "OpenAIMessage"
+                    },
+                    "description": "可选：未读取到 sender_id 历史消息时输出的回退消息列表",
+                    "name": "fallback",
+                    "required": false
+                  }
+                ],
+                "name": "获取 OpenAIMessage 历史",
+                "node_type": "openai_message_session_cache_get",
+                "output_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "OpenAIMessage"
+                    },
+                    "description": "读取到的历史 Vec<OpenAIMessage>",
+                    "name": "messages",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 740.0,
+                  "y": 580.0
+                },
+                "size": null
+              },
+              {
+                "description": "将 vec2 拼接到 vec1 之后，要求两个 Vec 的元素类型一致",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_46",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "Any"
+                    },
+                    "description": "前半部分列表",
+                    "name": "vec1",
+                    "required": true
+                  },
+                  {
+                    "data_type": {
+                      "Vec": "Any"
+                    },
+                    "description": "后半部分列表，将拼接到 vec1 后面",
+                    "name": "vec2",
+                    "required": true
+                  }
+                ],
+                "name": "拼接两个列表",
+                "node_type": "concat_vec",
+                "output_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "拼接后的列表，元素类型与输入列表一致",
+                    "name": "vec",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 1180.0,
+                  "y": 600.0
+                },
+                "size": null
+              },
+              {
+                "description": "根据缓存 Ref、sender_id 与消息列表，覆写当前运行期累计的 Vec<OpenAIMessage>",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_16",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "OpenAIMessageSessionCacheRef",
+                    "description": "OpenAIMessage 会话暂存节点输出的缓存引用",
+                    "name": "cache_ref",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "要覆写历史消息的 sender_id",
+                    "name": "sender_id",
+                    "required": true
+                  },
+                  {
+                    "data_type": {
+                      "Vec": "OpenAIMessage"
+                    },
+                    "description": "要写回并覆写到缓存中的 Vec<OpenAIMessage>",
+                    "name": "messages",
+                    "required": true
+                  }
+                ],
+                "name": "覆写 OpenAIMessage 历史",
+                "node_type": "openai_message_session_cache_set",
+                "output_ports": [
+                  {
+                    "data_type": "Boolean",
+                    "description": "是否成功覆写历史消息",
+                    "name": "success",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 2680.0,
+                  "y": 540.0
+                },
+                "size": null
+              },
+              {
+                "description": "原子检查并占用 sender_id 会话状态",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_33",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "SessionStateRef",
+                    "description": "运行时会话状态引用",
+                    "name": "session_ref",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "会话发送者 ID",
+                    "name": "sender_id",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Json",
+                    "description": "成功占用时写入的附加 JSON 状态",
+                    "name": "state_json",
+                    "required": false
+                  }
+                ],
+                "name": "尝试占用会话",
+                "node_type": "session_state_try_claim",
+                "output_ports": [
+                  {
+                    "data_type": "Boolean",
+                    "description": "本次是否成功占用",
+                    "name": "claimed",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Boolean",
+                    "description": "当前 sender_id 是否正在处理中",
+                    "name": "in_session",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Json",
+                    "description": "当前 sender_id 的附加 JSON 状态",
+                    "name": "state_json",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 480.0,
+                  "y": 200.0
+                },
+                "size": null
+              },
+              {
+                "description": "根据 Boolean 输入将同一份数据分流到 true 或 false 分支，另一分支不输出",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_34",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "Boolean",
+                    "description": "为 true 时走 true_output，否则走 false_output",
+                    "name": "condition",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "要分流到某个分支的输入值",
+                    "name": "input",
+                    "required": true
+                  }
+                ],
+                "name": "布尔分路",
+                "node_type": "boolean_branch",
+                "output_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "condition=true 时输出",
+                    "name": "true_output",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "condition=false 时输出",
+                    "name": "false_output",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "实际走到的分支：true 或 false",
+                    "name": "branch_taken",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 740.0,
+                  "y": 100.0
+                },
+                "size": null
+              },
+              {
+                "description": "向QQ好友发送消息",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_35",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "BotAdapterRef",
+                    "description": "Bot适配器引用",
+                    "name": "bot_adapter",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "目标好友的QQ号",
+                    "name": "target_id",
+                    "required": true
+                  },
+                  {
+                    "data_type": {
+                      "Vec": "QQMessage"
+                    },
+                    "description": "要发送的QQ消息段列表",
+                    "name": "message",
+                    "required": true
+                  }
+                ],
+                "name": "发送好友消息",
+                "node_type": "send_friend_message",
+                "output_ports": [
+                  {
+                    "data_type": "Boolean",
+                    "description": "是否发送成功",
+                    "name": "success",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Integer",
+                    "description": "服务器返回的消息ID",
+                    "name": "message_id",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 1940.0,
+                  "y": 200.0
+                },
+                "size": null
+              },
+              {
+                "description": "QQMessageList data source with inline UI editor",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_36",
+                "inline_values": {
+                  "messages": [
+                    {
+                      "data": {
+                        "text": "我还在思考，你别急"
+                      },
+                      "type": "text"
+                    }
+                  ]
+                },
+                "input_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "QQMessage"
+                    },
+                    "description": "Vec<QQMessage> provided by UI inline editor",
+                    "name": "messages",
+                    "required": false
+                  }
+                ],
+                "name": "QQMessageList Data",
+                "node_type": "qq_message_list_data",
+                "output_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "QQMessage"
+                    },
+                    "description": "Output Vec<QQMessage> from UI data source",
+                    "name": "messages",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 1220.0,
+                  "y": 80.0
+                },
+                "size": {
+                  "height": 160.0,
+                  "width": 400.0
+                }
+              },
+              {
+                "description": "释放 sender_id 的会话占用状态",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_37",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "SessionStateRef",
+                    "description": "运行时会话状态引用",
+                    "name": "session_ref",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "会话发送者 ID",
+                    "name": "sender_id",
+                    "required": true
+                  }
+                ],
+                "name": "释放会话占用",
+                "node_type": "session_state_release",
+                "output_ports": [
+                  {
+                    "data_type": "Boolean",
+                    "description": "是否成功释放当前 sender_id 的占用",
+                    "name": "released",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 3220.0,
+                  "y": 540.0
+                },
+                "size": null
+              },
+              {
+                "description": "等待 first 和 second 都到齐后，原样透传 second",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_42",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "用于串联依赖的前置输入，仅用于等待其到齐",
+                    "name": "first",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "在两个输入都到齐后原样透传的值",
+                    "name": "second",
+                    "required": true
+                  }
+                ],
+                "name": "And Then",
+                "node_type": "and_then",
+                "output_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "second 的原样输出",
+                    "name": "output",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 2980.0,
+                  "y": 540.0
+                },
+                "size": null
+              },
+              {
+                "description": "将 vec2 拼接到 vec1 之后，要求两个 Vec 的元素类型一致",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_9",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "Any"
+                    },
+                    "description": "前半部分列表",
+                    "name": "vec1",
+                    "required": true
+                  },
+                  {
+                    "data_type": {
+                      "Vec": "Any"
+                    },
+                    "description": "后半部分列表，将拼接到 vec1 后面",
+                    "name": "vec2",
+                    "required": true
+                  }
+                ],
+                "name": "拼接两个列表",
+                "node_type": "concat_vec",
+                "output_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "拼接后的列表，元素类型与输入列表一致",
+                    "name": "vec",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 2420.0,
+                  "y": 540.0
+                },
+                "size": null
+              },
+              {
+                "description": "函数子图的输入边界节点",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": true,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "__function_inputs__",
+                "inline_values": {
+                  "signature": [
+                    {
+                      "data_type": "MessageEvent",
+                      "name": "message_event"
+                    },
+                    {
+                      "data_type": "String",
+                      "name": "qq_bot_adapter"
+                    },
+                    {
+                      "data_type": "String",
+                      "name": "time"
+                    },
+                    {
+                      "data_type": "String",
+                      "name": "cache_ref"
+                    },
+                    {
+                      "data_type": "String",
+                      "name": "session_ref"
+                    },
+                    {
+                      "data_type": "String",
+                      "name": "llm_api_llm_model"
+                    }
+                  ]
+                },
+                "input_ports": [
+                  {
+                    "data_type": "Json",
+                    "description": "隐藏的函数签名 JSON",
+                    "name": "signature",
+                    "required": false
+                  },
+                  {
+                    "data_type": "Json",
+                    "description": "运行时注入的函数输入 JSON",
+                    "name": "runtime_values",
+                    "required": false
+                  }
+                ],
+                "name": "函数输入",
+                "node_type": "function_inputs",
+                "output_ports": [
+                  {
+                    "data_type": "MessageEvent",
+                    "description": "函数输入 'message_event'",
+                    "name": "message_event",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "函数输入 'qq_bot_adapter'",
+                    "name": "qq_bot_adapter",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "函数输入 'time'",
+                    "name": "time",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "函数输入 'cache_ref'",
+                    "name": "cache_ref",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "函数输入 'session_ref'",
+                    "name": "session_ref",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "函数输入 'llm_api_llm_model'",
+                    "name": "llm_api_llm_model",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 60.0,
+                  "y": 80.0
+                },
+                "size": {
+                  "height": 120.0,
+                  "width": 220.0
+                }
+              },
+              {
+                "description": "函数子图的输出边界节点",
+                "dynamic_input_ports": true,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "__function_outputs__",
+                "inline_values": {
+                  "signature": []
+                },
+                "input_ports": [
+                  {
+                    "data_type": "Json",
+                    "description": "隐藏的函数签名 JSON",
+                    "name": "signature",
+                    "required": false
+                  }
+                ],
+                "name": "函数输出",
+                "node_type": "function_outputs",
+                "output_ports": [],
+                "port_bindings": {},
+                "position": {
+                  "x": 3480.0,
+                  "y": 80.0
+                },
+                "size": {
+                  "height": 120.0,
+                  "width": 220.0
+                }
+              }
+            ]
+          }
+        }
+      },
       "port_bindings": {},
       "has_error": false,
       "has_cycle": false
@@ -2765,36 +3631,6 @@
       "from_node_id": "node_1",
       "from_port": "message_event",
       "to_node_id": "node_2",
-      "to_port": "message_event"
-    },
-    {
-      "from_node_id": "node_2",
-      "from_port": "true_event",
-      "to_node_id": "node_3",
-      "to_port": "message_event"
-    },
-    {
-      "from_node_id": "node_2",
-      "from_port": "false_event",
-      "to_node_id": "node_4",
-      "to_port": "message_event"
-    },
-    {
-      "from_node_id": "node_1",
-      "from_port": "bot_adapter",
-      "to_node_id": "node_4",
-      "to_port": "bot_adapter"
-    },
-    {
-      "from_node_id": "node_1",
-      "from_port": "bot_adapter",
-      "to_node_id": "node_3",
-      "to_port": "bot_adapter"
-    },
-    {
-      "from_node_id": "node_2",
-      "from_port": "true_event",
-      "to_node_id": "node_5",
       "to_port": "message_event"
     },
     {
@@ -2810,394 +3646,82 @@
       "to_port": "message_event"
     },
     {
-      "from_node_id": "node_4",
-      "from_port": "is_at_me",
-      "to_node_id": "node_18",
-      "to_port": "enabled"
-    },
-    {
-      "from_node_id": "node_4",
-      "from_port": "messages",
-      "to_node_id": "node_18",
-      "to_port": "input"
-    },
-    {
-      "from_node_id": "node_2",
-      "from_port": "false_event",
-      "to_node_id": "node_19",
-      "to_port": "message_event"
-    },
-    {
       "from_node_id": "node_1",
       "from_port": "message_event",
       "to_node_id": "node_27",
       "to_port": "message_event"
     },
     {
-      "from_node_id": "node_30",
-      "from_port": "time",
-      "to_node_id": "node_28",
-      "to_port": "time"
-    },
-    {
-      "from_node_id": "node_28",
-      "from_port": "output",
-      "to_node_id": "node_31",
-      "to_port": "content"
-    },
-    {
-      "from_node_id": "node_3",
-      "from_port": "messages",
-      "to_node_id": "node_32",
-      "to_port": "vec2"
-    },
-    {
-      "from_node_id": "node_31",
-      "from_port": "message",
-      "to_node_id": "node_41",
-      "to_port": "element"
-    },
-    {
-      "from_node_id": "node_45",
-      "from_port": "messages",
-      "to_node_id": "node_46",
-      "to_port": "vec2"
-    },
-    {
-      "from_node_id": "node_41",
-      "from_port": "array",
-      "to_node_id": "node_46",
-      "to_port": "vec1"
-    },
-    {
-      "from_node_id": "node_46",
-      "from_port": "vec",
-      "to_node_id": "node_32",
-      "to_port": "vec1"
-    },
-    {
-      "from_node_id": "node_10",
-      "from_port": "output",
-      "to_node_id": "node_49",
-      "to_port": "content"
-    },
-    {
-      "from_node_id": "node_49",
-      "from_port": "message",
-      "to_node_id": "node_50",
-      "to_port": "element"
-    },
-    {
-      "from_node_id": "node_30",
-      "from_port": "time",
-      "to_node_id": "node_10",
-      "to_port": "time"
-    },
-    {
-      "from_node_id": "node_50",
-      "from_port": "array",
-      "to_node_id": "node_8",
-      "to_port": "vec1"
-    },
-    {
-      "from_node_id": "node_8",
-      "from_port": "vec",
-      "to_node_id": "node_6",
-      "to_port": "vec1"
-    },
-    {
-      "from_node_id": "node_18",
-      "from_port": "output",
-      "to_node_id": "node_6",
-      "to_port": "vec2"
-    },
-    {
       "from_node_id": "node_2",
       "from_port": "false_event",
-      "to_node_id": "node_57",
+      "to_node_id": "node_14",
       "to_port": "message_event"
     },
     {
-      "from_node_id": "node_59",
-      "from_port": "messages",
-      "to_node_id": "node_8",
-      "to_port": "vec2"
+      "from_node_id": "node_1",
+      "from_port": "bot_adapter",
+      "to_node_id": "node_14",
+      "to_port": "qq_bot_adapter"
+    },
+    {
+      "from_node_id": "node_30",
+      "from_port": "time",
+      "to_node_id": "node_14",
+      "to_port": "time"
     },
     {
       "from_node_id": "node_48",
       "from_port": "cache_ref",
-      "to_node_id": "node_45",
-      "to_port": "cache_ref"
-    },
-    {
-      "from_node_id": "node_48",
-      "from_port": "cache_ref",
-      "to_node_id": "node_59",
-      "to_port": "cache_ref"
-    },
-    {
-      "from_node_id": "node_48",
-      "from_port": "cache_ref",
-      "to_node_id": "node_55",
-      "to_port": "cache_ref"
-    },
-    {
-      "from_node_id": "node_32",
-      "from_port": "vec",
-      "to_node_id": "node_17",
-      "to_port": "messages"
-    },
-    {
-      "from_node_id": "node_48",
-      "from_port": "cache_ref",
-      "to_node_id": "node_16",
+      "to_node_id": "node_14",
       "to_port": "cache_ref"
     },
     {
       "from_node_id": "node_26",
       "from_port": "session_ref",
-      "to_node_id": "node_33",
+      "to_node_id": "node_14",
       "to_port": "session_ref"
     },
     {
-      "from_node_id": "node_5",
-      "from_port": "result",
-      "to_node_id": "node_33",
-      "to_port": "sender_id"
+      "from_node_id": "node_29",
+      "from_port": "llm_model",
+      "to_node_id": "node_14",
+      "to_port": "llm_api_llm_model"
     },
     {
-      "from_node_id": "node_5",
-      "from_port": "result",
-      "to_node_id": "node_34",
-      "to_port": "input"
+      "from_node_id": "node_2",
+      "from_port": "true_event",
+      "to_node_id": "node_4",
+      "to_port": "message_event"
     },
     {
       "from_node_id": "node_1",
       "from_port": "bot_adapter",
-      "to_node_id": "node_35",
-      "to_port": "bot_adapter"
+      "to_node_id": "node_4",
+      "to_port": "qq_bot_adapter"
     },
     {
-      "from_node_id": "node_36",
-      "from_port": "messages",
-      "to_node_id": "node_35",
-      "to_port": "message"
+      "from_node_id": "node_30",
+      "from_port": "time",
+      "to_node_id": "node_4",
+      "to_port": "time"
     },
     {
-      "from_node_id": "node_29",
-      "from_port": "llm_model",
-      "to_node_id": "node_17",
-      "to_port": "llm_model"
-    },
-    {
-      "from_node_id": "node_26",
-      "from_port": "session_ref",
-      "to_node_id": "node_37",
-      "to_port": "session_ref"
+      "from_node_id": "node_48",
+      "from_port": "cache_ref",
+      "to_node_id": "node_4",
+      "to_port": "cache_ref"
     },
     {
       "from_node_id": "node_26",
       "from_port": "session_ref",
-      "to_node_id": "node_39",
+      "to_node_id": "node_4",
       "to_port": "session_ref"
     },
     {
-      "from_node_id": "node_57",
-      "from_port": "result",
-      "to_node_id": "node_39",
-      "to_port": "sender_id"
-    },
-    {
-      "from_node_id": "node_57",
-      "from_port": "result",
-      "to_node_id": "node_40",
-      "to_port": "input"
-    },
-    {
-      "from_node_id": "node_26",
-      "from_port": "session_ref",
-      "to_node_id": "node_38",
-      "to_port": "session_ref"
-    },
-    {
-      "from_node_id": "node_33",
-      "from_port": "claimed",
-      "to_node_id": "node_34",
-      "to_port": "condition"
-    },
-    {
-      "from_node_id": "node_34",
-      "from_port": "true_output",
-      "to_node_id": "node_28",
-      "to_port": "sender_id"
-    },
-    {
-      "from_node_id": "node_34",
-      "from_port": "true_output",
-      "to_node_id": "node_45",
-      "to_port": "sender_id"
-    },
-    {
-      "from_node_id": "node_34",
-      "from_port": "true_output",
-      "to_node_id": "node_16",
-      "to_port": "sender_id"
-    },
-    {
-      "from_node_id": "node_40",
-      "from_port": "true_output",
-      "to_node_id": "node_59",
-      "to_port": "sender_id"
-    },
-    {
-      "from_node_id": "node_39",
-      "from_port": "claimed",
-      "to_node_id": "node_40",
-      "to_port": "condition"
-    },
-    {
-      "from_node_id": "node_40",
-      "from_port": "true_output",
-      "to_node_id": "node_10",
-      "to_port": "sender_id"
-    },
-    {
-      "from_node_id": "node_40",
-      "from_port": "true_output",
-      "to_node_id": "node_55",
-      "to_port": "sender_id"
-    },
-    {
-      "from_node_id": "node_16",
-      "from_port": "success",
-      "to_node_id": "node_42",
-      "to_port": "first"
-    },
-    {
-      "from_node_id": "node_42",
-      "from_port": "output",
-      "to_node_id": "node_37",
-      "to_port": "sender_id"
-    },
-    {
-      "from_node_id": "node_34",
-      "from_port": "true_output",
-      "to_node_id": "node_42",
-      "to_port": "second"
-    },
-    {
-      "from_node_id": "node_34",
-      "from_port": "false_output",
-      "to_node_id": "node_35",
-      "to_port": "target_id"
-    },
-    {
-      "from_node_id": "node_55",
-      "from_port": "success",
-      "to_node_id": "node_43",
-      "to_port": "first"
-    },
-    {
-      "from_node_id": "node_43",
-      "from_port": "output",
-      "to_node_id": "node_38",
-      "to_port": "sender_id"
-    },
-    {
-      "from_node_id": "node_40",
-      "from_port": "true_output",
-      "to_node_id": "node_43",
-      "to_port": "second"
-    },
-    {
-      "from_node_id": "node_34",
-      "from_port": "true_output",
-      "to_node_id": "node_17",
-      "to_port": "target_id"
-    },
-    {
       "from_node_id": "node_29",
       "from_port": "llm_model",
-      "to_node_id": "node_17",
-      "to_port": "llm_ref"
-    },
-    {
-      "from_node_id": "node_1",
-      "from_port": "bot_adapter",
-      "to_node_id": "node_17",
-      "to_port": "bot_ref"
-    },
-    {
-      "from_node_id": "node_45",
-      "from_port": "messages",
-      "to_node_id": "node_9",
-      "to_port": "vec1"
-    },
-    {
-      "from_node_id": "node_17",
-      "from_port": "output",
-      "to_node_id": "node_9",
-      "to_port": "vec2"
-    },
-    {
-      "from_node_id": "node_9",
-      "from_port": "vec",
-      "to_node_id": "node_16",
-      "to_port": "messages"
-    },
-    {
-      "from_node_id": "node_29",
-      "from_port": "llm_model",
-      "to_node_id": "node_7",
-      "to_port": "llm_model"
-    },
-    {
-      "from_node_id": "node_6",
-      "from_port": "vec",
-      "to_node_id": "node_7",
-      "to_port": "messages"
-    },
-    {
-      "from_node_id": "node_19",
-      "from_port": "result",
-      "to_node_id": "node_7",
-      "to_port": "target_id"
-    },
-    {
-      "from_node_id": "node_29",
-      "from_port": "llm_model",
-      "to_node_id": "node_7",
-      "to_port": "llm_ref"
-    },
-    {
-      "from_node_id": "node_1",
-      "from_port": "bot_adapter",
-      "to_node_id": "node_7",
-      "to_port": "bot_ref"
-    },
-    {
-      "from_node_id": "node_59",
-      "from_port": "messages",
-      "to_node_id": "node_13",
-      "to_port": "vec1"
-    },
-    {
-      "from_node_id": "node_7",
-      "from_port": "output",
-      "to_node_id": "node_13",
-      "to_port": "vec2"
-    },
-    {
-      "from_node_id": "node_13",
-      "from_port": "vec",
-      "to_node_id": "node_55",
-      "to_port": "messages"
-    },
-    {
-      "from_node_id": "node_57",
-      "from_port": "result",
-      "to_node_id": "node_7",
-      "to_port": "metion_target_id"
+      "to_node_id": "node_4",
+      "to_port": "llm_api_llm_model"
     }
   ],
   "hyperparameter_groups": [
