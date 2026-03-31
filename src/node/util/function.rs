@@ -82,6 +82,11 @@ impl FunctionNode {
         &self,
         node_results: &HashMap<String, HashMap<String, DataValue>>,
     ) -> Result<HashMap<String, DataValue>> {
+        // No declared outputs → nothing to collect, skip boundary node lookup entirely.
+        if self.config.outputs.is_empty() {
+            return Ok(HashMap::new());
+        }
+
         let Some(result_node_values) = node_results.get(FUNCTION_OUTPUTS_NODE_ID) else {
             return Err(self.wrap_error("函数子图缺少 function_outputs 边界节点执行结果"));
         };
