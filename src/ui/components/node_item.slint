@@ -111,9 +111,15 @@ export component NodeItem inherits Rectangle {
     property <bool> has-json-extract-editor: root.node_type == "json_extract";
     property <bool> suppress-click: false;
     property <bool> shift-click-active: false;
-    property <color> boundary-card-bg: root.node_type == "function_inputs" ? #dceadf : #c9dbce;
-    property <color> boundary-card-bg-pressed: root.node_type == "function_inputs" ? #d3e3d7 : #c0d3c5;
-    property <color> boundary-card-border: root.node_type == "function_inputs" ? #96ab9d : #819989;
+    property <brush> boundary-card-bg: root.node_type == "function_inputs"
+        ? AppTheme.function-input-node-bg
+        : AppTheme.function-output-node-bg;
+    property <brush> boundary-card-bg-pressed: root.node_type == "function_inputs"
+        ? AppTheme.function-input-node-bg-pressed
+        : AppTheme.function-output-node-bg-pressed;
+    property <brush> boundary-card-border: root.node_type == "function_inputs"
+        ? AppTheme.function-input-node-border
+        : AppTheme.function-output-node-border;
 
     x: x_pos * 1px;
     y: y_pos * 1px;
