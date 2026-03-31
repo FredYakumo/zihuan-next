@@ -289,12 +289,10 @@ fn upsert_boundary_node(
         let position = existing.position.clone();
         let size = existing.size.clone();
         let mut replacement = replacement;
-        if replacement.position.is_none() {
-            replacement.position = position;
-        }
-        if replacement.size.is_none() {
-            replacement.size = size;
-        }
+        // Always prefer the existing (user-dragged) position/size over the
+        // hardcoded defaults supplied by build_function_*_node_definition.
+        replacement.position = position.or(replacement.position);
+        replacement.size = size.or(replacement.size);
         let changed = existing.id != replacement.id
             || existing.name != replacement.name
             || existing.description != replacement.description

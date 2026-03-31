@@ -3,6 +3,10 @@ use std::sync::{Arc, Mutex};
 use slint::ComponentHandle;
 
 use crate::node::data_value::DataType;
+use crate::llm::brain_tool::BrainToolDefinition;
+use crate::node::function_graph::{
+    embedded_function_config_from_node, FUNCTION_CONFIG_PORT,
+};
 use crate::node::graph_io::HyperParameter;
 use crate::ui::graph_window::NodeGraphWindow;
 use crate::ui::node_graph_view::{
@@ -58,6 +62,34 @@ fn normalize_group_name(group: &str) -> String {
         "default".to_string()
     } else {
         trimmed.to_string()
+    }
+}
+
+fn remove_hyperparameter_bindings_from_graph(
+    graph: &mut crate::node::graph_io::NodeGraphDefinition,
+    name: &str,
+) {
+    for node in &mut graph.nodes {
+        node.port_bindings.retain(|_, hp_name| hp_name != name);
+
+        if let Some(mut config) = embedded_function_config_from_node(node) {
+            remove_hyperparameter_bindings_from_graph(&mut config.subgraph, name);
+            if let Ok(value) = serde_json::to_value(&config) {
+                node.inline_values
+                    .insert(FUNCTION_CONFIG_PORT.to_string(), value);
+            }
+        }
+
+        if let Some(tools_value) = node.inline_values.get("tools_config").cloned() {
+            if let Ok(mut tools) = serde_json::from_value::<Vec<BrainToolDefinition>>(tools_value) {
+                for tool in &mut tools {
+                    remove_hyperparameter_bindings_from_graph(&mut tool.subgraph, name);
+                }
+                if let Ok(value) = serde_json::to_value(&tools) {
+                    node.inline_values.insert("tools_config".to_string(), value);
+                }
+            }
+        }
     }
 }
 
@@ -138,6 +170,9 @@ pub(crate) fn bind_hyperparameter_callbacks(
                         Some(description.to_string())
                     },
                 });
+                if !tab.is_subgraph_page() {
+                    tab.load_current_page_into_mirror();
+                }
                 tab.is_dirty = true;
             }
             if let Some(ui) = ui_handle.upgrade() {
@@ -171,6 +206,9 @@ pub(crate) fn bind_hyperparameter_callbacks(
                     .any(|existing| existing == &group)
                 {
                     tab.root_graph_mut().hyperparameter_groups.push(group.clone());
+                    if !tab.is_subgraph_page() {
+                        tab.load_current_page_into_mirror();
+                    }
                     tab.is_dirty = true;
                 }
             }
@@ -216,6 +254,9 @@ pub(crate) fn bind_hyperparameter_callbacks(
                         hp.group = new_group.clone();
                     }
                 }
+                if !tab.is_subgraph_page() {
+                    tab.load_current_page_into_mirror();
+                }
                 tab.is_dirty = true;
             }
             if let Some(ui) = ui_handle.upgrade() {
@@ -258,6 +299,9 @@ pub(crate) fn bind_hyperparameter_callbacks(
                         .hyperparameter_groups
                         .push("default".to_string());
                 }
+                if !tab.is_subgraph_page() {
+                    tab.load_current_page_into_mirror();
+                }
                 tab.is_dirty = true;
             }
             if let Some(ui) = ui_handle.upgrade() {
@@ -278,10 +322,9 @@ pub(crate) fn bind_hyperparameter_callbacks(
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
                 tab.root_graph_mut().hyperparameters.retain(|hp| hp.name != name);
-                // Remove all port bindings referencing this hyperparameter
-                for node in &mut tab.root_graph_mut().nodes {
-                    node.port_bindings.retain(|_, hp_name| hp_name != name);
-                }
+                remove_hyperparameter_bindings_from_graph(tab.root_graph_mut(), name);
+                remove_hyperparameter_bindings_from_graph(tab.graph_mut(), name);
+                tab.commit_current_page_to_parent();
                 tab.hyperparameter_values.remove(name);
                 // Auto-save values if the graph is backed by a file
                 if let Some(path) = &tab.file_path {
@@ -329,6 +372,9 @@ pub(crate) fn bind_hyperparameter_callbacks(
                         }
                     }
                 }
+                if !tab.is_subgraph_page() {
+                    tab.load_current_page_into_mirror();
+                }
                 // Auto-save values if the graph is backed by a file
                 if let Some(path) = &tab.file_path {
                     if let Err(e) =
@@ -374,6 +420,7 @@ pub(crate) fn bind_hyperparameter_callbacks(
             let mut tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
+                let mut toggled = false;
                 if let Some(hp) = tab
                     .root_graph_mut()
                     .hyperparameters
@@ -381,6 +428,12 @@ pub(crate) fn bind_hyperparameter_callbacks(
                     .find(|hp| hp.name == name.as_str())
                 {
                     hp.required = !hp.required;
+                    toggled = true;
+                }
+                if toggled {
+                    if !tab.is_subgraph_page() {
+                        tab.load_current_page_into_mirror();
+                    }
                     tab.is_dirty = true;
                 }
             }
@@ -410,7 +463,7 @@ pub(crate) fn bind_hyperparameter_callbacks(
 
             // Find the port DataType
             let port_type = tab
-                .root_graph()
+                .graph()
                 .nodes
                 .iter()
                 .find(|n| n.id == node_id.as_str())
@@ -428,7 +481,7 @@ pub(crate) fn bind_hyperparameter_callbacks(
 
             // Find current binding for this port
             let current_binding = tab
-                .root_graph()
+                .graph()
                 .nodes
                 .iter()
                 .find(|n| n.id == node_id.as_str())
@@ -489,13 +542,14 @@ pub(crate) fn bind_hyperparameter_callbacks(
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
                 if let Some(node) = tab
-                    .root_graph_mut()
+                    .graph_mut()
                     .nodes
                     .iter_mut()
                     .find(|n| n.id == node_id.as_str())
                 {
                     node.port_bindings
                         .insert(port_name.to_string(), hp_name.to_string());
+                    tab.commit_current_page_to_parent();
                     tab.is_dirty = true;
                 }
             }
@@ -516,12 +570,13 @@ pub(crate) fn bind_hyperparameter_callbacks(
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
                 if let Some(node) = tab
-                    .root_graph_mut()
+                    .graph_mut()
                     .nodes
                     .iter_mut()
                     .find(|n| n.id == node_id.as_str())
                 {
                     node.port_bindings.remove(port_name.as_str());
+                    tab.commit_current_page_to_parent();
                     tab.is_dirty = true;
                 }
             }

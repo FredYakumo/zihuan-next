@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
 use crate::error::Result;
+use crate::llm::brain_tool::BrainToolDefinition;
 use crate::node::function_graph::{
-    default_embedded_function_config, sync_function_node_definition, FUNCTION_INPUTS_NODE_TYPE,
+    default_embedded_function_config, embedded_function_config_from_node,
+    sync_function_node_definition, FUNCTION_CONFIG_PORT, FUNCTION_INPUTS_NODE_TYPE,
     FUNCTION_OUTPUTS_NODE_TYPE,
 };
 use crate::node::graph_io::NodeGraphDefinition;
@@ -76,6 +78,25 @@ pub(crate) fn apply_hyperparameter_bindings_to_graph(
         for (port_name, hp_name) in &node.port_bindings {
             if let Some(value) = values.get(hp_name.as_str()) {
                 node.inline_values.insert(port_name.clone(), value.clone());
+            }
+        }
+
+        if let Some(mut config) = embedded_function_config_from_node(node) {
+            apply_hyperparameter_bindings_to_graph(&mut config.subgraph, values);
+            if let Ok(value) = serde_json::to_value(&config) {
+                node.inline_values
+                    .insert(FUNCTION_CONFIG_PORT.to_string(), value);
+            }
+        }
+
+        if let Some(tools_value) = node.inline_values.get("tools_config").cloned() {
+            if let Ok(mut tools) = serde_json::from_value::<Vec<BrainToolDefinition>>(tools_value) {
+                for tool in &mut tools {
+                    apply_hyperparameter_bindings_to_graph(&mut tool.subgraph, values);
+                }
+                if let Ok(value) = serde_json::to_value(&tools) {
+                    node.inline_values.insert("tools_config".to_string(), value);
+                }
             }
         }
     }
@@ -174,5 +195,144 @@ fn next_node_id(graph: &NodeGraphDefinition) -> String {
             return candidate;
         }
         index += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use serde_json::json;
+
+    use super::apply_hyperparameter_bindings_to_graph;
+    use crate::llm::brain_tool::{BrainToolDefinition, ToolParamDef};
+    use crate::node::function_graph::{
+        default_embedded_function_config, sync_function_node_definition, FunctionPortDef,
+    };
+    use crate::node::graph_io::NodeDefinition;
+    use crate::node::DataType;
+
+    fn binding_node(id: &str, port_name: &str, hp_name: &str) -> NodeDefinition {
+        NodeDefinition {
+            id: id.to_string(),
+            name: id.to_string(),
+            description: None,
+            node_type: "string_data".to_string(),
+            input_ports: vec![crate::node::Port::new(port_name.to_string(), DataType::String)],
+            output_ports: Vec::new(),
+            dynamic_input_ports: false,
+            dynamic_output_ports: false,
+            position: None,
+            size: None,
+            inline_values: HashMap::new(),
+            port_bindings: HashMap::from([(port_name.to_string(), hp_name.to_string())]),
+            has_error: false,
+            has_cycle: false,
+        }
+    }
+
+    #[test]
+    fn apply_hyperparameter_bindings_recurses_into_function_subgraphs() {
+        let mut function_node = NodeDefinition {
+            id: "fn_1".to_string(),
+            name: "fn_1".to_string(),
+            description: None,
+            node_type: "function".to_string(),
+            input_ports: Vec::new(),
+            output_ports: Vec::new(),
+            dynamic_input_ports: true,
+            dynamic_output_ports: true,
+            position: None,
+            size: None,
+            inline_values: HashMap::new(),
+            port_bindings: HashMap::new(),
+            has_error: false,
+            has_cycle: false,
+        };
+        let mut config = default_embedded_function_config("demo");
+        config.inputs = vec![FunctionPortDef {
+            name: "name".to_string(),
+            data_type: DataType::String,
+        }];
+        config.subgraph.nodes.push(binding_node("inner_1", "text", "hp_name"));
+        sync_function_node_definition(&mut function_node, &config);
+
+        let mut graph = crate::node::graph_io::NodeGraphDefinition {
+            nodes: vec![function_node],
+            ..Default::default()
+        };
+        let values = HashMap::from([("hp_name".to_string(), json!("alice"))]);
+
+        apply_hyperparameter_bindings_to_graph(&mut graph, &values);
+
+        let config = crate::node::function_graph::embedded_function_config_from_node(&graph.nodes[0])
+            .expect("function config");
+        let inner = config
+            .subgraph
+            .nodes
+            .iter()
+            .find(|node| node.id == "inner_1")
+            .expect("inner node");
+        assert_eq!(inner.inline_values.get("text"), Some(&json!("alice")));
+    }
+
+    #[test]
+    fn apply_hyperparameter_bindings_recurses_into_brain_tool_subgraphs() {
+        let mut brain_node = NodeDefinition {
+            id: "brain_1".to_string(),
+            name: "brain_1".to_string(),
+            description: None,
+            node_type: "brain".to_string(),
+            input_ports: Vec::new(),
+            output_ports: Vec::new(),
+            dynamic_input_ports: false,
+            dynamic_output_ports: false,
+            position: None,
+            size: None,
+            inline_values: HashMap::new(),
+            port_bindings: HashMap::new(),
+            has_error: false,
+            has_cycle: false,
+        };
+        let mut tool = BrainToolDefinition {
+            id: "tool_1".to_string(),
+            name: "tool_1".to_string(),
+            description: String::new(),
+            parameters: vec![ToolParamDef {
+                name: "arg".to_string(),
+                data_type: DataType::String,
+                desc: String::new(),
+            }],
+            outputs: Vec::new(),
+            subgraph: crate::node::function_graph::default_function_subgraph(),
+        };
+        tool.subgraph
+            .nodes
+            .push(binding_node("inner_tool_1", "text", "hp_name"));
+        brain_node.inline_values.insert(
+            "tools_config".to_string(),
+            serde_json::to_value(vec![tool]).expect("serialize tools"),
+        );
+
+        let mut graph = crate::node::graph_io::NodeGraphDefinition {
+            nodes: vec![brain_node],
+            ..Default::default()
+        };
+        let values = HashMap::from([("hp_name".to_string(), json!("alice"))]);
+
+        apply_hyperparameter_bindings_to_graph(&mut graph, &values);
+
+        let tools = graph.nodes[0]
+            .inline_values
+            .get("tools_config")
+            .and_then(|value| serde_json::from_value::<Vec<BrainToolDefinition>>(value.clone()).ok())
+            .expect("tools config");
+        let inner = tools[0]
+            .subgraph
+            .nodes
+            .iter()
+            .find(|node| node.id == "inner_tool_1")
+            .expect("inner tool node");
+        assert_eq!(inner.inline_values.get("text"), Some(&json!("alice")));
     }
 }
