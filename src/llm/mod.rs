@@ -8,6 +8,8 @@ pub mod llm_infer_node;
 pub mod model;
 pub mod natural_language_reply;
 pub mod prompt;
+pub mod tavily_provider_node;
+pub mod tavily_search_node;
 pub mod tooling;
 pub mod util;
 

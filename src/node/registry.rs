@@ -166,6 +166,8 @@ pub fn init_node_registry() -> Result<()> {
     use crate::llm::brain_node::BrainNode;
     use crate::llm::llm_api_node::LLMApiNode;
     use crate::llm::llm_infer_node::LLMInferNode;
+    use crate::llm::tavily_provider_node::TavilyProviderNode;
+    use crate::llm::tavily_search_node::TavilySearchNode;
     use crate::node::database::{MySqlNode, RedisNode};
     use crate::node::message_cache::MessageCacheNode;
     use crate::node::message_mysql_get_group_history::MessageMySQLGetGroupHistoryNode;
@@ -492,6 +494,22 @@ pub fn init_node_registry() -> Result<()> {
         "AI",
         "使用 LLModel + system prompt + user message 触发带可编辑 Tools 的函数调用推理",
         BrainNode
+    );
+
+    register_node!(
+        "tavily_provider",
+        "Tavily Provider",
+        "AI",
+        "配置 Tavily 搜索 API Token，输出 TavilyRef 引用",
+        TavilyProviderNode
+    );
+
+    register_node!(
+        "tavily_search",
+        "Tavily 搜索",
+        "AI",
+        "使用 TavilyRef 执行 Tavily 搜索并输出包含标题、链接和内容的 Vec<String>",
+        TavilySearchNode
     );
 
     register_node!(
