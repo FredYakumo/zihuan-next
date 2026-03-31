@@ -48,6 +48,8 @@ fn is_visible_input_port(node_type: &str, port_name: &str) -> bool {
             | ("string_to_openai_message", "role")
             | ("as_system_openai_message", "role")
             | ("format_string", "template")
+            | ("set_variable", "variable_name")
+            | ("set_variable", "variable_type")
             | ("json_extract", "fields_config")
     )
 }
@@ -74,6 +76,8 @@ pub(crate) fn node_dimensions(node: &NodeDefinition) -> (f32, f32) {
         default_min_height.max(LIST_NODE_MIN_HEIGHT)
     } else if is_brain_node(node) {
         default_min_height.max(BRAIN_NODE_MIN_HEIGHT)
+    } else if node.node_type == "set_variable" {
+        default_min_height + GRID_SIZE
     } else {
         default_min_height
     };
@@ -817,6 +821,7 @@ mod tests {
             }],
             hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
+            variables: Vec::new(),
             execution_results: HashMap::new(),
         };
 
@@ -847,6 +852,7 @@ mod tests {
             edges: Vec::new(),
             hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
+            variables: Vec::new(),
             execution_results: HashMap::new(),
         };
 
@@ -905,6 +911,7 @@ mod tests {
             ],
             hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
+            variables: Vec::new(),
             execution_results: HashMap::new(),
         };
 
@@ -962,6 +969,7 @@ mod tests {
             ],
             hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
+            variables: Vec::new(),
             execution_results: HashMap::new(),
         };
 
@@ -1026,3 +1034,6 @@ mod tests {
         assert_eq!(center_y, 60.0 + GRID_SIZE * NODE_HEADER_ROWS + GRID_SIZE / 2.0);
     }
 }
+
+
+

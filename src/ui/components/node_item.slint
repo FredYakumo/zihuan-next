@@ -11,6 +11,8 @@ export component NodeItem inherits Rectangle {
     in property <string> string_data_text;
     in property <string> message_event_filter_type;
     in property <[MessageItemVm]> message_list;
+    in property <string> set_variable_name;
+    in property <[string]> set_variable_options;
     in property <float> x_pos;
     in property <float> y_pos;
     in-out property <float> node_width;
@@ -48,12 +50,13 @@ export component NodeItem inherits Rectangle {
     callback node_resized(float, float);
     callback node_resize_finished(float, float);
     callback show_help(string, string);
-    callback port_right_clicked(string, string);
+    callback port_right_clicked(string, string, float, float);
     callback edit_tools_clicked(string);
     callback edit_function_clicked(string);
     callback enter_function_subgraph_clicked(string);
     callback edit_format_string_clicked(string);
     callback edit_json_extract_clicked(string);
+    callback set_variable_node_selected(string, string);
 
     property <int> spin-frame: 0;
 
@@ -852,7 +855,12 @@ export component NodeItem inherits Rectangle {
         TouchArea {
             pointer-event(event) => {
                 if (event.kind == PointerEventKind.down && event.button == PointerEventButton.right) {
-                    root.port_right_clicked(root.node_id, port.name);
+                    root.port_right_clicked(
+                        root.node_id,
+                        port.name,
+                        (self.mouse-x / 1px) + root.x / 1px,
+                        (self.mouse-y / 1px) + root.y / 1px
+                    );
                 } else if (event.kind == PointerEventKind.down) {
                     root.port_clicked(root.node_id, port.name, true);
                 }
@@ -885,25 +893,25 @@ export component NodeItem inherits Rectangle {
                 horizontal-stretch: 0;
             }
 
-            if (port.bound_hyperparameter != ""): Rectangle {
-                background: #5b21b620;
+            if (port.bound_name != ""): Rectangle {
+                background: port.bound_kind == "variable" ? #0f766e20 : #5b21b620;
                 border-radius: 4px;
                 border-width: 1px;
-                border-color: #7c3aed40;
+                border-color: port.bound_kind == "variable" ? #14b8a640 : #7c3aed40;
                 width: min(parent.width * 0.5, 120px);
                 HorizontalLayout {
                     padding-left: 6px; padding-right: 6px; padding-top: 2px; padding-bottom: 2px;
                     CjkText {
-                        text: "§ " + port.bound_hyperparameter;
+                        text: (port.bound_kind == "variable" ? "V " : "§ ") + port.bound_name;
                         font-size: grid_size * 0.45 * 1px;
-                        color: #a78bfa;
+                        color: port.bound_kind == "variable" ? #5eead4 : #a78bfa;
                         overflow: elide;
                         vertical-alignment: center;
                     }
                 }
             }
 
-            if (!port.is_connected && port.bound_hyperparameter == "" && (port.data_type == "String" || port.data_type == "Integer" || port.data_type == "Float" || port.data_type == "Password")): LineEdit {
+            if (!port.is_connected && port.bound_name == "" && (port.data_type == "String" || port.data_type == "Integer" || port.data_type == "Float" || port.data_type == "Password")): LineEdit {
                 width: min(parent.width * 0.5, 120px);
                 height: (grid_size * 0.8) * 1px;
                 text: port.inline_text;
@@ -914,7 +922,7 @@ export component NodeItem inherits Rectangle {
                 }
             }
 
-            if (!port.is_connected && port.bound_hyperparameter == "" && (port.data_type == "Boolean")): CheckBox {
+            if (!port.is_connected && port.bound_name == "" && (port.data_type == "Boolean")): CheckBox {
                 height: (grid_size * 0.7) * 1px;
                 text: "";
                 checked: port.inline_bool;
@@ -951,6 +959,35 @@ export component NodeItem inherits Rectangle {
                 placeholder-text: "输入字符串";
                 edited(text) => {
                     root.inline_port_text_changed(root.node_id, "text", text);
+                }
+            }
+        }
+    }
+
+    if root.node_type == "set_variable": Rectangle {
+        x: (grid_size) * 1px;
+        y: (grid_size * (header_rows + 1)) * 1px;
+        width: root.width - (grid_size * 2.5) * 1px;
+        height: (grid_size) * 1px;
+
+        HorizontalLayout {
+            alignment: start;
+            spacing: 5px;
+
+            CjkText {
+                text: "变量";
+                color: AppTheme.text-secondary;
+                font-size: grid_size * 0.5 * 1px;
+                vertical-alignment: center;
+            }
+
+            ComboBox {
+                width: min(parent.width * 0.6, 130px);
+                height: (grid_size * 0.8) * 1px;
+                model: root.set_variable_options;
+                current-value: root.set_variable_name;
+                selected(value) => {
+                    root.set_variable_node_selected(root.node_id, value);
                 }
             }
         }

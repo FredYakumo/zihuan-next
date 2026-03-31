@@ -1,12 +1,12 @@
 import { VerticalBox } from "std-widgets.slint";
 import { AppTheme } from "theme.slint";
-import { EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, FunctionPortVm, GridLineVm, HyperParameterVm, JsonExtractFieldVm, LogEntryVm, NodeTypeVm, NodeVm, ToolDefinitionVm, ValidationIssueVm } from "types.slint";
+import { EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, FunctionPortVm, GraphVariableVm, GridLineVm, HyperParameterVm, JsonExtractFieldVm, LogEntryVm, NodeTypeVm, NodeVm, ToolDefinitionVm, ValidationIssueVm } from "types.slint";
 import { CjkButton, CjkDeleteButton, CjkRunButton, CjkText } from "components/buttons.slint";
 import { MenuBarItem, MenuItemRow } from "components/menubar.slint";
 import { TabItem } from "components/tabs.slint";
 import { GraphCanvas } from "components/graph_canvas.slint";
 import { LogOverlay } from "components/log_overlay.slint";
-import { ErrorDialog, FormatStringEditorDialog, FunctionEditorDialog, GroupManagerDialog, HyperParameterManagerDialog, JsonExtractEditorDialog, LogHistoryDialog, NodeHelpDialog, NodeSelector, OverwriteConfirmDialog, PortBindHyperparamDialog, RunningConfirmDialog, SaveConfirmDialog, ToolEditorDialog, ValidationFixDialog } from "dialogs.slint";
+import { ErrorDialog, FormatStringEditorDialog, FunctionEditorDialog, GroupManagerDialog, HyperParameterManagerDialog, JsonExtractEditorDialog, LogHistoryDialog, NodeHelpDialog, NodeSelector, OverwriteConfirmDialog, PortBindHyperparamDialog, PortBindVariableDialog, RunningConfirmDialog, SaveConfirmDialog, ToolEditorDialog, ValidationFixDialog, VariableManagerDialog } from "dialogs.slint";
 
 export component NodeGraphWindow inherits Window {
     in property <[NodeVm]> nodes;
@@ -139,34 +139,53 @@ export component NodeGraphWindow inherits Window {
     callback enter_function_subgraph_clicked(string);
     callback edit_format_string_clicked(string);
     callback edit_json_extract_clicked(string);
+    callback set_variable_node_selected(string, string);
 
     // Hyperparameter system
     in property <[HyperParameterVm]> hyperparameters;
+    in property <[GraphVariableVm]> graph_variables;
     in property <[string]> hyperparameter_groups;
     in-out property <string> selected_hyperparameter_group: "default";
     in property <bool> show_hyperparameter_manager: false;
+    in property <bool> show_variable_manager: false;
     in property <bool> show_group_manager: false;
+    in property <bool> show_port_bind_menu: false;
+    in property <float> port_bind_menu_x: 0;
+    in property <float> port_bind_menu_y: 0;
     in property <bool> show_port_bind_dialog: false;
+    in property <bool> show_port_variable_bind_dialog: false;
     in property <[HyperParameterVm]> port_bind_compatible_params;
+    in property <[GraphVariableVm]> port_bind_compatible_variables;
     in property <string> port_bind_current_binding: "";
+    in property <string> port_bind_current_kind: "";
     in property <string> port_bind_node_id: "";
     in property <string> port_bind_port_name: "";
     callback open_hyperparameter_manager();
     callback close_hyperparameter_manager();
+    callback open_variable_manager();
+    callback close_variable_manager();
     callback open_group_manager();
     callback close_group_manager();
     callback add_hyperparameter(string, string, bool, string, string); // name, data_type, required, description, group
+    callback add_graph_variable(string, string, string);          // name, data_type, initial_value
     callback select_hyperparameter_group(string);
     callback create_hyperparameter_group(string);
     callback rename_hyperparameter_group(string, string);
     callback delete_hyperparameter_group(string);
     callback delete_hyperparameter(string);                    // name
+    callback delete_graph_variable(string);                   // name
     callback set_hyperparameter_value(string, string);         // name, value
+    callback set_graph_variable_initial_value(string, string); // name, value
     callback toggle_hyperparameter_required(string);           // name
-    callback port_right_clicked(string, string);               // node_id, port_name
+    callback port_right_clicked(string, string, float, float); // node_id, port_name, screen x/y
+    callback open_port_bind_hyperparameter_dialog();
+    callback open_port_bind_variable_dialog();
+    callback close_port_bind_menu();
     callback bind_port_hyperparameter(string, string, string); // node_id, port_name, hyperparam_name
+    callback bind_port_variable(string, string, string);       // node_id, port_name, variable_name
     callback unbind_port_hyperparameter(string, string);       // node_id, port_name
     callback close_port_bind_dialog();
+    callback close_port_variable_bind_dialog();
 
     // Tool editor
     in property <bool> show_tool_editor_dialog: false;
@@ -276,8 +295,11 @@ export component NodeGraphWindow inherits Window {
         && !show_overwrite_confirm
         && !show_node_help_dialog
         && !show_hyperparameter_manager
+        && !show_variable_manager
         && !show_group_manager
+        && !show_port_bind_menu
         && !show_port_bind_dialog
+        && !show_port_variable_bind_dialog
         && !show_tool_editor_dialog
         && !show_function_editor_dialog
         && !show_format_string_editor
@@ -622,8 +644,8 @@ export component NodeGraphWindow inherits Window {
                     root.show_node_help(node_id, node_type);
                 }
 
-                port_right_clicked(node_id, port_name) => {
-                    root.port_right_clicked(node_id, port_name);
+                port_right_clicked(node_id, port_name, x, y) => {
+                    root.port_right_clicked(node_id, port_name, x, y);
                 }
 
                 edit_tools_clicked(node_id) => {
@@ -644,6 +666,10 @@ export component NodeGraphWindow inherits Window {
 
                 edit_json_extract_clicked(node_id) => {
                     root.edit_json_extract_clicked(node_id);
+                }
+
+                set_variable_node_selected(node_id, variable_name) => {
+                    root.set_variable_node_selected(node_id, variable_name);
                 }
             }
 
@@ -674,6 +700,11 @@ export component NodeGraphWindow inherits Window {
                     CjkButton {
                         text: "超参数";
                         clicked => { root.open_hyperparameter_manager(); }
+                    }
+
+                    CjkButton {
+                        text: "变量";
+                        clicked => { root.open_variable_manager(); }
                     }
 
                     CjkButton {
@@ -914,6 +945,16 @@ export component NodeGraphWindow inherits Window {
         close => { root.close_hyperparameter_manager(); }
     }
 
+    if root.show_variable_manager: VariableManagerDialog {
+        variables: root.graph_variables;
+        add(name, data_type, initial_value) => {
+            root.add_graph_variable(name, data_type, initial_value);
+        }
+        delete(name) => { root.delete_graph_variable(name); }
+        set_initial_value(name, value) => { root.set_graph_variable_initial_value(name, value); }
+        close => { root.close_variable_manager(); }
+    }
+
     if root.show_group_manager: GroupManagerDialog {
         groups: root.hyperparameter_groups;
         current_group <=> root.selected_hyperparameter_group;
@@ -922,6 +963,46 @@ export component NodeGraphWindow inherits Window {
         rename_group(old_name, new_name) => { root.rename_hyperparameter_group(old_name, new_name); }
         delete_group(name) => { root.delete_hyperparameter_group(name); }
         close => { root.close_group_manager(); }
+    }
+
+    if root.show_port_bind_menu: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #00000000;
+
+        TouchArea {
+            clicked => { root.close_port_bind_menu(); }
+        }
+
+        Rectangle {
+            x: max(4px, min(root.port_bind_menu_x * 1px, parent.width - self.width - 4px));
+            y: max(4px, min(root.port_bind_menu_y * 1px, parent.height - self.height - 4px));
+            width: 180px;
+            height: 70px;
+            background: AppTheme.menu-bg;
+            border-radius: 4px;
+            border-width: 1px;
+            border-color: AppTheme.menu-border;
+
+            TouchArea {}
+
+            VerticalBox {
+                padding: 6px;
+                spacing: 2px;
+
+                MenuItemRow {
+                    title: "绑定变量";
+                    shortcut: "";
+                    clicked => { root.open_port_bind_variable_dialog(); }
+                }
+
+                MenuItemRow {
+                    title: "绑定超参数";
+                    shortcut: "";
+                    clicked => { root.open_port_bind_hyperparameter_dialog(); }
+                }
+            }
+        }
     }
 
     if root.show_port_bind_dialog: PortBindHyperparamDialog {
@@ -935,6 +1016,19 @@ export component NodeGraphWindow inherits Window {
             root.unbind_port_hyperparameter(root.port_bind_node_id, root.port_bind_port_name);
         }
         close => { root.close_port_bind_dialog(); }
+    }
+
+    if root.show_port_variable_bind_dialog: PortBindVariableDialog {
+        compatible_variables: root.port_bind_compatible_variables;
+        current_binding: root.port_bind_current_binding;
+        port_name: root.port_bind_port_name;
+        bind(name) => {
+            root.bind_port_variable(root.port_bind_node_id, root.port_bind_port_name, name);
+        }
+        clear_binding() => {
+            root.unbind_port_hyperparameter(root.port_bind_node_id, root.port_bind_port_name);
+        }
+        close => { root.close_port_variable_bind_dialog(); }
     }
 
     if root.show_tool_editor_dialog: ToolEditorDialog {

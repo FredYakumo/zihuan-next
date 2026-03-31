@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use std::future::Future;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
+    Arc, Mutex, RwLock,
 };
 use tokio::task::JoinHandle;
 
@@ -55,17 +55,22 @@ pub mod database;
 pub mod function_graph;
 pub mod graph_io;
 pub mod message_cache;
+pub mod message_mysql_get_group_history;
+pub mod message_mysql_get_user_history;
+pub mod message_mysql_history_common;
 pub mod message_nodes;
 pub mod registry;
 pub mod util;
+
+pub type RuntimeVariableStore = Arc<RwLock<HashMap<String, DataValue>>>;
 
 #[allow(unused_imports)]
 pub use data_value::{DataType, DataValue};
 #[allow(unused_imports)]
 pub use graph_io::{
     ensure_positions, load_graph_definition_from_json,
-    load_graph_definition_from_json_with_migration, save_graph_definition_to_json,
-    EdgeDefinition, GraphPosition, LoadedGraphDefinition, NodeDefinition, NodeGraphDefinition,
+    load_graph_definition_from_json_with_migration, save_graph_definition_to_json, EdgeDefinition,
+    GraphPosition, LoadedGraphDefinition, NodeDefinition, NodeGraphDefinition,
 };
 #[allow(unused_imports)]
 pub use node_macros::{node_input, node_output};
@@ -154,10 +159,7 @@ pub trait Node: Send + Sync {
 
     /// Inject runtime values for a function-input boundary node without forcing
     /// opaque runtime references through a JSON round-trip.
-    fn set_function_runtime_values(
-        &mut self,
-        _values: HashMap<String, DataValue>,
-    ) -> Result<()> {
+    fn set_function_runtime_values(&mut self, _values: HashMap<String, DataValue>) -> Result<()> {
         Err(crate::error::Error::ValidationError(
             "Node does not accept function runtime values".to_string(),
         ))
@@ -176,6 +178,9 @@ pub trait Node: Send + Sync {
     /// Called before the event producer loop starts. Nodes that block in
     /// on_update() should store this flag and use it to interrupt the wait.
     fn set_stop_flag(&mut self, _stop_flag: Arc<AtomicBool>) {}
+
+    /// Inject a run-scoped variable store shared by the whole graph execution.
+    fn set_runtime_variable_store(&mut self, _store: RuntimeVariableStore) {}
 
     /// Event producer lifecycle: called after update loop exits
     fn on_cleanup(&mut self) -> Result<()> {
@@ -255,6 +260,7 @@ pub trait Node: Send + Sync {
 pub struct NodeGraph {
     pub nodes: HashMap<String, Box<dyn Node>>,
     pub inline_values: HashMap<String, HashMap<String, DataValue>>,
+    runtime_variable_store: RuntimeVariableStore,
     stop_flag: Arc<AtomicBool>,
     execution_callback: Option<
         Arc<dyn Fn(&str, &HashMap<String, DataValue>, &HashMap<String, DataValue>) + Send + Sync>,
@@ -270,6 +276,7 @@ impl NodeGraph {
         Self {
             nodes: HashMap::new(),
             inline_values: HashMap::new(),
+            runtime_variable_store: Arc::new(RwLock::new(HashMap::new())),
             stop_flag: Arc::new(AtomicBool::new(false)),
             execution_callback: None,
             edges: Vec::new(),
@@ -295,10 +302,42 @@ impl NodeGraph {
 
     pub fn set_definition(&mut self, definition: NodeGraphDefinition) {
         self.definition = Some(definition);
+        self.reset_runtime_variables_from_definition();
+    }
+
+    pub fn set_runtime_variable_store(&mut self, store: RuntimeVariableStore) {
+        self.runtime_variable_store = store.clone();
+        for node in self.nodes.values_mut() {
+            node.set_runtime_variable_store(store.clone());
+        }
+    }
+
+    fn reset_runtime_variables_from_definition(&mut self) {
+        let Some(definition) = &self.definition else {
+            self.runtime_variable_store.write().unwrap().clear();
+            return;
+        };
+
+        let mut values = HashMap::new();
+        for variable in &definition.variables {
+            let Some(initial_value) = variable.initial_value.as_ref() else {
+                continue;
+            };
+            if let Some(data_value) =
+                crate::node::registry::json_to_data_value(initial_value, &variable.data_type)
+            {
+                values.insert(variable.name.clone(), data_value);
+            }
+        }
+        *self.runtime_variable_store.write().unwrap() = values;
     }
 
     pub fn get_stop_flag(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.stop_flag)
+    }
+
+    pub fn runtime_variable_store(&self) -> RuntimeVariableStore {
+        self.runtime_variable_store.clone()
     }
 
     pub fn request_stop(&self) {
@@ -345,8 +384,10 @@ impl NodeGraph {
     fn prepare_for_execution(&mut self) -> Result<()> {
         self.stop_flag.store(false, Ordering::Relaxed);
         self.event_task_handles.clear();
+        self.reset_runtime_variables_from_definition();
 
         for (node_id, node) in self.nodes.iter_mut() {
+            node.set_runtime_variable_store(self.runtime_variable_store.clone());
             node.on_graph_start().map_err(|e| {
                 crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
             })?;
@@ -539,23 +580,30 @@ impl NodeGraph {
         if event_producer_set.is_empty() {
             let mut data_pool: HashMap<String, DataValue> = HashMap::new();
             for node_id in ordered {
+                let Some(inputs) = ({
+                    let node = self.nodes.get(&node_id).ok_or_else(|| {
+                        crate::error::Error::ValidationError(format!(
+                            "Node '{}' not found during execution",
+                            node_id
+                        ))
+                    })?;
+                    self.collect_inputs_if_available(
+                        node.as_ref(),
+                        &data_pool,
+                        &output_producers,
+                        &node_id,
+                        self.inline_values.get(&node_id),
+                    )?
+                }) else {
+                    continue;
+                };
+
                 let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
                     crate::error::Error::ValidationError(format!(
                         "Node '{}' not found during execution",
                         node_id
                     ))
                 })?;
-
-                let Some(inputs) = Self::collect_inputs_if_available(
-                    node.as_ref(),
-                    &data_pool,
-                    &output_producers,
-                    &node_id,
-                    self.inline_values.get(&node_id),
-                )?
-                else {
-                    continue;
-                };
                 let outputs = node.execute(inputs)?;
                 for (key, value) in outputs {
                     if data_pool.contains_key(&key) {
@@ -598,23 +646,30 @@ impl NodeGraph {
                 continue;
             }
 
+            let Some(inputs) = ({
+                let node = self.nodes.get(node_id).ok_or_else(|| {
+                    crate::error::Error::ValidationError(format!(
+                        "Node '{}' not found during execution",
+                        node_id
+                    ))
+                })?;
+                self.collect_inputs_if_available(
+                    node.as_ref(),
+                    &base_data_pool,
+                    &output_producers,
+                    node_id,
+                    self.inline_values.get(node_id),
+                )?
+            }) else {
+                continue;
+            };
+
             let node = self.nodes.get_mut(node_id).ok_or_else(|| {
                 crate::error::Error::ValidationError(format!(
                     "Node '{}' not found during execution",
                     node_id
                 ))
             })?;
-
-            let Some(inputs) = Self::collect_inputs_if_available(
-                node.as_ref(),
-                &base_data_pool,
-                &output_producers,
-                node_id,
-                self.inline_values.get(node_id),
-            )?
-            else {
-                continue;
-            };
             let outputs = node.execute(inputs)?;
             for (key, value) in outputs {
                 if base_data_pool.contains_key(&key) {
@@ -800,23 +855,30 @@ impl NodeGraph {
         if event_producer_set.is_empty() {
             let mut data_pool: HashMap<String, DataValue> = HashMap::new();
             for node_id in ordered {
+                let Some(inputs) = ({
+                    let node = self.nodes.get(&node_id).ok_or_else(|| {
+                        crate::error::Error::ValidationError(format!(
+                            "Node '{}' not found during execution",
+                            node_id
+                        ))
+                    })?;
+                    self.collect_inputs_if_available(
+                        node.as_ref(),
+                        &data_pool,
+                        &output_producers,
+                        &node_id,
+                        self.inline_values.get(&node_id),
+                    )?
+                }) else {
+                    continue;
+                };
+
                 let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
                     crate::error::Error::ValidationError(format!(
                         "Node '{}' not found during execution",
                         node_id
                     ))
                 })?;
-
-                let Some(inputs) = Self::collect_inputs_if_available(
-                    node.as_ref(),
-                    &data_pool,
-                    &output_producers,
-                    &node_id,
-                    self.inline_values.get(&node_id),
-                )?
-                else {
-                    continue;
-                };
 
                 let inputs_clone = if self.execution_callback.is_some() {
                     Some(inputs.clone())
@@ -1336,6 +1398,7 @@ impl NodeGraph {
         let sources = input_sources.get(node_id);
 
         for port in node.input_ports() {
+            let bound_variable_value = self.runtime_bound_variable_value(node_id, &port.name);
             if let Some(source_map) = sources.and_then(|m| m.get(&port.name)) {
                 let (from_node_id, from_port) = source_map;
                 if let Some(value) = data_pool
@@ -1349,7 +1412,9 @@ impl NodeGraph {
                 return Ok(None);
             }
 
-            if let Some(value) = inline_values.and_then(|m| m.get(&port.name)) {
+            if let Some(value) = bound_variable_value {
+                inputs.insert(port.name.clone(), value);
+            } else if let Some(value) = inline_values.and_then(|m| m.get(&port.name)) {
                 inputs.insert(port.name.clone(), value.clone());
             } else if port.required {
                 return Ok(None);
@@ -1408,6 +1473,7 @@ impl NodeGraph {
         let ordered = ordered.to_vec();
         let connected_nodes = connected_nodes.clone();
         let input_sources = input_sources.clone();
+        let runtime_variable_store = self.runtime_variable_store.clone();
         let handle = self.event_task_handle()?;
 
         let join = handle.spawn(async move {
@@ -1419,6 +1485,7 @@ impl NodeGraph {
                         if let Some(callback) = callback {
                             event_graph.execution_callback = Some(callback);
                         }
+                        event_graph.set_runtime_variable_store(runtime_variable_store.clone());
                         event_graph.stop_flag = stop_flag.clone();
                         event_graph.execute_single_event_with_edges(
                             &node_id,
@@ -1501,6 +1568,7 @@ impl NodeGraph {
         let reachable_map = reachable_map.clone();
         let event_producer_set = event_producer_set.clone();
         let ordered = ordered.to_vec();
+        let runtime_variable_store = self.runtime_variable_store.clone();
         let handle = self.event_task_handle()?;
 
         let join = handle.spawn(async move {
@@ -1512,6 +1580,7 @@ impl NodeGraph {
                         if let Some(callback) = callback {
                             event_graph.execution_callback = Some(callback);
                         }
+                        event_graph.set_runtime_variable_store(runtime_variable_store.clone());
                         event_graph.stop_flag = stop_flag.clone();
                         event_graph.execute_single_event(
                             &node_id,
@@ -1691,23 +1760,30 @@ impl NodeGraph {
                 continue;
             }
 
+            let Some(inputs) = ({
+                let node = self.nodes.get(ordered_id).ok_or_else(|| {
+                    crate::error::Error::ValidationError(format!(
+                        "Node '{}' not found during execution",
+                        ordered_id
+                    ))
+                })?;
+                self.collect_inputs_if_available(
+                    node.as_ref(),
+                    &event_pool,
+                    output_producers,
+                    ordered_id,
+                    self.inline_values.get(ordered_id),
+                )?
+            }) else {
+                continue;
+            };
+
             let node = self.nodes.get_mut(ordered_id).ok_or_else(|| {
                 crate::error::Error::ValidationError(format!(
                     "Node '{}' not found during execution",
                     ordered_id
                 ))
             })?;
-
-            let Some(inputs) = Self::collect_inputs_if_available(
-                node.as_ref(),
-                &event_pool,
-                output_producers,
-                ordered_id,
-                self.inline_values.get(ordered_id),
-            )?
-            else {
-                continue;
-            };
 
             let inputs_clone = self.execution_callback.as_ref().map(|_| inputs.clone());
             let outputs = node.execute(inputs).map_err(|e| {
@@ -1735,18 +1811,22 @@ impl NodeGraph {
     }
 
     fn collect_inputs_if_available(
+        &self,
         node: &dyn Node,
         data_pool: &HashMap<String, DataValue>,
         output_producers: &HashMap<String, String>,
-        _node_id: &str,
+        node_id: &str,
         inline_values: Option<&HashMap<String, DataValue>>,
     ) -> Result<Option<HashMap<String, DataValue>>> {
         let mut inputs: HashMap<String, DataValue> = HashMap::new();
         for port in node.input_ports() {
+            let bound_variable_value = self.runtime_bound_variable_value(node_id, &port.name);
             if let Some(value) = data_pool.get(&port.name) {
                 inputs.insert(port.name.clone(), value.clone());
             } else if output_producers.contains_key(&port.name) {
                 return Ok(None);
+            } else if let Some(value) = bound_variable_value {
+                inputs.insert(port.name.clone(), value);
             } else if let Some(value) = inline_values.and_then(|m| m.get(&port.name)) {
                 inputs.insert(port.name.clone(), value.clone());
             } else if port.required {
@@ -1755,6 +1835,20 @@ impl NodeGraph {
         }
         node.validate_inputs(&inputs)?;
         Ok(Some(inputs))
+    }
+
+    fn runtime_bound_variable_value(&self, node_id: &str, port_name: &str) -> Option<DataValue> {
+        let definition = self.definition.as_ref()?;
+        let node = definition.nodes.iter().find(|node| node.id == node_id)?;
+        let binding = node.port_bindings.get(port_name)?;
+        if binding.kind != crate::node::graph_io::PortBindingKind::Variable {
+            return None;
+        }
+        self.runtime_variable_store
+            .read()
+            .unwrap()
+            .get(&binding.name)
+            .cloned()
     }
 
     fn run_event_producer_with_edges(
@@ -1882,23 +1976,30 @@ impl NodeGraph {
     ) -> Result<bool> {
         let task_error: Arc<Mutex<Option<crate::error::Error>>> = Arc::new(Mutex::new(None));
         {
+            let Some(inputs) = ({
+                let node = self.nodes.get(node_id).ok_or_else(|| {
+                    crate::error::Error::ValidationError(format!(
+                        "Node '{}' not found during execution",
+                        node_id
+                    ))
+                })?;
+                self.collect_inputs_if_available(
+                    node.as_ref(),
+                    base_data_pool,
+                    output_producers,
+                    node_id,
+                    self.inline_values.get(node_id),
+                )?
+            }) else {
+                return Ok(false);
+            };
+
             let node = self.nodes.get_mut(node_id).ok_or_else(|| {
                 crate::error::Error::ValidationError(format!(
                     "Node '{}' not found during execution",
                     node_id
                 ))
             })?;
-
-            let Some(inputs) = Self::collect_inputs_if_available(
-                node.as_ref(),
-                base_data_pool,
-                output_producers,
-                node_id,
-                self.inline_values.get(node_id),
-            )?
-            else {
-                return Ok(false);
-            };
             node.on_start(inputs).map_err(|e| {
                 crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
             })?;
@@ -2707,6 +2808,7 @@ mod tests {
             edges: Vec::new(),
             hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
+            variables: Vec::new(),
             execution_results: HashMap::new(),
         };
 
@@ -2729,6 +2831,41 @@ mod tests {
             start_user_2.unwrap() < end_user_1.unwrap(),
             "second event should start before first event finishes: {log:?}"
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn graph_execution_resets_runtime_variables_to_initial_values_each_run() -> Result<()> {
+        let definition = NodeGraphDefinition {
+            nodes: vec![],
+            edges: vec![],
+            hyperparameter_groups: Vec::new(),
+            hyperparameters: Vec::new(),
+            variables: vec![crate::node::graph_io::GraphVariable {
+                name: "greeting".to_string(),
+                data_type: DataType::String,
+                initial_value: Some(serde_json::Value::String("hello".to_string())),
+            }],
+            execution_results: HashMap::new(),
+        };
+
+        let mut graph = crate::node::registry::build_node_graph_from_definition(&definition)?;
+        graph
+            .runtime_variable_store()
+            .write()
+            .unwrap()
+            .insert("greeting".to_string(), DataValue::String("changed".to_string()));
+
+        let _ = graph.execute_and_capture_results();
+
+        let value = graph
+            .runtime_variable_store()
+            .read()
+            .unwrap()
+            .get("greeting")
+            .cloned();
+        assert!(matches!(value, Some(DataValue::String(value)) if value == "hello"));
 
         Ok(())
     }

@@ -12,7 +12,8 @@ This document describes the JSON format used to save and load node graphs. The G
 {
   "nodes": [ /* NodeDefinition[] */ ],
   "edges": [ /* EdgeDefinition[] */ ],
-  "hyperparameters": [ /* HyperParameter[] */ ]   // optional
+  "hyperparameters": [ /* HyperParameter[] */ ],  // optional
+  "variables": [ /* GraphVariable[] */ ]          // optional
 }
 ```
 
@@ -37,6 +38,9 @@ This document describes the JSON format used to save and load node graphs. The G
   "inline_values": {
     "template": "Hello ${name}"           // port_name → JSON value
   },
+  "port_bindings": {
+    "text": { "kind": "variable", "name": "api_key" }
+  },
   "has_error":    false                   // runtime flag, safe to omit/ignore
 }
 ```
@@ -54,6 +58,7 @@ This document describes the JSON format used to save and load node graphs. The G
 | `position` | no | Top-left corner in canvas space. Omitting lets the GUI auto-layout on load |
 | `size` | no | `null` or omitted = auto-calculated from port count |
 | `inline_values` | no | Default values for input ports; keys are port names |
+| `port_bindings` | no | Input port binding metadata. Legacy string values still load as hyperparameter bindings |
 | `has_error` | no | Set by the runtime on execution failure; ignored on load |
 
 ---
@@ -125,6 +130,26 @@ Hyperparameters are graph-level variables that can be bound to input ports and o
 
 Hyperparameter *values* are stored in a shared local YAML file, not in the graph JSON.  
 Graphs reuse values by `(group, name)`, so renaming or moving the graph file will not break value lookup.
+
+---
+
+## GraphVariable
+
+Variables are graph-level run-scoped state with JSON-defined initial values:
+
+```jsonc
+{
+  "name": "counter",
+  "data_type": "Integer",
+  "initial_value": 0
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `name` | yes | Unique name within the graph |
+| `data_type` | yes | Current UI supports String / Integer / Float / Boolean / Password |
+| `initial_value` | no | Initial runtime value. Each graph run resets variables back to this value |
 
 ---
 

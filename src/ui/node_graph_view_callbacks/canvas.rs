@@ -130,6 +130,7 @@ pub(crate) fn bind_canvas_callbacks(
                     apply_graph_to_ui_live(
                         &ui,
                         &tab.graph,
+                        tab.root_graph().variables.as_slice(),
                         Some(tab_display_title(tab)),
                         &tab.selection,
                         &tab.inline_inputs,
@@ -163,6 +164,7 @@ pub(crate) fn bind_canvas_callbacks(
                     apply_graph_to_ui_live(
                         &ui,
                         &tab.graph,
+                        tab.root_graph().variables.as_slice(),
                         Some(tab_display_title(tab)),
                         &tab.selection,
                         &tab.inline_inputs,
@@ -402,6 +404,7 @@ pub(crate) fn bind_canvas_callbacks(
                     apply_graph_to_ui(
                         &ui,
                         &tab.graph,
+                        tab.root_graph().variables.as_slice(),
                         Some(tab_display_title(tab)),
                         &tab.selection,
                         &tab.inline_inputs,
@@ -432,6 +435,7 @@ pub(crate) fn bind_canvas_callbacks(
                 apply_graph_to_ui(
                     &ui,
                     &tab.graph,
+                    tab.root_graph().variables.as_slice(),
                     Some(tab_display_title(tab)),
                     &tab.selection,
                     &tab.inline_inputs,
@@ -464,6 +468,7 @@ pub(crate) fn bind_canvas_callbacks(
                     apply_graph_to_ui(
                         &ui,
                         &tab.graph,
+                        tab.root_graph().variables.as_slice(),
                         Some(tab_display_title(tab)),
                         &tab.selection,
                         &tab.inline_inputs,
@@ -488,6 +493,7 @@ pub(crate) fn bind_canvas_callbacks(
                 apply_graph_to_ui(
                     &ui,
                     &tab.graph,
+                    tab.root_graph().variables.as_slice(),
                     Some(tab_display_title(tab)),
                     &tab.selection,
                     &tab.inline_inputs,
@@ -571,6 +577,7 @@ pub(crate) fn bind_canvas_callbacks(
                 apply_graph_to_ui(
                     &ui,
                     &tab.graph,
+                    tab.root_graph().variables.as_slice(),
                     Some(tab_display_title(tab)),
                     &tab.selection,
                     &tab.inline_inputs,
@@ -597,6 +604,7 @@ pub(crate) fn bind_canvas_callbacks(
                 apply_graph_to_ui(
                     &ui,
                     &tab.graph,
+                    tab.root_graph().variables.as_slice(),
                     Some(tab_display_title(tab)),
                     &tab.selection,
                     &tab.inline_inputs,
@@ -670,6 +678,7 @@ pub(crate) fn bind_canvas_callbacks(
                 apply_graph_to_ui(
                     &ui,
                     &tab.graph,
+                    tab.root_graph().variables.as_slice(),
                     Some(tab_display_title(tab)),
                     &tab.selection,
                     &tab.inline_inputs,
