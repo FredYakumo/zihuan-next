@@ -56,6 +56,7 @@ pub fn default_function_subgraph() -> NodeGraphDefinition {
         edges: Vec::new(),
         hyperparameter_groups: Vec::new(),
         hyperparameters: Vec::new(),
+        variables: Vec::new(),
         execution_results: HashMap::new(),
     }
 }
@@ -120,9 +121,7 @@ pub fn is_function_boundary_node(node_type: &str) -> bool {
     )
 }
 
-pub fn embedded_function_config_from_node(
-    node: &NodeDefinition,
-) -> Option<EmbeddedFunctionConfig> {
+pub fn embedded_function_config_from_node(node: &NodeDefinition) -> Option<EmbeddedFunctionConfig> {
     embedded_function_config_from_inline_values(&node.inline_values)
 }
 
@@ -246,7 +245,10 @@ pub fn sync_function_subgraph_signature(
         .map(|node| {
             (
                 node.id.as_str(),
-                node.input_ports.iter().map(|port| port.name.as_str()).collect(),
+                node.input_ports
+                    .iter()
+                    .map(|port| port.name.as_str())
+                    .collect(),
             )
         })
         .collect();

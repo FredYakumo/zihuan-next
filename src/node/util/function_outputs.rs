@@ -26,9 +26,7 @@ impl FunctionOutputsNode {
 
     fn apply_signature_json(&mut self, value: &Value) -> Result<()> {
         self.signature = function_signature_from_value(value).ok_or_else(|| {
-            Error::ValidationError(
-                "function_outputs.signature 不是有效的函数签名 JSON".to_string(),
-            )
+            Error::ValidationError("function_outputs.signature 不是有效的函数签名 JSON".to_string())
         })?;
         Ok(())
     }
@@ -72,7 +70,10 @@ impl Node for FunctionOutputsNode {
         }
     }
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         if let Some(DataValue::Json(value)) = inputs.get(FUNCTION_SIGNATURE_PORT) {
             self.apply_signature_json(value)?;
         }

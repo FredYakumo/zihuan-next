@@ -50,7 +50,10 @@ impl Node for FunctionInputsNode {
     }
 
     fn input_ports(&self) -> Vec<Port> {
-        vec![hidden_function_signature_port(), hidden_function_runtime_values_port()]
+        vec![
+            hidden_function_signature_port(),
+            hidden_function_runtime_values_port(),
+        ]
     }
 
     fn output_ports(&self) -> Vec<Port> {
@@ -72,15 +75,15 @@ impl Node for FunctionInputsNode {
         }
     }
 
-    fn set_function_runtime_values(
-        &mut self,
-        values: HashMap<String, DataValue>,
-    ) -> Result<()> {
+    fn set_function_runtime_values(&mut self, values: HashMap<String, DataValue>) -> Result<()> {
         self.runtime_values = Some(values);
         Ok(())
     }
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         if let Some(DataValue::Json(value)) = inputs.get(FUNCTION_SIGNATURE_PORT) {
             self.apply_signature_json(value)?;
         }

@@ -168,20 +168,21 @@ pub fn init_node_registry() -> Result<()> {
     use crate::llm::natural_language_reply::NaturalLanguageReplyNode;
     use crate::node::database::{MySqlNode, RedisNode};
     use crate::node::message_cache::MessageCacheNode;
+    use crate::node::message_mysql_get_group_history::MessageMySQLGetGroupHistoryNode;
+    use crate::node::message_mysql_get_user_history::MessageMySQLGetUserHistoryNode;
     use crate::node::message_nodes::MessageMySQLPersistenceNode;
     use crate::node::util::{
         AndThenNode, ArrayGetNode, AtQQTargetMessageNode, BooleanBranchNode, BooleanNotNode,
         ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode,
         FunctionInputsNode, FunctionNode, FunctionOutputsNode, JoinStringNode, JsonExtractNode,
         JsonParserNode, LoopBreakNode, LoopNode, LoopStateUpdateNode, MessageContentNode,
-        MessageListDataNode,
-        OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode,
+        MessageListDataNode, OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode,
         OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheProviderNode,
         OpenAIMessageSessionCacheSetNode, PreviewMessageListNode, PreviewStringNode,
         PushBackVecNode, QQMessageListDataNode, QQNaturalLanguageReplyNode, SessionStateClearNode,
         SessionStateGetNode, SessionStateProviderNode, SessionStateReleaseNode,
-        SessionStateTryClaimNode, StackNode, StringDataNode, StringToOpenAIMessageNode,
-        StringToPlainTextNode, SwitchNode, ToolResultNode,
+        SessionStateTryClaimNode, SetVariableNode, StackNode, StringDataNode,
+        StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode,
     };
 
     // Utility nodes
@@ -247,6 +248,14 @@ pub fn init_node_registry() -> Result<()> {
         "工具",
         "当 enabled 为 true 时透传输入，否则阻断后续数据流",
         SwitchNode
+    );
+
+    register_node!(
+        "set_variable",
+        "设置变量",
+        "工具",
+        "将输入值写入运行期节点图变量，变量会在每次重新运行时回到初始值",
+        SetVariableNode
     );
 
     register_node!(
@@ -574,6 +583,22 @@ pub fn init_node_registry() -> Result<()> {
     );
 
     register_node!(
+        "message_mysql_get_user_history",
+        "获取用户 MySQL 历史",
+        "消息存储",
+        "根据 sender_id 读取最近消息历史，可选限定某个群",
+        MessageMySQLGetUserHistoryNode
+    );
+
+    register_node!(
+        "message_mysql_get_group_history",
+        "获取群 MySQL 历史",
+        "消息存储",
+        "根据 group_id 读取最近消息历史",
+        MessageMySQLGetGroupHistoryNode
+    );
+
+    register_node!(
         "message_cache",
         "消息缓存",
         "消息存储",
@@ -759,6 +784,9 @@ pub fn build_node_graph_from_definition(
             .or_default()
             .extend(extra_values);
     }
+
+    let runtime_variable_store = graph.runtime_variable_store();
+    graph.set_runtime_variable_store(runtime_variable_store);
 
     Ok(graph)
 }

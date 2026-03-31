@@ -6,8 +6,9 @@ use crate::node::function_graph::{
     FunctionPortDef, FUNCTION_CONFIG_PORT, FUNCTION_INPUTS_NODE_ID, FUNCTION_OUTPUTS_NODE_ID,
 };
 use crate::node::graph_io::{
-    EdgeDefinition, GraphPosition, NodeDefinition, NodeGraphDefinition,
+    EdgeDefinition, GraphPosition, NodeDefinition, NodeGraphDefinition, PortBindingKind,
 };
+use crate::node::util::set_variable::{SET_VARIABLE_NAME_PORT, SET_VARIABLE_TYPE_PORT};
 use crate::node::registry::NODE_REGISTRY;
 use crate::node::DataType;
 use crate::ui::node_graph_view_geometry::snap_to_grid;
@@ -130,6 +131,11 @@ pub(crate) fn paste_nodes_from_clipboard(
         .iter()
         .map(|hp| hp.name.as_str())
         .collect();
+    let target_variables: HashSet<&str> = graph
+        .variables
+        .iter()
+        .map(|variable| variable.name.as_str())
+        .collect();
 
     let mut used_ids: HashSet<String> = graph.nodes.iter().map(|node| node.id.clone()).collect();
     for node in &clipboard.nodes {
@@ -156,7 +162,29 @@ pub(crate) fn paste_nodes_from_clipboard(
 
         pasted_node
             .port_bindings
-            .retain(|_, hp_name| target_hyperparameters.contains(hp_name.as_str()));
+            .retain(|_, binding| {
+                match binding.kind {
+                    PortBindingKind::Hyperparameter => {
+                        target_hyperparameters.contains(binding.name.as_str())
+                    }
+                    PortBindingKind::Variable => {
+                        target_variables.contains(binding.name.as_str())
+                    }
+                }
+            });
+        if pasted_node.node_type == "set_variable" {
+            let selected = pasted_node
+                .inline_values
+                .get(SET_VARIABLE_NAME_PORT)
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string());
+            if let Some(selected) = selected {
+                if !target_variables.contains(selected.as_str()) {
+                    pasted_node.inline_values.remove(SET_VARIABLE_NAME_PORT);
+                    pasted_node.inline_values.remove(SET_VARIABLE_TYPE_PORT);
+                }
+            }
+        }
 
         pasted_node_ids.push(new_id);
         pasted_nodes.push(pasted_node);
@@ -180,6 +208,7 @@ pub(crate) fn paste_nodes_from_clipboard(
         edges: pasted_edges.clone(),
         hyperparameter_groups: Vec::new(),
         hyperparameters: Vec::new(),
+        variables: Vec::new(),
         execution_results: HashMap::new(),
     };
     let inline_inputs = build_inline_inputs_from_graph(&temp_graph);
@@ -397,6 +426,7 @@ pub(crate) fn convert_selection_to_function_subgraph(
         edges: internal_edges,
         hyperparameter_groups: Vec::new(),
         hyperparameters: Vec::new(),
+        variables: Vec::new(),
         execution_results: HashMap::new(),
     };
     sync_function_subgraph_signature(&mut subgraph, &input_ports, &output_ports);
@@ -747,8 +777,9 @@ mod tests {
                 },
             ],
             hyperparameter_groups: Vec::new(),
-            hyperparameters: Vec::new(),
-            execution_results: HashMap::new(),
+        hyperparameters: Vec::new(),
+        variables: Vec::new(),
+        execution_results: HashMap::new(),
         };
 
         let selected = HashSet::from(["node_1".to_string(), "node_2".to_string()]);
@@ -776,6 +807,7 @@ mod tests {
             }],
             hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
+            variables: Vec::new(),
             execution_results: HashMap::new(),
         };
         let selected = HashSet::from(["node_1".to_string(), "node_2".to_string()]);
@@ -787,6 +819,7 @@ mod tests {
             edges: Vec::new(),
             hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
+            variables: Vec::new(),
             execution_results: HashMap::new(),
         };
 
@@ -817,6 +850,7 @@ mod tests {
             edges: Vec::new(),
             hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
+            variables: Vec::new(),
             execution_results: HashMap::new(),
         };
         let selected = HashSet::from(["node_1".to_string()]);
@@ -838,13 +872,17 @@ mod tests {
     fn paste_clears_missing_hyperparameter_bindings() {
         let mut node = node_at("node_1", 40.0, 40.0);
         node.port_bindings
-            .insert("text".to_string(), "missing_hp".to_string());
+            .insert(
+                "text".to_string(),
+                crate::node::graph_io::PortBinding::hyperparameter("missing_hp".to_string()),
+            );
 
         let clipboard_graph = NodeGraphDefinition {
             nodes: vec![node],
             edges: Vec::new(),
             hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
+            variables: Vec::new(),
             execution_results: HashMap::new(),
         };
         let selected = HashSet::from(["node_1".to_string()]);
@@ -862,6 +900,7 @@ mod tests {
                 required: false,
                 description: None,
             }],
+            variables: Vec::new(),
             execution_results: HashMap::new(),
         };
 
@@ -880,6 +919,7 @@ mod tests {
             edges: Vec::new(),
             hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
+            variables: Vec::new(),
             execution_results: HashMap::new(),
         };
         let selected = HashSet::from(["node_1".to_string()]);
@@ -955,6 +995,7 @@ mod tests {
             ],
             hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
+            variables: Vec::new(),
             execution_results: HashMap::from([("node_2".to_string(), HashMap::new())]),
         };
 
@@ -1082,6 +1123,7 @@ mod tests {
             ],
             hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
+            variables: Vec::new(),
             execution_results: HashMap::new(),
         };
 
@@ -1160,6 +1202,7 @@ mod tests {
             ],
             hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
+            variables: Vec::new(),
             execution_results: HashMap::new(),
         };
 
@@ -1209,6 +1252,7 @@ mod tests {
             edges: Vec::new(),
             hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
+            variables: Vec::new(),
             execution_results: HashMap::new(),
         };
 
@@ -1312,6 +1356,7 @@ mod tests {
             ],
             hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
+            variables: Vec::new(),
             execution_results: HashMap::new(),
         };
 
@@ -1363,6 +1408,7 @@ mod tests {
             edges: Vec::new(),
             hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
+            variables: Vec::new(),
             execution_results: HashMap::new(),
         };
 
@@ -1392,6 +1438,7 @@ mod tests {
             edges: Vec::new(),
             hyperparameter_groups: Vec::new(),
             hyperparameters: Vec::new(),
+            variables: Vec::new(),
             execution_results: HashMap::new(),
         };
         let boundary_selected = HashSet::from(["node_2".to_string()]);
@@ -1409,3 +1456,6 @@ mod tests {
         assert_eq!(normalize_port_name("中文"), "");
     }
 }
+
+
+

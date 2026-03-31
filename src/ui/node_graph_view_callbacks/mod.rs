@@ -8,6 +8,7 @@ pub(crate) mod message_list;
 pub(crate) mod qq_message_list;
 pub(crate) mod tabs;
 pub(crate) mod tool_editor;
+pub(crate) mod variables;
 pub(crate) mod window;
 
 pub(crate) use canvas::bind_canvas_callbacks;
@@ -20,4 +21,5 @@ pub(crate) use message_list::bind_message_list_callbacks;
 pub(crate) use qq_message_list::bind_qq_message_list_callbacks;
 pub(crate) use tabs::bind_tab_callbacks;
 pub(crate) use tool_editor::bind_tool_editor_callbacks;
+pub(crate) use variables::bind_variable_callbacks;
 pub(crate) use window::bind_window_callbacks;

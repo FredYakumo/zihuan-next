@@ -149,9 +149,8 @@ impl Node for FunctionNode {
     fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
         match inline_values.get(FUNCTION_CONFIG_PORT) {
             Some(DataValue::Json(value)) => {
-                let config = embedded_function_config_from_value(value).ok_or_else(|| {
-                    self.wrap_error("function_config 不是有效的函数配置 JSON")
-                })?;
+                let config = embedded_function_config_from_value(value)
+                    .ok_or_else(|| self.wrap_error("function_config 不是有效的函数配置 JSON"))?;
                 self.set_config(config)
             }
             Some(other) => Err(self.wrap_error(format!(
@@ -162,7 +161,10 @@ impl Node for FunctionNode {
         }
     }
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.parse_config_input(&inputs)?;
         self.validate_inputs(&inputs)?;
         self.ensure_subgraph_is_runnable()?;
