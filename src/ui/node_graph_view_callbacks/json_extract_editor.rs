@@ -137,7 +137,7 @@ pub(crate) fn bind_json_extract_editor_callbacks(
             let Some(tab) = tabs_guard.get(active_index) else {
                 return;
             };
-            let Some(node) = tab.graph.nodes.iter().find(|n| n.id == node_id.as_str()) else {
+            let Some(node) = tab.graph().nodes.iter().find(|n| n.id == node_id.as_str()) else {
                 return;
             };
 
@@ -260,26 +260,28 @@ pub(crate) fn bind_json_extract_editor_callbacks(
             let mut tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
-                if let Some(node) = tab
+                if let Some(node_index) = tab
                     .graph
                     .nodes
-                    .iter_mut()
-                    .find(|n| n.id == node_id.as_str())
+                    .iter()
+                    .position(|n| n.id == node_id.as_str())
                 {
+                    let node_id_for_ports = tab.graph.nodes[node_index].id.clone();
+                    let node = &mut tab.graph.nodes[node_index];
                     node.inline_values
                         .insert(FIELDS_CONFIG_PORT.to_string(), fields_json.clone());
                     node.output_ports = json_extract_output_ports(&items);
                     let output_names: HashSet<&str> =
                         node.output_ports.iter().map(|p| p.name.as_str()).collect();
                     tab.graph.edges.retain(|edge| {
-                        if edge.from_node_id == node.id {
+                        if edge.from_node_id == node_id_for_ports {
                             output_names.contains(edge.from_port.as_str())
                         } else {
                             true
                         }
                     });
                     tab.inline_inputs.insert(
-                        inline_port_key(&node.id, FIELDS_CONFIG_PORT),
+                        inline_port_key(&node_id_for_ports, FIELDS_CONFIG_PORT),
                         InlinePortValue::Json(fields_json),
                     );
                     tab.is_dirty = true;

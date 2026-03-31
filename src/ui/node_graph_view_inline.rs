@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 
 use crate::error::Result;
+use crate::node::function_graph::{
+    default_embedded_function_config, sync_function_node_definition, FUNCTION_INPUTS_NODE_TYPE,
+    FUNCTION_OUTPUTS_NODE_TYPE,
+};
 use crate::node::graph_io::NodeGraphDefinition;
 use crate::node::registry::NODE_REGISTRY;
 use crate::ui::node_render::{inline_port_key, InlinePortValue};
@@ -118,6 +122,12 @@ pub(crate) fn cycle_role(current: &str) -> &'static str {
 }
 
 pub(crate) fn add_node_to_graph(graph: &mut NodeGraphDefinition, type_id: &str) -> Result<()> {
+    if matches!(type_id, FUNCTION_INPUTS_NODE_TYPE | FUNCTION_OUTPUTS_NODE_TYPE) {
+        return Err(crate::error::Error::ValidationError(
+            "函数边界节点不能从节点面板直接添加".to_string(),
+        ));
+    }
+
     let id = next_node_id(graph);
 
     let all_types = NODE_REGISTRY.get_all_types();
@@ -129,7 +139,7 @@ pub(crate) fn add_node_to_graph(graph: &mut NodeGraphDefinition, type_id: &str) 
 
     let dummy_node = NODE_REGISTRY.create_node(type_id, &id, &display_name)?;
 
-    graph.nodes.push(crate::node::graph_io::NodeDefinition {
+    let mut node_definition = crate::node::graph_io::NodeDefinition {
         id,
         name: display_name,
         description: dummy_node.description().map(|s| s.to_string()),
@@ -144,7 +154,14 @@ pub(crate) fn add_node_to_graph(graph: &mut NodeGraphDefinition, type_id: &str) 
         port_bindings: HashMap::new(),
         has_error: false,
         has_cycle: false,
-    });
+    };
+
+    if type_id == "function" {
+        let config = default_embedded_function_config(node_definition.name.clone());
+        sync_function_node_definition(&mut node_definition, &config);
+    }
+
+    graph.nodes.push(node_definition);
 
     Ok(())
 }

@@ -121,13 +121,13 @@ pub(crate) fn bind_hyperparameter_callbacks(
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
                 // Check unique name
-                if tab.graph.hyperparameters.iter().any(|hp| hp.name == name) {
+                if tab.root_graph().hyperparameters.iter().any(|hp| hp.name == name) {
                     return;
                 }
-                if !tab.graph.hyperparameter_groups.iter().any(|g| g == &group) {
-                    tab.graph.hyperparameter_groups.push(group.clone());
+                if !tab.root_graph().hyperparameter_groups.iter().any(|g| g == &group) {
+                    tab.root_graph_mut().hyperparameter_groups.push(group.clone());
                 }
-                tab.graph.hyperparameters.push(HyperParameter {
+                tab.root_graph_mut().hyperparameters.push(HyperParameter {
                     name,
                     data_type,
                     group,
@@ -165,12 +165,12 @@ pub(crate) fn bind_hyperparameter_callbacks(
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
                 if !tab
-                    .graph
+                    .root_graph()
                     .hyperparameter_groups
                     .iter()
                     .any(|existing| existing == &group)
                 {
-                    tab.graph.hyperparameter_groups.push(group.clone());
+                    tab.root_graph_mut().hyperparameter_groups.push(group.clone());
                     tab.is_dirty = true;
                 }
             }
@@ -196,7 +196,7 @@ pub(crate) fn bind_hyperparameter_callbacks(
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
                 if tab
-                    .graph
+                    .root_graph()
                     .hyperparameter_groups
                     .iter()
                     .any(|existing| existing == &new_group)
@@ -204,14 +204,14 @@ pub(crate) fn bind_hyperparameter_callbacks(
                     return;
                 }
                 if let Some(group) = tab
-                    .graph
+                    .root_graph_mut()
                     .hyperparameter_groups
                     .iter_mut()
                     .find(|existing| **existing == old_group)
                 {
                     *group = new_group.clone();
                 }
-                for hp in &mut tab.graph.hyperparameters {
+                for hp in &mut tab.root_graph_mut().hyperparameters {
                     if hp.group == old_group {
                         hp.group = new_group.clone();
                     }
@@ -240,21 +240,23 @@ pub(crate) fn bind_hyperparameter_callbacks(
             let mut tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
-                tab.graph
+                tab.root_graph_mut()
                     .hyperparameter_groups
                     .retain(|existing| existing != &group);
-                for hp in &mut tab.graph.hyperparameters {
+                for hp in &mut tab.root_graph_mut().hyperparameters {
                     if hp.group == group {
                         hp.group = "default".to_string();
                     }
                 }
                 if !tab
-                    .graph
+                    .root_graph()
                     .hyperparameter_groups
                     .iter()
                     .any(|existing| existing == "default")
                 {
-                    tab.graph.hyperparameter_groups.push("default".to_string());
+                    tab.root_graph_mut()
+                        .hyperparameter_groups
+                        .push("default".to_string());
                 }
                 tab.is_dirty = true;
             }
@@ -275,16 +277,20 @@ pub(crate) fn bind_hyperparameter_callbacks(
             let mut tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
-                tab.graph.hyperparameters.retain(|hp| hp.name != name);
+                tab.root_graph_mut().hyperparameters.retain(|hp| hp.name != name);
                 // Remove all port bindings referencing this hyperparameter
-                for node in &mut tab.graph.nodes {
+                for node in &mut tab.root_graph_mut().nodes {
                     node.port_bindings.retain(|_, hp_name| hp_name != name);
                 }
                 tab.hyperparameter_values.remove(name);
                 // Auto-save values if the graph is backed by a file
                 if let Some(path) = &tab.file_path {
                     if let Err(e) =
-                        save_hyperparameter_values(path, &tab.graph, &tab.hyperparameter_values)
+                        save_hyperparameter_values(
+                            path,
+                            tab.root_graph(),
+                            &tab.hyperparameter_values,
+                        )
                     {
                         log::warn!("[HyperParamStore] auto-save failed: {}", e);
                     }
@@ -306,27 +312,31 @@ pub(crate) fn bind_hyperparameter_callbacks(
             let mut tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
-                if let Some(hp) = tab
-                    .graph
+                if let Some((hp_name, type_str)) = tab
+                    .root_graph()
                     .hyperparameters
                     .iter()
                     .find(|hp| hp.name == name.as_str())
+                    .map(|hp| (hp.name.clone(), hp.data_type.to_string()))
                 {
-                    let type_str = hp.data_type.to_string();
                     let new_value = str_to_json_value(&type_str, value_str.as_str());
                     match new_value {
                         Some(v) => {
-                            tab.hyperparameter_values.insert(hp.name.clone(), v);
+                            tab.hyperparameter_values.insert(hp_name, v);
                         }
                         None => {
-                            tab.hyperparameter_values.remove(hp.name.as_str());
+                            tab.hyperparameter_values.remove(hp_name.as_str());
                         }
                     }
                 }
                 // Auto-save values if the graph is backed by a file
                 if let Some(path) = &tab.file_path {
                     if let Err(e) =
-                        save_hyperparameter_values(path, &tab.graph, &tab.hyperparameter_values)
+                        save_hyperparameter_values(
+                            path,
+                            tab.root_graph(),
+                            &tab.hyperparameter_values,
+                        )
                     {
                         log::warn!("[HyperParamStore] auto-save failed: {}", e);
                     }
@@ -365,7 +375,7 @@ pub(crate) fn bind_hyperparameter_callbacks(
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
                 if let Some(hp) = tab
-                    .graph
+                    .root_graph_mut()
                     .hyperparameters
                     .iter_mut()
                     .find(|hp| hp.name == name.as_str())
@@ -400,7 +410,7 @@ pub(crate) fn bind_hyperparameter_callbacks(
 
             // Find the port DataType
             let port_type = tab
-                .graph
+                .root_graph()
                 .nodes
                 .iter()
                 .find(|n| n.id == node_id.as_str())
@@ -418,7 +428,7 @@ pub(crate) fn bind_hyperparameter_callbacks(
 
             // Find current binding for this port
             let current_binding = tab
-                .graph
+                .root_graph()
                 .nodes
                 .iter()
                 .find(|n| n.id == node_id.as_str())
@@ -430,7 +440,7 @@ pub(crate) fn bind_hyperparameter_callbacks(
             use crate::ui::graph_window::HyperParameterVm;
             use slint::{ModelRc, VecModel};
             let compatible: Vec<HyperParameterVm> = tab
-                .graph
+                .root_graph()
                 .hyperparameters
                 .iter()
                 .filter(|hp| is_hp_type_compatible(&hp.data_type, &port_type))
@@ -459,7 +469,7 @@ pub(crate) fn bind_hyperparameter_callbacks(
             ui.set_port_bind_current_binding(current_binding.into());
             ui.set_port_bind_compatible_params(ModelRc::new(VecModel::from(compatible)));
             ui.set_show_port_bind_dialog(true);
-            let groups = collect_hyperparameter_groups(&tab.graph);
+            let groups = collect_hyperparameter_groups(tab.root_graph());
             if !groups
                 .iter()
                 .any(|group| group == &ui.get_selected_hyperparameter_group().to_string())
@@ -479,7 +489,7 @@ pub(crate) fn bind_hyperparameter_callbacks(
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
                 if let Some(node) = tab
-                    .graph
+                    .root_graph_mut()
                     .nodes
                     .iter_mut()
                     .find(|n| n.id == node_id.as_str())
@@ -506,7 +516,7 @@ pub(crate) fn bind_hyperparameter_callbacks(
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
                 if let Some(node) = tab
-                    .graph
+                    .root_graph_mut()
                     .nodes
                     .iter_mut()
                     .find(|n| n.id == node_id.as_str())

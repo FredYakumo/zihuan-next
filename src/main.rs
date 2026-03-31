@@ -80,9 +80,14 @@ fn main() {
     }
 
     // GUI mode: load graph if provided, otherwise start with empty graph
+    let mut initial_graph_dirty = false;
     let mut graph = if let Some(path) = args.graph_json.as_ref() {
-        match node::load_graph_definition_from_json(path) {
-            Ok(graph) => Some(graph),
+        match node::load_graph_definition_from_json_with_migration(path) {
+            Ok(loaded) => {
+                let node::LoadedGraphDefinition { graph, migrated } = loaded;
+                initial_graph_dirty = migrated;
+                Some(graph)
+            }
             Err(err) => {
                 error!("加载节点图失败: {}", err);
                 return;
@@ -96,8 +101,11 @@ fn main() {
         node::ensure_positions(graph);
     }
 
-    if let Err(err) =
-        ui::node_graph_view::show_graph(graph, args.graph_json.as_deref().map(std::path::Path::new))
+    if let Err(err) = ui::node_graph_view::show_graph(
+        graph,
+        args.graph_json.as_deref().map(std::path::Path::new),
+        initial_graph_dirty,
+    )
     {
         error!("UI渲染失败: {}", err);
     }

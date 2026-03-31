@@ -19,17 +19,17 @@ pub(crate) fn bind_qq_message_list_callbacks(
         let mut tabs_guard = tabs_clone.lock().unwrap();
         let active_index = *active_tab_clone.lock().unwrap();
         if let Some(tab) = tabs_guard.get_mut(active_index) {
-            let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
+            let mut items = get_message_list_inline(tab.inline_inputs(), node_id.as_str());
             items.push(serde_json::json!({"type": "text", "data": {"text": ""}}));
-            set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
+            set_message_list_inline(tab.inline_inputs_mut(), node_id.as_str(), items);
             tab.is_dirty = true;
             if let Some(ui) = ui_handle.upgrade() {
                 apply_graph_to_ui(
                     &ui,
-                    &tab.graph,
+                    tab.graph(),
                     Some(tab_display_title(tab)),
-                    &tab.selection,
-                    &tab.inline_inputs,
+                    tab.selection(),
+                    tab.inline_inputs(),
                     &tab.hyperparameter_values,
                 );
                 update_tabs_ui(&ui, &tabs_guard, active_index);
@@ -44,7 +44,7 @@ pub(crate) fn bind_qq_message_list_callbacks(
         let mut tabs_guard = tabs_clone.lock().unwrap();
         let active_index = *active_tab_clone.lock().unwrap();
         if let Some(tab) = tabs_guard.get_mut(active_index) {
-            let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
+            let mut items = get_message_list_inline(tab.inline_inputs(), node_id.as_str());
             let len = items.len();
             let mut insert_at = if index < 0 {
                 0
@@ -58,15 +58,15 @@ pub(crate) fn bind_qq_message_list_callbacks(
                 insert_at,
                 serde_json::json!({"type": "text", "data": {"text": ""}}),
             );
-            set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
+            set_message_list_inline(tab.inline_inputs_mut(), node_id.as_str(), items);
             tab.is_dirty = true;
             if let Some(ui) = ui_handle.upgrade() {
                 apply_graph_to_ui(
                     &ui,
-                    &tab.graph,
+                    tab.graph(),
                     Some(tab_display_title(tab)),
-                    &tab.selection,
-                    &tab.inline_inputs,
+                    tab.selection(),
+                    tab.inline_inputs(),
                     &tab.hyperparameter_values,
                 );
                 update_tabs_ui(&ui, &tabs_guard, active_index);
@@ -81,7 +81,7 @@ pub(crate) fn bind_qq_message_list_callbacks(
         let mut tabs_guard = tabs_clone.lock().unwrap();
         let active_index = *active_tab_clone.lock().unwrap();
         if let Some(tab) = tabs_guard.get_mut(active_index) {
-            let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
+            let mut items = get_message_list_inline(tab.inline_inputs(), node_id.as_str());
             if index >= 0 {
                 let idx = index as usize;
                 if let Some(serde_json::Value::Object(map)) = items.get_mut(idx) {
@@ -98,15 +98,15 @@ pub(crate) fn bind_qq_message_list_callbacks(
                     map.insert("data".to_string(), next_data);
                 }
             }
-            set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
+            set_message_list_inline(tab.inline_inputs_mut(), node_id.as_str(), items);
             tab.is_dirty = true;
             if let Some(ui) = ui_handle.upgrade() {
                 apply_graph_to_ui(
                     &ui,
-                    &tab.graph,
+                    tab.graph(),
                     Some(tab_display_title(tab)),
-                    &tab.selection,
-                    &tab.inline_inputs,
+                    tab.selection(),
+                    tab.inline_inputs(),
                     &tab.hyperparameter_values,
                 );
                 update_tabs_ui(&ui, &tabs_guard, active_index);
@@ -122,7 +122,7 @@ pub(crate) fn bind_qq_message_list_callbacks(
             let mut tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
-                let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
+                let mut items = get_message_list_inline(tab.inline_inputs(), node_id.as_str());
                 if index >= 0 {
                     let idx = index as usize;
                     if let Some(serde_json::Value::Object(map)) = items.get_mut(idx) {
@@ -156,7 +156,7 @@ pub(crate) fn bind_qq_message_list_callbacks(
                         }
                     }
                 }
-                set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
+                set_message_list_inline(tab.inline_inputs_mut(), node_id.as_str(), items);
                 tab.is_dirty = true;
                 if let Some(ui) = ui_handle.upgrade() {
                     update_tabs_ui(&ui, &tabs_guard, active_index);

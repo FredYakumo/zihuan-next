@@ -52,6 +52,7 @@ type InputSourceMap = HashMap<String, HashMap<String, (String, String)>>;
 
 pub mod data_value;
 pub mod database;
+pub mod function_graph;
 pub mod graph_io;
 pub mod message_cache;
 pub mod message_nodes;
@@ -62,14 +63,15 @@ pub mod util;
 pub use data_value::{DataType, DataValue};
 #[allow(unused_imports)]
 pub use graph_io::{
-    ensure_positions, load_graph_definition_from_json, save_graph_definition_to_json,
-    EdgeDefinition, GraphPosition, NodeDefinition, NodeGraphDefinition,
+    ensure_positions, load_graph_definition_from_json,
+    load_graph_definition_from_json_with_migration, save_graph_definition_to_json,
+    EdgeDefinition, GraphPosition, LoadedGraphDefinition, NodeDefinition, NodeGraphDefinition,
 };
 #[allow(unused_imports)]
 pub use node_macros::{node_input, node_output};
 
 /// Node input/output ports
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Port {
     pub name: String,
     pub data_type: DataType,

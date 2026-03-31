@@ -55,6 +55,8 @@ export component GraphCanvas inherits Rectangle {
     callback show_node_help(string, string);
     callback port_right_clicked(string, string);
     callback edit_tools_clicked(string);
+    callback edit_function_clicked(string);
+    callback enter_function_subgraph_clicked(string);
     callback edit_format_string_clicked(string);
     callback edit_json_extract_clicked(string);
 
@@ -432,6 +434,14 @@ export component GraphCanvas inherits Rectangle {
 
         edit_tools_clicked(node_id) => {
             root.edit_tools_clicked(node_id);
+        }
+
+        edit_function_clicked(node_id) => {
+            root.edit_function_clicked(node_id);
+        }
+
+        enter_function_subgraph_clicked(node_id) => {
+            root.enter_function_subgraph_clicked(node_id);
         }
 
         edit_format_string_clicked(node_id) => {

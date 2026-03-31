@@ -17,6 +17,23 @@ use crate::ui::node_graph_view_inline::{
 use crate::ui::node_graph_view_vm::{apply_graph_to_ui, matches_node_type_search};
 use crate::ui::node_render::{inline_port_key, InlinePortValue};
 
+fn filter_node_types_for_page(all_node_types: &[NodeTypeVm], is_subgraph_page: bool) -> Vec<NodeTypeVm> {
+    all_node_types
+        .iter()
+        .filter(|node_type| {
+            let type_id = node_type.type_id.as_str();
+            if matches!(type_id, "function_inputs" | "function_outputs") {
+                return false;
+            }
+            if is_subgraph_page && crate::node::registry::NODE_REGISTRY.is_event_producer(type_id) {
+                return false;
+            }
+            true
+        })
+        .cloned()
+        .collect()
+}
+
 fn build_node_help_data(
     node_type: &NodeTypeVm,
     graph: &NodeGraphDefinition,
@@ -224,6 +241,14 @@ pub(crate) fn bind_window_callbacks(
         let mut tabs_guard = tabs_clone.lock().unwrap();
         let active_index = *active_tab_clone.lock().unwrap();
         if let Some(tab) = tabs_guard.get_mut(active_index) {
+            if tab.is_subgraph_page()
+                && crate::node::registry::NODE_REGISTRY.is_event_producer(type_id_str)
+            {
+                if let Some(ui) = ui_handle.upgrade() {
+                    ui.invoke_show_error("函数子图内不能添加事件源节点".into());
+                }
+                return;
+            }
             if let Err(e) = add_node_to_graph(&mut tab.graph, type_id_str) {
                 eprintln!("Failed to add node: {}", e);
                 return;
@@ -280,6 +305,13 @@ pub(crate) fn bind_window_callbacks(
                 Some(tab) => tab,
                 None => return,
             };
+
+            if tab.is_subgraph_page() {
+                if let Some(ui) = ui_handle.upgrade() {
+                    ui.invoke_show_error("子图页面不能直接运行，请返回主图运行".into());
+                }
+                return;
+            }
 
             if tab.is_running {
                 info!("节点图已在运行中");
@@ -672,13 +704,23 @@ pub(crate) fn bind_window_callbacks(
     let all_node_types_clone = Arc::clone(&all_node_types);
     let last_context_canvas_pos_clone = Arc::clone(&last_context_canvas_pos);
     let pending_add_node_pos_clone = Arc::clone(&pending_add_node_pos);
+    let tabs_for_context_new = Arc::clone(&tabs);
+    let active_tab_for_context_new = Arc::clone(&active_tab_index);
     ui.on_context_menu_new_node(move || {
         *pending_add_node_pos_clone.lock().unwrap() =
             *last_context_canvas_pos_clone.lock().unwrap();
 
         if let Some(ui) = ui_handle.upgrade() {
+            let is_subgraph_page = {
+                let tabs_guard = tabs_for_context_new.lock().unwrap();
+                let active_index = *active_tab_for_context_new.lock().unwrap();
+                tabs_guard
+                    .get(active_index)
+                    .map(|tab| tab.is_subgraph_page())
+                    .unwrap_or(false)
+            };
             ui.set_available_node_types(ModelRc::new(VecModel::from(
-                all_node_types_clone.as_ref().clone(),
+                filter_node_types_for_page(all_node_types_clone.as_ref(), is_subgraph_page),
             )));
             ui.set_show_graph_context_menu(false);
             ui.set_show_node_selector(true);
@@ -687,20 +729,32 @@ pub(crate) fn bind_window_callbacks(
 
     let ui_handle = ui.as_weak();
     let all_node_types_clone = Arc::clone(&all_node_types);
+    let tabs_for_filter = Arc::clone(&tabs);
+    let active_tab_for_filter = Arc::clone(&active_tab_index);
     ui.on_filter_nodes(move |search_text: SharedString, category: SharedString| {
         if let Some(ui) = ui_handle.upgrade() {
             let search_text = search_text.as_str().to_lowercase();
             let category = category.as_str();
+            let is_subgraph_page = {
+                let tabs_guard = tabs_for_filter.lock().unwrap();
+                let active_index = *active_tab_for_filter.lock().unwrap();
+                tabs_guard
+                    .get(active_index)
+                    .map(|tab| tab.is_subgraph_page())
+                    .unwrap_or(false)
+            };
 
-            let filtered: Vec<NodeTypeVm> = all_node_types_clone
-                .iter()
-                .filter(|n| {
-                    let name_match = matches_node_type_search(n, &search_text);
-                    let cat_match = category.is_empty() || n.category == category;
-                    name_match && cat_match
-                })
-                .cloned()
-                .collect();
+            let filtered: Vec<NodeTypeVm> = filter_node_types_for_page(
+                all_node_types_clone.as_ref(),
+                is_subgraph_page,
+            )
+            .into_iter()
+            .filter(|n| {
+                let name_match = matches_node_type_search(n, &search_text);
+                let cat_match = category.is_empty() || n.category == category;
+                name_match && cat_match
+            })
+            .collect();
 
             ui.set_available_node_types(ModelRc::new(VecModel::from(filtered)));
         }
@@ -709,11 +763,21 @@ pub(crate) fn bind_window_callbacks(
     let ui_handle = ui.as_weak();
     let all_node_types_clone = Arc::clone(&all_node_types);
     let pending_add_node_pos_clone = Arc::clone(&pending_add_node_pos);
+    let tabs_for_show = Arc::clone(&tabs);
+    let active_tab_for_show = Arc::clone(&active_tab_index);
     ui.on_show_node_type_menu(move || {
         pending_add_node_pos_clone.lock().unwrap().take();
         if let Some(ui) = ui_handle.upgrade() {
+            let is_subgraph_page = {
+                let tabs_guard = tabs_for_show.lock().unwrap();
+                let active_index = *active_tab_for_show.lock().unwrap();
+                tabs_guard
+                    .get(active_index)
+                    .map(|tab| tab.is_subgraph_page())
+                    .unwrap_or(false)
+            };
             ui.set_available_node_types(ModelRc::new(VecModel::from(
-                all_node_types_clone.as_ref().clone(),
+                filter_node_types_for_page(all_node_types_clone.as_ref(), is_subgraph_page),
             )));
             ui.set_show_graph_context_menu(false);
             ui.set_show_node_selector(true);

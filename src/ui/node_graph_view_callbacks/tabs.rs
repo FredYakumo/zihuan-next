@@ -5,8 +5,8 @@ use log::info;
 use slint::ComponentHandle;
 
 use crate::node::graph_io::{
-    auto_fix_graph_definition, load_graph_definition_from_json, validate_graph_definition,
-    NodeGraphDefinition,
+    auto_fix_graph_definition, load_graph_definition_from_json_with_migration,
+    validate_graph_definition, NodeGraphDefinition,
 };
 use crate::ui::canvas_state::load_canvas_view_state;
 use crate::ui::graph_window::{NodeGraphWindow, ValidationIssueVm};
@@ -16,9 +16,7 @@ use crate::ui::node_graph_view::{
     apply_canvas_view_state, new_blank_tab, persist_tab_canvas_state, refresh_active_tab_ui,
     sync_active_tab_canvas_state, GraphTabState,
 };
-use crate::ui::node_graph_view_inline::{
-    apply_inline_inputs_to_graph, build_inline_inputs_from_graph,
-};
+use crate::ui::node_graph_view_inline::build_inline_inputs_from_graph;
 use crate::util::hyperparam_store::{load_hyperparameter_values, save_hyperparameter_values};
 
 pub(crate) fn bind_tab_callbacks(
@@ -45,8 +43,10 @@ pub(crate) fn bind_tab_callbacks(
             None => return,
         };
 
-        match load_graph_definition_from_json(&selected_path) {
-            Ok(graph) => {
+        match load_graph_definition_from_json_with_migration(&selected_path) {
+            Ok(loaded) => {
+                let migrated = loaded.migrated;
+                let graph = loaded.graph;
                 let issues = validate_graph_definition(&graph);
                 if !issues.is_empty() {
                     // Store the pending graph and show the validation dialog
@@ -75,19 +75,21 @@ pub(crate) fn bind_tab_callbacks(
                         persist_tab_canvas_state(current_tab);
                     }
                     if let Some(tab) = tabs_guard.get_mut(active_index) {
-                        tab.graph = graph.clone();
-                        tab.inline_inputs = build_inline_inputs_from_graph(&graph);
+                        tab.page_stack.clear();
+                        tab.root_page.graph = graph.clone();
+                        tab.root_page.inline_inputs = build_inline_inputs_from_graph(&graph);
+                        tab.root_page.selection.clear();
                         tab.hyperparameter_values =
-                            load_hyperparameter_values(&selected_path, &tab.graph);
-                        tab.canvas_view_state =
+                            load_hyperparameter_values(&selected_path, &tab.root_page.graph);
+                        tab.root_page.canvas_view_state =
                             load_canvas_view_state(&selected_path).unwrap_or_default();
-                        tab.selection.clear();
+                        tab.load_current_page_into_mirror();
                         tab.file_path = Some(selected_path.clone());
                         tab.title = selected_path
                             .file_name()
                             .map(|name| name.to_string_lossy().to_string())
                             .unwrap_or_else(|| selected_path.display().to_string());
-                        tab.is_dirty = false;
+                        tab.is_dirty = migrated;
                     }
 
                     refresh_active_tab_ui(&ui, &tabs_guard, active_index);
@@ -128,17 +130,20 @@ pub(crate) fn bind_tab_callbacks(
                 persist_tab_canvas_state(current_tab);
             }
             if let Some(tab) = tabs_guard.get_mut(active_index) {
-                tab.inline_inputs = build_inline_inputs_from_graph(&graph);
+                tab.page_stack.clear();
+                tab.root_page.graph = graph.clone();
+                tab.root_page.inline_inputs = build_inline_inputs_from_graph(&graph);
+                tab.root_page.selection.clear();
                 tab.hyperparameter_values = load_hyperparameter_values(&selected_path, &graph);
-                tab.canvas_view_state = load_canvas_view_state(&selected_path).unwrap_or_default();
-                tab.selection.clear();
+                tab.root_page.canvas_view_state =
+                    load_canvas_view_state(&selected_path).unwrap_or_default();
                 tab.file_path = Some(selected_path.clone());
                 tab.title = selected_path
                     .file_name()
                     .map(|name| name.to_string_lossy().to_string())
                     .unwrap_or_else(|| selected_path.display().to_string());
                 tab.is_dirty = true; // mark dirty since we fixed but haven't saved
-                tab.graph = graph;
+                tab.load_current_page_into_mirror();
             }
             refresh_active_tab_ui(&ui, &tabs_guard, active_index);
             if let Some(tab) = tabs_guard.get(active_index) {
@@ -199,9 +204,10 @@ pub(crate) fn bind_tab_callbacks(
             }
 
             let tab = &mut tabs_guard[tab_index];
-            apply_inline_inputs_to_graph(&mut tab.graph, &tab.inline_inputs);
+            tab.commit_all_pages_to_root();
 
-            if let Err(e) = crate::node::graph_io::save_graph_definition_to_json(&path, &tab.graph)
+            if let Err(e) =
+                crate::node::graph_io::save_graph_definition_to_json(&path, tab.root_graph())
             {
                 eprintln!("Failed to save graph: {}", e);
                 return false;
@@ -209,7 +215,7 @@ pub(crate) fn bind_tab_callbacks(
 
             // Save hyperparameter values to a separate YAML file in the data directory
             if let Err(e) =
-                save_hyperparameter_values(&path, &tab.graph, &tab.hyperparameter_values)
+                save_hyperparameter_values(&path, tab.root_graph(), &tab.hyperparameter_values)
             {
                 log::warn!(
                     "[HyperParamStore] Failed to save hyperparameter values: {}",
@@ -554,16 +560,17 @@ pub(crate) fn bind_tab_callbacks(
             }
 
             let tab = &mut tabs_guard[tab_index];
-            apply_inline_inputs_to_graph(&mut tab.graph, &tab.inline_inputs);
+            tab.commit_all_pages_to_root();
 
-            if let Err(e) = crate::node::graph_io::save_graph_definition_to_json(&path, &tab.graph)
+            if let Err(e) =
+                crate::node::graph_io::save_graph_definition_to_json(&path, tab.root_graph())
             {
                 log::error!("Failed to save graph: {}", e);
                 return false;
             }
 
             if let Err(e) =
-                save_hyperparameter_values(&path, &tab.graph, &tab.hyperparameter_values)
+                save_hyperparameter_values(&path, tab.root_graph(), &tab.hyperparameter_values)
             {
                 log::warn!(
                     "[HyperParamStore] Failed to save hyperparameter values: {}",

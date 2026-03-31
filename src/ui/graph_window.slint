@@ -1,12 +1,12 @@
 import { VerticalBox } from "std-widgets.slint";
 import { AppTheme } from "theme.slint";
-import { EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm, HyperParameterVm, JsonExtractFieldVm, LogEntryVm, NodeTypeVm, NodeVm, ToolDefinitionVm, ValidationIssueVm } from "types.slint";
+import { EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, FunctionPortVm, GridLineVm, HyperParameterVm, JsonExtractFieldVm, LogEntryVm, NodeTypeVm, NodeVm, ToolDefinitionVm, ValidationIssueVm } from "types.slint";
 import { CjkButton, CjkDeleteButton, CjkRunButton, CjkText } from "components/buttons.slint";
 import { MenuBarItem, MenuItemRow } from "components/menubar.slint";
 import { TabItem } from "components/tabs.slint";
 import { GraphCanvas } from "components/graph_canvas.slint";
 import { LogOverlay } from "components/log_overlay.slint";
-import { ErrorDialog, FormatStringEditorDialog, GroupManagerDialog, HyperParameterManagerDialog, JsonExtractEditorDialog, LogHistoryDialog, NodeHelpDialog, NodeSelector, OverwriteConfirmDialog, PortBindHyperparamDialog, RunningConfirmDialog, SaveConfirmDialog, ToolEditorDialog, ValidationFixDialog } from "dialogs.slint";
+import { ErrorDialog, FormatStringEditorDialog, FunctionEditorDialog, GroupManagerDialog, HyperParameterManagerDialog, JsonExtractEditorDialog, LogHistoryDialog, NodeHelpDialog, NodeSelector, OverwriteConfirmDialog, PortBindHyperparamDialog, RunningConfirmDialog, SaveConfirmDialog, ToolEditorDialog, ValidationFixDialog } from "dialogs.slint";
 
 export component NodeGraphWindow inherits Window {
     in property <[NodeVm]> nodes;
@@ -134,6 +134,8 @@ export component NodeGraphWindow inherits Window {
     callback node_resized(string, float, float);
     callback node_resize_finished(string, float, float);
     callback edit_tools_clicked(string);
+    callback edit_function_clicked(string);
+    callback enter_function_subgraph_clicked(string);
     callback edit_format_string_clicked(string);
     callback edit_json_extract_clicked(string);
 
@@ -183,6 +185,38 @@ export component NodeGraphWindow inherits Window {
     callback tool_editor_set_param_name(int, int, string);
     callback tool_editor_set_param_type(int, int, string);
     callback tool_editor_set_param_description(int, int, string);
+    callback tool_editor_add_output(int);
+    callback tool_editor_delete_output(int, int);
+    callback tool_editor_set_output_name(int, int, string);
+    callback tool_editor_set_output_type(int, int, string);
+    callback tool_editor_open_subgraph(int);
+
+    // Subgraph navigation
+    in property <bool> is_subgraph_page: false;
+    in property <string> subgraph_current_label: "";
+    callback navigate_subgraph_back();
+    callback navigate_subgraph_root();
+
+    // Function editor
+    in property <bool> show_function_editor_dialog: false;
+    in property <string> function_editor_node_id: "";
+    in property <string> function_editor_name: "";
+    in property <string> function_editor_description: "";
+    in property <[FunctionPortVm]> function_editor_inputs;
+    in property <[FunctionPortVm]> function_editor_outputs;
+    callback open_function_editor(string);
+    callback close_function_editor();
+    callback save_function_editor();
+    callback function_editor_set_name(string);
+    callback function_editor_set_description(string);
+    callback function_editor_add_input();
+    callback function_editor_delete_input(int);
+    callback function_editor_set_input_name(int, string);
+    callback function_editor_set_input_type(int, string);
+    callback function_editor_add_output();
+    callback function_editor_delete_output(int);
+    callback function_editor_set_output_name(int, string);
+    callback function_editor_set_output_type(int, string);
 
     // JSON extract editor
     in property <bool> show_json_extract_editor_dialog: false;
@@ -238,6 +272,7 @@ export component NodeGraphWindow inherits Window {
         && !show_group_manager
         && !show_port_bind_dialog
         && !show_tool_editor_dialog
+        && !show_function_editor_dialog
         && !show_format_string_editor
         && !show_json_extract_editor_dialog
         && !show_log_history;
@@ -339,6 +374,74 @@ export component NodeGraphWindow inherits Window {
             }
 
             // Bottom border
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                width: parent.width;
+                background: AppTheme.border;
+            }
+        }
+
+        if root.is_subgraph_page: Rectangle {
+            height: 34px;
+            background: AppTheme.node-bg;
+
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 10px;
+                alignment: start;
+
+                CjkButton {
+                    text: "返回";
+                    clicked => { root.navigate_subgraph_back(); }
+                }
+
+                Rectangle {
+                    height: 24px;
+                    border-radius: 12px;
+                    background: AppTheme.primary-muted;
+
+                    TouchArea {
+                        clicked => { root.navigate_subgraph_root(); }
+                    }
+
+                    CjkText {
+                        text: "主图";
+                        color: AppTheme.text-primary;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                        width: 72px;
+                        height: 100%;
+                        font-size: 12px;
+                        font-weight: 700;
+                    }
+                }
+
+                CjkText {
+                    text: "/";
+                    color: AppTheme.text-secondary;
+                    vertical-alignment: center;
+                }
+
+                Rectangle {
+                    height: 24px;
+                    border-radius: 12px;
+                    background: AppTheme.surface-overlay;
+
+                    CjkText {
+                        text: root.subgraph_current_label;
+                        color: AppTheme.text-primary;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                        width: max(120px, self.preferred-width);
+                        height: 100%;
+                        font-size: 12px;
+                        font-weight: 700;
+                    }
+                }
+            }
+
             Rectangle {
                 y: parent.height - 1px;
                 height: 1px;
@@ -515,6 +618,14 @@ export component NodeGraphWindow inherits Window {
                     root.edit_tools_clicked(node_id);
                 }
 
+                edit_function_clicked(node_id) => {
+                    root.edit_function_clicked(node_id);
+                }
+
+                enter_function_subgraph_clicked(node_id) => {
+                    root.enter_function_subgraph_clicked(node_id);
+                }
+
                 edit_format_string_clicked(node_id) => {
                     root.edit_format_string_clicked(node_id);
                 }
@@ -563,12 +674,12 @@ export component NodeGraphWindow inherits Window {
                         clicked => { root.show_node_type_menu(); }
                     }
 
-                    if !root.is_graph_running: CjkRunButton {
+                    if !root.is_graph_running && !root.is_subgraph_page: CjkRunButton {
                         text: "运行节点图";
                         clicked => { root.run_graph(); }
                     }
 
-                    if root.is_graph_running: CjkDeleteButton {
+                    if root.is_graph_running && !root.is_subgraph_page: CjkDeleteButton {
                         text: "停止运行";
                         clicked => { root.stop_graph(); }
                     }
@@ -821,8 +932,32 @@ export component NodeGraphWindow inherits Window {
         set_param_name(tool_index, param_index, value) => { root.tool_editor_set_param_name(tool_index, param_index, value); }
         set_param_type(tool_index, param_index, value) => { root.tool_editor_set_param_type(tool_index, param_index, value); }
         set_param_description(tool_index, param_index, value) => { root.tool_editor_set_param_description(tool_index, param_index, value); }
+        add_output(tool_index) => { root.tool_editor_add_output(tool_index); }
+        delete_output(tool_index, output_index) => { root.tool_editor_delete_output(tool_index, output_index); }
+        set_output_name(tool_index, output_index, value) => { root.tool_editor_set_output_name(tool_index, output_index, value); }
+        set_output_type(tool_index, output_index, value) => { root.tool_editor_set_output_type(tool_index, output_index, value); }
+        open_tool_subgraph(tool_index) => { root.tool_editor_open_subgraph(tool_index); }
         save => { root.save_tool_editor(); }
         close => { root.close_tool_editor(); }
+    }
+
+    if root.show_function_editor_dialog: FunctionEditorDialog {
+        function_name: root.function_editor_name;
+        function_description: root.function_editor_description;
+        inputs: root.function_editor_inputs;
+        outputs: root.function_editor_outputs;
+        set_function_name(value) => { root.function_editor_set_name(value); }
+        set_function_description(value) => { root.function_editor_set_description(value); }
+        add_input() => { root.function_editor_add_input(); }
+        delete_input(index) => { root.function_editor_delete_input(index); }
+        set_input_name(index, value) => { root.function_editor_set_input_name(index, value); }
+        set_input_type(index, value) => { root.function_editor_set_input_type(index, value); }
+        add_output() => { root.function_editor_add_output(); }
+        delete_output(index) => { root.function_editor_delete_output(index); }
+        set_output_name(index, value) => { root.function_editor_set_output_name(index, value); }
+        set_output_type(index, value) => { root.function_editor_set_output_type(index, value); }
+        save => { root.save_function_editor(); }
+        close => { root.close_function_editor(); }
     }
 
     if root.show_format_string_editor: FormatStringEditorDialog {

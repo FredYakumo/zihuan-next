@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::node::function_graph::is_function_boundary_node;
 use crate::node::graph_io::{EdgeDefinition, NodeDefinition, NodeGraphDefinition};
 use crate::ui::node_graph_view_geometry::snap_to_grid;
 use crate::ui::node_graph_view_inline::{
@@ -37,7 +38,9 @@ pub(crate) fn copy_selected_nodes_to_clipboard(
     let mut nodes: Vec<NodeDefinition> = graph_clone
         .nodes
         .iter()
-        .filter(|node| selected_node_ids.contains(&node.id))
+        .filter(|node| {
+            selected_node_ids.contains(&node.id) && !is_function_boundary_node(&node.node_type)
+        })
         .cloned()
         .collect();
 
@@ -171,6 +174,7 @@ fn next_available_node_id(used_ids: &mut HashSet<String>) -> String {
 mod tests {
     use std::collections::{HashMap, HashSet};
 
+    use crate::node::function_graph::FUNCTION_INPUTS_NODE_TYPE;
     use crate::node::data_value::DataType;
     use crate::node::graph_io::{
         EdgeDefinition, GraphPosition, HyperParameter, NodeDefinition, NodeGraphDefinition,
@@ -343,5 +347,24 @@ mod tests {
         let pasted = paste_nodes_from_clipboard(&target_graph, &clipboard, 100.0, 100.0).unwrap();
 
         assert!(pasted.nodes[0].port_bindings.is_empty());
+    }
+
+    #[test]
+    fn copy_ignores_function_boundary_nodes() {
+        let mut boundary = node_at("node_1", 40.0, 40.0);
+        boundary.node_type = FUNCTION_INPUTS_NODE_TYPE.to_string();
+
+        let graph = NodeGraphDefinition {
+            nodes: vec![boundary],
+            edges: Vec::new(),
+            hyperparameter_groups: Vec::new(),
+            hyperparameters: Vec::new(),
+            execution_results: HashMap::new(),
+        };
+        let selected = HashSet::from(["node_1".to_string()]);
+
+        let clipboard = copy_selected_nodes_to_clipboard(&graph, &HashMap::new(), &selected);
+
+        assert!(clipboard.is_none());
     }
 }
