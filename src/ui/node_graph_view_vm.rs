@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use slint::{ModelRc, VecModel};
 
 use crate::node::graph_io::{ensure_positions, NodeDefinition, NodeGraphDefinition};
+use crate::node::function_graph::is_hidden_function_port;
 use crate::ui::graph_window::{
     HyperParameterVm, MessageItemVm, NodeGraphWindow, NodeTypeVm, NodeVm, PortVm,
 };
@@ -169,7 +170,10 @@ fn build_node_vm(
     let input_ports: Vec<PortVm> = node
         .input_ports
         .iter()
-        .filter(|p| !(node.node_type == "brain" && p.name == "tools_config"))
+        .filter(|p| {
+            !(node.node_type == "brain" && p.name == "tools_config")
+                && !is_hidden_function_port(&node.node_type, &p.name)
+        })
         .map(|p| build_input_port_vm(node, p, graph, inline_inputs))
         .collect();
 

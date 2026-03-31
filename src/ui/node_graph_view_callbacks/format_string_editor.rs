@@ -180,7 +180,7 @@ pub(crate) fn bind_format_string_editor_callbacks(
             let Some(tab) = tabs_guard.get(active_index) else {
                 return;
             };
-            let Some(node) = tab.graph.nodes.iter().find(|n| n.id == node_id.as_str()) else {
+            let Some(node) = tab.graph().nodes.iter().find(|n| n.id == node_id.as_str()) else {
                 return;
             };
 
@@ -358,7 +358,9 @@ pub(crate) fn bind_format_string_editor_callbacks(
             let mut tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
-                if let Some(node) = tab.graph.nodes.iter_mut().find(|n| n.id == node_id) {
+                if let Some(node_index) = tab.graph.nodes.iter().position(|n| n.id == node_id) {
+                    let node_id_for_ports = tab.graph.nodes[node_index].id.clone();
+                    let node = &mut tab.graph.nodes[node_index];
                     node.inline_values.insert(
                         TEMPLATE_PORT.to_string(),
                         serde_json::Value::String(template.clone()),
@@ -367,7 +369,7 @@ pub(crate) fn bind_format_string_editor_callbacks(
 
                     // Remove edges whose target port no longer exists on this node
                     tab.graph.edges.retain(|edge| {
-                        if edge.to_node_id == node.id {
+                        if edge.to_node_id == node_id_for_ports {
                             port_names.contains(&edge.to_port)
                         } else {
                             true
@@ -375,7 +377,7 @@ pub(crate) fn bind_format_string_editor_callbacks(
                     });
 
                     tab.inline_inputs.insert(
-                        inline_port_key(&node.id, TEMPLATE_PORT),
+                        inline_port_key(&node_id_for_ports, TEMPLATE_PORT),
                         InlinePortValue::Text(template),
                     );
                     tab.is_dirty = true;
