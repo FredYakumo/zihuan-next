@@ -54,8 +54,8 @@
         "qq_id": "2496875785"
       },
       "port_bindings": {
-        "qq_id": "BOT_ID",
-        "bot_server_token": "BOT_SERVER_TOKEN"
+        "bot_server_token": "BOT_SERVER_TOKEN",
+        "qq_id": "BOT_ID"
       },
       "has_error": false,
       "has_cycle": false
@@ -357,9 +357,9 @@
         "height": 200.0
       },
       "inline_values": {
+        "mysql_port": "3306",
         "mysql_host": "127.0.0.1",
-        "mysql_database": "zihuan_aibot",
-        "mysql_port": "3306"
+        "mysql_database": "zihuan_aibot"
       },
       "port_bindings": {
         "mysql_user": "MYSQL_USER",
@@ -541,8 +541,8 @@
         "height": 140.0
       },
       "inline_values": {
-        "bucket_name": "message_id_cache",
-        "ttl_secs": "600"
+        "ttl_secs": "600",
+        "bucket_name": "message_id_cache"
       },
       "port_bindings": {},
       "has_error": false,
@@ -602,8 +602,8 @@
       },
       "port_bindings": {
         "model_name": "LLM_MODEL_NAME",
-        "api_endpoint": "LLM_API_ENDPOINT",
-        "api_key": "LLM_API_KEY"
+        "api_key": "LLM_API_KEY",
+        "api_endpoint": "LLM_API_ENDPOINT"
       },
       "has_error": false,
       "has_cycle": false
@@ -677,6 +677,20 @@
       },
       "size": null,
       "inline_values": {
+        "shared_inputs": [
+          {
+            "data_type": "String",
+            "name": "target_id"
+          },
+          {
+            "data_type": "LLModel",
+            "name": "llm_ref"
+          },
+          {
+            "data_type": "BotAdapterRef",
+            "name": "bot_ref"
+          }
+        ],
         "tools_config": [
           {
             "description": "回复对方",
@@ -974,20 +988,6 @@
                 }
               ]
             }
-          }
-        ],
-        "shared_inputs": [
-          {
-            "data_type": "String",
-            "name": "target_id"
-          },
-          {
-            "data_type": "LLModel",
-            "name": "llm_ref"
-          },
-          {
-            "data_type": "BotAdapterRef",
-            "name": "bot_ref"
           }
         ]
       },
@@ -2378,6 +2378,24 @@
       },
       "size": null,
       "inline_values": {
+        "shared_inputs": [
+          {
+            "data_type": "String",
+            "name": "target_id"
+          },
+          {
+            "data_type": "LLModel",
+            "name": "llm_ref"
+          },
+          {
+            "data_type": "BotAdapterRef",
+            "name": "bot_ref"
+          },
+          {
+            "data_type": "String",
+            "name": "metion_target_id"
+          }
+        ],
         "tools_config": [
           {
             "description": "回复对方",
@@ -2691,24 +2709,6 @@
                 }
               ]
             }
-          }
-        ],
-        "shared_inputs": [
-          {
-            "data_type": "String",
-            "name": "target_id"
-          },
-          {
-            "data_type": "LLModel",
-            "name": "llm_ref"
-          },
-          {
-            "data_type": "BotAdapterRef",
-            "name": "bot_ref"
-          },
-          {
-            "data_type": "String",
-            "name": "metion_target_id"
           }
         ]
       },
