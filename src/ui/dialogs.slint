@@ -2168,158 +2168,167 @@ export component ToolEditorDialog inherits Rectangle {
                         visible: i == root.selected_tool_index;
                         background: transparent;
                         border-width: 0px;
+                        horizontal-stretch: 1;
                         vertical-stretch: 1;
 
-                        VerticalLayout {
-                            spacing: 10px;
+                        ScrollView {
                             vertical-stretch: 1;
+                            horizontal-stretch: 1;
+                            viewport-width: max(0px, self.width);
 
-                            CjkText {
-                                text: "基础信息";
-                                font-size: 13px;
-                                font-weight: 700;
-                                color: AppTheme.text-secondary;
-                            }
-
-                            HorizontalLayout {
-                                spacing: 8px;
-                                CjkText {
-                                    text: "名称";
-                                    width: 50px;
-                                    color: AppTheme.text-secondary;
-                                    vertical-alignment: center;
-                                }
-                                LineEdit {
-                                    horizontal-stretch: 1;
-                                    height: 32px;
-                                    text: tool.name;
-                                    placeholder-text: "例如 search_docs";
-                                    edited(text) => { root.set_tool_name(i, text); }
-                                }
-                            }
-
-                            HorizontalLayout {
-                                spacing: 8px;
-                                CjkText {
-                                    text: "描述";
-                                    width: 50px;
-                                    color: AppTheme.text-secondary;
-                                    vertical-alignment: center;
-                                }
-                                LineEdit {
-                                    horizontal-stretch: 1;
-                                    height: 32px;
-                                    text: tool.description;
-                                    placeholder-text: "给 LLM 看的工具用途描述";
-                                    edited(text) => { root.set_tool_description(i, text); }
-                                }
-                            }
-
-                            HorizontalLayout {
-                                spacing: 8px;
-                                CjkButton {
-                                    text: "进入子图";
-                                    clicked => { root.open_tool_subgraph(i); }
-                                }
-                            }
-
-                            Rectangle { height: 1px; background: AppTheme.border; }
-
-                            HorizontalLayout {
-                                spacing: 8px;
+                            VerticalLayout {
+                                padding-right: 8px;
+                                spacing: 10px;
 
                                 CjkText {
-                                    text: "参数列表";
+                                    text: "基础信息";
                                     font-size: 13px;
                                     font-weight: 700;
                                     color: AppTheme.text-secondary;
-                                    horizontal-stretch: 1;
                                 }
 
-                                CjkButton {
-                                    text: "新增参数";
-                                    clicked => { root.add_param(i); }
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    CjkText {
+                                        text: "名称";
+                                        width: 50px;
+                                        color: AppTheme.text-secondary;
+                                        vertical-alignment: center;
+                                    }
+                                    LineEdit {
+                                        horizontal-stretch: 1;
+                                        height: 32px;
+                                        text: tool.name;
+                                        placeholder-text: "例如 search_docs";
+                                        edited(text) => { root.set_tool_name(i, text); }
+                                    }
                                 }
-                            }
 
-                            Rectangle {
-                                vertical-stretch: 1;
-                                background: AppTheme.background;
-                                border-radius: 8px;
-                                border-width: 1px;
-                                border-color: AppTheme.border-light;
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    CjkText {
+                                        text: "描述";
+                                        width: 50px;
+                                        color: AppTheme.text-secondary;
+                                        vertical-alignment: center;
+                                    }
+                                    LineEdit {
+                                        horizontal-stretch: 1;
+                                        height: 32px;
+                                        text: tool.description;
+                                        placeholder-text: "给 LLM 看的工具用途描述";
+                                        edited(text) => { root.set_tool_description(i, text); }
+                                    }
+                                }
 
-                                ScrollView {
-                                    viewport-height: max(80px, tool.params.length * 78px);
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    CjkButton {
+                                        text: "进入子图";
+                                        clicked => { root.open_tool_subgraph(i); }
+                                    }
+                                }
 
-                                    VerticalLayout {
-                                        padding: 8px;
-                                        spacing: 8px;
-                                        alignment: start;
+                                Rectangle { height: 1px; background: AppTheme.border; }
 
-                                        if tool.params.length == 0: CjkText {
-                                            text: "该 Tool 还没有参数。";
-                                            color: AppTheme.text-muted;
-                                            font-size: 13px;
-                                        }
+                                HorizontalLayout {
+                                    spacing: 8px;
 
-                                        for param[j] in tool.params: Rectangle {
-                                            height: 70px;
-                                            background: AppTheme.surface-overlay;
-                                            border-radius: 6px;
-                                            border-width: 1px;
-                                            border-color: AppTheme.border;
+                                    CjkText {
+                                        text: "参数列表";
+                                        font-size: 13px;
+                                        font-weight: 700;
+                                        color: AppTheme.text-secondary;
+                                        horizontal-stretch: 1;
+                                    }
 
-                                            VerticalLayout {
-                                                padding: 8px;
-                                                spacing: 8px;
+                                    CjkButton {
+                                        text: "新增参数";
+                                        clicked => { root.add_param(i); }
+                                    }
+                                }
 
-                                                HorizontalLayout {
+                                Rectangle {
+                                    height: 190px;
+                                    background: AppTheme.background;
+                                    border-radius: 8px;
+                                    border-width: 1px;
+                                    border-color: AppTheme.border-light;
+
+                                    ScrollView {
+                                        vertical-stretch: 1;
+                                        viewport-height: max(80px, tool.params.length * 78px);
+                                        viewport-width: max(0px, self.width);
+
+                                        VerticalLayout {
+                                            padding: 8px;
+                                            spacing: 8px;
+                                            alignment: start;
+
+                                            if tool.params.length == 0: CjkText {
+                                                text: "该 Tool 还没有参数。";
+                                                color: AppTheme.text-muted;
+                                                font-size: 13px;
+                                            }
+
+                                            for param[j] in tool.params: Rectangle {
+                                                height: 70px;
+                                                background: AppTheme.surface-overlay;
+                                                border-radius: 6px;
+                                                border-width: 1px;
+                                                border-color: AppTheme.border;
+
+                                                VerticalLayout {
+                                                    padding: 8px;
                                                     spacing: 8px;
 
-                                                    LineEdit {
-                                                        width: 180px;
-                                                        height: 30px;
-                                                        text: param.name;
-                                                        placeholder-text: "参数名";
-                                                        edited(text) => { root.set_param_name(i, j, text); }
-                                                    }
+                                                    HorizontalLayout {
+                                                        spacing: 8px;
 
-                                                    ComboBox {
-                                                        width: 100px;
-                                                        height: 30px;
-                                                        model: ["String", "Integer", "Float", "Boolean", "Json"];
-                                                        current-value: param.data_type;
-                                                        selected(value) => { root.set_param_type(i, j, value); }
-                                                    }
-
-                                                    LineEdit {
-                                                        horizontal-stretch: 1;
-                                                        height: 30px;
-                                                        text: param.description;
-                                                        placeholder-text: "参数描述";
-                                                        edited(text) => { root.set_param_description(i, j, text); }
-                                                    }
-
-                                                    Rectangle {
-                                                        width: 24px;
-                                                        height: 24px;
-                                                        background: AppTheme.danger-bg;
-                                                        border-radius: 4px;
-                                                        border-width: 1px;
-                                                        border-color: AppTheme.danger;
-
-                                                        TouchArea {
-                                                            clicked => { root.delete_param(i, j); }
+                                                        LineEdit {
+                                                            width: 180px;
+                                                            height: 30px;
+                                                            text: param.name;
+                                                            placeholder-text: "参数名";
+                                                            edited(text) => { root.set_param_name(i, j, text); }
                                                         }
 
-                                                        CjkText {
-                                                            text: "×";
-                                                            color: AppTheme.danger;
-                                                            horizontal-alignment: center;
-                                                            vertical-alignment: center;
-                                                            font-size: 14px;
-                                                            font-weight: 700;
+                                                        ComboBox {
+                                                            width: 110px;
+                                                            height: 30px;
+                                                            model: ["String", "Integer", "Float", "Boolean", "Json"];
+                                                            current-value: param.data_type;
+                                                            selected(value) => { root.set_param_type(i, j, value); }
+                                                        }
+
+                                                        LineEdit {
+                                                            horizontal-stretch: 1;
+                                                            height: 30px;
+                                                            text: param.description;
+                                                            placeholder-text: "参数描述";
+                                                            edited(text) => { root.set_param_description(i, j, text); }
+                                                        }
+
+                                                        Rectangle {
+                                                            width: 24px;
+                                                            height: 24px;
+                                                            background: AppTheme.danger-bg;
+                                                            border-radius: 4px;
+                                                            border-width: 1px;
+                                                            border-color: AppTheme.danger;
+
+                                                            TouchArea {
+                                                                clicked => { root.delete_param(i, j); }
+                                                            }
+
+                                                            CjkText {
+                                                                text: "×";
+                                                                color: AppTheme.danger;
+                                                                horizontal-alignment: center;
+                                                                vertical-alignment: center;
+                                                                font-size: 14px;
+                                                                font-weight: 700;
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -2327,97 +2336,99 @@ export component ToolEditorDialog inherits Rectangle {
                                         }
                                     }
                                 }
-                            }
 
-                            Rectangle { height: 1px; background: AppTheme.border; }
+                                Rectangle { height: 1px; background: AppTheme.border; }
 
-                            HorizontalLayout {
-                                spacing: 8px;
+                                HorizontalLayout {
+                                    spacing: 8px;
 
-                                CjkText {
-                                    text: "输出列表";
-                                    font-size: 13px;
-                                    font-weight: 700;
-                                    color: AppTheme.text-secondary;
-                                    horizontal-stretch: 1;
+                                    CjkText {
+                                        text: "输出列表";
+                                        font-size: 13px;
+                                        font-weight: 700;
+                                        color: AppTheme.text-secondary;
+                                        horizontal-stretch: 1;
+                                    }
+
+                                    CjkButton {
+                                        text: "新增输出";
+                                        clicked => { root.add_output(i); }
+                                    }
                                 }
 
-                                CjkButton {
-                                    text: "新增输出";
-                                    clicked => { root.add_output(i); }
-                                }
-                            }
+                                Rectangle {
+                                    height: 190px;
+                                    background: AppTheme.background;
+                                    border-radius: 8px;
+                                    border-width: 1px;
+                                    border-color: AppTheme.border-light;
 
-                            Rectangle {
-                                height: 180px;
-                                background: AppTheme.background;
-                                border-radius: 8px;
-                                border-width: 1px;
-                                border-color: AppTheme.border-light;
+                                    ScrollView {
+                                        vertical-stretch: 1;
+                                        viewport-height: max(80px, tool.outputs.length * 78px);
+                                        viewport-width: max(0px, self.width);
 
-                                ScrollView {
-                                    viewport-height: max(80px, tool.outputs.length * 78px);
+                                        VerticalLayout {
+                                            padding: 8px;
+                                            spacing: 8px;
+                                            alignment: start;
 
-                                    VerticalLayout {
-                                        padding: 8px;
-                                        spacing: 8px;
-                                        alignment: start;
+                                            if tool.outputs.length == 0: CjkText {
+                                                text: "该 Tool 还没有输出。";
+                                                color: AppTheme.text-muted;
+                                                font-size: 13px;
+                                            }
 
-                                        if tool.outputs.length == 0: CjkText {
-                                            text: "该 Tool 还没有输出。";
-                                            color: AppTheme.text-muted;
-                                            font-size: 13px;
-                                        }
+                                            for output[j] in tool.outputs: Rectangle {
+                                                height: 70px;
+                                                background: AppTheme.surface-overlay;
+                                                border-radius: 6px;
+                                                border-width: 1px;
+                                                border-color: AppTheme.border;
 
-                                        for output[j] in tool.outputs: Rectangle {
-                                            height: 70px;
-                                            background: AppTheme.surface-overlay;
-                                            border-radius: 6px;
-                                            border-width: 1px;
-                                            border-color: AppTheme.border;
-
-                                            VerticalLayout {
-                                                padding: 8px;
-                                                spacing: 8px;
-
-                                                HorizontalLayout {
+                                                VerticalLayout {
+                                                    padding: 8px;
                                                     spacing: 8px;
 
-                                                    LineEdit {
-                                                        width: 220px;
-                                                        height: 30px;
-                                                        text: output.name;
-                                                        placeholder-text: "输出名";
-                                                        edited(text) => { root.set_output_name(i, j, text); }
-                                                    }
+                                                    HorizontalLayout {
+                                                        spacing: 8px;
 
-                                                    ComboBox {
-                                                        width: 140px;
-                                                        height: 30px;
-                                                        model: ["String", "Integer", "Float", "Boolean", "Json", "OpenAIMessage", "QQMessage", "MessageEvent"];
-                                                        current-value: output.data_type;
-                                                        selected(value) => { root.set_output_type(i, j, value); }
-                                                    }
-
-                                                    Rectangle {
-                                                        width: 24px;
-                                                        height: 24px;
-                                                        background: AppTheme.danger-bg;
-                                                        border-radius: 4px;
-                                                        border-width: 1px;
-                                                        border-color: AppTheme.danger;
-
-                                                        TouchArea {
-                                                            clicked => { root.delete_output(i, j); }
+                                                        LineEdit {
+                                                            width: 220px;
+                                                            height: 30px;
+                                                            text: output.name;
+                                                            placeholder-text: "输出名";
+                                                            edited(text) => { root.set_output_name(i, j, text); }
                                                         }
 
-                                                        CjkText {
-                                                            text: "×";
-                                                            color: AppTheme.danger;
-                                                            horizontal-alignment: center;
-                                                            vertical-alignment: center;
-                                                            font-size: 14px;
-                                                            font-weight: 700;
+                                                        ComboBox {
+                                                            width: 150px;
+                                                            height: 30px;
+                                                            model: ["String", "Integer", "Float", "Boolean", "Json", "OpenAIMessage", "QQMessage", "MessageEvent"];
+                                                            current-value: output.data_type;
+                                                            selected(value) => { root.set_output_type(i, j, value); }
+                                                        }
+
+                                                        Rectangle {
+                                                            width: 24px;
+                                                            height: 24px;
+                                                            background: AppTheme.danger-bg;
+                                                            border-radius: 4px;
+                                                            border-width: 1px;
+                                                            border-color: AppTheme.danger;
+
+                                                            TouchArea {
+                                                                clicked => { root.delete_output(i, j); }
+                                                            }
+
+                                                            CjkText {
+                                                                text: "×";
+                                                                color: AppTheme.danger;
+                                                                horizontal-alignment: center;
+                                                                vertical-alignment: center;
+                                                                font-size: 14px;
+                                                                font-weight: 700;
+                                                            }
                                                         }
                                                     }
                                                 }
