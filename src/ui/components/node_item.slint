@@ -111,6 +111,9 @@ export component NodeItem inherits Rectangle {
     property <bool> has-json-extract-editor: root.node_type == "json_extract";
     property <bool> suppress-click: false;
     property <bool> shift-click-active: false;
+    property <color> boundary-card-bg: root.node_type == "function_inputs" ? #dceadf : #c9dbce;
+    property <color> boundary-card-bg-pressed: root.node_type == "function_inputs" ? #d3e3d7 : #c0d3c5;
+    property <color> boundary-card-border: root.node_type == "function_inputs" ? #96ab9d : #819989;
 
     x: x_pos * 1px;
     y: y_pos * 1px;
@@ -120,11 +123,17 @@ export component NodeItem inherits Rectangle {
         grid_size * max(min_rows, header_rows + max(input_ports.length, output_ports.length)) + inner-padding-bottom
     ) * 1px;
     background: root.is-function-boundary-node
-        ? (touch.pressed ? #dddddd : #eeeeee)
+        ? (touch.pressed ? root.boundary-card-bg-pressed : root.boundary-card-bg)
         : (touch.pressed ? AppTheme.node-bg-pressed : AppTheme.node-bg);
     border-radius: 8px;
     border-width: (has_error || has_cycle) ? 2px : (is_selected ? 2px : 1px);
-    border-color: has_error ? AppTheme.danger : (has_cycle ? AppTheme.warning : (is_selected ? AppTheme.selection : AppTheme.border));
+    border-color: has_error
+        ? AppTheme.danger
+        : (has_cycle
+            ? AppTheme.warning
+            : (is_selected
+                ? AppTheme.selection
+                : (root.is-function-boundary-node ? root.boundary-card-border : AppTheme.border)));
 
     touch := TouchArea {
         clicked => {

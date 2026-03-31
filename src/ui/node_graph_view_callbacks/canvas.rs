@@ -226,6 +226,7 @@ pub(crate) fn bind_canvas_callbacks(
             *drag_session_guard = None;
 
             if moved {
+                tab.commit_current_page_to_parent();
                 tab.is_dirty = true;
             }
 
@@ -262,6 +263,7 @@ pub(crate) fn bind_canvas_callbacks(
             }
 
             tab.is_dirty = true;
+            tab.commit_current_page_to_parent();
 
             if let Some(ui) = ui_handle.upgrade() {
                 refresh_active_tab_ui(&ui, &tabs_guard, active_index);

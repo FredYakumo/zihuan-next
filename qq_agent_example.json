@@ -54,8 +54,8 @@
         "qq_id": "2496875785"
       },
       "port_bindings": {
-        "bot_server_token": "BOT_SERVER_TOKEN",
-        "qq_id": "BOT_ID"
+        "qq_id": "BOT_ID",
+        "bot_server_token": "BOT_SERVER_TOKEN"
       },
       "has_error": false,
       "has_cycle": false
@@ -357,9 +357,9 @@
         "height": 200.0
       },
       "inline_values": {
-        "mysql_database": "zihuan_aibot",
         "mysql_host": "127.0.0.1",
-        "mysql_port": "3306"
+        "mysql_port": "3306",
+        "mysql_database": "zihuan_aibot"
       },
       "port_bindings": {
         "mysql_password": "MYSQL_PASSWORD",
@@ -541,8 +541,8 @@
         "height": 140.0
       },
       "inline_values": {
-        "bucket_name": "message_id_cache",
-        "ttl_secs": "600"
+        "ttl_secs": "600",
+        "bucket_name": "message_id_cache"
       },
       "port_bindings": {},
       "has_error": false,
@@ -601,8 +601,8 @@
         "timeout_secs": "600"
       },
       "port_bindings": {
-        "model_name": "LLM_MODEL_NAME",
         "api_endpoint": "LLM_API_ENDPOINT",
+        "model_name": "LLM_MODEL_NAME",
         "api_key": "LLM_API_KEY"
       },
       "has_error": false,
@@ -639,24 +639,12 @@
         {
           "name": "assistant_message",
           "data_type": "OpenAIMessage",
-          "description": "LLM 返回的完整 assistant 消息（含 tool_calls，用于 agentic loop）",
-          "required": true
-        },
-        {
-          "name": "has_tool_call",
-          "data_type": "Boolean",
-          "description": "LLM 返回的 assistant 消息是否包含 tool_calls，用于控制 agentic loop 继续或结束",
-          "required": true
-        },
-        {
-          "name": "natural_language_reply",
-          "data_type": "Json",
-          "description": "Tool 'natural_language_reply' 的调用参数 JSON",
+          "description": "完成工具调用循环后的 assistant 最终消息",
           "required": true
         }
       ],
       "dynamic_input_ports": false,
-      "dynamic_output_ports": true,
+      "dynamic_output_ports": false,
       "position": {
         "x": 1020.0,
         "y": -1440.0
@@ -666,7 +654,14 @@
         "tools_config": [
           {
             "description": "回复对方",
+            "id": "tool",
             "name": "natural_language_reply",
+            "outputs": [
+              {
+                "data_type": "String",
+                "name": "result"
+              }
+            ],
             "parameters": [
               {
                 "data_type": "String",
@@ -678,7 +673,210 @@
                 "desc": "语言风格，比如心情，语气等",
                 "name": "style"
               }
-            ]
+            ],
+            "subgraph": {
+              "edges": [
+                {
+                  "from_node_id": "__function_inputs__",
+                  "from_port": "content",
+                  "to_node_id": "node_1",
+                  "to_port": "content"
+                }
+              ],
+              "hyperparameter_groups": [],
+              "hyperparameters": [],
+              "nodes": [
+                {
+                  "description": "函数子图的输入边界节点",
+                  "dynamic_input_ports": false,
+                  "dynamic_output_ports": true,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "__function_inputs__",
+                  "inline_values": {
+                    "signature": [
+                      {
+                        "data_type": "String",
+                        "name": "content"
+                      },
+                      {
+                        "data_type": "String",
+                        "name": "style"
+                      }
+                    ]
+                  },
+                  "input_ports": [
+                    {
+                      "data_type": "Json",
+                      "description": "隐藏的函数签名 JSON",
+                      "name": "signature",
+                      "required": false
+                    },
+                    {
+                      "data_type": "Json",
+                      "description": "运行时注入的函数输入 JSON",
+                      "name": "runtime_values",
+                      "required": false
+                    }
+                  ],
+                  "name": "函数输入",
+                  "node_type": "function_inputs",
+                  "output_ports": [
+                    {
+                      "data_type": "String",
+                      "description": "函数输入 'content'",
+                      "name": "content",
+                      "required": true
+                    },
+                    {
+                      "data_type": "String",
+                      "description": "函数输入 'style'",
+                      "name": "style",
+                      "required": true
+                    }
+                  ],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 60.0,
+                    "y": 120.0
+                  },
+                  "size": {
+                    "height": 120.0,
+                    "width": 220.0
+                  }
+                },
+                {
+                  "description": "函数子图的输出边界节点",
+                  "dynamic_input_ports": true,
+                  "dynamic_output_ports": false,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "__function_outputs__",
+                  "inline_values": {
+                    "signature": [
+                      {
+                        "data_type": "String",
+                        "name": "result"
+                      }
+                    ]
+                  },
+                  "input_ports": [
+                    {
+                      "data_type": "Json",
+                      "description": "隐藏的函数签名 JSON",
+                      "name": "signature",
+                      "required": false
+                    },
+                    {
+                      "data_type": "String",
+                      "description": "函数输出 'result'",
+                      "name": "result",
+                      "required": true
+                    }
+                  ],
+                  "name": "函数输出",
+                  "node_type": "function_outputs",
+                  "output_ports": [],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 520.0,
+                    "y": 120.0
+                  },
+                  "size": {
+                    "height": 120.0,
+                    "width": 220.0
+                  }
+                },
+                {
+                  "description": "调用 LLM 生成结构化 QQ 自然语言回复，并按好友/群组目标逐批发送",
+                  "dynamic_input_ports": false,
+                  "dynamic_output_ports": false,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "node_1",
+                  "inline_values": {
+                    "target_type": "friend"
+                  },
+                  "input_ports": [
+                    {
+                      "data_type": "String",
+                      "description": "回复意图、要点、草稿或上下文提示，将作为第一条 user 消息传给二次 LLM",
+                      "name": "content",
+                      "required": true
+                    },
+                    {
+                      "data_type": "String",
+                      "description": "角色名字",
+                      "name": "character_name",
+                      "required": true
+                    },
+                    {
+                      "data_type": "String",
+                      "description": "目标 QQ 号或群号",
+                      "name": "target_id",
+                      "required": true
+                    },
+                    {
+                      "data_type": "String",
+                      "description": "可选：群聊中优先 @ 的成员 QQ 号，仅用于提示 LLM",
+                      "name": "mention_target_id",
+                      "required": false
+                    },
+                    {
+                      "data_type": "String",
+                      "description": "目标类型：friend 或 group",
+                      "name": "target_type",
+                      "required": false
+                    },
+                    {
+                      "data_type": "String",
+                      "description": "语言风格或情绪",
+                      "name": "style",
+                      "required": true
+                    },
+                    {
+                      "data_type": "Integer",
+                      "description": "单条 plain_text 最多字符数",
+                      "name": "max_one_reply_length",
+                      "required": true
+                    },
+                    {
+                      "data_type": "LLModel",
+                      "description": "LLMBase 引用",
+                      "name": "llm_ref",
+                      "required": true
+                    },
+                    {
+                      "data_type": "BotAdapterRef",
+                      "description": "Bot 适配器引用",
+                      "name": "bot_adapter_ref",
+                      "required": true
+                    }
+                  ],
+                  "name": "QQ自然语言回复",
+                  "node_type": "qq_natural_language_reply",
+                  "output_ports": [
+                    {
+                      "data_type": "String",
+                      "description": "已发送消息的一句话总结",
+                      "name": "summary",
+                      "required": true
+                    }
+                  ],
+                  "port_bindings": {
+                    "character_name": "BOT_NAME"
+                  },
+                  "position": {
+                    "x": 660.0,
+                    "y": 160.0
+                  },
+                  "size": {
+                    "height": 220.0,
+                    "width": 360.0
+                  }
+                }
+              ]
+            }
           }
         ]
       },
@@ -1193,22 +1391,10 @@
           "data_type": "OpenAIMessage",
           "description": "LLM 返回的完整 assistant 消息（含 tool_calls，用于 agentic loop）",
           "required": true
-        },
-        {
-          "name": "has_tool_call",
-          "data_type": "Boolean",
-          "description": "LLM 返回的 assistant 消息是否包含 tool_calls，用于控制 agentic loop 继续或结束",
-          "required": true
-        },
-        {
-          "name": "natural_language_reply",
-          "data_type": "Json",
-          "description": "Tool 'natural_language_reply' 的调用参数 JSON",
-          "required": true
         }
       ],
       "dynamic_input_ports": false,
-      "dynamic_output_ports": true,
+      "dynamic_output_ports": false,
       "position": {
         "x": 1740.0,
         "y": -600.0
@@ -1218,7 +1404,9 @@
         "tools_config": [
           {
             "description": "回复对方",
+            "id": "tool",
             "name": "natural_language_reply",
+            "outputs": [],
             "parameters": [
               {
                 "data_type": "String",
@@ -1230,7 +1418,104 @@
                 "desc": "语言风格，比如心情，语气等",
                 "name": "style"
               }
-            ]
+            ],
+            "subgraph": {
+              "edges": [],
+              "hyperparameter_groups": [],
+              "hyperparameters": [],
+              "nodes": [
+                {
+                  "description": "函数子图的输入边界节点",
+                  "dynamic_input_ports": false,
+                  "dynamic_output_ports": true,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "__function_inputs__",
+                  "inline_values": {
+                    "signature": [
+                      {
+                        "data_type": "String",
+                        "name": "content"
+                      },
+                      {
+                        "data_type": "String",
+                        "name": "style"
+                      }
+                    ]
+                  },
+                  "input_ports": [
+                    {
+                      "data_type": "Json",
+                      "description": "隐藏的函数签名 JSON",
+                      "name": "signature",
+                      "required": false
+                    },
+                    {
+                      "data_type": "Json",
+                      "description": "运行时注入的函数输入 JSON",
+                      "name": "runtime_values",
+                      "required": false
+                    }
+                  ],
+                  "name": "函数输入",
+                  "node_type": "function_inputs",
+                  "output_ports": [
+                    {
+                      "data_type": "String",
+                      "description": "函数输入 'content'",
+                      "name": "content",
+                      "required": true
+                    },
+                    {
+                      "data_type": "String",
+                      "description": "函数输入 'style'",
+                      "name": "style",
+                      "required": true
+                    }
+                  ],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 60.0,
+                    "y": 120.0
+                  },
+                  "size": {
+                    "height": 120.0,
+                    "width": 220.0
+                  }
+                },
+                {
+                  "description": "函数子图的输出边界节点",
+                  "dynamic_input_ports": true,
+                  "dynamic_output_ports": false,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "__function_outputs__",
+                  "inline_values": {
+                    "signature": []
+                  },
+                  "input_ports": [
+                    {
+                      "data_type": "Json",
+                      "description": "隐藏的函数签名 JSON",
+                      "name": "signature",
+                      "required": false
+                    }
+                  ],
+                  "name": "函数输出",
+                  "node_type": "function_outputs",
+                  "output_ports": [],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 520.0,
+                    "y": 120.0
+                  },
+                  "size": {
+                    "height": 120.0,
+                    "width": 220.0
+                  }
+                }
+              ]
+            }
           }
         ]
       },
@@ -1742,8 +2027,8 @@
         "target_type": "group"
       },
       "port_bindings": {
-        "character_name": "BOT_NAME",
-        "max_one_reply_length": "MAX_ONE_REPLAY_LENGTH"
+        "max_one_reply_length": "MAX_ONE_REPLAY_LENGTH",
+        "character_name": "BOT_NAME"
       },
       "has_error": false,
       "has_cycle": false
@@ -2270,8 +2555,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 660.0,
-        "y": -1880.0
+        "x": 1040.0,
+        "y": -1840.0
       },
       "size": null,
       "inline_values": {},
@@ -2310,7 +2595,10 @@
         "x": 320.0,
         "y": -1960.0
       },
-      "size": null,
+      "size": {
+        "width": 400.0,
+        "height": 160.0
+      },
       "inline_values": {
         "messages": [
           {
@@ -2748,18 +3036,6 @@
       "to_port": "vec2"
     },
     {
-      "from_node_id": "node_23",
-      "from_port": "natural_language_reply",
-      "to_node_id": "node_13",
-      "to_port": "json"
-    },
-    {
-      "from_node_id": "node_23",
-      "from_port": "natural_language_reply",
-      "to_node_id": "node_20",
-      "to_port": "tool_call"
-    },
-    {
       "from_node_id": "node_2",
       "from_port": "false_event",
       "to_node_id": "node_57",
@@ -2914,18 +3190,6 @@
       "from_port": "summary",
       "to_node_id": "node_15",
       "to_port": "content"
-    },
-    {
-      "from_node_id": "node_17",
-      "from_port": "natural_language_reply",
-      "to_node_id": "node_9",
-      "to_port": "json"
-    },
-    {
-      "from_node_id": "node_17",
-      "from_port": "natural_language_reply",
-      "to_node_id": "node_15",
-      "to_port": "tool_call"
     },
     {
       "from_node_id": "node_32",

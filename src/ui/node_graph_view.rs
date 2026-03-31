@@ -232,6 +232,31 @@ impl GraphTabState {
         }
     }
 
+    pub(crate) fn commit_current_page_to_parent(&mut self) {
+        self.sync_current_page_from_mirror();
+        crate::ui::node_graph_view_inline::apply_inline_inputs_to_graph(
+            &mut self.graph,
+            &self.inline_inputs,
+        );
+        self.sync_current_page_from_mirror();
+
+        let Some(owner) = self.page_stack.last().and_then(|page| page.owner.clone()) else {
+            self.root_page.graph = self.graph.clone();
+            self.root_page.inline_inputs = self.inline_inputs.clone();
+            self.root_page.selection = self.selection.clone();
+            self.root_page.canvas_view_state = self.canvas_view_state.clone();
+            return;
+        };
+
+        let child_graph = self.graph.clone();
+        if self.page_stack.len() >= 2 {
+            let parent_index = self.page_stack.len() - 2;
+            embed_subgraph_into_page(&mut self.page_stack[parent_index], owner, child_graph);
+        } else {
+            embed_subgraph_into_page(&mut self.root_page, owner, child_graph);
+        }
+    }
+
     pub(crate) fn pop_subgraph_page(&mut self) -> bool {
         self.commit_current_page_inline_inputs();
         let Some(child_page) = self.page_stack.pop() else {
@@ -262,6 +287,9 @@ impl GraphTabState {
         self.page_stack
             .push(GraphPageState::new_child(owner, title, graph));
         self.load_current_page_into_mirror();
+        // Concretize positions immediately so they are preserved when
+        // navigating back and re-entering the subgraph.
+        crate::node::graph_io::ensure_positions(&mut self.graph);
     }
 
     pub(crate) fn return_to_root_page(&mut self) -> bool {
@@ -389,6 +417,30 @@ pub(crate) fn refresh_active_tab_ui(
             tab.inline_inputs(),
             &tab.hyperparameter_values,
         );
+        let hyperparameter_vms: Vec<crate::ui::graph_window::HyperParameterVm> = tab
+            .root_graph()
+            .hyperparameters
+            .iter()
+            .map(|hp| crate::ui::graph_window::HyperParameterVm {
+                name: hp.name.clone().into(),
+                group: hp.group.clone().into(),
+                data_type: hp.data_type.to_string().into(),
+                value: tab
+                    .hyperparameter_values
+                    .get(&hp.name)
+                    .map(|v| match v {
+                        serde_json::Value::String(s) => s.clone(),
+                        serde_json::Value::Bool(b) => b.to_string(),
+                        serde_json::Value::Number(n) => n.to_string(),
+                        other => other.to_string(),
+                    })
+                    .unwrap_or_default()
+                    .into(),
+                required: hp.required,
+                description: hp.description.clone().unwrap_or_default().into(),
+            })
+            .collect();
+        ui.set_hyperparameters(ModelRc::new(VecModel::from(hyperparameter_vms)));
         let groups = collect_hyperparameter_groups(tab.root_graph());
         ui.set_hyperparameter_groups(ModelRc::new(VecModel::from(
             groups
