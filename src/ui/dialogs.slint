@@ -1,6 +1,6 @@
 import { HorizontalBox, VerticalBox, ScrollView, LineEdit, CheckBox, ComboBox } from "std-widgets.slint";
 import { AppTheme } from "theme.slint";
-import { JsonExtractFieldVm, NodeTypeVm, PortHelpVm, HyperParameterVm, LogEntryVm, ToolDefinitionVm, ValidationIssueVm } from "types.slint";
+import { FunctionPortVm, JsonExtractFieldVm, NodeTypeVm, PortHelpVm, HyperParameterVm, LogEntryVm, ToolDefinitionVm, ValidationIssueVm } from "types.slint";
 import { CjkButton, CjkDeleteButton, CjkText } from "components/buttons.slint";
 
 export component ValidationFixDialog inherits Rectangle {
@@ -1961,6 +1961,11 @@ export component ToolEditorDialog inherits Rectangle {
     callback set_param_name(int, int, string);
     callback set_param_type(int, int, string);
     callback set_param_description(int, int, string);
+    callback add_output(int);
+    callback delete_output(int, int);
+    callback set_output_name(int, int, string);
+    callback set_output_type(int, int, string);
+    callback open_tool_subgraph(int);
     callback save();
     callback close();
 
@@ -2210,6 +2215,14 @@ export component ToolEditorDialog inherits Rectangle {
                                 }
                             }
 
+                            HorizontalLayout {
+                                spacing: 8px;
+                                CjkButton {
+                                    text: "进入子图";
+                                    clicked => { root.open_tool_subgraph(i); }
+                                }
+                            }
+
                             Rectangle { height: 1px; background: AppTheme.border; }
 
                             HorizontalLayout {
@@ -2315,6 +2328,104 @@ export component ToolEditorDialog inherits Rectangle {
                                     }
                                 }
                             }
+
+                            Rectangle { height: 1px; background: AppTheme.border; }
+
+                            HorizontalLayout {
+                                spacing: 8px;
+
+                                CjkText {
+                                    text: "输出列表";
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                    color: AppTheme.text-secondary;
+                                    horizontal-stretch: 1;
+                                }
+
+                                CjkButton {
+                                    text: "新增输出";
+                                    clicked => { root.add_output(i); }
+                                }
+                            }
+
+                            Rectangle {
+                                height: 180px;
+                                background: AppTheme.background;
+                                border-radius: 8px;
+                                border-width: 1px;
+                                border-color: AppTheme.border-light;
+
+                                ScrollView {
+                                    viewport-height: max(80px, tool.outputs.length * 78px);
+
+                                    VerticalLayout {
+                                        padding: 8px;
+                                        spacing: 8px;
+                                        alignment: start;
+
+                                        if tool.outputs.length == 0: CjkText {
+                                            text: "该 Tool 还没有输出。";
+                                            color: AppTheme.text-muted;
+                                            font-size: 13px;
+                                        }
+
+                                        for output[j] in tool.outputs: Rectangle {
+                                            height: 70px;
+                                            background: AppTheme.surface-overlay;
+                                            border-radius: 6px;
+                                            border-width: 1px;
+                                            border-color: AppTheme.border;
+
+                                            VerticalLayout {
+                                                padding: 8px;
+                                                spacing: 8px;
+
+                                                HorizontalLayout {
+                                                    spacing: 8px;
+
+                                                    LineEdit {
+                                                        width: 220px;
+                                                        height: 30px;
+                                                        text: output.name;
+                                                        placeholder-text: "输出名";
+                                                        edited(text) => { root.set_output_name(i, j, text); }
+                                                    }
+
+                                                    ComboBox {
+                                                        width: 140px;
+                                                        height: 30px;
+                                                        model: ["String", "Integer", "Float", "Boolean", "Json", "OpenAIMessage", "QQMessage", "MessageEvent"];
+                                                        current-value: output.data_type;
+                                                        selected(value) => { root.set_output_type(i, j, value); }
+                                                    }
+
+                                                    Rectangle {
+                                                        width: 24px;
+                                                        height: 24px;
+                                                        background: AppTheme.danger-bg;
+                                                        border-radius: 4px;
+                                                        border-width: 1px;
+                                                        border-color: AppTheme.danger;
+
+                                                        TouchArea {
+                                                            clicked => { root.delete_output(i, j); }
+                                                        }
+
+                                                        CjkText {
+                                                            text: "×";
+                                                            color: AppTheme.danger;
+                                                            horizontal-alignment: center;
+                                                            vertical-alignment: center;
+                                                            font-size: 14px;
+                                                            font-weight: 700;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -2332,6 +2443,328 @@ export component ToolEditorDialog inherits Rectangle {
                             clicked => { root.save(); }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+export component FunctionEditorDialog inherits Rectangle {
+    in property <string> function_name: "";
+    in property <string> function_description: "";
+    in property <[FunctionPortVm]> inputs;
+    in property <[FunctionPortVm]> outputs;
+    callback set_function_name(string);
+    callback set_function_description(string);
+    callback add_input();
+    callback delete_input(int);
+    callback set_input_name(int, string);
+    callback set_input_type(int, string);
+    callback add_output();
+    callback delete_output(int);
+    callback set_output_name(int, string);
+    callback set_output_type(int, string);
+    callback save();
+    callback close();
+
+    background: AppTheme.overlay-mask;
+
+    TouchArea {
+        clicked => { root.close(); }
+    }
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 980px;
+        height: 640px;
+        background: AppTheme.node-bg;
+        border-radius: 12px;
+        border-width: 2px;
+        border-color: AppTheme.border;
+        clip: true;
+
+        TouchArea {}
+
+        VerticalLayout {
+            padding: 18px;
+            spacing: 12px;
+
+            HorizontalLayout {
+                spacing: 12px;
+
+                CjkText {
+                    text: "编辑函数";
+                    font-size: 18px;
+                    font-weight: 700;
+                    color: AppTheme.text-primary;
+                    horizontal-stretch: 1;
+                }
+
+                Rectangle {
+                    width: 26px;
+                    height: 26px;
+                    background: AppTheme.category-bg;
+                    border-radius: 13px;
+                    border-width: 1px;
+                    border-color: AppTheme.border-light;
+                    TouchArea { clicked => { root.close(); } }
+                    CjkText {
+                        text: "×";
+                        color: AppTheme.text-secondary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        font-size: 16px;
+                        font-weight: 700;
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                CjkText {
+                    text: "名称";
+                    width: 50px;
+                    color: AppTheme.text-secondary;
+                    vertical-alignment: center;
+                }
+                LineEdit {
+                    horizontal-stretch: 1;
+                    height: 32px;
+                    text: root.function_name;
+                    placeholder-text: "函数名";
+                    edited(text) => { root.set_function_name(text); }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                CjkText {
+                    text: "描述";
+                    width: 50px;
+                    color: AppTheme.text-secondary;
+                    vertical-alignment: center;
+                }
+                LineEdit {
+                    horizontal-stretch: 1;
+                    height: 32px;
+                    text: root.function_description;
+                    placeholder-text: "函数描述";
+                    edited(text) => { root.set_function_description(text); }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 12px;
+                vertical-stretch: 1;
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: AppTheme.surface;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: AppTheme.border-light;
+
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 8px;
+
+                        HorizontalLayout {
+                            spacing: 8px;
+
+                            CjkText {
+                                text: "输入参数";
+                                font-size: 13px;
+                                font-weight: 700;
+                                color: AppTheme.text-secondary;
+                                horizontal-stretch: 1;
+                            }
+
+                            CjkButton {
+                                text: "新增输入";
+                                clicked => { root.add_input(); }
+                            }
+                        }
+
+                        ScrollView {
+                            vertical-stretch: 1;
+                            viewport-height: max(80px, root.inputs.length * 78px);
+
+                            VerticalLayout {
+                                padding: 4px;
+                                spacing: 8px;
+
+                                if root.inputs.length == 0: CjkText {
+                                    text: "暂无输入参数";
+                                    color: AppTheme.text-muted;
+                                    font-size: 13px;
+                                }
+
+                                for input[i] in root.inputs: Rectangle {
+                                    height: 70px;
+                                    background: AppTheme.surface-overlay;
+                                    border-radius: 6px;
+                                    border-width: 1px;
+                                    border-color: AppTheme.border;
+
+                                    HorizontalLayout {
+                                        padding: 8px;
+                                        spacing: 8px;
+
+                                        LineEdit {
+                                            width: 180px;
+                                            height: 30px;
+                                            text: input.name;
+                                            placeholder-text: "输入名";
+                                            edited(text) => { root.set_input_name(i, text); }
+                                        }
+
+                                        ComboBox {
+                                            width: 140px;
+                                            height: 30px;
+                                            model: ["String", "Integer", "Float", "Boolean", "Json", "OpenAIMessage", "QQMessage", "MessageEvent"];
+                                            current-value: input.data_type;
+                                            selected(value) => { root.set_input_type(i, value); }
+                                        }
+
+                                        Rectangle {
+                                            width: 24px;
+                                            height: 24px;
+                                            background: AppTheme.danger-bg;
+                                            border-radius: 4px;
+                                            border-width: 1px;
+                                            border-color: AppTheme.danger;
+
+                                            TouchArea {
+                                                clicked => { root.delete_input(i); }
+                                            }
+
+                                            CjkText {
+                                                text: "×";
+                                                color: AppTheme.danger;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                                font-size: 14px;
+                                                font-weight: 700;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: AppTheme.surface;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: AppTheme.border-light;
+
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 8px;
+
+                        HorizontalLayout {
+                            spacing: 8px;
+
+                            CjkText {
+                                text: "输出参数";
+                                font-size: 13px;
+                                font-weight: 700;
+                                color: AppTheme.text-secondary;
+                                horizontal-stretch: 1;
+                            }
+
+                            CjkButton {
+                                text: "新增输出";
+                                clicked => { root.add_output(); }
+                            }
+                        }
+
+                        ScrollView {
+                            vertical-stretch: 1;
+                            viewport-height: max(80px, root.outputs.length * 78px);
+
+                            VerticalLayout {
+                                padding: 4px;
+                                spacing: 8px;
+
+                                if root.outputs.length == 0: CjkText {
+                                    text: "暂无输出参数";
+                                    color: AppTheme.text-muted;
+                                    font-size: 13px;
+                                }
+
+                                for output[i] in root.outputs: Rectangle {
+                                    height: 70px;
+                                    background: AppTheme.surface-overlay;
+                                    border-radius: 6px;
+                                    border-width: 1px;
+                                    border-color: AppTheme.border;
+
+                                    HorizontalLayout {
+                                        padding: 8px;
+                                        spacing: 8px;
+
+                                        LineEdit {
+                                            width: 180px;
+                                            height: 30px;
+                                            text: output.name;
+                                            placeholder-text: "输出名";
+                                            edited(text) => { root.set_output_name(i, text); }
+                                        }
+
+                                        ComboBox {
+                                            width: 140px;
+                                            height: 30px;
+                                            model: ["String", "Integer", "Float", "Boolean", "Json", "OpenAIMessage", "QQMessage", "MessageEvent"];
+                                            current-value: output.data_type;
+                                            selected(value) => { root.set_output_type(i, value); }
+                                        }
+
+                                        Rectangle {
+                                            width: 24px;
+                                            height: 24px;
+                                            background: AppTheme.danger-bg;
+                                            border-radius: 4px;
+                                            border-width: 1px;
+                                            border-color: AppTheme.danger;
+
+                                            TouchArea {
+                                                clicked => { root.delete_output(i); }
+                                            }
+
+                                            CjkText {
+                                                text: "×";
+                                                color: AppTheme.danger;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                                font-size: 14px;
+                                                font-weight: 700;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            HorizontalBox {
+                alignment: end;
+                spacing: 10px;
+
+                CjkButton {
+                    text: "取消";
+                    clicked => { root.close(); }
+                }
+
+                CjkButton {
+                    text: "保存";
+                    clicked => { root.save(); }
                 }
             }
         }

@@ -5,6 +5,11 @@ use std::fs;
 use std::path::Path;
 
 use crate::error::Result;
+use crate::llm::brain_tool::BrainToolDefinition;
+use crate::node::function_graph::{
+    default_embedded_function_config, embedded_function_config_from_node,
+    sync_function_node_definition, sync_function_subgraph_signature,
+};
 use crate::node::data_value::DataType;
 use crate::node::{DataValue, Node, NodeGraph, Port};
 
@@ -41,6 +46,12 @@ pub struct NodeGraphDefinition {
     pub hyperparameters: Vec<HyperParameter>,
     #[serde(skip)]
     pub execution_results: HashMap<String, HashMap<String, DataValue>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LoadedGraphDefinition {
+    pub graph: NodeGraphDefinition,
+    pub migrated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,6 +101,12 @@ pub struct GraphSize {
 pub type CycleEdgeKey = (String, String, String, String);
 
 pub fn load_graph_definition_from_json(path: impl AsRef<Path>) -> Result<NodeGraphDefinition> {
+    Ok(load_graph_definition_from_json_with_migration(path)?.graph)
+}
+
+pub fn load_graph_definition_from_json_with_migration(
+    path: impl AsRef<Path>,
+) -> Result<LoadedGraphDefinition> {
     let content = fs::read_to_string(path.as_ref())?;
     // Backward-compat: replace removed type names before parsing so old saved graphs load cleanly.
     // refresh_port_types() will then overwrite these with the live registry types.
@@ -114,14 +131,22 @@ pub fn load_graph_definition_from_json(path: impl AsRef<Path>) -> Result<NodeGra
         .replace("\"data_type\": {\"List\":", "\"data_type\": {\"Vec\":")
         .replace("\"data_type\":{\"List\":", "\"data_type\":{\"Vec\":");
     let mut graph: NodeGraphDefinition = serde_json::from_str(&content)?;
+    let before_refresh = serde_json::to_value(&graph).ok();
     refresh_port_types(&mut graph);
-    Ok(graph)
+    let migrated = before_refresh
+        .and_then(|before| serde_json::to_value(&graph).ok().map(|after| before != after))
+        .unwrap_or(false);
+    Ok(LoadedGraphDefinition { graph, migrated })
 }
 
 /// Refresh port `data_type` fields in a loaded graph by looking up the canonical types from
 /// the node registry. This migrates graphs saved with stale port types (e.g. `String` instead
 /// of `Password`) without requiring a manual file edit.
 pub fn refresh_port_types(graph: &mut NodeGraphDefinition) {
+    refresh_port_types_internal(graph);
+}
+
+fn refresh_port_types_internal(graph: &mut NodeGraphDefinition) {
     use crate::node::registry::NODE_REGISTRY;
     for node in &mut graph.nodes {
         if let Some((canonical_inputs, canonical_outputs)) =
@@ -134,15 +159,31 @@ pub fn refresh_port_types(graph: &mut NodeGraphDefinition) {
                 node.dynamic_output_ports = dynamic_outputs;
             }
 
+            if !node.dynamic_input_ports {
+                node.input_ports
+                    .retain(|port| canonical_inputs.iter().any(|canonical| canonical.name == port.name));
+            }
+            for canon in &canonical_inputs {
+                if !node.input_ports.iter().any(|p| p.name == canon.name) {
+                    node.input_ports.push(canon.clone());
+                }
+            }
             for port in &mut node.input_ports {
                 if let Some(canonical) = canonical_inputs.iter().find(|p| p.name == port.name) {
                     port.data_type = canonical.data_type.clone();
                 }
             }
-            // Silently add optional input ports that exist in the registry but not in the JSON
-            for canon in &canonical_inputs {
-                if !canon.required && !node.input_ports.iter().any(|p| p.name == canon.name) {
-                    node.input_ports.push(canon.clone());
+
+            if !node.dynamic_output_ports {
+                node.output_ports.retain(|port| {
+                    canonical_outputs
+                        .iter()
+                        .any(|canonical| canonical.name == port.name)
+                });
+            }
+            for canon in &canonical_outputs {
+                if !node.output_ports.iter().any(|p| p.name == canon.name) {
+                    node.output_ports.push(canon.clone());
                 }
             }
             for port in &mut node.output_ports {
@@ -150,16 +191,22 @@ pub fn refresh_port_types(graph: &mut NodeGraphDefinition) {
                     port.data_type = canonical.data_type.clone();
                 }
             }
-            // Silently add optional output ports that exist in the registry but not in the JSON
-            for canon in &canonical_outputs {
-                if !canon.required && !node.output_ports.iter().any(|p| p.name == canon.name) {
-                    node.output_ports.push(canon.clone());
-                }
+
+            if !node.dynamic_input_ports {
+                let all_port_names = canonical_inputs
+                    .iter()
+                    .chain(canonical_outputs.iter())
+                    .map(|port| port.name.as_str())
+                    .collect::<Vec<_>>();
+                node.inline_values
+                    .retain(|key, _| all_port_names.contains(&key.as_str()));
             }
         }
     }
 
     rebuild_dynamic_ports_from_inline_values(graph);
+    refresh_embedded_subgraphs(graph);
+    prune_invalid_edges(graph);
 }
 
 fn rebuild_dynamic_ports_from_inline_values(graph: &mut NodeGraphDefinition) {
@@ -238,6 +285,12 @@ impl ValidationIssue {
 /// Validate a loaded `NodeGraphDefinition` against the live node registry.
 /// Returns a (possibly empty) list of issues. Does NOT mutate the definition.
 pub fn validate_graph_definition(graph: &NodeGraphDefinition) -> Vec<ValidationIssue> {
+    let mut issues = validate_graph_definition_local(graph);
+    issues.extend(validate_embedded_subgraphs(graph));
+    issues
+}
+
+fn validate_graph_definition_local(graph: &NodeGraphDefinition) -> Vec<ValidationIssue> {
     use crate::node::registry::NODE_REGISTRY;
     let mut issues = Vec::new();
 
@@ -359,6 +412,11 @@ pub fn validate_graph_definition(graph: &NodeGraphDefinition) -> Vec<ValidationI
 /// - Invalid edges (bad node/port reference) → remove
 /// - Orphan inline_values (no matching port) → remove
 pub fn auto_fix_graph_definition(graph: &mut NodeGraphDefinition) {
+    auto_fix_graph_definition_local(graph);
+    auto_fix_embedded_subgraphs(graph);
+}
+
+fn auto_fix_graph_definition_local(graph: &mut NodeGraphDefinition) {
     use crate::node::registry::NODE_REGISTRY;
 
     // Phase 0: collect and remove nodes with unknown types, along with their edges.
@@ -484,6 +542,155 @@ pub fn auto_fix_graph_definition(graph: &mut NodeGraphDefinition) {
     });
 
     rebuild_dynamic_ports_from_inline_values(graph);
+    prune_invalid_edges(graph);
+}
+
+fn prune_invalid_edges(graph: &mut NodeGraphDefinition) {
+    let node_map: HashMap<&str, (&[Port], &[Port])> = graph
+        .nodes
+        .iter()
+        .map(|node| {
+            (
+                node.id.as_str(),
+                (node.input_ports.as_slice(), node.output_ports.as_slice()),
+            )
+        })
+        .collect();
+
+    graph.edges.retain(|edge| {
+        let from_ok = node_map
+            .get(edge.from_node_id.as_str())
+            .map(|(_, outputs)| outputs.iter().any(|port| port.name == edge.from_port))
+            .unwrap_or(false);
+        let to_ok = node_map
+            .get(edge.to_node_id.as_str())
+            .map(|(inputs, _)| inputs.iter().any(|port| port.name == edge.to_port))
+            .unwrap_or(false);
+        from_ok && to_ok
+    });
+}
+
+fn refresh_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
+    for node in &mut graph.nodes {
+        if node.node_type == "function" {
+            let mut config = embedded_function_config_from_node(node)
+                .unwrap_or_else(|| default_embedded_function_config(node.name.clone()));
+            refresh_port_types_internal(&mut config.subgraph);
+            sync_function_subgraph_signature(&mut config.subgraph, &config.inputs, &config.outputs);
+            sync_function_node_definition(node, &config);
+            continue;
+        }
+
+        if node.node_type != "brain" {
+            continue;
+        }
+
+        let Some(value) = node.inline_values.get("tools_config").cloned() else {
+            continue;
+        };
+        let Ok(mut tools) = serde_json::from_value::<Vec<BrainToolDefinition>>(value) else {
+            continue;
+        };
+
+        for (index, tool) in tools.iter_mut().enumerate() {
+            tool.ensure_defaults(index + 1);
+            refresh_port_types_internal(&mut tool.subgraph);
+            let input_signature = tool.input_signature();
+            sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &tool.outputs);
+        }
+
+        if let Ok(value) = serde_json::to_value(&tools) {
+            node.inline_values.insert("tools_config".to_string(), value);
+        }
+    }
+}
+
+fn validate_embedded_subgraphs(graph: &NodeGraphDefinition) -> Vec<ValidationIssue> {
+    let mut issues = Vec::new();
+
+    for node in &graph.nodes {
+        if node.node_type == "function" {
+            match embedded_function_config_from_node(node) {
+                Some(config) => {
+                    let prefix = format!("函数节点 \"{}\" 的子图", node.name);
+                    issues.extend(
+                        validate_graph_definition(&config.subgraph)
+                            .into_iter()
+                            .map(|issue| prefixed_issue(prefix.clone(), issue)),
+                    );
+                }
+                None => {}
+            }
+        }
+
+        if node.node_type != "brain" {
+            continue;
+        }
+
+        if let Some(value) = node.inline_values.get("tools_config") {
+            match serde_json::from_value::<Vec<BrainToolDefinition>>(value.clone()) {
+                Ok(tools) => {
+                    for tool in tools {
+                        let prefix =
+                            format!("Brain 节点 \"{}\" 的 Tool \"{}\" 子图", node.name, tool.name);
+                        issues.extend(
+                            validate_graph_definition(&tool.subgraph)
+                                .into_iter()
+                                .map(|issue| prefixed_issue(prefix.clone(), issue)),
+                        );
+                    }
+                }
+                Err(error) => issues.push(ValidationIssue::error(format!(
+                    "Brain 节点 \"{}\" 的 tools_config 无法解析: {}",
+                    node.name, error
+                ))),
+            }
+        }
+    }
+
+    issues
+}
+
+fn auto_fix_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
+    for node in &mut graph.nodes {
+        if node.node_type == "function" {
+            let mut config = embedded_function_config_from_node(node)
+                .unwrap_or_else(|| default_embedded_function_config(node.name.clone()));
+            auto_fix_graph_definition(&mut config.subgraph);
+            sync_function_subgraph_signature(&mut config.subgraph, &config.inputs, &config.outputs);
+            sync_function_node_definition(node, &config);
+            continue;
+        }
+
+        if node.node_type != "brain" {
+            continue;
+        }
+
+        let Some(value) = node.inline_values.get("tools_config").cloned() else {
+            continue;
+        };
+        let Ok(mut tools) = serde_json::from_value::<Vec<BrainToolDefinition>>(value) else {
+            continue;
+        };
+
+        for (index, tool) in tools.iter_mut().enumerate() {
+            tool.ensure_defaults(index + 1);
+            auto_fix_graph_definition(&mut tool.subgraph);
+            let input_signature = tool.input_signature();
+            sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &tool.outputs);
+        }
+
+        if let Ok(value) = serde_json::to_value(&tools) {
+            node.inline_values.insert("tools_config".to_string(), value);
+        }
+    }
+}
+
+fn prefixed_issue(prefix: String, issue: ValidationIssue) -> ValidationIssue {
+    ValidationIssue {
+        severity: issue.severity,
+        message: format!("{}: {}", prefix, issue.message),
+    }
 }
 
 pub fn save_graph_definition_to_json(
@@ -1053,6 +1260,25 @@ mod tests {
         }
     }
 
+    fn preview_string_node(id: &str) -> NodeDefinition {
+        NodeDefinition {
+            id: id.to_string(),
+            name: "预览字符串".to_string(),
+            description: Some("展示输入字符串".to_string()),
+            node_type: "preview_string".to_string(),
+            input_ports: vec![Port::new("text", DataType::String)],
+            output_ports: Vec::new(),
+            dynamic_input_ports: false,
+            dynamic_output_ports: false,
+            position: None,
+            size: None,
+            inline_values: HashMap::new(),
+            port_bindings: HashMap::new(),
+            has_error: false,
+            has_cycle: false,
+        }
+    }
+
     #[test]
     fn validate_brain_dynamic_outputs_without_false_issues() {
         ensure_registry_initialized();
@@ -1080,10 +1306,11 @@ mod tests {
     }
 
     #[test]
-    fn auto_fix_rebuilds_brain_dynamic_outputs_from_inline_config() {
+    fn auto_fix_replaces_legacy_brain_tool_outputs_with_static_assistant_output() {
         ensure_registry_initialized();
         let mut graph = NodeGraphDefinition {
             nodes: vec![brain_node(vec![
+                Port::new("assistant_message", DataType::OpenAIMessage),
                 Port::new("has_tool_call", DataType::Boolean),
                 Port::new("search", DataType::Json),
             ])],
@@ -1096,20 +1323,32 @@ mod tests {
         auto_fix_graph_definition(&mut graph);
 
         let fixed = &graph.nodes[0];
-        assert!(fixed
+        let output_names = fixed
             .output_ports
             .iter()
-            .any(|p| p.name == "assistant_message"));
-        assert!(fixed.output_ports.iter().any(|p| p.name == "has_tool_call"));
-        assert!(fixed.output_ports.iter().any(|p| p.name == "search"));
+            .map(|port| port.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(output_names, vec!["assistant_message"]);
+        assert!(!fixed.dynamic_output_ports);
     }
 
     #[test]
-    fn refresh_port_types_rebuilds_brain_dynamic_outputs_from_inline_config() {
+    fn refresh_port_types_prunes_legacy_brain_tool_outputs_and_edges() {
         ensure_registry_initialized();
         let mut graph = NodeGraphDefinition {
-            nodes: vec![brain_node(vec![Port::new("search", DataType::Json)])],
-            edges: vec![],
+            nodes: vec![
+                brain_node(vec![
+                    Port::new("assistant_message", DataType::OpenAIMessage),
+                    Port::new("search", DataType::Json),
+                ]),
+                preview_string_node("node_2"),
+            ],
+            edges: vec![EdgeDefinition {
+                from_node_id: "node_1".to_string(),
+                from_port: "search".to_string(),
+                to_node_id: "node_2".to_string(),
+                to_port: "text".to_string(),
+            }],
             hyperparameter_groups: vec![],
             hyperparameters: vec![],
             execution_results: HashMap::new(),
@@ -1118,12 +1357,13 @@ mod tests {
         refresh_port_types(&mut graph);
 
         let fixed = &graph.nodes[0];
-        assert!(fixed
+        let output_names = fixed
             .output_ports
             .iter()
-            .any(|p| p.name == "assistant_message"));
-        assert!(fixed.output_ports.iter().any(|p| p.name == "has_tool_call"));
-        assert!(fixed.output_ports.iter().any(|p| p.name == "search"));
+            .map(|port| port.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(output_names, vec!["assistant_message"]);
+        assert!(graph.edges.is_empty());
     }
 
     #[test]

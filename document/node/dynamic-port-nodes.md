@@ -10,7 +10,8 @@ A dynamic-port node is one whose input or output port list is determined by its 
 |----------|-----------|
 | Template string with `${variable}` placeholders | Dynamic **inputs** (one per variable) |
 | JSON field extraction with user-configured fields | Dynamic **outputs** (one per field) |
-| LLM brain node with user-configured tools | Dynamic **outputs** (one per tool) |
+| Private `function` node signature | Dynamic **inputs and outputs** |
+| `function_inputs` / `function_outputs` boundary nodes | Dynamic side depends on signature |
 
 The pattern: the user configures something in the node's inline editor → that config is stored in an `inline_values` key → the node parses it and generates ports at runtime.
 
@@ -147,7 +148,23 @@ After this, call `refresh_active_tab_ui()` to re-render.
 |------|------------------|------------|--------|
 | `FormatStringNode` | inputs | `template` (String) | `src/node/util/format_string.rs` |
 | `JsonExtractNode` | outputs | `fields_config` (Json) | `src/node/util/json_extract.rs` |
-| `BrainNode` | outputs | `tools_config` (Json) | `src/llm/brain_node.rs` |
+| `FunctionNode` | inputs + outputs | `function_config` (Json) | `src/node/util/function.rs` |
+| `FunctionInputsNode` | outputs | `signature` (Json) | `src/node/util/function_inputs.rs` |
+| `FunctionOutputsNode` | inputs | `signature` (Json) | `src/node/util/function_outputs.rs` |
+
+---
+
+## Brain note
+
+`BrainNode` used to be the canonical example of a dynamic-output node. That is no longer true.
+
+Today:
+
+- `brain` has a static `assistant_message` output
+- tool definitions still live in `tools_config`
+- each tool owns an embedded subgraph instead of creating external dynamic output ports
+
+See [function-subgraphs.md](./function-subgraphs.md) for the full Brain/tool-subgraph design.
 
 ---
 

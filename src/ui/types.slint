@@ -18,10 +18,17 @@ export struct ToolParamVm {
     description: string,
 }
 
+export struct FunctionPortVm {
+    name: string,
+    data_type: string,
+}
+
 export struct ToolDefinitionVm {
+    id: string,
     name: string,
     description: string,
     params: [ToolParamVm],
+    outputs: [FunctionPortVm],
 }
 
 export struct JsonExtractFieldVm {

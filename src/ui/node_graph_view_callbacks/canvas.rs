@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
+use crate::node::function_graph::is_function_boundary_node;
 use crate::node::graph_io::{ensure_positions, GraphPosition};
 use crate::ui::graph_window::NodeGraphWindow;
 use crate::ui::node_graph_view::{
@@ -503,26 +504,67 @@ pub(crate) fn bind_canvas_callbacks(
             let mut tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
+                let mut changed = false;
                 if !tab.selection.selected_node_ids.is_empty() {
-                    tab.graph
-                        .nodes
-                        .retain(|n| !tab.selection.selected_node_ids.contains(&n.id));
-                    tab.graph.edges.retain(|e| {
-                        !tab.selection.selected_node_ids.contains(&e.from_node_id)
-                            && !tab.selection.selected_node_ids.contains(&e.to_node_id)
-                    });
+                    let deletable_node_ids = tab
+                        .selection
+                        .selected_node_ids
+                        .iter()
+                        .filter(|node_id| {
+                            tab.graph
+                                .nodes
+                                .iter()
+                                .find(|node| &node.id == *node_id)
+                                .map(|node| !is_function_boundary_node(&node.node_type))
+                                .unwrap_or(true)
+                        })
+                        .cloned()
+                        .collect::<Vec<_>>();
+
+                    if !deletable_node_ids.is_empty() {
+                        let node_count_before = tab.graph.nodes.len();
+                        let edge_count_before = tab.graph.edges.len();
+                        tab.graph
+                            .nodes
+                            .retain(|n| !deletable_node_ids.contains(&n.id));
+                        tab.graph.edges.retain(|e| {
+                            !deletable_node_ids.contains(&e.from_node_id)
+                                && !deletable_node_ids.contains(&e.to_node_id)
+                        });
+                        changed |= tab.graph.nodes.len() != node_count_before
+                            || tab.graph.edges.len() != edge_count_before;
+                    }
                 } else if !tab.selection.selected_edge_from_node.is_empty() {
+                    let edge_count_before = tab.graph.edges.len();
                     tab.graph.edges.retain(|e| {
                         !(e.from_node_id == tab.selection.selected_edge_from_node
                             && e.from_port == tab.selection.selected_edge_from_port
                             && e.to_node_id == tab.selection.selected_edge_to_node
                             && e.to_port == tab.selection.selected_edge_to_port)
                     });
+                    changed |= tab.graph.edges.len() != edge_count_before;
+                }
+
+                if changed {
+                    tab.is_dirty = true;
+                }
+
+                if !tab.selection.selected_node_ids.is_empty()
+                    || !tab.selection.selected_edge_from_node.is_empty()
+                {
+                    let existing_node_ids = tab
+                        .graph
+                        .nodes
+                        .iter()
+                        .map(|node| node.id.clone())
+                        .collect::<Vec<_>>();
+                    tab.graph
+                        .execution_results
+                        .retain(|node_id, _| existing_node_ids.contains(node_id));
                 }
 
                 tab.selection.clear();
                 tab.selection.apply_to_ui(&ui);
-                tab.is_dirty = true;
 
                 apply_graph_to_ui(
                     &ui,
@@ -532,7 +574,9 @@ pub(crate) fn bind_canvas_callbacks(
                     &tab.inline_inputs,
                     &tab.hyperparameter_values,
                 );
-                update_tabs_ui(&ui, &tabs_guard, active_index);
+                if changed {
+                    update_tabs_ui(&ui, &tabs_guard, active_index);
+                }
             }
         }
     });

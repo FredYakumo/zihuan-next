@@ -285,14 +285,44 @@ Some node types require custom dialog editors that modify `inline_values` and re
 - Rebuilds `output_ports` in `NodeDefinition` from the new field definitions
 - Marks `dynamic_output_ports = true` on the node definition
 
+### FunctionNode editor (`function_editor.rs`)
+
+- Dialog edits function name, description, input signature, and output signature
+- On save: serializes `function_config`, updates visible ports, and syncs boundary nodes inside the embedded subgraph
+- The node also exposes an "enter subgraph" action that pushes a child page onto the current tab's page stack
+
 ### BrainNode tool editor (`tool_editor.rs`)
 
-- Dialog with a table of tool definitions (name, description, parameters)
-- On save: serializes tool config to JSON, stores in `inline_values["tools_config"]`
-- Rebuilds `output_ports` in `NodeDefinition` — one port per tool
-- Marks `dynamic_output_ports = true` on the node definition
+- Dialog with a table of tool definitions (id, name, description, parameters, outputs)
+- On save: serializes tool config to JSON and stores it in `inline_values["tools_config"]`
+- `brain` output ports stay static; only `assistant_message` remains visible
+- Each tool row can open its own embedded subgraph editor page
 
-The key invariant: whatever the editor saves into `inline_values` must produce exactly the same port list as the node's `apply_inline_config()` + `input_ports()` / `output_ports()` methods would compute at runtime.
+The key invariant: whatever the editor saves into `inline_values` must produce exactly the same visible port list as the node's `apply_inline_config()` + `input_ports()` / `output_ports()` methods would compute at runtime.
+
+---
+
+## Subgraph page navigation
+
+`GraphTabState` now manages a root page plus a stack of child subgraph pages.
+
+Each page stores:
+
+- the page-local `NodeGraphDefinition`
+- selection state
+- inline-input cache
+- canvas pan/zoom state
+
+This allows:
+
+- entering a function node's private subgraph
+- entering a Brain tool's private subgraph
+- returning one level up or jumping back to `主图`
+- preserving per-page pan/zoom and selection
+
+Before save, save-as, open, tab switch, or leaving a subgraph page, Rust commits the current page stack back into the root graph's embedded configs.
+
+See [../node/function-subgraphs.md](../node/function-subgraphs.md) for the full subgraph model.
 
 ---
 

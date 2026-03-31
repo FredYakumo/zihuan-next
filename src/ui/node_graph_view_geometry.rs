@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use crate::node::graph_io::{
     find_cycle_edge_keys, EdgeDefinition, NodeDefinition, NodeGraphDefinition,
 };
+use crate::node::function_graph::is_hidden_function_port;
 use crate::node::DataType;
 use crate::ui::graph_window::{EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm};
 use crate::ui::selection::SelectionState;
@@ -41,7 +42,12 @@ pub(crate) fn snap_to_grid_center(value: f32) -> f32 {
 
 pub(crate) fn node_dimensions(node: &NodeDefinition) -> (f32, f32) {
     let min_width = GRID_SIZE * NODE_WIDTH_CELLS;
-    let port_rows = node.input_ports.len().max(node.output_ports.len()) as f32;
+    let visible_input_count = node
+        .input_ports
+        .iter()
+        .filter(|port| !is_hidden_function_port(&node.node_type, &port.name))
+        .count();
+    let port_rows = visible_input_count.max(node.output_ports.len()) as f32;
     let default_min_height =
         GRID_SIZE * (NODE_MIN_ROWS.max(NODE_HEADER_ROWS + port_rows) + NODE_PADDING_BOTTOM);
     let min_height = if is_list_data_node(node) {
@@ -76,9 +82,12 @@ pub(crate) fn get_port_center_for_node(
     let position = node.position.as_ref()?;
 
     let ports = if is_input {
-        &node.input_ports
+        node.input_ports
+            .iter()
+            .filter(|port| !is_hidden_function_port(&node.node_type, &port.name))
+            .collect::<Vec<_>>()
     } else {
-        &node.output_ports
+        node.output_ports.iter().collect::<Vec<_>>()
     };
     let index = ports.iter().position(|p| p.name == port_name)? as f32;
     let radius = GRID_SIZE / 2.0;

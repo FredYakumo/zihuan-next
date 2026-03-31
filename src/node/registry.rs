@@ -172,8 +172,9 @@ pub fn init_node_registry() -> Result<()> {
     use crate::node::util::{
         AndThenNode, ArrayGetNode, AtQQTargetMessageNode, BooleanBranchNode, BooleanNotNode,
         ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode,
-        JoinStringNode, JsonExtractNode, JsonParserNode, LoopBreakNode, LoopNode,
-        LoopStateUpdateNode, MessageContentNode, MessageListDataNode,
+        FunctionInputsNode, FunctionNode, FunctionOutputsNode, JoinStringNode, JsonExtractNode,
+        JsonParserNode, LoopBreakNode, LoopNode, LoopStateUpdateNode, MessageContentNode,
+        MessageListDataNode,
         OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode,
         OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheProviderNode,
         OpenAIMessageSessionCacheSetNode, PreviewMessageListNode, PreviewStringNode,
@@ -198,6 +199,30 @@ pub fn init_node_registry() -> Result<()> {
         "工具",
         "通过 ${变量名} 模板语法将输入变量格式化为字符串",
         FormatStringNode
+    );
+
+    register_node!(
+        "function",
+        "函数",
+        "工具",
+        "执行节点私有函数子图，输入输出端口由函数签名动态决定",
+        FunctionNode
+    );
+
+    register_node!(
+        "function_inputs",
+        "函数输入",
+        "内部",
+        "函数子图内部边界节点，将调用参数展开为动态输出端口",
+        FunctionInputsNode
+    );
+
+    register_node!(
+        "function_outputs",
+        "函数输出",
+        "内部",
+        "函数子图内部边界节点，汇总子图结果作为函数返回值",
+        FunctionOutputsNode
     );
 
     register_node!(

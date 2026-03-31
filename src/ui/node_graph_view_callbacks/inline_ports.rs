@@ -20,7 +20,7 @@ pub(crate) fn bind_inline_port_callbacks(
             let mut tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
-                tab.inline_inputs
+                tab.inline_inputs_mut()
                     .insert(key, InlinePortValue::Text(value.to_string()));
                 tab.is_dirty = true;
                 if let Some(ui) = ui_handle.upgrade() {
@@ -39,7 +39,7 @@ pub(crate) fn bind_inline_port_callbacks(
             let mut tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
-                tab.inline_inputs.insert(key, InlinePortValue::Bool(value));
+                tab.inline_inputs_mut().insert(key, InlinePortValue::Bool(value));
                 tab.is_dirty = true;
                 if let Some(ui) = ui_handle.upgrade() {
                     update_tabs_ui(&ui, &tabs_guard, active_index);
