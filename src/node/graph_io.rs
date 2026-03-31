@@ -208,6 +208,7 @@ fn refresh_port_types_internal(graph: &mut NodeGraphDefinition) {
     }
 
     rebuild_dynamic_ports_from_inline_values(graph);
+    fix_function_node_input_types_from_edges(graph);
     refresh_embedded_subgraphs(graph);
     prune_invalid_edges(graph);
 }
@@ -253,6 +254,75 @@ fn rebuild_dynamic_ports_from_inline_values(graph: &mut NodeGraphDefinition) {
         }
         if node.dynamic_output_ports {
             node.output_ports = runtime_node.output_ports();
+        }
+    }
+}
+
+/// 根据外层图中连接到 function 节点输入端口的边，修正 function_config.inputs 中
+/// 保存了错误类型的条目（如旧版转换时将 BotAdapterRef/SessionStateRef 写成了 String）。
+/// 这是对旧 JSON 的加载迁移：以边另一端的源端口（已经过注册表刷新）为准，覆盖config里的错误类型。
+fn fix_function_node_input_types_from_edges(graph: &mut NodeGraphDefinition) {
+    use crate::node::function_graph::{
+        embedded_function_config_from_node, sync_function_node_definition,
+    };
+
+    // 构建 node_id → output_ports 映射（端口类型已经过注册表刷新）
+    let output_port_map: HashMap<String, Vec<Port>> = graph
+        .nodes
+        .iter()
+        .map(|n| (n.id.clone(), n.output_ports.clone()))
+        .collect();
+
+    // 收集每个 function 节点应被修正的 (port_name → canonical DataType)
+    let mut corrections: HashMap<String, Vec<(String, DataType)>> = HashMap::new();
+    for edge in &graph.edges {
+        let Some(to_node) = graph.nodes.iter().find(|n| n.id == edge.to_node_id) else {
+            continue;
+        };
+        if to_node.node_type != "function" {
+            continue;
+        }
+        let Some(from_ports) = output_port_map.get(&edge.from_node_id) else {
+            continue;
+        };
+        let Some(from_port) = from_ports.iter().find(|p| p.name == edge.from_port) else {
+            continue;
+        };
+        corrections
+            .entry(edge.to_node_id.clone())
+            .or_default()
+            .push((edge.to_port.clone(), from_port.data_type.clone()));
+    }
+
+    if corrections.is_empty() {
+        return;
+    }
+
+    for node in &mut graph.nodes {
+        if node.node_type != "function" {
+            continue;
+        }
+        let Some(fixes) = corrections.get(&node.id) else {
+            continue;
+        };
+        let Some(mut config) = embedded_function_config_from_node(node) else {
+            continue;
+        };
+        let mut changed = false;
+        for (port_name, correct_type) in fixes {
+            if let Some(port_def) = config.inputs.iter_mut().find(|p| &p.name == port_name) {
+                if &port_def.data_type != correct_type {
+                    log::debug!(
+                        "[graph_io] 迁移 function 节点 '{}' 输入端口 '{}' 类型: {} → {}",
+                        node.name, port_name, port_def.data_type, correct_type
+                    );
+                    port_def.data_type = correct_type.clone();
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            sync_function_node_definition(node, &config);
         }
     }
 }
