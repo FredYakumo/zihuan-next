@@ -8,7 +8,8 @@ use crate::node::graph_io::NodeGraphDefinition;
 use crate::ui::graph_window::{NodeGraphWindow, NodeTypeVm};
 use crate::ui::node_graph_view::{refresh_active_tab_ui, tab_display_title, GraphTabState};
 use crate::ui::node_graph_view_clipboard::{
-    copy_selected_nodes_to_clipboard, paste_nodes_from_clipboard, NodeClipboard,
+    convert_selection_to_function_subgraph, copy_selected_nodes_to_clipboard,
+    paste_nodes_from_clipboard, NodeClipboard,
 };
 use crate::ui::node_graph_view_geometry::{node_dimensions, snap_to_grid};
 use crate::ui::node_graph_view_inline::{add_node_to_graph, materialize_graph_for_execution};
@@ -650,6 +651,42 @@ pub(crate) fn bind_window_callbacks(
         if let Some(ui) = ui_handle.upgrade() {
             ui.set_show_graph_context_menu(false);
             ui.set_graph_context_menu_can_paste(can_paste);
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    ui.on_convert_selection_to_function_subgraph(move || {
+        let Some(ui) = ui_handle.upgrade() else {
+            return;
+        };
+
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        let Some(tab) = tabs_guard.get_mut(active_index) else {
+            ui.set_show_graph_context_menu(false);
+            return;
+        };
+
+        match convert_selection_to_function_subgraph(
+            &tab.graph,
+            &tab.inline_inputs,
+            &tab.selection.selected_node_ids,
+        ) {
+            Ok(result) => {
+                tab.graph = result.graph;
+                tab.inline_inputs = result.inline_inputs;
+                tab.selection.clear();
+                tab.selection
+                    .select_node(result.function_node_id.clone(), false);
+                tab.is_dirty = true;
+                refresh_active_tab_ui(&ui, &tabs_guard, active_index);
+            }
+            Err(message) => {
+                ui.set_show_graph_context_menu(false);
+                ui.invoke_show_error(message.into());
+            }
         }
     });
 

@@ -112,6 +112,7 @@ export component NodeGraphWindow inherits Window {
     callback canvas_right_clicked(float, float, float, float);
     callback delete_selected();
     callback copy_selected_nodes();
+    callback convert_selection_to_function_subgraph();
     callback paste_nodes_at_context();
     callback context_menu_new_node();
     callback auto_layout_graph();
@@ -209,6 +210,7 @@ export component NodeGraphWindow inherits Window {
     in property <string> function_editor_description: "";
     in property <[FunctionPortVm]> function_editor_inputs;
     in property <[FunctionPortVm]> function_editor_outputs;
+    in property <[string]> function_editor_data_types;
     callback open_function_editor(string);
     callback close_function_editor();
     callback save_function_editor();
@@ -397,29 +399,42 @@ export component NodeGraphWindow inherits Window {
                 spacing: 10px;
                 alignment: start;
 
-                CjkButton {
-                    text: "返回";
+                // "返回" clickable text
+                ta-back := TouchArea {
+                    height: 24px;
+                    width: back-label.preferred-width + 4px;
+                    mouse-cursor: pointer;
                     clicked => { root.navigate_subgraph_back(); }
+
+                    back-label := CjkText {
+                        text: "返回";
+                        color: ta-back.has-hover ? AppTheme.primary : AppTheme.text-secondary;
+                        vertical-alignment: center;
+                        font-size: 13px;
+                        font-weight: 600;
+                    }
                 }
 
-                Rectangle {
+                CjkText {
+                    text: "·";
+                    color: AppTheme.text-secondary;
+                    vertical-alignment: center;
+                    font-size: 13px;
+                }
+
+                // "主图" clickable breadcrumb link
+                ta-root := TouchArea {
                     height: 24px;
-                    border-radius: 12px;
-                    background: AppTheme.primary-muted;
+                    width: root-label.preferred-width + 4px;
+                    mouse-cursor: pointer;
+                    clicked => { root.navigate_subgraph_root(); }
 
-                    TouchArea {
-                        clicked => { root.navigate_subgraph_root(); }
-                    }
-
-                    CjkText {
+                    root-label := CjkText {
                         text: "主图";
-                        color: AppTheme.text-primary;
+                        color: ta-root.has-hover ? AppTheme.primary : AppTheme.text-secondary;
                         vertical-alignment: center;
-                        horizontal-alignment: center;
-                        width: 72px;
-                        height: 100%;
-                        font-size: 12px;
-                        font-weight: 700;
+                        font-size: 13px;
+                        font-weight: 600;
                     }
                 }
 
@@ -427,23 +442,15 @@ export component NodeGraphWindow inherits Window {
                     text: "/";
                     color: AppTheme.text-secondary;
                     vertical-alignment: center;
+                    font-size: 13px;
                 }
 
-                Rectangle {
-                    height: 24px;
-                    border-radius: 12px;
-                    background: AppTheme.surface-overlay;
-
-                    CjkText {
-                        text: root.subgraph_current_label;
-                        color: AppTheme.text-primary;
-                        vertical-alignment: center;
-                        horizontal-alignment: center;
-                        width: max(120px, self.preferred-width);
-                        height: 100%;
-                        font-size: 12px;
-                        font-weight: 700;
-                    }
+                CjkText {
+                    text: root.subgraph_current_label;
+                    color: AppTheme.text-primary;
+                    vertical-alignment: center;
+                    font-size: 13px;
+                    font-weight: 700;
                 }
             }
 
@@ -732,7 +739,7 @@ export component NodeGraphWindow inherits Window {
                     property <int> item-count:
                         root.graph_context_menu_mode == "canvas"
                             ? (root.graph_context_menu_can_paste ? 2 : 1)
-                            : (root.graph_context_menu_mode == "selection" ? 2 : 0);
+                            : (root.graph_context_menu_mode == "selection" ? 3 : 0);
                     x: max(4px, min(root.graph_context_menu_x * 1px, parent.width - self.width - 4px));
                     y: max(4px, min(root.graph_context_menu_y * 1px, parent.height - self.height - 4px));
                     width: 180px;
@@ -765,6 +772,12 @@ export component NodeGraphWindow inherits Window {
                             title: "复制节点";
                             shortcut: "";
                             clicked => { root.copy_selected_nodes(); }
+                        }
+
+                        if root.graph_context_menu_mode == "selection": MenuItemRow {
+                            title: "转换为函数子图";
+                            shortcut: "";
+                            clicked => { root.convert_selection_to_function_subgraph(); }
                         }
 
                         if root.graph_context_menu_mode == "selection": MenuItemRow {
@@ -956,6 +969,7 @@ export component NodeGraphWindow inherits Window {
         function_description: root.function_editor_description;
         inputs: root.function_editor_inputs;
         outputs: root.function_editor_outputs;
+        data_types: root.function_editor_data_types;
         set_function_name(value) => { root.function_editor_set_name(value); }
         set_function_description(value) => { root.function_editor_set_description(value); }
         add_input() => { root.function_editor_add_input(); }
