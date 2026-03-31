@@ -54,13 +54,13 @@
         "bot_server_url": "ws://localhost:3001"
       },
       "port_bindings": {
-        "qq_id": {
-          "kind": "hyperparameter",
-          "name": "BOT_ID"
-        },
         "bot_server_token": {
           "kind": "hyperparameter",
           "name": "BOT_SERVER_TOKEN"
+        },
+        "qq_id": {
+          "kind": "hyperparameter",
+          "name": "BOT_ID"
         }
       },
       "has_error": false,
@@ -197,8 +197,8 @@
       },
       "inline_values": {
         "mysql_port": "3306",
-        "mysql_host": "127.0.0.1",
-        "mysql_database": "zihuan_aibot"
+        "mysql_database": "zihuan_aibot",
+        "mysql_host": "127.0.0.1"
       },
       "port_bindings": {
         "mysql_password": {
@@ -314,8 +314,8 @@
         "height": 140.0
       },
       "inline_values": {
-        "bucket_name": "message_id_cache",
-        "ttl_secs": "600"
+        "ttl_secs": "600",
+        "bucket_name": "message_id_cache"
       },
       "port_bindings": {},
       "has_error": false,
@@ -378,13 +378,13 @@
           "kind": "hyperparameter",
           "name": "LLM_API_ENDPOINT"
         },
-        "model_name": {
-          "kind": "hyperparameter",
-          "name": "LLM_MODEL_NAME"
-        },
         "api_key": {
           "kind": "hyperparameter",
           "name": "LLM_API_KEY"
+        },
+        "model_name": {
+          "kind": "hyperparameter",
+          "name": "LLM_MODEL_NAME"
         }
       },
       "has_error": false,
@@ -1731,30 +1731,36 @@
                 "input_ports": [
                   {
                     "data_type": "String",
+                    "description": "格式化模板字符串，使用 ${变量名} 语法引用输入变量",
+                    "name": "template",
+                    "required": false
+                  },
+                  {
+                    "data_type": "Any",
                     "description": "变量 角色名称",
                     "name": "角色名称",
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "Any",
                     "description": "变量 time",
                     "name": "time",
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "Any",
                     "description": "变量 群号",
                     "name": "群号",
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "Any",
                     "description": "变量 sender_id",
                     "name": "sender_id",
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "Any",
                     "description": "变量 格式",
                     "name": "格式",
                     "required": true
@@ -2544,24 +2550,30 @@
                 "input_ports": [
                   {
                     "data_type": "String",
+                    "description": "格式化模板字符串，使用 ${变量名} 语法引用输入变量",
+                    "name": "template",
+                    "required": false
+                  },
+                  {
+                    "data_type": "Any",
                     "description": "变量 角色名称",
                     "name": "角色名称",
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "Any",
                     "description": "变量 time",
                     "name": "time",
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "Any",
                     "description": "变量 sender_id",
                     "name": "sender_id",
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "Any",
                     "description": "变量 格式",
                     "name": "格式",
                     "required": true
