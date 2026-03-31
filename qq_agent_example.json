@@ -195,8 +195,8 @@
         "mysql_port": "3306"
       },
       "port_bindings": {
-        "mysql_user": "MYSQL_USER",
-        "mysql_password": "MYSQL_PASSWORD"
+        "mysql_password": "MYSQL_PASSWORD",
+        "mysql_user": "MYSQL_USER"
       },
       "has_error": false,
       "has_cycle": false
@@ -302,8 +302,8 @@
         "height": 140.0
       },
       "inline_values": {
-        "bucket_name": "message_id_cache",
-        "ttl_secs": "600"
+        "ttl_secs": "600",
+        "bucket_name": "message_id_cache"
       },
       "port_bindings": {},
       "has_error": false,
@@ -362,9 +362,9 @@
         "timeout_secs": "600"
       },
       "port_bindings": {
-        "model_name": "LLM_MODEL_NAME",
         "api_key": "LLM_API_KEY",
-        "api_endpoint": "LLM_API_ENDPOINT"
+        "api_endpoint": "LLM_API_ENDPOINT",
+        "model_name": "LLM_MODEL_NAME"
       },
       "has_error": false,
       "has_cycle": false
@@ -390,37 +390,6 @@
         "y": -1300.0
       },
       "size": null,
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_56",
-      "name": "Preview OpenAIMessage List",
-      "description": "Preview OpenAIMessage list inside the node card with scrollable message items",
-      "node_type": "preview_message_list",
-      "input_ports": [
-        {
-          "name": "messages",
-          "data_type": {
-            "Vec": "OpenAIMessage"
-          },
-          "description": "Vec<OpenAIMessage> to preview inside the node",
-          "required": false
-        }
-      ],
-      "output_ports": [],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 3920.0,
-        "y": -960.0
-      },
-      "size": {
-        "width": 440.0,
-        "height": 280.0
-      },
       "inline_values": {},
       "port_bindings": {},
       "has_error": false,
@@ -507,7 +476,7 @@
         },
         {
           "name": "qq_bot_adapter",
-          "data_type": "String",
+          "data_type": "BotAdapterRef",
           "description": "函数输入 'qq_bot_adapter'",
           "required": true
         },
@@ -519,19 +488,19 @@
         },
         {
           "name": "cache_ref",
-          "data_type": "String",
+          "data_type": "OpenAIMessageSessionCacheRef",
           "description": "函数输入 'cache_ref'",
           "required": true
         },
         {
           "name": "session_ref",
-          "data_type": "String",
+          "data_type": "SessionStateRef",
           "description": "函数输入 'session_ref'",
           "required": true
         },
         {
           "name": "llm_api_llm_model",
-          "data_type": "String",
+          "data_type": "LLModel",
           "description": "函数输入 'llm_api_llm_model'",
           "required": true
         }
@@ -553,7 +522,7 @@
               "name": "message_event"
             },
             {
-              "data_type": "String",
+              "data_type": "BotAdapterRef",
               "name": "qq_bot_adapter"
             },
             {
@@ -561,15 +530,15 @@
               "name": "time"
             },
             {
-              "data_type": "String",
+              "data_type": "OpenAIMessageSessionCacheRef",
               "name": "cache_ref"
             },
             {
-              "data_type": "String",
+              "data_type": "SessionStateRef",
               "name": "session_ref"
             },
             {
-              "data_type": "String",
+              "data_type": "LLModel",
               "name": "llm_api_llm_model"
             }
           ],
@@ -577,18 +546,6 @@
           "outputs": [],
           "subgraph": {
             "edges": [
-              {
-                "from_node_id": "node_4",
-                "from_port": "is_at_me",
-                "to_node_id": "node_18",
-                "to_port": "enabled"
-              },
-              {
-                "from_node_id": "node_4",
-                "from_port": "messages",
-                "to_node_id": "node_18",
-                "to_port": "input"
-              },
               {
                 "from_node_id": "node_10",
                 "from_port": "output",
@@ -614,22 +571,10 @@
                 "to_port": "vec1"
               },
               {
-                "from_node_id": "node_18",
-                "from_port": "output",
-                "to_node_id": "node_6",
-                "to_port": "vec2"
-              },
-              {
                 "from_node_id": "node_59",
                 "from_port": "messages",
                 "to_node_id": "node_8",
                 "to_port": "vec2"
-              },
-              {
-                "from_node_id": "node_57",
-                "from_port": "result",
-                "to_node_id": "node_39",
-                "to_port": "sender_id"
               },
               {
                 "from_node_id": "node_57",
@@ -786,6 +731,30 @@
                 "from_port": "llm_api_llm_model",
                 "to_node_id": "node_7",
                 "to_port": "llm_ref"
+              },
+              {
+                "from_node_id": "node_4",
+                "from_port": "is_at_me",
+                "to_node_id": "node_1",
+                "to_port": "enabled"
+              },
+              {
+                "from_node_id": "node_57",
+                "from_port": "result",
+                "to_node_id": "node_1",
+                "to_port": "input"
+              },
+              {
+                "from_node_id": "node_1",
+                "from_port": "output",
+                "to_node_id": "node_39",
+                "to_port": "sender_id"
+              },
+              {
+                "from_node_id": "node_4",
+                "from_port": "messages",
+                "to_node_id": "node_6",
+                "to_port": "vec2"
               }
             ],
             "hyperparameter_groups": [],
@@ -855,45 +824,6 @@
                 "position": {
                   "x": 220.0,
                   "y": 340.0
-                },
-                "size": null
-              },
-              {
-                "description": "Forward input only when enabled is true",
-                "dynamic_input_ports": false,
-                "dynamic_output_ports": false,
-                "has_cycle": false,
-                "has_error": false,
-                "id": "node_18",
-                "inline_values": {},
-                "input_ports": [
-                  {
-                    "data_type": "Boolean",
-                    "description": "Whether the switch is open",
-                    "name": "enabled",
-                    "required": true
-                  },
-                  {
-                    "data_type": "Any",
-                    "description": "Input value to forward when enabled",
-                    "name": "input",
-                    "required": true
-                  }
-                ],
-                "name": "开关器",
-                "node_type": "switch_gate",
-                "output_ports": [
-                  {
-                    "data_type": "Any",
-                    "description": "Forwarded output value",
-                    "name": "output",
-                    "required": true
-                  }
-                ],
-                "port_bindings": {},
-                "position": {
-                  "x": 1300.0,
-                  "y": 320.0
                 },
                 "size": null
               },
@@ -1371,8 +1301,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 700.0,
-                  "y": 540.0
+                  "x": 720.0,
+                  "y": 500.0
                 },
                 "size": null
               },
@@ -1936,7 +1866,7 @@
                       "name": "message_event"
                     },
                     {
-                      "data_type": "String",
+                      "data_type": "BotAdapterRef",
                       "name": "qq_bot_adapter"
                     },
                     {
@@ -1944,15 +1874,15 @@
                       "name": "time"
                     },
                     {
-                      "data_type": "String",
+                      "data_type": "OpenAIMessageSessionCacheRef",
                       "name": "cache_ref"
                     },
                     {
-                      "data_type": "String",
+                      "data_type": "SessionStateRef",
                       "name": "session_ref"
                     },
                     {
-                      "data_type": "String",
+                      "data_type": "LLModel",
                       "name": "llm_api_llm_model"
                     }
                   ]
@@ -1981,7 +1911,7 @@
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "BotAdapterRef",
                     "description": "函数输入 'qq_bot_adapter'",
                     "name": "qq_bot_adapter",
                     "required": true
@@ -1993,19 +1923,19 @@
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "OpenAIMessageSessionCacheRef",
                     "description": "函数输入 'cache_ref'",
                     "name": "cache_ref",
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "SessionStateRef",
                     "description": "函数输入 'session_ref'",
                     "name": "session_ref",
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "LLModel",
                     "description": "函数输入 'llm_api_llm_model'",
                     "name": "llm_api_llm_model",
                     "required": true
@@ -2051,13 +1981,52 @@
                   "height": 120.0,
                   "width": 220.0
                 }
+              },
+              {
+                "description": "Forward input only when enabled is true",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_1",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "Boolean",
+                    "description": "Whether the switch is open",
+                    "name": "enabled",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "Input value to forward when enabled",
+                    "name": "input",
+                    "required": true
+                  }
+                ],
+                "name": "开关器",
+                "node_type": "switch_gate",
+                "output_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "Forwarded output value",
+                    "name": "output",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 480.0,
+                  "y": 480.0
+                },
+                "size": null
               }
             ]
           }
         }
       },
       "port_bindings": {},
-      "has_error": true,
+      "has_error": false,
       "has_cycle": false
     },
     {
@@ -2074,7 +2043,7 @@
         },
         {
           "name": "qq_bot_adapter",
-          "data_type": "String",
+          "data_type": "BotAdapterRef",
           "description": "函数输入 'qq_bot_adapter'",
           "required": true
         },
@@ -2086,19 +2055,19 @@
         },
         {
           "name": "cache_ref",
-          "data_type": "String",
+          "data_type": "OpenAIMessageSessionCacheRef",
           "description": "函数输入 'cache_ref'",
           "required": true
         },
         {
           "name": "session_ref",
-          "data_type": "String",
+          "data_type": "SessionStateRef",
           "description": "函数输入 'session_ref'",
           "required": true
         },
         {
           "name": "llm_api_llm_model",
-          "data_type": "String",
+          "data_type": "LLModel",
           "description": "函数输入 'llm_api_llm_model'",
           "required": true
         }
@@ -2120,7 +2089,7 @@
               "name": "message_event"
             },
             {
-              "data_type": "String",
+              "data_type": "BotAdapterRef",
               "name": "qq_bot_adapter"
             },
             {
@@ -2128,15 +2097,15 @@
               "name": "time"
             },
             {
-              "data_type": "String",
+              "data_type": "OpenAIMessageSessionCacheRef",
               "name": "cache_ref"
             },
             {
-              "data_type": "String",
+              "data_type": "SessionStateRef",
               "name": "session_ref"
             },
             {
-              "data_type": "String",
+              "data_type": "LLModel",
               "name": "llm_api_llm_model"
             }
           ],
@@ -3501,7 +3470,7 @@
                       "name": "message_event"
                     },
                     {
-                      "data_type": "String",
+                      "data_type": "BotAdapterRef",
                       "name": "qq_bot_adapter"
                     },
                     {
@@ -3509,15 +3478,15 @@
                       "name": "time"
                     },
                     {
-                      "data_type": "String",
+                      "data_type": "OpenAIMessageSessionCacheRef",
                       "name": "cache_ref"
                     },
                     {
-                      "data_type": "String",
+                      "data_type": "SessionStateRef",
                       "name": "session_ref"
                     },
                     {
-                      "data_type": "String",
+                      "data_type": "LLModel",
                       "name": "llm_api_llm_model"
                     }
                   ]
@@ -3546,7 +3515,7 @@
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "BotAdapterRef",
                     "description": "函数输入 'qq_bot_adapter'",
                     "name": "qq_bot_adapter",
                     "required": true
@@ -3558,19 +3527,19 @@
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "OpenAIMessageSessionCacheRef",
                     "description": "函数输入 'cache_ref'",
                     "name": "cache_ref",
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "SessionStateRef",
                     "description": "函数输入 'session_ref'",
                     "name": "session_ref",
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "LLModel",
                     "description": "函数输入 'llm_api_llm_model'",
                     "name": "llm_api_llm_model",
                     "required": true
