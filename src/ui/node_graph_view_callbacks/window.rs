@@ -11,9 +11,7 @@ use crate::ui::node_graph_view_clipboard::{
     copy_selected_nodes_to_clipboard, paste_nodes_from_clipboard, NodeClipboard,
 };
 use crate::ui::node_graph_view_geometry::{node_dimensions, snap_to_grid};
-use crate::ui::node_graph_view_inline::{
-    add_node_to_graph, apply_hyperparameter_bindings_to_graph, apply_inline_inputs_to_graph,
-};
+use crate::ui::node_graph_view_inline::{add_node_to_graph, materialize_graph_for_execution};
 use crate::ui::node_graph_view_vm::{apply_graph_to_ui, matches_node_type_search};
 use crate::ui::node_render::{inline_port_key, InlinePortValue};
 
@@ -356,8 +354,7 @@ pub(crate) fn bind_window_callbacks(
             }
         }
 
-        apply_hyperparameter_bindings_to_graph(&mut graph_def, &hyperparameter_values);
-        apply_inline_inputs_to_graph(&mut graph_def, &inline_inputs_map);
+        materialize_graph_for_execution(&mut graph_def, &inline_inputs_map, &hyperparameter_values);
         clear_graph_error_state(&mut graph_def);
 
         match crate::node::registry::build_node_graph_from_definition(&graph_def) {
