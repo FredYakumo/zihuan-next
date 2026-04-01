@@ -6,6 +6,7 @@ use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 
 use crate::node::graph_io::NodeGraphDefinition;
 use crate::ui::graph_window::{NodeGraphWindow, NodeTypeVm};
+use crate::ui::task_manager::{push_task_list_to_ui, TASK_MANAGER};
 use crate::ui::node_graph_view::{refresh_active_tab_ui, tab_display_title, GraphTabState};
 use crate::ui::node_graph_view_clipboard::{
     convert_selection_to_function_subgraph, copy_selected_nodes_to_clipboard,
@@ -304,7 +305,7 @@ pub(crate) fn bind_window_callbacks(
     let tabs_clone = Arc::clone(&tabs);
     let active_tab_clone = Arc::clone(&active_tab_index);
     ui.on_run_graph(move || {
-        let (tab_id, graph_def, inline_inputs_map, hyperparameter_values) = {
+        let (tab_id, tab_title, graph_def, inline_inputs_map, hyperparameter_values) = {
             let tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
             let tab = match tabs_guard.get(active_index) {
@@ -326,6 +327,7 @@ pub(crate) fn bind_window_callbacks(
 
             (
                 tab.id,
+                tab_display_title(tab),
                 tab.graph.clone(),
                 tab.inline_inputs.clone(),
                 tab.hyperparameter_values.clone(),
@@ -368,6 +370,12 @@ pub(crate) fn bind_window_callbacks(
         match crate::node::registry::build_node_graph_from_definition(&graph_def) {
             Ok(mut node_graph) => {
                 info!("开始执行节点图...");
+
+                // Register task in global task manager
+                let task_id = TASK_MANAGER.lock().unwrap().add_task(&tab_title);
+                if let Some(ui) = ui_handle.upgrade() {
+                    push_task_list_to_ui(&ui);
+                }
 
                 let has_event_producer = node_graph
                     .nodes
@@ -528,7 +536,9 @@ pub(crate) fn bind_window_callbacks(
                             tab.is_running = false;
                             tab.stop_flag = None;
 
+                            TASK_MANAGER.lock().unwrap().finish_task(task_id);
                             if let Some(ui) = ui_weak.upgrade() {
+                                push_task_list_to_ui(&ui);
                                 if active_tab_id == Some(tab_id) {
                                     ui.set_is_graph_running(false);
                                 }
@@ -595,6 +605,11 @@ pub(crate) fn bind_window_callbacks(
                                 );
                             }
                         }
+                    }
+                    // Mark task as finished (non-EventProducer synchronous path)
+                    TASK_MANAGER.lock().unwrap().finish_task(task_id);
+                    if let Some(ui) = ui_handle.upgrade() {
+                        push_task_list_to_ui(&ui);
                     }
                 }
             }
@@ -881,6 +896,15 @@ pub(crate) fn bind_window_callbacks(
     ui.on_hide_node_help(move || {
         if let Some(ui) = ui_handle.upgrade() {
             ui.set_show_node_help_dialog(false);
+        }
+    });
+
+    // Task manager toggle
+    let ui_handle = ui.as_weak();
+    ui.on_toggle_task_manager(move || {
+        if let Some(ui) = ui_handle.upgrade() {
+            let show = !ui.get_show_task_manager();
+            ui.set_show_task_manager(show);
         }
     });
 }

@@ -1,0 +1,203 @@
+import { AppTheme } from "../theme.slint";
+import { CjkText } from "buttons.slint";
+import { TaskEntryVm } from "../types.slint";
+
+// A single task row, with its own spinning indicator for running tasks.
+component TaskRow inherits Rectangle {
+    in property <TaskEntryVm> entry;
+
+    height: 56px;
+    background: AppTheme.surface-overlay;
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: AppTheme.border;
+
+    // Spinning angle for running indicator
+    property <float> spin-angle: 0;
+    spin-timer := Timer {
+        interval: 30ms;
+        running: entry.is_running;
+        triggered => {
+            spin-angle = mod(spin-angle + 6, 360);
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 8px;
+        alignment: start;
+
+        // Status indicator: spinning arc for running, static check for done
+        if entry.is_running: Rectangle {
+            width: 18px;
+            height: 18px;
+            y: (parent.height - self.height) / 2;
+
+            // Track circle
+            Rectangle {
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                border-width: 2px;
+                border-color: AppTheme.border;
+                background: transparent;
+            }
+
+            // Rotating colored dot orbiting the track
+            dot-container := Rectangle {
+                width: 18px;
+                height: 18px;
+                background: transparent;
+                transform-rotation: spin-angle * 1deg;
+
+                Rectangle {
+                    x: 6px;
+                    y: -3px;
+                    width: 6px;
+                    height: 6px;
+                    border-radius: 3px;
+                    background: AppTheme.primary;
+                }
+            }
+        }
+
+        if !entry.is_running: Rectangle {
+            width: 18px;
+            height: 18px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 9px;
+            background: AppTheme.primary-muted;
+
+            CjkText {
+                text: "✓";
+                color: AppTheme.text-on-primary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                font-size: 10px;
+                width: 100%;
+                height: 100%;
+            }
+        }
+
+        // Task info column
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            vertical-stretch: 1;
+
+            CjkText {
+                text: entry.graph_name;
+                color: AppTheme.text-primary;
+                font-size: 12px;
+                font-weight: 600;
+                overflow: elide;
+            }
+
+            CjkText {
+                text: "开始: " + entry.start_time + (entry.is_running ? "" : "  结束: " + entry.end_time);
+                color: AppTheme.text-muted;
+                font-size: 11px;
+            }
+        }
+
+        // Status label
+        Rectangle {
+            width: 52px;
+            height: 20px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 3px;
+            background: entry.is_running ? AppTheme.primary-muted : AppTheme.surface;
+            border-width: 1px;
+            border-color: entry.is_running ? AppTheme.primary : AppTheme.border;
+
+            CjkText {
+                text: entry.is_running ? "运行中" : "已完成";
+                color: entry.is_running ? AppTheme.text-on-primary : AppTheme.text-secondary;
+                font-size: 10px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: 100%;
+                height: 100%;
+            }
+        }
+    }
+}
+
+export component TaskManagerPanel inherits Rectangle {
+    in property <[TaskEntryVm]> entries;
+    callback close();
+
+    width: 340px;
+    height: min(400px, 64px + entries.length * 64px + 16px);
+    background: AppTheme.surface;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: AppTheme.border;
+
+    // Shadow via layered rectangle
+    drop-shadow-blur: 12px;
+    drop-shadow-color: #00000040;
+    drop-shadow-offset-y: 4px;
+
+    VerticalLayout {
+        padding: 0px;
+        spacing: 0px;
+
+        // Title bar
+        Rectangle {
+            height: 40px;
+            background: AppTheme.surface-overlay;
+            border-radius: 8px; // only top corners technically, but full is fine
+
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 8px;
+                spacing: 0px;
+                alignment: start;
+
+                CjkText {
+                    text: "任务管理器";
+                    color: AppTheme.text-primary;
+                    font-size: 13px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+            }
+        }
+
+        // Divider
+        Rectangle {
+            height: 1px;
+            background: AppTheme.border;
+        }
+
+        // Task list (Flickable with fixed viewport-width to avoid binding loops)
+        Flickable {
+            vertical-stretch: 1;
+            viewport-width: 324px;
+            viewport-height: task-content.preferred-height;
+
+            task-content := VerticalLayout {
+                width: 324px;
+                padding: 8px;
+                spacing: 6px;
+                alignment: start;
+
+                if entries.length == 0: CjkText {
+                    text: "暂无任务";
+                    color: AppTheme.text-muted;
+                    horizontal-alignment: center;
+                    font-size: 12px;
+                    height: 40px;
+                }
+
+                for entry in entries: TaskRow {
+                    entry: entry;
+                    width: 308px;
+                }
+            }
+        }
+    }
+}
