@@ -1,6 +1,7 @@
 pub mod canvas_state;
 pub mod graph_window;
 pub(crate) mod log_overlay;
+pub(crate) mod task_manager;
 #[cfg(target_os = "macos")]
 pub mod macos_menu;
 pub mod node_graph_view;

@@ -1,7 +1,8 @@
 import { VerticalBox } from "std-widgets.slint";
 import { AppTheme } from "theme.slint";
-import { EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, FunctionPortVm, GraphVariableVm, GridLineVm, HyperParameterVm, JsonExtractFieldVm, LogEntryVm, NodeTypeVm, NodeVm, ToolDefinitionVm, ValidationIssueVm } from "types.slint";
+import { EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, FunctionPortVm, GraphVariableVm, GridLineVm, HyperParameterVm, JsonExtractFieldVm, LogEntryVm, NodeTypeVm, NodeVm, TaskEntryVm, ToolDefinitionVm, ValidationIssueVm } from "types.slint";
 import { CjkButton, CjkDeleteButton, CjkRunButton, CjkText } from "components/buttons.slint";
+import { TaskManagerPanel } from "components/task_manager_panel.slint";
 import { MenuBarItem, MenuItemRow } from "components/menubar.slint";
 import { TabItem } from "components/tabs.slint";
 import { GraphCanvas } from "components/graph_canvas.slint";
@@ -95,6 +96,11 @@ export component NodeGraphWindow inherits Window {
     callback run_graph();
     callback stop_graph();
     in property <bool> is_graph_running: false;
+    // Task manager
+    in property <[TaskEntryVm]> task_entries;
+    in property <int> running_task_count: 0;
+    in-out property <bool> show_task_manager: false;
+    callback toggle_task_manager();
     callback show_node_type_menu();
     callback hide_node_type_menu();
     callback show_error(string);
@@ -409,6 +415,65 @@ export component NodeGraphWindow inherits Window {
                 width: parent.width;
                 background: AppTheme.border;
             }
+
+            // Task manager icon button (top-right corner of tab bar)
+            task-icon-btn := TouchArea {
+                x: parent.width - self.width - 6px;
+                y: (parent.height - self.height) / 2;
+                width: 28px;
+                height: 28px;
+                mouse-cursor: pointer;
+                clicked => { root.toggle_task_manager(); }
+
+                property <float> icon-spin: 0;
+                icon-timer := Timer {
+                    interval: 30ms;
+                    running: root.running_task_count > 0;
+                    triggered => {
+                        task-icon-btn.icon-spin = mod(task-icon-btn.icon-spin + 6, 360);
+                    }
+                }
+
+                // Icon background
+                Rectangle {
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 5px;
+                    background: task-icon-btn.has-hover ? AppTheme.surface-overlay : transparent;
+                }
+
+                // Gear icon (rotates when running)
+                icon-text := CjkText {
+                    text: "⚙";
+                    color: root.running_task_count > 0 ? AppTheme.primary : AppTheme.text-secondary;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    font-size: 15px;
+                    width: 28px;
+                    height: 28px;
+                    transform-rotation: task-icon-btn.icon-spin * 1deg;
+                }
+
+                // Running count badge
+                if root.running_task_count > 0: Rectangle {
+                    x: 16px;
+                    y: 0px;
+                    width: 14px;
+                    height: 14px;
+                    border-radius: 7px;
+                    background: AppTheme.danger;
+
+                    CjkText {
+                        text: root.running_task_count > 9 ? "9+" : root.running_task_count;
+                        color: #ffffff;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        font-size: 8px;
+                        width: 100%;
+                        height: 100%;
+                    }
+                }
+            }
         }
 
         if root.is_subgraph_page: Rectangle {
@@ -671,6 +736,14 @@ export component NodeGraphWindow inherits Window {
                 set_variable_node_selected(node_id, variable_name) => {
                     root.set_variable_node_selected(node_id, variable_name);
                 }
+            }
+
+            // Task manager panel overlay (top-right, below icon)
+            if root.show_task_manager: TaskManagerPanel {
+                x: parent.width - self.width - 6px;
+                y: 4px;
+                entries: root.task_entries;
+                close => { root.toggle_task_manager(); }
             }
 
             // Log overlay — bottom-left of canvas
