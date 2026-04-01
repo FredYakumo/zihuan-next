@@ -213,12 +213,81 @@ fn route_edge(
     ((source_channel_x + target_channel_x) / 2.0, lane_y)
 }
 
-const EDGE_SOURCE_CHANNEL_BASE: f32 = GRID_SIZE * 1.0;
+const EDGE_SOURCE_CHANNEL_BASE: f32 = GRID_SIZE * 1.5;
 const EDGE_SOURCE_CHANNEL_SPACING: f32 = GRID_SIZE * 0.8;
-const EDGE_TARGET_CHANNEL_BASE: f32 = GRID_SIZE * 1.0;
+const EDGE_TARGET_CHANNEL_BASE: f32 = GRID_SIZE * 1.5;
 const EDGE_TARGET_CHANNEL_SPACING: f32 = GRID_SIZE * 0.8;
-const EDGE_LANE_SPACING: f32 = GRID_SIZE * 1.0;
+const EDGE_LANE_SPACING: f32 = GRID_SIZE * 1.2;
 const EDGE_LANE_THRESHOLD: f32 = GRID_SIZE * 2.0;
+
+/// Axis-aligned bounding box of an on-canvas node (world-space).
+struct NodeBox {
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+}
+
+fn collect_node_boxes(graph: &NodeGraphDefinition) -> Vec<NodeBox> {
+    graph
+        .nodes
+        .iter()
+        .filter_map(|node| {
+            let pos = node.position.as_ref()?;
+            let (w, h) = node_dimensions(node);
+            Some(NodeBox {
+                left: pos.x,
+                top: pos.y,
+                right: pos.x + w,
+                bottom: pos.y + h,
+            })
+        })
+        .collect()
+}
+
+/// Return a `candidate_y` adjusted so the horizontal wire segment running
+/// between `span_min_x` and `span_max_x` does not pass through any node card.
+/// Uses a greedy nearest-gap strategy: route above or below whichever is closer.
+fn find_obstacle_free_lane_y(
+    candidate_y: f32,
+    span_min_x: f32,
+    span_max_x: f32,
+    node_boxes: &[NodeBox],
+) -> f32 {
+    const MARGIN: f32 = GRID_SIZE * 0.8;
+    // Boxes whose X range intersects [span_min_x, span_max_x] AND
+    // whose top/bottom bracket candidate_y (with margin).
+    let blockers: Vec<&NodeBox> = node_boxes
+        .iter()
+        .filter(|b| {
+            b.left < span_max_x
+                && b.right > span_min_x
+                && (b.top - MARGIN) < candidate_y
+                && (b.bottom + MARGIN) > candidate_y
+        })
+        .collect();
+
+    if blockers.is_empty() {
+        return candidate_y;
+    }
+
+    let above_y = blockers
+        .iter()
+        .map(|b| b.top)
+        .fold(f32::INFINITY, f32::min)
+        - MARGIN;
+    let below_y = blockers
+        .iter()
+        .map(|b| b.bottom)
+        .fold(f32::NEG_INFINITY, f32::max)
+        + MARGIN;
+
+    if (above_y - candidate_y).abs() <= (below_y - candidate_y).abs() {
+        above_y
+    } else {
+        below_y
+    }
+}
 
 #[derive(Clone)]
 struct EdgeRoutePlan {
@@ -241,6 +310,8 @@ fn centered_group_offset(index: usize, len: usize) -> f32 {
 }
 
 fn build_edge_route_plans(graph: &NodeGraphDefinition, snap: bool) -> Vec<EdgeRoutePlan> {
+    let node_boxes = collect_node_boxes(graph);
+
     #[derive(Clone)]
     struct EdgeInfo {
         from_x: f32,
@@ -346,6 +417,18 @@ fn build_edge_route_plans(graph: &NodeGraphDefinition, snap: bool) -> Vec<EdgeRo
         info.span_max_x = info.source_channel_x.max(info.target_channel_x);
     }
 
+    // Avoidance pass 1: shift each edge's candidate lane out of any node body
+    // it would cross, before Union-Find groups them.  This ensures the grouping
+    // centers reflect already-displaced lanes and reduces second-order collisions.
+    for info in &mut infos {
+        info.candidate_lane_y = find_obstacle_free_lane_y(
+            info.candidate_lane_y,
+            info.span_min_x,
+            info.span_max_x,
+            &node_boxes,
+        );
+    }
+
     let n = infos.len();
     let mut lane_y_overrides: Vec<Option<f32>> = vec![None; n];
 
@@ -389,8 +472,13 @@ fn build_edge_route_plans(graph: &NodeGraphDefinition, snap: bool) -> Vec<EdgeRo
                 continue;
             }
 
+            // Sort by the natural mid-Y of each wire so lanes are ordered in
+            // the same direction the wires travel – this minimises crossings
+            // within a conflict bundle.
             members.sort_by(|&a, &b| {
-                cmp_f32(infos[a].to_y, infos[b].to_y)
+                let mid_a = (infos[a].from_y + infos[a].to_y) / 2.0;
+                let mid_b = (infos[b].from_y + infos[b].to_y) / 2.0;
+                cmp_f32(mid_a, mid_b)
                     .then_with(|| cmp_f32(infos[a].from_y, infos[b].from_y))
                     .then_with(|| cmp_f32(infos[a].candidate_lane_y, infos[b].candidate_lane_y))
             });
@@ -412,19 +500,31 @@ fn build_edge_route_plans(graph: &NodeGraphDefinition, snap: bool) -> Vec<EdgeRo
     infos
         .into_iter()
         .enumerate()
-        .map(|(info_idx, info)| EdgeRoutePlan {
-            from_x: info.from_x,
-            from_y: info.from_y,
-            to_x: info.to_x,
-            to_y: info.to_y,
-            source_channel_x: info.source_channel_x,
-            target_channel_x: info.target_channel_x,
-            lane_y: if snap {
-                snap_to_grid_center(lane_y_overrides[info_idx].unwrap_or(info.candidate_lane_y))
-            } else {
-                lane_y_overrides[info_idx].unwrap_or(info.candidate_lane_y)
-            },
-            edge_idx: info.edge_idx,
+        .map(|(info_idx, info)| {
+            let raw_lane_y =
+                lane_y_overrides[info_idx].unwrap_or(info.candidate_lane_y);
+            // Avoidance pass 2: re-check after Union-Find may have shifted lanes;
+            // ensures conflict-resolved lanes don't land inside a node body.
+            let avoided_y = find_obstacle_free_lane_y(
+                raw_lane_y,
+                info.span_min_x,
+                info.span_max_x,
+                &node_boxes,
+            );
+            EdgeRoutePlan {
+                from_x: info.from_x,
+                from_y: info.from_y,
+                to_x: info.to_x,
+                to_y: info.to_y,
+                source_channel_x: info.source_channel_x,
+                target_channel_x: info.target_channel_x,
+                lane_y: if snap {
+                    snap_to_grid_center(avoided_y)
+                } else {
+                    avoided_y
+                },
+                edge_idx: info.edge_idx,
+            }
         })
         .collect()
 }

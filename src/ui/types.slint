@@ -3,6 +3,14 @@ export struct MessageItemVm {
     content: string,
 }
 
+export struct TaskEntryVm {
+    task_id: string,
+    graph_name: string,
+    start_time: string,
+    is_running: bool,
+    end_time: string,
+}
+
 export struct HyperParameterVm {
     name: string,
     group: string,
