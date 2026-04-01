@@ -166,8 +166,8 @@ pub fn init_node_registry() -> Result<()> {
     use crate::llm::brain_node::BrainNode;
     use crate::llm::llm_api_node::LLMApiNode;
     use crate::llm::llm_infer_node::LLMInferNode;
-    use crate::llm::tavily_provider_node::TavilyProviderNode;
-    use crate::llm::tavily_search_node::TavilySearchNode;
+    use crate::llm::rag::tavily_provider_node::TavilyProviderNode;
+    use crate::llm::rag::tavily_search_node::TavilySearchNode;
     use crate::node::database::{MySqlNode, RedisNode};
     use crate::node::message_cache::MessageCacheNode;
     use crate::node::message_mysql_get_group_history::MessageMySQLGetGroupHistoryNode;

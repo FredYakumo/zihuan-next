@@ -175,7 +175,7 @@ impl Node for TavilySearchNode {
 mod tests {
     use super::{TavilyRef, TavilySearchNode};
     use crate::error::Result;
-    use crate::llm::tavily_provider_node::TavilyProviderNode;
+    use crate::llm::rag::tavily_provider_node::TavilyProviderNode;
     use crate::node::{DataType, DataValue, Node};
     use std::collections::HashMap;
     use std::io::{Read, Write};
