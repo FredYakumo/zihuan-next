@@ -1,6 +1,7 @@
 use crate::error::{Error, Result};
 use crate::llm::natural_language_reply::json_value_to_qq_message_vec as parse_json_to_qq_messages;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
+use log::{info, warn};
 use std::collections::HashMap;
 
 pub struct JsonToQQMessageVecNode {
@@ -32,7 +33,10 @@ impl Node for JsonToQQMessageVecNode {
 
     node_input![port! { name = "json", ty = Json, desc = "LLM 输出的 QQ 消息 JSON 二维数组" },];
 
-    node_output![port! { name = "messages", ty = Vec(Vec(QQMessage)), desc = "解析得到的 Vec<Vec<QQMessage>>" },];
+    node_output![
+        port! { name = "messages", ty = Vec(Vec(QQMessage)), desc = "解析得到的 Vec<Vec<QQMessage>>" },
+        port! { name = "failed", ty = Json, desc = "转换失败时输出原始 JSON" },
+    ];
 
     fn execute(
         &mut self,
@@ -45,25 +49,43 @@ impl Node for JsonToQQMessageVecNode {
             _ => return Err(Error::InvalidNodeInput("json is required".to_string())),
         };
 
-        let messages = parse_json_to_qq_messages(json_value)?;
-        let outputs = HashMap::from([(
-            "messages".to_string(),
-            DataValue::Vec(
-                Box::new(DataType::Vec(Box::new(DataType::QQMessage))),
-                messages
-                    .into_iter()
-                    .map(|batch| {
-                        DataValue::Vec(
-                            Box::new(DataType::QQMessage),
-                            batch.into_iter().map(DataValue::QQMessage).collect(),
-                        )
-                    })
-                    .collect(),
-            ),
-        )]);
-
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        match parse_json_to_qq_messages(json_value) {
+            Ok(messages) => {
+                info!(
+                    "[JsonToQQMessageVecNode] Conversion succeeded: {} message batch(es)",
+                    messages.len()
+                );
+                let outputs = HashMap::from([(
+                    "messages".to_string(),
+                    DataValue::Vec(
+                        Box::new(DataType::Vec(Box::new(DataType::QQMessage))),
+                        messages
+                            .into_iter()
+                            .map(|batch| {
+                                DataValue::Vec(
+                                    Box::new(DataType::QQMessage),
+                                    batch.into_iter().map(DataValue::QQMessage).collect(),
+                                )
+                            })
+                            .collect(),
+                    ),
+                )]);
+                self.validate_outputs(&outputs)?;
+                Ok(outputs)
+            }
+            Err(e) => {
+                warn!(
+                    "[JsonToQQMessageVecNode] Conversion failed: {} — routing to failed output",
+                    e
+                );
+                let outputs = HashMap::from([(
+                    "failed".to_string(),
+                    DataValue::Json(json_value.clone()),
+                )]);
+                self.validate_outputs(&outputs)?;
+                Ok(outputs)
+            }
+        }
     }
 }
 
@@ -149,15 +171,20 @@ mod tests {
     #[test]
     fn rejects_legacy_one_dimensional_format() {
         let mut node = JsonToQQMessageVecNode::new("parser", "Parser");
-        let error = node
+        let outputs = node
             .execute(HashMap::from([(
                 "json".to_string(),
                 DataValue::Json(serde_json::json!([
                     {"message_type":"plain_text","content":"你好"}
                 ])),
             )]))
-            .expect_err("legacy one-dimensional format should be rejected");
+            .expect("legacy one-dimensional format should route to failed output");
 
-        assert!(!error.to_string().is_empty());
+        assert!(
+            outputs.contains_key("failed"),
+            "expected failed output key, got: {:?}",
+            outputs.keys().collect::<Vec<_>>()
+        );
+        assert!(!outputs.contains_key("messages"));
     }
 }
