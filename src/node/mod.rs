@@ -58,7 +58,8 @@ pub mod message_cache;
 pub mod message_mysql_get_group_history;
 pub mod message_mysql_get_user_history;
 pub mod message_mysql_history_common;
-pub mod message_nodes;
+pub mod message_mysql_persistence;
+pub mod qq_message_list_mysql_persistence;
 pub mod registry;
 pub mod util;
 

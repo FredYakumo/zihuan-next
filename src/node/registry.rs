@@ -172,7 +172,8 @@ pub fn init_node_registry() -> Result<()> {
     use crate::node::message_cache::MessageCacheNode;
     use crate::node::message_mysql_get_group_history::MessageMySQLGetGroupHistoryNode;
     use crate::node::message_mysql_get_user_history::MessageMySQLGetUserHistoryNode;
-    use crate::node::message_nodes::MessageMySQLPersistenceNode;
+    use crate::node::message_mysql_persistence::MessageMySQLPersistenceNode;
+    use crate::node::qq_message_list_mysql_persistence::QQMessageListMySQLPersistenceNode;
     use crate::node::util::{
         AndThenNode, ArrayGetNode, AtQQTargetMessageNode, BooleanBranchNode, BooleanNotNode,
         ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode,
@@ -625,6 +626,14 @@ pub fn init_node_registry() -> Result<()> {
         "消息存储",
         "将消息事件持久化到MySQL数据库",
         MessageMySQLPersistenceNode
+    );
+
+    register_node!(
+        "qq_message_list_mysql_persistence",
+        "QQMessage列表MySQL持久化",
+        "消息存储",
+        "将Vec<QQMessage>及调用方提供的元数据持久化到MySQL数据库",
+        QQMessageListMySQLPersistenceNode
     );
 
     register_node!(
