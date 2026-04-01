@@ -101,6 +101,8 @@ export component NodeGraphWindow inherits Window {
     in property <int> running_task_count: 0;
     in-out property <bool> show_task_manager: false;
     callback toggle_task_manager();
+    callback stop_task(string);
+
     callback show_node_type_menu();
     callback hide_node_type_menu();
     callback show_error(string);
@@ -434,7 +436,7 @@ export component NodeGraphWindow inherits Window {
                     }
                 }
 
-                // Icon background
+                // Icon background / hover highlight
                 Rectangle {
                     width: 28px;
                     height: 28px;
@@ -442,16 +444,50 @@ export component NodeGraphWindow inherits Window {
                     background: task-icon-btn.has-hover ? AppTheme.surface-overlay : transparent;
                 }
 
-                // Gear icon (rotates when running)
-                icon-text := CjkText {
+                // Static icon when idle
+                if root.running_task_count == 0: CjkText {
                     text: "⚙";
-                    color: root.running_task_count > 0 ? AppTheme.primary : AppTheme.text-secondary;
+                    color: AppTheme.text-secondary;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                     font-size: 15px;
                     width: 28px;
                     height: 28px;
-                    transform-rotation: task-icon-btn.icon-spin * 1deg;
+                }
+
+                // Spinning circle animation when tasks are running
+                if root.running_task_count > 0: Rectangle {
+                    x: (28px - 18px) / 2;
+                    y: (28px - 18px) / 2;
+                    width: 18px;
+                    height: 18px;
+
+                    // Track
+                    Rectangle {
+                        width: 18px;
+                        height: 18px;
+                        border-radius: 9px;
+                        border-width: 2px;
+                        border-color: AppTheme.border;
+                        background: transparent;
+                    }
+
+                    // Orbiting dot
+                    Rectangle {
+                        width: 18px;
+                        height: 18px;
+                        background: transparent;
+                        transform-rotation: task-icon-btn.icon-spin * 1deg;
+
+                        Rectangle {
+                            x: 6px;
+                            y: -3px;
+                            width: 6px;
+                            height: 6px;
+                            border-radius: 3px;
+                            background: AppTheme.primary;
+                        }
+                    }
                 }
 
                 // Running count badge
@@ -744,6 +780,7 @@ export component NodeGraphWindow inherits Window {
                 y: 4px;
                 entries: root.task_entries;
                 close => { root.toggle_task_manager(); }
+                stop_task(id) => { root.stop_task(id); }
             }
 
             // Log overlay — bottom-left of canvas

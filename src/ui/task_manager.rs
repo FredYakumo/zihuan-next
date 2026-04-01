@@ -1,7 +1,7 @@
 use chrono::{DateTime, Local};
 use lazy_static::lazy_static;
 use slint::{ModelRc, VecModel};
-use std::sync::{Arc, Mutex};
+use std::sync::{atomic::AtomicBool, atomic::Ordering, Arc, Mutex};
 
 use crate::ui::graph_window::{NodeGraphWindow, TaskEntryVm};
 
@@ -17,6 +17,7 @@ pub struct TaskEntry {
     pub start_time: DateTime<Local>,
     pub is_running: bool,
     pub end_time: Option<DateTime<Local>>,
+    pub stop_flag: Option<Arc<AtomicBool>>,
 }
 
 pub struct TaskManager {
@@ -33,7 +34,7 @@ impl TaskManager {
     }
 
     /// Register a new running task; returns its ID.
-    pub fn add_task(&mut self, graph_name: impl Into<String>) -> u64 {
+    pub fn add_task(&mut self, graph_name: impl Into<String>, stop_flag: Option<Arc<AtomicBool>>) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
         self.tasks.push(TaskEntry {
@@ -42,8 +43,20 @@ impl TaskManager {
             start_time: Local::now(),
             is_running: true,
             end_time: None,
+            stop_flag,
         });
         id
+    }
+
+    /// Request a task to stop if it's currently running.
+    pub fn stop_task(&self, id: u64) {
+        if let Some(entry) = self.tasks.iter().find(|e| e.id == id) {
+            if entry.is_running {
+                if let Some(flag) = &entry.stop_flag {
+                    flag.store(true, Ordering::Relaxed);
+                }
+            }
+        }
     }
 
     /// Mark a task as finished.

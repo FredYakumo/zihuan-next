@@ -371,8 +371,10 @@ pub(crate) fn bind_window_callbacks(
             Ok(mut node_graph) => {
                 info!("开始执行节点图...");
 
+                let stop_flag_clone = node_graph.get_stop_flag();
+
                 // Register task in global task manager
-                let task_id = TASK_MANAGER.lock().unwrap().add_task(&tab_title);
+                let task_id = TASK_MANAGER.lock().unwrap().add_task(&tab_title, Some(stop_flag_clone.clone()));
                 if let Some(ui) = ui_handle.upgrade() {
                     push_task_list_to_ui(&ui);
                 }
@@ -383,7 +385,7 @@ pub(crate) fn bind_window_callbacks(
                     .any(|node| node.node_type() == crate::node::NodeType::EventProducer);
 
                 if has_event_producer {
-                    let stop_flag = node_graph.get_stop_flag();
+                    let stop_flag = stop_flag_clone;
 
                     {
                         let mut tabs_guard = tabs_clone.lock().unwrap();
@@ -643,6 +645,20 @@ pub(crate) fn bind_window_callbacks(
             if let Some(stop_flag) = tab.stop_flag.as_ref() {
                 info!("请求停止节点图执行");
                 stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    ui.on_stop_task(move |task_id_str| {
+        if let Ok(task_id) = task_id_str.trim().parse::<u64>() {
+            info!("请求停止任务: {}", task_id);
+            let manager = TASK_MANAGER.lock().unwrap();
+            manager.stop_task(task_id);
+            drop(manager);
+
+            if let Some(ui) = ui_handle.upgrade() {
+                push_task_list_to_ui(&ui);
             }
         }
     });
