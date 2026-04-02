@@ -20,6 +20,8 @@
 cargo build
 cargo run
 cargo test
+# Validate a graph JSON before running (exits 0=ok/warn, 1=errors, 2=load failure)
+cargo run -- --graph-json example.json --validate
 ```
 
 ## Detailed References
