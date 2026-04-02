@@ -638,7 +638,7 @@ pub fn init_node_registry() -> Result<()> {
 
     register_node!(
         "message_mysql_get_user_history",
-        "获取用户 MySQL 历史",
+        "获取QQ号消息历史",
         "消息存储",
         "根据 sender_id 读取最近消息历史，可选限定某个群",
         MessageMySQLGetUserHistoryNode
@@ -646,7 +646,7 @@ pub fn init_node_registry() -> Result<()> {
 
     register_node!(
         "message_mysql_get_group_history",
-        "获取群 MySQL 历史",
+        "获取QQ群聊消息历史",
         "消息存储",
         "根据 group_id 读取最近消息历史",
         MessageMySQLGetGroupHistoryNode
