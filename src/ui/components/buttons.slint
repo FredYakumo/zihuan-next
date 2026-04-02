@@ -54,6 +54,34 @@ export component CjkDeleteButton inherits Rectangle {
     }
 }
 
+export component SmallDeleteButton inherits Rectangle {
+    callback clicked();
+
+    width: 24px;
+    height: 24px;
+    background: touch.has-hover ? AppTheme.danger-bg : #c6282818;
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: touch.has-hover ? AppTheme.danger : #c6282860;
+    animate background { duration: 150ms; }
+    animate border-color { duration: 150ms; }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    CjkText {
+        text: "×";
+        color: touch.has-hover ? AppTheme.text-on-primary : #e0736a;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        font-size: 14px;
+        font-weight: 700;
+        animate color { duration: 150ms; }
+    }
+}
+
 export component CjkRunButton inherits Rectangle {
     in property <string> text;
     callback clicked();

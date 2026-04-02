@@ -1,7 +1,7 @@
 import { HorizontalBox, VerticalBox, ScrollView, LineEdit, CheckBox, ComboBox } from "std-widgets.slint";
 import { AppTheme } from "theme.slint";
 import { FunctionPortVm, GraphVariableVm, JsonExtractFieldVm, NodeTypeVm, PortHelpVm, HyperParameterVm, LogEntryVm, ToolDefinitionVm, ValidationIssueVm } from "types.slint";
-import { CjkButton, CjkDeleteButton, CjkText } from "components/buttons.slint";
+import { CjkButton, CjkDeleteButton, CjkText, SmallDeleteButton } from "components/buttons.slint";
 
 export component ValidationFixDialog inherits Rectangle {
     in property <[ValidationIssueVm]> issues;
@@ -1384,24 +1384,8 @@ export component HyperParameterManagerDialog inherits Rectangle {
                                 // Delete button
                                 VerticalLayout {
                                     alignment: center;
-                                    Rectangle {
-                                        width: 24px;
-                                        height: 24px;
-                                        background: AppTheme.danger-bg;
-                                        border-radius: 4px;
-                                        border-width: 1px;
-                                        border-color: AppTheme.danger;
-                                        TouchArea {
-                                            clicked => { root.delete(hp.name); }
-                                        }
-                                        CjkText {
-                                            text: "×";
-                                            color: AppTheme.danger;
-                                            horizontal-alignment: center;
-                                            vertical-alignment: center;
-                                            font-size: 14px;
-                                            font-weight: 700;
-                                        }
+                                    SmallDeleteButton {
+                                        clicked => { root.delete(hp.name); }
                                     }
                                 }
                             }
@@ -1640,24 +1624,8 @@ export component VariableManagerDialog inherits Rectangle {
                                     }
                                 }
 
-                                Rectangle {
-                                    width: 24px;
-                                    height: 24px;
-                                    background: AppTheme.danger-bg;
-                                    border-radius: 4px;
-                                    border-width: 1px;
-                                    border-color: AppTheme.danger;
-                                    TouchArea {
-                                        clicked => { root.delete(variable.name); }
-                                    }
-                                    CjkText {
-                                        text: "×";
-                                        color: AppTheme.danger;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                        font-size: 14px;
-                                        font-weight: 700;
-                                    }
+                                SmallDeleteButton {
+                                    clicked => { root.delete(variable.name); }
                                 }
                             }
                         }
@@ -2506,26 +2474,8 @@ export component ToolEditorDialog inherits Rectangle {
                                             }
                                         }
 
-                                        Rectangle {
-                                            width: 24px;
-                                            height: 24px;
-                                            background: AppTheme.danger-bg;
-                                            border-radius: 4px;
-                                            border-width: 1px;
-                                            border-color: AppTheme.danger;
-
-                                            TouchArea {
-                                                clicked => { root.delete_tool(i); }
-                                            }
-
-                                            CjkText {
-                                                text: "×";
-                                                color: AppTheme.danger;
-                                                horizontal-alignment: center;
-                                                vertical-alignment: center;
-                                                font-size: 14px;
-                                                font-weight: 700;
-                                            }
+                                        SmallDeleteButton {
+                                            clicked => { root.delete_tool(i); }
                                         }
                                     }
                                 }
@@ -2732,26 +2682,8 @@ export component ToolEditorDialog inherits Rectangle {
                                                             selected(value) => { root.set_shared_input_type(j, value); }
                                                         }
 
-                                                        Rectangle {
-                                                            width: 24px;
-                                                            height: 24px;
-                                                            background: AppTheme.danger-bg;
-                                                            border-radius: 4px;
-                                                            border-width: 1px;
-                                                            border-color: AppTheme.danger;
-
-                                                            TouchArea {
-                                                                clicked => { root.delete_shared_input(j); }
-                                                            }
-
-                                                            CjkText {
-                                                                text: "×";
-                                                                color: AppTheme.danger;
-                                                                horizontal-alignment: center;
-                                                                vertical-alignment: center;
-                                                                font-size: 14px;
-                                                                font-weight: 700;
-                                                            }
+                                                        SmallDeleteButton {
+                                                            clicked => { root.delete_shared_input(j); }
                                                         }
                                                     }
                                                 }
@@ -2840,26 +2772,8 @@ export component ToolEditorDialog inherits Rectangle {
                                                             edited(text) => { root.set_param_description(i, j, text); }
                                                         }
 
-                                                        Rectangle {
-                                                            width: 24px;
-                                                            height: 24px;
-                                                            background: AppTheme.danger-bg;
-                                                            border-radius: 4px;
-                                                            border-width: 1px;
-                                                            border-color: AppTheme.danger;
-
-                                                            TouchArea {
-                                                                clicked => { root.delete_param(i, j); }
-                                                            }
-
-                                                            CjkText {
-                                                                text: "×";
-                                                                color: AppTheme.danger;
-                                                                horizontal-alignment: center;
-                                                                vertical-alignment: center;
-                                                                font-size: 14px;
-                                                                font-weight: 700;
-                                                            }
+                                                        SmallDeleteButton {
+                                                            clicked => { root.delete_param(i, j); }
                                                         }
                                                     }
                                                 }
@@ -2940,26 +2854,8 @@ export component ToolEditorDialog inherits Rectangle {
                                                             selected(value) => { root.set_output_type(i, j, value); }
                                                         }
 
-                                                        Rectangle {
-                                                            width: 24px;
-                                                            height: 24px;
-                                                            background: AppTheme.danger-bg;
-                                                            border-radius: 4px;
-                                                            border-width: 1px;
-                                                            border-color: AppTheme.danger;
-
-                                                            TouchArea {
-                                                                clicked => { root.delete_output(i, j); }
-                                                            }
-
-                                                            CjkText {
-                                                                text: "×";
-                                                                color: AppTheme.danger;
-                                                                horizontal-alignment: center;
-                                                                vertical-alignment: center;
-                                                                font-size: 14px;
-                                                                font-weight: 700;
-                                                            }
+                                                        SmallDeleteButton {
+                                                            clicked => { root.delete_output(i, j); }
                                                         }
                                                     }
                                                 }
@@ -3170,26 +3066,8 @@ export component FunctionEditorDialog inherits Rectangle {
                                             selected(value) => { root.set_input_type(i, value); }
                                         }
 
-                                        Rectangle {
-                                            width: 24px;
-                                            height: 24px;
-                                            background: AppTheme.danger-bg;
-                                            border-radius: 4px;
-                                            border-width: 1px;
-                                            border-color: AppTheme.danger;
-
-                                            TouchArea {
-                                                clicked => { root.delete_input(i); }
-                                            }
-
-                                            CjkText {
-                                                text: "×";
-                                                color: AppTheme.danger;
-                                                horizontal-alignment: center;
-                                                vertical-alignment: center;
-                                                font-size: 14px;
-                                                font-weight: 700;
-                                            }
+                                        SmallDeleteButton {
+                                            clicked => { root.delete_input(i); }
                                         }
                                     }
                                 }
@@ -3267,26 +3145,8 @@ export component FunctionEditorDialog inherits Rectangle {
                                             selected(value) => { root.set_output_type(i, value); }
                                         }
 
-                                        Rectangle {
-                                            width: 24px;
-                                            height: 24px;
-                                            background: AppTheme.danger-bg;
-                                            border-radius: 4px;
-                                            border-width: 1px;
-                                            border-color: AppTheme.danger;
-
-                                            TouchArea {
-                                                clicked => { root.delete_output(i); }
-                                            }
-
-                                            CjkText {
-                                                text: "×";
-                                                color: AppTheme.danger;
-                                                horizontal-alignment: center;
-                                                vertical-alignment: center;
-                                                font-size: 14px;
-                                                font-weight: 700;
-                                            }
+                                        SmallDeleteButton {
+                                            clicked => { root.delete_output(i); }
                                         }
                                     }
                                 }
@@ -3686,26 +3546,8 @@ export component JsonExtractEditorDialog inherits Rectangle {
                                             }
                                         }
 
-                                        Rectangle {
-                                            width: 24px;
-                                            height: 24px;
-                                            background: AppTheme.danger-bg;
-                                            border-radius: 4px;
-                                            border-width: 1px;
-                                            border-color: AppTheme.danger;
-
-                                            TouchArea {
-                                                clicked => { root.delete_field(i); }
-                                            }
-
-                                            CjkText {
-                                                text: "×";
-                                                color: AppTheme.danger;
-                                                horizontal-alignment: center;
-                                                vertical-alignment: center;
-                                                font-size: 14px;
-                                                font-weight: 700;
-                                            }
+                                        SmallDeleteButton {
+                                            clicked => { root.delete_field(i); }
                                         }
                                     }
                                 }
