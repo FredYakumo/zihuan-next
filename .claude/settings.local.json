@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -r \"key_pressed\\\\|KeyEvent\\\\|Ctrl\" /c/Users/fredyakumo/zihuan-next/src/ui/*.rs)",
+      "Bash(grep -r \"key_pressed\\\\|KeyEvent\\\\|key.pressed\\\\|Ctrl\\\\+\" /c/Users/fredyakumo/zihuan-next/src --include=*.rs)",
+      "Bash(grep -r key /c/Users/fredyakumo/zihuan-next/src/ui/node_graph_view_callbacks --include=*.rs)",
+      "Bash(cargo check:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo test:*)"
+    ]
+  }
+}
