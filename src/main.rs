@@ -31,6 +31,12 @@ struct Args {
         help = "以非GUI模式运行节点图（需要--graph-json参数）"
     )]
     no_gui: bool,
+
+    #[arg(
+        long = "validate",
+        help = "验证节点图JSON文件是否可以安全运行，打印所有错误和警告后退出（退出码：0=通过或仅有警告，1=存在错误）"
+    )]
+    validate: bool,
 }
 
 fn main() {
@@ -45,6 +51,19 @@ fn main() {
 
     // Parse command line arguments
     let args = Args::parse();
+
+    // Validate mode: check graph JSON and exit
+    if args.validate {
+        let graph_path = match args.graph_json {
+            Some(path) => path,
+            None => {
+                eprintln!("错误: --validate 需要通过 --graph-json 参数指定节点图文件");
+                std::process::exit(2);
+            }
+        };
+        let exit_code = validate_node_graph_json(&graph_path);
+        std::process::exit(exit_code);
+    }
 
     // Non-GUI mode: requires graph JSON file
     if args.no_gui {
@@ -129,4 +148,78 @@ fn execute_node_graph(
     info!("节点图执行完成");
 
     Ok(())
+}
+
+/// Validate a node graph JSON file and print all issues.
+/// Returns exit code: 0 = valid (or warnings only), 1 = errors found, 2 = load failure.
+fn validate_node_graph_json(graph_path: &str) -> i32 {
+    println!("验证节点图: {}", graph_path);
+
+    let definition = match node::load_graph_definition_from_json(graph_path) {
+        Ok(def) => def,
+        Err(err) => {
+            println!("  ✗ 错误: 无法加载或解析文件 — {}", err);
+            println!();
+            println!("结果: 文件加载失败，节点图无法运行");
+            return 2;
+        }
+    };
+
+    let node_count = definition.nodes.len();
+    let edge_count = definition.edges.len();
+    println!(
+        "  ✓ 文件解析成功（{} 个节点，{} 条连接）",
+        node_count, edge_count
+    );
+
+    // Collect structural issues from registry validation
+    let mut issues = node::graph_io::validate_graph_definition(&definition);
+
+    // Detect cycles (not covered by validate_graph_definition)
+    let cycle_nodes = node::graph_io::find_cycle_node_ids(&definition);
+    if !cycle_nodes.is_empty() {
+        let names: Vec<String> = cycle_nodes
+            .iter()
+            .filter_map(|id| {
+                definition
+                    .nodes
+                    .iter()
+                    .find(|n| &n.id == id)
+                    .map(|n| format!("\"{}\"", n.name))
+            })
+            .collect();
+        issues.push(node::graph_io::ValidationIssue {
+            severity: "error".into(),
+            message: format!("节点图存在环路依赖，涉及节点: {}", names.join(", ")),
+        });
+    }
+
+    let error_count = issues.iter().filter(|i| i.severity == "error").count();
+    let warning_count = issues.iter().filter(|i| i.severity == "warning").count();
+
+    for issue in &issues {
+        if issue.severity == "error" {
+            println!("  ✗ 错误: {}", issue.message);
+        } else {
+            println!("  ⚠ 警告: {}", issue.message);
+        }
+    }
+
+    println!();
+    if error_count == 0 && warning_count == 0 {
+        println!("结果: ✓ 节点图验证通过，可以安全运行");
+        0
+    } else if error_count == 0 {
+        println!(
+            "结果: ⚠ 节点图有 {} 个警告，但可以运行（建议修复警告）",
+            warning_count
+        );
+        0
+    } else {
+        println!(
+            "结果: ✗ {} 个错误，{} 个警告 — 节点图无法安全运行",
+            error_count, warning_count
+        );
+        1
+    }
 }

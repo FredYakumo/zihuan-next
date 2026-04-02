@@ -524,6 +524,12 @@
           "data_type": "LLModel",
           "description": "函数输入 'llm_api_llm_model'",
           "required": true
+        },
+        {
+          "name": "tavily_ref",
+          "data_type": "TavilyRef",
+          "description": "函数输入 'tavily_ref'",
+          "required": true
         }
       ],
       "output_ports": [],
@@ -561,6 +567,10 @@
             {
               "data_type": "LLModel",
               "name": "llm_api_llm_model"
+            },
+            {
+              "data_type": "TavilyRef",
+              "name": "tavily_ref"
             }
           ],
           "name": "群聊消息处理",
@@ -734,6 +744,12 @@
                 "from_port": "llm_api_llm_model",
                 "to_node_id": "node_7",
                 "to_port": "llm_ref"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "tavily_ref",
+                "to_node_id": "node_7",
+                "to_port": "tavily_ref"
               },
               {
                 "from_node_id": "node_4",
@@ -1431,9 +1447,134 @@
                     {
                       "data_type": "String",
                       "name": "metion_target_id"
+                    },
+                    {
+                      "data_type": "TavilyRef",
+                      "name": "tavily_ref"
                     }
                   ],
-                  "tools_config": []
+                  "tools_config": [
+                    {
+                      "id": "tavily_web_search",
+                      "name": "web_search",
+                      "description": "使用 Tavily 搜索引擎在互联网上搜索信息，返回相关网页的标题、链接和内容摘要",
+                      "parameters": [
+                        {
+                          "name": "query",
+                          "data_type": "String",
+                          "desc": "搜索关键词或问题"
+                        },
+                        {
+                          "name": "search_count",
+                          "data_type": "Integer",
+                          "desc": "搜索结果数量，通常为 3，如需更多可以提高，最大 10"
+                        }
+                      ],
+                      "outputs": [
+                        {
+                          "name": "results",
+                          "data_type": { "Vec": "String" }
+                        }
+                      ],
+                      "subgraph": {
+                        "nodes": [
+                          {
+                            "description": "函数子图的输入边界节点",
+                            "dynamic_input_ports": false,
+                            "dynamic_output_ports": true,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "__function_inputs__",
+                            "inline_values": {
+                              "signature": [
+                                { "data_type": "String", "name": "target_id" },
+                                { "data_type": "LLModel", "name": "llm_ref" },
+                                { "data_type": "BotAdapterRef", "name": "bot_ref" },
+                                { "data_type": "String", "name": "metion_target_id" },
+                                { "data_type": "TavilyRef", "name": "tavily_ref" },
+                                { "data_type": "String", "name": "content" },
+                                { "data_type": "String", "name": "query" },
+                                { "data_type": "Integer", "name": "search_count" }
+                              ]
+                            },
+                            "input_ports": [
+                              { "data_type": "Json", "description": "隐藏的函数签名 JSON", "name": "signature", "required": false },
+                              { "data_type": "Json", "description": "运行时注入的函数输入 JSON", "name": "runtime_values", "required": false }
+                            ],
+                            "name": "函数输入",
+                            "node_type": "function_inputs",
+                            "output_ports": [
+                              { "data_type": "String", "description": "函数输入 'target_id'", "name": "target_id", "required": true },
+                              { "data_type": "LLModel", "description": "函数输入 'llm_ref'", "name": "llm_ref", "required": true },
+                              { "data_type": "BotAdapterRef", "description": "函数输入 'bot_ref'", "name": "bot_ref", "required": true },
+                              { "data_type": "String", "description": "函数输入 'metion_target_id'", "name": "metion_target_id", "required": true },
+                              { "data_type": "TavilyRef", "description": "函数输入 'tavily_ref'", "name": "tavily_ref", "required": true },
+                              { "data_type": "String", "description": "函数输入 'content'", "name": "content", "required": true },
+                              { "data_type": "String", "description": "函数输入 'query'", "name": "query", "required": true },
+                              { "data_type": "Integer", "description": "函数输入 'search_count'", "name": "search_count", "required": true }
+                            ],
+                            "port_bindings": {},
+                            "position": { "x": -240.0, "y": 0.0 },
+                            "size": null
+                          },
+                          {
+                            "description": "使用 TavilyRef 执行搜索，输出包含标题、链接和内容的 Vec<String>",
+                            "dynamic_input_ports": false,
+                            "dynamic_output_ports": false,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "node_ts1",
+                            "inline_values": {},
+                            "input_ports": [
+                              { "data_type": "TavilyRef", "description": "Tavily 搜索引用", "name": "tavily_ref", "required": true },
+                              { "data_type": "String", "description": "搜索关键词或问题", "name": "query", "required": true },
+                              { "data_type": "Integer", "description": "返回结果数量，必须大于 0", "name": "search_count", "required": true }
+                            ],
+                            "name": "Tavily 搜索",
+                            "node_type": "tavily_search",
+                            "output_ports": [
+                              { "data_type": { "Vec": "String" }, "description": "搜索结果列表，每项包含标题、链接、内容", "name": "results", "required": true }
+                            ],
+                            "port_bindings": {},
+                            "position": { "x": 240.0, "y": 0.0 },
+                            "size": null
+                          },
+                          {
+                            "description": "函数子图的输出边界节点",
+                            "dynamic_input_ports": true,
+                            "dynamic_output_ports": false,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "__function_outputs__",
+                            "inline_values": {
+                              "signature": [
+                                { "name": "results", "data_type": { "Vec": "String" } }
+                              ]
+                            },
+                            "input_ports": [
+                              { "data_type": "Json", "description": "隐藏的函数签名 JSON", "name": "signature", "required": false },
+                              { "data_type": { "Vec": "String" }, "description": "函数输出 'results'", "name": "results", "required": true }
+                            ],
+                            "name": "函数输出",
+                            "node_type": "function_outputs",
+                            "output_ports": [],
+                            "port_bindings": {},
+                            "position": { "x": 720.0, "y": 0.0 },
+                            "size": null
+                          }
+                        ],
+                        "edges": [
+                          { "from_node_id": "__function_inputs__", "from_port": "tavily_ref", "to_node_id": "node_ts1", "to_port": "tavily_ref" },
+                          { "from_node_id": "__function_inputs__", "from_port": "query", "to_node_id": "node_ts1", "to_port": "query" },
+                          { "from_node_id": "__function_inputs__", "from_port": "search_count", "to_node_id": "node_ts1", "to_port": "search_count" },
+                          { "from_node_id": "node_ts1", "from_port": "results", "to_node_id": "__function_outputs__", "to_port": "results" }
+                        ],
+                        "hyperparameter_groups": [],
+                        "hyperparameters": [],
+                        "variables": []
+                      }
+                    }
+                  ]
                 },
                 "input_ports": [
                   {
@@ -1484,6 +1625,12 @@
                     "data_type": "String",
                     "description": "Brain 共享输入 'metion_target_id'",
                     "name": "metion_target_id",
+                    "required": true
+                  },
+                  {
+                    "data_type": "TavilyRef",
+                    "description": "Brain 共享输入 'tavily_ref'",
+                    "name": "tavily_ref",
                     "required": true
                   }
                 ],
@@ -1581,6 +1728,10 @@
                     {
                       "data_type": "LLModel",
                       "name": "llm_api_llm_model"
+                    },
+                    {
+                      "data_type": "TavilyRef",
+                      "name": "tavily_ref"
                     }
                   ]
                 },
@@ -1635,6 +1786,12 @@
                     "data_type": "LLModel",
                     "description": "函数输入 'llm_api_llm_model'",
                     "name": "llm_api_llm_model",
+                    "required": true
+                  },
+                  {
+                    "data_type": "TavilyRef",
+                    "description": "函数输入 'tavily_ref'",
+                    "name": "tavily_ref",
                     "required": true
                   }
                 ],
@@ -2061,6 +2218,12 @@
           "data_type": "LLModel",
           "description": "函数输入 'llm_api_llm_model'",
           "required": true
+        },
+        {
+          "name": "tavily_ref",
+          "data_type": "TavilyRef",
+          "description": "函数输入 'tavily_ref'",
+          "required": true
         }
       ],
       "output_ports": [],
@@ -2098,6 +2261,10 @@
             {
               "data_type": "LLModel",
               "name": "llm_api_llm_model"
+            },
+            {
+              "data_type": "TavilyRef",
+              "name": "tavily_ref"
             }
           ],
           "name": "好友消息处理",
@@ -2307,6 +2474,12 @@
                 "from_port": "llm_api_llm_model",
                 "to_node_id": "node_17",
                 "to_port": "llm_ref"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "tavily_ref",
+                "to_node_id": "node_17",
+                "to_port": "tavily_ref"
               },
               {
                 "from_node_id": "node_17",
@@ -2540,9 +2713,132 @@
                     {
                       "data_type": "BotAdapterRef",
                       "name": "bot_ref"
+                    },
+                    {
+                      "data_type": "TavilyRef",
+                      "name": "tavily_ref"
                     }
                   ],
-                  "tools_config": []
+                  "tools_config": [
+                    {
+                      "id": "tavily_web_search",
+                      "name": "web_search",
+                      "description": "使用 Tavily 搜索引擎在互联网上搜索信息，返回相关网页的标题、链接和内容摘要",
+                      "parameters": [
+                        {
+                          "name": "query",
+                          "data_type": "String",
+                          "desc": "搜索关键词或问题"
+                        },
+                        {
+                          "name": "search_count",
+                          "data_type": "Integer",
+                          "desc": "搜索结果数量，通常为 3，如需更多可以提高，最大 10"
+                        }
+                      ],
+                      "outputs": [
+                        {
+                          "name": "results",
+                          "data_type": { "Vec": "String" }
+                        }
+                      ],
+                      "subgraph": {
+                        "nodes": [
+                          {
+                            "description": "函数子图的输入边界节点",
+                            "dynamic_input_ports": false,
+                            "dynamic_output_ports": true,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "__function_inputs__",
+                            "inline_values": {
+                              "signature": [
+                                { "data_type": "String", "name": "target_id" },
+                                { "data_type": "LLModel", "name": "llm_ref" },
+                                { "data_type": "BotAdapterRef", "name": "bot_ref" },
+                                { "data_type": "TavilyRef", "name": "tavily_ref" },
+                                { "data_type": "String", "name": "content" },
+                                { "data_type": "String", "name": "query" },
+                                { "data_type": "Integer", "name": "search_count" }
+                              ]
+                            },
+                            "input_ports": [
+                              { "data_type": "Json", "description": "隐藏的函数签名 JSON", "name": "signature", "required": false },
+                              { "data_type": "Json", "description": "运行时注入的函数输入 JSON", "name": "runtime_values", "required": false }
+                            ],
+                            "name": "函数输入",
+                            "node_type": "function_inputs",
+                            "output_ports": [
+                              { "data_type": "String", "description": "函数输入 'target_id'", "name": "target_id", "required": true },
+                              { "data_type": "LLModel", "description": "函数输入 'llm_ref'", "name": "llm_ref", "required": true },
+                              { "data_type": "BotAdapterRef", "description": "函数输入 'bot_ref'", "name": "bot_ref", "required": true },
+                              { "data_type": "TavilyRef", "description": "函数输入 'tavily_ref'", "name": "tavily_ref", "required": true },
+                              { "data_type": "String", "description": "函数输入 'content'", "name": "content", "required": true },
+                              { "data_type": "String", "description": "函数输入 'query'", "name": "query", "required": true },
+                              { "data_type": "Integer", "description": "函数输入 'search_count'", "name": "search_count", "required": true }
+                            ],
+                            "port_bindings": {},
+                            "position": { "x": -240.0, "y": 0.0 },
+                            "size": null
+                          },
+                          {
+                            "description": "使用 TavilyRef 执行搜索，输出包含标题、链接和内容的 Vec<String>",
+                            "dynamic_input_ports": false,
+                            "dynamic_output_ports": false,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "node_ts1",
+                            "inline_values": {},
+                            "input_ports": [
+                              { "data_type": "TavilyRef", "description": "Tavily 搜索引用", "name": "tavily_ref", "required": true },
+                              { "data_type": "String", "description": "搜索关键词或问题", "name": "query", "required": true },
+                              { "data_type": "Integer", "description": "返回结果数量，必须大于 0", "name": "search_count", "required": true }
+                            ],
+                            "name": "Tavily 搜索",
+                            "node_type": "tavily_search",
+                            "output_ports": [
+                              { "data_type": { "Vec": "String" }, "description": "搜索结果列表，每项包含标题、链接、内容", "name": "results", "required": true }
+                            ],
+                            "port_bindings": {},
+                            "position": { "x": 240.0, "y": 0.0 },
+                            "size": null
+                          },
+                          {
+                            "description": "函数子图的输出边界节点",
+                            "dynamic_input_ports": true,
+                            "dynamic_output_ports": false,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "__function_outputs__",
+                            "inline_values": {
+                              "signature": [
+                                { "name": "results", "data_type": { "Vec": "String" } }
+                              ]
+                            },
+                            "input_ports": [
+                              { "data_type": "Json", "description": "隐藏的函数签名 JSON", "name": "signature", "required": false },
+                              { "data_type": { "Vec": "String" }, "description": "函数输出 'results'", "name": "results", "required": true }
+                            ],
+                            "name": "函数输出",
+                            "node_type": "function_outputs",
+                            "output_ports": [],
+                            "port_bindings": {},
+                            "position": { "x": 720.0, "y": 0.0 },
+                            "size": null
+                          }
+                        ],
+                        "edges": [
+                          { "from_node_id": "__function_inputs__", "from_port": "tavily_ref", "to_node_id": "node_ts1", "to_port": "tavily_ref" },
+                          { "from_node_id": "__function_inputs__", "from_port": "query", "to_node_id": "node_ts1", "to_port": "query" },
+                          { "from_node_id": "__function_inputs__", "from_port": "search_count", "to_node_id": "node_ts1", "to_port": "search_count" },
+                          { "from_node_id": "node_ts1", "from_port": "results", "to_node_id": "__function_outputs__", "to_port": "results" }
+                        ],
+                        "hyperparameter_groups": [],
+                        "hyperparameters": [],
+                        "variables": []
+                      }
+                    }
+                  ]
                 },
                 "input_ports": [
                   {
@@ -2587,6 +2883,12 @@
                     "data_type": "BotAdapterRef",
                     "description": "Brain 共享输入 'bot_ref'",
                     "name": "bot_ref",
+                    "required": true
+                  },
+                  {
+                    "data_type": "TavilyRef",
+                    "description": "Brain 共享输入 'tavily_ref'",
+                    "name": "tavily_ref",
                     "required": true
                   }
                 ],
@@ -3298,6 +3600,10 @@
                     {
                       "data_type": "LLModel",
                       "name": "llm_api_llm_model"
+                    },
+                    {
+                      "data_type": "TavilyRef",
+                      "name": "tavily_ref"
                     }
                   ]
                 },
@@ -3352,6 +3658,12 @@
                     "data_type": "LLModel",
                     "description": "函数输入 'llm_api_llm_model'",
                     "name": "llm_api_llm_model",
+                    "required": true
+                  },
+                  {
+                    "data_type": "TavilyRef",
+                    "description": "函数输入 'tavily_ref'",
+                    "name": "tavily_ref",
                     "required": true
                   }
                 ],
@@ -3937,6 +4249,50 @@
       "port_bindings": {},
       "has_error": false,
       "has_cycle": false
+    },
+    {
+      "id": "node_tavily",
+      "name": "Tavily 搜索配置",
+      "description": "配置 Tavily 搜索 API Token，输出 TavilyRef 引用",
+      "node_type": "tavily_provider",
+      "input_ports": [
+        {
+          "name": "api_token",
+          "data_type": "Password",
+          "description": "Tavily API Token",
+          "required": true
+        },
+        {
+          "name": "timeout_secs",
+          "data_type": "Integer",
+          "description": "可选：请求超时秒数，默认 30 秒",
+          "required": false
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "tavily_ref",
+          "data_type": "TavilyRef",
+          "description": "Tavily 搜索引用",
+          "required": true
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": -1880.0,
+        "y": -1380.0
+      },
+      "size": null,
+      "inline_values": {},
+      "port_bindings": {
+        "api_token": {
+          "kind": "hyperparameter",
+          "name": "TAVILY_API_KEY"
+        }
+      },
+      "has_error": false,
+      "has_cycle": false
     }
   ],
   "edges": [
@@ -4035,6 +4391,18 @@
       "from_port": "llm_model",
       "to_node_id": "node_4",
       "to_port": "llm_api_llm_model"
+    },
+    {
+      "from_node_id": "node_tavily",
+      "from_port": "tavily_ref",
+      "to_node_id": "node_14",
+      "to_port": "tavily_ref"
+    },
+    {
+      "from_node_id": "node_tavily",
+      "from_port": "tavily_ref",
+      "to_node_id": "node_4",
+      "to_port": "tavily_ref"
     }
   ],
   "hyperparameter_groups": [
@@ -4102,6 +4470,13 @@
       "data_type": "Integer",
       "group": "default",
       "required": false,
+      "description": null
+    },
+    {
+      "name": "TAVILY_API_KEY",
+      "data_type": "Password",
+      "group": "default",
+      "required": true,
       "description": null
     }
   ],

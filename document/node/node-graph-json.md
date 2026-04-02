@@ -6,6 +6,47 @@ This document describes the JSON format used to save and load node graphs. The G
 
 ---
 
+## Validating a graph before running
+
+Run the built-in validator to check a graph JSON file for safety:
+
+```bash
+cargo run -- --graph-json my_graph.json --validate
+# or with a release build:
+./zihuan_next --graph-json my_graph.json --validate
+```
+
+**What is checked:**
+
+| Check | Severity |
+|-------|----------|
+| JSON parse / schema errors | error (exit 2) |
+| `node_type` not found in registry | error |
+| Required input port absent from node | error |
+| Invalid edge (unknown node ID or port name) | error |
+| Cycle dependency in the graph | error |
+| Port present in JSON but removed from registry | warning |
+| `inline_values` key with no matching port | warning |
+| Subgraphs inside `function` / `brain` nodes | recursively checked |
+
+**Exit codes:** `0` = pass or warnings only · `1` = one or more errors · `2` = file load failure
+
+**Rust API** (for programmatic use):
+
+```rust
+use crate::node::graph_io::{validate_graph_definition, find_cycle_node_ids, ValidationIssue};
+
+let definition = node::load_graph_definition_from_json("my_graph.json")?;
+let issues: Vec<ValidationIssue> = validate_graph_definition(&definition);
+let cycles = find_cycle_node_ids(&definition); // Tarjan's SCC; empty = DAG
+for issue in &issues {
+    println!("[{}] {}", issue.severity, issue.message);
+}
+let has_errors = issues.iter().any(|i| i.severity == "error") || !cycles.is_empty();
+```
+
+---
+
 ## Root structure
 
 ```jsonc
