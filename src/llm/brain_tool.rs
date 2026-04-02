@@ -16,6 +16,8 @@ pub struct ToolParamDef {
     pub data_type: DataType,
     #[serde(default)]
     pub desc: String,
+    #[serde(default)]
+    pub optional: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

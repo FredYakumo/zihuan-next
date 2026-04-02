@@ -218,6 +218,7 @@ export component NodeGraphWindow inherits Window {
     callback tool_editor_set_param_name(int, int, string);
     callback tool_editor_set_param_type(int, int, string);
     callback tool_editor_set_param_description(int, int, string);
+    callback tool_editor_set_param_optional(int, int, bool);
     callback tool_editor_add_output(int);
     callback tool_editor_delete_output(int, int);
     callback tool_editor_set_output_name(int, int, string);
@@ -1159,6 +1160,7 @@ export component NodeGraphWindow inherits Window {
         set_param_name(tool_index, param_index, value) => { root.tool_editor_set_param_name(tool_index, param_index, value); }
         set_param_type(tool_index, param_index, value) => { root.tool_editor_set_param_type(tool_index, param_index, value); }
         set_param_description(tool_index, param_index, value) => { root.tool_editor_set_param_description(tool_index, param_index, value); }
+        set_param_optional(tool_index, param_index, value) => { root.tool_editor_set_param_optional(tool_index, param_index, value); }
         add_output(tool_index) => { root.tool_editor_add_output(tool_index); }
         delete_output(tool_index, output_index) => { root.tool_editor_delete_output(tool_index, output_index); }
         set_output_name(tool_index, output_index, value) => { root.tool_editor_set_output_name(tool_index, output_index, value); }

@@ -22,6 +22,7 @@ fn default_param_vm() -> ToolParamVm {
         name: "param".into(),
         data_type: "String".into(),
         description: "".into(),
+        optional: false,
     }
 }
 
@@ -100,6 +101,7 @@ fn tool_items_from_json(value: &serde_json::Value) -> Vec<ToolDefinitionVm> {
                         name: param.name.into(),
                         data_type: param.data_type.to_string().into(),
                         description: param.desc.into(),
+                        optional: param.optional,
                     })
                     .collect::<Vec<_>>(),
             )),
@@ -153,6 +155,7 @@ fn params_from_vm(params: ModelRc<ToolParamVm>) -> Vec<ToolParamDef> {
             name: param.name.to_string(),
             data_type: string_to_data_type(param.data_type.as_str()),
             desc: param.description.to_string(),
+            optional: param.optional,
         })
         .collect()
 }
@@ -614,6 +617,24 @@ pub(crate) fn bind_tool_editor_callbacks(
                     let params_model = item.params.clone();
                     if let Some(mut param) = params_model.row_data(p_idx) {
                         param.description = value;
+                        params_model.set_row_data(p_idx, param);
+                    }
+                }
+            }
+        });
+    }
+
+    {
+        let ui_handle = ui.as_weak();
+        ui.on_tool_editor_set_param_optional(move |tool_index, param_index, value| {
+            if let Some(ui) = ui_handle.upgrade() {
+                let t_idx = tool_index.max(0) as usize;
+                let p_idx = param_index.max(0) as usize;
+                let model = ui.get_tool_editor_items();
+                if let Some(item) = model.row_data(t_idx) {
+                    let params_model = item.params.clone();
+                    if let Some(mut param) = params_model.row_data(p_idx) {
+                        param.optional = value;
                         params_model.set_row_data(p_idx, param);
                     }
                 }

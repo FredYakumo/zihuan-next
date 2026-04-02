@@ -2368,6 +2368,7 @@ export component ToolEditorDialog inherits Rectangle {
     callback set_param_name(int, int, string);
     callback set_param_type(int, int, string);
     callback set_param_description(int, int, string);
+    callback set_param_optional(int, int, bool);
     callback add_output(int);
     callback delete_output(int, int);
     callback set_output_name(int, int, string);
@@ -2838,6 +2839,23 @@ export component ToolEditorDialog inherits Rectangle {
                                                             text: param.description;
                                                             placeholder-text: "参数描述";
                                                             edited(text) => { root.set_param_description(i, j, text); }
+                                                        }
+
+                                                        HorizontalLayout {
+                                                            spacing: 4px;
+                                                            alignment: center;
+
+                                                            CjkText {
+                                                                text: "可选";
+                                                                font-size: 12px;
+                                                                color: AppTheme.text-muted;
+                                                                vertical-alignment: center;
+                                                            }
+
+                                                            CheckBox {
+                                                                checked: param.optional;
+                                                                toggled => { root.set_param_optional(i, j, self.checked); }
+                                                            }
                                                         }
 
                                                         Rectangle {

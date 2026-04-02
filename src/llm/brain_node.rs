@@ -88,7 +88,9 @@ fn tool_parameters_to_json_schema(parameters: &[ToolParamDef]) -> Value {
         if param_name.is_empty() {
             continue;
         }
-        required.push(Value::String(param_name.to_string()));
+        if !param.optional {
+            required.push(Value::String(param_name.to_string()));
+        }
         properties.insert(
             param_name.to_string(),
             json!({
@@ -788,6 +790,7 @@ mod tests {
                 name: "query".to_string(),
                 data_type: DataType::String,
                 desc: "query".to_string(),
+                optional: false,
             }],
             outputs: vec![FunctionPortDef {
                 name: "query".to_string(),
@@ -841,6 +844,7 @@ mod tests {
                 name: "query".to_string(),
                 data_type: DataType::String,
                 desc: "query".to_string(),
+                optional: false,
             }],
             outputs: output_signature,
             subgraph,
@@ -1293,6 +1297,7 @@ mod tests {
                 name: "query".to_string(),
                 data_type: DataType::String,
                 desc: "query".to_string(),
+                optional: false,
             }],
             outputs: output_signature,
             subgraph,
