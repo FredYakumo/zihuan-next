@@ -140,3 +140,40 @@ You must provide the graph file and the `--no-gui` flag via the command line.
 
 **Stopping the bot:**
 Press `Ctrl+C` in the terminal to gracefully shut down the application and close connections.
+
+### Method 3: Validate Mode (Pre-flight Check)
+
+**Use this mode to verify a graph JSON file before running it in production.**
+
+The validator checks:
+- JSON parsing and schema correctness
+- All `node_type` values exist in the node registry
+- Required ports are present on every node
+- Invalid edge references (unknown node IDs or port names)
+- Cycle dependencies (which would prevent execution)
+- Embedded subgraphs in `function` and `brain` nodes
+
+**Windows (PowerShell/CMD):**
+```powershell
+.\zihuan_next.exe --graph-json bot.json --validate
+```
+
+**Linux/macOS:**
+```bash
+./zihuan_next --graph-json bot.json --validate
+```
+
+**Example output:**
+```
+验证节点图: bot.json
+  ✓ 文件解析成功（5 个节点，4 条连接）
+  ⚠ 警告: 节点 "Format String" 的内联值 "old_key" 对应的端口不存在
+  ✗ 错误: 节点图存在环路依赖，涉及节点: "Node A", "Node B"
+
+结果: ✗ 1 个错误，1 个警告 — 节点图无法安全运行
+```
+
+**Exit codes:**
+- `0` — No errors (graph is safe to run; warnings may still appear)
+- `1` — One or more errors found (graph will fail at runtime)
+- `2` — File could not be loaded or parsed

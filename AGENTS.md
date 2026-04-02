@@ -29,6 +29,9 @@ cargo run -- --graph-json example.json
 cargo run -- --graph-json input.json --no-gui
 cargo run -- --graph-json input.json --save-graph-json output.json --no-gui
 
+# Validate graph JSON before running (exits 0=ok/warn, 1=errors, 2=load failure)
+cargo run -- --graph-json input.json --validate
+
 # Tests
 cargo test
 cargo test test_name
