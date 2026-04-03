@@ -240,8 +240,8 @@ mod tests {
     use std::sync::{Arc, Once};
 
     use super::FunctionNode;
-    use crate::llm::llm_base::LLMBase;
-    use crate::llm::{InferenceParam, OpenAIMessage};
+    use zihuan_llm::llm_base::LLMBase;
+    use zihuan_llm::{InferenceParam, OpenAIMessage};
     use crate::node::function_graph::{
         default_embedded_function_config, sync_function_subgraph_signature, FunctionPortDef,
         FUNCTION_CONFIG_PORT, FUNCTION_INPUTS_NODE_ID, FUNCTION_OUTPUTS_NODE_ID,

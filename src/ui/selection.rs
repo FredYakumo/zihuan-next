@@ -2,7 +2,7 @@ use slint::{ComponentHandle, SharedString};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
-use crate::node::graph_io::NodeGraphDefinition;
+use zihuan_node::graph_io::NodeGraphDefinition;
 use crate::ui::graph_window::NodeGraphWindow;
 
 /// Selection state manager for nodes and edges

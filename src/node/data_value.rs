@@ -1,5 +1,5 @@
 use zihuan_bot_types::event_model::MessageEvent;
-use crate::llm::tooling::FunctionTool;
+use zihuan_llm::tooling::FunctionTool;
 use redis::{aio::ConnectionManager, AsyncCommands};
 use serde::Serialize;
 use serde_json::Value;
@@ -227,7 +227,7 @@ impl fmt::Debug for SessionStateRef {
 #[derive(Clone)]
 pub struct OpenAIMessageSessionCacheRef {
     pub node_id: String,
-    pub memory_cache: Arc<TokioMutex<HashMap<String, Vec<crate::llm::OpenAIMessage>>>>,
+    pub memory_cache: Arc<TokioMutex<HashMap<String, Vec<zihuan_llm::OpenAIMessage>>>>,
     pub redis_cm: Arc<TokioMutex<Option<ConnectionManager>>>,
     pub cached_redis_url: Arc<TokioMutex<Option<String>>>,
     pub sender_bucket_map: Arc<TokioMutex<HashMap<String, String>>>,
@@ -274,7 +274,7 @@ impl OpenAIMessageSessionCacheRef {
     pub async fn get_messages(
         &self,
         sender_id: &str,
-    ) -> crate::error::Result<Vec<crate::llm::OpenAIMessage>> {
+    ) -> crate::error::Result<Vec<zihuan_llm::OpenAIMessage>> {
         let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
             let sender_bucket_map = self.sender_bucket_map.lock().await;
@@ -312,7 +312,7 @@ impl OpenAIMessageSessionCacheRef {
             if let Some(cm) = cm_guard.as_mut() {
                 let existing_json: Option<String> = cm.get(&key).await?;
                 if let Some(raw) = existing_json {
-                    let messages: Vec<crate::llm::OpenAIMessage> = serde_json::from_str(&raw)?;
+                    let messages: Vec<zihuan_llm::OpenAIMessage> = serde_json::from_str(&raw)?;
                     return Ok(messages);
                 }
             }
@@ -377,7 +377,7 @@ impl OpenAIMessageSessionCacheRef {
     pub async fn set_messages(
         &self,
         sender_id: &str,
-        messages: Vec<crate::llm::OpenAIMessage>,
+        messages: Vec<zihuan_llm::OpenAIMessage>,
     ) -> crate::error::Result<()> {
         let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
@@ -437,7 +437,7 @@ impl OpenAIMessageSessionCacheRef {
     pub async fn append_messages(
         &self,
         sender_id: &str,
-        incoming_messages: Vec<crate::llm::OpenAIMessage>,
+        incoming_messages: Vec<zihuan_llm::OpenAIMessage>,
     ) -> crate::error::Result<()> {
         let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
@@ -475,7 +475,7 @@ impl OpenAIMessageSessionCacheRef {
 
             if let Some(cm) = cm_guard.as_mut() {
                 let existing_json: Option<String> = cm.get(&key).await?;
-                let mut existing_messages: Vec<crate::llm::OpenAIMessage> = existing_json
+                let mut existing_messages: Vec<zihuan_llm::OpenAIMessage> = existing_json
                     .as_deref()
                     .map(serde_json::from_str)
                     .transpose()?
@@ -742,7 +742,7 @@ pub enum DataValue {
     Binary(Vec<u8>),
     Vec(Box<DataType>, std::vec::Vec<DataValue>),
     MessageEvent(MessageEvent),
-    OpenAIMessage(crate::llm::OpenAIMessage),
+    OpenAIMessage(zihuan_llm::OpenAIMessage),
     QQMessage(crate::bot_adapter::models::message::Message),
     FunctionTools(Vec<Arc<dyn FunctionTool>>),
     BotAdapterRef(zihuan_bot_types::BotAdapterHandle),
@@ -752,7 +752,7 @@ pub enum DataValue {
     SessionStateRef(Arc<SessionStateRef>),
     OpenAIMessageSessionCacheRef(Arc<OpenAIMessageSessionCacheRef>),
     Password(String),
-    LLModel(Arc<dyn crate::llm::llm_base::LLMBase>),
+    LLModel(Arc<dyn zihuan_llm::llm_base::LLMBase>),
     LoopControlRef(Arc<LoopControl>),
 }
 
@@ -812,7 +812,7 @@ impl DataValue {
             }
             DataValue::OpenAIMessage(m) => {
                 serde_json::json!({
-                    "role": crate::llm::role_to_str(&m.role),
+                    "role": zihuan_llm::role_to_str(&m.role),
                     "content": m.content,
                     "tool_calls": m.tool_calls,
                 })

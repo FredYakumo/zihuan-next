@@ -15,11 +15,11 @@ pub fn init_node_registry() -> Result<()> {
         SendFriendMessageBatchesNode, SendFriendMessageNode, SendGroupMessageBatchesNode,
         SendGroupMessageNode, SendQQMessageBatchesNode,
     };
-    use crate::llm::brain_node::BrainNode;
-    use crate::llm::llm_api_node::LLMApiNode;
-    use crate::llm::llm_infer_node::LLMInferNode;
-    use crate::llm::rag::tavily_provider_node::TavilyProviderNode;
-    use crate::llm::rag::tavily_search_node::TavilySearchNode;
+    use zihuan_llm::brain_node::BrainNode;
+    use zihuan_llm::llm_api_node::LLMApiNode;
+    use zihuan_llm::llm_infer_node::LLMInferNode;
+    use zihuan_llm::rag::tavily_provider_node::TavilyProviderNode;
+    use zihuan_llm::rag::tavily_search_node::TavilySearchNode;
 
     // LLM nodes
     register_node!(

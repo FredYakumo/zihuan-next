@@ -6,7 +6,7 @@ use log::warn;
 use serde_json::Value;
 
 use crate::error::Result;
-use crate::node::graph_io::NodeGraphDefinition;
+use zihuan_node::graph_io::NodeGraphDefinition;
 
 /// Returns the central directory that stores hyperparameter value files.
 ///

@@ -1,5 +1,5 @@
 use super::{inline_port_key, InlinePortValue, NodeRenderer};
-use crate::node::graph_io::NodeGraphDefinition;
+use zihuan_node::graph_io::NodeGraphDefinition;
 use std::collections::HashMap;
 
 pub struct StringDataRenderer;

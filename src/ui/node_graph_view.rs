@@ -8,16 +8,16 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crate::error::Result;
-use crate::llm::brain_tool::{
+use zihuan_llm::brain_tool::{
     brain_shared_inputs_from_value, brain_tool_input_signature, BrainToolDefinition,
     BRAIN_SHARED_INPUTS_PORT, BRAIN_TOOLS_CONFIG_PORT,
 };
-use crate::node::function_graph::{
+use zihuan_node::function_graph::{
     default_embedded_function_config, embedded_function_config_from_node,
     sync_function_node_definition, sync_function_subgraph_signature, FUNCTION_CONFIG_PORT,
 };
-use crate::node::graph_io::{validate_graph_definition, NodeGraphDefinition};
-use crate::node::registry::NODE_REGISTRY;
+use zihuan_node::graph_io::{validate_graph_definition, NodeGraphDefinition};
+use zihuan_node::registry::NODE_REGISTRY;
 use crate::ui::graph_window::ValidationIssueVm;
 
 use crate::ui::canvas_state::{load_canvas_view_state, save_canvas_view_state, CanvasViewState};
@@ -302,7 +302,7 @@ impl GraphTabState {
         self.load_current_page_into_mirror();
         // Concretize positions immediately so they are preserved when
         // navigating back and re-entering the subgraph.
-        crate::node::graph_io::ensure_positions(&mut self.graph);
+        zihuan_node::graph_io::ensure_positions(&mut self.graph);
     }
 
     pub(crate) fn return_to_root_page(&mut self) -> bool {
@@ -393,15 +393,15 @@ mod tests {
     use super::{
         embed_subgraph_into_page, new_blank_tab, GraphPageState, SubgraphOwner,
     };
-    use crate::llm::brain_tool::{
+    use zihuan_llm::brain_tool::{
         BrainToolDefinition, ToolParamDef, BRAIN_SHARED_INPUTS_PORT, BRAIN_TOOLS_CONFIG_PORT,
     };
-    use crate::node::function_graph::{
+    use zihuan_node::function_graph::{
         function_signature_from_inline_values, sync_function_subgraph_signature, FunctionPortDef,
         FUNCTION_INPUTS_NODE_ID,
     };
-    use crate::node::graph_io::{EdgeDefinition, NodeDefinition, NodeGraphDefinition};
-    use crate::node::{DataType, Port};
+    use zihuan_node::graph_io::{EdgeDefinition, NodeDefinition, NodeGraphDefinition};
+    use zihuan_node::{DataType, Port};
     use crate::ui::canvas_state::CanvasViewState;
     use crate::ui::node_graph_view_inline::build_inline_inputs_from_graph;
 
@@ -439,12 +439,12 @@ mod tests {
                 desc: String::new(),
             }],
             outputs: Vec::new(),
-            subgraph: crate::node::function_graph::default_function_subgraph(),
+            subgraph: zihuan_node::function_graph::default_function_subgraph(),
         };
         let mut subgraph = tool.subgraph.clone();
         sync_function_subgraph_signature(
             &mut subgraph,
-            &crate::llm::brain_tool::brain_tool_input_signature(&shared_inputs, &tool),
+            &zihuan_llm::brain_tool::brain_tool_input_signature(&shared_inputs, &tool),
             &tool.outputs,
         );
         subgraph.nodes.push(inner_string_node());

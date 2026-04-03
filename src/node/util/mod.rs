@@ -133,7 +133,7 @@ pub mod openai_message_session_cache_clear {
     mod tests {
         use super::OpenAIMessageSessionCacheClearNode;
         use crate::error::Result;
-        use crate::llm::{MessageRole, OpenAIMessage};
+        use zihuan_llm::{MessageRole, OpenAIMessage};
         use crate::node::util::{
             OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode,
             OpenAIMessageSessionCacheProviderNode,

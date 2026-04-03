@@ -5,7 +5,7 @@ pub mod preview_string;
 pub mod qq_message_list_data;
 pub mod string_data;
 
-use crate::node::graph_io::NodeGraphDefinition;
+use zihuan_node::graph_io::NodeGraphDefinition;
 use serde_json::Value;
 use std::collections::HashMap;
 

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::error::{Error, Result};
-use crate::llm::{str_to_role, OpenAIMessage};
+use zihuan_llm::{str_to_role, OpenAIMessage};
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 
 /// Converts a plain string into an `OpenAIMessage` with the selected role.
@@ -75,7 +75,7 @@ impl Node for StringToOpenAIMessageNode {
 #[cfg(test)]
 mod tests {
     use super::StringToOpenAIMessageNode;
-    use crate::llm::MessageRole;
+    use zihuan_llm::MessageRole;
     use crate::node::{DataValue, Node};
     use std::collections::HashMap;
 

@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use slint::{ModelRc, VecModel};
 
-use crate::node::graph_io::{ensure_positions, GraphVariable, NodeDefinition, NodeGraphDefinition, PortBindingKind};
-use crate::node::function_graph::is_hidden_function_port;
+use zihuan_node::graph_io::{ensure_positions, GraphVariable, NodeDefinition, NodeGraphDefinition, PortBindingKind};
+use zihuan_node::function_graph::is_hidden_function_port;
 use crate::ui::graph_window::{
     HyperParameterVm, MessageItemVm, NodeGraphWindow, NodeTypeVm, NodeVm, PortVm,
 };
@@ -239,10 +239,10 @@ fn build_node_vm(
 
     let message_list = build_message_list_vm(node, graph, inline_inputs);
 
-    let is_event_producer = crate::node::registry::NODE_REGISTRY.is_event_producer(&node.node_type);
+    let is_event_producer = zihuan_node::registry::NODE_REGISTRY.is_event_producer(&node.node_type);
     let set_variable_name = if node.node_type == "set_variable" {
         node.inline_values
-            .get(crate::node::util::set_variable::SET_VARIABLE_NAME_PORT)
+            .get(zihuan_node::util::set_variable::SET_VARIABLE_NAME_PORT)
             .and_then(|value| value.as_str())
             .unwrap_or_default()
             .to_string()
@@ -299,7 +299,7 @@ fn build_node_vm(
 
 fn build_input_port_vm(
     node: &NodeDefinition,
-    port: &crate::node::Port,
+    port: &zihuan_node::Port,
     graph: &NodeGraphDefinition,
     inline_inputs: &HashMap<String, InlinePortValue>,
 ) -> PortVm {
@@ -310,7 +310,7 @@ fn build_input_port_vm(
         .any(|e| e.to_node_id == node.id && e.to_port == port.name);
     let key = inline_port_key(&node.id, &port.name);
     let (inline_text, inline_bool, has_inline) = match &port.data_type {
-        crate::node::DataType::Boolean => {
+        zihuan_node::DataType::Boolean => {
             let value = match inline_inputs.get(&key) {
                 Some(InlinePortValue::Bool(v)) => *v,
                 Some(InlinePortValue::Text(v)) => v.eq_ignore_ascii_case("true"),
@@ -319,10 +319,10 @@ fn build_input_port_vm(
             };
             (String::new(), value, true)
         }
-        crate::node::DataType::String
-        | crate::node::DataType::Integer
-        | crate::node::DataType::Float
-        | crate::node::DataType::Password => {
+        zihuan_node::DataType::String
+        | zihuan_node::DataType::Integer
+        | zihuan_node::DataType::Float
+        | zihuan_node::DataType::Password => {
             let value = match inline_inputs.get(&key) {
                 Some(InlinePortValue::Text(v)) => v.clone(),
                 Some(InlinePortValue::Bool(v)) => v.to_string(),
@@ -332,10 +332,10 @@ fn build_input_port_vm(
             let has_val = !value.is_empty();
             (value, false, has_val)
         }
-        crate::node::DataType::Vec(inner)
+        zihuan_node::DataType::Vec(inner)
             if matches!(
                 inner.as_ref(),
-                crate::node::DataType::OpenAIMessage | crate::node::DataType::QQMessage
+                zihuan_node::DataType::OpenAIMessage | zihuan_node::DataType::QQMessage
             ) =>
         {
             let has_val = match inline_inputs.get(&key) {
