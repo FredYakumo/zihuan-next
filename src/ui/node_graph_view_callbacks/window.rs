@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use log::{error, info};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 
-use crate::node::graph_io::NodeGraphDefinition;
+use zihuan_node::graph_io::NodeGraphDefinition;
 use crate::ui::graph_window::{NodeGraphWindow, NodeTypeVm};
 use crate::ui::task_manager::{push_task_list_to_ui, TASK_MANAGER};
 use crate::ui::node_graph_view::{refresh_active_tab_ui, tab_display_title, GraphTabState};
@@ -25,7 +25,7 @@ fn filter_node_types_for_page(all_node_types: &[NodeTypeVm], is_subgraph_page: b
             if matches!(type_id, "function_inputs" | "function_outputs") {
                 return false;
             }
-            if is_subgraph_page && crate::node::registry::NODE_REGISTRY.is_event_producer(type_id) {
+            if is_subgraph_page && zihuan_node::registry::NODE_REGISTRY.is_event_producer(type_id) {
                 return false;
             }
             true
@@ -165,7 +165,7 @@ fn is_cycle_dependency_error(error_msg: &str) -> bool {
 fn mark_graph_cycle_path(graph: &mut NodeGraphDefinition) {
     clear_graph_error_state(graph);
 
-    for cycle_node_id in crate::node::graph_io::find_cycle_node_ids(graph) {
+    for cycle_node_id in zihuan_node::graph_io::find_cycle_node_ids(graph) {
         if let Some(node) = graph.nodes.iter_mut().find(|node| node.id == cycle_node_id) {
             node.has_cycle = true;
         }
@@ -249,7 +249,7 @@ pub(crate) fn bind_window_callbacks(
         let active_index = *active_tab_clone.lock().unwrap();
         if let Some(tab) = tabs_guard.get_mut(active_index) {
             if tab.is_subgraph_page()
-                && crate::node::registry::NODE_REGISTRY.is_event_producer(type_id_str)
+                && zihuan_node::registry::NODE_REGISTRY.is_event_producer(type_id_str)
             {
                 if let Some(ui) = ui_handle.upgrade() {
                     ui.invoke_show_error("函数子图内不能添加事件源节点".into());
@@ -288,7 +288,7 @@ pub(crate) fn bind_window_callbacks(
                         .unwrap_or((0.0, 0.0))
                 };
 
-                node.position = Some(crate::node::graph_io::GraphPosition {
+                node.position = Some(zihuan_node::graph_io::GraphPosition {
                     x: snap_to_grid(center_canvas_x - node_width / 2.0),
                     y: snap_to_grid(center_canvas_y - node_height / 2.0),
                 });
@@ -337,7 +337,7 @@ pub(crate) fn bind_window_callbacks(
         let mut graph_def = graph_def;
 
         {
-            use crate::node::util::STRING_DATA_CONTEXT;
+            use zihuan_node::util::STRING_DATA_CONTEXT;
             let mut context = STRING_DATA_CONTEXT.write().unwrap();
             context.clear();
 
@@ -367,7 +367,7 @@ pub(crate) fn bind_window_callbacks(
         materialize_graph_for_execution(&mut graph_def, &inline_inputs_map, &hyperparameter_values);
         clear_graph_error_state(&mut graph_def);
 
-        match crate::node::registry::build_node_graph_from_definition(&graph_def) {
+        match zihuan_node::registry::build_node_graph_from_definition(&graph_def) {
             Ok(mut node_graph) => {
                 info!("开始执行节点图...");
 
@@ -382,7 +382,7 @@ pub(crate) fn bind_window_callbacks(
                 let has_event_producer = node_graph
                     .nodes
                     .values()
-                    .any(|node| node.node_type() == crate::node::NodeType::EventProducer);
+                    .any(|node| node.node_type() == zihuan_node::NodeType::EventProducer);
 
                 if has_event_producer {
                     let stop_flag = stop_flag_clone;

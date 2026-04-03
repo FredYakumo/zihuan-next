@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::error::{Error, Result};
-use crate::llm::OpenAIMessage;
+use zihuan_llm::OpenAIMessage;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 
 pub struct ToolResultNode {
@@ -75,7 +75,7 @@ impl Node for ToolResultNode {
 #[cfg(test)]
 mod tests {
     use super::ToolResultNode;
-    use crate::llm::MessageRole;
+    use zihuan_llm::MessageRole;
     use crate::node::{DataValue, Node};
     use serde_json::json;
     use std::collections::HashMap;

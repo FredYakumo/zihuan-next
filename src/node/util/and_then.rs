@@ -58,7 +58,7 @@ impl Node for AndThenNode {
 mod tests {
     use super::AndThenNode;
     use crate::error::Result;
-    use crate::llm::OpenAIMessage;
+    use zihuan_llm::OpenAIMessage;
     use crate::node::{DataType, DataValue, Node};
     use std::collections::HashMap;
 

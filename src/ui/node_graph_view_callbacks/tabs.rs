@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use log::info;
 use slint::ComponentHandle;
 
-use crate::node::graph_io::{
+use zihuan_node::graph_io::{
     auto_fix_graph_definition, load_graph_definition_from_json_with_migration,
     validate_graph_definition, NodeGraphDefinition,
 };
@@ -207,7 +207,7 @@ pub(crate) fn bind_tab_callbacks(
             tab.commit_all_pages_to_root();
 
             if let Err(e) =
-                crate::node::graph_io::save_graph_definition_to_json(&path, tab.root_graph())
+                zihuan_node::graph_io::save_graph_definition_to_json(&path, tab.root_graph())
             {
                 eprintln!("Failed to save graph: {}", e);
                 return false;
@@ -563,7 +563,7 @@ pub(crate) fn bind_tab_callbacks(
             tab.commit_all_pages_to_root();
 
             if let Err(e) =
-                crate::node::graph_io::save_graph_definition_to_json(&path, tab.root_graph())
+                zihuan_node::graph_io::save_graph_definition_to_json(&path, tab.root_graph())
             {
                 log::error!("Failed to save graph: {}", e);
                 return false;

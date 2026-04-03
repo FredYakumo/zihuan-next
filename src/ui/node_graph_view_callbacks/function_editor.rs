@@ -3,11 +3,11 @@ use std::sync::{Arc, Mutex};
 
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
 
-use crate::node::function_graph::{
+use zihuan_node::function_graph::{
     default_embedded_function_config, embedded_function_config_from_node,
     sync_function_node_definition, FunctionPortDef, FUNCTION_CONFIG_PORT,
 };
-use crate::node::DataType;
+use zihuan_node::DataType;
 use crate::ui::graph_window::{FunctionPortVm, NodeGraphWindow};
 use crate::ui::node_graph_view::{
     apply_canvas_view_state, refresh_active_tab_ui, GraphTabState, SubgraphOwner,

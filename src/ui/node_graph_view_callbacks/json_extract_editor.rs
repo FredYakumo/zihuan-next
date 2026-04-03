@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
 
-use crate::node::DataType;
-use crate::node::Port;
+use zihuan_node::DataType;
+use zihuan_node::Port;
 use crate::ui::graph_window::{JsonExtractFieldVm, NodeGraphWindow};
 use crate::ui::node_graph_view::{refresh_active_tab_ui, GraphTabState};
 use crate::ui::node_render::{inline_port_key, InlinePortValue};

@@ -1,16 +1,16 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::node::function_graph::{
+use zihuan_node::function_graph::{
     default_embedded_function_config, embedded_function_config_from_node,
     is_function_boundary_node, sync_function_node_definition, sync_function_subgraph_signature,
     FunctionPortDef, FUNCTION_CONFIG_PORT, FUNCTION_INPUTS_NODE_ID, FUNCTION_OUTPUTS_NODE_ID,
 };
-use crate::node::graph_io::{
+use zihuan_node::graph_io::{
     EdgeDefinition, GraphPosition, NodeDefinition, NodeGraphDefinition, PortBindingKind,
 };
-use crate::node::util::set_variable::{SET_VARIABLE_NAME_PORT, SET_VARIABLE_TYPE_PORT};
-use crate::node::registry::NODE_REGISTRY;
-use crate::node::DataType;
+use zihuan_node::util::set_variable::{SET_VARIABLE_NAME_PORT, SET_VARIABLE_TYPE_PORT};
+use zihuan_node::registry::NODE_REGISTRY;
+use zihuan_node::DataType;
 use crate::ui::node_graph_view_geometry::snap_to_grid;
 use crate::ui::node_graph_view_inline::{
     apply_inline_inputs_to_graph, build_inline_inputs_from_graph,
@@ -66,7 +66,7 @@ pub(crate) fn copy_selected_nodes_to_clipboard(
     }
 
     let mut graph_clone = graph.clone();
-    crate::node::graph_io::ensure_positions(&mut graph_clone);
+    zihuan_node::graph_io::ensure_positions(&mut graph_clone);
     apply_inline_inputs_to_graph(&mut graph_clone, inline_inputs);
 
     let mut nodes: Vec<NodeDefinition> = graph_clone
@@ -231,11 +231,11 @@ pub(crate) fn convert_selection_to_function_subgraph(
     }
 
     let mut graph_clone = graph.clone();
-    crate::node::graph_io::ensure_positions(&mut graph_clone);
+    zihuan_node::graph_io::ensure_positions(&mut graph_clone);
     apply_inline_inputs_to_graph(&mut graph_clone, inline_inputs);
     // 确保所有节点的端口类型与注册表一致，避免因旧 JSON 保存了错误类型
     // （如 BotAdapterRef 被存成 String）导致边界类型推断出错。
-    crate::node::graph_io::refresh_port_types(&mut graph_clone);
+    zihuan_node::graph_io::refresh_port_types(&mut graph_clone);
 
     let selected_nodes = graph_clone
         .nodes
@@ -689,15 +689,15 @@ fn normalize_port_name(value: &str) -> String {
 mod tests {
     use std::collections::{HashMap, HashSet};
 
-    use crate::node::function_graph::{
+    use zihuan_node::function_graph::{
         embedded_function_config_from_node, FunctionPortDef, FUNCTION_INPUTS_NODE_ID,
         FUNCTION_INPUTS_NODE_TYPE, FUNCTION_OUTPUTS_NODE_ID,
     };
-    use crate::node::data_value::DataType;
-    use crate::node::graph_io::{
+    use zihuan_node::data_value::DataType;
+    use zihuan_node::graph_io::{
         EdgeDefinition, GraphPosition, HyperParameter, NodeDefinition, NodeGraphDefinition,
     };
-    use crate::node::Port;
+    use zihuan_node::Port;
     use crate::ui::node_render::InlinePortValue;
 
     use super::{
@@ -874,7 +874,7 @@ mod tests {
         node.port_bindings
             .insert(
                 "text".to_string(),
-                crate::node::graph_io::PortBinding::hyperparameter("missing_hp".to_string()),
+                zihuan_node::graph_io::PortBinding::hyperparameter("missing_hp".to_string()),
             );
 
         let clipboard_graph = NodeGraphDefinition {

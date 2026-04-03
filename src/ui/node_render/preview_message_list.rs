@@ -1,7 +1,7 @@
 use super::{InlinePortValue, NodeRenderer};
-use crate::llm::{MessageRole, OpenAIMessage};
-use crate::node::graph_io::NodeGraphDefinition;
-use crate::node::DataValue;
+use zihuan_llm::{MessageRole, OpenAIMessage};
+use zihuan_node::graph_io::NodeGraphDefinition;
+use zihuan_node::DataValue;
 use std::collections::HashMap;
 
 pub struct PreviewMessageListRenderer;

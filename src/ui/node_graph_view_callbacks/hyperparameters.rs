@@ -2,12 +2,12 @@ use std::sync::{Arc, Mutex};
 
 use slint::ComponentHandle;
 
-use crate::node::data_value::DataType;
-use crate::llm::brain_tool::BrainToolDefinition;
-use crate::node::function_graph::{
+use zihuan_node::data_value::DataType;
+use zihuan_llm::brain_tool::BrainToolDefinition;
+use zihuan_node::function_graph::{
     embedded_function_config_from_node, FUNCTION_CONFIG_PORT,
 };
-use crate::node::graph_io::{HyperParameter, PortBindingKind};
+use zihuan_node::graph_io::{HyperParameter, PortBindingKind};
 use crate::ui::graph_window::NodeGraphWindow;
 use crate::ui::node_graph_view::{refresh_active_tab_ui, update_tabs_ui, GraphTabState};
 use crate::util::hyperparam_store::save_hyperparameter_values;
@@ -64,7 +64,7 @@ fn normalize_group_name(group: &str) -> String {
 }
 
 fn remove_hyperparameter_bindings_from_graph(
-    graph: &mut crate::node::graph_io::NodeGraphDefinition,
+    graph: &mut zihuan_node::graph_io::NodeGraphDefinition,
     name: &str,
 ) {
     for node in &mut graph.nodes {
