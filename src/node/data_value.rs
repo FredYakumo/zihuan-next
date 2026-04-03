@@ -1,4 +1,3 @@
-use crate::bot_adapter::adapter::SharedBotAdapter;
 use crate::bot_adapter::models::event_model::MessageEvent;
 use crate::llm::tooling::FunctionTool;
 use redis::{aio::ConnectionManager, AsyncCommands};
@@ -746,7 +745,7 @@ pub enum DataValue {
     OpenAIMessage(crate::llm::OpenAIMessage),
     QQMessage(crate::bot_adapter::models::message::Message),
     FunctionTools(Vec<Arc<dyn FunctionTool>>),
-    BotAdapterRef(SharedBotAdapter),
+    BotAdapterRef(zihuan_bot_types::BotAdapterHandle),
     RedisRef(Arc<RedisConfig>),
     MySqlRef(Arc<MySqlConfig>),
     TavilyRef(Arc<TavilyRef>),

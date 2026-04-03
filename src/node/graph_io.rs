@@ -5,7 +5,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::error::Result;
-use crate::llm::brain_tool::{
+use crate::node::brain_tool_spec::{
     brain_shared_inputs_from_value, brain_tool_input_signature, BrainToolDefinition,
     BRAIN_SHARED_INPUTS_PORT, BRAIN_TOOLS_CONFIG_PORT,
 };

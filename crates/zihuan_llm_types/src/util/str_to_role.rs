@@ -1,0 +1,10 @@
+use crate::model::MessageRole;
+
+pub fn str_to_role(s: &str) -> MessageRole {
+    match s {
+        "system" => MessageRole::System,
+        "user" => MessageRole::User,
+        "tool" => MessageRole::Tool,
+        _ => MessageRole::Assistant,
+    }
+}

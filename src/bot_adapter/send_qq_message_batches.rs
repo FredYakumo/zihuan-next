@@ -399,7 +399,7 @@ pub fn execute_fixed_target_batch_send(
     log_prefix: &str,
 ) -> Result<HashMap<String, DataValue>> {
     let bot_adapter = match inputs.get("bot_adapter") {
-        Some(DataValue::BotAdapterRef(value)) => value.clone(),
+        Some(DataValue::BotAdapterRef(handle)) => crate::bot_adapter::adapter::shared_from_handle(handle),
         _ => return Err(Error::InvalidNodeInput("bot_adapter is required".to_string())),
     };
     let target_id = match inputs.get("target_id") {
@@ -471,7 +471,7 @@ impl Node for SendQQMessageBatchesNode {
         self.validate_inputs(&inputs)?;
 
         let bot_adapter_ref = match inputs.get("bot_adapter_ref") {
-            Some(DataValue::BotAdapterRef(value)) => value.clone(),
+            Some(DataValue::BotAdapterRef(handle)) => crate::bot_adapter::adapter::shared_from_handle(handle),
             _ => {
                 return Err(Error::InvalidNodeInput(
                     "bot_adapter_ref is required".to_string(),
@@ -780,7 +780,7 @@ mod tests {
         let outputs = node.execute(HashMap::from([
             (
                 "bot_adapter_ref".to_string(),
-                DataValue::BotAdapterRef(adapter_ref.clone()),
+                DataValue::BotAdapterRef(adapter_ref.clone() as zihuan_bot_types::BotAdapterHandle),
             ),
             (
                 "target_id".to_string(),
