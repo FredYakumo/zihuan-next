@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::llm::OpenAIMessage;
+use zihuan_llm::OpenAIMessage;
 use crate::node::data_value::OpenAIMessageSessionCacheRef;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::info;
@@ -113,7 +113,7 @@ impl Node for OpenAIMessageSessionCacheNode {
 mod tests {
     use super::OpenAIMessageSessionCacheNode;
     use crate::error::Result;
-    use crate::llm::{MessageRole, OpenAIMessage};
+    use zihuan_llm::{MessageRole, OpenAIMessage};
     use crate::node::data_value::OpenAIMessageSessionCacheRef;
     use crate::node::util::OpenAIMessageSessionCacheProviderNode;
     use crate::node::{DataType, DataValue, Node};

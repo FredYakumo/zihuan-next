@@ -2,11 +2,11 @@ use std::sync::{Arc, Mutex};
 
 use slint::{ComponentHandle, ModelRc, VecModel};
 
-use crate::llm::brain_tool::BrainToolDefinition;
-use crate::node::data_value::DataType;
-use crate::node::function_graph::{embedded_function_config_from_node, FUNCTION_CONFIG_PORT};
-use crate::node::graph_io::{GraphVariable, NodeGraphDefinition, PortBinding, PortBindingKind};
-use crate::node::util::set_variable::{SET_VARIABLE_NAME_PORT, SET_VARIABLE_TYPE_PORT};
+use zihuan_llm::brain_tool::BrainToolDefinition;
+use zihuan_node::data_value::DataType;
+use zihuan_node::function_graph::{embedded_function_config_from_node, FUNCTION_CONFIG_PORT};
+use zihuan_node::graph_io::{GraphVariable, NodeGraphDefinition, PortBinding, PortBindingKind};
+use zihuan_node::util::set_variable::{SET_VARIABLE_NAME_PORT, SET_VARIABLE_TYPE_PORT};
 use crate::ui::graph_window::{GraphVariableVm, HyperParameterVm, NodeGraphWindow};
 use crate::ui::node_graph_view::{refresh_active_tab_ui, GraphTabState};
 
@@ -59,7 +59,7 @@ fn is_type_compatible(variable_type: &DataType, port_type: &DataType) -> bool {
     }
 }
 
-fn clear_set_variable_config_if_matches(node: &mut crate::node::graph_io::NodeDefinition, name: &str) {
+fn clear_set_variable_config_if_matches(node: &mut zihuan_node::graph_io::NodeDefinition, name: &str) {
     if node.node_type != "set_variable" {
         return;
     }
@@ -101,7 +101,7 @@ fn remove_variable_references_from_graph(graph: &mut NodeGraphDefinition, name: 
         }
     }
 
-    crate::node::graph_io::refresh_port_types(graph);
+    zihuan_node::graph_io::refresh_port_types(graph);
 }
 
 fn set_set_variable_selection(
@@ -125,7 +125,7 @@ fn set_set_variable_selection(
         SET_VARIABLE_TYPE_PORT.to_string(),
         serde_json::Value::String(variable_type.to_string()),
     );
-    crate::node::graph_io::refresh_port_types(graph);
+    zihuan_node::graph_io::refresh_port_types(graph);
     true
 }
 

@@ -121,7 +121,7 @@ impl Node for OpenAIMessageSessionCacheGetNode {
 mod tests {
     use super::OpenAIMessageSessionCacheGetNode;
     use crate::error::Result;
-    use crate::llm::{MessageRole, OpenAIMessage};
+    use zihuan_llm::{MessageRole, OpenAIMessage};
     use crate::node::util::{OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheProviderNode};
     use crate::node::{DataType, DataValue, Node};
     use std::collections::HashMap;

@@ -3,10 +3,10 @@ use std::sync::{Arc, Mutex};
 
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
-use crate::node::util::format_string::{
+use zihuan_node::util::format_string::{
     complete_incomplete_variable_at, find_incomplete_variable_at,
 };
-use crate::node::{DataType, Port};
+use zihuan_node::{DataType, Port};
 use crate::ui::graph_window::NodeGraphWindow;
 use crate::ui::node_graph_view::{refresh_active_tab_ui, GraphTabState};
 use crate::ui::node_render::{inline_port_key, InlinePortValue};

@@ -7,7 +7,7 @@ pub mod brain;
 use zihuan_bot_adapter::adapter::BotAdapter;
 use zihuan_bot_types::event_model::MessageEvent;
 
-use crate::llm::OpenAIMessage;
+use crate::model::OpenAIMessage;
 
 pub trait Agent: Send + Sync {
     type Output;
@@ -27,5 +27,5 @@ pub trait Agent: Send + Sync {
 }
 
 pub trait FunctionToolsAgent: Send + Sync {
-    fn get_tools(&self) -> Vec<&dyn crate::llm::tooling::FunctionTool>;
+    fn get_tools(&self) -> Vec<&dyn crate::tooling::FunctionTool>;
 }

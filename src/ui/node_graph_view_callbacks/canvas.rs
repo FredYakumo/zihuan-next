@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
-use crate::node::function_graph::is_function_boundary_node;
-use crate::node::graph_io::{ensure_positions, GraphPosition};
+use zihuan_node::function_graph::is_function_boundary_node;
+use zihuan_node::graph_io::{ensure_positions, GraphPosition};
 use crate::ui::graph_window::NodeGraphWindow;
 use crate::ui::node_graph_view::{
     refresh_active_tab_ui, tab_display_title, update_tabs_ui, GraphTabState,
@@ -188,7 +188,7 @@ pub(crate) fn bind_canvas_callbacks(
                 .iter_mut()
                 .find(|n| n.id == node_id.as_str())
             {
-                node.size = Some(crate::node::graph_io::GraphSize { width, height });
+                node.size = Some(zihuan_node::graph_io::GraphSize { width, height });
             }
 
             if let Some(ui) = ui_handle.upgrade() {
@@ -258,7 +258,7 @@ pub(crate) fn bind_canvas_callbacks(
                             + node.input_ports.len().max(node.output_ports.len()) as f32,
                     ) + NODE_PADDING_BOTTOM);
                 let snapped_height = snap_to_grid(height).max(min_height);
-                node.size = Some(crate::node::graph_io::GraphSize {
+                node.size = Some(zihuan_node::graph_io::GraphSize {
                     width: snapped_width,
                     height: snapped_height,
                 });
@@ -303,7 +303,7 @@ pub(crate) fn bind_canvas_callbacks(
                             (node_id_str, port_name_str, prev_node, prev_port)
                         };
 
-                        tab.graph.edges.push(crate::node::graph_io::EdgeDefinition {
+                        tab.graph.edges.push(zihuan_node::graph_io::EdgeDefinition {
                             from_node_id: from_node,
                             from_port,
                             to_node_id: to_node,
@@ -599,7 +599,7 @@ pub(crate) fn bind_canvas_callbacks(
             let mut tabs_guard = tabs_clone.lock().unwrap();
             let active_index = *active_tab_clone.lock().unwrap();
             if let Some(tab) = tabs_guard.get_mut(active_index) {
-                crate::node::graph_io::auto_layout(&mut tab.graph);
+                zihuan_node::graph_io::auto_layout(&mut tab.graph);
                 tab.is_dirty = true;
                 apply_graph_to_ui(
                     &ui,

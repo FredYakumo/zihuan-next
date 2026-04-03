@@ -1,11 +1,11 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
-use crate::node::graph_io::{
+use zihuan_node::graph_io::{
     find_cycle_edge_keys, EdgeDefinition, NodeDefinition, NodeGraphDefinition,
 };
-use crate::node::function_graph::is_hidden_function_port;
-use crate::node::DataType;
+use zihuan_node::function_graph::is_hidden_function_port;
+use zihuan_node::DataType;
 use crate::ui::graph_window::{EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm};
 use crate::ui::selection::SelectionState;
 
@@ -848,10 +848,10 @@ mod tests {
         build_edge_route_plans, get_port_center_for_node, resolve_display_data_type, GRID_SIZE,
         NODE_HEADER_ROWS,
     };
-    use crate::node::graph_io::{
+    use zihuan_node::graph_io::{
         EdgeDefinition, GraphPosition, NodeDefinition, NodeGraphDefinition,
     };
-    use crate::node::{DataType, Port};
+    use zihuan_node::{DataType, Port};
     use std::collections::HashMap;
 
     fn node(

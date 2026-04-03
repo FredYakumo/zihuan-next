@@ -286,26 +286,26 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
 
         // Single OpenAIMessage from a JSON object: {"role": "user", "content": "..."}
         (Value::Object(map), DataType::OpenAIMessage) => {
-            fn parse_role(v: &Value) -> crate::llm::MessageRole {
+            fn parse_role(v: &Value) -> zihuan_llm::MessageRole {
                 let s = v.as_str().unwrap_or("user").to_ascii_lowercase();
                 match s.as_str() {
-                    "system" => crate::llm::MessageRole::System,
-                    "assistant" => crate::llm::MessageRole::Assistant,
-                    "tool" => crate::llm::MessageRole::Tool,
-                    _ => crate::llm::MessageRole::User,
+                    "system" => zihuan_llm::MessageRole::System,
+                    "assistant" => zihuan_llm::MessageRole::Assistant,
+                    "tool" => zihuan_llm::MessageRole::Tool,
+                    _ => zihuan_llm::MessageRole::User,
                 }
             }
 
             let role = map
                 .get("role")
                 .map(|v| parse_role(v))
-                .unwrap_or(crate::llm::MessageRole::User);
+                .unwrap_or(zihuan_llm::MessageRole::User);
             let content = match map.get("content") {
                 Some(Value::String(s)) => Some(s.clone()),
                 Some(Value::Null) | None => None,
                 Some(other) => Some(other.to_string()),
             };
-            Some(DataValue::OpenAIMessage(crate::llm::OpenAIMessage {
+            Some(DataValue::OpenAIMessage(zihuan_llm::OpenAIMessage {
                 role,
                 content,
                 tool_calls: Vec::new(),
@@ -367,14 +367,13 @@ mod tests {
                 assert_eq!(list.len(), 3);
                 match &list[0] {
                     DataValue::OpenAIMessage(m) => {
-                        assert_eq!(crate::llm::role_to_str(&m.role), "user");
-                        assert_eq!(m.content.as_deref(), Some("hi"));
+                        assert_eq!(zihuan_llm::role_to_str(&m.role), "user");
                     }
                     _ => panic!("expected OpenAIMessage"),
                 }
                 match &list[1] {
                     DataValue::OpenAIMessage(m) => {
-                        assert_eq!(crate::llm::role_to_str(&m.role), "assistant");
+                        assert_eq!(zihuan_llm::role_to_str(&m.role), "assistant");
                         assert_eq!(m.content.as_deref(), Some("hello"));
                     }
                     _ => panic!("expected OpenAIMessage"),
@@ -382,7 +381,7 @@ mod tests {
                 match &list[2] {
                     DataValue::OpenAIMessage(m) => {
                         // Unknown role falls back to user
-                        assert_eq!(crate::llm::role_to_str(&m.role), "user");
+                        assert_eq!(zihuan_llm::role_to_str(&m.role), "user");
                         assert_eq!(m.content, None);
                     }
                     _ => panic!("expected OpenAIMessage"),

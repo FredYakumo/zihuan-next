@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 
 use crate::error::Result;
-use crate::llm::brain_tool::BrainToolDefinition;
-use crate::node::function_graph::{
+use zihuan_llm::brain_tool::BrainToolDefinition;
+use zihuan_node::function_graph::{
     default_embedded_function_config, embedded_function_config_from_node,
     sync_function_node_definition, FUNCTION_CONFIG_PORT, FUNCTION_INPUTS_NODE_TYPE,
     FUNCTION_OUTPUTS_NODE_TYPE,
 };
-use crate::node::graph_io::{NodeGraphDefinition, PortBindingKind};
-use crate::node::registry::NODE_REGISTRY;
+use zihuan_node::graph_io::{NodeGraphDefinition, PortBindingKind};
+use zihuan_node::registry::NODE_REGISTRY;
 use crate::ui::node_render::{inline_port_key, InlinePortValue};
 
 pub(crate) fn build_inline_inputs_from_graph(
@@ -174,7 +174,7 @@ pub(crate) fn add_node_to_graph(graph: &mut NodeGraphDefinition, type_id: &str) 
 
     let dummy_node = NODE_REGISTRY.create_node(type_id, &id, &display_name)?;
 
-    let mut node_definition = crate::node::graph_io::NodeDefinition {
+    let mut node_definition = zihuan_node::graph_io::NodeDefinition {
         id,
         name: display_name,
         description: dummy_node.description().map(|s| s.to_string()),
@@ -222,12 +222,12 @@ mod tests {
         apply_hyperparameter_bindings_to_graph, build_inline_inputs_from_graph,
         materialize_graph_for_execution,
     };
-    use crate::llm::brain_tool::{BrainToolDefinition, ToolParamDef};
-    use crate::node::function_graph::{
+    use zihuan_llm::brain_tool::{BrainToolDefinition, ToolParamDef};
+    use zihuan_node::function_graph::{
         default_embedded_function_config, sync_function_node_definition, FunctionPortDef,
     };
-    use crate::node::graph_io::{NodeDefinition, PortBinding};
-    use crate::node::DataType;
+    use zihuan_node::graph_io::{NodeDefinition, PortBinding};
+    use zihuan_node::DataType;
 
     fn binding_node(id: &str, port_name: &str, hp_name: &str) -> NodeDefinition {
         NodeDefinition {
@@ -235,7 +235,7 @@ mod tests {
             name: id.to_string(),
             description: None,
             node_type: "string_data".to_string(),
-            input_ports: vec![crate::node::Port::new(port_name.to_string(), DataType::String)],
+            input_ports: vec![zihuan_node::Port::new(port_name.to_string(), DataType::String)],
             output_ports: Vec::new(),
             dynamic_input_ports: false,
             dynamic_output_ports: false,
@@ -277,7 +277,7 @@ mod tests {
         config.subgraph.nodes.push(binding_node("inner_1", "text", "hp_name"));
         sync_function_node_definition(&mut function_node, &config);
 
-        let mut graph = crate::node::graph_io::NodeGraphDefinition {
+        let mut graph = zihuan_node::graph_io::NodeGraphDefinition {
             nodes: vec![function_node],
             ..Default::default()
         };
@@ -285,7 +285,7 @@ mod tests {
 
         apply_hyperparameter_bindings_to_graph(&mut graph, &values);
 
-        let config = crate::node::function_graph::embedded_function_config_from_node(&graph.nodes[0])
+        let config = zihuan_node::function_graph::embedded_function_config_from_node(&graph.nodes[0])
             .expect("function config");
         let inner = config
             .subgraph
@@ -324,7 +324,7 @@ mod tests {
                 desc: String::new(),
             }],
             outputs: Vec::new(),
-            subgraph: crate::node::function_graph::default_function_subgraph(),
+            subgraph: zihuan_node::function_graph::default_function_subgraph(),
         };
         tool.subgraph
             .nodes
@@ -334,7 +334,7 @@ mod tests {
             serde_json::to_value(vec![tool]).expect("serialize tools"),
         );
 
-        let mut graph = crate::node::graph_io::NodeGraphDefinition {
+        let mut graph = zihuan_node::graph_io::NodeGraphDefinition {
             nodes: vec![brain_node],
             ..Default::default()
         };
@@ -382,7 +382,7 @@ mod tests {
         config.subgraph.nodes.push(binding_node("inner_1", "text", "hp_name"));
         sync_function_node_definition(&mut function_node, &config);
 
-        let mut graph = crate::node::graph_io::NodeGraphDefinition {
+        let mut graph = zihuan_node::graph_io::NodeGraphDefinition {
             nodes: vec![function_node],
             ..Default::default()
         };
@@ -391,7 +391,7 @@ mod tests {
 
         materialize_graph_for_execution(&mut graph, &inline_inputs, &values);
 
-        let config = crate::node::function_graph::embedded_function_config_from_node(&graph.nodes[0])
+        let config = zihuan_node::function_graph::embedded_function_config_from_node(&graph.nodes[0])
             .expect("function config");
         let inner = config
             .subgraph
@@ -430,7 +430,7 @@ mod tests {
                 desc: String::new(),
             }],
             outputs: Vec::new(),
-            subgraph: crate::node::function_graph::default_function_subgraph(),
+            subgraph: zihuan_node::function_graph::default_function_subgraph(),
         };
         tool.subgraph
             .nodes
@@ -440,7 +440,7 @@ mod tests {
             serde_json::to_value(vec![tool]).expect("serialize tools"),
         );
 
-        let mut graph = crate::node::graph_io::NodeGraphDefinition {
+        let mut graph = zihuan_node::graph_io::NodeGraphDefinition {
             nodes: vec![brain_node],
             ..Default::default()
         };

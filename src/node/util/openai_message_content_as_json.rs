@@ -77,7 +77,7 @@ impl Node for OpenAIMessageContentAsJsonNode {
 #[cfg(test)]
 mod tests {
     use super::OpenAIMessageContentAsJsonNode;
-    use crate::llm::{MessageRole, OpenAIMessage};
+    use zihuan_llm::{MessageRole, OpenAIMessage};
     use crate::node::{DataValue, Node};
     use std::collections::HashMap;
 

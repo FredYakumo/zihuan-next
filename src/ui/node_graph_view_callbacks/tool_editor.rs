@@ -4,13 +4,13 @@ use std::sync::{Arc, Mutex};
 use serde_json::Value;
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
 
-use crate::llm::brain_tool::{
+use zihuan_llm::brain_tool::{
     brain_shared_inputs_from_value, brain_tool_input_signature, BrainToolDefinition, ToolParamDef,
     BRAIN_SHARED_INPUTS_PORT, BRAIN_TOOLS_CONFIG_PORT, BRAIN_TOOL_FIXED_CONTENT_INPUT,
 };
-use crate::node::function_graph::{sync_function_subgraph_signature, FunctionPortDef};
-use crate::node::DataType;
-use crate::node::Port;
+use zihuan_node::function_graph::{sync_function_subgraph_signature, FunctionPortDef};
+use zihuan_node::DataType;
+use zihuan_node::Port;
 use crate::ui::graph_window::{FunctionPortVm, NodeGraphWindow, ToolDefinitionVm, ToolParamVm};
 use crate::ui::node_graph_view::{
     apply_canvas_view_state, refresh_active_tab_ui, GraphTabState, SubgraphOwner,

@@ -1,8 +1,6 @@
 mod config;
 mod error;
 mod init_registry;
-mod llm;
-mod node;
 mod ui;
 mod util;
 
@@ -76,7 +74,7 @@ fn main() {
         };
 
         info!("加载节点图文件: {}", graph_path);
-        match node::load_graph_definition_from_json(&graph_path) {
+        match zihuan_node::load_graph_definition_from_json(&graph_path) {
             Ok(mut definition) => {
                 let hp_values = util::hyperparam_store::load_hyperparameter_values(
                     std::path::Path::new(&graph_path),
@@ -101,9 +99,9 @@ fn main() {
     // GUI mode: load graph if provided, otherwise start with empty graph
     let mut initial_graph_dirty = false;
     let mut graph = if let Some(path) = args.graph_json.as_ref() {
-        match node::load_graph_definition_from_json_with_migration(path) {
+        match zihuan_node::load_graph_definition_from_json_with_migration(path) {
             Ok(loaded) => {
-                let node::LoadedGraphDefinition { graph, migrated } = loaded;
+                let zihuan_node::LoadedGraphDefinition { graph, migrated } = loaded;
                 initial_graph_dirty = migrated;
                 Some(graph)
             }
@@ -117,7 +115,7 @@ fn main() {
     };
 
     if let Some(graph) = graph.as_mut() {
-        node::ensure_positions(graph);
+        zihuan_node::ensure_positions(graph);
     }
 
     if let Err(err) = ui::node_graph_view::show_graph(
@@ -132,10 +130,10 @@ fn main() {
 
 /// Execute a node graph loaded from JSON definition
 fn execute_node_graph(
-    definition: node::NodeGraphDefinition,
+    definition: zihuan_node::NodeGraphDefinition,
 ) -> Result<(), Box<dyn std::error::Error>> {
     info!("构建节点图");
-    let mut graph = node::registry::build_node_graph_from_definition(&definition)?;
+    let mut graph = zihuan_node::registry::build_node_graph_from_definition(&definition)?;
 
     // Load LLM configuration for any LLM nodes that might be in the graph
     let config = load_config();
@@ -155,7 +153,7 @@ fn execute_node_graph(
 fn validate_node_graph_json(graph_path: &str) -> i32 {
     println!("验证节点图: {}", graph_path);
 
-    let definition = match node::load_graph_definition_from_json(graph_path) {
+    let definition = match zihuan_node::load_graph_definition_from_json(graph_path) {
         Ok(def) => def,
         Err(err) => {
             println!("  ✗ 错误: 无法加载或解析文件 — {}", err);
@@ -173,10 +171,10 @@ fn validate_node_graph_json(graph_path: &str) -> i32 {
     );
 
     // Collect structural issues from registry validation
-    let mut issues = node::graph_io::validate_graph_definition(&definition);
+    let mut issues = zihuan_node::graph_io::validate_graph_definition(&definition);
 
     // Detect cycles (not covered by validate_graph_definition)
-    let cycle_nodes = node::graph_io::find_cycle_node_ids(&definition);
+    let cycle_nodes = zihuan_node::graph_io::find_cycle_node_ids(&definition);
     if !cycle_nodes.is_empty() {
         let names: Vec<String> = cycle_nodes
             .iter()
@@ -188,7 +186,7 @@ fn validate_node_graph_json(graph_path: &str) -> i32 {
                     .map(|n| format!("\"{}\"", n.name))
             })
             .collect();
-        issues.push(node::graph_io::ValidationIssue {
+        issues.push(zihuan_node::graph_io::ValidationIssue {
             severity: "error".into(),
             message: format!("节点图存在环路依赖，涉及节点: {}", names.join(", ")),
         });

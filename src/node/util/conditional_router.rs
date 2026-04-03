@@ -88,7 +88,7 @@ impl Node for ConditionalRouterNode {
 mod tests {
     use super::ConditionalRouterNode;
     use crate::error::Result;
-    use crate::llm::{MessageRole, OpenAIMessage};
+    use zihuan_llm::{MessageRole, OpenAIMessage};
     use crate::node::{DataType, DataValue, Node};
     use std::collections::HashMap;
 
