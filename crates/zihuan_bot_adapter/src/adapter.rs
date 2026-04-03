@@ -4,8 +4,8 @@ use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 
 use super::event;
 use super::models::{MessageEvent, MessageType, Profile, RawMessageEvent};
-use crate::error::Result;
-use crate::util::url_utils::extract_host;
+use zihuan_core::error::Result;
+use zihuan_core::url_utils::extract_host;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;

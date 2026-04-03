@@ -1,20 +1,20 @@
-use crate::bot_adapter::send_qq_message_batches::{
+use crate::send_qq_message_batches::{
     describe_message_segments, qq_messages_from_data_value,
 };
-use crate::bot_adapter::ws_action::{
+use crate::ws_action::{
     json_i64, qq_message_list_to_json, response_message_id, response_success, ws_send_action,
 };
-use crate::error::Result;
-use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
+use zihuan_core::error::Result;
+use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::{info, warn};
 use std::collections::HashMap;
 
-pub struct SendFriendMessageNode {
+pub struct SendGroupMessageNode {
     id: String,
     name: String,
 }
 
-impl SendFriendMessageNode {
+impl SendGroupMessageNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -23,7 +23,7 @@ impl SendFriendMessageNode {
     }
 }
 
-impl Node for SendFriendMessageNode {
+impl Node for SendGroupMessageNode {
     fn id(&self) -> &str {
         &self.id
     }
@@ -31,13 +31,13 @@ impl Node for SendFriendMessageNode {
         &self.name
     }
     fn description(&self) -> Option<&str> {
-        Some("向QQ好友发送消息")
+        Some("向QQ群组发送消息")
     }
 
     node_input![
         port! { name = "bot_adapter", ty = BotAdapterRef, desc = "Bot适配器引用" },
-        port! { name = "target_id", ty = String, desc = "目标好友的QQ号" },
-        port! { name = "message", ty = Vec(QQMessage), desc = "要发送的QQ消息段列表" },
+        port! { name = "target_id", ty = String, desc = "目标群的群号" },
+        port! { name = "message", ty = Vec(QQMessage), desc = "要发送的QQ消息段列表" }
     ];
 
     node_output![
@@ -52,7 +52,7 @@ impl Node for SendFriendMessageNode {
         self.validate_inputs(&inputs)?;
 
         let adapter_ref = match inputs.get("bot_adapter") {
-            Some(DataValue::BotAdapterRef(handle)) => crate::bot_adapter::adapter::shared_from_handle(handle),
+            Some(DataValue::BotAdapterRef(handle)) => crate::adapter::shared_from_handle(handle),
             _ => return Err("bot_adapter input is required".into()),
         };
         let target_id = match inputs.get("target_id") {
@@ -63,14 +63,14 @@ impl Node for SendFriendMessageNode {
         let segment_summary = describe_message_segments(&messages);
 
         let params = serde_json::json!({
-            "user_id": target_id,
+            "group_id": target_id,
             "message": qq_message_list_to_json(&messages),
         });
         info!(
-            "[SendFriendMessageNode] Sending private message to {} with {}",
+            "[SendGroupMessageNode] Sending group message to {} with {}",
             target_id, segment_summary
         );
-        let response = ws_send_action(&adapter_ref, "send_private_msg", params)?;
+        let response = ws_send_action(&adapter_ref, "send_group_msg", params)?;
 
         let success = response_success(&response);
         let message_id = response_message_id(&response).unwrap_or(-1);
@@ -80,7 +80,7 @@ impl Node for SendFriendMessageNode {
 
         if success {
             info!(
-                "[SendFriendMessageNode] Sent private message to {} (message_id={}, retcode={:?}, status={:?}, {})",
+                "[SendGroupMessageNode] Sent group message to {} (message_id={}, retcode={:?}, status={:?}, {})",
                 target_id,
                 message_id,
                 retcode,
@@ -89,7 +89,7 @@ impl Node for SendFriendMessageNode {
             );
         } else {
             warn!(
-                "[SendFriendMessageNode] Failed to send private message to {} (retcode={:?}, status={:?}, wording={:?}, {}, response={})",
+                "[SendGroupMessageNode] Failed to send group message to {} (retcode={:?}, status={:?}, wording={:?}, {}, response={})",
                 target_id,
                 retcode,
                 status,

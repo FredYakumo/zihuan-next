@@ -1,4 +1,3 @@
-mod bot_adapter;
 mod config;
 mod error;
 mod init_registry;

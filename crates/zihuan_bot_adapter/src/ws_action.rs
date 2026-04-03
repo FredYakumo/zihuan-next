@@ -1,5 +1,5 @@
-use crate::bot_adapter::adapter::SharedBotAdapter;
-use crate::error::Result;
+use crate::adapter::SharedBotAdapter;
+use zihuan_core::error::Result;
 use serde_json::Value;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::oneshot;
@@ -39,7 +39,7 @@ pub fn response_message_id(response: &Value) -> Option<i64> {
 }
 
 pub fn qq_message_list_to_json(
-    messages: &[crate::bot_adapter::models::message::Message],
+    messages: &[crate::models::message::Message],
 ) -> serde_json::Value {
     serde_json::Value::Array(
         messages
@@ -69,32 +69,34 @@ pub fn ws_send_action(
         let (action_tx, pending_actions) = {
             let guard = adapter_ref.lock().await;
             let tx = guard.action_tx.clone().ok_or_else(|| {
-                crate::error::Error::ValidationError(
+                zihuan_core::error::Error::ValidationError(
                     "Bot adapter WebSocket not connected yet".to_string(),
                 )
             })?;
             let pending = guard.pending_actions.clone();
-            Ok::<_, crate::error::Error>((tx, pending))
+            Ok::<_, zihuan_core::error::Error>((tx, pending))
         }?;
 
         let (tx, rx) = oneshot::channel::<serde_json::Value>();
         pending_actions.lock().await.insert(echo.clone(), tx);
 
         action_tx.send(payload.to_string()).map_err(|_| {
-            crate::error::Error::ValidationError("Failed to enqueue WebSocket action".to_string())
+            zihuan_core::error::Error::ValidationError(
+                "Failed to enqueue WebSocket action".to_string(),
+            )
         })?;
 
         // Wait for the response (30 s timeout).
         let response = tokio::time::timeout(std::time::Duration::from_secs(30), rx)
             .await
             .map_err(|_| {
-                crate::error::Error::ValidationError(format!(
+                zihuan_core::error::Error::ValidationError(format!(
                     "Action '{}' timed out after 30 s",
                     action_name
                 ))
             })?
             .map_err(|_| {
-                crate::error::Error::ValidationError(
+                zihuan_core::error::Error::ValidationError(
                     "Response channel closed unexpectedly".to_string(),
                 )
             })?;

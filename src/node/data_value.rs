@@ -1,4 +1,4 @@
-use crate::bot_adapter::models::event_model::MessageEvent;
+use zihuan_bot_types::event_model::MessageEvent;
 use crate::llm::tooling::FunctionTool;
 use redis::{aio::ConnectionManager, AsyncCommands};
 use serde::Serialize;

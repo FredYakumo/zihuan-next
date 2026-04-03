@@ -1,9 +1,9 @@
-use crate::bot_adapter::adapter::BotAdapter;
-use crate::bot_adapter::models::message::MessageProp;
-use crate::bot_adapter::models::MessageEvent;
-use crate::error::Result;
-use crate::llm::{OpenAIMessage, SystemMessage};
-use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
+use crate::adapter::BotAdapter;
+use crate::models::message::MessageProp;
+use crate::models::MessageEvent;
+use zihuan_core::error::Result;
+use zihuan_llm_types::{OpenAIMessage, SystemMessage};
+use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 use tokio::task::block_in_place;
 
@@ -68,7 +68,7 @@ impl Node for ExtractMessageFromEventNode {
                 .get("bot_adapter")
                 .and_then(|v| {
                     if let DataValue::BotAdapterRef(handle) = v {
-                        Some(crate::bot_adapter::adapter::shared_from_handle(handle))
+                        Some(crate::adapter::shared_from_handle(handle))
                     } else {
                         None
                     }
@@ -110,7 +110,7 @@ impl Node for ExtractMessageFromEventNode {
             outputs.insert(
                 "messages".to_string(),
                 DataValue::Vec(
-                    Box::new(crate::node::DataType::OpenAIMessage),
+                    Box::new(zihuan_node::DataType::OpenAIMessage),
                     messages.into_iter().map(DataValue::OpenAIMessage).collect(),
                 ),
             );

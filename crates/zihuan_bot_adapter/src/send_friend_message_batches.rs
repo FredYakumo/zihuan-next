@@ -1,18 +1,18 @@
-use crate::bot_adapter::send_qq_message_batches::{
-    execute_fixed_target_batch_send, TARGET_TYPE_GROUP,
+use crate::send_qq_message_batches::{
+    execute_fixed_target_batch_send, TARGET_TYPE_FRIEND,
 };
-use crate::error::Result;
-use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
+use zihuan_core::error::Result;
+use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 
-const LOG_PREFIX: &str = "[SendGroupMessageBatchesNode]";
+const LOG_PREFIX: &str = "[SendFriendMessageBatchesNode]";
 
-pub struct SendGroupMessageBatchesNode {
+pub struct SendFriendMessageBatchesNode {
     id: String,
     name: String,
 }
 
-impl SendGroupMessageBatchesNode {
+impl SendFriendMessageBatchesNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -21,7 +21,7 @@ impl SendGroupMessageBatchesNode {
     }
 }
 
-impl Node for SendGroupMessageBatchesNode {
+impl Node for SendFriendMessageBatchesNode {
     fn id(&self) -> &str {
         &self.id
     }
@@ -31,12 +31,12 @@ impl Node for SendGroupMessageBatchesNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("向QQ群组批量发送多条消息")
+        Some("向QQ好友批量发送多条消息")
     }
 
     node_input![
         port! { name = "bot_adapter", ty = BotAdapterRef, desc = "Bot适配器引用" },
-        port! { name = "target_id", ty = String, desc = "目标群的群号" },
+        port! { name = "target_id", ty = String, desc = "目标好友的QQ号" },
         port! { name = "message_batches", ty = Vec(Vec(QQMessage)), desc = "要发送的 QQ 消息批次列表" },
         port! { name = "delay_millis", ty = Integer, desc = "两次实际发送之间的间隔毫秒数，默认 0", optional },
     ];
@@ -52,7 +52,7 @@ impl Node for SendGroupMessageBatchesNode {
         inputs: HashMap<String, DataValue>,
     ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
-        let outputs = execute_fixed_target_batch_send(&inputs, TARGET_TYPE_GROUP, LOG_PREFIX)?;
+        let outputs = execute_fixed_target_batch_send(&inputs, TARGET_TYPE_FRIEND, LOG_PREFIX)?;
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
@@ -60,11 +60,10 @@ impl Node for SendGroupMessageBatchesNode {
 
 #[cfg(test)]
 mod tests {
-    use super::SendGroupMessageBatchesNode;
-    use crate::bot_adapter::send_qq_message_batches::create_mock_bot_adapter;
-    use crate::bot_adapter::models::message::{Message, PlainTextMessage};
-    use crate::error::Result;
-    use crate::node::{DataType, DataValue, Node};
+    use super::SendFriendMessageBatchesNode;
+    use crate::send_qq_message_batches::create_mock_bot_adapter;
+    use zihuan_core::error::Result;
+    use zihuan_node::{DataType, DataValue, Node};
     use serde_json::json;
     use std::collections::HashMap;
 
@@ -73,9 +72,9 @@ mod tests {
         let (adapter_ref, handle) = create_mock_bot_adapter(vec![json!({
             "status": "ok",
             "retcode": 0,
-            "data": { "message_id": 21 }
+            "data": { "message_id": 11 }
         })])?;
-        let mut node = SendGroupMessageBatchesNode::new("send", "Send");
+        let mut node = SendFriendMessageBatchesNode::new("send", "Send");
         let outputs = node.execute(HashMap::from([
             (
                 "bot_adapter".to_string(),
@@ -83,7 +82,7 @@ mod tests {
             ),
             (
                 "target_id".to_string(),
-                DataValue::String("654321".to_string()),
+                DataValue::String("123456".to_string()),
             ),
             (
                 "message_batches".to_string(),
@@ -91,9 +90,13 @@ mod tests {
                     Box::new(DataType::Vec(Box::new(DataType::QQMessage))),
                     vec![DataValue::Vec(
                         Box::new(DataType::QQMessage),
-                        vec![DataValue::QQMessage(Message::PlainText(PlainTextMessage {
-                            text: "你好".to_string(),
-                        }))],
+                        vec![DataValue::QQMessage(
+                            crate::models::message::Message::PlainText(
+                                crate::models::message::PlainTextMessage {
+                                    text: "你好".to_string(),
+                                },
+                            ),
+                        )],
                     )],
                 ),
             ),
@@ -109,10 +112,42 @@ mod tests {
         match outputs.get("message_ids") {
             Some(DataValue::Vec(inner, items)) => {
                 assert_eq!(**inner, DataType::Integer);
-                assert!(matches!(items.as_slice(), [DataValue::Integer(21)]));
+                assert!(matches!(items.as_slice(), [DataValue::Integer(11)]));
             }
             other => panic!("unexpected message_ids output: {:?}", other),
         }
+        Ok(())
+    }
+
+    #[test]
+    fn execute_noops_on_empty_top_level_batches() -> Result<()> {
+        let (adapter_ref, handle) = create_mock_bot_adapter(Vec::new())?;
+        let mut node = SendFriendMessageBatchesNode::new("send", "Send");
+        let outputs = node.execute(HashMap::from([
+            (
+                "bot_adapter".to_string(),
+                DataValue::BotAdapterRef(adapter_ref.clone() as zihuan_bot_types::BotAdapterHandle),
+            ),
+            (
+                "target_id".to_string(),
+                DataValue::String("123456".to_string()),
+            ),
+            (
+                "message_batches".to_string(),
+                DataValue::Vec(
+                    Box::new(DataType::Vec(Box::new(DataType::QQMessage))),
+                    Vec::new(),
+                ),
+            ),
+        ]))?;
+
+        drop(adapter_ref);
+        handle.join().expect("mock bot thread should join");
+
+        assert!(matches!(
+            outputs.get("success"),
+            Some(DataValue::Boolean(true))
+        ));
         Ok(())
     }
 }
