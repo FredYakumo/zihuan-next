@@ -706,7 +706,7 @@ mod tests {
     };
 
     fn ensure_registry_initialized() {
-        let _ = crate::node::registry::init_node_registry();
+        let _ = crate::init_registry::init_node_registry();
     }
 
     fn node_at(id: &str, x: f32, y: f32) -> NodeDefinition {

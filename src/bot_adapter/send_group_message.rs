@@ -52,7 +52,7 @@ impl Node for SendGroupMessageNode {
         self.validate_inputs(&inputs)?;
 
         let adapter_ref = match inputs.get("bot_adapter") {
-            Some(DataValue::BotAdapterRef(r)) => r.clone(),
+            Some(DataValue::BotAdapterRef(handle)) => crate::bot_adapter::adapter::shared_from_handle(handle),
             _ => return Err("bot_adapter input is required".into()),
         };
         let target_id = match inputs.get("target_id") {

@@ -1,0 +1,16 @@
+[package]
+name = "zihuan_core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+thiserror = "2.0.17"
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+reqwest = { version = "0.12.25", features = ["blocking", "json"] }
+http = "1.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+log = "0.4"
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "mysql", "chrono"] }

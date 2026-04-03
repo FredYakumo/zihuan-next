@@ -93,7 +93,20 @@ impl BotAdapter {
     pub fn into_shared(self) -> SharedBotAdapter {
         Arc::new(TokioMutex::new(self))
     }
+}
 
+/// Downcast a type-erased `BotAdapterHandle` back to `SharedBotAdapter`.
+///
+/// # Panics
+/// Panics if the handle did not originate from a `SharedBotAdapter`.
+pub fn shared_from_handle(handle: &zihuan_bot_types::BotAdapterHandle) -> SharedBotAdapter {
+    handle
+        .clone()
+        .downcast::<TokioMutex<BotAdapter>>()
+        .expect("BotAdapterHandle contains unexpected concrete type")
+}
+
+impl BotAdapter {
     pub fn get_bot_id(&self) -> &str {
         self.bot_profile
             .as_ref()

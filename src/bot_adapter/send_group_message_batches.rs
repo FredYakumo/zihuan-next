@@ -79,7 +79,7 @@ mod tests {
         let outputs = node.execute(HashMap::from([
             (
                 "bot_adapter".to_string(),
-                DataValue::BotAdapterRef(adapter_ref.clone()),
+                DataValue::BotAdapterRef(adapter_ref.clone() as zihuan_bot_types::BotAdapterHandle),
             ),
             (
                 "target_id".to_string(),

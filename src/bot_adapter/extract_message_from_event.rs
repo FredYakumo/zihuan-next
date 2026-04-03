@@ -67,8 +67,8 @@ impl Node for ExtractMessageFromEventNode {
             let bot_adapter_ref = inputs
                 .get("bot_adapter")
                 .and_then(|v| {
-                    if let DataValue::BotAdapterRef(adapter_ref) = v {
-                        Some(adapter_ref.clone())
+                    if let DataValue::BotAdapterRef(handle) = v {
+                        Some(crate::bot_adapter::adapter::shared_from_handle(handle))
                     } else {
                         None
                     }

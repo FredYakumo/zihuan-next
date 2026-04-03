@@ -1,10 +1,1 @@
-use crate::llm::model::MessageRole;
-
-pub fn str_to_role(s: &str) -> MessageRole {
-    match s {
-        "system" => MessageRole::System,
-        "user" => MessageRole::User,
-        "tool" => MessageRole::Tool,
-        _ => MessageRole::Assistant,
-    }
-}
+pub use zihuan_llm_types::util::str_to_role::str_to_role;
