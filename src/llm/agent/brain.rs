@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use log::info;
 
-use crate::bot_adapter::adapter::BotAdapter;
-use crate::bot_adapter::models::message::MessageProp;
-use crate::bot_adapter::models::MessageEvent;
+use zihuan_bot_adapter::adapter::BotAdapter;
+use zihuan_bot_types::message::MessageProp;
+use zihuan_bot_types::event_model::MessageEvent;
 use crate::error::Result;
 use crate::llm::agent::Agent;
 use crate::llm::llm_base::LLMBase;
@@ -247,7 +247,7 @@ impl Agent for BrainAgent {
     }
 }
 
-impl crate::bot_adapter::adapter::BrainAgentTrait for BrainAgent {
+impl zihuan_bot_adapter::adapter::BrainAgentTrait for BrainAgent {
     fn on_event(&self, bot_adapter: &mut BotAdapter, event: &MessageEvent) -> Result<()> {
         Agent::on_event(self, bot_adapter, event)
     }
@@ -256,7 +256,7 @@ impl crate::bot_adapter::adapter::BrainAgentTrait for BrainAgent {
         "BrainAgent"
     }
 
-    fn clone_box(&self) -> crate::bot_adapter::adapter::AgentBox {
+    fn clone_box(&self) -> zihuan_bot_adapter::adapter::AgentBox {
         Box::new(self.clone())
     }
 }

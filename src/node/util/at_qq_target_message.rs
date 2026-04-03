@@ -1,4 +1,4 @@
-use crate::bot_adapter::models::message::{AtTargetMessage, Message};
+use zihuan_bot_types::message::{AtTargetMessage, Message};
 use crate::error::Result;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
@@ -63,7 +63,7 @@ impl Node for AtQQTargetMessageNode {
 #[cfg(test)]
 mod tests {
     use super::AtQQTargetMessageNode;
-    use crate::bot_adapter::models::message::Message;
+    use zihuan_bot_types::message::Message;
     use crate::node::{DataValue, Node};
     use std::collections::HashMap;
 

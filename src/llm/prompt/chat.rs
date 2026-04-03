@@ -1,7 +1,6 @@
-use crate::{
-    bot_adapter::{adapter::BotAdapter, models::MessageEvent},
-    llm::{OpenAIMessage, SystemMessage},
-};
+use zihuan_bot_adapter::adapter::BotAdapter;
+use zihuan_bot_types::event_model::MessageEvent;
+use crate::llm::{OpenAIMessage, SystemMessage};
 
 /// Build system message for chat agent based on bot profile and event context
 pub fn build_chat_system_message(

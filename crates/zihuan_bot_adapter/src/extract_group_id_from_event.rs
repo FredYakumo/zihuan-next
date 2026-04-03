@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use crate::bot_adapter::models::event_model::MessageType;
-use crate::error::Result;
-use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
+use crate::models::event_model::MessageType;
+use zihuan_core::error::Result;
+use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
 
 pub struct ExtractGroupIdFromEventNode {
     id: String,
@@ -32,7 +32,7 @@ impl Node for ExtractGroupIdFromEventNode {
     }
 
     node_input![
-        port! { name = "message_event", ty = crate::bot_adapter::models::event_model::MessageEvent, desc = "输入的消息事件" },
+        port! { name = "message_event", ty = crate::models::event_model::MessageEvent, desc = "输入的消息事件" },
     ];
 
     node_output![port! { name = "result", ty = String, desc = "群号字符串" },];
@@ -66,8 +66,8 @@ impl Node for ExtractGroupIdFromEventNode {
 #[cfg(test)]
 mod tests {
     use super::ExtractGroupIdFromEventNode;
-    use crate::bot_adapter::models::event_model::{MessageEvent, MessageType, Sender};
-    use crate::node::{DataValue, Node};
+    use crate::models::event_model::{MessageEvent, MessageType, Sender};
+    use zihuan_node::{DataValue, Node};
     use std::collections::HashMap;
 
     fn make_event(message_type: MessageType, group_id: Option<i64>) -> MessageEvent {

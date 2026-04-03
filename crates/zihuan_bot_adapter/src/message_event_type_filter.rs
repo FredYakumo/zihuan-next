@@ -1,6 +1,6 @@
-use crate::bot_adapter::models::event_model::{MessageEvent, MessageType};
-use crate::error::Result;
-use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
+use crate::models::event_model::{MessageEvent, MessageType};
+use zihuan_core::error::Result;
+use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 
 pub struct MessageEventTypeFilterNode {

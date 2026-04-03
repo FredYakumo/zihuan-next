@@ -1,4 +1,4 @@
-use crate::bot_adapter::models::message::Message;
+use zihuan_bot_types::message::Message;
 use crate::error::Result;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 use log::{debug, info, warn};

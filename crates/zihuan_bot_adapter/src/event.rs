@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use super::models::{MessageEvent, MessageType};
-use crate::bot_adapter::adapter::SharedBotAdapter;
+use crate::adapter::SharedBotAdapter;
 
 /// Process messages (both private and group)
 pub async fn process_message(bot_adapter: SharedBotAdapter, event: MessageEvent) {

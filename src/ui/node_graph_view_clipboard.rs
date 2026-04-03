@@ -740,7 +740,7 @@ mod tests {
             id: id.to_string(),
             name: name.to_string(),
             description: None,
-            node_type: "preview_string".to_string(),
+            node_type: "custom".to_string(),
             input_ports,
             output_ports,
             dynamic_input_ports: false,
