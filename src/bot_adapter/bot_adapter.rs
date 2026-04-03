@@ -286,7 +286,7 @@ impl Node for BotAdapterNode {
         );
         outputs.insert(
             "bot_adapter".to_string(),
-            DataValue::BotAdapterRef(self.adapter_handle.clone().unwrap()),
+            DataValue::BotAdapterRef(self.adapter_handle.clone().unwrap() as zihuan_bot_types::BotAdapterHandle),
         );
         self.validate_outputs(&outputs)?;
 

@@ -1,6 +1,7 @@
 mod bot_adapter;
 mod config;
 mod error;
+mod init_registry;
 mod llm;
 mod node;
 mod ui;
@@ -43,7 +44,7 @@ fn main() {
     ui::log_overlay::CompositeLogger::init(&BASE_LOG).expect("Failed to initialize logger");
 
     // Initialize node registry
-    if let Err(e) = node::registry::init_node_registry() {
+    if let Err(e) = init_registry::init_node_registry() {
         error!("Failed to initialize node registry: {}", e);
     } else {
         info!("Node registry initialized");
