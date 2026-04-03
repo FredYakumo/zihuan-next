@@ -92,7 +92,7 @@ impl Node for JsonToQQMessageVecNode {
 #[cfg(test)]
 mod tests {
     use super::JsonToQQMessageVecNode;
-    use crate::bot_adapter::models::message::Message;
+    use zihuan_bot_types::message::Message;
     use crate::node::{DataType, DataValue, Node};
     use std::collections::HashMap;
 

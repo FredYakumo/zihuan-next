@@ -2,13 +2,13 @@ use std::collections::HashMap;
 use std::thread;
 use std::time::Duration;
 
-use crate::bot_adapter::adapter::SharedBotAdapter;
-use crate::bot_adapter::models::message::Message;
-use crate::bot_adapter::ws_action::{
+use crate::adapter::SharedBotAdapter;
+use crate::models::message::Message;
+use crate::ws_action::{
     json_i64, qq_message_list_to_json, response_message_id, response_success, ws_send_action,
 };
-use crate::error::{Error, Result};
-use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
+use zihuan_core::error::{Error, Result};
+use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::{info, warn};
 
 pub const TARGET_TYPE_FRIEND: &str = "friend";
@@ -399,7 +399,7 @@ pub fn execute_fixed_target_batch_send(
     log_prefix: &str,
 ) -> Result<HashMap<String, DataValue>> {
     let bot_adapter = match inputs.get("bot_adapter") {
-        Some(DataValue::BotAdapterRef(handle)) => crate::bot_adapter::adapter::shared_from_handle(handle),
+        Some(DataValue::BotAdapterRef(handle)) => crate::adapter::shared_from_handle(handle),
         _ => return Err(Error::InvalidNodeInput("bot_adapter is required".to_string())),
     };
     let target_id = match inputs.get("target_id") {
@@ -471,7 +471,7 @@ impl Node for SendQQMessageBatchesNode {
         self.validate_inputs(&inputs)?;
 
         let bot_adapter_ref = match inputs.get("bot_adapter_ref") {
-            Some(DataValue::BotAdapterRef(handle)) => crate::bot_adapter::adapter::shared_from_handle(handle),
+            Some(DataValue::BotAdapterRef(handle)) => crate::adapter::shared_from_handle(handle),
             _ => {
                 return Err(Error::InvalidNodeInput(
                     "bot_adapter_ref is required".to_string(),
@@ -510,7 +510,7 @@ impl Node for SendQQMessageBatchesNode {
 pub(crate) fn create_mock_bot_adapter(
     responses: Vec<serde_json::Value>,
 ) -> Result<(SharedBotAdapter, std::thread::JoinHandle<()>)> {
-    use crate::bot_adapter::adapter::{BotAdapter, BotAdapterConfig};
+    use crate::adapter::{BotAdapter, BotAdapterConfig};
     use serde_json::json;
     use tokio::sync::mpsc;
 
@@ -566,9 +566,9 @@ mod tests {
         send_qq_message_batches_with_delay, SendBatchResult, SendQQMessageBatchesNode,
         TARGET_TYPE_GROUP,
     };
-    use crate::bot_adapter::models::message::{AtTargetMessage, Message, PlainTextMessage};
-    use crate::error::Result;
-    use crate::node::{DataType, DataValue, Node};
+    use crate::models::message::{AtTargetMessage, Message, PlainTextMessage};
+    use zihuan_core::error::Result;
+    use zihuan_node::{DataType, DataValue, Node};
     use serde_json::json;
     use std::collections::HashMap;
     use std::time::{Duration, Instant};

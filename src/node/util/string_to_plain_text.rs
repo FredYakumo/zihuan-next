@@ -1,4 +1,4 @@
-use crate::bot_adapter::models::message::{Message, PlainTextMessage};
+use zihuan_bot_types::message::{Message, PlainTextMessage};
 use crate::error::Result;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;

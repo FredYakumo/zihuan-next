@@ -1,5 +1,5 @@
-use crate::error::Result;
-use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
+use zihuan_core::error::Result;
+use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 
 pub struct MessageSenderNode {

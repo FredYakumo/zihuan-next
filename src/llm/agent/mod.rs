@@ -4,10 +4,10 @@ pub mod brain;
 ///
 /// An agent consumes an event and produces an output/decision.
 ///
-use crate::{
-    bot_adapter::{adapter::BotAdapter, models::MessageEvent},
-    llm::OpenAIMessage,
-};
+use zihuan_bot_adapter::adapter::BotAdapter;
+use zihuan_bot_types::event_model::MessageEvent;
+
+use crate::llm::OpenAIMessage;
 
 pub trait Agent: Send + Sync {
     type Output;

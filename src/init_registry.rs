@@ -8,9 +8,9 @@ pub fn init_node_registry() -> Result<()> {
     // Register all nodes from the zihuan_node crate.
     zihuan_node::registry::init_node_registry()?;
 
-    use crate::bot_adapter::extract_group_id_from_event::ExtractGroupIdFromEventNode;
-    use crate::bot_adapter::extract_message_from_event::ExtractMessageFromEventNode;
-    use crate::bot_adapter::{
+    use zihuan_bot_adapter::extract_group_id_from_event::ExtractGroupIdFromEventNode;
+    use zihuan_bot_adapter::extract_message_from_event::ExtractMessageFromEventNode;
+    use zihuan_bot_adapter::{
         BotAdapterNode, ExtractSenderIdFromEventNode, MessageEventTypeFilterNode,
         SendFriendMessageBatchesNode, SendFriendMessageNode, SendGroupMessageBatchesNode,
         SendGroupMessageNode, SendQQMessageBatchesNode,

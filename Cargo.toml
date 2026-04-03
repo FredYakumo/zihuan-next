@@ -1,5 +1,5 @@
 [workspace]
-members = ["node_macros", "crates/zihuan_core", "crates/zihuan_bot_types", "crates/zihuan_llm_types", "crates/zihuan_node", "crates/zihuan_llm"]
+members = ["node_macros", "crates/zihuan_core", "crates/zihuan_bot_types", "crates/zihuan_llm_types", "crates/zihuan_node", "crates/zihuan_llm", "crates/zihuan_bot_adapter"]
 
 [package]
 name = "zihuan_next"
@@ -35,6 +35,7 @@ zihuan_bot_types = { path = "crates/zihuan_bot_types" }
 zihuan_llm_types = { path = "crates/zihuan_llm_types" }
 zihuan_node = { path = "crates/zihuan_node" }
 zihuan_llm = { path = "crates/zihuan_llm" }
+zihuan_bot_adapter = { path = "crates/zihuan_bot_adapter" }
 
 [build-dependencies]
 slint-build = "1.15"

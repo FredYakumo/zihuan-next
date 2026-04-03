@@ -1,8 +1,8 @@
-use crate::bot_adapter::adapter::{BotAdapter, BotAdapterConfig, SharedBotAdapter};
-use crate::bot_adapter::event;
-use crate::bot_adapter::models::event_model::MessageEvent;
-use crate::error::Result;
-use crate::node::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
+use crate::adapter::{BotAdapter, BotAdapterConfig, SharedBotAdapter};
+use crate::event;
+use crate::models::event_model::MessageEvent;
+use zihuan_core::error::Result;
+use zihuan_node::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 use log::{error, info};
 use std::collections::HashMap;
 use std::sync::{
@@ -72,7 +72,7 @@ impl Node for BotAdapterNode {
     ) -> Result<HashMap<String, DataValue>> {
         self.on_start(inputs)?;
         let outputs = self.on_update()?.ok_or_else(|| {
-            crate::error::Error::ValidationError("No message event received".to_string())
+            zihuan_core::error::Error::ValidationError("No message event received".to_string())
         })?;
         Ok(outputs)
     }
@@ -148,7 +148,9 @@ impl Node for BotAdapterNode {
         };
 
         let adapter_handle = adapter_handle.ok_or_else(|| {
-            crate::error::Error::ValidationError("Failed to receive bot adapter handle".to_string())
+            zihuan_core::error::Error::ValidationError(
+                "Failed to receive bot adapter handle".to_string(),
+            )
         })?;
 
         self.adapter_handle = Some(adapter_handle);
@@ -160,7 +162,9 @@ impl Node for BotAdapterNode {
 
     fn on_update(&mut self) -> Result<Option<HashMap<String, DataValue>>> {
         let event_rx = self.event_rx.as_ref().ok_or_else(|| {
-            crate::error::Error::ValidationError("Bot adapter is not initialized".to_string())
+            zihuan_core::error::Error::ValidationError(
+                "Bot adapter is not initialized".to_string(),
+            )
         })?;
         let error_rx = self.error_rx.as_ref();
         let stop_flag = self.stop_flag.clone();
@@ -176,7 +180,7 @@ impl Node for BotAdapterNode {
                                 guard.recv().await
                             } => {
                                 if let Some(msg) = error_msg {
-                                    return Err(crate::error::Error::ValidationError(msg));
+                                    return Err(zihuan_core::error::Error::ValidationError(msg));
                                 }
                                 Ok(None)
                             }
@@ -230,7 +234,7 @@ impl Node for BotAdapterNode {
                             guard.recv().await
                         } => {
                             if let Some(msg) = error_msg {
-                                return Err(crate::error::Error::ValidationError(msg));
+                                return Err(zihuan_core::error::Error::ValidationError(msg));
                             }
                             Ok(None)
                         }
@@ -286,7 +290,9 @@ impl Node for BotAdapterNode {
         );
         outputs.insert(
             "bot_adapter".to_string(),
-            DataValue::BotAdapterRef(self.adapter_handle.clone().unwrap() as zihuan_bot_types::BotAdapterHandle),
+            DataValue::BotAdapterRef(
+                self.adapter_handle.clone().unwrap() as zihuan_bot_types::BotAdapterHandle,
+            ),
         );
         self.validate_outputs(&outputs)?;
 
