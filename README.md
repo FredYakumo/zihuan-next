@@ -1,29 +1,36 @@
 # zihuan-next
 
-**Node-graph dataflow engine** for building event-driven bot pipelines with composable, self-contained processing nodes.
+**Node-graph engine** for building simple, event-driven AI pipelines — describe data flow on the graph, encapsulate complexity inside nodes.
 
 <img width="1248" height="880" alt="QQ_1774524965499" src="https://github.com/user-attachments/assets/ac06d18e-bf36-4ae8-893a-45ee9e36f475" />
 
 ## Overview
 
-zihuan-next uses a **node graph** to describe data flow between processing steps. The key design principle is:
+zihuan-next uses a **node graph** to describe how data moves through a workflow. You can think of it as a simple flowchart made of typed processing blocks: data comes in, passes through a few steps, and produces an output.
 
 > **The graph describes what data flows where. Complexity lives inside individual nodes.**
 
-Each node in the graph is a self-contained unit with clearly typed input and output ports. The graph topology stays simple and readable — it shows the high-level flow of data through the pipeline. All algorithms, agentic reasoning loops, control flow, and other complex logic are fully encapsulated within individual nodes. When you encounter a new complex problem, the answer is to build a new dedicated node rather than to introduce complex wiring on the graph canvas.
+That means the graph itself should stay easy to read. A workflow might look like:
 
-While currently featuring strong support for QQ bots, the engine is designed as a **universal workflow engine**. Workflows are stored as JSON and can run on **desktop**, **server**, or **edge devices** without modification.
+`receive message → extract text → call model → format reply → send message`
+
+Each node has clear **inputs** and **outputs**, and every port has a declared data type. The graph therefore focuses on the **big picture**: what data enters, how it is transformed, and where it goes next.
+
+This is also where the project differs from putting all logic directly into an agent loop. **Agentic behavior is supported, but it should be encapsulated inside nodes.** In other words, the node graph is responsible for describing the outer data flow, while complex inner behavior — such as LLM reasoning, tool calling, message memory, retrieval, or other multi-step control logic — should live inside dedicated nodes.
+
+So the graph can remain simple, while nodes can remain powerful. When a new problem becomes too complex to express cleanly on the canvas, the preferred solution is to create a new node or package the logic as a function subgraph rather than making the main graph more complicated.
+
+The project currently has strong support for QQ bots, but the overall idea is broader: use a node graph to build **simple workflows** and **event-driven interactions** that can run in a desktop app or directly from JSON in headless mode.
 
 ### Key Capabilities
 
-1.  **Simple Data Flow**: The graph is intentionally kept flat and readable. Routing, filtering, and composition happen through port connections, not nested logic on the canvas.
-2.  **Self-Contained Nodes**: Complex behaviors such as LLM inference, agentic tool-use loops, chat session management, and RAG retrieval are each fully encapsulated in a single node. Adding capability means adding a node.
-3.  **Function Subgraphs**: A `function` node embeds a private subgraph and exposes a typed call signature. This allows reusable sub-pipelines to be packaged as a single callable node, keeping the outer graph uncluttered.
-4.  **Chat Memory**: Maintains conversational context for coherent multi-turn interactions.
-5.  **Hybrid Knowledge Retrieval**: Augments responses using vector database knowledge graphs fused with real-time group chat context.
-6.  **Web-Augmented Dialogue**: Enhances conversations with live web search results via Tavily.
-7.  **Rich Content Rendering**: Generates display-ready images from Markdown, code blocks, and LaTeX formulas.
-8.  **Multi-Platform Support**: Workflows run headless on servers or edge devices by loading a JSON file. No GUI required.
+1.  **Node Graphs for Data Flow**: The graph is used to describe how data moves between steps. It is not meant to expose every internal algorithm or control detail on the canvas.
+2.  **Strongly Typed Inputs and Outputs**: Every node works through typed ports, so the graph has a clear contract for what kind of data each step receives and produces.
+3.  **Headless / No-GUI Execution**: Workflows can run directly from JSON with `--no-gui`, which makes them suitable for service deployment, command-line execution, and being invoked by other AI systems as tools or skills.
+4.  **Infrastructure Nodes**: Nodes can provide reusable infrastructure for algorithms, linear algebra, neural network models, LLMs, and other higher-level intelligent systems.
+5.  **Simple Flows and Event-Driven Interaction**: The same graph model can describe straightforward one-pass workflows as well as event-driven interactions triggered by messages, sockets, or other incoming events.
+6.  **Function Subgraphs and Agent Tools**: A `function` node can package a private subgraph as one reusable step, which helps simplify the main graph. The same function logic can also be exposed to LLM-driven nodes as callable tools.
+7.  **Extensibility**: When a workflow needs new behavior, the preferred pattern is to add a new node or function subgraph rather than pushing more complexity into the top-level graph.
 
 ## Architecture
 
@@ -42,17 +49,17 @@ The engine is split into focused library crates:
 | `node_macros` | `node_input!`, `node_output!`, `port!` procedural macros |
 | `src/` | Main binary: Slint UI, combined node registry (`init_registry.rs`) |
 
-### Node Graph Engine (`crates/zihuan_node`)
-- **DAG Execution**: Nodes execute in topological order. Data flows through typed ports.
-- **Port-Based Connections**: Input and output ports carry a declared `DataType`. Connections require matching types.
-- **Two Node Models**: `Simple` nodes run once per activation; `EventProducer` nodes run a persistent loop (e.g. WebSocket listener).
-- **Function Subgraphs**: A `function` node owns a private embedded subgraph executed as a child graph, enabling reusable encapsulated pipelines.
+### How the graph runtime works
+- **Nodes are connected by ports**: Each node has typed inputs and outputs, and data moves along those connections.
+- **The graph stays simple**: The canvas is for showing the workflow structure, not for expressing complicated logic step by step.
+- **Two execution styles**: Some nodes run once when triggered, while others stay active and keep producing events.
+- **Function subgraphs**: A `function` node can wrap a small private subgraph and present it as one clean step in the main graph.
 
 ### Integration Components
-- **Bot Adapter** (`crates/zihuan_bot_adapter`): WebSocket handling for QQ bot servers. Inbound events become `MessageEvent` values flowing into the graph.
-- **LLM Integration** (`crates/zihuan_llm`): `LLMInferNode` for one-shot inference; `BrainNode` for agentic tool-use loops with embedded tool subgraphs.
-- **Message Store**: Three-tier storage architecture (Redis cache → MySQL persistence → in-memory fallback).
-- **Visual Editor** (`src/ui/`): Slint-based drag-and-drop workflow editor.
+- **Bot Adapter** (`crates/zihuan_bot_adapter`): Connects to QQ bot servers and turns incoming messages into workflow input.
+- **LLM Integration** (`crates/zihuan_llm`): Provides nodes for model calls, tool-using AI behaviors, and retrieval features.
+- **Message Store**: Supports caching and persistent history with Redis, MySQL, and in-memory fallback.
+- **Visual Editor** (`src/ui/`): Lets you build and inspect workflows as a node graph.
 
 ## Screenshots
 <img width="1248" height="880" alt="QQ_1774524965499" src="https://github.com/user-attachments/assets/ac06d18e-bf36-4ae8-893a-45ee9e36f475" />
@@ -121,7 +128,7 @@ The engine is split into focused library crates:
 ### Usage
 
 **Visual Node Editor (GUI Mode)**
-Launch the visual editor to design your bot logic.
+Open the editor when you want to build or inspect a workflow as a graph.
 
 - **Windows:** Double-click `zihuan_next.exe`
 - **Linux/macOS:**
@@ -130,7 +137,7 @@ Launch the visual editor to design your bot logic.
   ```
 
 **Headless/Edge Mode**
-Run the engine without the GUI (suitable for servers, edge devices, or web backends). You can execute complex workflows by simply loading a JSON file.
+Run the engine without the GUI when you only need to execute a saved workflow file.
 
 - **Windows:**
   ```powershell
@@ -154,7 +161,7 @@ Run the engine without the GUI (suitable for servers, edge devices, or web backe
 
 ### Creating Custom Nodes
 
-Nodes are the primary extension point. When you encounter a new complex problem, build a new node rather than adding complexity to the graph canvas.
+Nodes are the main extension point. If a workflow needs a new complex behavior, the preferred approach is to build a new node for it instead of making the graph itself more complicated.
 
 1. Decide which crate the node belongs to:
    - General-purpose utility node → `crates/zihuan_node/src/util/`
