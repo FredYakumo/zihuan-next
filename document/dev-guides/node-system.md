@@ -25,7 +25,7 @@ Use this document in two ways:
 
 ## The Node Trait
 
-Defined in `src/node/mod.rs`. Every node type implements this trait:
+Defined in `crates/zihuan_node/src/lib.rs`. Every node type implements this trait:
 
 ```rust
 pub trait Node: Send + Sync {
@@ -160,7 +160,7 @@ Port::new("port_name", DataType::String).with_description("help text")
 
 ### DataType
 
-Defined in `src/node/data_value.rs`:
+Defined in `crates/zihuan_node/src/data_value.rs`:
 
 ```rust
 pub enum DataType {
@@ -286,7 +286,12 @@ Use `on_graph_start()` for one-time initialization that should happen after the 
 
 ## Node Registry
 
-All node types must be registered in `src/node/registry.rs -> init_node_registry()`.
+All node types must be registered in the appropriate registry:
+
+- Nodes in `crates/zihuan_node` → `crates/zihuan_node/src/registry.rs` (`init_node_registry()`)
+- Nodes in `crates/zihuan_bot_adapter` or `crates/zihuan_llm` → `src/init_registry.rs`
+
+The combined registry (`src/init_registry.rs`) calls `zihuan_node::registry::init_node_registry()` first, then registers bot-adapter and LLM nodes.
 
 The registry is a global thread-safe singleton:
 
@@ -435,12 +440,16 @@ This is the recommended implementation path for a new node.
 
 ### 1. Create the node file
 
-Put the node in the correct module. Utility or transform nodes usually go in `src/node/util/`.
+Put the node in the correct crate and module:
+
+- General-purpose utility/transform node → `crates/zihuan_node/src/util/`
+- Bot / QQ messaging node → `crates/zihuan_bot_adapter/src/`
+- LLM / AI node → `crates/zihuan_llm/src/`
 
 ```rust
 use std::collections::HashMap;
-use crate::error::{Error, Result};
-use crate::node::{DataType, DataValue, Node, NodeType, Port, node_input, node_output};
+use zihuan_core::error::{Error, Result};
+use zihuan_node::{DataType, DataValue, Node, NodeType, Port, node_input, node_output};
 
 pub struct UppercaseNode {
     id: String,
@@ -594,7 +603,9 @@ pub use uppercase::UppercaseNode;
 
 ### 5. Register the node
 
-Register it in `src/node/registry.rs -> init_node_registry()`:
+Register it in the appropriate registry:
+
+- For a node in `crates/zihuan_node` → `crates/zihuan_node/src/registry.rs`:
 
 ```rust
 register_node!(
@@ -603,6 +614,18 @@ register_node!(
     "工具",
     "Converts text to uppercase",
     UppercaseNode
+);
+```
+
+- For a node in `crates/zihuan_bot_adapter` or `crates/zihuan_llm` → `src/init_registry.rs`:
+
+```rust
+register_node!(
+    "my_bot_node",
+    "My Bot Node",
+    "适配器",
+    "Description",
+    MyBotNode
 );
 ```
 
@@ -636,8 +659,8 @@ Integration test with `NodeGraph`:
 ```rust
 #[test]
 fn test_uppercase_in_graph() {
-    use crate::node::{NodeGraph, graph_io::NodeGraphDefinition};
-    use crate::node::registry::{build_node_graph_from_definition, init_node_registry};
+    use zihuan_node::{NodeGraph, graph_io::NodeGraphDefinition};
+    use zihuan_node::registry::{build_node_graph_from_definition, init_node_registry};
 
     init_node_registry().unwrap();
 
@@ -669,7 +692,7 @@ fn test_uppercase_in_graph() {
 - `type_id` is unique and stable
 - EventProducers check the stop flag
 - Node is exported from parent `mod.rs`
-- Node is registered in `src/node/registry.rs`
+- Node is registered in the appropriate registry (`crates/zihuan_node/src/registry.rs` or `src/init_registry.rs`)
 - Happy-path and failure-path tests are present
 
 ---

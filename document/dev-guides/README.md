@@ -2,6 +2,28 @@
 
 Documentation for developing and extending zihuan-next — a Rust + Slint node-graph workflow engine for event-driven bot pipelines.
 
+The node graph describes **data flow** between processing steps. Complexity (algorithms, agentic loops, control flow) is encapsulated inside individual nodes; the graph topology itself stays simple and readable. When you encounter a new complex problem, build a new node rather than adding complexity to the graph canvas.
+
+---
+
+## Crate Structure
+
+| Crate | Contents |
+|---|---|
+| `crates/zihuan_core` | Error types, config loading, URL utilities |
+| `crates/zihuan_bot_types` | `MessageEvent`, QQ message models, bot handle |
+| `crates/zihuan_llm_types` | `OpenAIMessage`, `LLMBase` trait, `FunctionTool` trait |
+| `crates/zihuan_node` | `Node` trait, `DataType`/`DataValue`, DAG execution engine, general-purpose utility nodes, base registry |
+| `crates/zihuan_bot_adapter` | `BotAdapterNode`, QQ message send/receive nodes |
+| `crates/zihuan_llm` | `LLMApiNode`, `LLMInferNode`, `BrainNode`, RAG nodes |
+| `node_macros` | `node_input!`, `node_output!`, `port!` procedural macros |
+| `src/` | Main binary: Slint UI, combined node registry (`init_registry.rs`) |
+
+### Node registration
+
+- Nodes in `zihuan_node` → `crates/zihuan_node/src/registry.rs` (`init_node_registry()`)
+- Nodes in `zihuan_bot_adapter` or `zihuan_llm` → `src/init_registry.rs`
+
 ---
 
 ## Where to start

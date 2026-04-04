@@ -32,7 +32,15 @@ If the distinction is unclear, read [../dev-guides/node-system.md](../dev-guides
 
 ### 2. Create the node file
 
-Place the node in the appropriate module and keep one node per file. Follow the existing module layout rather than creating a new directory unless the feature genuinely introduces a new area of responsibility.
+Decide which crate the new node belongs to, then place it in one file per node:
+
+| Node category | Crate | Directory |
+|---|---|---|
+| General-purpose utility or transform | `crates/zihuan_node` | `crates/zihuan_node/src/util/` |
+| Bot / QQ messaging | `crates/zihuan_bot_adapter` | `crates/zihuan_bot_adapter/src/` |
+| LLM / AI | `crates/zihuan_llm` | `crates/zihuan_llm/src/` |
+
+Do not create a new directory unless the feature genuinely introduces a new area of responsibility.
 
 The node struct should normally expose:
 
@@ -69,7 +77,10 @@ After adding the file, update the parent `mod.rs` so the node can be referenced 
 
 ### 6. Register the node
 
-Register every node in `src/node/registry.rs`. This is the step that makes the node available to graph loading, the UI palette, and metadata queries.
+Register in the appropriate registry — this makes the node available to graph loading, the UI palette, and metadata queries.
+
+- **Nodes in `crates/zihuan_node`** → `crates/zihuan_node/src/registry.rs` inside `init_node_registry()`.
+- **Nodes in `crates/zihuan_bot_adapter` or `crates/zihuan_llm`** → `src/init_registry.rs`.
 
 When registering:
 
@@ -93,7 +104,7 @@ Use a `NodeGraph` integration test when:
 Before finishing, verify that the node is not only implemented but also integrated into the rest of the system:
 
 - the parent module exports it
-- the registry entry exists
+- the registry entry exists in the correct registry file
 - docs or examples are updated if the node adds a notable capability
 - the node behaves correctly in the expected graph shape
 
@@ -121,7 +132,7 @@ Use this checklist before considering a node finished:
 - Ports are declared clearly and use stable naming
 - Inline config handling is implemented when needed
 - The node is exported from the parent `mod.rs`
-- The node is registered in `src/node/registry.rs`
+- The node is registered in the correct registry (`crates/zihuan_node/src/registry.rs` or `src/init_registry.rs`)
 - Unit tests cover the main behavior
 - Error cases are tested when they are part of the contract
 - Any EventProducer implementation stores and checks the stop flag
