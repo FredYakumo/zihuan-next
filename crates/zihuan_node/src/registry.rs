@@ -368,7 +368,7 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         PushBackVecNode, QQMessageJsonOutputSystemPromptProviderNode, QQMessageListDataNode,
         SessionStateClearNode, SessionStateGetNode, SessionStateProviderNode,
         SessionStateReleaseNode, SessionStateTryClaimNode, SetVariableNode, StackNode,
-        StringDataNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode,
+        StringDataNode, StringIsNotEmptyNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode,
         ToolResultNode,
     };
 
@@ -399,6 +399,7 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
     register_node!("as_system_openai_message", "字符串转 OpenAIMessage", "消息", "兼容旧节点类型 ID：将字符串封装为可选 role 的 OpenAIMessage，默认 role=system", StringToOpenAIMessageNode);
     register_node!("preview_string", "Preview String", "工具", "在节点卡片内预览输入字符串", PreviewStringNode);
     register_node!("string_data", "String Data", "数据", "字符串数据源，通过UI输入框提供字符串", StringDataNode);
+    register_node!("string_is_not_empty", "字符串非空判断", "工具", "判断字符串是否非空，可选 trim_before_check 决定是否先 trim 再判断", StringIsNotEmptyNode);
     register_node!("current_time", "当前时间", "数据", "输出当前本地时间字符串，无需输入", CurrentTimeNode);
     register_node!("preview_message_list", "Preview OpenAIMessage List", "工具", "在节点卡片内预览 OpenAIMessage 列表", PreviewMessageListNode);
     register_node!("message_list_data", "OpenAIMessage List Data", "数据", "OpenAIMessage 列表数据源，通过 UI 容器编辑器提供列表数据", MessageListDataNode);
