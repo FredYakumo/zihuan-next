@@ -50,17 +50,17 @@
         "height": 160.0
       },
       "inline_values": {
-        "qq_id": "2496875785",
-        "bot_server_url": "ws://localhost:3001"
+        "bot_server_url": "ws://localhost:3001",
+        "qq_id": "2496875785"
       },
       "port_bindings": {
-        "qq_id": {
-          "kind": "hyperparameter",
-          "name": "BOT_ID"
-        },
         "bot_server_token": {
           "kind": "hyperparameter",
           "name": "BOT_SERVER_TOKEN"
+        },
+        "qq_id": {
+          "kind": "hyperparameter",
+          "name": "BOT_ID"
         }
       },
       "has_error": false,
@@ -196,18 +196,18 @@
         "height": 200.0
       },
       "inline_values": {
+        "mysql_port": "3306",
         "mysql_host": "127.0.0.1",
-        "mysql_database": "zihuan_aibot",
-        "mysql_port": "3306"
+        "mysql_database": "zihuan_aibot"
       },
       "port_bindings": {
-        "mysql_password": {
-          "kind": "hyperparameter",
-          "name": "MYSQL_PASSWORD"
-        },
         "mysql_user": {
           "kind": "hyperparameter",
           "name": "MYSQL_USER"
+        },
+        "mysql_password": {
+          "kind": "hyperparameter",
+          "name": "MYSQL_PASSWORD"
         }
       },
       "has_error": false,
@@ -378,13 +378,13 @@
           "kind": "hyperparameter",
           "name": "LLM_MODEL_NAME"
         },
-        "api_key": {
-          "kind": "hyperparameter",
-          "name": "LLM_API_KEY"
-        },
         "api_endpoint": {
           "kind": "hyperparameter",
           "name": "LLM_API_ENDPOINT"
+        },
+        "api_key": {
+          "kind": "hyperparameter",
+          "name": "LLM_API_KEY"
         }
       },
       "has_error": false,
@@ -1455,28 +1455,58 @@
                   ],
                   "tools_config": [
                     {
+                      "description": "使用 Tavily 搜索引擎在互联网上搜索信息，返回相关网页的标题、链接和内容摘要",
                       "id": "tavily_web_search",
                       "name": "web_search",
-                      "description": "使用 Tavily 搜索引擎在互联网上搜索信息，返回相关网页的标题、链接和内容摘要",
-                      "parameters": [
-                        {
-                          "name": "query",
-                          "data_type": "String",
-                          "desc": "搜索关键词或问题"
-                        },
-                        {
-                          "name": "search_count",
-                          "data_type": "Integer",
-                          "desc": "搜索结果数量，通常为 3，如需更多可以提高，最大 10"
-                        }
-                      ],
                       "outputs": [
                         {
-                          "name": "results",
-                          "data_type": { "Vec": "String" }
+                          "data_type": {
+                            "Vec": "String"
+                          },
+                          "name": "results"
+                        }
+                      ],
+                      "parameters": [
+                        {
+                          "data_type": "String",
+                          "desc": "搜索关键词或问题",
+                          "name": "query"
+                        },
+                        {
+                          "data_type": "Integer",
+                          "desc": "搜索结果数量，通常为 3，如需更多可以提高，最大 10",
+                          "name": "search_count"
                         }
                       ],
                       "subgraph": {
+                        "edges": [
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "tavily_ref",
+                            "to_node_id": "node_ts1",
+                            "to_port": "tavily_ref"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "query",
+                            "to_node_id": "node_ts1",
+                            "to_port": "query"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "search_count",
+                            "to_node_id": "node_ts1",
+                            "to_port": "search_count"
+                          },
+                          {
+                            "from_node_id": "node_ts1",
+                            "from_port": "results",
+                            "to_node_id": "__function_outputs__",
+                            "to_port": "results"
+                          }
+                        ],
+                        "hyperparameter_groups": [],
+                        "hyperparameters": [],
                         "nodes": [
                           {
                             "description": "函数子图的输入边界节点",
@@ -1487,35 +1517,115 @@
                             "id": "__function_inputs__",
                             "inline_values": {
                               "signature": [
-                                { "data_type": "String", "name": "target_id" },
-                                { "data_type": "LLModel", "name": "llm_ref" },
-                                { "data_type": "BotAdapterRef", "name": "bot_ref" },
-                                { "data_type": "String", "name": "metion_target_id" },
-                                { "data_type": "TavilyRef", "name": "tavily_ref" },
-                                { "data_type": "String", "name": "content" },
-                                { "data_type": "String", "name": "query" },
-                                { "data_type": "Integer", "name": "search_count" }
+                                {
+                                  "data_type": "String",
+                                  "name": "target_id"
+                                },
+                                {
+                                  "data_type": "LLModel",
+                                  "name": "llm_ref"
+                                },
+                                {
+                                  "data_type": "BotAdapterRef",
+                                  "name": "bot_ref"
+                                },
+                                {
+                                  "data_type": "String",
+                                  "name": "metion_target_id"
+                                },
+                                {
+                                  "data_type": "TavilyRef",
+                                  "name": "tavily_ref"
+                                },
+                                {
+                                  "data_type": "String",
+                                  "name": "content"
+                                },
+                                {
+                                  "data_type": "String",
+                                  "name": "query"
+                                },
+                                {
+                                  "data_type": "Integer",
+                                  "name": "search_count"
+                                }
                               ]
                             },
                             "input_ports": [
-                              { "data_type": "Json", "description": "隐藏的函数签名 JSON", "name": "signature", "required": false },
-                              { "data_type": "Json", "description": "运行时注入的函数输入 JSON", "name": "runtime_values", "required": false }
+                              {
+                                "data_type": "Json",
+                                "description": "隐藏的函数签名 JSON",
+                                "name": "signature",
+                                "required": false
+                              },
+                              {
+                                "data_type": "Json",
+                                "description": "运行时注入的函数输入 JSON",
+                                "name": "runtime_values",
+                                "required": false
+                              }
                             ],
                             "name": "函数输入",
                             "node_type": "function_inputs",
                             "output_ports": [
-                              { "data_type": "String", "description": "函数输入 'target_id'", "name": "target_id", "required": true },
-                              { "data_type": "LLModel", "description": "函数输入 'llm_ref'", "name": "llm_ref", "required": true },
-                              { "data_type": "BotAdapterRef", "description": "函数输入 'bot_ref'", "name": "bot_ref", "required": true },
-                              { "data_type": "String", "description": "函数输入 'metion_target_id'", "name": "metion_target_id", "required": true },
-                              { "data_type": "TavilyRef", "description": "函数输入 'tavily_ref'", "name": "tavily_ref", "required": true },
-                              { "data_type": "String", "description": "函数输入 'content'", "name": "content", "required": true },
-                              { "data_type": "String", "description": "函数输入 'query'", "name": "query", "required": true },
-                              { "data_type": "Integer", "description": "函数输入 'search_count'", "name": "search_count", "required": true }
+                              {
+                                "data_type": "String",
+                                "description": "函数输入 'target_id'",
+                                "name": "target_id",
+                                "required": true
+                              },
+                              {
+                                "data_type": "LLModel",
+                                "description": "函数输入 'llm_ref'",
+                                "name": "llm_ref",
+                                "required": true
+                              },
+                              {
+                                "data_type": "BotAdapterRef",
+                                "description": "函数输入 'bot_ref'",
+                                "name": "bot_ref",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "函数输入 'metion_target_id'",
+                                "name": "metion_target_id",
+                                "required": true
+                              },
+                              {
+                                "data_type": "TavilyRef",
+                                "description": "函数输入 'tavily_ref'",
+                                "name": "tavily_ref",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "函数输入 'content'",
+                                "name": "content",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "函数输入 'query'",
+                                "name": "query",
+                                "required": true
+                              },
+                              {
+                                "data_type": "Integer",
+                                "description": "函数输入 'search_count'",
+                                "name": "search_count",
+                                "required": true
+                              }
                             ],
                             "port_bindings": {},
-                            "position": { "x": -240.0, "y": 0.0 },
-                            "size": null
+                            "position": {
+                              "x": -240.0,
+                              "y": 0.0
+                            },
+                            "size": {
+                              "height": 120.0,
+                              "width": 220.0
+                            }
                           },
                           {
                             "description": "使用 TavilyRef 执行搜索，输出包含标题、链接和内容的 Vec<String>",
@@ -1526,17 +1636,42 @@
                             "id": "node_ts1",
                             "inline_values": {},
                             "input_ports": [
-                              { "data_type": "TavilyRef", "description": "Tavily 搜索引用", "name": "tavily_ref", "required": true },
-                              { "data_type": "String", "description": "搜索关键词或问题", "name": "query", "required": true },
-                              { "data_type": "Integer", "description": "返回结果数量，必须大于 0", "name": "search_count", "required": true }
+                              {
+                                "data_type": "TavilyRef",
+                                "description": "Tavily 搜索引用",
+                                "name": "tavily_ref",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "搜索关键词或问题",
+                                "name": "query",
+                                "required": true
+                              },
+                              {
+                                "data_type": "Integer",
+                                "description": "返回结果数量，必须大于 0",
+                                "name": "search_count",
+                                "required": true
+                              }
                             ],
                             "name": "Tavily 搜索",
                             "node_type": "tavily_search",
                             "output_ports": [
-                              { "data_type": { "Vec": "String" }, "description": "搜索结果列表，每项包含标题、链接、内容", "name": "results", "required": true }
+                              {
+                                "data_type": {
+                                  "Vec": "String"
+                                },
+                                "description": "搜索结果列表，每项包含标题、链接、内容",
+                                "name": "results",
+                                "required": true
+                              }
                             ],
                             "port_bindings": {},
-                            "position": { "x": 240.0, "y": 0.0 },
+                            "position": {
+                              "x": 240.0,
+                              "y": 0.0
+                            },
                             "size": null
                           },
                           {
@@ -1548,29 +1683,44 @@
                             "id": "__function_outputs__",
                             "inline_values": {
                               "signature": [
-                                { "name": "results", "data_type": { "Vec": "String" } }
+                                {
+                                  "data_type": {
+                                    "Vec": "String"
+                                  },
+                                  "name": "results"
+                                }
                               ]
                             },
                             "input_ports": [
-                              { "data_type": "Json", "description": "隐藏的函数签名 JSON", "name": "signature", "required": false },
-                              { "data_type": { "Vec": "String" }, "description": "函数输出 'results'", "name": "results", "required": true }
+                              {
+                                "data_type": "Json",
+                                "description": "隐藏的函数签名 JSON",
+                                "name": "signature",
+                                "required": false
+                              },
+                              {
+                                "data_type": {
+                                  "Vec": "String"
+                                },
+                                "description": "函数输出 'results'",
+                                "name": "results",
+                                "required": true
+                              }
                             ],
                             "name": "函数输出",
                             "node_type": "function_outputs",
                             "output_ports": [],
                             "port_bindings": {},
-                            "position": { "x": 720.0, "y": 0.0 },
-                            "size": null
+                            "position": {
+                              "x": 720.0,
+                              "y": 0.0
+                            },
+                            "size": {
+                              "height": 120.0,
+                              "width": 220.0
+                            }
                           }
                         ],
-                        "edges": [
-                          { "from_node_id": "__function_inputs__", "from_port": "tavily_ref", "to_node_id": "node_ts1", "to_port": "tavily_ref" },
-                          { "from_node_id": "__function_inputs__", "from_port": "query", "to_node_id": "node_ts1", "to_port": "query" },
-                          { "from_node_id": "__function_inputs__", "from_port": "search_count", "to_node_id": "node_ts1", "to_port": "search_count" },
-                          { "from_node_id": "node_ts1", "from_port": "results", "to_node_id": "__function_outputs__", "to_port": "results" }
-                        ],
-                        "hyperparameter_groups": [],
-                        "hyperparameters": [],
                         "variables": []
                       }
                     }
@@ -2721,28 +2871,76 @@
                   ],
                   "tools_config": [
                     {
+                      "description": "使用 Tavily 搜索引擎在互联网上搜索信息，返回相关网页的标题、链接和内容摘要",
                       "id": "tavily_web_search",
                       "name": "web_search",
-                      "description": "使用 Tavily 搜索引擎在互联网上搜索信息，返回相关网页的标题、链接和内容摘要",
-                      "parameters": [
-                        {
-                          "name": "query",
-                          "data_type": "String",
-                          "desc": "搜索关键词或问题"
-                        },
-                        {
-                          "name": "search_count",
-                          "data_type": "Integer",
-                          "desc": "搜索结果数量，通常为 3，如需更多可以提高，最大 10"
-                        }
-                      ],
                       "outputs": [
                         {
-                          "name": "results",
-                          "data_type": { "Vec": "String" }
+                          "data_type": {
+                            "Vec": "String"
+                          },
+                          "name": "results"
+                        }
+                      ],
+                      "parameters": [
+                        {
+                          "data_type": "String",
+                          "desc": "搜索关键词或问题",
+                          "name": "query"
+                        },
+                        {
+                          "data_type": "Integer",
+                          "desc": "搜索结果数量，通常为 3，如需更多可以提高，最大 10",
+                          "name": "search_count"
                         }
                       ],
                       "subgraph": {
+                        "edges": [
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "tavily_ref",
+                            "to_node_id": "node_ts1",
+                            "to_port": "tavily_ref"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "query",
+                            "to_node_id": "node_ts1",
+                            "to_port": "query"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "search_count",
+                            "to_node_id": "node_ts1",
+                            "to_port": "search_count"
+                          },
+                          {
+                            "from_node_id": "node_ts1",
+                            "from_port": "results",
+                            "to_node_id": "__function_outputs__",
+                            "to_port": "results"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "bot_ref",
+                            "to_node_id": "node_1",
+                            "to_port": "bot_adapter"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "target_id",
+                            "to_node_id": "node_1",
+                            "to_port": "target_id"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "content",
+                            "to_node_id": "node_2",
+                            "to_port": "text"
+                          }
+                        ],
+                        "hyperparameter_groups": [],
+                        "hyperparameters": [],
                         "nodes": [
                           {
                             "description": "函数子图的输入边界节点",
@@ -2753,33 +2951,105 @@
                             "id": "__function_inputs__",
                             "inline_values": {
                               "signature": [
-                                { "data_type": "String", "name": "target_id" },
-                                { "data_type": "LLModel", "name": "llm_ref" },
-                                { "data_type": "BotAdapterRef", "name": "bot_ref" },
-                                { "data_type": "TavilyRef", "name": "tavily_ref" },
-                                { "data_type": "String", "name": "content" },
-                                { "data_type": "String", "name": "query" },
-                                { "data_type": "Integer", "name": "search_count" }
+                                {
+                                  "data_type": "String",
+                                  "name": "target_id"
+                                },
+                                {
+                                  "data_type": "LLModel",
+                                  "name": "llm_ref"
+                                },
+                                {
+                                  "data_type": "BotAdapterRef",
+                                  "name": "bot_ref"
+                                },
+                                {
+                                  "data_type": "TavilyRef",
+                                  "name": "tavily_ref"
+                                },
+                                {
+                                  "data_type": "String",
+                                  "name": "content"
+                                },
+                                {
+                                  "data_type": "String",
+                                  "name": "query"
+                                },
+                                {
+                                  "data_type": "Integer",
+                                  "name": "search_count"
+                                }
                               ]
                             },
                             "input_ports": [
-                              { "data_type": "Json", "description": "隐藏的函数签名 JSON", "name": "signature", "required": false },
-                              { "data_type": "Json", "description": "运行时注入的函数输入 JSON", "name": "runtime_values", "required": false }
+                              {
+                                "data_type": "Json",
+                                "description": "隐藏的函数签名 JSON",
+                                "name": "signature",
+                                "required": false
+                              },
+                              {
+                                "data_type": "Json",
+                                "description": "运行时注入的函数输入 JSON",
+                                "name": "runtime_values",
+                                "required": false
+                              }
                             ],
                             "name": "函数输入",
                             "node_type": "function_inputs",
                             "output_ports": [
-                              { "data_type": "String", "description": "函数输入 'target_id'", "name": "target_id", "required": true },
-                              { "data_type": "LLModel", "description": "函数输入 'llm_ref'", "name": "llm_ref", "required": true },
-                              { "data_type": "BotAdapterRef", "description": "函数输入 'bot_ref'", "name": "bot_ref", "required": true },
-                              { "data_type": "TavilyRef", "description": "函数输入 'tavily_ref'", "name": "tavily_ref", "required": true },
-                              { "data_type": "String", "description": "函数输入 'content'", "name": "content", "required": true },
-                              { "data_type": "String", "description": "函数输入 'query'", "name": "query", "required": true },
-                              { "data_type": "Integer", "description": "函数输入 'search_count'", "name": "search_count", "required": true }
+                              {
+                                "data_type": "String",
+                                "description": "函数输入 'target_id'",
+                                "name": "target_id",
+                                "required": true
+                              },
+                              {
+                                "data_type": "LLModel",
+                                "description": "函数输入 'llm_ref'",
+                                "name": "llm_ref",
+                                "required": true
+                              },
+                              {
+                                "data_type": "BotAdapterRef",
+                                "description": "函数输入 'bot_ref'",
+                                "name": "bot_ref",
+                                "required": true
+                              },
+                              {
+                                "data_type": "TavilyRef",
+                                "description": "函数输入 'tavily_ref'",
+                                "name": "tavily_ref",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "函数输入 'content'",
+                                "name": "content",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "函数输入 'query'",
+                                "name": "query",
+                                "required": true
+                              },
+                              {
+                                "data_type": "Integer",
+                                "description": "函数输入 'search_count'",
+                                "name": "search_count",
+                                "required": true
+                              }
                             ],
                             "port_bindings": {},
-                            "position": { "x": -240.0, "y": 0.0 },
-                            "size": null
+                            "position": {
+                              "x": -240.0,
+                              "y": 0.0
+                            },
+                            "size": {
+                              "height": 120.0,
+                              "width": 220.0
+                            }
                           },
                           {
                             "description": "使用 TavilyRef 执行搜索，输出包含标题、链接和内容的 Vec<String>",
@@ -2790,17 +3060,42 @@
                             "id": "node_ts1",
                             "inline_values": {},
                             "input_ports": [
-                              { "data_type": "TavilyRef", "description": "Tavily 搜索引用", "name": "tavily_ref", "required": true },
-                              { "data_type": "String", "description": "搜索关键词或问题", "name": "query", "required": true },
-                              { "data_type": "Integer", "description": "返回结果数量，必须大于 0", "name": "search_count", "required": true }
+                              {
+                                "data_type": "TavilyRef",
+                                "description": "Tavily 搜索引用",
+                                "name": "tavily_ref",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "搜索关键词或问题",
+                                "name": "query",
+                                "required": true
+                              },
+                              {
+                                "data_type": "Integer",
+                                "description": "返回结果数量，必须大于 0",
+                                "name": "search_count",
+                                "required": true
+                              }
                             ],
                             "name": "Tavily 搜索",
                             "node_type": "tavily_search",
                             "output_ports": [
-                              { "data_type": { "Vec": "String" }, "description": "搜索结果列表，每项包含标题、链接、内容", "name": "results", "required": true }
+                              {
+                                "data_type": {
+                                  "Vec": "String"
+                                },
+                                "description": "搜索结果列表，每项包含标题、链接、内容",
+                                "name": "results",
+                                "required": true
+                              }
                             ],
                             "port_bindings": {},
-                            "position": { "x": 240.0, "y": 0.0 },
+                            "position": {
+                              "x": 240.0,
+                              "y": 0.0
+                            },
                             "size": null
                           },
                           {
@@ -2812,29 +3107,130 @@
                             "id": "__function_outputs__",
                             "inline_values": {
                               "signature": [
-                                { "name": "results", "data_type": { "Vec": "String" } }
+                                {
+                                  "data_type": {
+                                    "Vec": "String"
+                                  },
+                                  "name": "results"
+                                }
                               ]
                             },
                             "input_ports": [
-                              { "data_type": "Json", "description": "隐藏的函数签名 JSON", "name": "signature", "required": false },
-                              { "data_type": { "Vec": "String" }, "description": "函数输出 'results'", "name": "results", "required": true }
+                              {
+                                "data_type": "Json",
+                                "description": "隐藏的函数签名 JSON",
+                                "name": "signature",
+                                "required": false
+                              },
+                              {
+                                "data_type": {
+                                  "Vec": "String"
+                                },
+                                "description": "函数输出 'results'",
+                                "name": "results",
+                                "required": true
+                              }
                             ],
                             "name": "函数输出",
                             "node_type": "function_outputs",
                             "output_ports": [],
                             "port_bindings": {},
-                            "position": { "x": 720.0, "y": 0.0 },
+                            "position": {
+                              "x": 720.0,
+                              "y": 0.0
+                            },
+                            "size": {
+                              "height": 120.0,
+                              "width": 220.0
+                            }
+                          },
+                          {
+                            "description": "向QQ好友发送消息",
+                            "dynamic_input_ports": false,
+                            "dynamic_output_ports": false,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "node_1",
+                            "inline_values": {},
+                            "input_ports": [
+                              {
+                                "data_type": "BotAdapterRef",
+                                "description": "Bot适配器引用",
+                                "name": "bot_adapter",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "目标好友的QQ号",
+                                "name": "target_id",
+                                "required": true
+                              },
+                              {
+                                "data_type": {
+                                  "Vec": "QQMessage"
+                                },
+                                "description": "要发送的QQ消息段列表",
+                                "name": "message",
+                                "required": true
+                              }
+                            ],
+                            "name": "发送好友消息",
+                            "node_type": "send_friend_message",
+                            "output_ports": [
+                              {
+                                "data_type": "Boolean",
+                                "description": "是否发送成功",
+                                "name": "success",
+                                "required": true
+                              },
+                              {
+                                "data_type": "Integer",
+                                "description": "服务器返回的消息ID",
+                                "name": "message_id",
+                                "required": true
+                              }
+                            ],
+                            "port_bindings": {},
+                            "position": {
+                              "x": 540.0,
+                              "y": 200.0
+                            },
+                            "size": null
+                          },
+                          {
+                            "description": "将字符串转换为 QQ 消息中的纯文本（PlainText）消息段",
+                            "dynamic_input_ports": false,
+                            "dynamic_output_ports": false,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "node_2",
+                            "inline_values": {},
+                            "input_ports": [
+                              {
+                                "data_type": "String",
+                                "description": "输入字符串",
+                                "name": "text",
+                                "required": true
+                              }
+                            ],
+                            "name": "字符串转QQ纯文本",
+                            "node_type": "string_to_plain_text",
+                            "output_ports": [
+                              {
+                                "data_type": "QQMessage",
+                                "description": "输出 QQMessage PlainText 消息段",
+                                "name": "result",
+                                "required": true
+                              }
+                            ],
+                            "port_bindings": {},
+                            "position": {
+                              "x": 100.0,
+                              "y": 240.0
+                            },
                             "size": null
                           }
                         ],
-                        "edges": [
-                          { "from_node_id": "__function_inputs__", "from_port": "tavily_ref", "to_node_id": "node_ts1", "to_port": "tavily_ref" },
-                          { "from_node_id": "__function_inputs__", "from_port": "query", "to_node_id": "node_ts1", "to_port": "query" },
-                          { "from_node_id": "__function_inputs__", "from_port": "search_count", "to_node_id": "node_ts1", "to_port": "search_count" },
-                          { "from_node_id": "node_ts1", "from_port": "results", "to_node_id": "__function_outputs__", "to_port": "results" }
-                        ],
-                        "hyperparameter_groups": [],
-                        "hyperparameters": [],
                         "variables": []
                       }
                     }

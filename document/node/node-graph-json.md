@@ -1,8 +1,8 @@
 # Node Graph JSON Specification
 
-> **Source of truth:** `src/node/graph_io.rs` — Rust structs serialized/deserialized with [serde](https://serde.rs).
+> **Source of truth:** `crates/zihuan_node/src/graph_io.rs` — Rust structs serialized/deserialized with [serde](https://serde.rs).
 
-This document describes the JSON format used to save and load node graphs. The GUI reads and writes this format; the runtime rebuilds an executable `NodeGraph` from it via `build_node_graph_from_definition()` in `src/node/registry.rs`.
+This document describes the JSON format used to save and load node graphs. The GUI reads and writes this format; the runtime rebuilds an executable `NodeGraph` from it via `build_node_graph_from_definition()` in `crates/zihuan_node/src/registry.rs`.
 
 ---
 

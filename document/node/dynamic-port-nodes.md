@@ -145,12 +145,12 @@ After this, call `refresh_active_tab_ui()` to re-render.
 ## Real examples in the codebase
 
 | Node | Dynamic direction | Config key | Source |
-|------|------------------|------------|--------|
-| `FormatStringNode` | inputs | `template` (String) | `src/node/util/format_string.rs` |
-| `JsonExtractNode` | outputs | `fields_config` (Json) | `src/node/util/json_extract.rs` |
-| `FunctionNode` | inputs + outputs | `function_config` (Json) | `src/node/util/function.rs` |
-| `FunctionInputsNode` | outputs | `signature` (Json) | `src/node/util/function_inputs.rs` |
-| `FunctionOutputsNode` | inputs | `signature` (Json) | `src/node/util/function_outputs.rs` |
+|------|------------------|------------|---------|
+| `FormatStringNode` | inputs | `template` (String) | `crates/zihuan_node/src/util/format_string.rs` |
+| `JsonExtractNode` | outputs | `fields_config` (Json) | `crates/zihuan_node/src/util/json_extract.rs` |
+| `FunctionNode` | inputs + outputs | `function_config` (Json) | `crates/zihuan_node/src/util/function.rs` |
+| `FunctionInputsNode` | outputs | `signature` (Json) | `crates/zihuan_node/src/util/function_inputs.rs` |
+| `FunctionOutputsNode` | inputs | `signature` (Json) | `crates/zihuan_node/src/util/function_outputs.rs` |
 
 ---
 
