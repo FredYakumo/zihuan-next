@@ -795,9 +795,72 @@ fn resolve_display_data_type_inner(
         return Some(DataType::Any);
     }
 
-    if node.node_type == "switch_gate" && port_name == "output" {
-        return resolve_display_data_type_inner(graph, node, "input", true, visited)
-            .or(Some(DataType::Any));
+    // Vec-transformation nodes: infer concrete output types from their Any-typed inputs.
+    match (node.node_type.as_str(), port_name) {
+        ("stack", "array") => {
+            // element: Any  →  array: Vec(element_type)
+            if let Some(inner) =
+                resolve_display_data_type_inner(graph, node, "element", true, visited)
+            {
+                let inner = match inner {
+                    DataType::Any => return Some(DataType::Any),
+                    t => t,
+                };
+                return Some(DataType::Vec(Box::new(inner)));
+            }
+        }
+        ("array_get", "element") => {
+            // array: Vec(T)  →  element: T
+            if let Some(vec_type) =
+                resolve_display_data_type_inner(graph, node, "array", true, visited)
+            {
+                if let DataType::Vec(inner) = vec_type {
+                    return Some(*inner);
+                }
+            }
+        }
+        ("push_back_vec", "result") => {
+            // vec: Vec(T), element: Any  →  result: Vec(T)
+            if let Some(t) =
+                resolve_display_data_type_inner(graph, node, "vec", true, visited)
+            {
+                if !matches!(t, DataType::Any) {
+                    return Some(t);
+                }
+            }
+        }
+        ("concat_vec", "vec") => {
+            // vec1: Vec(T), vec2: Vec(T)  →  vec: Vec(T)
+            for input_name in ["vec1", "vec2"] {
+                if let Some(t) =
+                    resolve_display_data_type_inner(graph, node, input_name, true, visited)
+                {
+                    if !matches!(t, DataType::Any) {
+                        return Some(t);
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+
+    // Generic passthrough: for Any-typed output ports, trace back through all Any-typed
+    // input ports and return the first concrete type found. This covers switch_gate,
+    // and_then, boolean_branch, conditional, conditional_router, loop, loop_break, etc.
+    let any_inputs: Vec<String> = node
+        .input_ports
+        .iter()
+        .filter(|p| matches!(p.data_type, DataType::Any))
+        .map(|p| p.name.clone())
+        .collect();
+    for input_name in any_inputs {
+        if let Some(t) =
+            resolve_display_data_type_inner(graph, node, &input_name, true, visited)
+        {
+            if !matches!(t, DataType::Any) {
+                return Some(t);
+            }
+        }
     }
 
     Some(DataType::Any)
