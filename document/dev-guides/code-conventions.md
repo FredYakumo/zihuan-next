@@ -57,49 +57,41 @@ Categories use Chinese strings by convention (to match the existing UI palette g
 
 ### One node per file
 
-Each node struct lives in its own file. Simple utility nodes go under `src/node/util/`:
+Each node struct lives in its own file in the appropriate crate:
 
 ```
-src/node/util/
-├── mod.rs               ← re-exports all util nodes
-├── format_string.rs     ← FormatStringNode
-├── json_extract.rs      ← JsonExtractNode
-├── conditional.rs       ← ConditionalNode
+crates/zihuan_node/src/util/   ← general-purpose utility and transform nodes
+├── mod.rs                          ← re-exports all util nodes
+├── format_string.rs                ← FormatStringNode
+├── json_extract.rs                 ← JsonExtractNode
+├── conditional.rs                  ← ConditionalNode
 └── ...
+
+crates/zihuan_bot_adapter/src/ ← bot / QQ messaging nodes
+crates/zihuan_llm/src/         ← LLM / AI nodes
 ```
 
-Bot-adapter nodes live under `src/bot_adapter/`, LLM nodes under `src/llm/`.
+After creating a new file, add it to the parent `mod.rs` and register it in the appropriate registry.
 
-After creating a new file, add it to the parent `mod.rs` and register it in `src/node/registry.rs → init_node_registry()`.
+- Nodes in `crates/zihuan_node` → `crates/zihuan_node/src/registry.rs → init_node_registry()`
+- Nodes in `crates/zihuan_bot_adapter` or `crates/zihuan_llm` → `src/init_registry.rs`
 
 ### Module structure
 
-```
-src/
-├── main.rs
-├── error.rs                    ← crate-wide error type and Result alias
-├── node/
-│   ├── mod.rs                  ← Node trait, NodeGraph, Port, execution engine
-│   ├── data_value.rs           ← DataType, DataValue, reference config structs
-│   ├── graph_io.rs             ← NodeGraphDefinition, serde, auto-fix
-│   ├── registry.rs             ← NODE_REGISTRY, register_node! macro
-│   ├── util/                   ← utility and control-flow nodes
-│   ├── database.rs             ← RedisNode, MySqlNode
-│   ├── message_nodes.rs        ← MySQL message persistence
-│   └── message_cache.rs        ← in-memory message cache
-├── llm/
-│   ├── mod.rs                  ← LLM types (OpenAIMessage, FunctionTool, etc.)
-│   ├── brain_node.rs
-│   ├── llm_api_node.rs
-│   └── llm_infer_node.rs
-├── bot_adapter/
-│   ├── mod.rs
-│   ├── adapter.rs              ← SharedBotAdapter, WebSocket loop
-│   ├── node_impl.rs            ← BotAdapterNode (EventProducer)
-│   └── ...
-└── ui/
-    └── ...                     ← see ui-architecture.md
-```
+The engine is split into focused crates. High-level responsibilities:
+
+| Crate | Role |
+|---|---|
+| `crates/zihuan_core` | Error types, config, URL utilities |
+| `crates/zihuan_bot_types` | Bot event and message types |
+| `crates/zihuan_llm_types` | LLM model types and traits |
+| `crates/zihuan_node` | Node trait, graph engine, utility nodes, base registry |
+| `crates/zihuan_bot_adapter` | Bot platform adapter nodes |
+| `crates/zihuan_llm` | LLM inference and AI nodes |
+| `node_macros` | `node_input!`, `node_output!`, `port!` macros |
+| `src/` | Main binary: Slint UI, combined registry (`init_registry.rs`) |
+
+For per-file details, browse the crate source directly.
 
 ---
 
@@ -107,10 +99,10 @@ src/
 
 ### Error handling
 
-The crate uses a single `Error` enum and `Result` alias in `src/error.rs`:
+The `Error` enum and `Result` alias are defined in `crates/zihuan_core/src/error.rs` and re-exported by each crate:
 
 ```rust
-use crate::error::{Error, Result};
+use zihuan_core::error::{Error, Result};
 
 // Return an error
 return Err(Error::ValidationError("message here".into()));
@@ -170,15 +162,15 @@ Located in `src/ui/node_graph_view_geometry.rs`. Returns `Option<(f32, f32)>` �
 
 ### `refresh_port_types(graph)`
 
-Located in `src/node/graph_io.rs`. Re-synchronizes port types in a `NodeGraphDefinition` against the live registry. Called when loading a graph to fix stale type strings from old files.
+Located in `crates/zihuan_node/src/graph_io.rs`. Re-synchronizes port types in a `NodeGraphDefinition` against the live registry. Called when loading a graph to fix stale type strings from old files.
 
 ### `build_node_graph_from_definition(def)`
 
-Located in `src/node/registry.rs`. Creates an executable `NodeGraph` from a `NodeGraphDefinition`. Instantiates all nodes, applies inline configs, resolves edges.
+Located in `crates/zihuan_node/src/registry.rs`. Creates an executable `NodeGraph` from a `NodeGraphDefinition`. Instantiates all nodes, applies inline configs, resolves edges.
 
 ### `validate_graph_definition(def)`
 
-Located in `src/node/graph_io.rs`. Returns a list of `ValidationIssue` structs without executing the graph. Used by the UI's validate button and before execution.
+Located in `crates/zihuan_node/src/graph_io.rs`. Returns a list of `ValidationIssue` structs without executing the graph. Used by the UI's validate button and before execution.
 
 ---
 
