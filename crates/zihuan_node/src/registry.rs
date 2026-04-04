@@ -424,6 +424,7 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
     register_node!("session_state_clear", "清除会话状态", "消息存储", "清除 sender_id 当前会话状态", SessionStateClearNode);
     register_node!("session_state_try_claim", "尝试占用会话", "消息存储", "原子检查并占用 sender_id 会话状态", SessionStateTryClaimNode);
     register_node!("session_state_release", "释放会话占用", "消息存储", "释放 sender_id 当前持有的会话占用", SessionStateReleaseNode);
+    register_node!("qq_message_json_output_system_prompt_provider", "QQ消息JSON输出格式Prompt", "消息", "输出固定的 system prompt，要求 LLM 只返回 QQ 消息二维 JSON 数组", QQMessageJsonOutputSystemPromptProviderNode);
 
     Ok(())
 }
