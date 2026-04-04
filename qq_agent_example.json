@@ -42,8 +42,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": -1880.0,
-        "y": -1180.0
+        "x": -1940.0,
+        "y": -1200.0
       },
       "size": {
         "width": 340.0,
@@ -188,17 +188,17 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": -1880.0,
-        "y": -940.0
+        "x": -1940.0,
+        "y": -960.0
       },
       "size": {
         "width": 280.0,
         "height": 200.0
       },
       "inline_values": {
+        "mysql_database": "zihuan_aibot",
         "mysql_port": "3306",
-        "mysql_host": "127.0.0.1",
-        "mysql_database": "zihuan_aibot"
+        "mysql_host": "127.0.0.1"
       },
       "port_bindings": {
         "mysql_user": {
@@ -249,8 +249,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": -1520.0,
-        "y": -800.0
+        "x": -1460.0,
+        "y": -880.0
       },
       "size": null,
       "inline_values": {},
@@ -306,8 +306,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": -1300.0,
-        "y": -800.0
+        "x": -1240.0,
+        "y": -880.0
       },
       "size": {
         "width": 280.0,
@@ -363,8 +363,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": -1320.0,
-        "y": -1680.0
+        "x": -1940.0,
+        "y": -1580.0
       },
       "size": {
         "width": 300.0,
@@ -374,6 +374,10 @@
         "timeout_secs": "600"
       },
       "port_bindings": {
+        "api_key": {
+          "kind": "hyperparameter",
+          "name": "LLM_API_KEY"
+        },
         "model_name": {
           "kind": "hyperparameter",
           "name": "LLM_MODEL_NAME"
@@ -381,10 +385,6 @@
         "api_endpoint": {
           "kind": "hyperparameter",
           "name": "LLM_API_ENDPOINT"
-        },
-        "api_key": {
-          "kind": "hyperparameter",
-          "name": "LLM_API_KEY"
         }
       },
       "has_error": false,
@@ -446,8 +446,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": -1800.0,
-        "y": -660.0
+        "x": -1860.0,
+        "y": -680.0
       },
       "size": null,
       "inline_values": {
@@ -474,8 +474,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": -1800.0,
-        "y": -520.0
+        "x": -1860.0,
+        "y": -560.0
       },
       "size": null,
       "inline_values": {},
@@ -536,10 +536,13 @@
       "dynamic_input_ports": true,
       "dynamic_output_ports": true,
       "position": {
-        "x": -540.0,
+        "x": -480.0,
         "y": -900.0
       },
-      "size": null,
+      "size": {
+        "width": 240.0,
+        "height": 260.0
+      },
       "inline_values": {
         "function_config": {
           "description": "",
@@ -1503,6 +1506,54 @@
                             "from_port": "results",
                             "to_node_id": "__function_outputs__",
                             "to_port": "results"
+                          },
+                          {
+                            "from_node_id": "node_6",
+                            "from_port": "result",
+                            "to_node_id": "node_8",
+                            "to_port": "input"
+                          },
+                          {
+                            "from_node_id": "node_7",
+                            "from_port": "result",
+                            "to_node_id": "node_8",
+                            "to_port": "enabled"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "content",
+                            "to_node_id": "node_6",
+                            "to_port": "text"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "target_id",
+                            "to_node_id": "node_1",
+                            "to_port": "target_id"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "bot_ref",
+                            "to_node_id": "node_1",
+                            "to_port": "bot_adapter"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "content",
+                            "to_node_id": "node_7",
+                            "to_port": "input"
+                          },
+                          {
+                            "from_node_id": "node_8",
+                            "from_port": "output",
+                            "to_node_id": "node_2",
+                            "to_port": "element"
+                          },
+                          {
+                            "from_node_id": "node_2",
+                            "from_port": "array",
+                            "to_node_id": "node_1",
+                            "to_port": "message"
                           }
                         ],
                         "hyperparameter_groups": [],
@@ -1719,6 +1770,205 @@
                               "height": 120.0,
                               "width": 220.0
                             }
+                          },
+                          {
+                            "description": "将字符串转换为 QQ 消息中的纯文本（PlainText）消息段",
+                            "dynamic_input_ports": false,
+                            "dynamic_output_ports": false,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "node_6",
+                            "inline_values": {},
+                            "input_ports": [
+                              {
+                                "data_type": "String",
+                                "description": "输入字符串",
+                                "name": "text",
+                                "required": true
+                              }
+                            ],
+                            "name": "字符串转QQ纯文本",
+                            "node_type": "string_to_plain_text",
+                            "output_ports": [
+                              {
+                                "data_type": "QQMessage",
+                                "description": "输出 QQMessage PlainText 消息段",
+                                "name": "result",
+                                "required": true
+                              }
+                            ],
+                            "port_bindings": {},
+                            "position": {
+                              "x": 100.0,
+                              "y": 240.0
+                            },
+                            "size": null
+                          },
+                          {
+                            "description": "判断字符串是否非空，可选 trim_before_check 决定是否在判断前先去除两端空白",
+                            "dynamic_input_ports": false,
+                            "dynamic_output_ports": false,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "node_7",
+                            "inline_values": {
+                              "trim_before_check": true
+                            },
+                            "input_ports": [
+                              {
+                                "data_type": "String",
+                                "description": "待判断的字符串",
+                                "name": "input",
+                                "required": true
+                              },
+                              {
+                                "data_type": "Boolean",
+                                "description": "为 true 时先 trim 再判断，纯空格字符串将视为空；默认 false",
+                                "name": "trim_before_check",
+                                "required": false
+                              }
+                            ],
+                            "name": "字符串非空判断",
+                            "node_type": "string_is_not_empty",
+                            "output_ports": [
+                              {
+                                "data_type": "Boolean",
+                                "description": "字符串非空则为 true，否则为 false",
+                                "name": "result",
+                                "required": true
+                              }
+                            ],
+                            "port_bindings": {},
+                            "position": {
+                              "x": 100.0,
+                              "y": 120.0
+                            },
+                            "size": null
+                          },
+                          {
+                            "description": "Forward input only when enabled is true",
+                            "dynamic_input_ports": false,
+                            "dynamic_output_ports": false,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "node_8",
+                            "inline_values": {},
+                            "input_ports": [
+                              {
+                                "data_type": "Boolean",
+                                "description": "Whether the switch is open",
+                                "name": "enabled",
+                                "required": true
+                              },
+                              {
+                                "data_type": "Any",
+                                "description": "Input value to forward when enabled",
+                                "name": "input",
+                                "required": true
+                              }
+                            ],
+                            "name": "开关器",
+                            "node_type": "switch_gate",
+                            "output_ports": [
+                              {
+                                "data_type": "Any",
+                                "description": "Forwarded output value",
+                                "name": "output",
+                                "required": true
+                              }
+                            ],
+                            "port_bindings": {},
+                            "position": {
+                              "x": 340.0,
+                              "y": 260.0
+                            },
+                            "size": null
+                          },
+                          {
+                            "description": "向QQ群组发送消息",
+                            "dynamic_input_ports": false,
+                            "dynamic_output_ports": false,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "node_1",
+                            "inline_values": {},
+                            "input_ports": [
+                              {
+                                "data_type": "BotAdapterRef",
+                                "description": "Bot适配器引用",
+                                "name": "bot_adapter",
+                                "required": true
+                              },
+                              {
+                                "data_type": "String",
+                                "description": "目标群的群号",
+                                "name": "target_id",
+                                "required": true
+                              },
+                              {
+                                "data_type": {
+                                  "Vec": "QQMessage"
+                                },
+                                "description": "要发送的QQ消息段列表",
+                                "name": "message",
+                                "required": true
+                              }
+                            ],
+                            "name": "发送群组消息",
+                            "node_type": "send_group_message",
+                            "output_ports": [
+                              {
+                                "data_type": "Boolean",
+                                "description": "是否发送成功",
+                                "name": "success",
+                                "required": true
+                              },
+                              {
+                                "data_type": "Integer",
+                                "description": "服务器返回的消息ID",
+                                "name": "message_id",
+                                "required": true
+                              }
+                            ],
+                            "port_bindings": {},
+                            "position": {
+                              "x": 720.0,
+                              "y": 120.0
+                            },
+                            "size": null
+                          },
+                          {
+                            "description": "将单个元素封装为单元素 List",
+                            "dynamic_input_ports": false,
+                            "dynamic_output_ports": false,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "node_2",
+                            "inline_values": {},
+                            "input_ports": [
+                              {
+                                "data_type": "Any",
+                                "description": "要封装到数组中的元素",
+                                "name": "element",
+                                "required": true
+                              }
+                            ],
+                            "name": "封装元素为数组",
+                            "node_type": "stack",
+                            "output_ports": [
+                              {
+                                "data_type": "Any",
+                                "description": "包含单个元素的 List",
+                                "name": "array",
+                                "required": true
+                              }
+                            ],
+                            "port_bindings": {},
+                            "position": {
+                              "x": 600.0,
+                              "y": 260.0
+                            },
+                            "size": null
                           }
                         ],
                         "variables": []
@@ -2380,10 +2630,13 @@
       "dynamic_input_ports": true,
       "dynamic_output_ports": true,
       "position": {
-        "x": -580.0,
-        "y": -1480.0
+        "x": -480.0,
+        "y": -1440.0
       },
-      "size": null,
+      "size": {
+        "width": 240.0,
+        "height": 240.0
+      },
       "inline_values": {
         "function_config": {
           "description": "",
@@ -2937,6 +3190,36 @@
                             "from_port": "content",
                             "to_node_id": "node_2",
                             "to_port": "text"
+                          },
+                          {
+                            "from_node_id": "node_2",
+                            "from_port": "result",
+                            "to_node_id": "node_4",
+                            "to_port": "input"
+                          },
+                          {
+                            "from_node_id": "node_3",
+                            "from_port": "result",
+                            "to_node_id": "node_4",
+                            "to_port": "enabled"
+                          },
+                          {
+                            "from_node_id": "__function_inputs__",
+                            "from_port": "content",
+                            "to_node_id": "node_3",
+                            "to_port": "input"
+                          },
+                          {
+                            "from_node_id": "node_4",
+                            "from_port": "output",
+                            "to_node_id": "node_5",
+                            "to_port": "element"
+                          },
+                          {
+                            "from_node_id": "node_5",
+                            "from_port": "array",
+                            "to_node_id": "node_1",
+                            "to_port": "message"
                           }
                         ],
                         "hyperparameter_groups": [],
@@ -3192,8 +3475,8 @@
                             ],
                             "port_bindings": {},
                             "position": {
-                              "x": 540.0,
-                              "y": 200.0
+                              "x": 780.0,
+                              "y": 180.0
                             },
                             "size": null
                           },
@@ -3227,6 +3510,119 @@
                             "position": {
                               "x": 100.0,
                               "y": 240.0
+                            },
+                            "size": null
+                          },
+                          {
+                            "description": "判断字符串是否非空，可选 trim_before_check 决定是否在判断前先去除两端空白",
+                            "dynamic_input_ports": false,
+                            "dynamic_output_ports": false,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "node_3",
+                            "inline_values": {
+                              "trim_before_check": true
+                            },
+                            "input_ports": [
+                              {
+                                "data_type": "String",
+                                "description": "待判断的字符串",
+                                "name": "input",
+                                "required": true
+                              },
+                              {
+                                "data_type": "Boolean",
+                                "description": "为 true 时先 trim 再判断，纯空格字符串将视为空；默认 false",
+                                "name": "trim_before_check",
+                                "required": false
+                              }
+                            ],
+                            "name": "字符串非空判断",
+                            "node_type": "string_is_not_empty",
+                            "output_ports": [
+                              {
+                                "data_type": "Boolean",
+                                "description": "字符串非空则为 true，否则为 false",
+                                "name": "result",
+                                "required": true
+                              }
+                            ],
+                            "port_bindings": {},
+                            "position": {
+                              "x": 380.0,
+                              "y": 220.0
+                            },
+                            "size": null
+                          },
+                          {
+                            "description": "Forward input only when enabled is true",
+                            "dynamic_input_ports": false,
+                            "dynamic_output_ports": false,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "node_4",
+                            "inline_values": {},
+                            "input_ports": [
+                              {
+                                "data_type": "Boolean",
+                                "description": "Whether the switch is open",
+                                "name": "enabled",
+                                "required": true
+                              },
+                              {
+                                "data_type": "Any",
+                                "description": "Input value to forward when enabled",
+                                "name": "input",
+                                "required": true
+                              }
+                            ],
+                            "name": "开关器",
+                            "node_type": "switch_gate",
+                            "output_ports": [
+                              {
+                                "data_type": "Any",
+                                "description": "Forwarded output value",
+                                "name": "output",
+                                "required": true
+                              }
+                            ],
+                            "port_bindings": {},
+                            "position": {
+                              "x": 380.0,
+                              "y": 320.0
+                            },
+                            "size": null
+                          },
+                          {
+                            "description": "将单个元素封装为单元素 List",
+                            "dynamic_input_ports": false,
+                            "dynamic_output_ports": false,
+                            "has_cycle": false,
+                            "has_error": false,
+                            "id": "node_5",
+                            "inline_values": {},
+                            "input_ports": [
+                              {
+                                "data_type": "Any",
+                                "description": "要封装到数组中的元素",
+                                "name": "element",
+                                "required": true
+                              }
+                            ],
+                            "name": "封装元素为数组",
+                            "node_type": "stack",
+                            "output_ports": [
+                              {
+                                "data_type": "Any",
+                                "description": "包含单个元素的 List",
+                                "name": "array",
+                                "required": true
+                              }
+                            ],
+                            "port_bindings": {},
+                            "position": {
+                              "x": 640.0,
+                              "y": 320.0
                             },
                             "size": null
                           }
@@ -4676,7 +5072,7 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": -1880.0,
+        "x": -1940.0,
         "y": -1380.0
       },
       "size": null,
