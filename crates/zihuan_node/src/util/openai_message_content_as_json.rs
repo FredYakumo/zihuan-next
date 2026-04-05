@@ -1,6 +1,7 @@
 use zihuan_core::error::{Error, Result};
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::{info, warn};
+use serde_json::Value;
 use std::collections::HashMap;
 
 /// Parses the `content` string of an `OpenAIMessage` into JSON.
@@ -62,11 +63,41 @@ impl Node for OpenAIMessageContentAsJsonNode {
                 HashMap::from([("json".to_string(), DataValue::Json(json))])
             }
             Err(err) => {
-                warn!(
-                    "[{}] Failed to parse OpenAIMessage content as JSON: {}. Raw content: {:?}",
-                    self.id, err, content
-                );
-                HashMap::from([("failed".to_string(), DataValue::String(content.clone()))])
+                // Streaming fallback: the LLM may emit multiple JSON values separated by
+                // whitespace (e.g. `[[...]]\n\n[[...]]`) instead of one unified array.
+                // Attempt to collect all top-level values; if every one is a JSON array,
+                // flat-map their elements into a single array so downstream parsing still works.
+                let streamed: Vec<Value> = serde_json::Deserializer::from_str(content)
+                    .into_iter::<Value>()
+                    .filter_map(|r| r.ok())
+                    .collect();
+
+                let merged = if !streamed.is_empty() && streamed.iter().all(|v| v.is_array()) {
+                    let elements: Vec<Value> = streamed
+                        .into_iter()
+                        .flat_map(|v| match v {
+                            Value::Array(arr) => arr,
+                            _ => vec![],
+                        })
+                        .collect();
+                    Some(Value::Array(elements))
+                } else {
+                    None
+                };
+
+                if let Some(json) = merged {
+                    warn!(
+                        "[{}] OpenAIMessage content contained multiple JSON values; merged into one array. Original parse error: {}. Raw content: {:?}",
+                        self.id, err, content
+                    );
+                    HashMap::from([("json".to_string(), DataValue::Json(json))])
+                } else {
+                    warn!(
+                        "[{}] Failed to parse OpenAIMessage content as JSON: {}. Raw content: {:?}",
+                        self.id, err, content
+                    );
+                    HashMap::from([("failed".to_string(), DataValue::String(content.clone()))])
+                }
             }
         };
         self.validate_outputs(&outputs)?;
@@ -137,5 +168,29 @@ mod tests {
             other => panic!("expected failed output with raw string, got: {:?}", other),
         }
         assert!(!outputs.contains_key("json"), "json port should not be set on failure");
+    }
+
+    #[test]
+    fn merges_multiple_json_array_blocks() {
+        let mut node = OpenAIMessageContentAsJsonNode::new("json_4", "MessageContentAsJson");
+        // Simulate LLM emitting several [[...]] blocks separated by newlines
+        let content = r#"[["a"],["b"]]
+
+[["c"]]"#;
+        let outputs = node
+            .execute(HashMap::from([(
+                "message".to_string(),
+                DataValue::OpenAIMessage(message(Some(content))),
+            )]))
+            .expect("multi-block content should not return Err");
+
+        match outputs.get("json") {
+            Some(DataValue::Json(value)) => {
+                let arr = value.as_array().expect("merged result must be an array");
+                assert_eq!(arr.len(), 3, "should have 3 inner batches after merging");
+            }
+            other => panic!("expected json output, got: {:?}", other),
+        }
+        assert!(!outputs.contains_key("failed"));
     }
 }
