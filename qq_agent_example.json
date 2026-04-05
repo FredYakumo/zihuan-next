@@ -837,6 +837,66 @@
                 "from_port": "messages",
                 "to_node_id": "node_10",
                 "to_port": "message_batches"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "qq_bot_adapter",
+                "to_node_id": "node_12",
+                "to_port": "bot_adapter"
+              },
+              {
+                "from_node_id": "node_19",
+                "from_port": "result",
+                "to_node_id": "node_12",
+                "to_port": "target_id"
+              },
+              {
+                "from_node_id": "node_9",
+                "from_port": "failed",
+                "to_node_id": "node_15",
+                "to_port": "first"
+              },
+              {
+                "from_node_id": "node_14",
+                "from_port": "messages",
+                "to_node_id": "node_15",
+                "to_port": "second"
+              },
+              {
+                "from_node_id": "node_15",
+                "from_port": "output",
+                "to_node_id": "node_12",
+                "to_port": "message"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "qq_bot_adapter",
+                "to_node_id": "node_16",
+                "to_port": "bot_adapter"
+              },
+              {
+                "from_node_id": "node_19",
+                "from_port": "result",
+                "to_node_id": "node_16",
+                "to_port": "target_id"
+              },
+              {
+                "from_node_id": "node_11",
+                "from_port": "failed",
+                "to_node_id": "node_18",
+                "to_port": "first"
+              },
+              {
+                "from_node_id": "node_17",
+                "from_port": "messages",
+                "to_node_id": "node_18",
+                "to_port": "second"
+              },
+              {
+                "from_node_id": "node_18",
+                "from_port": "output",
+                "to_node_id": "node_16",
+                "to_port": "message"
               }
             ],
             "hyperparameter_groups": [],
@@ -2547,6 +2607,288 @@
                 "position": {
                   "x": 3740.0,
                   "y": 380.0
+                },
+                "size": null
+              },
+              {
+                "description": "向QQ群组发送消息",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_12",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "BotAdapterRef",
+                    "description": "Bot适配器引用",
+                    "name": "bot_adapter",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "目标群的群号",
+                    "name": "target_id",
+                    "required": true
+                  },
+                  {
+                    "data_type": {
+                      "Vec": "QQMessage"
+                    },
+                    "description": "要发送的QQ消息段列表",
+                    "name": "message",
+                    "required": true
+                  }
+                ],
+                "name": "发送群组消息",
+                "node_type": "send_group_message",
+                "output_ports": [
+                  {
+                    "data_type": "Boolean",
+                    "description": "是否发送成功",
+                    "name": "success",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Integer",
+                    "description": "服务器返回的消息ID",
+                    "name": "message_id",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 4000.0,
+                  "y": 660.0
+                },
+                "size": null
+              },
+              {
+                "description": "QQMessageList data source with inline UI editor",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_14",
+                "inline_values": {
+                  "messages": [
+                    {
+                      "data": {
+                        "text": "对不起,我无法回复这条消息"
+                      },
+                      "type": "text"
+                    }
+                  ]
+                },
+                "input_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "QQMessage"
+                    },
+                    "description": "Vec<QQMessage> provided by UI inline editor",
+                    "name": "messages",
+                    "required": false
+                  }
+                ],
+                "name": "QQMessageList Data",
+                "node_type": "qq_message_list_data",
+                "output_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "QQMessage"
+                    },
+                    "description": "Output Vec<QQMessage> from UI data source",
+                    "name": "messages",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 3480.0,
+                  "y": 660.0
+                },
+                "size": {
+                  "height": 160.0,
+                  "width": 300.0
+                }
+              },
+              {
+                "description": "等待 first 和 second 都到齐后，原样透传 second",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_15",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "用于串联依赖的前置输入，仅用于等待其到齐",
+                    "name": "first",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "在两个输入都到齐后原样透传的值",
+                    "name": "second",
+                    "required": true
+                  }
+                ],
+                "name": "And Then",
+                "node_type": "and_then",
+                "output_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "second 的原样输出",
+                    "name": "output",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 3780.0,
+                  "y": 660.0
+                },
+                "size": null
+              },
+              {
+                "description": "向QQ群组发送消息",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_16",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "BotAdapterRef",
+                    "description": "Bot适配器引用",
+                    "name": "bot_adapter",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "目标群的群号",
+                    "name": "target_id",
+                    "required": true
+                  },
+                  {
+                    "data_type": {
+                      "Vec": "QQMessage"
+                    },
+                    "description": "要发送的QQ消息段列表",
+                    "name": "message",
+                    "required": true
+                  }
+                ],
+                "name": "发送群组消息",
+                "node_type": "send_group_message",
+                "output_ports": [
+                  {
+                    "data_type": "Boolean",
+                    "description": "是否发送成功",
+                    "name": "success",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Integer",
+                    "description": "服务器返回的消息ID",
+                    "name": "message_id",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 4780.0,
+                  "y": 620.0
+                },
+                "size": null
+              },
+              {
+                "description": "QQMessageList data source with inline UI editor",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_17",
+                "inline_values": {
+                  "messages": [
+                    {
+                      "data": {
+                        "text": "对不起,我无法回复这条消息"
+                      },
+                      "type": "text"
+                    }
+                  ]
+                },
+                "input_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "QQMessage"
+                    },
+                    "description": "Vec<QQMessage> provided by UI inline editor",
+                    "name": "messages",
+                    "required": false
+                  }
+                ],
+                "name": "QQMessageList Data",
+                "node_type": "qq_message_list_data",
+                "output_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "QQMessage"
+                    },
+                    "description": "Output Vec<QQMessage> from UI data source",
+                    "name": "messages",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 4220.0,
+                  "y": 620.0
+                },
+                "size": {
+                  "height": 160.0,
+                  "width": 300.0
+                }
+              },
+              {
+                "description": "等待 first 和 second 都到齐后，原样透传 second",
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "node_18",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "用于串联依赖的前置输入，仅用于等待其到齐",
+                    "name": "first",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "在两个输入都到齐后原样透传的值",
+                    "name": "second",
+                    "required": true
+                  }
+                ],
+                "name": "And Then",
+                "node_type": "and_then",
+                "output_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "second 的原样输出",
+                    "name": "output",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 4540.0,
+                  "y": 620.0
                 },
                 "size": null
               }

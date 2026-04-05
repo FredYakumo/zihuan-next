@@ -110,30 +110,6 @@ component TaskRow inherits Rectangle {
             spacing: 6px;
             horizontal-stretch: 0;
 
-            if entry.is_running: Rectangle {
-                width: 20px;
-                height: 20px;
-                y: (parent.height - self.height) / 2;
-                border-radius: 4px;
-                background: stop-ta.pressed ? #ff4d4f80 : (stop-ta.has-hover ? #ff4d4f40 : transparent);
-                border-width: 1px;
-                border-color: #ff4d4f;
-
-                CjkText {
-                    text: "⏹";
-                    color: #ff4d4f;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                    font-size: 10px;
-                    width: 100%;
-                    height: 100%;
-                }
-
-                stop-ta := TouchArea {
-                    clicked => { root.stop_task(entry.task_id); }
-                }
-            }
-
             // Status label
             Rectangle {
                 width: 52px;
@@ -152,6 +128,31 @@ component TaskRow inherits Rectangle {
                     vertical-alignment: center;
                     width: 100%;
                     height: 100%;
+                }
+            }
+
+            if entry.is_running: Rectangle {
+                width: 24px;
+                height: 24px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 6px;
+                background: stop-ta.pressed ? #c6282840 : (stop-ta.has-hover ? #c6282826 : transparent);
+                border-width: 1px;
+                border-color: stop-ta.has-hover ? AppTheme.danger : #c6282860;
+
+                CjkText {
+                    text: "×";
+                    color: stop-ta.has-hover ? AppTheme.danger : #e0736a;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    font-size: 14px;
+                    font-weight: 700;
+                    width: 100%;
+                    height: 100%;
+                }
+
+                stop-ta := TouchArea {
+                    clicked => { root.stop_task(entry.task_id); }
                 }
             }
         }
