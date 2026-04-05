@@ -90,14 +90,44 @@ impl Node for OpenAIMessageContentAsJsonNode {
                         "[{}] OpenAIMessage content contained multiple JSON values; merged into one array. Original parse error: {}. Raw content: {:?}",
                         self.id, err, content
                     );
-                    HashMap::from([("json".to_string(), DataValue::Json(json))])
-                } else {
+                    return {
+                        let outputs = HashMap::from([("json".to_string(), DataValue::Json(json))]);
+                        self.validate_outputs(&outputs)?;
+                        Ok(outputs)
+                    };
+                }
+
+                // Bracket-closing fallback: the LLM may have truncated the output before
+                // closing all brackets (e.g. `[[a],[b],[c]` missing the final `]`).
+                // Try appending 1–3 closing brackets to see if the result becomes valid JSON.
+                let mut bracket_recovered: Option<Value> = None;
+                for suffix in &["]", "]]", "]]]"] {
+                    let candidate = format!("{content}{suffix}");
+                    if let Ok(v) = serde_json::from_str::<Value>(&candidate) {
+                        if v.is_array() {
+                            bracket_recovered = Some(v);
+                            break;
+                        }
+                    }
+                }
+
+                if let Some(json) = bracket_recovered {
                     warn!(
-                        "[{}] Failed to parse OpenAIMessage content as JSON: {}. Raw content: {:?}",
+                        "[{}] OpenAIMessage content was truncated (missing closing bracket(s)); auto-closed to recover. Original parse error: {}. Raw content: {:?}",
                         self.id, err, content
                     );
-                    HashMap::from([("failed".to_string(), DataValue::String(content.clone()))])
+                    return {
+                        let outputs = HashMap::from([("json".to_string(), DataValue::Json(json))]);
+                        self.validate_outputs(&outputs)?;
+                        Ok(outputs)
+                    };
                 }
+
+                warn!(
+                    "[{}] Failed to parse OpenAIMessage content as JSON: {}. Raw content: {:?}",
+                    self.id, err, content
+                );
+                HashMap::from([("failed".to_string(), DataValue::String(content.clone()))])
             }
         };
         self.validate_outputs(&outputs)?;
@@ -188,6 +218,28 @@ mod tests {
             Some(DataValue::Json(value)) => {
                 let arr = value.as_array().expect("merged result must be an array");
                 assert_eq!(arr.len(), 3, "should have 3 inner batches after merging");
+            }
+            other => panic!("expected json output, got: {:?}", other),
+        }
+        assert!(!outputs.contains_key("failed"));
+    }
+
+    #[test]
+    fn recovers_truncated_json_by_closing_brackets() {
+        let mut node = OpenAIMessageContentAsJsonNode::new("json_5", "MessageContentAsJson");
+        // Simulate LLM truncating output before the final closing bracket
+        let content = r#"[[{"message_type":"plain_text","content":"hello"}],[{"message_type":"plain_text","content":"world"}]"#;
+        let outputs = node
+            .execute(HashMap::from([(
+                "message".to_string(),
+                DataValue::OpenAIMessage(message(Some(content))),
+            )]))
+            .expect("truncated content should not return Err");
+
+        match outputs.get("json") {
+            Some(DataValue::Json(value)) => {
+                let arr = value.as_array().expect("recovered result must be an array");
+                assert_eq!(arr.len(), 2, "should have 2 inner batches after bracket-closing");
             }
             other => panic!("expected json output, got: {:?}", other),
         }
