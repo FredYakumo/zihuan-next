@@ -54,13 +54,13 @@
         "qq_id": "2496875785"
       },
       "port_bindings": {
-        "bot_server_token": {
-          "kind": "hyperparameter",
-          "name": "BOT_SERVER_TOKEN"
-        },
         "qq_id": {
           "kind": "hyperparameter",
           "name": "BOT_ID"
+        },
+        "bot_server_token": {
+          "kind": "hyperparameter",
+          "name": "BOT_SERVER_TOKEN"
         }
       },
       "has_error": false,
@@ -196,18 +196,18 @@
         "height": 200.0
       },
       "inline_values": {
-        "mysql_database": "zihuan_aibot",
         "mysql_port": "3306",
-        "mysql_host": "127.0.0.1"
+        "mysql_host": "127.0.0.1",
+        "mysql_database": "zihuan_aibot"
       },
       "port_bindings": {
-        "mysql_user": {
-          "kind": "hyperparameter",
-          "name": "MYSQL_USER"
-        },
         "mysql_password": {
           "kind": "hyperparameter",
           "name": "MYSQL_PASSWORD"
+        },
+        "mysql_user": {
+          "kind": "hyperparameter",
+          "name": "MYSQL_USER"
         }
       },
       "has_error": false,
@@ -314,8 +314,8 @@
         "height": 140.0
       },
       "inline_values": {
-        "bucket_name": "message_id_cache",
-        "ttl_secs": "600"
+        "ttl_secs": "600",
+        "bucket_name": "message_id_cache"
       },
       "port_bindings": {},
       "has_error": false,
@@ -374,13 +374,13 @@
         "timeout_secs": "600"
       },
       "port_bindings": {
-        "api_key": {
-          "kind": "hyperparameter",
-          "name": "LLM_API_KEY"
-        },
         "model_name": {
           "kind": "hyperparameter",
           "name": "LLM_MODEL_NAME"
+        },
+        "api_key": {
+          "kind": "hyperparameter",
+          "name": "LLM_API_KEY"
         },
         "api_endpoint": {
           "kind": "hyperparameter",
@@ -837,12 +837,6 @@
                 "from_port": "messages",
                 "to_node_id": "node_10",
                 "to_port": "message_batches"
-              },
-              {
-                "from_node_id": "node_19",
-                "from_port": "result",
-                "to_node_id": "node_2",
-                "to_port": "群号"
               }
             ],
             "hyperparameter_groups": [],
@@ -2283,41 +2277,29 @@
                 "has_error": false,
                 "id": "node_2",
                 "inline_values": {
-                  "template": "你的角色是${角色名称}。现在时间是${time}。\n${群号}群里的${sender_id}向你发送了一条消息。\r你可以选择调用相关工工具来获取信息，并发送QQ消息回复对方。也可以不回复对方，发送空的JSON数组。\n以下是你的输出格式，必须严格遵守。\n${格式}\n对于超过250字过长的文本，请拆成多段，每一段信息要足够完整。"
+                  "template": "你的角色是${角色名称}。现在时间是${time}，你的QQ好友${sender_id}向你发送了一条消息。\r你可以选择调用相关工工具来获取信息，并发送QQ消息回复对方。也可以不回复对方，发送空的JSON数组。\n以下是你的输出格式，必须严格遵守\n对于超过250字过长的文本，请拆成多段，每一段信息要足够完整。\n当你决定调用工具时，请在工具 content 里用一句话说明你即将做什么（例如\"我将搜索关于xxx的信息\"）。\n${格式}"
                 },
                 "input_ports": [
                   {
                     "data_type": "String",
-                    "description": "格式化模板字符串，使用 ${变量名} 语法引用输入变量",
-                    "name": "template",
-                    "required": false
-                  },
-                  {
-                    "data_type": "Any",
                     "description": "变量 角色名称",
                     "name": "角色名称",
                     "required": true
                   },
                   {
-                    "data_type": "Any",
+                    "data_type": "String",
                     "description": "变量 time",
                     "name": "time",
                     "required": true
                   },
                   {
-                    "data_type": "Any",
-                    "description": "变量 群号",
-                    "name": "群号",
-                    "required": true
-                  },
-                  {
-                    "data_type": "Any",
+                    "data_type": "String",
                     "description": "变量 sender_id",
                     "name": "sender_id",
                     "required": true
                   },
                   {
-                    "data_type": "Any",
+                    "data_type": "String",
                     "description": "变量 格式",
                     "name": "格式",
                     "required": true
@@ -3711,35 +3693,29 @@
                 "has_error": false,
                 "id": "node_28",
                 "inline_values": {
-                  "template": "你的角色是${角色名称}。现在时间是${time}，你的QQ好友${sender_id}向你发送了一条消息。\r你可以选择调用相关工工具来获取信息，并发送QQ消息回复对方。也可以不回复对方，发送空的JSON数组。\n以下是你的输出格式，必须严格遵守\n${格式}\n对于超过250字过长的文本，请拆成多段，每一段信息要足够完整。"
+                  "template": "你的角色是${角色名称}。现在时间是${time}，你的QQ好友${sender_id}向你发送了一条消息。\r你可以选择调用相关工工具来获取信息，并发送QQ消息回复对方。也可以不回复对方，发送空的JSON数组。\n以下是你的输出格式，必须严格遵守\n对于超过250字过长的文本，请拆成多段，每一段信息要足够完整。\n当你决定调用工具时，请在工具 content 里用一句话说明你即将做什么（例如\"我将搜索关于xxx的信息\"）。\n${格式}"
                 },
                 "input_ports": [
                   {
                     "data_type": "String",
-                    "description": "格式化模板字符串，使用 ${变量名} 语法引用输入变量",
-                    "name": "template",
-                    "required": false
-                  },
-                  {
-                    "data_type": "Any",
                     "description": "变量 角色名称",
                     "name": "角色名称",
                     "required": true
                   },
                   {
-                    "data_type": "Any",
+                    "data_type": "String",
                     "description": "变量 time",
                     "name": "time",
                     "required": true
                   },
                   {
-                    "data_type": "Any",
+                    "data_type": "String",
                     "description": "变量 sender_id",
                     "name": "sender_id",
                     "required": true
                   },
                   {
-                    "data_type": "Any",
+                    "data_type": "String",
                     "description": "变量 格式",
                     "name": "格式",
                     "required": true
