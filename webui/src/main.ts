@@ -236,14 +236,9 @@ async function main() {
       const result = await graphs.saveFile(sid);
       setTabDirty(sid, false);
       statusBar.textContent = `已保存: ${result.path}`;
-    } catch (e) {
-      // No server path yet — download as file
-      const url = graphs.downloadUrl(sid);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "graph.json";
-      a.click();
-      statusBar.textContent = "正在下载节点图 JSON...";
+    } catch {
+      // No server path yet (new or uploaded file) — redirect to Save As
+      await onSaveAs();
     }
   };
 
@@ -415,6 +410,42 @@ async function main() {
     } else if (e.key === "s" && !e.shiftKey) {
       e.preventDefault();
       onSaveFile();
+    }
+  });
+
+  // ── Auto-save ──────────────────────────────────────────────────────────────
+  // Every 30 s: silently save dirty tabs that have a known server path.
+  // New tabs and uploaded files without a server path are skipped.
+  const autoSave = async () => {
+    for (const tab of tabList) {
+      if (!tab.dirty) continue;
+      try {
+        if (tab.isWorkflowSet) {
+          const result = await workflowsApi.save(tab.id, tab.name);
+          const displayName = tabNameFrom(result.path, tab.name);
+          tab.name = displayName;
+          tab.dirty = false;
+          tab.isWorkflowSet = true;
+          renderTabs();
+        } else {
+          // Try saving to the session's server path; silently skip if none.
+          const result = await graphs.saveFile(tab.id);
+          setTabDirty(tab.id, false);
+          if (tab.id === activeTabId) {
+            statusBar.textContent = `自动保存: ${result.path}`;
+          }
+        }
+      } catch {
+        // No path available — skip (new or uploaded file)
+      }
+    }
+  };
+  setInterval(() => { autoSave().catch(console.error); }, 30_000);
+
+  // Warn before leaving the page when there are unsaved dirty tabs
+  window.addEventListener("beforeunload", (e) => {
+    if (tabList.some((t) => t.dirty)) {
+      e.preventDefault();
     }
   });
 
