@@ -6,7 +6,7 @@ import type { NodeGraphDefinition, NodeDefinition, EdgeDefinition } from "../api
 import { setupNodeWidgets } from "./widgets";
 import { portTypeString } from "./registry";
 import type { BrainToolDefinition, EmbeddedFunctionConfig } from "../ui/dialogs";
-import { getLiteGraphColors, onThemeChange } from "../ui/theme";
+import { getLiteGraphColors, getPortColor, onThemeChange } from "../ui/theme";
 
 export interface CanvasState {
   sessionId: string | null;
@@ -173,6 +173,30 @@ export class ZihuanCanvas {
     (LiteGraph as any).EVENT_LINK_COLOR        = c.eventLinkColor;
     (LiteGraph as any).CONNECTING_LINK_COLOR   = c.connectingLinkColor;
 
+    // Per-DataType wire colours — mutate in-place so descriptor constraints don't block us
+    const tc = c.linkTypeColors;
+    const primitives = ["String", "Integer", "Float", "Boolean", "Binary", "Password"];
+    const complexTypes = ["Json", "MessageEvent", "OpenAIMessage", "QQMessage", "FunctionTools", "LLModel"];
+    const refs = ["BotAdapterRef", "RedisRef", "MySqlRef", "TavilyRef", "SessionStateRef",
+                  "OpenAIMessageSessionCacheRef", "LoopControlRef"];
+    const typeColorMap: Record<string, string> = { Any: tc.any };
+    for (const t of primitives)   typeColorMap[t] = tc.primitive;
+    for (const t of complexTypes) typeColorMap[t] = tc.complex;
+    for (const t of refs)         typeColorMap[t] = tc.ref;
+    // Vec variants — both Debug format "Vec(T)" and portTypeString format "Vec<T>"
+    for (const t of [...primitives, ...complexTypes, ...refs, "Any"]) {
+      typeColorMap[`Vec(${t})`] = tc.array;
+      typeColorMap[`Vec<${t}>`] = tc.array;
+    }
+    const ltc = (LiteGraph as any).link_type_colors as Record<string, string> | null | undefined;
+    if (ltc) {
+      // Mutate in-place so any descriptor constraints are respected
+      for (const key of Object.keys(ltc)) delete ltc[key];
+      Object.assign(ltc, typeColorMap);
+    } else {
+      (LiteGraph as any).link_type_colors = typeColorMap;
+    }
+
     // Canvas-instance settings
     (this.lCanvas as any).clear_background_color = c.canvasBg;
     (this.lCanvas as any).node_title_color       = c.nodeTitleText;
@@ -262,6 +286,26 @@ export class ZihuanCanvas {
     }
     for (const p of nodeDef.output_ports) {
       node.addOutput(p.name, portTypeString(p.data_type as string | object));
+    }
+
+    // Apply type-based port dot colours for all slots.
+    // color_on  = type color (shown when connected)
+    // color_off = red if required and unconnected, gray otherwise
+    if (node.inputs) {
+      for (let i = 0; i < nodeDef.input_ports.length; i++) {
+        const p = nodeDef.input_ports[i];
+        const col = getPortColor(portTypeString(p.data_type as string | object));
+        node.inputs[i].color_on  = col;
+        node.inputs[i].color_off = p.required ? "#e74c3c" : "#555568";
+      }
+    }
+    if (node.outputs) {
+      for (let i = 0; i < nodeDef.output_ports.length; i++) {
+        const p = nodeDef.output_ports[i];
+        const col = getPortColor(portTypeString(p.data_type as string | object));
+        node.outputs[i].color_on  = col;
+        node.outputs[i].color_off = "#555568";
+      }
     }
 
     // Visual indicator for bound ports: colored slot dot.

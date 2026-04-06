@@ -2,6 +2,7 @@
 
 import { LiteGraph } from "@comfyorg/litegraph";
 import type { NodeTypeInfo } from "../api/types";
+import { getPortColor } from "../ui/theme";
 
 /**
  * Register all node types received from /api/registry/types with LiteGraph.
@@ -24,10 +25,18 @@ export function registerNodeTypes(types: NodeTypeInfo[]): void {
       constructor() {
         super(info.display_name);
         for (const port of inputPorts) {
-          this.addInput(port.name, portTypeString(port.data_type as string | object));
+          const typeStr = portTypeString(port.data_type as string | object);
+          this.addInput(port.name, typeStr);
+          const last = this.inputs[this.inputs.length - 1];
+          last.color_on  = getPortColor(typeStr);
+          last.color_off = port.required ? "#e74c3c" : "#555568";
         }
         for (const port of outputPorts) {
-          this.addOutput(port.name, portTypeString(port.data_type as string | object));
+          const typeStr = portTypeString(port.data_type as string | object);
+          this.addOutput(port.name, typeStr);
+          const last = this.outputs[this.outputs.length - 1];
+          last.color_on  = getPortColor(typeStr);
+          last.color_off = "#555568";
         }
         // Mark dynamic port nodes so the UI can show add-port buttons
         if (hasDynIn) (this as any).zihuanDynIn = true;
