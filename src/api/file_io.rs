@@ -8,10 +8,10 @@ use super::state::AppState;
 
 // ─── Workflows directory helpers ──────────────────────────────────────────────
 
-/// Return a sorted list of `.json` filenames in the `workflows/` directory.
+/// Return a sorted list of `.json` filenames in the `workflow_set/` directory.
 #[handler]
 pub async fn list_workflows(_req: &mut Request, res: &mut Response, _depot: &mut Depot) {
-    let dir = std::path::Path::new("workflows");
+    let dir = std::path::Path::new("workflow_set");
     match std::fs::read_dir(dir) {
         Ok(entries) => {
             let mut names: Vec<String> = entries
@@ -43,7 +43,7 @@ pub struct SaveToWorkflowsRequest {
     pub name: String,
 }
 
-/// Save a session's graph into the `workflows/` directory.
+/// Save a session's graph into the `workflow_set/` directory.
 #[handler]
 pub async fn save_to_workflows(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
@@ -76,7 +76,7 @@ pub async fn save_to_workflows(req: &mut Request, res: &mut Response, depot: &mu
         }
     };
 
-    if let Err(e) = std::fs::create_dir_all("workflows") {
+    if let Err(e) = std::fs::create_dir_all("workflow_set") {
         res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
         res.render(Json(serde_json::json!({ "error": e.to_string() })));
         return;
@@ -87,7 +87,7 @@ pub async fn save_to_workflows(req: &mut Request, res: &mut Response, depot: &mu
     } else {
         format!("{}.json", body.name)
     };
-    let path = format!("workflows/{}", filename);
+    let path = format!("workflow_set/{}", filename);
 
     match std::fs::write(&path, json_str) {
         Ok(()) => {

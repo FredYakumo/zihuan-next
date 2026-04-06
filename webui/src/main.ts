@@ -6,7 +6,7 @@ import { registerNodeTypes } from "./graph/registry";
 import { ZihuanCanvas } from "./graph/canvas";
 import { injectStyles, buildDOM, buildToolbar, buildCanvasPanelButtons, updateBreadcrumb, updateTabs } from "./ui/shell";
 import type { TabInfo } from "./ui/shell";
-import { showWorkflowsDialog, openHyperparametersDialog, openVariablesDialog, showAddNodeDialog } from "./ui/dialogs";
+import { showWorkflowsDialog, openHyperparametersDialog, openVariablesDialog, showAddNodeDialog, showSaveAsDialog } from "./ui/dialogs";
 import type { NodeTypeInfo } from "./api/types";
 
 async function main() {
@@ -43,9 +43,12 @@ async function main() {
       () => { createNewTab().catch(console.error); },
     );
     const activeTab = tabList.find((t) => t.id === activeTabId);
-    document.title = activeTab
-      ? `${activeTab.name} — Zihuan Next`
-      : "Zihuan Next — Node Graph Editor";
+    if (activeTab) {
+      const suffix = activeTab.isWorkflowSet ? " [工作流集]" : "";
+      document.title = `${activeTab.name}${suffix} — Zihuan Next`;
+    } else {
+      document.title = "Zihuan Next — Node Graph Editor";
+    }
   }
 
   async function switchTab(id: string) {
@@ -83,13 +86,14 @@ async function main() {
     }
   }
 
-  function openTab(id: string, name: string, dirty = false) {
+  function openTab(id: string, name: string, dirty = false, isWorkflowSet = false) {
     const existing = tabList.findIndex((t) => t.id === id);
     if (existing !== -1) {
       tabList[existing].name = name;
       tabList[existing].dirty = dirty;
+      tabList[existing].isWorkflowSet = isWorkflowSet;
     } else {
-      tabList.push({ id, name, dirty });
+      tabList.push({ id, name, dirty, isWorkflowSet });
     }
     activeTabId = id;
     renderTabs();
@@ -175,7 +179,7 @@ async function main() {
       try {
         const result = await fileIO.upload(file);
         const name = file.name.replace(/\.json$/i, "");
-        openTab(result.session_id, name, false);
+        openTab(result.session_id, name, false, false);
         await canvas.loadSession(result.session_id);
         statusBar.textContent = `已打开: ${file.name}`;
       } catch (e) {
@@ -185,19 +189,19 @@ async function main() {
     input.click();
   };
 
-  // Open workflow from server workflows/ directory
+  // Open workflow from server workflow_set/ directory
   const onWorkflows = async () => {
     try {
       const result = await workflowsApi.list();
       if (result.files.length === 0) {
-        alert("workflows/ 目录中没有节点图文件。");
+        alert("workflow_set/ 目录中没有节点图文件。");
         return;
       }
       const selected = await showWorkflowsDialog(result.files);
       if (!selected) return;
-      const openResult = await fileIO.open("workflows/" + selected);
-      const name = tabNameFrom("workflows/" + selected);
-      openTab(openResult.session_id, name, false);
+      const openResult = await fileIO.open("workflow_set/" + selected);
+      const name = tabNameFrom("workflow_set/" + selected);
+      openTab(openResult.session_id, name, false, true);
       await canvas.loadSession(openResult.session_id);
       if (openResult.migrated) statusBar.textContent = `已打开 workflow: ${selected} (端口类型已迁移)`;
       else statusBar.textContent = `已打开 workflow: ${selected}`;
@@ -210,6 +214,22 @@ async function main() {
     const sid = canvas.sessionId;
     if (!sid) {
       statusBar.textContent = "No graph open";
+      return;
+    }
+    const currentTab = tabList.find((t) => t.id === sid);
+    if (currentTab?.isWorkflowSet) {
+      // Smart save: opened from workflow set → save back silently
+      try {
+        const result = await workflowsApi.save(sid, currentTab.name);
+        const displayName = tabNameFrom(result.path, currentTab.name);
+        currentTab.name = displayName;
+        currentTab.dirty = false;
+        currentTab.isWorkflowSet = true;
+        renderTabs();
+        statusBar.textContent = `已保存到 workflow_set: ${result.path}`;
+      } catch (e) {
+        statusBar.textContent = `Error: ${(e as Error).message}`;
+      }
       return;
     }
     try {
@@ -227,21 +247,58 @@ async function main() {
     }
   };
 
-  // Save current graph into workflows/ directory
+  const onSaveAs = async () => {
+    const sid = canvas.sessionId;
+    if (!sid) { statusBar.textContent = "No graph open"; return; }
+    const currentTab = tabList.find((t) => t.id === sid);
+    const defaultName = currentTab?.name ?? "untitled";
+    const choice = await showSaveAsDialog(defaultName);
+    if (!choice) return;
+    if (choice === "local") {
+      const url = graphs.downloadUrl(sid);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${defaultName}.json`;
+      a.click();
+      if (currentTab) { currentTab.isWorkflowSet = false; renderTabs(); }
+      statusBar.textContent = "正在下载节点图 JSON...";
+    } else {
+      const name = prompt("保存到 workflow_set/ 目录，文件名:", defaultName);
+      if (!name) return;
+      try {
+        const result = await workflowsApi.save(sid, name);
+        const displayName = tabNameFrom(result.path, name);
+        if (currentTab) {
+          currentTab.name = displayName;
+          currentTab.isWorkflowSet = true;
+          currentTab.dirty = false;
+        }
+        renderTabs();
+        statusBar.textContent = `已保存到 workflow_set: ${result.path}`;
+      } catch (e) {
+        statusBar.textContent = `Error: ${(e as Error).message}`;
+      }
+    }
+  };
+
+  // Save current graph into workflow_set/ directory
   const onSaveToWorkflows = async () => {
     const sid = canvas.sessionId;
     if (!sid) { statusBar.textContent = "No graph open"; return; }
     const currentTab = tabList.find((t) => t.id === sid);
     const defaultName = currentTab?.name ?? "untitled";
-    const name = prompt("保存到 workflows/ 目录，文件名:", defaultName);
+    const name = prompt("保存到 workflow_set/ 目录，文件名:", defaultName);
     if (!name) return;
     try {
       const result = await workflowsApi.save(sid, name);
       const displayName = tabNameFrom(result.path, name);
-      const existing = tabList.find((t) => t.id === sid);
-      if (existing) { existing.name = displayName; existing.dirty = false; }
+      if (currentTab) {
+        currentTab.name = displayName;
+        currentTab.isWorkflowSet = true;
+        currentTab.dirty = false;
+      }
       renderTabs();
-      statusBar.textContent = `已保存到 workflows: ${result.path}`;
+      statusBar.textContent = `已保存到 workflow_set: ${result.path}`;
     } catch (e) {
       statusBar.textContent = `Error: ${(e as Error).message}`;
     }
@@ -336,9 +393,30 @@ async function main() {
     onNewGraph,
     onOpenFile,
     onSaveFile,
+    onSaveAs,
     onSaveToWorkflows,
     onValidate,
   );
+
+  // ── Global keyboard shortcuts ────────────────────────────────────────────
+  document.addEventListener("keydown", (e) => {
+    const target = e.target as HTMLElement;
+    const inInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
+    if (!e.ctrlKey && !e.metaKey) return;
+    if (e.key === "n" && !e.shiftKey && !inInput) {
+      e.preventDefault();
+      onNewGraph();
+    } else if (e.key === "o" && !e.shiftKey && !inInput) {
+      e.preventDefault();
+      onOpenFile();
+    } else if (e.key === "s" && e.shiftKey) {
+      e.preventDefault();
+      onSaveAs();
+    } else if (e.key === "s" && !e.shiftKey) {
+      e.preventDefault();
+      onSaveFile();
+    }
+  });
 
   // Auto-resize canvas to fill its container
   const resizeCanvas = () => {

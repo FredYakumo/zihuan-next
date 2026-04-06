@@ -116,6 +116,37 @@ The application requires a `config.yaml` file.
 2.  You can drag nodes from the palette, connect them, and verify logic.
 3.  Use "Save Graph" to export your workflow to a JSON file (e.g., `bot.json`).
 
+#### 编辑器菜单与快捷键
+
+点击左上角 **Zihuan Next** 标题可打开菜单，所有主要操作均支持键盘快捷键：
+
+| 操作 | 菜单项 | 快捷键 |
+|---|---|---|
+| 新建节点图 | 新建 | `Ctrl+N` |
+| 从本地文件打开 | 打开... | `Ctrl+O` |
+| 保存 | 保存 | `Ctrl+S` |
+| 另存为 | 另存为 | `Ctrl+Shift+S` |
+| 保存为工作流集 | 保存为工作流集 | — |
+| 验证图结构 | 验证 | — |
+
+> **注意：** 在输入框或文本域中聚焦时，快捷键不会触发，避免与节点参数编辑冲突。
+
+#### 保存行为说明
+
+**保存（`Ctrl+S`）的逻辑取决于当前标签页的来源：**
+
+- **从服务端工作流集打开的图**（标签页标题显示 `[工作流集]`）：直接静默保存回原工作流集文件，无需弹出对话框。
+- **从本地文件打开或新建的图**：保存到服务器记录的文件路径；若没有关联路径则触发浏览器下载。
+
+**另存为（`Ctrl+Shift+S`）：** 弹出对话框，让用户选择保存目标：
+
+- **保存到工作流集**：输入文件名后保存到服务器 `workflow_set/` 目录；保存完成后当前标签页标题变为 `xxx [工作流集]`，后续按 `Ctrl+S` 将静默保存回工作流集。
+- **下载到本地**：触发浏览器下载 JSON 文件；保存后标签页不再标记为工作流集。
+
+#### 工作流集标记
+
+通过**打开工作流集**菜单（主界面右侧工具栏）或**保存为工作流集**操作打开的节点图，其标签页和浏览器标题栏会显示 `[工作流集]` 后缀，以区分服务器端托管的工作流与本地文件。
+
 ### Method 2: Headless Mode (CLI / Production)
 
 **Use this mode to run a saved bot workflow in the background.**
