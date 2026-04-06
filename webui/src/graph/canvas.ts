@@ -76,41 +76,59 @@ export class ZihuanCanvas {
       }
     };
 
-    // Draw data-type labels at the midpoint of each rendered connection
+    // Draw data-type labels at the connection midpoint.
+    // If the midpoint falls inside any node's bounding box the label is shifted
+    // upward until it clears the node's top edge.
     (this.lCanvas as any).onDrawForeground = (ctx: CanvasRenderingContext2D) => {
       const scale: number = (this.lCanvas as any).ds?.scale ?? 1;
       if (scale < 0.3) return; // skip labels when zoomed out too far
       const renderedPaths: Set<any> = (this.lCanvas as any).renderedPaths;
       if (!renderedPaths) return;
       const fontSize = Math.round(10 / scale);
+      const titleH: number = (LiteGraph as any).NODE_TITLE_HEIGHT ?? 24;
+      const allNodes: any[] = (this.lGraph as any)._nodes ?? [];
       ctx.save();
       ctx.font = `bold ${fontSize}px sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
+      // Deduplicate: one label per (origin_id, origin_slot) pair.
+      const drawnPorts = new Set<string>();
       for (const seg of renderedPaths) {
         // Skip Reroute objects (they have no origin_id) and wildcard type
         if (seg.origin_id === undefined) continue;
         const typeName: string = String(seg.type ?? "");
         if (!typeName || typeName === "*" || typeName === "null" || typeName === "undefined") continue;
+        const portKey = `${seg.origin_id}:${seg.origin_slot}`;
+        if (drawnPorts.has(portKey)) continue;
+        drawnPorts.add(portKey);
         const pos: Float32Array | number[] = seg._pos;
         if (!pos) continue;
         const x = pos[0];
-        const y = pos[1];
+        let y = pos[1];
         const padding = 3 / scale;
         const metrics = ctx.measureText(typeName);
-        const tw = metrics.width;
-        const th = fontSize;
-        const pw = tw + padding * 2;
-        const ph = th + padding * 2;
+        const pw = metrics.width + padding * 2;
+        const ph = fontSize + padding * 2;
+        // If the label center falls inside any node, push it above that node's top edge.
+        for (const node of allNodes) {
+          if (!node.pos || !node.size) continue;
+          const nx = node.pos[0];
+          const ny = node.pos[1] - titleH;
+          const nw = node.size[0];
+          const nh = node.size[1] + titleH;
+          if (x > nx && x < nx + nw && y > ny && y < ny + nh) {
+            y = ny - ph / 2 - 2 / scale;
+          }
+        }
         const rx = 3 / scale;
         // Pill background
         ctx.fillStyle = "rgba(0,0,0,0.65)";
         ctx.beginPath();
-        (ctx as any).roundRect(x - pw / 2, y - ph / 2 - fontSize * 0.8, pw, ph, rx);
+        (ctx as any).roundRect(x - pw / 2, y - ph / 2, pw, ph, rx);
         ctx.fill();
         // Label text
         ctx.fillStyle = "#ffffff";
-        ctx.fillText(typeName, x, y - fontSize * 0.8);
+        ctx.fillText(typeName, x, y);
       }
       ctx.restore();
     };
