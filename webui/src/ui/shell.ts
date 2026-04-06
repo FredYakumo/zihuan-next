@@ -799,7 +799,7 @@ export function buildCanvasPanelButtons(
   }
 
   const logBtn = document.createElement("button");
-  logBtn.textContent = "📋 日志";
+  logBtn.textContent = "日志";
   logBtn.title = "打开实时日志流";
   logBtn.addEventListener("click", openLogOverlay);
   panel.appendChild(logBtn);
@@ -904,6 +904,7 @@ export function buildToolbar(
   onSaveAs: () => void,
   onSaveToWorkflows: () => void,
   onValidate: () => void,
+  onBrowseWorkflows: () => void,
 ): void {
   // Make the title a popup trigger
   const titleEl = toolbar.querySelector<HTMLElement>(".title")!;
@@ -917,6 +918,7 @@ export function buildToolbar(
     { label: "保存", shortcut: "Ctrl+S", onClick: onSaveFile },
     { label: "另存为", shortcut: "Ctrl+Shift+S", onClick: onSaveAs },
     { label: "保存为工作流集", onClick: onSaveToWorkflows },
+    { label: "浏览工作流集", onClick: onBrowseWorkflows },
     { label: "验证", onClick: onValidate },
   ];
 

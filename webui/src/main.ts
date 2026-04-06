@@ -6,7 +6,7 @@ import { registerNodeTypes } from "./graph/registry";
 import { ZihuanCanvas } from "./graph/canvas";
 import { injectStyles, buildDOM, buildToolbar, buildCanvasPanelButtons, updateBreadcrumb, updateTabs, createLogToastOverlay } from "./ui/shell";
 import type { TabInfo } from "./ui/shell";
-import { showWorkflowsDialog, openHyperparametersDialog, openVariablesDialog, showAddNodeDialog, showSaveAsDialog } from "./ui/dialogs";
+import { showWorkflowsDialog, openHyperparametersDialog, openVariablesDialog, showAddNodeDialog, showSaveAsDialog, showWorkflowBrowserDialog } from "./ui/dialogs";
 import type { NodeTypeInfo } from "./api/types";
 
 async function main() {
@@ -351,6 +351,22 @@ async function main() {
     }
   };
 
+  const onBrowseWorkflows = async () => {
+    try {
+      const result = await workflowsApi.listDetailed();
+      const selected = await showWorkflowBrowserDialog(result.workflows);
+      if (!selected) return;
+      const openResult = await fileIO.open("workflow_set/" + selected);
+      const name = tabNameFrom("workflow_set/" + selected);
+      openTab(openResult.session_id, name, false, true);
+      await canvas.loadSession(openResult.session_id);
+      if (openResult.migrated) statusBar.textContent = `已打开 workflow: ${selected} (端口类型已迁移)`;
+      else statusBar.textContent = `已打开 workflow: ${selected}`;
+    } catch (e) {
+      statusBar.textContent = `Error: ${(e as Error).message}`;
+    }
+  };
+
   const onValidate = async () => {
     const sid = canvas.sessionId;
     if (!sid) { statusBar.textContent = "No graph open"; return; }
@@ -443,6 +459,7 @@ async function main() {
     onSaveAs,
     onSaveToWorkflows,
     onValidate,
+    onBrowseWorkflows,
   );
 
   // ── Global keyboard shortcuts ────────────────────────────────────────────
