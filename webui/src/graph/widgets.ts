@@ -40,6 +40,9 @@ export function setupNodeWidgets(
     case "brain":
       setupBrainWidgets(lNode, nodeDef, getSessionId, onRefresh, onEnterSubgraph);
       break;
+    case "string_data":
+      setupStringDataWidgets(lNode, nodeDef, getSessionId, onRefresh);
+      break;
     default:
       setupSimpleInlineWidgets(lNode, nodeDef, getSessionId, onRefresh);
       break;
@@ -127,6 +130,24 @@ function setupBrainWidgets(
     openBrainToolsEditor(nodeDef, sid, onRefresh, (toolIndex, toolDef) => {
       onEnterSubgraph(nodeDef, "brain-tool", toolIndex, toolDef, undefined);
     });
+  });
+}
+
+// ─── String Data ──────────────────────────────────────────────────────────────
+
+function setupStringDataWidgets(
+  lNode: any,
+  nodeDef: NodeDefinition,
+  getSessionId: () => string | null,
+  onRefresh: () => void
+): void {
+  const currentValue = String(nodeDef.inline_values?.["text"] ?? "");
+  lNode.addWidget("text", "text", currentValue, async (val: string) => {
+    const sid = getSessionId();
+    if (!sid) return;
+    try {
+      await graphs.updateNode(sid, nodeDef.id, { inline_values: { text: val } });
+    } catch (e) { console.error("widget update failed", e); }
   });
 }
 
