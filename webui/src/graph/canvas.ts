@@ -55,6 +55,14 @@ export class ZihuanCanvas {
     // Use orthogonal routing (STRAIGHT_LINK = 0): horizontal → vertical → horizontal
     (this.lCanvas as any).links_render_mode = 0;
 
+    // Override drawNodeWidgets to draw binding badges on widget-linked slots
+    // AFTER the widget backgrounds are rendered (so badges are visible on top).
+    const origDrawNodeWidgets = (this.lCanvas as any).drawNodeWidgets.bind(this.lCanvas);
+    (this.lCanvas as any).drawNodeWidgets = (node: any, posY: any, ctx: CanvasRenderingContext2D) => {
+      origDrawNodeWidgets(node, posY, ctx);
+      drawWidgetBindingBadges.call(node, ctx);
+    };
+
     // Snap nodes to grid only on release, not during drag (avoids jitter and unnecessary work)
     LiteGraph.alwaysSnapToGrid = false;
     LiteGraph.CANVAS_GRID_SIZE = 10;
@@ -871,7 +879,8 @@ export class ZihuanCanvas {
   }
 }
 
-/** Draw colored badge pills to the right of each bound input port's label text. */
+/** Draw colored badge pills to the right of each bound input port's label text.
+ *  Only handles NON-widget-linked slots (drawn before widgets via onDrawForeground). */
 function drawBindingBadges(
   this: any,
   ctx: CanvasRenderingContext2D
@@ -894,7 +903,8 @@ function drawBindingBadges(
   let verticalSlotIndex = -1;
   for (let i = 0; i < this.inputs.length; i++) {
     const input = this.inputs[i];
-    // Widget input slots (linked to widgets) are not drawn as vertical slots.
+    // Widget input slots (linked to widgets) are not drawn as vertical slots —
+    // their badges are handled by drawWidgetBindingBadges (runs after widgets).
     if (input.pos || (this.widgets?.length && input.widget)) continue;
     verticalSlotIndex++;
 
@@ -903,31 +913,80 @@ function drawBindingBadges(
     if (!binding) continue;
 
     const localY = (verticalSlotIndex + 0.7) * SLOT_HEIGHT + ((<any>this.constructor).slot_start_y || 0);
-    const labelText = portName;
-    const labelWidth = ctx.measureText(labelText).width;
-
-    const badgeText = (binding.kind === "Hyperparameter" ? "\u2191" : "\u27f2") + binding.name;
-    const badgePadX = 4;
-    const badgePadY = 2;
-    const badgeTextMetrics = ctx.measureText(badgeText);
-    const badgeTextW = badgeTextMetrics.width;
-    const badgeH = FONT_SIZE + badgePadY * 2;
-    const badgeW = badgeTextW + badgePadX * 2;
-    const badgeX = LABEL_X + labelWidth + 4;
-    const badgeY = localY + LABEL_BASELINE_OFFSET - badgeH / 2;
-    const badgeRadius = 3;
-
-    const bgColor = binding.kind === "Hyperparameter" ? "#e67e22" : "#1abc9c";
-    ctx.fillStyle = bgColor;
-    ctx.beginPath();
-    (ctx as any).roundRect(badgeX, badgeY, badgeW, badgeH, badgeRadius);
-    ctx.fill();
-
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText(badgeText, badgeX + badgePadX, badgeY + badgeH / 2);
+    drawBadgePill(ctx, portName, binding, LABEL_X, localY + LABEL_BASELINE_OFFSET, FONT_SIZE);
   }
 
   ctx.restore();
+}
+
+/** Draw binding badges for widget-linked input slots.
+ *  Called AFTER drawNodeWidgets so badges render on top of widget backgrounds. */
+function drawWidgetBindingBadges(
+  this: any,
+  ctx: CanvasRenderingContext2D
+): void {
+  const bindings: Record<string, { kind: string; name: string }> = this._portBindings;
+  if (!bindings || !this.inputs || !this.widgets) return;
+
+  const FONT_SIZE = 12;
+  const FONT = "Arial";
+  const WIDGET_HEIGHT: number = (LiteGraph as any).NODE_WIDGET_HEIGHT || 20;
+  const MARGIN: number = 15; // BaseWidget.margin
+  const LABEL_X = MARGIN * 2; // widget label starts at margin*2
+
+  ctx.save();
+  ctx.font = `normal ${FONT_SIZE}px ${FONT}`;
+  ctx.textBaseline = "middle";
+
+  for (let i = 0; i < this.inputs.length; i++) {
+    const input = this.inputs[i];
+    if (!input.widget) continue;
+
+    const binding = bindings[input.name];
+    if (!binding) continue;
+
+    const widgetName: string = typeof input.widget === "object" ? input.widget.name : input.widget;
+    const widget = (this.widgets as any[]).find((w: any) => w.name === widgetName);
+    if (!widget) continue;
+
+    // widget.last_y is set by drawWidgets (just ran); widget.y is set by arrange().
+    const wy: number = widget.last_y ?? widget.y ?? 0;
+    const centerY = wy + WIDGET_HEIGHT * 0.5;
+
+    drawBadgePill(ctx, input.name, binding, LABEL_X, centerY, FONT_SIZE);
+  }
+
+  ctx.restore();
+}
+
+/** Shared helper: draw a single binding badge pill at the given position. */
+function drawBadgePill(
+  ctx: CanvasRenderingContext2D,
+  portName: string,
+  binding: { kind: string; name: string },
+  labelX: number,
+  centerY: number,
+  fontSize: number
+): void {
+  const labelWidth = ctx.measureText(portName).width;
+  const badgeText = (binding.kind === "Hyperparameter" ? "\u2191" : "\u27f2") + binding.name;
+  const badgePadX = 4;
+  const badgePadY = 2;
+  const badgeTextW = ctx.measureText(badgeText).width;
+  const badgeH = fontSize + badgePadY * 2;
+  const badgeW = badgeTextW + badgePadX * 2;
+  const badgeX = labelX + labelWidth + 4;
+  const badgeY = centerY - badgeH / 2;
+  const badgeRadius = 3;
+
+  const bgColor = binding.kind === "Hyperparameter" ? "#e67e22" : "#1abc9c";
+  ctx.fillStyle = bgColor;
+  ctx.beginPath();
+  (ctx as any).roundRect(badgeX, badgeY, badgeW, badgeH, badgeRadius);
+  ctx.fill();
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(badgeText, badgeX + badgePadX, badgeY + badgeH / 2);
 }
 
 /** Find the registered LiteGraph type key for a backend type_id. */
