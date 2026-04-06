@@ -6,3 +6,4 @@ docker/redis/
 target/
 Cargo.lock
 **/node_modules/
+web/dist/

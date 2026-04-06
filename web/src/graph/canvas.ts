@@ -47,6 +47,52 @@ export class ZihuanCanvas {
     this.lGraph = new (LGraph as any)();
     this.lCanvas = new (LGraphCanvas as any)(canvasEl, this.lGraph);
 
+    // Use orthogonal routing (STRAIGHT_LINK = 0): horizontal → vertical → horizontal
+    (this.lCanvas as any).links_render_mode = 0;
+
+    // Snap nodes to grid on drag
+    LiteGraph.alwaysSnapToGrid = true;
+    LiteGraph.CANVAS_GRID_SIZE = 10;
+
+    // Draw data-type labels at the midpoint of each rendered connection
+    (this.lCanvas as any).onDrawForeground = (ctx: CanvasRenderingContext2D) => {
+      const scale: number = (this.lCanvas as any).ds?.scale ?? 1;
+      if (scale < 0.3) return; // skip labels when zoomed out too far
+      const renderedPaths: Set<any> = (this.lCanvas as any).renderedPaths;
+      if (!renderedPaths) return;
+      const fontSize = Math.round(10 / scale);
+      ctx.save();
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      for (const seg of renderedPaths) {
+        // Skip Reroute objects (they have no origin_id) and wildcard type
+        if (seg.origin_id === undefined) continue;
+        const typeName: string = String(seg.type ?? "");
+        if (!typeName || typeName === "*" || typeName === "null" || typeName === "undefined") continue;
+        const pos: Float32Array | number[] = seg._pos;
+        if (!pos) continue;
+        const x = pos[0];
+        const y = pos[1];
+        const padding = 3 / scale;
+        const metrics = ctx.measureText(typeName);
+        const tw = metrics.width;
+        const th = fontSize;
+        const pw = tw + padding * 2;
+        const ph = th + padding * 2;
+        const rx = 3 / scale;
+        // Pill background
+        ctx.fillStyle = "rgba(0,0,0,0.65)";
+        ctx.beginPath();
+        (ctx as any).roundRect(x - pw / 2, y - ph / 2 - fontSize * 0.8, pw, ph, rx);
+        ctx.fill();
+        // Label text
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(typeName, x, y - fontSize * 0.8);
+      }
+      ctx.restore();
+    };
+
     // Wire up LiteGraph change callbacks
     this.lGraph.onAfterExecute = () => {};
 
@@ -438,6 +484,13 @@ export class ZihuanCanvas {
 
     // Reload the parent session
     await this.loadSession(entry.parentSessionId);
+  }
+
+  /** Exit subgraphs until the stack depth equals targetDepth (0 = root). */
+  async exitSubgraphToDepth(targetDepth: number): Promise<void> {
+    while (this.subgraphStack.length > targetDepth) {
+      await this.exitSubgraph();
+    }
   }
 
   private _notifyNavigation(): void {
