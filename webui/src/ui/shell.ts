@@ -478,7 +478,7 @@ export function updateTabs(
 
     const label = document.createElement("span");
     const displayName = tab.name + (tab.isWorkflowSet ? " [工作流集]" : "");
-    label.textContent = (tab.dirty ? "● " : "") + displayName;
+    label.textContent = (tab.dirty ? "* " : "") + displayName;
     el.appendChild(label);
 
     const closeBtn = document.createElement("button");
