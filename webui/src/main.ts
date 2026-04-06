@@ -168,8 +168,32 @@ async function main() {
     }
   };
 
-  // Open from local file (replaces old Upload)
+  // Open from local file — uses File System Access API (Chrome/Edge) when available
+  // so that Ctrl+S can write back to the same file without a prompt.
   const onOpenFile = async () => {
+    // Prefer File System Access API (grants a reusable writable handle)
+    if ("showOpenFilePicker" in window) {
+      type ShowOpenFilePicker = (opts?: object) => Promise<FileSystemFileHandle[]>;
+      try {
+        const [handle] = await (window.showOpenFilePicker as ShowOpenFilePicker)({
+          types: [{ description: "JSON", accept: { "application/json": [".json"] } }],
+          multiple: false,
+        });
+        const file = await handle.getFile();
+        const result = await fileIO.upload(file);
+        const name = file.name.replace(/\.json$/i, "");
+        openTab(result.session_id, name, false, false);
+        const tab = tabList.find((t) => t.id === result.session_id);
+        if (tab) tab.fileHandle = handle;
+        await canvas.loadSession(result.session_id);
+        statusBar.textContent = `已打开: ${file.name}`;
+        return;
+      } catch (e) {
+        if ((e as Error).name === "AbortError") return; // user cancelled
+        // Fall through to legacy input
+      }
+    }
+    // Fallback: plain <input type="file"> (no write-back handle)
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".json";
@@ -210,6 +234,15 @@ async function main() {
     }
   };
 
+  /** Write the current session JSON through the given FileSystemFileHandle. */
+  const writeViaFileHandle = async (sid: string, handle: FileSystemFileHandle): Promise<void> => {
+    const resp = await fetch(graphs.downloadUrl(sid));
+    const json = await resp.text();
+    const writable = await handle.createWritable();
+    await writable.write(json);
+    await writable.close();
+  };
+
   const onSaveFile = async () => {
     const sid = canvas.sessionId;
     if (!sid) {
@@ -217,6 +250,17 @@ async function main() {
       return;
     }
     const currentTab = tabList.find((t) => t.id === sid);
+    // Save back to the original local file via File System Access API
+    if (currentTab?.fileHandle) {
+      try {
+        await writeViaFileHandle(sid, currentTab.fileHandle);
+        setTabDirty(sid, false);
+        statusBar.textContent = `已保存: ${currentTab.name}.json`;
+      } catch (e) {
+        statusBar.textContent = `Error: ${(e as Error).message}`;
+      }
+      return;
+    }
     if (currentTab?.isWorkflowSet) {
       // Smart save: opened from workflow set → save back silently
       try {
@@ -420,7 +464,11 @@ async function main() {
     for (const tab of tabList) {
       if (!tab.dirty) continue;
       try {
-        if (tab.isWorkflowSet) {
+        if (tab.fileHandle) {
+          await writeViaFileHandle(tab.id, tab.fileHandle);
+          tab.dirty = false;
+          renderTabs();
+        } else if (tab.isWorkflowSet) {
           const result = await workflowsApi.save(tab.id, tab.name);
           const displayName = tabNameFrom(result.path, tab.name);
           tab.name = displayName;
