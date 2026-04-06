@@ -42,44 +42,44 @@ const DIALOG_STYLES = `
     z-index: 9999; font-family: sans-serif;
   }
   .zh-dialog {
-    background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 8px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
     padding: 20px; min-width: 480px; max-width: 720px; max-height: 80vh;
-    overflow-y: auto; color: #e0e0e0; box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    overflow-y: auto; color: var(--text); box-shadow: 0 8px 32px rgba(0,0,0,0.5);
   }
-  .zh-dialog h3 { margin: 0 0 12px; font-size: 15px; color: #8ab4f8; }
-  .zh-dialog label { display: block; font-size: 12px; color: #aaa; margin-bottom: 3px; }
+  .zh-dialog h3 { margin: 0 0 12px; font-size: 15px; color: var(--link); }
+  .zh-dialog label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 3px; }
   .zh-dialog input, .zh-dialog textarea, .zh-dialog select {
     width: 100%; box-sizing: border-box; padding: 6px 8px;
-    background: #0f1a2e; border: 1px solid #2a2a4a; border-radius: 4px;
-    color: #e0e0e0; font-size: 13px; margin-bottom: 10px;
+    background: var(--input-bg); border: 1px solid var(--border); border-radius: 4px;
+    color: var(--text); font-size: 13px; margin-bottom: 10px;
   }
   .zh-dialog textarea { resize: vertical; min-height: 80px; font-family: monospace; }
   .zh-dialog .zh-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
   .zh-dialog .zh-row input, .zh-dialog .zh-row select { margin-bottom: 0; }
   .zh-dialog .zh-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
   .zh-dialog button {
-    padding: 6px 16px; border-radius: 4px; border: 1px solid #2a2a4a;
-    background: #1e3a5f; color: #e0e0e0; cursor: pointer; font-size: 13px;
+    padding: 6px 16px; border-radius: 4px; border: 1px solid var(--border);
+    background: var(--btn-bg); color: var(--text); cursor: pointer; font-size: 13px;
   }
-  .zh-dialog button:hover { background: #1a3a6e; }
-  .zh-dialog button.primary { background: #0a5a9e; border-color: #1a7abf; }
-  .zh-dialog button.primary:hover { background: #0a6abf; }
-  .zh-dialog button.danger { color: #e94560; border-color: #e94560; background: transparent; }
-  .zh-dialog button.danger:hover { background: rgba(233,69,96,0.1); }
+  .zh-dialog button:hover { background: var(--btn-hover); }
+  .zh-dialog button.primary { background: var(--btn-primary); border-color: var(--btn-primary-hover); }
+  .zh-dialog button.primary:hover { background: var(--btn-primary-hover); }
+  .zh-dialog button.danger { color: var(--accent); border-color: var(--accent); background: transparent; }
+  .zh-dialog button.danger:hover { background: var(--accent-subtle); }
   .zh-dialog .zh-section-label {
-    font-size: 12px; font-weight: bold; color: #8ab4f8;
-    margin: 12px 0 6px; padding-bottom: 4px; border-bottom: 1px solid #2a2a4a;
+    font-size: 12px; font-weight: bold; color: var(--link);
+    margin: 12px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border);
   }
   .zh-dialog .zh-port-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
   .zh-dialog .zh-port-row input { flex: 1; margin-bottom: 0; }
   .zh-dialog .zh-port-row select { flex: 1; margin-bottom: 0; }
   .zh-dialog .zh-tool-card {
-    border: 1px solid #2a2a4a; border-radius: 6px; padding: 10px; margin-bottom: 10px; background: #0d1020;
+    border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 10px; background: var(--tool-card-bg);
   }
   .zh-dialog .zh-tool-card summary {
-    cursor: pointer; font-size: 13px; font-weight: bold; color: #cdf; list-style: none;
+    cursor: pointer; font-size: 13px; font-weight: bold; color: var(--tool-card-summary); list-style: none;
   }
-  .zh-dialog .zh-hint { font-size: 11px; color: #888; margin-bottom: 10px; }
+  .zh-dialog .zh-hint { font-size: 11px; color: var(--text-dim); margin-bottom: 10px; }
 `;
 
 function ensureDialogStyles(): void {

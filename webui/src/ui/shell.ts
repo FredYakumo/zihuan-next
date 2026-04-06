@@ -6,16 +6,6 @@ import { ws } from "../api/ws";
 import type { TaskEntry } from "../api/types";
 
 const STYLES = `
-  :root {
-    --bg: #1a1a2e;
-    --toolbar-bg: #16213e;
-    --sidebar-bg: #0f3460;
-    --text: #e0e0e0;
-    --accent: #e94560;
-    --border: #2a2a4a;
-    --node-hover: #1a3a6e;
-  }
-
   #toolbar {
     display: flex;
     align-items: center;
@@ -80,7 +70,7 @@ const STYLES = `
   }
 
   #toolbar-menu .menu-item .menu-shortcut {
-    color: #888;
+    color: var(--text-dim);
     font-size: 11px;
     flex-shrink: 0;
   }
@@ -91,11 +81,11 @@ const STYLES = `
 
   #toolbar .task-status {
     font-size: 12px;
-    color: #aaa;
+    color: var(--text-muted);
   }
 
   #toolbar .task-status.running {
-    color: #4caf50;
+    color: var(--run-color);
   }
 
   #main {
@@ -111,7 +101,7 @@ const STYLES = `
   #sidebar .category-header {
     padding: 6px 10px;
     font-weight: bold;
-    color: #8ab4f8;
+    color: var(--link);
     background: rgba(0,0,0,0.2);
     border-bottom: 1px solid var(--border);
     user-select: none;
@@ -151,7 +141,7 @@ const STYLES = `
     gap: 4px;
     padding: 4px 8px 0;
     align-items: flex-end;
-    background: #0d1117;
+    background: var(--bg-deep);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
     min-height: 30px;
@@ -162,10 +152,10 @@ const STYLES = `
     border-radius: 3px 3px 0 0;
     border: 1px solid var(--border);
     border-bottom: none;
-    background: #1a2a4a;
+    background: var(--tab-inactive);
     cursor: pointer;
     font-size: 12px;
-    color: #aaa;
+    color: var(--text-muted);
   }
 
   #graph-tabs .tab.active {
@@ -177,7 +167,7 @@ const STYLES = `
     padding: 2px 8px;
     font-size: 18px;
     cursor: pointer;
-    color: #aaa;
+    color: var(--text-muted);
     border: none;
     background: transparent;
   }
@@ -190,7 +180,7 @@ const STYLES = `
     margin-left: 6px;
     font-size: 14px;
     line-height: 1;
-    color: #666;
+    color: var(--text-faint);
     border: none;
     background: transparent;
     cursor: pointer;
@@ -200,22 +190,22 @@ const STYLES = `
   }
 
   #graph-tabs .tab .tab-close:hover {
-    color: #e94560;
+    color: var(--accent);
   }
 
   #graph-tabs .tab.active .tab-close {
-    color: #aaa;
+    color: var(--text-muted);
   }
 
   #status-bar {
     height: 24px;
-    background: #0d1117;
+    background: var(--bg-deep);
     border-top: 1px solid var(--border);
     padding: 0 12px;
     display: flex;
     align-items: center;
     font-size: 11px;
-    color: #666;
+    color: var(--text-faint);
     font-family: monospace;
     flex-shrink: 0;
   }
@@ -225,10 +215,10 @@ const STYLES = `
     align-items: center;
     padding: 0 12px;
     height: 26px;
-    background: #0d1117;
-    border-bottom: 1px solid #2a2a4a;
+    background: var(--bg-deep);
+    border-bottom: 1px solid var(--border);
     font-size: 12px;
-    color: #aaa;
+    color: var(--text-muted);
     flex-shrink: 0;
     overflow: hidden;
     white-space: nowrap;
@@ -239,7 +229,7 @@ const STYLES = `
   }
 
   #breadcrumb .bc-root {
-    color: #8ab4f8;
+    color: var(--link);
     cursor: pointer;
   }
 
@@ -249,11 +239,11 @@ const STYLES = `
 
   #breadcrumb .bc-sep {
     margin: 0 5px;
-    color: #555;
+    color: var(--text-faint);
   }
 
   #breadcrumb .bc-item {
-    color: #ccc;
+    color: var(--text);
   }
 
   #breadcrumb .bc-item.bc-clickable {
@@ -262,7 +252,7 @@ const STYLES = `
 
   #breadcrumb .bc-item.bc-clickable:hover {
     text-decoration: underline;
-    color: #8ab4f8;
+    color: var(--link);
   }
 
   #canvas-back-arrow {
@@ -277,7 +267,7 @@ const STYLES = `
     padding: 6px 14px;
     border-radius: 4px;
     border: 1px solid var(--border);
-    background: rgba(22, 33, 62, 0.92);
+    background: var(--float-bg);
     color: var(--text);
     cursor: pointer;
     font-size: 13px;
@@ -305,7 +295,7 @@ const STYLES = `
     padding: 6px 14px;
     border-radius: 4px;
     border: 1px solid var(--border);
-    background: rgba(22, 33, 62, 0.92);
+    background: var(--float-bg);
     color: var(--text);
     cursor: pointer;
     font-size: 13px;
@@ -320,8 +310,8 @@ const STYLES = `
   }
 
   #canvas-panel-buttons #btn-run {
-    border-color: #4caf50;
-    color: #4caf50;
+    border-color: var(--run-color);
+    color: var(--run-color);
   }
 
   #canvas-panel-buttons #btn-run.stop {
@@ -339,11 +329,11 @@ const STYLES = `
     font-family: sans-serif;
     line-height: 1.5;
   }
-  .log-badge-INFO  { background: #1b5e20; color: #a5d6a7; }
-  .log-badge-WARN  { background: #e65100; color: #ffe0b2; }
-  .log-badge-ERROR { background: #7f0000; color: #ef9a9a; }
-  .log-badge-DEBUG { background: #0d47a1; color: #90caf9; }
-  .log-badge-TRACE { background: #37474f; color: #b0bec5; }
+  .log-badge-INFO  { background: var(--badge-info-bg);   color: var(--badge-info-text); }
+  .log-badge-WARN  { background: var(--badge-warn-bg);   color: var(--badge-warn-text); }
+  .log-badge-ERROR { background: var(--badge-error-bg);  color: var(--badge-error-text); }
+  .log-badge-DEBUG { background: var(--badge-debug-bg);  color: var(--badge-debug-text); }
+  .log-badge-TRACE { background: var(--badge-trace-bg);  color: var(--badge-trace-text); }
 
   /* ── Log toast overlay (top-left, inside canvas, no background container) ── */
   .log-toast-overlay {
@@ -364,7 +354,7 @@ const STYLES = `
     gap: 6px;
     font-size: 12px;
     font-family: monospace;
-    color: #e8e8e8;
+    color: var(--toast-text);
     opacity: 1;
     transition: opacity 0.8s ease;
     text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.7);
@@ -391,8 +381,8 @@ const STYLES = `
   }
 
   .log-stream-dialog {
-    background: #0d1117;
-    border: 1px solid #2a2a4a;
+    background: var(--log-stream-bg);
+    border: 1px solid var(--border);
     border-radius: 8px;
     box-shadow: 0 8px 32px rgba(0,0,0,0.6);
     width: 760px;
@@ -408,21 +398,21 @@ const STYLES = `
     align-items: center;
     justify-content: space-between;
     padding: 10px 16px;
-    border-bottom: 1px solid #2a2a4a;
+    border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
 
   .log-stream-header h3 {
     margin: 0;
     font-size: 14px;
-    color: #8ab4f8;
+    color: var(--link);
     font-weight: bold;
   }
 
   .log-stream-close {
     background: transparent;
     border: none;
-    color: #aaa;
+    color: var(--text-muted);
     font-size: 20px;
     cursor: pointer;
     padding: 0 4px;
@@ -430,7 +420,7 @@ const STYLES = `
   }
 
   .log-stream-close:hover {
-    color: #e94560;
+    color: var(--accent);
   }
 
   .log-stream-list {
@@ -452,14 +442,14 @@ const STYLES = `
   }
 
   .log-entry-ts {
-    color: #555;
+    color: var(--text-faint);
     font-size: 11px;
     flex-shrink: 0;
     min-width: 80px;
   }
 
   .log-entry-msg {
-    color: #ddd;
+    color: var(--text);
     word-break: break-all;
   }
 `;
