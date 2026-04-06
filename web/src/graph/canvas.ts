@@ -31,9 +31,17 @@ export class ZihuanCanvas {
   private nodeMap = new Map<string, any>();
   /** Subgraph navigation stack */
   private subgraphStack: SubgraphStackEntry[] = [];
+  /** In-memory node clipboard for copy/paste */
+  private nodeClipboard: NodeDefinition[] = [];
 
   /** Called whenever the breadcrumb navigation path changes */
   onNavigationChange?: (labels: string[]) => void;
+
+  /**
+   * Called when the user right-clicks on an empty area of the canvas.
+   * Receives the position in graph coordinates where the node should be placed.
+   */
+  onAddNodeRequest?: (graphX: number, graphY: number) => void;
 
   constructor(canvasEl: HTMLCanvasElement) {
     this.lGraph = new (LGraph as any)();
@@ -46,10 +54,64 @@ export class ZihuanCanvas {
     this.lGraph.onNodeAdded = (node: any) => this.onNodeAdded(node);
     this.lGraph.onNodeRemoved = (node: any) => this.onNodeRemoved(node);
     this.lGraph.onConnectionChange = (node: any) => this.onConnectionChanged(node);
+
+    // Right-click context menu (capture phase so we preempt LiteGraph's own handler).
+    canvasEl.addEventListener("contextmenu", (e: MouseEvent) => {
+      const [gx, gy] = (this.lCanvas as any).graph_mouse as [number, number];
+      const node = this.lGraph.getNodeOnPos(gx, gy);
+
+      // If right-clicking on a node's input slot, show port-binding menu instead.
+      if (node) {
+        const nx = (node as any).pos[0] as number;
+        const ny = (node as any).pos[1] as number;
+        const found = (node as any).getSlotInPosition(gx - nx, gy - ny) as
+          | { slot: number; input?: unknown; output?: unknown }
+          | null;
+        if (found && found.input) {
+          const portName = ((node as any).inputs?.[found.slot]?.name ?? "") as string;
+          if (portName) {
+            e.preventDefault();
+            e.stopPropagation();
+            this.showPortBindingMenu(node, found.slot, portName, e);
+            return;
+          }
+        }
+      }
+
+      // In all other cases show our custom canvas context menu.
+      e.preventDefault();
+      e.stopPropagation();
+      this.showCanvasContextMenu(e, gx, gy);
+    }, { capture: true });
   }
 
   get sessionId(): string | null {
     return this.state.sessionId;
+  }
+
+  /**
+   * Return the current viewport center in graph coordinates.
+   * Used to place a new node near the visible area when triggered from a button.
+   */
+  graphCenterPos(): { x: number; y: number } {
+    const ds = (this.lCanvas as any).ds as { offset: [number, number]; scale: number } | undefined;
+    const canvasEl = (this.lCanvas as any).canvas as HTMLCanvasElement | undefined;
+    if (!ds || !canvasEl) return { x: 100, y: 100 };
+    const w = canvasEl.width / (window.devicePixelRatio || 1);
+    const h = canvasEl.height / (window.devicePixelRatio || 1);
+    return {
+      x: -ds.offset[0] + w / 2 / ds.scale,
+      y: -ds.offset[1] + h / 2 / ds.scale,
+    };
+  }
+
+  /** Clear the canvas and discard session state (e.g. when the last tab is closed). */
+  clearCanvas(): void {
+    this.state = { sessionId: null, graph: null, dirty: false };
+    this.nodeMap.clear();
+    this.subgraphStack = [];
+    this.lGraph.clear();
+    this.onNavigationChange?.([]);
   }
 
   /** Load a graph session from the API into the LiteGraph canvas. */
@@ -96,6 +158,18 @@ export class ZihuanCanvas {
     }
     for (const p of nodeDef.output_ports) {
       node.addOutput(p.name, portTypeString(p.data_type as string | object));
+    }
+
+    // Visual indicator for bound ports
+    if (node.inputs) {
+      for (let i = 0; i < nodeDef.input_ports.length; i++) {
+        const portName = nodeDef.input_ports[i].name;
+        const binding = nodeDef.port_bindings?.[portName];
+        if (binding) {
+          const prefix = binding.kind === "Hyperparameter" ? "↑" : "⟲";
+          node.inputs[i].label = `${portName} [${prefix}${binding.name}]`;
+        }
+      }
     }
 
     node.id = nodeDef.id;
@@ -240,6 +314,13 @@ export class ZihuanCanvas {
     }
   }
 
+  /** Resize the LiteGraph canvas, updating both the DOM element and LiteGraph's internal viewport.
+   * LiteGraph expects physical pixel dimensions (logical × devicePixelRatio) for correct HiDPI rendering. */
+  resize(width: number, height: number): void {
+    const dpr = window.devicePixelRatio || 1;
+    (this.lCanvas as any).resize(Math.round(width * dpr), Math.round(height * dpr));
+  }
+
   startPositionSync(intervalMs = 2000): () => void {
     const id = setInterval(() => this.syncPositions(), intervalMs);
     return () => clearInterval(id);
@@ -363,6 +444,248 @@ export class ZihuanCanvas {
     if (!this.onNavigationChange) return;
     const labels = this.subgraphStack.map(e => e.label);
     this.onNavigationChange(labels);
+  }
+
+  // ─── Canvas context menu ──────────────────────────────────────────────────
+
+  private showCanvasContextMenu(event: MouseEvent, graphX: number, graphY: number): void {
+    document.getElementById("zh-canvas-menu")?.remove();
+
+    const selectedNodes: any[] = Object.values((this.lGraph as any).selected_nodes ?? {});
+    const hasSelection = selectedNodes.length > 0;
+    const hasClipboard = this.nodeClipboard.length > 0;
+
+    const menu = document.createElement("div");
+    menu.id = "zh-canvas-menu";
+    menu.style.cssText = `
+      position:fixed;z-index:10000;
+      left:${event.clientX}px;top:${event.clientY}px;
+      background:#1a1a2e;border:1px solid #2a2a4a;border-radius:4px;
+      box-shadow:0 4px 16px rgba(0,0,0,0.6);
+      font-family:sans-serif;font-size:13px;color:#e0e0e0;min-width:170px;overflow:hidden;
+    `;
+
+    const makeItem = (label: string, enabled: boolean, onClick: () => void) => {
+      const item = document.createElement("div");
+      item.textContent = label;
+      item.style.cssText = `padding:8px 14px;cursor:${enabled ? "pointer" : "default"};border-bottom:1px solid #1a2a4a;color:${enabled ? "#e0e0e0" : "#555"};`;
+      if (enabled) {
+        item.addEventListener("mouseenter", () => { item.style.background = "#1a3a6e"; });
+        item.addEventListener("mouseleave", () => { item.style.background = ""; });
+        item.addEventListener("click", () => { menu.remove(); onClick(); });
+      }
+      menu.appendChild(item);
+    };
+
+    makeItem("新建节点", true, () => {
+      this.onAddNodeRequest?.(graphX, graphY);
+    });
+
+    makeItem("复制", hasSelection, () => {
+      this.copySelectedNodes();
+    });
+
+    makeItem("粘贴", hasClipboard, () => {
+      this.pasteNodes(graphX, graphY).catch(console.error);
+    });
+
+    makeItem("删除", hasSelection, () => {
+      this.deleteSelectedNodes().catch(console.error);
+    });
+
+    document.body.appendChild(menu);
+
+    const dismiss = (e: MouseEvent) => {
+      if (!menu.contains(e.target as Node)) {
+        menu.remove();
+        document.removeEventListener("click", dismiss);
+      }
+    };
+    setTimeout(() => document.addEventListener("click", dismiss), 0);
+  }
+
+  /** Copy currently selected nodes into the in-memory clipboard. */
+  private copySelectedNodes(): void {
+    const selectedLNodes: any[] = Object.values((this.lGraph as any).selected_nodes ?? {});
+    if (selectedLNodes.length === 0) return;
+    const defs: NodeDefinition[] = [];
+    for (const lNode of selectedLNodes) {
+      const nodeId = lNode.zihuanId as string | undefined;
+      if (!nodeId) continue;
+      const def = this.state.graph?.nodes.find((n) => n.id === nodeId);
+      if (def) defs.push(def);
+    }
+    this.nodeClipboard = defs;
+  }
+
+  /** Paste clipboard nodes, offset by 20 px from the given graph position. */
+  private async pasteNodes(graphX: number, graphY: number): Promise<void> {
+    const sid = this.state.sessionId;
+    if (!sid || this.nodeClipboard.length === 0) return;
+
+    // Determine bounding box of clipboard nodes to anchor the paste position.
+    const xs = this.nodeClipboard.map((n) => n.position?.x ?? 0);
+    const ys = this.nodeClipboard.map((n) => n.position?.y ?? 0);
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    const OFFSET = 20;
+
+    for (const def of this.nodeClipboard) {
+      const dx = (def.position?.x ?? 0) - minX;
+      const dy = (def.position?.y ?? 0) - minY;
+      await graphs.addNode(sid, def.node_type, def.name, graphX + dx + OFFSET, graphY + dy + OFFSET);
+    }
+    await this.reloadCurrentSession();
+    this.state.dirty = true;
+  }
+
+  /** Delete all currently selected nodes from the canvas and backend. */
+  private async deleteSelectedNodes(): Promise<void> {
+    const selectedLNodes: any[] = Object.values((this.lGraph as any).selected_nodes ?? {});
+    if (selectedLNodes.length === 0) return;
+    // Remove each selected node via LiteGraph — onNodeRemoved will sync to backend.
+    for (const lNode of [...selectedLNodes]) {
+      this.lGraph.remove(lNode);
+    }
+  }
+
+  // ─── Port binding context menu ────────────────────────────────────────────
+
+  private showPortBindingMenu(
+    lNode: any,
+    _slotIndex: number,
+    portName: string,
+    event: MouseEvent
+  ): void {
+    document.getElementById("zh-port-menu")?.remove();
+
+    const menu = document.createElement("div");
+    menu.id = "zh-port-menu";
+    menu.style.cssText = `
+      position:fixed;z-index:10000;
+      left:${event.clientX}px;top:${event.clientY}px;
+      background:#1a1a2e;border:1px solid #2a2a4a;border-radius:4px;
+      box-shadow:0 4px 16px rgba(0,0,0,0.6);
+      font-family:sans-serif;font-size:13px;color:#e0e0e0;min-width:170px;overflow:hidden;
+    `;
+
+    const makeItem = (label: string, onClick: () => void) => {
+      const item = document.createElement("div");
+      item.textContent = label;
+      item.style.cssText = "padding:8px 14px;cursor:pointer;border-bottom:1px solid #1a2a4a;";
+      item.addEventListener("mouseenter", () => { item.style.background = "#1a3a6e"; });
+      item.addEventListener("mouseleave", () => { item.style.background = ""; });
+      item.addEventListener("click", () => { menu.remove(); onClick(); });
+      menu.appendChild(item);
+    };
+
+    makeItem("绑定超参数...", () => {
+      this.showHPPicker(lNode, portName, event).catch(console.error);
+    });
+    makeItem("绑定变量...", () => {
+      this.showVarPicker(lNode, portName, event).catch(console.error);
+    });
+    makeItem("清除绑定", () => {
+      this.clearPortBinding(lNode, portName).catch(console.error);
+    });
+
+    document.body.appendChild(menu);
+
+    const dismiss = (e: MouseEvent) => {
+      if (!menu.contains(e.target as Node)) {
+        menu.remove();
+        document.removeEventListener("click", dismiss);
+      }
+    };
+    setTimeout(() => document.addEventListener("click", dismiss), 0);
+  }
+
+  private async showHPPicker(lNode: any, portName: string, event: MouseEvent): Promise<void> {
+    const sid = this.state.sessionId;
+    if (!sid) return;
+    const { hyperparameters } = await graphs.getHyperparameters(sid);
+    this.showBindingPicker(event, hyperparameters.map((h) => h.name), async (name) => {
+      await graphs.updateNode(sid, lNode.zihuanId as string, {
+        port_bindings: { [portName]: { kind: "Hyperparameter", name } },
+      });
+      await this.reloadCurrentSession();
+    });
+  }
+
+  private async showVarPicker(lNode: any, portName: string, event: MouseEvent): Promise<void> {
+    const sid = this.state.sessionId;
+    if (!sid) return;
+    const variables = await graphs.getVariables(sid);
+    this.showBindingPicker(event, variables.map((v) => v.name), async (name) => {
+      await graphs.updateNode(sid, lNode.zihuanId as string, {
+        port_bindings: { [portName]: { kind: "Variable", name } },
+      });
+      await this.reloadCurrentSession();
+    });
+  }
+
+  private showBindingPicker(
+    event: MouseEvent,
+    names: string[],
+    onSelect: (name: string) => Promise<void>
+  ): void {
+    document.getElementById("zh-port-picker")?.remove();
+
+    const picker = document.createElement("div");
+    picker.id = "zh-port-picker";
+    picker.style.cssText = `
+      position:fixed;z-index:10001;
+      left:${event.clientX + 8}px;top:${event.clientY}px;
+      background:#1a1a2e;border:1px solid #2a2a4a;border-radius:4px;
+      box-shadow:0 4px 16px rgba(0,0,0,0.6);
+      font-family:sans-serif;font-size:13px;color:#e0e0e0;
+      min-width:160px;max-height:220px;overflow-y:auto;
+    `;
+
+    if (names.length === 0) {
+      const empty = document.createElement("div");
+      empty.textContent = "(无可用项)";
+      empty.style.cssText = "padding:8px 14px;color:#888;";
+      picker.appendChild(empty);
+    }
+
+    for (const name of names) {
+      const item = document.createElement("div");
+      item.textContent = name;
+      item.style.cssText = "padding:8px 14px;cursor:pointer;border-bottom:1px solid #1a2a4a;";
+      item.addEventListener("mouseenter", () => { item.style.background = "#1a3a6e"; });
+      item.addEventListener("mouseleave", () => { item.style.background = ""; });
+      item.addEventListener("click", () => { picker.remove(); onSelect(name).catch(console.error); });
+      picker.appendChild(item);
+    }
+
+    document.body.appendChild(picker);
+
+    const dismiss = (e: MouseEvent) => {
+      if (!picker.contains(e.target as Node)) {
+        picker.remove();
+        document.removeEventListener("click", dismiss);
+      }
+    };
+    setTimeout(() => document.addEventListener("click", dismiss), 0);
+  }
+
+  private async clearPortBinding(lNode: any, portName: string): Promise<void> {
+    const sid = this.state.sessionId;
+    if (!sid) return;
+    const def = await graphs.get(sid);
+    const nodeIdx = def.nodes.findIndex((n) => n.id === (lNode.zihuanId as string));
+    if (nodeIdx < 0) return;
+    const newBindings = { ...def.nodes[nodeIdx].port_bindings };
+    delete newBindings[portName];
+    const updatedGraph = {
+      ...def,
+      nodes: def.nodes.map((n, i) =>
+        i === nodeIdx ? { ...n, port_bindings: newBindings } : n
+      ),
+    };
+    await graphs.put(sid, updatedGraph);
+    await this.reloadCurrentSession();
   }
 }
 

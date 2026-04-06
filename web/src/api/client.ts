@@ -177,3 +177,13 @@ export const tasks = {
     return request("POST", `/tasks/${taskId}/stop`);
   },
 };
+
+// Workflows
+export const workflows = {
+  list(): Promise<{ files: string[] }> {
+    return request("GET", "/workflows");
+  },
+  save(graphId: string, name: string): Promise<{ ok: boolean; path: string }> {
+    return request("POST", "/workflows/save", { graph_id: graphId, name });
+  },
+};

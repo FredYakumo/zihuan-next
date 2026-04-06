@@ -1,7 +1,7 @@
 // Modal dialog implementations for special node editors
 
 import { graphs } from "../api/client";
-import type { NodeDefinition, NodeGraphDefinition, Port } from "../api/types";
+import type { NodeDefinition, NodeGraphDefinition, Port, HyperParameter, GraphVariable, NodeTypeInfo } from "../api/types";
 
 // ─── Data types ──────────────────────────────────────────────────────────────
 
@@ -798,4 +798,577 @@ export function extractTemplateVars(template: string): string[] {
     }
   }
   return result;
+}
+
+// ─── Add Node dialog ──────────────────────────────────────────────────────────
+
+/**
+ * Show the "选择节点类型" picker dialog.
+ * Resolves with the chosen `type_id` or `null` if cancelled.
+ */
+export function showAddNodeDialog(nodeTypes: NodeTypeInfo[]): Promise<string | null> {
+  ensureDialogStyles();
+
+  // Extra styles scoped to the add-node dialog
+  const extraStyleId = "zh-add-node-styles";
+  if (!document.getElementById(extraStyleId)) {
+    const s = document.createElement("style");
+    s.id = extraStyleId;
+    s.textContent = `
+      .zh-an-dialog { min-width: 540px; max-width: 760px; max-height: 82vh; display: flex; flex-direction: column; }
+      .zh-an-search {
+        width: 100%; box-sizing: border-box; padding: 7px 10px;
+        background: #0f1a2e; border: 1px solid #3a5a8a; border-radius: 4px;
+        color: #e0e0e0; font-size: 13px; margin-bottom: 10px; outline: none;
+      }
+      .zh-an-search:focus { border-color: #5a9af8; }
+      .zh-an-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+      .zh-an-tab {
+        padding: 3px 12px; border-radius: 4px; border: 1px solid #2a2a4a;
+        background: #1e3a5f; color: #aaa; cursor: pointer; font-size: 12px;
+        transition: background 0.1s, color 0.1s;
+      }
+      .zh-an-tab:hover { background: #1a3a6e; color: #e0e0e0; }
+      .zh-an-tab.active { background: #2e6abf; border-color: #3a8af8; color: #fff; }
+      .zh-an-list {
+        flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;
+        min-height: 200px; max-height: 52vh;
+      }
+      .zh-an-item {
+        display: flex; flex-direction: column; gap: 2px;
+        padding: 8px 12px; border: 1px solid #2a2a4a; border-radius: 5px;
+        cursor: pointer; background: #0d1020; transition: background 0.1s;
+      }
+      .zh-an-item:hover { background: #1a3a6e; border-color: #3a6abf; }
+      .zh-an-item-top { display: flex; align-items: center; gap: 8px; }
+      .zh-an-name { font-size: 13px; font-weight: bold; color: #e0e0e0; flex: 1; }
+      .zh-an-badge {
+        font-size: 10px; padding: 1px 7px; border-radius: 10px;
+        background: #1e3a5f; border: 1px solid #3a5a8a; color: #8ab4f8;
+        white-space: nowrap;
+      }
+      .zh-an-desc { font-size: 11px; color: #888; line-height: 1.4; }
+      .zh-an-empty { padding: 20px; text-align: center; color: #666; font-size: 13px; }
+    `;
+    document.head.appendChild(s);
+  }
+
+  const visibleTypes = nodeTypes.filter((n) => n.category !== "内部");
+  const cats = ["全部", ...Array.from(new Set(visibleTypes.map((n) => n.category)))];
+
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "zh-overlay";
+
+    const dialog = document.createElement("div");
+    dialog.className = "zh-dialog zh-an-dialog";
+
+    const titleEl = document.createElement("h3");
+    titleEl.textContent = "选择节点类型";
+    dialog.appendChild(titleEl);
+
+    const searchInput = document.createElement("input");
+    searchInput.type = "text";
+    searchInput.className = "zh-an-search";
+    searchInput.placeholder = "输入名称、类型、分类或描述…";
+    dialog.appendChild(searchInput);
+
+    const tabsRow = document.createElement("div");
+    tabsRow.className = "zh-an-tabs";
+    dialog.appendChild(tabsRow);
+
+    const listEl = document.createElement("div");
+    listEl.className = "zh-an-list";
+    dialog.appendChild(listEl);
+
+    const footer = document.createElement("div");
+    footer.className = "zh-buttons";
+    const cancelBtn = document.createElement("button");
+    cancelBtn.textContent = "取消";
+    cancelBtn.addEventListener("click", () => { document.body.removeChild(overlay); resolve(null); });
+    footer.appendChild(cancelBtn);
+    dialog.appendChild(footer);
+
+    overlay.appendChild(dialog);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) { document.body.removeChild(overlay); resolve(null); }
+    });
+
+    // ── State ──
+    let activeCategory = "全部";
+    let searchText = "";
+
+    function applyFilter() {
+      const q = searchText.toLowerCase();
+      return visibleTypes.filter((n) => {
+        const catMatch = activeCategory === "全部" || n.category === activeCategory;
+        if (!catMatch) return false;
+        if (!q) return true;
+        return (
+          n.display_name.toLowerCase().includes(q) ||
+          n.type_id.toLowerCase().includes(q) ||
+          n.category.toLowerCase().includes(q) ||
+          n.description.toLowerCase().includes(q)
+        );
+      });
+    }
+
+    function renderList() {
+      listEl.innerHTML = "";
+      const filtered = applyFilter();
+      if (filtered.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "zh-an-empty";
+        empty.textContent = "无匹配节点";
+        listEl.appendChild(empty);
+        return;
+      }
+      for (const nt of filtered) {
+        const item = document.createElement("div");
+        item.className = "zh-an-item";
+
+        const top = document.createElement("div");
+        top.className = "zh-an-item-top";
+
+        const name = document.createElement("span");
+        name.className = "zh-an-name";
+        name.textContent = nt.display_name;
+        top.appendChild(name);
+
+        const badge = document.createElement("span");
+        badge.className = "zh-an-badge";
+        badge.textContent = nt.category;
+        top.appendChild(badge);
+
+        item.appendChild(top);
+
+        if (nt.description) {
+          const desc = document.createElement("div");
+          desc.className = "zh-an-desc";
+          desc.textContent = nt.description;
+          item.appendChild(desc);
+        }
+
+        item.addEventListener("click", () => {
+          document.body.removeChild(overlay);
+          resolve(nt.type_id);
+        });
+
+        listEl.appendChild(item);
+      }
+    }
+
+    function renderTabs() {
+      tabsRow.innerHTML = "";
+      for (const cat of cats) {
+        const tab = document.createElement("button");
+        tab.className = "zh-an-tab" + (cat === activeCategory ? " active" : "");
+        tab.textContent = cat;
+        tab.addEventListener("click", () => {
+          activeCategory = cat;
+          renderTabs();
+          renderList();
+        });
+        tabsRow.appendChild(tab);
+      }
+    }
+
+    searchInput.addEventListener("input", () => {
+      searchText = searchInput.value;
+      renderList();
+    });
+
+    renderTabs();
+    renderList();
+
+    document.body.appendChild(overlay);
+    // Auto-focus the search field
+    setTimeout(() => searchInput.focus(), 0);
+  });
+}
+
+// ─── Workflow selection dialog ────────────────────────────────────────────────
+
+/**
+ * Show a modal listing workflow filenames. Resolves with the chosen filename
+ * (e.g. "my_flow.json") or `null` if the user cancels.
+ */
+export function showWorkflowsDialog(files: string[]): Promise<string | null> {
+  ensureDialogStyles();
+
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "zh-overlay";
+
+    const dialog = document.createElement("div");
+    dialog.className = "zh-dialog";
+    dialog.style.minWidth = "320px";
+    dialog.style.maxWidth = "480px";
+
+    const title = document.createElement("h3");
+    title.textContent = "打开 Workflow";
+    dialog.appendChild(title);
+
+    const list = document.createElement("div");
+    list.style.cssText = "display:flex;flex-direction:column;gap:4px;max-height:50vh;overflow-y:auto;margin-bottom:12px;";
+
+    for (const file of files) {
+      const item = document.createElement("div");
+      item.style.cssText =
+        "padding:8px 12px;border:1px solid #2a2a4a;border-radius:4px;cursor:pointer;transition:background 0.1s;font-size:13px;";
+      item.textContent = file;
+      item.addEventListener("mouseenter", () => { item.style.background = "#1a3a6e"; });
+      item.addEventListener("mouseleave", () => { item.style.background = ""; });
+      item.addEventListener("click", () => {
+        document.body.removeChild(overlay);
+        resolve(file);
+      });
+      list.appendChild(item);
+    }
+
+    dialog.appendChild(list);
+
+    const buttons = document.createElement("div");
+    buttons.className = "zh-buttons";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.textContent = "取消";
+    cancelBtn.addEventListener("click", () => {
+      document.body.removeChild(overlay);
+      resolve(null);
+    });
+    buttons.appendChild(cancelBtn);
+    dialog.appendChild(buttons);
+
+    overlay.appendChild(dialog);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) {
+        document.body.removeChild(overlay);
+        resolve(null);
+      }
+    });
+
+    document.body.appendChild(overlay);
+  });
+}
+
+// ─── Hyperparameters Dialog ───────────────────────────────────────────────────
+
+const HP_SCALAR_TYPES = ["String", "Integer", "Float", "Boolean"] as const;
+
+export async function openHyperparametersDialog(
+  sessionId: string,
+  onSaved: () => void
+): Promise<void> {
+  ensureDialogStyles();
+  const { dialog, close } = openOverlay();
+  dialog.style.minWidth = "760px";
+
+  const title = document.createElement("h3");
+  title.textContent = "超参数管理";
+  dialog.appendChild(title);
+
+  const hint = document.createElement("div");
+  hint.className = "zh-hint";
+  hint.textContent = "超参数在磁盘上共享，运行前注入已绑定的节点输入端口。";
+  dialog.appendChild(hint);
+
+  const sectionLabel = document.createElement("div");
+  sectionLabel.className = "zh-section-label";
+  sectionLabel.textContent = "超参数列表";
+  dialog.appendChild(sectionLabel);
+
+  const listContainer = document.createElement("div");
+  dialog.appendChild(listContainer);
+
+  let hpResp: { hyperparameters: HyperParameter[]; values: Record<string, unknown> };
+  try {
+    hpResp = await graphs.getHyperparameters(sessionId);
+  } catch (e) {
+    alert("加载超参数失败: " + (e as Error).message);
+    close();
+    return;
+  }
+
+  type HpRow = {
+    nameEl: HTMLInputElement;
+    typeEl: HTMLSelectElement;
+    groupEl: HTMLInputElement;
+    requiredEl: HTMLInputElement;
+    descEl: HTMLInputElement;
+    valueEl: HTMLInputElement;
+  };
+  const rows: HpRow[] = [];
+
+  const COL = "1fr 100px 100px 50px 1fr 1fr 32px";
+
+  // Header row
+  const headerRow = document.createElement("div");
+  headerRow.style.cssText = `display:grid;grid-template-columns:${COL};gap:6px;margin-bottom:4px;font-size:11px;color:#888;padding:0 2px;`;
+  for (const h of ["名称", "类型", "分组", "必填", "描述", "当前值", ""]) {
+    const span = document.createElement("span");
+    span.textContent = h;
+    headerRow.appendChild(span);
+  }
+  listContainer.appendChild(headerRow);
+
+  const rowsContainer = document.createElement("div");
+  listContainer.appendChild(rowsContainer);
+
+  const addRow = (hp?: HyperParameter) => {
+    const currentValue = hp ? (hpResp.values[hp.name] ?? "") : "";
+    const row = document.createElement("div");
+    row.style.cssText = `display:grid;grid-template-columns:${COL};gap:6px;align-items:center;margin-bottom:6px;`;
+
+    const makeInput = (placeholder: string, value: string): HTMLInputElement => {
+      const el = document.createElement("input");
+      el.type = "text";
+      el.placeholder = placeholder;
+      el.value = value;
+      el.style.marginBottom = "0";
+      return el;
+    };
+
+    const nameEl = makeInput("名称", hp?.name ?? "");
+
+    const typeEl = document.createElement("select");
+    typeEl.style.marginBottom = "0";
+    for (const t of HP_SCALAR_TYPES) {
+      const opt = document.createElement("option");
+      opt.value = t;
+      opt.textContent = t;
+      if (t === (hp?.data_type ?? "String")) opt.selected = true;
+      typeEl.appendChild(opt);
+    }
+
+    const groupEl = makeInput("分组", hp?.group ?? "default");
+    const descEl = makeInput("描述", hp?.description ?? "");
+    const valueEl = makeInput("当前值", currentValue !== "" ? String(currentValue) : "");
+
+    const requiredWrap = document.createElement("label");
+    requiredWrap.style.cssText = "display:flex;align-items:center;justify-content:center;gap:4px;font-size:12px;cursor:pointer;";
+    const requiredEl = document.createElement("input");
+    requiredEl.type = "checkbox";
+    requiredEl.checked = hp?.required ?? false;
+    requiredWrap.appendChild(requiredEl);
+    requiredWrap.appendChild(document.createTextNode("是"));
+
+    const removeBtn = document.createElement("button");
+    removeBtn.textContent = "✕";
+    removeBtn.className = "danger";
+    removeBtn.style.cssText = "padding:2px 6px;font-size:12px;";
+    removeBtn.addEventListener("click", () => {
+      const i = rows.findIndex((r) => r.nameEl === nameEl);
+      if (i >= 0) rows.splice(i, 1);
+      row.remove();
+    });
+
+    row.appendChild(nameEl);
+    row.appendChild(typeEl);
+    row.appendChild(groupEl);
+    row.appendChild(requiredWrap);
+    row.appendChild(descEl);
+    row.appendChild(valueEl);
+    row.appendChild(removeBtn);
+    rowsContainer.appendChild(row);
+
+    rows.push({ nameEl, typeEl, groupEl, requiredEl, descEl, valueEl });
+  };
+
+  for (const hp of hpResp.hyperparameters) addRow(hp);
+
+  const addBtn = document.createElement("button");
+  addBtn.textContent = "+ 添加超参数";
+  addBtn.style.marginTop = "6px";
+  addBtn.addEventListener("click", () => addRow());
+  listContainer.appendChild(addBtn);
+
+  const btns = document.createElement("div");
+  btns.className = "zh-buttons";
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "取消";
+  cancelBtn.addEventListener("click", close);
+
+  const saveBtn = document.createElement("button");
+  saveBtn.textContent = "保存";
+  saveBtn.className = "primary";
+  saveBtn.addEventListener("click", async () => {
+    const newHPs: HyperParameter[] = rows
+      .filter((r) => r.nameEl.value.trim())
+      .map((r) => ({
+        name: r.nameEl.value.trim(),
+        data_type: r.typeEl.value,
+        group: r.groupEl.value.trim() || "default",
+        required: r.requiredEl.checked,
+        description: r.descEl.value.trim() || null,
+      }));
+
+    const valuesMap: Record<string, unknown> = {};
+    for (const r of rows) {
+      const name = r.nameEl.value.trim();
+      if (!name) continue;
+      const raw = r.valueEl.value;
+      switch (r.typeEl.value) {
+        case "Integer": valuesMap[name] = parseInt(raw, 10) || 0; break;
+        case "Float": valuesMap[name] = parseFloat(raw) || 0.0; break;
+        case "Boolean": valuesMap[name] = raw === "true" || raw === "1" || raw === "yes"; break;
+        default: valuesMap[name] = raw;
+      }
+    }
+
+    try {
+      const graphDef = await graphs.get(sessionId);
+      const groups = [...new Set(newHPs.map((h) => h.group))];
+      await graphs.put(sessionId, {
+        ...graphDef,
+        hyperparameters: newHPs,
+        hyperparameter_groups: groups,
+      });
+      await graphs.updateHyperparameters(sessionId, valuesMap);
+      close();
+      onSaved();
+    } catch (e) {
+      alert("保存失败: " + (e as Error).message);
+    }
+  });
+
+  btns.appendChild(cancelBtn);
+  btns.appendChild(saveBtn);
+  dialog.appendChild(btns);
+}
+
+// ─── Variables Dialog ─────────────────────────────────────────────────────────
+
+export async function openVariablesDialog(
+  sessionId: string,
+  onSaved: () => void
+): Promise<void> {
+  ensureDialogStyles();
+  const { dialog, close } = openOverlay();
+  dialog.style.minWidth = "560px";
+
+  const title = document.createElement("h3");
+  title.textContent = "变量管理";
+  dialog.appendChild(title);
+
+  const hint = document.createElement("div");
+  hint.className = "zh-hint";
+  hint.textContent = "变量存储于节点图中，运行期间可在节点间读写，通过端口绑定注入。";
+  dialog.appendChild(hint);
+
+  const sectionLabel = document.createElement("div");
+  sectionLabel.className = "zh-section-label";
+  sectionLabel.textContent = "变量列表";
+  dialog.appendChild(sectionLabel);
+
+  const listContainer = document.createElement("div");
+  dialog.appendChild(listContainer);
+
+  let variables: GraphVariable[];
+  try {
+    variables = await graphs.getVariables(sessionId);
+  } catch (e) {
+    alert("加载变量失败: " + (e as Error).message);
+    close();
+    return;
+  }
+
+  type VarRow = { nameEl: HTMLInputElement; typeEl: HTMLSelectElement; valueEl: HTMLInputElement };
+  const rows: VarRow[] = [];
+
+  const COL = "1fr 120px 1fr 32px";
+
+  const headerRow = document.createElement("div");
+  headerRow.style.cssText = `display:grid;grid-template-columns:${COL};gap:6px;margin-bottom:4px;font-size:11px;color:#888;padding:0 2px;`;
+  for (const h of ["名称", "类型", "初始值 (JSON)", ""]) {
+    const span = document.createElement("span");
+    span.textContent = h;
+    headerRow.appendChild(span);
+  }
+  listContainer.appendChild(headerRow);
+
+  const rowsContainer = document.createElement("div");
+  listContainer.appendChild(rowsContainer);
+
+  const addRow = (v?: GraphVariable) => {
+    const row = document.createElement("div");
+    row.style.cssText = `display:grid;grid-template-columns:${COL};gap:6px;align-items:center;margin-bottom:6px;`;
+
+    const nameEl = document.createElement("input");
+    nameEl.type = "text";
+    nameEl.placeholder = "名称";
+    nameEl.value = v?.name ?? "";
+    nameEl.style.marginBottom = "0";
+
+    const typeEl = dataTypeSelect(v?.data_type ?? "String");
+    typeEl.style.marginBottom = "0";
+
+    const valueEl = document.createElement("input");
+    valueEl.type = "text";
+    valueEl.placeholder = "初始值 (JSON)";
+    valueEl.value = v?.initial_value != null ? JSON.stringify(v.initial_value) : "";
+    valueEl.style.marginBottom = "0";
+
+    const removeBtn = document.createElement("button");
+    removeBtn.textContent = "✕";
+    removeBtn.className = "danger";
+    removeBtn.style.cssText = "padding:2px 6px;font-size:12px;";
+    removeBtn.addEventListener("click", () => {
+      const i = rows.findIndex((r) => r.nameEl === nameEl);
+      if (i >= 0) rows.splice(i, 1);
+      row.remove();
+    });
+
+    row.appendChild(nameEl);
+    row.appendChild(typeEl);
+    row.appendChild(valueEl);
+    row.appendChild(removeBtn);
+    rowsContainer.appendChild(row);
+
+    rows.push({ nameEl, typeEl, valueEl });
+  };
+
+  for (const v of variables) addRow(v);
+
+  const addBtn = document.createElement("button");
+  addBtn.textContent = "+ 添加变量";
+  addBtn.style.marginTop = "6px";
+  addBtn.addEventListener("click", () => addRow());
+  listContainer.appendChild(addBtn);
+
+  const btns = document.createElement("div");
+  btns.className = "zh-buttons";
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "取消";
+  cancelBtn.addEventListener("click", close);
+
+  const saveBtn = document.createElement("button");
+  saveBtn.textContent = "保存";
+  saveBtn.className = "primary";
+  saveBtn.addEventListener("click", async () => {
+    const newVars: GraphVariable[] = rows
+      .filter((r) => r.nameEl.value.trim())
+      .map((r) => {
+        let initVal: unknown = null;
+        const raw = r.valueEl.value.trim();
+        if (raw) {
+          try { initVal = JSON.parse(raw); } catch { initVal = raw; }
+        }
+        return { name: r.nameEl.value.trim(), data_type: r.typeEl.value, initial_value: initVal };
+      });
+
+    try {
+      await graphs.updateVariables(sessionId, newVars);
+      close();
+      onSaved();
+    } catch (e) {
+      alert("保存失败: " + (e as Error).message);
+    }
+  });
+
+  btns.appendChild(cancelBtn);
+  btns.appendChild(saveBtn);
+  dialog.appendChild(btns);
 }

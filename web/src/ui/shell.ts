@@ -76,14 +76,7 @@ const STYLES = `
   }
 
   #sidebar {
-    width: 220px;
-    flex-shrink: 0;
-    background: var(--sidebar-bg);
-    overflow-y: auto;
-    border-right: 1px solid var(--border);
-    color: var(--text);
-    font-family: sans-serif;
-    font-size: 12px;
+    display: none;
   }
 
   #sidebar .category-header {
@@ -119,16 +112,20 @@ const STYLES = `
   }
 
   #graph-canvas {
-    width: 100%;
-    height: 100%;
+    position: absolute;
+    inset: 0;
     display: block;
   }
 
   #graph-tabs {
     display: flex;
     gap: 4px;
-    padding: 0 8px;
-    align-items: center;
+    padding: 4px 8px 0;
+    align-items: flex-end;
+    background: #0d1117;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    min-height: 30px;
   }
 
   #graph-tabs .tab {
@@ -158,6 +155,27 @@ const STYLES = `
 
   #graph-tabs .new-tab:hover {
     color: var(--text);
+  }
+
+  #graph-tabs .tab .tab-close {
+    margin-left: 6px;
+    font-size: 14px;
+    line-height: 1;
+    color: #666;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  #graph-tabs .tab .tab-close:hover {
+    color: #e94560;
+  }
+
+  #graph-tabs .tab.active .tab-close {
+    color: #aaa;
   }
 
   #status-bar {
@@ -204,6 +222,34 @@ const STYLES = `
   #breadcrumb .bc-item {
     color: #ccc;
   }
+
+  #canvas-panel-buttons {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  #canvas-panel-buttons button {
+    padding: 6px 14px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: rgba(22, 33, 62, 0.92);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 13px;
+    font-family: sans-serif;
+    backdrop-filter: blur(4px);
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+
+  #canvas-panel-buttons button:hover {
+    background: var(--node-hover);
+  }
 `;
 
 export function injectStyles(): void {
@@ -214,6 +260,7 @@ export function injectStyles(): void {
 
 export function buildDOM(): {
   toolbar: HTMLElement;
+  tabsBar: HTMLElement;
   breadcrumb: HTMLElement;
   sidebar: HTMLElement;
   canvasContainer: HTMLElement;
@@ -227,6 +274,10 @@ export function buildDOM(): {
   const toolbar = document.createElement("div");
   toolbar.id = "toolbar";
   toolbar.innerHTML = `<span class="title">Zihuan Next</span>`;
+
+  // Tabs bar
+  const tabsBar = document.createElement("div");
+  tabsBar.id = "graph-tabs";
 
   // Breadcrumb bar (hidden until inside a subgraph)
   const breadcrumb = document.createElement("div");
@@ -259,11 +310,12 @@ export function buildDOM(): {
   statusBar.textContent = "Ready";
 
   app.appendChild(toolbar);
+  app.appendChild(tabsBar);
   app.appendChild(breadcrumb);
   app.appendChild(main);
   app.appendChild(statusBar);
 
-  return { toolbar, breadcrumb, sidebar, canvasContainer, canvasEl, statusBar };
+  return { toolbar, tabsBar, breadcrumb, sidebar, canvasContainer, canvasEl, statusBar };
 }
 
 /** Update the breadcrumb navigation bar. Pass empty array to clear/hide. */
@@ -296,6 +348,58 @@ export function updateBreadcrumb(labels: string[]): void {
     item.textContent = label;
     breadcrumb.appendChild(item);
   }
+}
+
+export interface TabInfo {
+  id: string;
+  name: string;
+  dirty: boolean;
+}
+
+/**
+ * Re-render the graph tabs bar. Calls onSwitch(id) when a tab is clicked and
+ * onClose(id) when the × button is pressed.
+ */
+export function updateTabs(
+  tabs: TabInfo[],
+  activeId: string | null,
+  onSwitch: (id: string) => void,
+  onClose: (id: string) => void,
+  onNew: () => void,
+): void {
+  const bar = document.getElementById("graph-tabs");
+  if (!bar) return;
+  bar.innerHTML = "";
+
+  for (const tab of tabs) {
+    const el = document.createElement("div");
+    el.className = "tab" + (tab.id === activeId ? " active" : "");
+    el.title = tab.name;
+
+    const label = document.createElement("span");
+    label.textContent = (tab.dirty ? "● " : "") + tab.name;
+    el.appendChild(label);
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "tab-close";
+    closeBtn.textContent = "×";
+    closeBtn.title = "关闭";
+    closeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onClose(tab.id);
+    });
+    el.appendChild(closeBtn);
+
+    el.addEventListener("click", () => onSwitch(tab.id));
+    bar.appendChild(el);
+  }
+
+  const newBtn = document.createElement("button");
+  newBtn.className = "new-tab";
+  newBtn.textContent = "+";
+  newBtn.title = "新建节点图";
+  newBtn.addEventListener("click", onNew);
+  bar.appendChild(newBtn);
 }
 
 export function buildSidebar(
@@ -354,14 +458,45 @@ export function buildSidebar(
   });
 }
 
+export function buildCanvasPanelButtons(
+  canvasContainer: HTMLElement,
+  onHyperparameters: () => void,
+  onVariables: () => void,
+  onAddNode: () => void,
+): void {
+  const panel = document.createElement("div");
+  panel.id = "canvas-panel-buttons";
+
+  const addNodeBtn = document.createElement("button");
+  addNodeBtn.textContent = "＋ 新建节点";
+  addNodeBtn.title = "添加节点到画布";
+  addNodeBtn.addEventListener("click", onAddNode);
+  panel.appendChild(addNodeBtn);
+
+  const hpBtn = document.createElement("button");
+  hpBtn.textContent = "⚙ 超参数";
+  hpBtn.title = "管理超参数定义和值";
+  hpBtn.addEventListener("click", onHyperparameters);
+  panel.appendChild(hpBtn);
+
+  const varBtn = document.createElement("button");
+  varBtn.textContent = "{ } 变量";
+  varBtn.title = "管理图变量";
+  varBtn.addEventListener("click", onVariables);
+  panel.appendChild(varBtn);
+
+  canvasContainer.appendChild(panel);
+}
+
 export function buildToolbar(
   toolbar: HTMLElement,
   canvas: ZihuanCanvas,
   statusBar: HTMLElement,
   onNewGraph: () => void,
   onOpenFile: () => void,
-  onUpload: () => void,
+  onWorkflows: () => void,
   onSaveFile: () => void,
+  onSaveToWorkflows: () => void,
   onValidate: () => void,
   onExecute: () => void,
   onStopTask: () => void
@@ -381,8 +516,9 @@ export function buildToolbar(
   const buttons: Array<{ label: string; id?: string; danger?: boolean; onClick: () => void }> = [
     { label: "New", onClick: onNewGraph },
     { label: "Open...", onClick: onOpenFile },
-    { label: "Upload", onClick: onUpload },
+    { label: "Workflows", onClick: onWorkflows },
     { label: "Save", onClick: onSaveFile },
+    { label: "Save to Workflows", onClick: onSaveToWorkflows },
     { label: "Validate", onClick: onValidate },
     { label: "Run ▶", onClick: onExecute },
     { label: "Stop ■", danger: true, id: "btn-stop", onClick: onStopTask },
