@@ -17,7 +17,7 @@ use salvo::cors::Cors;
 use state::AppState;
 use ws::{WsBroadcast, ws_handler};
 
-/// Embedded frontend assets (populated after `cd webui && npm run build`)
+/// Embedded frontend assets (populated after `cd webui && pnpm run build`)
 #[derive(RustEmbed)]
 #[folder = "webui/dist/"]
 struct WebAssets;
