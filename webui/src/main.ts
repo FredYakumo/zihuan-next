@@ -8,13 +8,13 @@ import { registerNodeTypes } from "./graph/registry";
 import { ZihuanCanvas } from "./graph/canvas";
 import { injectStyles, buildDOM, buildToolbar, buildCanvasPanelButtons, updateBreadcrumb, updateTabs, createLogToastOverlay } from "./ui/shell";
 import type { TabInfo } from "./ui/shell";
-import { showWorkflowsDialog, openHyperparametersDialog, openVariablesDialog, showAddNodeDialog, showSaveAsDialog, showWorkflowBrowserDialog } from "./ui/dialogs";
+import { showWorkflowsDialog, openHyperparametersDialog, openVariablesDialog, showAddNodeDialog, showSaveAsDialog, showWorkflowBrowserDialog, showErrorDialog } from "./ui/dialogs";
 import type { NodeTypeInfo } from "./api/types";
 
 async function main() {
   initTheme();
   injectStyles();
-  const { toolbar, tabsBar: _tabsBar, sidebar: _sidebar, canvasContainer, canvasEl, backArrow, statusBar } = buildDOM();
+  const { toolbar, tabsBar: _tabsBar, sidebar: _sidebar, canvasContainer, canvasEl, backArrow } = buildDOM();
 
   // Connect WebSocket
   ws.connect();
@@ -27,7 +27,7 @@ async function main() {
     registerNodeTypes(nodeTypes);
   } catch (e) {
     console.error("Failed to load registry:", e);
-    statusBar.textContent = "Error: failed to load node registry";
+    showErrorDialog("加载节点注册表失败: " + (e as Error).message);
   }
 
   // Create canvas
@@ -60,8 +60,6 @@ async function main() {
     renderTabs();
     await canvas.loadSession(id);
     updateRunButton(id === runningSessionId);
-    const tab = tabList.find((t) => t.id === id);
-    statusBar.textContent = tab ? `切换到: ${tab.name}` : "Ready";
   }
 
   async function closeTab(id: string) {
@@ -82,7 +80,6 @@ async function main() {
         canvas.clearCanvas();
         renderTabs();
         updateRunButton(false);
-        statusBar.textContent = "所有标签已关闭 — 新建或打开节点图";
       }
     } else {
       renderTabs();
@@ -118,27 +115,23 @@ async function main() {
     const tab = await graphs.create();
     openTab(tab.id, "未命名", false);
     await canvas.loadSession(tab.id);
-    statusBar.textContent = "新建节点图";
   }
 
   // Wire breadcrumb navigation
   // Wire back-arrow button (exits one subgraph level)
   backArrow.querySelector("button")!.addEventListener("click", () => {
     canvas.exitSubgraph().catch((e: Error) => {
-      statusBar.textContent = `Exit subgraph error: ${e.message}`;
+      showErrorDialog(`退出子图失败: ${e.message}`);
     });
   });
 
   canvas.onNavigationChange = (labels) => {
     updateBreadcrumb(labels, (depth) => {
       canvas.exitSubgraphToDepth(depth).catch((e: Error) => {
-        statusBar.textContent = `Navigation error: ${e.message}`;
+        showErrorDialog(`导航失败: ${e.message}`);
       });
     });
     backArrow.style.display = labels.length > 0 ? "" : "none";
-    if (labels.length > 0) {
-      statusBar.textContent = `子图: ${labels[labels.length - 1]}`;
-    }
   };
 
   // Log overlay (top-left toast) — created here so the WS handler below can close over addLog
@@ -175,7 +168,7 @@ async function main() {
     try {
       await createNewTab();
     } catch (e) {
-      statusBar.textContent = `Error: ${(e as Error).message}`;
+      showErrorDialog(`新建节点图失败: ${(e as Error).message}`);
     }
   };
 
@@ -197,7 +190,6 @@ async function main() {
         const tab = tabList.find((t) => t.id === result.session_id);
         if (tab) tab.fileHandle = handle;
         await canvas.loadSession(result.session_id);
-        statusBar.textContent = `已打开: ${file.name}`;
         return;
       } catch (e) {
         if ((e as Error).name === "AbortError") return; // user cancelled
@@ -216,9 +208,8 @@ async function main() {
         const name = file.name.replace(/\.json$/i, "");
         openTab(result.session_id, name, false, false);
         await canvas.loadSession(result.session_id);
-        statusBar.textContent = `已打开: ${file.name}`;
       } catch (e) {
-        statusBar.textContent = `Error: ${(e as Error).message}`;
+        showErrorDialog(`打开文件失败: ${(e as Error).message}`);
       }
     };
     input.click();
@@ -238,10 +229,8 @@ async function main() {
       const name = tabNameFrom("workflow_set/" + selected);
       openTab(openResult.session_id, name, false, true);
       await canvas.loadSession(openResult.session_id);
-      if (openResult.migrated) statusBar.textContent = `已打开 workflow: ${selected} (端口类型已迁移)`;
-      else statusBar.textContent = `已打开 workflow: ${selected}`;
     } catch (e) {
-      statusBar.textContent = `Error: ${(e as Error).message}`;
+      showErrorDialog(`打开 workflow 失败: ${(e as Error).message}`);
     }
   };
 
@@ -257,7 +246,7 @@ async function main() {
   const onSaveFile = async () => {
     const sid = canvas.sessionId;
     if (!sid) {
-      statusBar.textContent = "No graph open";
+      showErrorDialog("请先打开一个节点图");
       return;
     }
     const currentTab = tabList.find((t) => t.id === sid);
@@ -266,9 +255,8 @@ async function main() {
       try {
         await writeViaFileHandle(sid, currentTab.fileHandle);
         setTabDirty(sid, false);
-        statusBar.textContent = `已保存: ${currentTab.name}.json`;
       } catch (e) {
-        statusBar.textContent = `Error: ${(e as Error).message}`;
+        showErrorDialog(`保存失败: ${(e as Error).message}`);
       }
       return;
     }
@@ -281,16 +269,14 @@ async function main() {
         currentTab.dirty = false;
         currentTab.isWorkflowSet = true;
         renderTabs();
-        statusBar.textContent = `已保存到 workflow_set: ${result.path}`;
       } catch (e) {
-        statusBar.textContent = `Error: ${(e as Error).message}`;
+        showErrorDialog(`保存失败: ${(e as Error).message}`);
       }
       return;
     }
     try {
-      const result = await graphs.saveFile(sid);
+      await graphs.saveFile(sid);
       setTabDirty(sid, false);
-      statusBar.textContent = `已保存: ${result.path}`;
     } catch {
       // No server path yet (new or uploaded file) — redirect to Save As
       await onSaveAs();
@@ -299,7 +285,7 @@ async function main() {
 
   const onSaveAs = async () => {
     const sid = canvas.sessionId;
-    if (!sid) { statusBar.textContent = "No graph open"; return; }
+    if (!sid) { showErrorDialog("请先打开一个节点图"); return; }
     const currentTab = tabList.find((t) => t.id === sid);
     const defaultName = currentTab?.name ?? "untitled";
     const choice = await showSaveAsDialog(defaultName);
@@ -311,7 +297,6 @@ async function main() {
       a.download = `${defaultName}.json`;
       a.click();
       if (currentTab) { currentTab.isWorkflowSet = false; renderTabs(); }
-      statusBar.textContent = "正在下载节点图 JSON...";
     } else {
       const name = prompt("保存到 workflow_set/ 目录，文件名:", defaultName);
       if (!name) return;
@@ -324,9 +309,8 @@ async function main() {
           currentTab.dirty = false;
         }
         renderTabs();
-        statusBar.textContent = `已保存到 workflow_set: ${result.path}`;
       } catch (e) {
-        statusBar.textContent = `Error: ${(e as Error).message}`;
+        showErrorDialog(`保存失败: ${(e as Error).message}`);
       }
     }
   };
@@ -334,7 +318,7 @@ async function main() {
   // Save current graph into workflow_set/ directory
   const onSaveToWorkflows = async () => {
     const sid = canvas.sessionId;
-    if (!sid) { statusBar.textContent = "No graph open"; return; }
+    if (!sid) { showErrorDialog("请先打开一个节点图"); return; }
     const currentTab = tabList.find((t) => t.id === sid);
     const defaultName = currentTab?.name ?? "untitled";
     const name = prompt("保存到 workflow_set/ 目录，文件名:", defaultName);
@@ -348,9 +332,8 @@ async function main() {
         currentTab.dirty = false;
       }
       renderTabs();
-      statusBar.textContent = `已保存到 workflow_set: ${result.path}`;
     } catch (e) {
-      statusBar.textContent = `Error: ${(e as Error).message}`;
+      showErrorDialog(`保存失败: ${(e as Error).message}`);
     }
   };
 
@@ -363,63 +346,53 @@ async function main() {
       const name = tabNameFrom("workflow_set/" + selected);
       openTab(openResult.session_id, name, false, true);
       await canvas.loadSession(openResult.session_id);
-      if (openResult.migrated) statusBar.textContent = `已打开 workflow: ${selected} (端口类型已迁移)`;
-      else statusBar.textContent = `已打开 workflow: ${selected}`;
     } catch (e) {
-      statusBar.textContent = `Error: ${(e as Error).message}`;
+      showErrorDialog(`打开 workflow 失败: ${(e as Error).message}`);
     }
   };
 
   const onValidate = async () => {
     const sid = canvas.sessionId;
-    if (!sid) { statusBar.textContent = "No graph open"; return; }
+    if (!sid) { showErrorDialog("请先打开一个节点图"); return; }
     try {
       const result = await graphs.validate(sid);
       if (result.has_errors) {
         const msgs = result.issues.map((i) => `[${i.severity}] ${i.message}`).join("\n");
-        alert(`Validation errors:\n\n${msgs}`);
-        statusBar.textContent = `Validation failed (${result.issues.length} issues)`;
-      } else {
-        const warnings = result.issues.filter((i) => i.severity === "warning");
-        statusBar.textContent = warnings.length
-          ? `Valid (${warnings.length} warnings)`
-          : "Graph is valid ✓";
+        showErrorDialog(`验证失败:\n\n${msgs}`);
       }
     } catch (e) {
-      statusBar.textContent = `Validate error: ${(e as Error).message}`;
+      showErrorDialog(`验证失败: ${(e as Error).message}`);
     }
   };
 
   const onExecute = async () => {
     const sid = canvas.sessionId;
-    if (!sid) { statusBar.textContent = "No graph open"; return; }
+    if (!sid) { showErrorDialog("请先打开一个节点图"); return; }
     try {
-      const result = await graphs.execute(sid);
-      statusBar.textContent = `Execution started (task ${result.task_id.slice(0, 8)})`;
+      await graphs.execute(sid);
     } catch (e) {
-      statusBar.textContent = `Execute error: ${(e as Error).message}`;
+      showErrorDialog(`执行失败: ${(e as Error).message}`);
     }
   };
 
   const onStopTask = async () => {
-    if (!currentTaskId) { statusBar.textContent = "No running task"; return; }
+    if (!currentTaskId) { showErrorDialog("当前没有正在运行的任务"); return; }
     try {
       await tasks.stop(currentTaskId);
-      statusBar.textContent = "Stop requested";
     } catch (e) {
-      statusBar.textContent = `Stop error: ${(e as Error).message}`;
+      showErrorDialog(`停止任务失败: ${(e as Error).message}`);
     }
   };
 
   const onHyperparameters = () => {
     const sid = canvas.sessionId;
-    if (!sid) { statusBar.textContent = "请先打开一个节点图"; return; }
+    if (!sid) { showErrorDialog("请先打开一个节点图"); return; }
     openHyperparametersDialog(sid, () => { canvas.reloadCurrentSession().catch(console.error); }).catch(console.error);
   };
 
   const onVariables = () => {
     const sid = canvas.sessionId;
-    if (!sid) { statusBar.textContent = "请先打开一个节点图"; return; }
+    if (!sid) { showErrorDialog("请先打开一个节点图"); return; }
     openVariablesDialog(sid, () => { canvas.reloadCurrentSession().catch(console.error); }).catch(console.error);
   };
 
@@ -435,10 +408,9 @@ async function main() {
       await graphs.addNode(sid, typeId, undefined, pos.x, pos.y);
       await canvas.loadSession(sid);
       setTabDirty(sid, true);
-      statusBar.textContent = `已添加节点: ${typeId}`;
     } catch (e) {
       console.error("addNode error:", e);
-      statusBar.textContent = `Error: ${(e as Error).message}`;
+      showErrorDialog(`添加节点失败: ${(e as Error).message}`);
     }
   };
 
@@ -455,7 +427,6 @@ async function main() {
 
   buildToolbar(
     toolbar,
-    statusBar,
     onNewGraph,
     onOpenFile,
     onSaveFile,
@@ -463,6 +434,7 @@ async function main() {
     onSaveToWorkflows,
     onValidate,
     onBrowseWorkflows,
+    (msg) => showErrorDialog(msg),
   );
 
   // ── Global keyboard shortcuts ────────────────────────────────────────────
@@ -505,11 +477,8 @@ async function main() {
           renderTabs();
         } else {
           // Try saving to the session's server path; silently skip if none.
-          const result = await graphs.saveFile(tab.id);
+          await graphs.saveFile(tab.id);
           setTabDirty(tab.id, false);
-          if (tab.id === activeTabId) {
-            statusBar.textContent = `自动保存: ${result.path}`;
-          }
         }
       } catch {
         // No path available — skip (new or uploaded file)
@@ -540,8 +509,8 @@ async function main() {
   // ── Create default unnamed graph on startup ──────────────────────────────
   try {
     await createNewTab();
-  } catch (e) {
-    statusBar.textContent = "Ready — create or open a graph to begin";
+  } catch {
+    // Startup graph creation failed — user can create one manually
   }
 }
 
