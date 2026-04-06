@@ -4,13 +4,14 @@ use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-// Global context for string_data nodes to access UI input values
+// Global context kept for backwards compatibility (no longer used by StringDataNode itself)
 pub static STRING_DATA_CONTEXT: Lazy<RwLock<HashMap<String, String>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
 pub struct StringDataNode {
     id: String,
     name: String,
+    value: String,
 }
 
 impl StringDataNode {
@@ -18,6 +19,7 @@ impl StringDataNode {
         Self {
             id: id.into(),
             name: name.into(),
+            value: String::new(),
         }
     }
 }
@@ -39,19 +41,21 @@ impl Node for StringDataNode {
 
     node_output![port! { name = "text", ty = String, desc = "Output string from UI input" },];
 
+    fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
+        if let Some(DataValue::String(s)) = inline_values.get("text") {
+            self.value = s.clone();
+        }
+        Ok(())
+    }
+
     fn execute(
         &mut self,
         inputs: HashMap<String, DataValue>,
     ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
-        // StringDataNode gets its value from the global context (set by UI layer before execution)
         let mut outputs = HashMap::new();
-        let value = {
-            let context = STRING_DATA_CONTEXT.read().unwrap();
-            context.get(&self.id).cloned().unwrap_or_default()
-        };
-        outputs.insert("text".to_string(), DataValue::String(value));
+        outputs.insert("text".to_string(), DataValue::String(self.value.clone()));
 
         self.validate_outputs(&outputs)?;
         Ok(outputs)
