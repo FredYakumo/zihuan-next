@@ -193,13 +193,14 @@ function setupSimpleInlineWidgets(
       });
       addedWidget = true;
     } else if (dt === "String" || dt === "Password") {
-      lNode.addWidget("text", key, String(existingValue ?? ""), async (val: string) => {
+      const w = lNode.addWidget("text", key, String(existingValue ?? ""), async (val: string) => {
         const sid = getSessionId();
         if (!sid) return;
         try {
           await graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: val } });
         } catch (e) { console.error("widget update failed", e); }
       });
+      if (dt === "Password" && w) (w as any)._isPassword = true;
       addedWidget = true;
     }
     // Link widget to its input slot so LiteGraph collapses the double row

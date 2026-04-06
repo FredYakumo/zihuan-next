@@ -60,7 +60,7 @@ pub struct GraphVariable {
 pub struct HyperParameter {
     /// Unique name within the graph
     pub name: String,
-    /// Must be one of: String, Integer, Float, Boolean
+    /// Must be one of: String, Integer, Float, Boolean, Password
     pub data_type: DataType,
     /// Logical group for shared hyperparameter storage.
     #[serde(default = "default_hyperparameter_group")]

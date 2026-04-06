@@ -1288,7 +1288,7 @@ export function showWorkflowBrowserDialog(workflows: WorkflowEntry[]): Promise<s
 
 // ─── Hyperparameters Dialog ───────────────────────────────────────────────────
 
-const HP_SCALAR_TYPES = ["String", "Integer", "Float", "Boolean"] as const;
+const HP_SCALAR_TYPES = ["String", "Integer", "Float", "Boolean", "Password"] as const;
 
 export async function openHyperparametersDialog(
   sessionId: string,
@@ -1378,6 +1378,31 @@ export async function openHyperparametersDialog(
     const groupEl = makeInput("分组", hp?.group ?? "default");
     const descEl = makeInput("描述", hp?.description ?? "");
     const valueEl = makeInput("当前值", currentValue !== "" ? String(currentValue) : "");
+    const isPasswordInit = hp?.data_type === "Password";
+    if (isPasswordInit) valueEl.type = "password";
+
+    // Peek button — reveals plaintext while held down
+    const peekBtn = document.createElement("button");
+    peekBtn.textContent = "👁";
+    peekBtn.title = "按住查看";
+    peekBtn.style.cssText = "padding:2px 5px;font-size:12px;flex-shrink:0;";
+    peekBtn.hidden = !isPasswordInit;
+    const showValue = () => { if (valueEl.type === "password") valueEl.type = "text"; };
+    const hideValue = () => { if (typeEl.value === "Password") valueEl.type = "password"; };
+    peekBtn.addEventListener("mousedown", showValue);
+    peekBtn.addEventListener("mouseup", hideValue);
+    peekBtn.addEventListener("mouseleave", hideValue);
+
+    const valueWrap = document.createElement("div");
+    valueWrap.style.cssText = "display:flex;gap:2px;align-items:center;";
+    valueWrap.appendChild(valueEl);
+    valueWrap.appendChild(peekBtn);
+
+    typeEl.addEventListener("change", () => {
+      const isPwd = typeEl.value === "Password";
+      valueEl.type = isPwd ? "password" : "text";
+      peekBtn.hidden = !isPwd;
+    });
 
     const requiredWrap = document.createElement("label");
     requiredWrap.style.cssText = "display:flex;align-items:center;justify-content:center;gap:4px;font-size:12px;cursor:pointer;";
@@ -1402,7 +1427,7 @@ export async function openHyperparametersDialog(
     row.appendChild(groupEl);
     row.appendChild(requiredWrap);
     row.appendChild(descEl);
-    row.appendChild(valueEl);
+    row.appendChild(valueWrap);
     row.appendChild(removeBtn);
     rowsContainer.appendChild(row);
 
