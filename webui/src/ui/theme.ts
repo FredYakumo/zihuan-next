@@ -61,9 +61,9 @@ const DARK_LITEGRAPH: LiteGraphColors = {
   widgetText:         "#e8e0f0",
   widgetSecondary:    "#706880",
   widgetDisabled:     "#383048",
-  linkColor:          "#8060b0",
-  eventLinkColor:     "#d07bb8",
-  connectingLinkColor:"#c088d8",
+  linkColor:          "#ffffff",
+  eventLinkColor:     "#ffffff",
+  connectingLinkColor:"#ffffff",
 };
 
 const LIGHT_LITEGRAPH: LiteGraphColors = {
