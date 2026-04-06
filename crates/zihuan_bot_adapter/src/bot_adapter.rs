@@ -20,6 +20,7 @@ pub struct BotAdapterNode {
     event_rx: Option<TokioMutex<mpsc::UnboundedReceiver<MessageEvent>>>,
     error_rx: Option<TokioMutex<mpsc::UnboundedReceiver<String>>>,
     adapter_handle: Option<SharedBotAdapter>,
+    adapter_task: Option<tokio::task::JoinHandle<()>>,
     runtime: Option<tokio::runtime::Runtime>,
     stop_flag: Option<Arc<AtomicBool>>,
 }
@@ -32,6 +33,7 @@ impl BotAdapterNode {
             event_rx: None,
             error_rx: None,
             adapter_handle: None,
+            adapter_task: None,
             runtime: None,
             stop_flag: None,
         }
@@ -137,7 +139,8 @@ impl Node for BotAdapterNode {
         };
 
         let adapter_handle = if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            handle.spawn(run_adapter);
+            let task = handle.spawn(run_adapter);
+            self.adapter_task = Some(task);
             block_in_place(|| handle.block_on(async { adapter_rx.await.ok() }))
         } else {
             let runtime = tokio::runtime::Runtime::new()?;
@@ -300,6 +303,9 @@ impl Node for BotAdapterNode {
     }
 
     fn on_cleanup(&mut self) -> Result<()> {
+        if let Some(task) = self.adapter_task.take() {
+            task.abort();
+        }
         self.event_rx = None;
         self.error_rx = None;
         self.adapter_handle = None;
