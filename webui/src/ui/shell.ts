@@ -454,6 +454,8 @@ export interface TabInfo {
   name: string;
   dirty: boolean;
   isWorkflowSet: boolean;
+  /** File System Access API handle — present when the file was opened from the local filesystem. */
+  fileHandle?: FileSystemFileHandle;
 }
 
 /**
