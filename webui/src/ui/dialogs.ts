@@ -987,6 +987,54 @@ export function showAddNodeDialog(nodeTypes: NodeTypeInfo[]): Promise<string | n
   });
 }
 
+// ─── Save As dialog ───────────────────────────────────────────────────────────
+
+/**
+ * Ask the user where to save the current graph.
+ * Resolves with "local" (download to disk), "workflow" (server workflow_set/), or null (cancelled).
+ */
+export function showSaveAsDialog(currentName: string): Promise<"local" | "workflow" | null> {
+  return new Promise((resolve) => {
+    const { dialog, close } = openOverlay();
+    dialog.style.minWidth = "320px";
+    dialog.style.maxWidth = "420px";
+
+    const title = document.createElement("h3");
+    title.textContent = "另存为";
+    dialog.appendChild(title);
+
+    const hint = document.createElement("p");
+    hint.style.cssText = "margin:0 0 16px;font-size:13px;color:#aaa;";
+    hint.textContent = `当前文件: ${currentName}`;
+    dialog.appendChild(hint);
+
+    const buttons = document.createElement("div");
+    buttons.className = "zh-buttons";
+    buttons.style.flexDirection = "column";
+    buttons.style.gap = "8px";
+
+    const localBtn = document.createElement("button");
+    localBtn.textContent = "下载到本地";
+    localBtn.style.width = "100%";
+    localBtn.addEventListener("click", () => { close(); resolve("local"); });
+
+    const workflowBtn = document.createElement("button");
+    workflowBtn.textContent = "保存到工作流集";
+    workflowBtn.style.width = "100%";
+    workflowBtn.addEventListener("click", () => { close(); resolve("workflow"); });
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.textContent = "取消";
+    cancelBtn.style.cssText = "width:100%;background:transparent;border-color:#555;color:#aaa;";
+    cancelBtn.addEventListener("click", () => { close(); resolve(null); });
+
+    buttons.appendChild(workflowBtn);
+    buttons.appendChild(localBtn);
+    buttons.appendChild(cancelBtn);
+    dialog.appendChild(buttons);
+  });
+}
+
 // ─── Workflow selection dialog ────────────────────────────────────────────────
 
 /**

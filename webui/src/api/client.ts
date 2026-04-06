@@ -181,9 +181,9 @@ export const tasks = {
 // Workflows
 export const workflows = {
   list(): Promise<{ files: string[] }> {
-    return request("GET", "/workflows");
+    return request("GET", "/workflow_set");
   },
   save(graphId: string, name: string): Promise<{ ok: boolean; path: string }> {
-    return request("POST", "/workflows/save", { graph_id: graphId, name });
+    return request("POST", "/workflow_set/save", { graph_id: graphId, name });
   },
 };
