@@ -1,5 +1,7 @@
 // Zihuan Next — Web UI entry point
 
+import "./ui/theme.css";
+import { initTheme } from "./ui/theme";
 import { registry, graphs, fileIO, tasks, workflows as workflowsApi } from "./api/client";
 import { ws } from "./api/ws";
 import { registerNodeTypes } from "./graph/registry";
@@ -10,6 +12,7 @@ import { showWorkflowsDialog, openHyperparametersDialog, openVariablesDialog, sh
 import type { NodeTypeInfo } from "./api/types";
 
 async function main() {
+  initTheme();
   injectStyles();
   const { toolbar, tabsBar: _tabsBar, sidebar: _sidebar, canvasContainer, canvasEl, backArrow, statusBar } = buildDOM();
 

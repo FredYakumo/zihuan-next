@@ -1,0 +1,221 @@
+/*
+ * Zihuan Next — Color Token Definitions
+ *
+ * Dark pink-purple theme (default) / Light lavender theme
+ *
+ * Layers:
+ *   :root                                — dark defaults (no FOUC on dark systems)
+ *   @media (prefers-color-scheme: light) — auto light from system (pure CSS, zero-JS)
+ *   [data-theme="dark"]                  — explicit dark override (via localStorage)
+ *   [data-theme="light"]                 — explicit light override (via localStorage)
+ */
+
+/* ─── Dark pink-purple defaults ──────────────────────────────────────────── */
+:root {
+  /* Backgrounds */
+  --bg:              #120d1e;   /* canvas / main background */
+  --bg-deep:         #0d0917;   /* status bar / tabs bar / log dialog */
+  --toolbar-bg:      #1a1032;   /* toolbar / sidebar / panel backdrop */
+
+  /* Text */
+  --text:            #ede0f5;   /* primary text — soft lavender-white */
+  --text-muted:      #b8a0cc;   /* secondary / placeholder */
+  --text-dim:        #8a70a0;   /* keyboard shortcuts, hints */
+  --text-faint:      #6a5080;   /* status bar, close buttons */
+  --text-faint2:     #4a3860;   /* separators, muted timestamps */
+
+  /* Accent */
+  --accent:          #d07bb8;   /* pink-purple — close hover, stop button, danger */
+  --accent-subtle:   rgba(208, 123, 184, 0.12); /* danger button hover tint */
+
+  /* Borders & hover surfaces */
+  --border:          #2e1a4a;
+  --node-hover:      #281545;
+  --tab-inactive:    #1c1238;
+
+  /* Links & headings */
+  --link:            #c088d8;   /* category headers, dialog h3 */
+
+  /* Run button */
+  --run-color:       #7ecba8;   /* soft green */
+
+  /* Inputs */
+  --input-bg:        #0f0a1e;
+
+  /* Buttons */
+  --btn-bg:          #2a1858;
+  --btn-hover:       #321a6a;
+  --btn-primary:     #7b3fa8;
+  --btn-primary-hover: #8f52c0;
+
+  /* Tool card */
+  --tool-card-bg:      #0e0820;
+  --tool-card-summary: #d0a8f0;
+
+  /* Floating panel */
+  --float-bg:        rgba(26, 16, 50, 0.92);
+
+  /* Log toast */
+  --toast-text:      #ede0f5;
+
+  /* Log stream dialog */
+  --log-stream-bg:   #0d0917;
+
+  /* Log badge colors */
+  --badge-info-bg:      #1b3a1f;
+  --badge-info-text:    #a5d6a7;
+  --badge-warn-bg:      #4a2000;
+  --badge-warn-text:    #ffcc80;
+  --badge-error-bg:     #3a0010;
+  --badge-error-text:   #ef9a9a;
+  --badge-debug-bg:     #0d2a5a;
+  --badge-debug-text:   #90caf9;
+  --badge-trace-bg:     #1e2a30;
+  --badge-trace-text:   #b0bec5;
+}
+
+/* ─── Light lavender theme (system auto) ─────────────────────────────────── */
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg:              #fdf8ff;
+    --bg-deep:         #f0e8fd;
+    --toolbar-bg:      #ede0f8;
+
+    --text:            #1e0f35;
+    --text-muted:      #6a4890;
+    --text-dim:        #8a62a8;
+    --text-faint:      #9a78b8;
+    --text-faint2:     #b090c8;
+
+    --accent:          #a03090;
+    --accent-subtle:   rgba(160, 48, 144, 0.10);
+
+    --border:          #d8c0ec;
+    --node-hover:      #ead8f8;
+    --tab-inactive:    #e0d0f5;
+
+    --link:            #7030a8;
+    --run-color:       #2a7a52;
+
+    --input-bg:        #f8f2fd;
+
+    --btn-bg:          #ead8f8;
+    --btn-hover:       #ddc8f5;
+    --btn-primary:     #7030a8;
+    --btn-primary-hover: #8a40c0;
+
+    --tool-card-bg:      #f2eaff;
+    --tool-card-summary: #5a2880;
+
+    --float-bg:        rgba(237, 224, 248, 0.95);
+    --toast-text:      #1e0f35;
+    --log-stream-bg:   #f0e8fd;
+
+    --badge-info-bg:      #c8f0cc;
+    --badge-info-text:    #1b5e20;
+    --badge-warn-bg:      #ffe0b2;
+    --badge-warn-text:    #bf5000;
+    --badge-error-bg:     #ffcdd2;
+    --badge-error-text:   #7f0000;
+    --badge-debug-bg:     #bbdefb;
+    --badge-debug-text:   #0d47a1;
+    --badge-trace-bg:     #cfd8dc;
+    --badge-trace-text:   #37474f;
+  }
+}
+
+/* ─── Explicit dark override ─────────────────────────────────────────────── */
+[data-theme="dark"] {
+  --bg:              #120d1e;
+  --bg-deep:         #0d0917;
+  --toolbar-bg:      #1a1032;
+
+  --text:            #ede0f5;
+  --text-muted:      #b8a0cc;
+  --text-dim:        #8a70a0;
+  --text-faint:      #6a5080;
+  --text-faint2:     #4a3860;
+
+  --accent:          #d07bb8;
+  --accent-subtle:   rgba(208, 123, 184, 0.12);
+
+  --border:          #2e1a4a;
+  --node-hover:      #281545;
+  --tab-inactive:    #1c1238;
+
+  --link:            #c088d8;
+  --run-color:       #7ecba8;
+
+  --input-bg:        #0f0a1e;
+
+  --btn-bg:          #2a1858;
+  --btn-hover:       #321a6a;
+  --btn-primary:     #7b3fa8;
+  --btn-primary-hover: #8f52c0;
+
+  --tool-card-bg:      #0e0820;
+  --tool-card-summary: #d0a8f0;
+
+  --float-bg:        rgba(26, 16, 50, 0.92);
+  --toast-text:      #ede0f5;
+  --log-stream-bg:   #0d0917;
+
+  --badge-info-bg:      #1b3a1f;
+  --badge-info-text:    #a5d6a7;
+  --badge-warn-bg:      #4a2000;
+  --badge-warn-text:    #ffcc80;
+  --badge-error-bg:     #3a0010;
+  --badge-error-text:   #ef9a9a;
+  --badge-debug-bg:     #0d2a5a;
+  --badge-debug-text:   #90caf9;
+  --badge-trace-bg:     #1e2a30;
+  --badge-trace-text:   #b0bec5;
+}
+
+/* ─── Explicit light override ────────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg:              #fdf8ff;
+  --bg-deep:         #f0e8fd;
+  --toolbar-bg:      #ede0f8;
+
+  --text:            #1e0f35;
+  --text-muted:      #6a4890;
+  --text-dim:        #8a62a8;
+  --text-faint:      #9a78b8;
+  --text-faint2:     #b090c8;
+
+  --accent:          #a03090;
+  --accent-subtle:   rgba(160, 48, 144, 0.10);
+
+  --border:          #d8c0ec;
+  --node-hover:      #ead8f8;
+  --tab-inactive:    #e0d0f5;
+
+  --link:            #7030a8;
+  --run-color:       #2a7a52;
+
+  --input-bg:        #f8f2fd;
+
+  --btn-bg:          #ead8f8;
+  --btn-hover:       #ddc8f5;
+  --btn-primary:     #7030a8;
+  --btn-primary-hover: #8a40c0;
+
+  --tool-card-bg:      #f2eaff;
+  --tool-card-summary: #5a2880;
+
+  --float-bg:        rgba(237, 224, 248, 0.95);
+  --toast-text:      #1e0f35;
+  --log-stream-bg:   #f0e8fd;
+
+  --badge-info-bg:      #c8f0cc;
+  --badge-info-text:    #1b5e20;
+  --badge-warn-bg:      #ffe0b2;
+  --badge-warn-text:    #bf5000;
+  --badge-error-bg:     #ffcdd2;
+  --badge-error-text:   #7f0000;
+  --badge-debug-bg:     #bbdefb;
+  --badge-debug-text:   #0d47a1;
+  --badge-trace-bg:     #cfd8dc;
+  --badge-trace-text:   #37474f;
+}
