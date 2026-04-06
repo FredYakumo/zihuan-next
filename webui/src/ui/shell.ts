@@ -69,10 +69,20 @@ const STYLES = `
     font-size: 13px;
     font-family: sans-serif;
     white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
   }
 
   #toolbar-menu .menu-item:hover {
     background: var(--node-hover);
+  }
+
+  #toolbar-menu .menu-item .menu-shortcut {
+    color: #888;
+    font-size: 11px;
+    flex-shrink: 0;
   }
 
   #toolbar .spacer {
@@ -443,6 +453,7 @@ export interface TabInfo {
   id: string;
   name: string;
   dirty: boolean;
+  isWorkflowSet: boolean;
 }
 
 /**
@@ -466,7 +477,8 @@ export function updateTabs(
     el.title = tab.name;
 
     const label = document.createElement("span");
-    label.textContent = (tab.dirty ? "● " : "") + tab.name;
+    const displayName = tab.name + (tab.isWorkflowSet ? " [工作流集]" : "");
+    label.textContent = (tab.dirty ? "● " : "") + displayName;
     el.appendChild(label);
 
     const closeBtn = document.createElement("button");
@@ -609,6 +621,7 @@ export function buildToolbar(
   onNewGraph: () => void,
   onOpenFile: () => void,
   onSaveFile: () => void,
+  onSaveAs: () => void,
   onSaveToWorkflows: () => void,
   onValidate: () => void,
 ): void {
@@ -618,10 +631,11 @@ export function buildToolbar(
   const menu = document.createElement("div");
   menu.id = "toolbar-menu";
 
-  const menuItems: Array<{ label: string; onClick: () => void }> = [
-    { label: "新建", onClick: onNewGraph },
-    { label: "打开...", onClick: onOpenFile },
-    { label: "保存", onClick: onSaveFile },
+  const menuItems: Array<{ label: string; shortcut?: string; onClick: () => void }> = [
+    { label: "新建", shortcut: "Ctrl+N", onClick: onNewGraph },
+    { label: "打开...", shortcut: "Ctrl+O", onClick: onOpenFile },
+    { label: "保存", shortcut: "Ctrl+S", onClick: onSaveFile },
+    { label: "另存为", shortcut: "Ctrl+Shift+S", onClick: onSaveAs },
     { label: "保存为工作流集", onClick: onSaveToWorkflows },
     { label: "验证", onClick: onValidate },
   ];
@@ -629,7 +643,15 @@ export function buildToolbar(
   for (const item of menuItems) {
     const el = document.createElement("div");
     el.className = "menu-item";
-    el.textContent = item.label;
+    const labelSpan = document.createElement("span");
+    labelSpan.textContent = item.label;
+    el.appendChild(labelSpan);
+    if (item.shortcut) {
+      const shortcutSpan = document.createElement("span");
+      shortcutSpan.className = "menu-shortcut";
+      shortcutSpan.textContent = item.shortcut;
+      el.appendChild(shortcutSpan);
+    }
     el.addEventListener("click", () => {
       menu.classList.remove("open");
       item.onClick();
