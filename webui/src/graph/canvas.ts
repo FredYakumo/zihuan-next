@@ -50,9 +50,18 @@ export class ZihuanCanvas {
     // Use orthogonal routing (STRAIGHT_LINK = 0): horizontal → vertical → horizontal
     (this.lCanvas as any).links_render_mode = 0;
 
-    // Snap nodes to grid on drag
-    LiteGraph.alwaysSnapToGrid = true;
+    // Snap nodes to grid only on release, not during drag (avoids jitter and unnecessary work)
+    LiteGraph.alwaysSnapToGrid = false;
     LiteGraph.CANVAS_GRID_SIZE = 10;
+
+    // Snap selected nodes to grid after each drag ends
+    (this.lCanvas as any).onNodeMoved = (_node: any) => {
+      const selected: Set<any> | undefined = (this.lCanvas as any).selectedItems;
+      if (selected?.size) {
+        this.lGraph.snapToGrid(selected);
+        this.lGraph.setDirtyCanvas(true, true);
+      }
+    };
 
     // Draw data-type labels at the midpoint of each rendered connection
     (this.lCanvas as any).onDrawForeground = (ctx: CanvasRenderingContext2D) => {
