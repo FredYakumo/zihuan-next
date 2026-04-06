@@ -163,6 +163,15 @@ export class ZihuanCanvas {
         }
       }
 
+      // If right-clicking on a node (but not a slot), select it so the
+      // context menu's "删除" action is enabled for that node.
+      if (node) {
+        const alreadySelected = !!(this.lCanvas as any).selected_nodes?.[node.id];
+        if (!alreadySelected) {
+          (this.lCanvas as any).selectNode(node, false);
+        }
+      }
+
       // In all other cases show our custom canvas context menu.
       e.preventDefault();
       e.stopPropagation();
@@ -657,7 +666,7 @@ export class ZihuanCanvas {
   private showCanvasContextMenu(event: MouseEvent, graphX: number, graphY: number): void {
     document.getElementById("zh-canvas-menu")?.remove();
 
-    const selectedNodes: any[] = Object.values((this.lGraph as any).selected_nodes ?? {});
+    const selectedNodes: any[] = Object.values((this.lCanvas as any).selected_nodes ?? {});
     const hasSelection = selectedNodes.length > 0;
     const hasClipboard = this.nodeClipboard.length > 0;
 
@@ -712,7 +721,7 @@ export class ZihuanCanvas {
 
   /** Copy currently selected nodes into the in-memory clipboard. */
   private copySelectedNodes(): void {
-    const selectedLNodes: any[] = Object.values((this.lGraph as any).selected_nodes ?? {});
+    const selectedLNodes: any[] = Object.values((this.lCanvas as any).selected_nodes ?? {});
     if (selectedLNodes.length === 0) return;
     const defs: NodeDefinition[] = [];
     for (const lNode of selectedLNodes) {
@@ -747,7 +756,7 @@ export class ZihuanCanvas {
 
   /** Delete all currently selected nodes from the canvas and backend. */
   private async deleteSelectedNodes(): Promise<void> {
-    const selectedLNodes: any[] = Object.values((this.lGraph as any).selected_nodes ?? {});
+    const selectedLNodes: any[] = Object.values((this.lCanvas as any).selected_nodes ?? {});
     if (selectedLNodes.length === 0) return;
     // Remove each selected node via LiteGraph — onNodeRemoved will sync to backend.
     for (const lNode of [...selectedLNodes]) {
