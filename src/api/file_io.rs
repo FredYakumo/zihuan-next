@@ -6,6 +6,105 @@ use serde::Deserialize;
 
 use super::state::AppState;
 
+// ─── Workflows directory helpers ──────────────────────────────────────────────
+
+/// Return a sorted list of `.json` filenames in the `workflows/` directory.
+#[handler]
+pub async fn list_workflows(_req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let dir = std::path::Path::new("workflows");
+    match std::fs::read_dir(dir) {
+        Ok(entries) => {
+            let mut names: Vec<String> = entries
+                .filter_map(|e| e.ok())
+                .filter_map(|e| {
+                    let p = e.path();
+                    if p.extension().and_then(|s| s.to_str()) == Some("json") {
+                        p.file_name()
+                            .and_then(|s| s.to_str())
+                            .map(|s| s.to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            names.sort();
+            res.render(Json(serde_json::json!({ "files": names })));
+        }
+        Err(_) => {
+            // Directory absent — return empty list
+            res.render(Json(serde_json::json!({ "files": [] })));
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct SaveToWorkflowsRequest {
+    pub graph_id: String,
+    pub name: String,
+}
+
+/// Save a session's graph into the `workflows/` directory.
+#[handler]
+pub async fn save_to_workflows(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+    let state = depot.obtain::<Arc<AppState>>().unwrap();
+    let body: SaveToWorkflowsRequest = match req.parse_json().await {
+        Ok(v) => v,
+        Err(e) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(serde_json::json!({ "error": e.to_string() })));
+            return;
+        }
+    };
+
+    // Serialise the graph under read lock, then release it before writing.
+    let json_str = {
+        let sessions = state.sessions.read().unwrap();
+        match sessions.get(&body.graph_id) {
+            Some(s) => match serde_json::to_string_pretty(&s.graph) {
+                Ok(s) => s,
+                Err(e) => {
+                    res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+                    res.render(Json(serde_json::json!({ "error": e.to_string() })));
+                    return;
+                }
+            },
+            None => {
+                res.status_code(StatusCode::NOT_FOUND);
+                res.render(Json(serde_json::json!({ "error": "Graph not found" })));
+                return;
+            }
+        }
+    };
+
+    if let Err(e) = std::fs::create_dir_all("workflows") {
+        res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+        res.render(Json(serde_json::json!({ "error": e.to_string() })));
+        return;
+    }
+
+    let filename = if body.name.ends_with(".json") {
+        body.name.clone()
+    } else {
+        format!("{}.json", body.name)
+    };
+    let path = format!("workflows/{}", filename);
+
+    match std::fs::write(&path, json_str) {
+        Ok(()) => {
+            let mut sessions = state.sessions.write().unwrap();
+            if let Some(s) = sessions.get_mut(&body.graph_id) {
+                s.file_path = Some(path.clone());
+                s.dirty = false;
+            }
+            res.render(Json(serde_json::json!({ "ok": true, "path": path })));
+        }
+        Err(e) => {
+            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+            res.render(Json(serde_json::json!({ "error": e.to_string() })));
+        }
+    }
+}
+
 
 #[derive(Deserialize)]
 pub struct OpenFileRequest {
@@ -113,7 +212,7 @@ pub async fn save_file(req: &mut Request, res: &mut Response, depot: &mut Depot)
 #[handler]
 pub async fn upload_graph(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
-    let body_bytes = match req.payload().await {
+    let body_bytes = match req.payload_with_max_size(usize::MAX).await {
         Ok(b) => b,
         Err(e) => {
             res.status_code(StatusCode::BAD_REQUEST);

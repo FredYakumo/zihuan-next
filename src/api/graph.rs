@@ -72,7 +72,7 @@ pub async fn get_graph(req: &mut Request, res: &mut Response, depot: &mut Depot)
 pub async fn put_graph(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
     let id = req.param::<String>("id").unwrap_or_default();
-    let body: NodeGraphDefinition = match req.parse_json().await {
+    let body: NodeGraphDefinition = match req.parse_json_with_max_size(usize::MAX).await {
         Ok(v) => v,
         Err(e) => {
             res.status_code(StatusCode::BAD_REQUEST);
