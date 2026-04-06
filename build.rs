@@ -5,6 +5,7 @@ fn main() {
     println!("cargo:rerun-if-changed=webui/src");
     println!("cargo:rerun-if-changed=webui/index.html");
     println!("cargo:rerun-if-changed=webui/package.json");
+    println!("cargo:rerun-if-changed=webui/pnpm-lock.yaml");
     println!("cargo:rerun-if-changed=webui/vite.config.ts");
     println!("cargo:rerun-if-changed=webui/tsconfig.json");
 

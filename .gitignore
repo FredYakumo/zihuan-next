@@ -7,3 +7,4 @@ target/
 Cargo.lock
 **/node_modules/
 webui/dist/
+webui/package-lock.json
