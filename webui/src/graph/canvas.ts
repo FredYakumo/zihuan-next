@@ -145,6 +145,22 @@ export class ZihuanCanvas {
             return;
           }
         }
+
+        // Widget-linked input slots are not in getSlotInPosition's standard vertical
+        // slot layout.  Fall back to getWidgetOnPos and map the widget to its input.
+        const widget = (node as any).getWidgetOnPos(gx, gy, true);
+        if (widget) {
+          const inputs = (node as any).inputs as Array<{ name: string; widget?: { name: string } }> | undefined;
+          if (inputs) {
+            const idx = inputs.findIndex((inp) => inp.widget && inp.widget.name === widget.name);
+            if (idx >= 0) {
+              e.preventDefault();
+              e.stopPropagation();
+              this.showPortBindingMenu(node, idx, inputs[idx].name, e);
+              return;
+            }
+          }
+        }
       }
 
       // In all other cases show our custom canvas context menu.
@@ -327,7 +343,7 @@ export class ZihuanCanvas {
         const binding = portBindings[portName];
         if (binding) {
           // Color the connector dot to signal the binding visually.
-          const dotColor = binding.kind === "Hyperparameter" ? "#e67e22" : "#1abc9c";
+          const dotColor = binding.kind === "hyperparameter" ? "#e67e22" : "#1abc9c";
           node.inputs[i].color_on = dotColor;
           node.inputs[i].color_off = dotColor;
         }
@@ -796,7 +812,7 @@ export class ZihuanCanvas {
     const { hyperparameters } = await graphs.getHyperparameters(sid);
     this.showBindingPicker(event, hyperparameters.map((h) => h.name), async (name) => {
       await graphs.updateNode(sid, lNode.zihuanId as string, {
-        port_bindings: { [portName]: { kind: "Hyperparameter", name } },
+        port_bindings: { [portName]: { kind: "hyperparameter", name } },
       });
       await this.reloadCurrentSession();
     });
@@ -808,7 +824,7 @@ export class ZihuanCanvas {
     const variables = await graphs.getVariables(sid);
     this.showBindingPicker(event, variables.map((v) => v.name), async (name) => {
       await graphs.updateNode(sid, lNode.zihuanId as string, {
-        port_bindings: { [portName]: { kind: "Variable", name } },
+        port_bindings: { [portName]: { kind: "variable", name } },
       });
       await this.reloadCurrentSession();
     });
@@ -969,7 +985,7 @@ function drawBadgePill(
   fontSize: number
 ): void {
   const labelWidth = ctx.measureText(portName).width;
-  const badgeText = (binding.kind === "Hyperparameter" ? "\u2191" : "\u27f2") + binding.name;
+  const badgeText = (binding.kind === "hyperparameter" ? "\u2191" : "\u27f2") + binding.name;
   const badgePadX = 4;
   const badgePadY = 2;
   const badgeTextW = ctx.measureText(badgeText).width;
@@ -979,7 +995,7 @@ function drawBadgePill(
   const badgeY = centerY - badgeH / 2;
   const badgeRadius = 3;
 
-  const bgColor = binding.kind === "Hyperparameter" ? "#e67e22" : "#1abc9c";
+  const bgColor = binding.kind === "hyperparameter" ? "#e67e22" : "#1abc9c";
   ctx.fillStyle = bgColor;
   ctx.beginPath();
   (ctx as any).roundRect(badgeX, badgeY, badgeW, badgeH, badgeRadius);
