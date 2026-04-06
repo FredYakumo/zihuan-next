@@ -264,6 +264,7 @@ export class ZihuanCanvas {
       this.connectLGraphEdge(edge);
     }
 
+    this.colorizeAllLinks();
     this.lGraph.setDirtyCanvas(true, true);
   }
 
@@ -370,6 +371,23 @@ export class ZihuanCanvas {
     fromNode.connect(fromPortIdx, toNode, toPortIdx);
   }
 
+  /** Set link.color directly on every link based on the origin port's DataType. */
+  private colorizeAllLinks(): void {
+    const links = this.lGraph.links;
+    if (!links) return;
+    const linkList = Object.values(links) as any[];
+    for (const link of linkList) {
+      if (!link) continue;
+      const originNode = this.lGraph.getNodeById(link.origin_id) as any;
+      if (!originNode) continue;
+      const originDef = this.state.graph?.nodes.find((n) => n.id === originNode.zihuanId);
+      if (!originDef) continue;
+      const port = originDef.output_ports[link.origin_slot];
+      if (!port) continue;
+      link.color = getPortColor(portTypeString(port.data_type as string | object));
+    }
+  }
+
   // ─── LiteGraph event handlers ─────────────────────────────────────────────
 
   private onNodeAdded(node: any): void {
@@ -446,6 +464,8 @@ export class ZihuanCanvas {
         .put(sessionId, updatedGraph)
         .catch((e) => console.error("[Canvas] put graph (edges) failed:", e));
       this.state.dirty = true;
+      this.colorizeAllLinks();
+      this.lGraph.setDirtyCanvas(true, false);
     }
   }
 
