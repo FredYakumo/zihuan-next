@@ -4,7 +4,7 @@ import { registry, graphs, fileIO, tasks, workflows as workflowsApi } from "./ap
 import { ws } from "./api/ws";
 import { registerNodeTypes } from "./graph/registry";
 import { ZihuanCanvas } from "./graph/canvas";
-import { injectStyles, buildDOM, buildToolbar, buildCanvasPanelButtons, updateBreadcrumb, updateTabs } from "./ui/shell";
+import { injectStyles, buildDOM, buildToolbar, buildCanvasPanelButtons, updateBreadcrumb, updateTabs, createLogToastOverlay } from "./ui/shell";
 import type { TabInfo } from "./ui/shell";
 import { showWorkflowsDialog, openHyperparametersDialog, openVariablesDialog, showAddNodeDialog, showSaveAsDialog } from "./ui/dialogs";
 import type { NodeTypeInfo } from "./api/types";
@@ -138,11 +138,15 @@ async function main() {
     }
   };
 
+  // Log overlay (top-left toast) — created here so the WS handler below can close over addLog
+  const addLog = createLogToastOverlay(canvasContainer);
+
   // State: current running task id and which session started it
   let currentTaskId: string | null = null;
   let runningSessionId: string | null = null;
   // Late-bound so the WS handler can be registered before updateRunButton is available
   let updateRunButton: (isRunning: boolean) => void = () => {};
+  let appendLogEntry: (level: string, message: string, timestamp: string) => void = () => {};
   ws.onMessage((msg) => {
     if (msg.type === "TaskStarted") {
       currentTaskId = msg.task_id;
@@ -155,6 +159,10 @@ async function main() {
       currentTaskId = null;
       runningSessionId = null;
       updateRunButton(false);
+    }
+    if (msg.type === "LogMessage") {
+      addLog(msg.level, msg.message);
+      appendLogEntry(msg.level, msg.message, msg.timestamp);
     }
   });
 
@@ -417,7 +425,7 @@ async function main() {
 
   canvas.onAddNodeRequest = (gx, gy) => { addNodeWithDialog(gx, gy).catch(console.error); };
 
-  ({ updateRunButton } = buildCanvasPanelButtons(
+  ({ updateRunButton, appendLogEntry } = buildCanvasPanelButtons(
     canvasContainer,
     onHyperparameters,
     onVariables,

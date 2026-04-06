@@ -1,6 +1,7 @@
 mod api;
 mod error;
 mod init_registry;
+mod log_forwarder;
 mod util;
 
 use std::sync::Arc;
@@ -29,8 +30,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
-    LogUtil::init_with_logger(&BASE_LOG)
-        .expect("Failed to initialize logger");
+    log_forwarder::init(&BASE_LOG);
 
     if let Err(e) = init_registry::init_node_registry() {
         error!("Failed to initialize node registry: {}", e);
@@ -42,6 +42,7 @@ async fn main() {
 
     let state = Arc::new(api::state::AppState::new());
     let broadcast = api::ws::create_broadcast();
+    log_forwarder::set_broadcast(broadcast.clone());
 
     let listen_addr = format!("{}:{}", args.host, args.port);
     info!("Starting web server on http://{}", listen_addr);
