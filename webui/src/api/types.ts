@@ -42,7 +42,7 @@ export interface Port {
 }
 
 export interface PortBinding {
-  kind: "Hyperparameter" | "Variable";
+  kind: "hyperparameter" | "variable";
   name: string;
 }
 
