@@ -6,6 +6,7 @@ import type { NodeGraphDefinition, NodeDefinition, EdgeDefinition } from "../api
 import { setupNodeWidgets } from "./widgets";
 import { portTypeString } from "./registry";
 import type { BrainToolDefinition, EmbeddedFunctionConfig } from "../ui/dialogs";
+import { getLiteGraphColors, onThemeChange } from "../ui/theme";
 
 export interface CanvasState {
   sessionId: string | null;
@@ -46,6 +47,10 @@ export class ZihuanCanvas {
   constructor(canvasEl: HTMLCanvasElement) {
     this.lGraph = new (LGraph as any)();
     this.lCanvas = new (LGraphCanvas as any)(canvasEl, this.lGraph);
+
+    // Apply pink-purple theme colours to LiteGraph, then subscribe to theme changes.
+    this.applyLiteGraphTheme();
+    onThemeChange(() => this.applyLiteGraphTheme());
 
     // Use orthogonal routing (STRAIGHT_LINK = 0): horizontal → vertical → horizontal
     (this.lCanvas as any).links_render_mode = 0;
@@ -143,6 +148,49 @@ export class ZihuanCanvas {
 
   get sessionId(): string | null {
     return this.state.sessionId;
+  }
+
+  /** Apply theme-aware colour tokens to LiteGraph global and canvas-instance settings. */
+  private applyLiteGraphTheme(): void {
+    const c = getLiteGraphColors();
+
+    // Global LiteGraph colour tokens
+    (LiteGraph as any).NODE_DEFAULT_COLOR      = c.nodeHeader;
+    (LiteGraph as any).NODE_DEFAULT_BGCOLOR    = c.nodeBg;
+    (LiteGraph as any).NODE_DEFAULT_BOXCOLOR   = c.nodeBox;
+    (LiteGraph as any).NODE_BOX_OUTLINE_COLOR  = c.nodeBoxOutline;
+    (LiteGraph as any).NODE_TITLE_COLOR        = c.nodeTitleText;
+    (LiteGraph as any).NODE_SELECTED_TITLE_COLOR = c.nodeSelectedTitle;
+    (LiteGraph as any).NODE_TEXT_COLOR         = c.nodeText;
+    (LiteGraph as any).NODE_TEXT_HIGHLIGHT_COLOR = c.nodeSelectedTitle;
+    (LiteGraph as any).DEFAULT_SHADOW_COLOR    = c.shadow;
+    (LiteGraph as any).WIDGET_BGCOLOR          = c.widgetBg;
+    (LiteGraph as any).WIDGET_OUTLINE_COLOR    = c.widgetOutline;
+    (LiteGraph as any).WIDGET_TEXT_COLOR       = c.widgetText;
+    (LiteGraph as any).WIDGET_SECONDARY_TEXT_COLOR = c.widgetSecondary;
+    (LiteGraph as any).WIDGET_DISABLED_TEXT_COLOR  = c.widgetDisabled;
+    (LiteGraph as any).LINK_COLOR              = c.linkColor;
+    (LiteGraph as any).EVENT_LINK_COLOR        = c.eventLinkColor;
+    (LiteGraph as any).CONNECTING_LINK_COLOR   = c.connectingLinkColor;
+
+    // Canvas-instance settings
+    (this.lCanvas as any).clear_background_color = c.canvasBg;
+    (this.lCanvas as any).node_title_color       = c.nodeTitleText;
+    (this.lCanvas as any).default_link_color     = c.linkColor;
+
+    // Generate a tiled dot-grid background image
+    const tile = document.createElement("canvas");
+    tile.width = 10; tile.height = 10;
+    const tCtx = tile.getContext("2d")!;
+    tCtx.fillStyle = c.canvasBg;
+    tCtx.fillRect(0, 0, 10, 10);
+    tCtx.fillStyle = c.gridDotColor;
+    tCtx.beginPath();
+    tCtx.arc(1, 1, 0.9, 0, Math.PI * 2);
+    tCtx.fill();
+    (this.lCanvas as any).background_image = tile.toDataURL("image/png");
+
+    this.lGraph.setDirtyCanvas(true, true);
   }
 
   /**
