@@ -2,7 +2,9 @@
 
 ## Overview
 
-`zihuan-next` is a Rust + Slint node-graph workflow engine for building event-driven bot pipelines. The node graph describes **data flow** between processing steps — complexity (algorithms, agentic loops, control flow) is encapsulated inside individual nodes, keeping the graph topology simple and readable. When a new complex problem arises, build a new node rather than adding complexity to the graph canvas.
+`zihuan-next` is a Rust node-graph workflow engine for building event-driven bot pipelines. The node graph describes **data flow** between processing steps — complexity (algorithms, agentic loops, control flow) is encapsulated inside individual nodes, keeping the graph topology simple and readable. When a new complex problem arises, build a new node rather than adding complexity to the graph canvas.
+
+The editor runs in the browser. The backend is a single Rust binary (Salvo HTTP server) that serves the web UI and exposes a REST + WebSocket API.
 
 The engine is split into focused library crates:
 
@@ -15,7 +17,8 @@ The engine is split into focused library crates:
 | `crates/zihuan_bot_adapter` | `BotAdapterNode`, QQ message send/receive nodes |
 | `crates/zihuan_llm` | `LLMApiNode`, `LLMInferNode`, `BrainNode`, RAG nodes |
 | `node_macros` | `node_input!`, `node_output!`, `port!` procedural macros |
-| `src/` | Main binary: Slint UI, combined registry (`init_registry.rs`) |
+| `src/` | Main binary: Salvo web server, REST/WebSocket API (`src/api/`), combined registry (`src/init_registry.rs`) |
+| `web/` | Frontend: Vite + TypeScript + Litegraph.js; embedded at compile time via rust-embed |
 
 ## High-Level Rules
 
@@ -30,17 +33,16 @@ The engine is split into focused library crates:
 - Node registration:
   - Nodes in `zihuan_node` → `crates/zihuan_node/src/registry.rs` (`init_node_registry()`)
   - Nodes in `zihuan_bot_adapter` or `zihuan_llm` → `src/init_registry.rs`
-- Keep UI responsibilities split between Slint presentation and Rust orchestration.
+- Keep the web frontend (TypeScript/Litegraph.js) responsible for presentation; Rust backend responsible for graph execution and state.
 - Keep message parsing and storage behavior resilient.
 
 ## Build And Validation
 
 ```bash
+# Build (pnpm run build in web/ runs automatically via build.rs)
 cargo build
 cargo run
 cargo test
-# Validate a graph JSON before running (exits 0=ok/warn, 1=errors, 2=load failure)
-cargo run -- --graph-json example.json --validate
 ```
 
 ## Detailed References

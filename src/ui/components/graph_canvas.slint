@@ -1,5 +1,5 @@
 import { AppTheme } from "../theme.slint";
-import { EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm, NodeVm } from "../types.slint";
+import { EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, NodeVm } from "../types.slint";
 import { CjkText } from "buttons.slint";
 import { NodeItem } from "node_item.slint";
 
@@ -9,7 +9,7 @@ export component GraphCanvas inherits Rectangle {
     in property <[EdgeSegmentVm]> edge_segments;
     in property <[EdgeCornerVm]> edge_corners;
     in property <[EdgeLabelVm]> edge_labels;
-    in property <[GridLineVm]> grid_lines;
+    in property <string> grid_commands;
     in property <float> grid_size;
     in property <float> edge_thickness;
     in property <bool> drag_line_visible;
@@ -70,11 +70,15 @@ export component GraphCanvas inherits Rectangle {
     in property <bool> is_graph_running: false;
     in-out property <float> canvas_zoom: 1.0;
 
-    // FPS counter — synced to actual display refresh rate via animation-tick()
-    private property <float> _fps-anim: mod(animation-tick() / 1ms, 100000.0);
+    // FPS counter — uses a 16ms sampling timer instead of animation-tick() to avoid
+    // forcing a continuous repaint on every frame when the scene is otherwise idle.
     private property <int> _fps-count: 0;
     private property <int> fps-display: 0;
-    changed _fps-anim => { _fps-count += 1; }
+    Timer {
+        interval: 16ms;
+        running: true;
+        triggered => { _fps-count += 1; }
+    }
     Timer {
         interval: 1000ms;
         running: true;
@@ -89,7 +93,7 @@ export component GraphCanvas inherits Rectangle {
     height: 100%;
     clip: true;
 
-    for line in grid_lines: Path {
+    Path {
         width: parent.width;
         height: parent.height;
         x: 0px;
@@ -102,16 +106,7 @@ export component GraphCanvas inherits Rectangle {
         viewbox-y: -(Math.mod(Math.mod(root.canvas_pan_y, root.grid_size) + root.grid_size, root.grid_size));
         viewbox-width: parent.width / 1px / root.canvas_zoom;
         viewbox-height: parent.height / 1px / root.canvas_zoom;
-
-        MoveTo {
-            x: line.x1;
-            y: line.y1;
-        }
-
-        LineTo {
-            x: line.x2;
-            y: line.y2;
-        }
+        commands: root.grid_commands;
     }
 
     drag_area := TouchArea {

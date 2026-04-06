@@ -8,7 +8,7 @@ use crate::ui::graph_window::{
     HyperParameterVm, MessageItemVm, NodeGraphWindow, NodeTypeVm, NodeVm, PortVm,
 };
 use crate::ui::node_graph_view_geometry::{
-    build_edge_segments, build_edges, build_grid_lines, node_dimensions, resolve_display_data_type,
+    build_edge_segments, build_edges, build_grid_commands, node_dimensions, resolve_display_data_type,
     snap_to_grid, CANVAS_HEIGHT, CANVAS_WIDTH, GRID_SIZE,
 };
 use crate::ui::node_graph_view_inline::get_message_list_inline;
@@ -82,37 +82,34 @@ fn apply_graph_to_ui_with_options(
     hyperparameter_values: &HashMap<String, serde_json::Value>,
     snap_positions: bool,
 ) {
-    let mut graph = graph.clone();
-    ensure_positions(&mut graph);
-
     if snap_positions {
+        // Full rebuild path: clone and mutate for snapping
+        let mut graph = graph.clone();
+        ensure_positions(&mut graph);
+
         for node in &mut graph.nodes {
             if let Some(pos) = &mut node.position {
                 pos.x = snap_to_grid(pos.x);
                 pos.y = snap_to_grid(pos.y);
             }
         }
-    }
 
-    let nodes: Vec<NodeVm> = graph
-        .nodes
-        .iter()
-        .map(|node| build_node_vm(node, &graph, root_variables, selection_state, inline_inputs, snap_positions))
-        .collect();
-
-    let edges = build_edges(&graph, selection_state, snap_positions);
-    let (edge_segments, edge_corners, edge_labels) = build_edge_segments(&graph, snap_positions);
-
-    let label = current_file.unwrap_or_else(|| "已加载 JSON".to_string());
-    if snap_positions {
-        let grid_lines = build_grid_lines(CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE);
+        let nodes: Vec<NodeVm> = graph
+            .nodes
+            .iter()
+            .map(|node| build_node_vm(node, &graph, root_variables, selection_state, inline_inputs, true))
+            .collect();
+        let edges = build_edges(&graph, selection_state, true);
+        let (edge_segments, edge_corners, edge_labels) = build_edge_segments(&graph, true);
+        let grid_commands = build_grid_commands(CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE);
+        let label = current_file.unwrap_or_else(|| "已加载 JSON".to_string());
 
         ui.set_nodes(ModelRc::new(VecModel::from(nodes)));
         ui.set_edges(ModelRc::new(VecModel::from(edges)));
         ui.set_edge_segments(ModelRc::new(VecModel::from(edge_segments)));
         ui.set_edge_corners(ModelRc::new(VecModel::from(edge_corners)));
         ui.set_edge_labels(ModelRc::new(VecModel::from(edge_labels)));
-        ui.set_grid_lines(ModelRc::new(VecModel::from(grid_lines)));
+        ui.set_grid_commands(grid_commands.into());
         ui.set_current_file(label.into());
 
         let hyperparameter_vms: Vec<HyperParameterVm> = graph
@@ -138,6 +135,16 @@ fn apply_graph_to_ui_with_options(
             .collect();
         ui.set_hyperparameters(ModelRc::new(VecModel::from(hyperparameter_vms)));
     } else {
+        // Live path: skip clone — work directly with graph reference.
+        // Positions are assumed already ensured by the caller (e.g. drag session).
+        let nodes: Vec<NodeVm> = graph
+            .nodes
+            .iter()
+            .map(|node| build_node_vm(node, graph, root_variables, selection_state, inline_inputs, false))
+            .collect();
+        let edges = build_edges(graph, selection_state, false);
+        let (edge_segments, edge_corners, edge_labels) = build_edge_segments(graph, false);
+
         update_nodes_model_in_place(ui, nodes);
         ui.set_edges(ModelRc::new(VecModel::from(edges)));
         ui.set_edge_segments(ModelRc::new(VecModel::from(edge_segments)));
@@ -156,6 +163,36 @@ fn update_nodes_model_in_place(ui: &NodeGraphWindow, nodes: Vec<NodeVm>) {
         }
     } else {
         ui.set_nodes(ModelRc::new(VecModel::from(nodes)));
+    }
+}
+
+/// Fast drag-time node position updater: updates ONLY the x/y coordinates of
+/// nodes listed in `new_positions` by patching the existing Slint model in-place.
+/// Avoids rebuilding NodeVm structs, ports, preview text, message lists, etc.
+///
+/// `new_positions` maps node_id → (x, y) for all nodes that moved.
+pub(crate) fn apply_drag_positions_only(
+    ui: &NodeGraphWindow,
+    new_positions: &HashMap<String, (f32, f32)>,
+) {
+    use slint::Model;
+
+    if new_positions.is_empty() {
+        return;
+    }
+
+    let model = ui.get_nodes();
+    let count = model.row_count();
+    for i in 0..count {
+        let node = model.row_data(i).unwrap();
+        if let Some(&(x, y)) = new_positions.get(node.id.as_str()) {
+            if (node.x - x).abs() > f32::EPSILON || (node.y - y).abs() > f32::EPSILON {
+                let mut updated = node;
+                updated.x = x;
+                updated.y = y;
+                model.set_row_data(i, updated);
+            }
+        }
     }
 }
 
