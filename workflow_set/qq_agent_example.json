@@ -50,8 +50,8 @@
         "height": 160.0
       },
       "inline_values": {
-        "bot_server_url": "ws://localhost:3001",
-        "qq_id": "2496875785"
+        "qq_id": "2496875785",
+        "bot_server_url": "ws://localhost:3001"
       },
       "port_bindings": {
         "qq_id": {
@@ -377,13 +377,13 @@
         "timeout_secs": "600"
       },
       "port_bindings": {
-        "api_key": {
-          "kind": "hyperparameter",
-          "name": "LLM_API_KEY"
-        },
         "model_name": {
           "kind": "hyperparameter",
           "name": "LLM_MODEL_NAME"
+        },
+        "api_key": {
+          "kind": "hyperparameter",
+          "name": "LLM_API_KEY"
         },
         "api_endpoint": {
           "kind": "hyperparameter",
@@ -452,8 +452,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 230.0,
-        "y": 840.0
+        "x": 150.0,
+        "y": 1150.0
       },
       "size": {
         "width": 218.07187,
@@ -483,8 +483,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 230.0,
-        "y": 960.0
+        "x": 150.0,
+        "y": 1030.0
       },
       "size": {
         "width": 179.9,
@@ -2354,24 +2354,30 @@
                 "input_ports": [
                   {
                     "data_type": "String",
+                    "description": "格式化模板字符串，使用 ${变量名} 语法引用输入变量",
+                    "name": "template",
+                    "required": false
+                  },
+                  {
+                    "data_type": "Any",
                     "description": "变量 角色名称",
                     "name": "角色名称",
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "Any",
                     "description": "变量 time",
                     "name": "time",
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "Any",
                     "description": "变量 sender_id",
                     "name": "sender_id",
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "Any",
                     "description": "变量 格式",
                     "name": "格式",
                     "required": true
@@ -4052,24 +4058,30 @@
                 "input_ports": [
                   {
                     "data_type": "String",
+                    "description": "格式化模板字符串，使用 ${变量名} 语法引用输入变量",
+                    "name": "template",
+                    "required": false
+                  },
+                  {
+                    "data_type": "Any",
                     "description": "变量 角色名称",
                     "name": "角色名称",
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "Any",
                     "description": "变量 time",
                     "name": "time",
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "Any",
                     "description": "变量 sender_id",
                     "name": "sender_id",
                     "required": true
                   },
                   {
-                    "data_type": "String",
+                    "data_type": "Any",
                     "description": "变量 格式",
                     "name": "格式",
                     "required": true

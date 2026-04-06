@@ -707,19 +707,19 @@ export function buildCanvasPanelButtons(
   panel.id = "canvas-panel-buttons";
 
   const addNodeBtn = document.createElement("button");
-  addNodeBtn.textContent = "＋ 新建节点";
+  addNodeBtn.textContent = "新建节点";
   addNodeBtn.title = "添加节点到画布";
   addNodeBtn.addEventListener("click", onAddNode);
   panel.appendChild(addNodeBtn);
 
   const hpBtn = document.createElement("button");
-  hpBtn.textContent = "⚙ 超参数";
+  hpBtn.textContent = "超参数";
   hpBtn.title = "管理超参数定义和值";
   hpBtn.addEventListener("click", onHyperparameters);
   panel.appendChild(hpBtn);
 
   const varBtn = document.createElement("button");
-  varBtn.textContent = "{ } 变量";
+  varBtn.textContent = "变量";
   varBtn.title = "管理图变量";
   varBtn.addEventListener("click", onVariables);
   panel.appendChild(varBtn);
