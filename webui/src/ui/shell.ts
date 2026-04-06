@@ -197,19 +197,6 @@ const STYLES = `
     color: var(--text-muted);
   }
 
-  #status-bar {
-    height: 24px;
-    background: var(--bg-deep);
-    border-top: 1px solid var(--border);
-    padding: 0 12px;
-    display: flex;
-    align-items: center;
-    font-size: 11px;
-    color: var(--text-faint);
-    font-family: monospace;
-    flex-shrink: 0;
-  }
-
   #breadcrumb {
     display: flex;
     align-items: center;
@@ -468,7 +455,6 @@ export function buildDOM(): {
   canvasContainer: HTMLElement;
   canvasEl: HTMLCanvasElement;
   backArrow: HTMLElement;
-  statusBar: HTMLElement;
 } {
   const app = document.getElementById("app")!;
   app.style.flexDirection = "column";
@@ -515,18 +501,12 @@ export function buildDOM(): {
   main.appendChild(sidebar);
   main.appendChild(canvasContainer);
 
-  // Status bar
-  const statusBar = document.createElement("div");
-  statusBar.id = "status-bar";
-  statusBar.textContent = "Ready";
-
   app.appendChild(toolbar);
   app.appendChild(tabsBar);
   app.appendChild(breadcrumb);
   app.appendChild(main);
-  app.appendChild(statusBar);
 
-  return { toolbar, tabsBar, breadcrumb, sidebar, canvasContainer, canvasEl, backArrow, statusBar };
+  return { toolbar, tabsBar, breadcrumb, sidebar, canvasContainer, canvasEl, backArrow };
 }
 
 /** Update the breadcrumb navigation bar. Pass empty array to clear/hide.
@@ -887,7 +867,6 @@ export function createLogToastOverlay(
 
 export function buildToolbar(
   toolbar: HTMLElement,
-  statusBar: HTMLElement,
   onNewGraph: () => void,
   onOpenFile: () => void,
   onSaveFile: () => void,
@@ -895,6 +874,7 @@ export function buildToolbar(
   onSaveToWorkflows: () => void,
   onValidate: () => void,
   onBrowseWorkflows: () => void,
+  onTaskFailed: (message: string) => void,
 ): void {
   // Make the title a popup trigger
   const titleEl = toolbar.querySelector<HTMLElement>(".title")!;
@@ -957,15 +937,15 @@ export function buildToolbar(
     if (msg.type === "TaskStarted") {
       taskStatus.textContent = `Running: ${msg.graph_name}`;
       taskStatus.className = "task-status running";
-      statusBar.textContent = `Execution started (task ${msg.task_id.slice(0, 8)})`;
     } else if (msg.type === "TaskFinished") {
       const success = msg.success;
       taskStatus.textContent = success ? "Done ✓" : "Failed ✗";
       taskStatus.className = "task-status";
-      statusBar.textContent = success ? "Execution completed" : "Execution failed";
+      if (!success) {
+        onTaskFailed("执行失败");
+      }
       setTimeout(() => {
         taskStatus.textContent = "Idle";
-        statusBar.textContent = "Ready";
       }, 5000);
     } else if (msg.type === "TaskStopped") {
       taskStatus.textContent = "Stopped";
@@ -973,8 +953,6 @@ export function buildToolbar(
       setTimeout(() => {
         taskStatus.textContent = "Idle";
       }, 3000);
-    } else if (msg.type === "LogMessage") {
-      statusBar.textContent = `[${msg.level}] ${msg.message}`;
     }
   });
 }
