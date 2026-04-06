@@ -10,12 +10,12 @@
  *   [data-theme="light"]                 — explicit light override (via localStorage)
  */
 
-/* ─── Dark pink-purple defaults ──────────────────────────────────────────── */
+/* ─── Dark defaults ──────────────────────────────────────────── */
 :root {
   /* Backgrounds */
   --bg:              #111114;   /* canvas / main background */
-  --bg-deep:         #161228;   /* status bar / tabs bar / log dialog — keep purple */
-  --toolbar-bg:      #241a40;   /* toolbar / sidebar / panel backdrop — keep purple */
+  --bg-deep:         #161228;   /* status bar / tabs bar / log dialog */
+  --toolbar-bg:      #241a40;   /* toolbar / sidebar / panel backdrop */
 
   /* Text */
   --text:            #e8e0f0;   /* primary text — soft lavender-white */
@@ -31,13 +31,13 @@
   /* Borders & hover surfaces */
   --border:          #222228;
   --node-hover:      #1c1c24;
-  --tab-inactive:    #271848;   /* keep purple for tabs */
+  --tab-inactive:    #271848;
 
   /* Links & headings */
   --link:            #b07acc;   /* category headers, dialog h3 */
 
   /* Run button */
-  --run-color:       #7ecba8;   /* soft green */
+  --run-color:       #7ecba8;
 
   /* Inputs */
   --input-bg:        #0e0e12;

@@ -24,6 +24,15 @@ function applyTheme(theme: Theme): void {
 
 // ─── LiteGraph color tokens ───────────────────────────────────────────────────
 
+/** Per-DataType colour categories for link wires and port dots. */
+export interface LinkTypeColors {
+  primitive: string;   // String, Integer, Float, Boolean, Binary, Password
+  complex:   string;   // Json, MessageEvent, OpenAIMessage, QQMessage, FunctionTools, LLModel
+  ref:       string;   // *Ref types, LoopControlRef
+  array:     string;   // Vec(...) types
+  any:       string;   // Any / wildcard
+}
+
 export interface LiteGraphColors {
   canvasBg: string;
   gridDotColor: string;
@@ -43,6 +52,7 @@ export interface LiteGraphColors {
   linkColor: string;
   eventLinkColor: string;
   connectingLinkColor: string;
+  linkTypeColors: LinkTypeColors;
 }
 
 const DARK_LITEGRAPH: LiteGraphColors = {
@@ -61,9 +71,16 @@ const DARK_LITEGRAPH: LiteGraphColors = {
   widgetText:         "#e8e0f0",
   widgetSecondary:    "#706880",
   widgetDisabled:     "#383048",
-  linkColor:          "#ffffff",
-  eventLinkColor:     "#ffffff",
+  linkColor:          "#aaaaaa",
+  eventLinkColor:     "#cccccc",
   connectingLinkColor:"#ffffff",
+  linkTypeColors: {
+    primitive: "#7ec8ff",   // sky blue  — String/Int/Float/Bool/Binary/Password
+    complex:   "#ffb347",   // amber     — Json/MessageEvent/OpenAIMessage/QQMessage/FunctionTools/LLModel
+    ref:       "#4dd9a0",   // teal      — *Ref types / LoopControlRef
+    array:     "#c89bff",   // lavender  — Vec(...)
+    any:       "#aaaaaa",   // gray      — Any / wildcard
+  },
 };
 
 const LIGHT_LITEGRAPH: LiteGraphColors = {
@@ -85,6 +102,13 @@ const LIGHT_LITEGRAPH: LiteGraphColors = {
   linkColor:          "#9060c0",
   eventLinkColor:     "#a03090",
   connectingLinkColor:"#7030a8",
+  linkTypeColors: {
+    primitive: "#3a80c0",   // blue
+    complex:   "#cc7000",   // dark amber
+    ref:       "#1d8a60",   // dark teal
+    array:     "#7040b0",   // purple
+    any:       "#606070",   // gray
+  },
 };
 
 /** Return the LiteGraph color set matching the currently active theme. */
@@ -125,4 +149,23 @@ export function setTheme(theme: Theme): void {
 export function clearTheme(): void {
   localStorage.removeItem(STORAGE_KEY);
   applyTheme(getSystemTheme());
+}
+
+// ─── Per-type port/link colour helpers ───────────────────────────────────────
+
+const COMPLEX_TYPES = new Set([
+  "Json", "MessageEvent", "OpenAIMessage", "QQMessage", "FunctionTools", "LLModel",
+]);
+
+/**
+ * Return the theme-aware colour for a given DataType string.
+ * Matches the same categorisation used for link_type_colors.
+ */
+export function getPortColor(typeStr: string): string {
+  const tc = getLiteGraphColors().linkTypeColors;
+  if (!typeStr || typeStr === "Any" || typeStr === "*") return tc.any;
+  if (typeStr.startsWith("Vec")) return tc.array;
+  if (typeStr.endsWith("Ref") || typeStr === "LoopControlRef") return tc.ref;
+  if (COMPLEX_TYPES.has(typeStr)) return tc.complex;
+  return tc.primitive;
 }
