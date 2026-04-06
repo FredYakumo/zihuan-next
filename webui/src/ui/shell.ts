@@ -130,6 +130,47 @@ const STYLES = `
     overflow: hidden;
   }
 
+  /* LiteGraph inline-edit prompt (.graphdialog) — fix position & theme */
+  #canvas-container > .graphdialog {
+    position: fixed;
+    display: flex;
+    align-items: center;
+    border-radius: 20px;
+    padding: 4px 10px;
+    background-color: var(--toolbar-bg);
+    box-shadow: 0 0 12px rgba(0,0,0,0.6);
+    z-index: 10;
+  }
+  #canvas-container > .graphdialog .name {
+    padding: 0;
+    min-height: 0;
+    font-size: 14px;
+    color: var(--text-muted);
+  }
+  #canvas-container > .graphdialog .value {
+    font-size: 14px;
+    min-height: 0;
+    margin: 0 8px;
+    padding: 4px 8px;
+    background-color: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    outline: none;
+  }
+  #canvas-container > .graphdialog button {
+    padding: 4px 14px;
+    border-radius: 20px;
+    border: 0;
+    cursor: pointer;
+    background-color: var(--btn-primary);
+    color: var(--text);
+    font-size: 13px;
+  }
+  #canvas-container > .graphdialog button:hover {
+    background-color: var(--btn-primary-hover);
+  }
+
   #graph-canvas {
     position: absolute;
     inset: 0;
