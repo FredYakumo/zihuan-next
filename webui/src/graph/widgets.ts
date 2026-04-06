@@ -73,7 +73,7 @@ function setupJsonExtractWidgets(
   onRefresh: () => void
 ): void {
   const fields = (nodeDef.inline_values?.["fields_config"] as Array<{ name: string }> | undefined) ?? [];
-  lNode.addWidget("button", `✏ 配置字段 (${fields.length})`, null, () => {
+  lNode.addWidget("button", `配置字段 (${fields.length})`, null, () => {
     const sid = getSessionId();
     if (!sid) { alert("请先打开一个图。"); return; }
     openJsonExtractEditor(nodeDef, sid, onRefresh);
@@ -95,7 +95,7 @@ function setupFunctionWidgets(
     functionConfig?: EmbeddedFunctionConfig
   ) => void
 ): void {
-  lNode.addWidget("button", "↳ 编辑签名/子图", null, () => {
+  lNode.addWidget("button", "编辑签名/子图", null, () => {
     const sid = getSessionId();
     if (!sid) { alert("请先打开一个图。"); return; }
     openFunctionSignatureEditor(
@@ -121,7 +121,7 @@ function setupBrainWidgets(
   ) => void
 ): void {
   const tools = (nodeDef.inline_values?.["tools_config"] as BrainToolDefinition[] | undefined) ?? [];
-  lNode.addWidget("button", `🔧 管理工具 (${tools.length})`, null, () => {
+  lNode.addWidget("button", `管理工具 (${tools.length})`, null, () => {
     const sid = getSessionId();
     if (!sid) { alert("请先打开一个图。"); return; }
     openBrainToolsEditor(nodeDef, sid, onRefresh, (toolIndex, toolDef) => {
