@@ -40,13 +40,13 @@ Each node has clear **inputs** and **outputs** with declared data types. The gra
 | `crates/zihuan_llm` | `LLMApiNode`, `LLMInferNode`, `BrainNode`, RAG nodes |
 | `node_macros` | `node_input!`, `node_output!`, `port!` procedural macros |
 | `src/` | Main binary: Salvo web server, REST/WebSocket API (`src/api/`), combined node registry (`src/init_registry.rs`) |
-| `web/` | Frontend: Vite + TypeScript + Litegraph.js; built into `web/dist/` and embedded in the binary |
+| `webui/` | Frontend: Vite + TypeScript + Litegraph.js; built into `webui/dist/` and embedded in the binary |
 
 ### How the stack works
 
 - **Backend** (`src/`): Salvo HTTP server exposes REST endpoints under `/api/` and a WebSocket at `/ws`. The frontend and all static assets are served from the root route.
-- **Frontend** (`web/`): TypeScript SPA built with Vite. Communicates with the backend via `fetch` (REST) and a WebSocket connection that receives live execution events.
-- **Embedding**: `cargo build` runs `pnpm run build` automatically (via `build.rs`), then `rust-embed` bakes `web/dist/` into the binary. No separate web server or file deployment is needed.
+- **Frontend** (`webui/`): TypeScript SPA built with Vite. Communicates with the backend via `fetch` (REST) and a WebSocket connection that receives live execution events.
+- **Embedding**: `cargo build` runs `pnpm run build` automatically (via `build.rs`), then `rust-embed` bakes `webui/dist/` into the binary. No separate web server or file deployment is needed.
 - **Execution**: Graph execution runs on the backend. The frontend sends run/stop commands and receives status updates through WebSocket messages.
 
 ### Integration Components
@@ -75,7 +75,7 @@ git clone https://github.com/FredYakumo/zihuan-next.git
 cd zihuan-next
 
 # 2. Install frontend dependencies (first time only)
-cd web && pnpm install && cd ..
+cd webui && pnpm install && cd ..
 
 # 3. Build — pnpm build runs automatically via build.rs
 cargo build --release
@@ -137,7 +137,7 @@ cargo build
 cargo build --release
 
 # Frontend only (when iterating on web UI without recompiling Rust)
-cd web && pnpm run build
+cd webui && pnpm run build
 
 # Tests
 cargo test

@@ -17,9 +17,9 @@ use salvo::cors::Cors;
 use state::AppState;
 use ws::{WsBroadcast, ws_handler};
 
-/// Embedded frontend assets (populated after `cd web && npm run build`)
+/// Embedded frontend assets (populated after `cd webui && npm run build`)
 #[derive(RustEmbed)]
-#[folder = "web/dist/"]
+#[folder = "webui/dist/"]
 struct WebAssets;
 
 /// Build the Salvo router with all API endpoints and static file serving.

@@ -1,7 +1,6 @@
 // App shell — creates the toolbar, canvas, and sidebar DOM elements
 
 import type { NodeTypeInfo } from "../api/types";
-import type { ZihuanCanvas } from "../graph/canvas";
 import { graphs, fileIO, tasks } from "../api/client";
 import { ws } from "../api/ws";
 import type { TaskEntry } from "../api/types";
@@ -29,31 +28,51 @@ const STYLES = `
     color: var(--text);
     font-family: sans-serif;
     font-size: 13px;
+    position: relative;
   }
 
   #toolbar .title {
     font-weight: bold;
     color: var(--accent);
     margin-right: 8px;
-  }
-
-  #toolbar button {
-    padding: 4px 12px;
-    border-radius: 4px;
-    border: 1px solid var(--border);
-    background: #1e3a5f;
-    color: var(--text);
     cursor: pointer;
-    transition: background 0.15s;
+    user-select: none;
+    transition: opacity 0.15s;
   }
 
-  #toolbar button:hover {
+  #toolbar .title:hover {
+    opacity: 0.8;
+  }
+
+  #toolbar-menu {
+    position: absolute;
+    top: 44px;
+    left: 12px;
+    background: var(--toolbar-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    z-index: 1000;
+    min-width: 180px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    display: none;
+    flex-direction: column;
+  }
+
+  #toolbar-menu.open {
+    display: flex;
+  }
+
+  #toolbar-menu .menu-item {
+    padding: 8px 16px;
+    cursor: pointer;
+    color: var(--text);
+    font-size: 13px;
+    font-family: sans-serif;
+    white-space: nowrap;
+  }
+
+  #toolbar-menu .menu-item:hover {
     background: var(--node-hover);
-  }
-
-  #toolbar button.danger {
-    border-color: var(--accent);
-    color: var(--accent);
   }
 
   #toolbar .spacer {
@@ -289,6 +308,16 @@ const STYLES = `
   #canvas-panel-buttons button:hover {
     background: var(--node-hover);
   }
+
+  #canvas-panel-buttons #btn-run {
+    border-color: #4caf50;
+    color: #4caf50;
+  }
+
+  #canvas-panel-buttons #btn-run.stop {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
 `;
 
 export function injectStyles(): void {
@@ -523,7 +552,9 @@ export function buildCanvasPanelButtons(
   onHyperparameters: () => void,
   onVariables: () => void,
   onAddNode: () => void,
-): void {
+  onExecute: () => void,
+  onStopTask: () => void,
+): { updateRunButton: (isRunning: boolean) => void } {
   const panel = document.createElement("div");
   panel.id = "canvas-panel-buttons";
 
@@ -545,41 +576,77 @@ export function buildCanvasPanelButtons(
   varBtn.addEventListener("click", onVariables);
   panel.appendChild(varBtn);
 
+  const runBtn = document.createElement("button");
+  runBtn.id = "btn-run";
+  runBtn.textContent = "Run ▶";
+  runBtn.title = "运行当前工作流";
+  let currentHandler = onExecute;
+  runBtn.addEventListener("click", () => currentHandler());
+  panel.appendChild(runBtn);
+
   canvasContainer.appendChild(panel);
+
+  function updateRunButton(isRunning: boolean): void {
+    if (isRunning) {
+      runBtn.textContent = "Stop ■";
+      runBtn.title = "停止当前任务";
+      runBtn.classList.add("stop");
+      currentHandler = onStopTask;
+    } else {
+      runBtn.textContent = "Run ▶";
+      runBtn.title = "运行当前工作流";
+      runBtn.classList.remove("stop");
+      currentHandler = onExecute;
+    }
+  }
+
+  return { updateRunButton };
 }
 
 export function buildToolbar(
   toolbar: HTMLElement,
-  canvas: ZihuanCanvas,
   statusBar: HTMLElement,
   onNewGraph: () => void,
   onOpenFile: () => void,
-  onWorkflows: () => void,
   onSaveFile: () => void,
   onSaveToWorkflows: () => void,
   onValidate: () => void,
-  onExecute: () => void,
-  onStopTask: () => void
 ): void {
-  const buttons: Array<{ label: string; id?: string; danger?: boolean; onClick: () => void }> = [
-    { label: "New", onClick: onNewGraph },
-    { label: "Open...", onClick: onOpenFile },
-    { label: "Workflows", onClick: onWorkflows },
-    { label: "Save", onClick: onSaveFile },
-    { label: "Save to Workflows", onClick: onSaveToWorkflows },
-    { label: "Validate", onClick: onValidate },
-    { label: "Run ▶", onClick: onExecute },
-    { label: "Stop ■", danger: true, id: "btn-stop", onClick: onStopTask },
+  // Make the title a popup trigger
+  const titleEl = toolbar.querySelector<HTMLElement>(".title")!;
+
+  const menu = document.createElement("div");
+  menu.id = "toolbar-menu";
+
+  const menuItems: Array<{ label: string; onClick: () => void }> = [
+    { label: "新建", onClick: onNewGraph },
+    { label: "打开...", onClick: onOpenFile },
+    { label: "保存", onClick: onSaveFile },
+    { label: "保存为工作流集", onClick: onSaveToWorkflows },
+    { label: "验证", onClick: onValidate },
   ];
 
-  for (const btn of buttons) {
-    const el = document.createElement("button");
-    el.textContent = btn.label;
-    if (btn.danger) el.classList.add("danger");
-    if (btn.id) el.id = btn.id;
-    el.addEventListener("click", btn.onClick);
-    toolbar.appendChild(el);
+  for (const item of menuItems) {
+    const el = document.createElement("div");
+    el.className = "menu-item";
+    el.textContent = item.label;
+    el.addEventListener("click", () => {
+      menu.classList.remove("open");
+      item.onClick();
+    });
+    menu.appendChild(el);
   }
+
+  toolbar.appendChild(menu);
+
+  titleEl.addEventListener("click", (e) => {
+    e.stopPropagation();
+    menu.classList.toggle("open");
+  });
+
+  document.addEventListener("click", () => {
+    menu.classList.remove("open");
+  });
 
   const spacer = document.createElement("span");
   spacer.className = "spacer";
