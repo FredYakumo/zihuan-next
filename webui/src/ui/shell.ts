@@ -328,6 +328,140 @@ const STYLES = `
     border-color: var(--accent);
     color: var(--accent);
   }
+
+  /* ── Log badge (shared by toast overlay and log-stream dialog) ── */
+  .log-badge {
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: bold;
+    flex-shrink: 0;
+    font-family: sans-serif;
+    line-height: 1.5;
+  }
+  .log-badge-INFO  { background: #1b5e20; color: #a5d6a7; }
+  .log-badge-WARN  { background: #e65100; color: #ffe0b2; }
+  .log-badge-ERROR { background: #7f0000; color: #ef9a9a; }
+  .log-badge-DEBUG { background: #0d47a1; color: #90caf9; }
+  .log-badge-TRACE { background: #37474f; color: #b0bec5; }
+
+  /* ── Log toast overlay (top-left, inside canvas, no background container) ── */
+  .log-toast-overlay {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 100;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    max-width: 620px;
+  }
+
+  .log-toast {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 12px;
+    font-family: monospace;
+    color: #e8e8e8;
+    opacity: 1;
+    transition: opacity 0.8s ease;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.7);
+  }
+
+  .log-toast.fading {
+    opacity: 0;
+  }
+
+  .log-toast-msg {
+    word-break: break-all;
+  }
+
+  /* ── Log stream overlay (full-screen modal dialog) ── */
+  .log-stream-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    font-family: sans-serif;
+  }
+
+  .log-stream-dialog {
+    background: #0d1117;
+    border: 1px solid #2a2a4a;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    width: 760px;
+    max-width: 92vw;
+    height: 72vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .log-stream-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid #2a2a4a;
+    flex-shrink: 0;
+  }
+
+  .log-stream-header h3 {
+    margin: 0;
+    font-size: 14px;
+    color: #8ab4f8;
+    font-weight: bold;
+  }
+
+  .log-stream-close {
+    background: transparent;
+    border: none;
+    color: #aaa;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+  }
+
+  .log-stream-close:hover {
+    color: #e94560;
+  }
+
+  .log-stream-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .log-entry {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 12px;
+    font-family: monospace;
+    line-height: 1.55;
+  }
+
+  .log-entry-ts {
+    color: #555;
+    font-size: 11px;
+    flex-shrink: 0;
+    min-width: 80px;
+  }
+
+  .log-entry-msg {
+    color: #ddd;
+    word-break: break-all;
+  }
 `;
 
 export function injectStyles(): void {
@@ -568,7 +702,7 @@ export function buildCanvasPanelButtons(
   onAddNode: () => void,
   onExecute: () => void,
   onStopTask: () => void,
-): { updateRunButton: (isRunning: boolean) => void } {
+): { updateRunButton: (isRunning: boolean) => void; appendLogEntry: (level: string, message: string, timestamp: string) => void } {
   const panel = document.createElement("div");
   panel.id = "canvas-panel-buttons";
 
@@ -589,6 +723,88 @@ export function buildCanvasPanelButtons(
   varBtn.title = "管理图变量";
   varBtn.addEventListener("click", onVariables);
   panel.appendChild(varBtn);
+
+  // ── Log button + stream overlay ──────────────────────────────────────────
+
+  const MAX_BUFFER = 1000;
+  const logBuffer: Array<{ level: string; message: string; timestamp: string }> = [];
+  let logOverlay: HTMLElement | null = null;
+  let logList: HTMLElement | null = null;
+
+  function buildLogEntry(entry: { level: string; message: string; timestamp: string }): HTMLElement {
+    const row = document.createElement("div");
+    row.className = "log-entry";
+    row.appendChild(makeBadge(entry.level));
+    const ts = document.createElement("span");
+    ts.className = "log-entry-ts";
+    ts.textContent = entry.timestamp;
+    row.appendChild(ts);
+    const msg = document.createElement("span");
+    msg.className = "log-entry-msg";
+    msg.textContent = entry.message;
+    row.appendChild(msg);
+    return row;
+  }
+
+  function closeLogOverlay(): void {
+    if (logOverlay && logOverlay.parentNode) {
+      logOverlay.parentNode.removeChild(logOverlay);
+    }
+    logOverlay = null;
+    logList = null;
+  }
+
+  function openLogOverlay(): void {
+    if (logOverlay) return; // already open
+
+    const overlay = document.createElement("div");
+    overlay.className = "log-stream-overlay";
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) closeLogOverlay();
+    });
+
+    const dialog = document.createElement("div");
+    dialog.className = "log-stream-dialog";
+    dialog.addEventListener("click", (e) => e.stopPropagation());
+
+    const header = document.createElement("div");
+    header.className = "log-stream-header";
+    const title = document.createElement("h3");
+    title.textContent = "实时日志流";
+    header.appendChild(title);
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "log-stream-close";
+    closeBtn.textContent = "×";
+    closeBtn.title = "关闭";
+    closeBtn.addEventListener("click", closeLogOverlay);
+    header.appendChild(closeBtn);
+    dialog.appendChild(header);
+
+    const list = document.createElement("div");
+    list.className = "log-stream-list";
+    // Replay buffer
+    for (const entry of logBuffer) {
+      list.appendChild(buildLogEntry(entry));
+    }
+    dialog.appendChild(list);
+
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    logOverlay = overlay;
+    logList = list;
+
+    // Scroll to bottom after render
+    requestAnimationFrame(() => { list.scrollTop = list.scrollHeight; });
+  }
+
+  const logBtn = document.createElement("button");
+  logBtn.textContent = "📋 日志";
+  logBtn.title = "打开实时日志流";
+  logBtn.addEventListener("click", openLogOverlay);
+  panel.appendChild(logBtn);
+
+  // ── Run button ───────────────────────────────────────────────────────────
 
   const runBtn = document.createElement("button");
   runBtn.id = "btn-run";
@@ -614,7 +830,69 @@ export function buildCanvasPanelButtons(
     }
   }
 
-  return { updateRunButton };
+  function appendLogEntry(level: string, message: string, timestamp: string): void {
+    // Push to buffer, trim if over limit
+    logBuffer.push({ level, message, timestamp });
+    if (logBuffer.length > MAX_BUFFER) logBuffer.shift();
+
+    // If the overlay is currently open, append to the DOM list and scroll
+    if (logList) {
+      logList.appendChild(buildLogEntry({ level, message, timestamp }));
+      logList.scrollTop = logList.scrollHeight;
+    }
+  }
+
+  return { updateRunButton, appendLogEntry };
+}
+
+// ── Log badge helper ─────────────────────────────────────────────────────────
+
+function makeBadge(level: string): HTMLElement {
+  const badge = document.createElement("span");
+  badge.className = `log-badge log-badge-${level.toUpperCase()}`;
+  badge.textContent = level.toUpperCase();
+  return badge;
+}
+
+// ── Log toast overlay ────────────────────────────────────────────────────────
+
+/** Creates a transparent toast overlay anchored to the top-left of canvasContainer.
+ *  Returns an `addLog(level, message)` function that shows a new toast:
+ *  - max 5 toasts visible at once (oldest removed when exceeded)
+ *  - each toast fades out after 4.2 s and is removed from DOM after 5 s */
+export function createLogToastOverlay(
+  canvasContainer: HTMLElement,
+): (level: string, message: string) => void {
+  const overlay = document.createElement("div");
+  overlay.className = "log-toast-overlay";
+  canvasContainer.appendChild(overlay);
+
+  const MAX_TOASTS = 5;
+  const FADE_AFTER_MS = 4200;
+  const REMOVE_AFTER_MS = 5000;
+
+  return function addLog(level: string, message: string): void {
+    // Enforce max count: remove oldest (first child) if needed
+    while (overlay.childElementCount >= MAX_TOASTS) {
+      overlay.firstChild && overlay.removeChild(overlay.firstChild);
+    }
+
+    const toast = document.createElement("div");
+    toast.className = "log-toast";
+
+    toast.appendChild(makeBadge(level));
+
+    const msgSpan = document.createElement("span");
+    msgSpan.className = "log-toast-msg";
+    msgSpan.textContent = message;
+    toast.appendChild(msgSpan);
+
+    overlay.appendChild(toast);
+
+    // Schedule fade then removal
+    setTimeout(() => toast.classList.add("fading"), FADE_AFTER_MS);
+    setTimeout(() => { if (toast.parentNode) overlay.removeChild(toast); }, REMOVE_AFTER_MS);
+  };
 }
 
 export function buildToolbar(
