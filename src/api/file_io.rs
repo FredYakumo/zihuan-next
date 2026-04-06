@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use salvo::prelude::*;
 use salvo::writing::Json;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::state::AppState;
 
@@ -33,6 +33,85 @@ pub async fn list_workflows(_req: &mut Request, res: &mut Response, _depot: &mut
         Err(_) => {
             // Directory absent — return empty list
             res.render(Json(serde_json::json!({ "files": [] })));
+        }
+    }
+}
+
+/// WorkflowInfo returned by the detailed listing endpoint.
+#[derive(Serialize)]
+pub struct WorkflowInfo {
+    pub name: String,
+    pub file: String,
+    pub cover_url: Option<String>,
+}
+
+/// Return detailed workflow listing: name, json filename, optional cover URL.
+#[handler]
+pub async fn list_workflows_detailed(_req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let dir = std::path::Path::new("workflow_set");
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => {
+            res.render(Json(serde_json::json!({ "workflows": [] })));
+            return;
+        }
+    };
+
+    let mut workflows: Vec<WorkflowInfo> = entries
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let p = e.path();
+            if p.extension().and_then(|s| s.to_str()) != Some("json") {
+                return None;
+            }
+            let stem = p.file_stem()?.to_str()?.to_string();
+            let file = p.file_name()?.to_str()?.to_string();
+
+            // Check for same-named cover image
+            let cover_url = ["jpg", "jpeg", "png", "webp"].iter().find_map(|ext| {
+                let img = dir.join(format!("{}.{}", stem, ext));
+                if img.exists() {
+                    Some(format!("/api/workflow_set/cover/{}.{}", stem, ext))
+                } else {
+                    None
+                }
+            });
+
+            Some(WorkflowInfo { name: stem, file, cover_url })
+        })
+        .collect();
+
+    workflows.sort_by(|a, b| a.name.cmp(&b.name));
+    res.render(Json(serde_json::json!({ "workflows": workflows })));
+}
+
+/// Serve a cover image from the workflow_set/ directory.
+#[handler]
+pub async fn serve_workflow_cover(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let filename = req.param::<String>("filename").unwrap_or_default();
+    // Security: reject any path traversal attempts
+    if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
+        res.status_code(StatusCode::BAD_REQUEST);
+        return;
+    }
+    let path = std::path::Path::new("workflow_set").join(&filename);
+    match std::fs::read(&path) {
+        Ok(bytes) => {
+            let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+            let mime = match ext.to_ascii_lowercase().as_str() {
+                "jpg" | "jpeg" => "image/jpeg",
+                "png" => "image/png",
+                "webp" => "image/webp",
+                _ => "application/octet-stream",
+            };
+            res.headers_mut().insert(
+                salvo::http::header::CONTENT_TYPE,
+                mime.parse().unwrap(),
+            );
+            res.write_body(bytes).ok();
+        }
+        Err(_) => {
+            res.status_code(StatusCode::NOT_FOUND);
         }
     }
 }

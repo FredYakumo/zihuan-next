@@ -183,6 +183,9 @@ export const workflows = {
   list(): Promise<{ files: string[] }> {
     return request("GET", "/workflow_set");
   },
+  listDetailed(): Promise<{ workflows: Array<{ name: string; file: string; cover_url: string | null }> }> {
+    return request("GET", "/workflow_set/detailed");
+  },
   save(graphId: string, name: string): Promise<{ ok: boolean; path: string }> {
     return request("POST", "/workflow_set/save", { graph_id: graphId, name });
   },
