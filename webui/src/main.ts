@@ -53,6 +53,7 @@ async function main() {
     activeTabId = id;
     renderTabs();
     await canvas.loadSession(id);
+    updateRunButton(id === runningSessionId);
     const tab = tabList.find((t) => t.id === id);
     statusBar.textContent = tab ? `切换到: ${tab.name}` : "Ready";
   }
@@ -62,6 +63,10 @@ async function main() {
     if (idx === -1) return;
     tabList.splice(idx, 1);
     try { await graphs.delete(id); } catch { /* ignore */ }
+    if (id === runningSessionId) {
+      runningSessionId = null;
+      updateRunButton(false);
+    }
     if (activeTabId === id) {
       const next = tabList[Math.min(idx, tabList.length - 1)];
       if (next) {
@@ -70,6 +75,7 @@ async function main() {
         activeTabId = null;
         canvas.clearCanvas();
         renderTabs();
+        updateRunButton(false);
         statusBar.textContent = "所有标签已关闭 — 新建或打开节点图";
       }
     } else {
@@ -128,11 +134,24 @@ async function main() {
     }
   };
 
-  // State: current running task id
+  // State: current running task id and which session started it
   let currentTaskId: string | null = null;
+  let runningSessionId: string | null = null;
+  // Late-bound so the WS handler can be registered before updateRunButton is available
+  let updateRunButton: (isRunning: boolean) => void = () => {};
   ws.onMessage((msg) => {
-    if (msg.type === "TaskStarted") currentTaskId = msg.task_id;
-    if (msg.type === "TaskFinished" || msg.type === "TaskStopped") currentTaskId = null;
+    if (msg.type === "TaskStarted") {
+      currentTaskId = msg.task_id;
+      runningSessionId = msg.graph_session_id;
+      if (msg.graph_session_id === activeTabId) {
+        updateRunButton(true);
+      }
+    }
+    if (msg.type === "TaskFinished" || msg.type === "TaskStopped") {
+      currentTaskId = null;
+      runningSessionId = null;
+      updateRunButton(false);
+    }
   });
 
   // ── Toolbar actions ──────────────────────────────────────────────────────
@@ -253,7 +272,6 @@ async function main() {
     if (!sid) { statusBar.textContent = "No graph open"; return; }
     try {
       const result = await graphs.execute(sid);
-      currentTaskId = result.task_id;
       statusBar.textContent = `Execution started (task ${result.task_id.slice(0, 8)})`;
     } catch (e) {
       statusBar.textContent = `Execute error: ${(e as Error).message}`;
@@ -303,20 +321,23 @@ async function main() {
 
   canvas.onAddNodeRequest = (gx, gy) => { addNodeWithDialog(gx, gy).catch(console.error); };
 
-  buildCanvasPanelButtons(canvasContainer, onHyperparameters, onVariables, () => { addNodeWithDialog().catch(console.error); });
+  ({ updateRunButton } = buildCanvasPanelButtons(
+    canvasContainer,
+    onHyperparameters,
+    onVariables,
+    () => { addNodeWithDialog().catch(console.error); },
+    onExecute,
+    onStopTask,
+  ));
 
   buildToolbar(
     toolbar,
-    canvas,
     statusBar,
     onNewGraph,
     onOpenFile,
-    onWorkflows,
     onSaveFile,
     onSaveToWorkflows,
     onValidate,
-    onExecute,
-    onStopTask
   );
 
   // Auto-resize canvas to fill its container

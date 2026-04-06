@@ -1,5 +1,5 @@
-use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use log::{error, info};
 use salvo::prelude::*;
@@ -7,6 +7,7 @@ use salvo::writing::Json;
 use serde::Deserialize;
 
 use super::state::AppState;
+use super::ws::{ServerMessage, WsBroadcast};
 use crate::util::hyperparam_store;
 
 // ─── Execute graph ────────────────────────────────────────────────────────────
@@ -20,6 +21,7 @@ pub struct ExecuteRequest {
 #[handler]
 pub async fn execute_graph(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
+    let broadcast_tx = depot.obtain::<WsBroadcast>().unwrap().clone();
     let graph_id = req.param::<String>("id").unwrap_or_default();
 
     let (graph_def, graph_name, file_path) = {
@@ -60,14 +62,22 @@ pub async fn execute_graph(req: &mut Request, res: &mut Response, depot: &mut De
 
     let stop_flag = Arc::new(AtomicBool::new(false));
     let task_id = state.tasks.lock().unwrap().add_task(
-        graph_name,
+        graph_name.clone(),
         graph_id.clone(),
         Arc::clone(&stop_flag),
     );
 
+    // Broadcast TaskStarted
+    let _ = broadcast_tx.send(ServerMessage::TaskStarted {
+        task_id: task_id.clone(),
+        graph_name,
+        graph_session_id: graph_id,
+    });
+
     // Spawn background execution
     let state_clone = Arc::clone(&state);
     let task_id_clone = task_id.clone();
+    let stop_flag_check = Arc::clone(&stop_flag);
     tokio::spawn(async move {
         let result = tokio::task::spawn_blocking(move || {
             run_graph_blocking(graph_def, stop_flag)
@@ -94,6 +104,24 @@ pub async fn execute_graph(req: &mut Request, res: &mut Response, depot: &mut De
             .lock()
             .unwrap()
             .finish_task(&task_id_clone, success);
+
+        // Broadcast completion — distinguish user-stopped from natural finish/error
+        if stop_flag_check.load(Ordering::Relaxed) {
+            match broadcast_tx.send(ServerMessage::TaskStopped {
+                task_id: task_id_clone,
+            }) {
+                Ok(n) => info!("Broadcast TaskStopped to {} receivers", n),
+                Err(e) => error!("Failed to broadcast TaskStopped: {}", e),
+            }
+        } else {
+            match broadcast_tx.send(ServerMessage::TaskFinished {
+                task_id: task_id_clone,
+                success,
+            }) {
+                Ok(n) => info!("Broadcast TaskFinished(success={}) to {} receivers", success, n),
+                Err(e) => error!("Failed to broadcast TaskFinished: {}", e),
+            }
+        }
     });
 
     res.render(Json(serde_json::json!({"task_id": task_id})));

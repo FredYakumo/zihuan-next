@@ -18,7 +18,7 @@ The engine is split into focused library crates:
 | `crates/zihuan_llm` | `LLMApiNode`, `LLMInferNode`, `BrainNode`, RAG nodes |
 | `node_macros` | `node_input!`, `node_output!`, `port!` procedural macros |
 | `src/` | Main binary: Salvo web server, REST/WebSocket API (`src/api/`), combined registry (`src/init_registry.rs`) |
-| `web/` | Frontend: Vite + TypeScript + Litegraph.js; embedded at compile time via rust-embed |
+| `webui/` | Frontend: Vite + TypeScript + Litegraph.js; embedded at compile time via rust-embed |
 
 ## High-Level Rules
 
@@ -39,7 +39,7 @@ The engine is split into focused library crates:
 ## Build And Validation
 
 ```bash
-# Build (pnpm run build in web/ runs automatically via build.rs)
+# Build (pnpm run build in webui/ runs automatically via build.rs)
 cargo build
 cargo run
 cargo test
