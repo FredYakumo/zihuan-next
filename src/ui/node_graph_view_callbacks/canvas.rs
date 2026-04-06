@@ -12,9 +12,10 @@ use crate::ui::node_graph_view::{
 use crate::ui::node_graph_view_clipboard::NodeClipboard;
 use crate::ui::node_graph_view_geometry::{
     build_edge_segments, get_port_center, node_dimensions, snap_to_grid, snap_to_grid_center,
-    GRID_SIZE, NODE_HEADER_ROWS, NODE_MIN_ROWS, NODE_PADDING_BOTTOM, NODE_WIDTH_CELLS,
+    translate_edge_geometry, GRID_SIZE, NODE_HEADER_ROWS, NODE_MIN_ROWS, NODE_PADDING_BOTTOM,
+    NODE_WIDTH_CELLS,
 };
-use crate::ui::node_graph_view_vm::{apply_graph_to_ui, apply_graph_to_ui_live};
+use crate::ui::node_graph_view_vm::{apply_drag_positions_only, apply_graph_to_ui, apply_graph_to_ui_live};
 use crate::ui::selection::BoxSelection;
 
 fn hide_graph_context_menu(ui: &NodeGraphWindow) {
@@ -26,6 +27,9 @@ struct DragSession {
     anchor_node_id: String,
     anchor_start: GraphPosition,
     node_start_positions: HashMap<String, GraphPosition>,
+    /// Tracks the last positions applied to the UI, for computing per-frame deltas
+    /// during the fast drag path. Initialized to `node_start_positions` values.
+    last_applied_positions: HashMap<String, (f32, f32)>,
 }
 
 fn build_drag_session(tab: &mut GraphTabState, anchor_node_id: &str) -> Option<DragSession> {
@@ -61,10 +65,16 @@ fn build_drag_session(tab: &mut GraphTabState, anchor_node_id: &str) -> Option<D
         return None;
     }
 
+    let last_applied_positions = node_start_positions
+        .iter()
+        .map(|(id, pos)| (id.clone(), (pos.x, pos.y)))
+        .collect();
+
     Some(DragSession {
         anchor_node_id: anchor_node_id.to_string(),
         anchor_start,
         node_start_positions,
+        last_applied_positions,
     })
 }
 
@@ -159,17 +169,44 @@ pub(crate) fn bind_canvas_callbacks(
                     *drag_session_guard = build_drag_session(tab, node_id.as_str());
                 }
 
-                if let Some(drag_session) = drag_session_guard.as_ref() {
+                if let Some(drag_session) = drag_session_guard.as_mut() {
+                    // Update graph data model (keeps positions in sync for move_finished)
                     apply_drag_session(tab, drag_session, x, y);
-                    apply_graph_to_ui_live(
-                        &ui,
-                        &tab.graph,
-                        tab.root_graph().variables.as_slice(),
-                        Some(tab_display_title(tab)),
-                        &tab.selection,
-                        &tab.inline_inputs,
-                        &tab.hyperparameter_values,
-                    );
+
+                    // Fast path: compute per-node deltas and new positions
+                    let delta_x = x - drag_session.anchor_start.x;
+                    let delta_y = y - drag_session.anchor_start.y;
+
+                    let mut new_positions: HashMap<String, (f32, f32)> = HashMap::new();
+                    let mut node_deltas: HashMap<String, (f32, f32)> = HashMap::new();
+
+                    for (node_id, start_pos) in &drag_session.node_start_positions {
+                        let new_x = start_pos.x + delta_x;
+                        let new_y = start_pos.y + delta_y;
+                        new_positions.insert(node_id.clone(), (new_x, new_y));
+
+                        let last = drag_session
+                            .last_applied_positions
+                            .get(node_id)
+                            .copied()
+                            .unwrap_or((start_pos.x, start_pos.y));
+                        let dx = new_x - last.0;
+                        let dy = new_y - last.1;
+                        if dx.abs() > f32::EPSILON || dy.abs() > f32::EPSILON {
+                            node_deltas.insert(node_id.clone(), (dx, dy));
+                        }
+                    }
+
+                    // Apply lightweight updates (no edge routing, no node VM rebuild)
+                    apply_drag_positions_only(&ui, &new_positions);
+                    translate_edge_geometry(&ui, &node_deltas);
+
+                    // Update last applied positions for next frame's delta
+                    for (node_id, pos) in &new_positions {
+                        drag_session
+                            .last_applied_positions
+                            .insert(node_id.clone(), *pos);
+                    }
                 }
             }
         }

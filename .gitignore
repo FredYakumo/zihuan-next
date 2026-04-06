@@ -5,3 +5,4 @@ config.yaml
 docker/redis/
 target/
 Cargo.lock
+**/node_modules/

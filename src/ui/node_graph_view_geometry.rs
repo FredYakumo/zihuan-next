@@ -6,7 +6,7 @@ use zihuan_node::graph_io::{
 };
 use zihuan_node::function_graph::is_hidden_function_port;
 use zihuan_node::DataType;
-use crate::ui::graph_window::{EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm};
+use crate::ui::graph_window::{EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm};
 use crate::ui::selection::SelectionState;
 
 pub(crate) const GRID_SIZE: f32 = 20.0;
@@ -312,6 +312,13 @@ fn centered_group_offset(index: usize, len: usize) -> f32 {
 fn build_edge_route_plans(graph: &NodeGraphDefinition, snap: bool) -> Vec<EdgeRoutePlan> {
     let node_boxes = collect_node_boxes(graph);
 
+    let node_map: HashMap<&str, usize> = graph
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.id.as_str(), i))
+        .collect();
+
     #[derive(Clone)]
     struct EdgeInfo {
         from_x: f32,
@@ -331,12 +338,12 @@ fn build_edge_route_plans(graph: &NodeGraphDefinition, snap: bool) -> Vec<EdgeRo
     let mut infos: Vec<EdgeInfo> = Vec::new();
 
     for (idx, edge) in graph.edges.iter().enumerate() {
-        let from_node = match graph.nodes.iter().find(|n| n.id == edge.from_node_id) {
-            Some(node) => node,
+        let from_node = match node_map.get(edge.from_node_id.as_str()) {
+            Some(&i) => &graph.nodes[i],
             None => continue,
         };
-        let to_node = match graph.nodes.iter().find(|n| n.id == edge.to_node_id) {
-            Some(node) => node,
+        let to_node = match node_map.get(edge.to_node_id.as_str()) {
+            Some(&i) => &graph.nodes[i],
             None => continue,
         };
 
@@ -539,6 +546,13 @@ pub(crate) fn build_edge_segments(
     let thickness = GRID_SIZE * EDGE_THICKNESS_RATIO;
     let plans = build_edge_route_plans(graph, snap);
 
+    let node_map: HashMap<&str, usize> = graph
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.id.as_str(), i))
+        .collect();
+
     for (plan_idx, plan) in plans.iter().enumerate() {
         let edge_index = plan_idx as i32;
 
@@ -557,11 +571,7 @@ pub(crate) fn build_edge_segments(
         );
 
         let edge = &graph.edges[plan.edge_idx];
-        let from_node = graph
-            .nodes
-            .iter()
-            .find(|n| n.id == edge.from_node_id)
-            .unwrap();
+        let from_node = &graph.nodes[node_map[edge.from_node_id.as_str()]];
         let label_text = get_edge_data_type_label(graph, from_node, &edge.from_port)
             .unwrap_or_else(|| "Unknown".to_string());
         let label_width = (label_text.len() as f32 * 7.0).max(GRID_SIZE * 2.0);
@@ -577,6 +587,121 @@ pub(crate) fn build_edge_segments(
     }
 
     (segments, corners, labels)
+}
+
+/// Fast drag-time edge position updater: translates existing edge geometry in-place
+/// by applying node position deltas. Avoids recalculating edge routing entirely.
+///
+/// `node_deltas` maps node_id → (dx, dy) for all dragged nodes.
+/// For edges where both endpoints have a delta, translate the entire edge geometry
+/// by that delta. For edges where only one endpoint moved, translate both endpoints
+/// by the weighted delta — this is a rough approximation that avoids full re-routing.
+pub(crate) fn translate_edge_geometry(
+    ui: &crate::ui::graph_window::NodeGraphWindow,
+    node_deltas: &HashMap<String, (f32, f32)>,
+) {
+    use slint::Model;
+
+    if node_deltas.is_empty() {
+        return;
+    }
+
+    let edges_model = ui.get_edges();
+    let segments_model = ui.get_edge_segments();
+    let corners_model = ui.get_edge_corners();
+    let labels_model = ui.get_edge_labels();
+
+    // Build per-edge delta: for each edge, compute what dx/dy to apply.
+    // If both from/to nodes are dragged, they share the same delta (rigid move).
+    // If only one endpoint is dragged, we still translate the whole edge by
+    // half the delta for each endpoint — but for simplicity during drag,
+    // we compute from_delta and to_delta separately.
+    let edge_count = edges_model.row_count();
+    let mut edge_from_delta: Vec<(f32, f32)> = Vec::with_capacity(edge_count);
+    let mut edge_to_delta: Vec<(f32, f32)> = Vec::with_capacity(edge_count);
+
+    for i in 0..edge_count {
+        let edge = edges_model.row_data(i).unwrap();
+        let fd = node_deltas
+            .get(edge.from_node_id.as_str())
+            .copied()
+            .unwrap_or((0.0, 0.0));
+        let td = node_deltas
+            .get(edge.to_node_id.as_str())
+            .copied()
+            .unwrap_or((0.0, 0.0));
+        edge_from_delta.push(fd);
+        edge_to_delta.push(td);
+
+        // Update the edge endpoint positions
+        if fd != (0.0, 0.0) || td != (0.0, 0.0) {
+            let mut e = edge;
+            e.from_x += fd.0;
+            e.from_y += fd.1;
+            e.to_x += td.0;
+            e.to_y += td.1;
+            edges_model.set_row_data(i, e);
+        }
+    }
+
+    // Translate edge segments: each segment belongs to an edge (edge_index).
+    // Use the average of from/to deltas as the segment translation.
+    let seg_count = segments_model.row_count();
+    for i in 0..seg_count {
+        let seg = segments_model.row_data(i).unwrap();
+        let ei = seg.edge_index as usize;
+        if ei < edge_count {
+            let (fdx, fdy) = edge_from_delta[ei];
+            let (tdx, tdy) = edge_to_delta[ei];
+            let dx = (fdx + tdx) / 2.0;
+            let dy = (fdy + tdy) / 2.0;
+            if dx != 0.0 || dy != 0.0 {
+                let mut s = seg;
+                s.x += dx;
+                s.y += dy;
+                segments_model.set_row_data(i, s);
+            }
+        }
+    }
+
+    // Translate edge corners
+    let corner_count = corners_model.row_count();
+    for i in 0..corner_count {
+        let corner = corners_model.row_data(i).unwrap();
+        let ei = corner.edge_index as usize;
+        if ei < edge_count {
+            let (fdx, fdy) = edge_from_delta[ei];
+            let (tdx, tdy) = edge_to_delta[ei];
+            let dx = (fdx + tdx) / 2.0;
+            let dy = (fdy + tdy) / 2.0;
+            if dx != 0.0 || dy != 0.0 {
+                let mut c = corner;
+                c.x += dx;
+                c.y += dy;
+                corners_model.set_row_data(i, c);
+            }
+        }
+    }
+
+    // Translate edge labels — labels don't have edge_index, so we match positionally.
+    // Labels are generated 1:1 with edge route plans (same order as edges model).
+    let label_count = labels_model.row_count();
+    for i in 0..label_count {
+        if i >= edge_count {
+            break;
+        }
+        let (fdx, fdy) = edge_from_delta[i];
+        let (tdx, tdy) = edge_to_delta[i];
+        let dx = (fdx + tdx) / 2.0;
+        let dy = (fdy + tdy) / 2.0;
+        if dx != 0.0 || dy != 0.0 {
+            let label = labels_model.row_data(i).unwrap();
+            let mut l = label;
+            l.x += dx;
+            l.y += dy;
+            labels_model.set_row_data(i, l);
+        }
+    }
 }
 
 const N_EDGE_COLORS: usize = 8;
@@ -600,13 +725,6 @@ fn edge_color(edge: &EdgeDefinition) -> slint::Color {
         7 => slint::Color::from_rgb_u8(0xff, 0xd9, 0x3d),
         _ => unreachable!(),
     }
-}
-
-fn edge_has_error(graph: &NodeGraphDefinition, edge: &EdgeDefinition) -> bool {
-    graph
-        .nodes
-        .iter()
-        .any(|node| node.has_error && (node.id == edge.from_node_id || node.id == edge.to_node_id))
 }
 
 fn edge_has_cycle(
@@ -636,12 +754,26 @@ pub(crate) fn build_edges(
         HashSet::new()
     };
 
+    let node_map: HashMap<&str, usize> = graph
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.id.as_str(), i))
+        .collect();
+
+    let error_nodes: HashSet<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.has_error)
+        .map(|n| n.id.as_str())
+        .collect();
+
     graph
         .edges
         .iter()
         .filter_map(|edge| {
-            let from_node = graph.nodes.iter().find(|n| n.id == edge.from_node_id)?;
-            let to_node = graph.nodes.iter().find(|n| n.id == edge.to_node_id)?;
+            let from_node = &graph.nodes[*node_map.get(edge.from_node_id.as_str())?];
+            let to_node = &graph.nodes[*node_map.get(edge.to_node_id.as_str())?];
 
             let (from_x, from_y) = get_port_center_for_node(from_node, &edge.from_port, false)?;
             let (to_x, to_y) = get_port_center_for_node(to_node, &edge.to_port, true)?;
@@ -662,7 +794,8 @@ pub(crate) fn build_edges(
                 && edge.from_port == selected_edge_from_port.as_str()
                 && edge.to_node_id == selected_edge_to_node.as_str()
                 && edge.to_port == selected_edge_to_port.as_str();
-            let has_error = edge_has_error(graph, edge);
+            let has_error = error_nodes.contains(edge.from_node_id.as_str())
+                || error_nodes.contains(edge.to_node_id.as_str());
             let has_cycle = edge_has_cycle(&cycle_edge_keys, edge);
 
             Some(EdgeVm {
@@ -878,31 +1011,26 @@ fn declared_port_type(node: &NodeDefinition, port_name: &str, is_input: bool) ->
         .map(|p| p.data_type.clone())
 }
 
-pub(crate) fn build_grid_lines(width: f32, height: f32, grid_size: f32) -> Vec<GridLineVm> {
-    let mut lines = Vec::new();
-    let mut x = 0.0;
+pub(crate) fn build_grid_commands(width: f32, height: f32, grid_size: f32) -> String {
+    use std::fmt::Write;
+    let num_vertical = (width / grid_size) as usize + 1;
+    let num_horizontal = (height / grid_size) as usize + 1;
+    // Each line takes ~22 chars: "M 0000 0000 L 0000 0000 "
+    let mut cmds = String::with_capacity(24 * (num_vertical + num_horizontal));
+
+    let mut x = 0.0f32;
     while x <= width {
-        lines.push(GridLineVm {
-            x1: x,
-            y1: 0.0,
-            x2: x,
-            y2: height,
-        });
+        let _ = write!(cmds, "M {} 0 L {} {} ", x, x, height);
         x += grid_size;
     }
 
-    let mut y = 0.0;
+    let mut y = 0.0f32;
     while y <= height {
-        lines.push(GridLineVm {
-            x1: 0.0,
-            y1: y,
-            x2: width,
-            y2: y,
-        });
+        let _ = write!(cmds, "M 0 {} L {} {} ", y, width, y);
         y += grid_size;
     }
 
-    lines
+    cmds
 }
 
 #[cfg(test)]
