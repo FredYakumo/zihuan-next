@@ -179,6 +179,7 @@ pub fn build_node_graph_from_definition(
             let ports: HashMap<String, DataType> = node
                 .input_ports()
                 .into_iter()
+                .chain(node.output_ports().into_iter())
                 .map(|p| (p.name, p.data_type))
                 .collect();
 
@@ -223,6 +224,7 @@ pub fn build_node_graph_from_definition(
             let ports: HashMap<String, DataType> = node
                 .input_ports()
                 .into_iter()
+                .chain(node.output_ports().into_iter())
                 .map(|p| (p.name, p.data_type))
                 .collect();
             let mut extra = HashMap::new();
