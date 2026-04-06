@@ -11,7 +11,7 @@ import type { NodeTypeInfo } from "./api/types";
 
 async function main() {
   injectStyles();
-  const { toolbar, tabsBar: _tabsBar, sidebar: _sidebar, canvasContainer, canvasEl, statusBar } = buildDOM();
+  const { toolbar, tabsBar: _tabsBar, sidebar: _sidebar, canvasContainer, canvasEl, backArrow, statusBar } = buildDOM();
 
   // Connect WebSocket
   ws.connect();
@@ -109,10 +109,20 @@ async function main() {
   }
 
   // Wire breadcrumb navigation
+  // Wire back-arrow button (exits one subgraph level)
+  backArrow.querySelector("button")!.addEventListener("click", () => {
+    canvas.exitSubgraph().catch((e: Error) => {
+      statusBar.textContent = `Exit subgraph error: ${e.message}`;
+    });
+  });
+
   canvas.onNavigationChange = (labels) => {
-    updateBreadcrumb(labels);
-    const exitBtn = document.getElementById("btn-exit-subgraph") as HTMLButtonElement | null;
-    if (exitBtn) exitBtn.style.display = labels.length > 0 ? "" : "none";
+    updateBreadcrumb(labels, (depth) => {
+      canvas.exitSubgraphToDepth(depth).catch((e: Error) => {
+        statusBar.textContent = `Navigation error: ${e.message}`;
+      });
+    });
+    backArrow.style.display = labels.length > 0 ? "" : "none";
     if (labels.length > 0) {
       statusBar.textContent = `子图: ${labels[labels.length - 1]}`;
     }

@@ -211,7 +211,11 @@ const STYLES = `
 
   #breadcrumb .bc-root {
     color: #8ab4f8;
-    cursor: default;
+    cursor: pointer;
+  }
+
+  #breadcrumb .bc-root:hover {
+    text-decoration: underline;
   }
 
   #breadcrumb .bc-sep {
@@ -221,6 +225,41 @@ const STYLES = `
 
   #breadcrumb .bc-item {
     color: #ccc;
+  }
+
+  #breadcrumb .bc-item.bc-clickable {
+    cursor: pointer;
+  }
+
+  #breadcrumb .bc-item.bc-clickable:hover {
+    text-decoration: underline;
+    color: #8ab4f8;
+  }
+
+  #canvas-back-arrow {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 100;
+    display: none;
+  }
+
+  #canvas-back-arrow button {
+    padding: 6px 14px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: rgba(22, 33, 62, 0.92);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 13px;
+    font-family: sans-serif;
+    backdrop-filter: blur(4px);
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+
+  #canvas-back-arrow button:hover {
+    background: var(--node-hover);
   }
 
   #canvas-panel-buttons {
@@ -265,6 +304,7 @@ export function buildDOM(): {
   sidebar: HTMLElement;
   canvasContainer: HTMLElement;
   canvasEl: HTMLCanvasElement;
+  backArrow: HTMLElement;
   statusBar: HTMLElement;
 } {
   const app = document.getElementById("app")!;
@@ -301,6 +341,14 @@ export function buildDOM(): {
   canvasEl.id = "graph-canvas";
   canvasContainer.appendChild(canvasEl);
 
+  // Back arrow overlay (top-left of canvas, shown when inside a subgraph)
+  const backArrow = document.createElement("div");
+  backArrow.id = "canvas-back-arrow";
+  const backArrowBtn = document.createElement("button");
+  backArrowBtn.textContent = "← 返回";
+  backArrow.appendChild(backArrowBtn);
+  canvasContainer.appendChild(backArrow);
+
   main.appendChild(sidebar);
   main.appendChild(canvasContainer);
 
@@ -315,11 +363,16 @@ export function buildDOM(): {
   app.appendChild(main);
   app.appendChild(statusBar);
 
-  return { toolbar, tabsBar, breadcrumb, sidebar, canvasContainer, canvasEl, statusBar };
+  return { toolbar, tabsBar, breadcrumb, sidebar, canvasContainer, canvasEl, backArrow, statusBar };
 }
 
-/** Update the breadcrumb navigation bar. Pass empty array to clear/hide. */
-export function updateBreadcrumb(labels: string[]): void {
+/** Update the breadcrumb navigation bar. Pass empty array to clear/hide.
+ *  onNavigateTo(depth) is called when the user clicks a breadcrumb segment:
+ *  depth=0 means root ("主图"), depth=N means the Nth subgraph level. */
+export function updateBreadcrumb(
+  labels: string[],
+  onNavigateTo?: (depth: number) => void,
+): void {
   const breadcrumb = document.getElementById("breadcrumb");
   if (!breadcrumb) return;
 
@@ -335,17 +388,24 @@ export function updateBreadcrumb(labels: string[]): void {
   const root = document.createElement("span");
   root.className = "bc-root";
   root.textContent = "主图";
+  if (onNavigateTo) {
+    root.addEventListener("click", () => onNavigateTo(0));
+  }
   breadcrumb.appendChild(root);
 
-  for (const label of labels) {
+  for (let i = 0; i < labels.length; i++) {
     const sep = document.createElement("span");
     sep.className = "bc-sep";
     sep.textContent = "›";
     breadcrumb.appendChild(sep);
 
     const item = document.createElement("span");
-    item.className = "bc-item";
-    item.textContent = label;
+    const isLast = i === labels.length - 1;
+    item.className = isLast ? "bc-item" : "bc-item bc-clickable";
+    item.textContent = labels[i];
+    if (!isLast && onNavigateTo) {
+      item.addEventListener("click", () => onNavigateTo(i + 1));
+    }
     breadcrumb.appendChild(item);
   }
 }
@@ -501,18 +561,6 @@ export function buildToolbar(
   onExecute: () => void,
   onStopTask: () => void
 ): void {
-  // "Exit subgraph" button — visible only when inside a subgraph
-  const exitSubgraphBtn = document.createElement("button");
-  exitSubgraphBtn.textContent = "← 退出子图";
-  exitSubgraphBtn.id = "btn-exit-subgraph";
-  exitSubgraphBtn.style.display = "none";
-  exitSubgraphBtn.addEventListener("click", () => {
-    canvas.exitSubgraph().catch((e: Error) => {
-      statusBar.textContent = `Exit subgraph error: ${e.message}`;
-    });
-  });
-  toolbar.appendChild(exitSubgraphBtn);
-
   const buttons: Array<{ label: string; id?: string; danger?: boolean; onClick: () => void }> = [
     { label: "New", onClick: onNewGraph },
     { label: "Open...", onClick: onOpenFile },
