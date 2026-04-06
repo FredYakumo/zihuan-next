@@ -1100,6 +1100,160 @@ export function showWorkflowsDialog(files: string[]): Promise<string | null> {
   });
 }
 
+// ─── Workflow Browser Dialog ──────────────────────────────────────────────────
+
+const BROWSER_STYLES = `
+  .zh-wf-browser-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 9999; font-family: sans-serif;
+  }
+  .zh-wf-browser-dialog {
+    background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 10px;
+    width: 860px; max-width: 95vw; max-height: 85vh;
+    display: flex; flex-direction: column;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6); color: #e0e0e0;
+  }
+  .zh-wf-browser-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px; border-bottom: 1px solid #2a2a4a; flex-shrink: 0;
+  }
+  .zh-wf-browser-header h3 { margin: 0; font-size: 16px; color: #8ab4f8; }
+  .zh-wf-browser-close {
+    background: transparent; border: none; color: #aaa; font-size: 22px;
+    cursor: pointer; padding: 0 4px; line-height: 1;
+  }
+  .zh-wf-browser-close:hover { color: #e94560; }
+  .zh-wf-browser-grid {
+    flex: 1; overflow-y: auto; padding: 16px 20px;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 14px; align-content: start;
+  }
+  .zh-wf-card {
+    border: 1px solid #2a2a4a; border-radius: 8px; overflow: hidden;
+    cursor: pointer; transition: border-color 0.15s, transform 0.1s, box-shadow 0.15s;
+    background: #0d1117; display: flex; flex-direction: column;
+  }
+  .zh-wf-card:hover {
+    border-color: #8ab4f8; transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+  }
+  .zh-wf-card-cover {
+    width: 100%; aspect-ratio: 16/9; background: #0a0e1a;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden; flex-shrink: 0;
+  }
+  .zh-wf-card-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .zh-wf-card-cover .zh-wf-no-cover {
+    font-size: 36px; opacity: 0.25; user-select: none; color: #8ab4f8;
+  }
+  .zh-wf-card-name {
+    padding: 8px 10px; font-size: 12px; color: #cdd;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    border-top: 1px solid #1a2a3a; font-weight: 500;
+  }
+  .zh-wf-empty {
+    grid-column: 1 / -1; color: #666; font-size: 14px;
+    text-align: center; padding: 40px 0;
+  }
+`;
+
+function ensureBrowserStyles(): void {
+  if (document.getElementById("zh-wf-browser-styles")) return;
+  const style = document.createElement("style");
+  style.id = "zh-wf-browser-styles";
+  style.textContent = BROWSER_STYLES;
+  document.head.appendChild(style);
+}
+
+export interface WorkflowEntry {
+  name: string;
+  file: string;
+  cover_url: string | null;
+}
+
+/** Show a card-grid browser for workflow_set entries. Returns the selected file name or null. */
+export function showWorkflowBrowserDialog(workflows: WorkflowEntry[]): Promise<string | null> {
+  ensureBrowserStyles();
+
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "zh-wf-browser-overlay";
+
+    const dialog = document.createElement("div");
+    dialog.className = "zh-wf-browser-dialog";
+    dialog.addEventListener("click", (e) => e.stopPropagation());
+
+    // Header
+    const header = document.createElement("div");
+    header.className = "zh-wf-browser-header";
+    const title = document.createElement("h3");
+    title.textContent = "浏览工作流集";
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "zh-wf-browser-close";
+    closeBtn.textContent = "×";
+    closeBtn.title = "关闭";
+    const close = () => { overlay.remove(); resolve(null); };
+    closeBtn.addEventListener("click", close);
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+    dialog.appendChild(header);
+
+    // Grid
+    const grid = document.createElement("div");
+    grid.className = "zh-wf-browser-grid";
+
+    if (workflows.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "zh-wf-empty";
+      empty.textContent = "workflow_set/ 目录中没有工作流文件";
+      grid.appendChild(empty);
+    } else {
+      for (const wf of workflows) {
+        const card = document.createElement("div");
+        card.className = "zh-wf-card";
+        card.title = wf.name;
+
+        const coverDiv = document.createElement("div");
+        coverDiv.className = "zh-wf-card-cover";
+
+        if (wf.cover_url) {
+          const img = document.createElement("img");
+          img.src = wf.cover_url;
+          img.alt = wf.name;
+          img.draggable = false;
+          coverDiv.appendChild(img);
+        } else {
+          const placeholder = document.createElement("span");
+          placeholder.className = "zh-wf-no-cover";
+          placeholder.textContent = "⬡";
+          coverDiv.appendChild(placeholder);
+        }
+
+        const nameDiv = document.createElement("div");
+        nameDiv.className = "zh-wf-card-name";
+        nameDiv.textContent = wf.name;
+
+        card.appendChild(coverDiv);
+        card.appendChild(nameDiv);
+
+        card.addEventListener("click", () => {
+          overlay.remove();
+          resolve(wf.file);
+        });
+
+        grid.appendChild(card);
+      }
+    }
+
+    dialog.appendChild(grid);
+    overlay.appendChild(dialog);
+
+    overlay.addEventListener("click", close);
+    document.body.appendChild(overlay);
+  });
+}
+
 // ─── Hyperparameters Dialog ───────────────────────────────────────────────────
 
 const HP_SCALAR_TYPES = ["String", "Integer", "Float", "Boolean"] as const;

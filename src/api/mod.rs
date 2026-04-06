@@ -76,7 +76,9 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast) -> Router {
         .push(Router::with_path("file/upload").post(file_io::upload_graph))
         // Workflows directory
         .push(Router::with_path("workflow_set").get(file_io::list_workflows))
-        .push(Router::with_path("workflow_set/save").post(file_io::save_to_workflows));
+        .push(Router::with_path("workflow_set/save").post(file_io::save_to_workflows))
+        .push(Router::with_path("workflow_set/detailed").get(file_io::list_workflows_detailed))
+        .push(Router::with_path("workflow_set/cover/<filename>").get(file_io::serve_workflow_cover));
 
     // Inject state into depot for all API handlers (REST + WebSocket)
     Router::new()
