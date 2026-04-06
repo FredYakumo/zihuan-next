@@ -143,6 +143,7 @@ function setupSimpleInlineWidgets(
     const existingValue = nodeDef.inline_values?.[key];
     const dt = typeof port.data_type === "string" ? port.data_type : "Any";
 
+    let addedWidget = false;
     if (dt === "Boolean") {
       lNode.addWidget("toggle", key, existingValue ?? false, async (val: boolean) => {
         const sid = getSessionId();
@@ -151,6 +152,7 @@ function setupSimpleInlineWidgets(
           await graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: val } });
         } catch (e) { console.error("widget update failed", e); }
       });
+      addedWidget = true;
     } else if (dt === "Integer" || dt === "Float") {
       lNode.addWidget("number", key, existingValue ?? 0, async (val: number) => {
         const sid = getSessionId();
@@ -159,6 +161,7 @@ function setupSimpleInlineWidgets(
           await graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: val } });
         } catch (e) { console.error("widget update failed", e); }
       });
+      addedWidget = true;
     } else if (dt === "String" || dt === "Password") {
       lNode.addWidget("text", key, String(existingValue ?? ""), async (val: string) => {
         const sid = getSessionId();
@@ -167,6 +170,15 @@ function setupSimpleInlineWidgets(
           await graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: val } });
         } catch (e) { console.error("widget update failed", e); }
       });
+      addedWidget = true;
+    }
+    // Link widget to its input slot so LiteGraph collapses the double row
+    // and automatically greys out the widget when a wire is connected.
+    if (addedWidget) {
+      const inputIdx = (lNode.inputs as any[])?.findIndex((inp: any) => inp.name === key) ?? -1;
+      if (inputIdx >= 0) {
+        lNode.inputs[inputIdx].widget = { name: key };
+      }
     }
     // Other types (refs, etc.) don't get inline widgets
   }

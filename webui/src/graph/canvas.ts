@@ -291,13 +291,14 @@ export class ZihuanCanvas {
 
     // Apply type-based port dot colours for all slots.
     // color_on  = type color (shown when connected)
-    // color_off = red if required and unconnected, gray otherwise
+    // color_off = type color if inline data provided, red if required+empty, gray otherwise
     if (node.inputs) {
       for (let i = 0; i < nodeDef.input_ports.length; i++) {
         const p = nodeDef.input_ports[i];
         const col = getPortColor(portTypeString(p.data_type as string | object));
+        const hasInlineValue = nodeDef.inline_values != null && nodeDef.inline_values[p.name] != null;
         node.inputs[i].color_on  = col;
-        node.inputs[i].color_off = p.required ? "#e74c3c" : "#555568";
+        node.inputs[i].color_off = hasInlineValue ? col : (p.required ? "#e74c3c" : "#555568");
       }
     }
     if (node.outputs) {
