@@ -59,7 +59,19 @@ export class ZihuanCanvas {
     // AFTER the widget backgrounds are rendered (so badges are visible on top).
     const origDrawNodeWidgets = (this.lCanvas as any).drawNodeWidgets.bind(this.lCanvas);
     (this.lCanvas as any).drawNodeWidgets = (node: any, posY: any, ctx: CanvasRenderingContext2D) => {
+      // Temporarily mask password widget values so they render as bullets on canvas.
+      const savedPasswordValues: Array<{ w: any; real: any }> = [];
+      if (node.widgets) {
+        for (const w of node.widgets as any[]) {
+          if (w._isPassword) {
+            savedPasswordValues.push({ w, real: w.value });
+            w.value = "•".repeat(String(w.value ?? "").length || 8);
+          }
+        }
+      }
       origDrawNodeWidgets(node, posY, ctx);
+      // Restore real values immediately after drawing.
+      for (const { w, real } of savedPasswordValues) w.value = real;
       drawWidgetBindingBadges.call(node, ctx);
     };
 
