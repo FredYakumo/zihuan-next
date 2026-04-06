@@ -174,7 +174,16 @@ function setupSimpleInlineWidgets(
         } catch (e) { console.error("widget update failed", e); }
       });
       addedWidget = true;
-    } else if (dt === "Integer" || dt === "Float") {
+    } else if (dt === "Integer") {
+      lNode.addWidget("number", key, existingValue ?? 0, async (val: number) => {
+        const sid = getSessionId();
+        if (!sid) return;
+        try {
+          await graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: Math.trunc(val) } });
+        } catch (e) { console.error("widget update failed", e); }
+      }, { precision: 0, step: 10 });
+      addedWidget = true;
+    } else if (dt === "Float") {
       lNode.addWidget("number", key, existingValue ?? 0, async (val: number) => {
         const sid = getSessionId();
         if (!sid) return;
