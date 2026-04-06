@@ -112,14 +112,15 @@ export class ZihuanCanvas {
 
     // Right-click context menu (capture phase so we preempt LiteGraph's own handler).
     canvasEl.addEventListener("contextmenu", (e: MouseEvent) => {
-      const [gx, gy] = (this.lCanvas as any).graph_mouse as [number, number];
+      // graph_mouse is updated by LiteGraph on every mousemove and holds graph-space coords.
+      // convertEventToCanvasOffset(e) also produces graph-space coords directly (despite its name).
+      const [gx, gy] = (this.lCanvas as any).convertEventToCanvasOffset(e) as [number, number];
       const node = this.lGraph.getNodeOnPos(gx, gy);
 
       // If right-clicking on a node's input slot, show port-binding menu instead.
+      // getSlotInPosition expects graph-space coords (calls getInputPos which returns graph coords).
       if (node) {
-        const nx = (node as any).pos[0] as number;
-        const ny = (node as any).pos[1] as number;
-        const found = (node as any).getSlotInPosition(gx - nx, gy - ny) as
+        const found = (node as any).getSlotInPosition(gx, gy) as
           | { slot: number; input?: unknown; output?: unknown }
           | null;
         if (found && found.input) {
@@ -215,17 +216,23 @@ export class ZihuanCanvas {
       node.addOutput(p.name, portTypeString(p.data_type as string | object));
     }
 
-    // Visual indicator for bound ports
+    // Visual indicator for bound ports: colored slot dot.
+    const portBindings = nodeDef.port_bindings ?? {};
+    node._portBindings = portBindings;
     if (node.inputs) {
       for (let i = 0; i < nodeDef.input_ports.length; i++) {
         const portName = nodeDef.input_ports[i].name;
-        const binding = nodeDef.port_bindings?.[portName];
+        const binding = portBindings[portName];
         if (binding) {
-          const prefix = binding.kind === "Hyperparameter" ? "↑" : "⟲";
-          node.inputs[i].label = `${portName} [${prefix}${binding.name}]`;
+          // Color the connector dot to signal the binding visually.
+          const dotColor = binding.kind === "Hyperparameter" ? "#e67e22" : "#1abc9c";
+          node.inputs[i].color_on = dotColor;
+          node.inputs[i].color_off = dotColor;
         }
       }
     }
+    // Draw colored badge pills next to each bound input's label.
+    node.onDrawForeground = drawBindingBadges;
 
     node.id = nodeDef.id;
     node.title = nodeDef.name;
@@ -749,6 +756,65 @@ export class ZihuanCanvas {
     await graphs.put(sid, updatedGraph);
     await this.reloadCurrentSession();
   }
+}
+
+/** Draw colored badge pills to the right of each bound input port's label text. */
+function drawBindingBadges(
+  this: any,
+  ctx: CanvasRenderingContext2D
+): void {
+  const bindings: Record<string, { kind: string; name: string }> = this._portBindings;
+  if (!bindings || !this.inputs) return;
+
+  const SLOT_HEIGHT = 20; // LiteGraph.NODE_SLOT_HEIGHT
+  const FONT_SIZE = 12;   // LiteGraph.NODE_SUBTEXT_SIZE
+  const FONT = "Arial";   // LiteGraph.NODE_FONT
+  const SLOT_DOT_X = SLOT_HEIGHT * 0.5; // dot is at (NODE_SLOT_HEIGHT/2, ...)
+  const LABEL_X = SLOT_DOT_X + 10;     // label text starts here (matches LiteGraph slot draw)
+  const LABEL_BASELINE_OFFSET = 5;     // ctx.fillText(..., pos[0]+10, pos[1]+5)
+
+  ctx.save();
+  ctx.font = `normal ${FONT_SIZE}px ${FONT}`;
+  ctx.textBaseline = "middle";
+
+  // Count non-widget vertical inputs to find slot Y position (mirrors getInputSlotPos logic).
+  let verticalSlotIndex = -1;
+  for (let i = 0; i < this.inputs.length; i++) {
+    const input = this.inputs[i];
+    // Widget input slots (linked to widgets) are not drawn as vertical slots.
+    if (input.pos || (this.widgets?.length && input.widget)) continue;
+    verticalSlotIndex++;
+
+    const portName: string = input.name;
+    const binding = bindings[portName];
+    if (!binding) continue;
+
+    const localY = (verticalSlotIndex + 0.7) * SLOT_HEIGHT + ((<any>this.constructor).slot_start_y || 0);
+    const labelText = portName;
+    const labelWidth = ctx.measureText(labelText).width;
+
+    const badgeText = (binding.kind === "Hyperparameter" ? "\u2191" : "\u27f2") + binding.name;
+    const badgePadX = 4;
+    const badgePadY = 2;
+    const badgeTextMetrics = ctx.measureText(badgeText);
+    const badgeTextW = badgeTextMetrics.width;
+    const badgeH = FONT_SIZE + badgePadY * 2;
+    const badgeW = badgeTextW + badgePadX * 2;
+    const badgeX = LABEL_X + labelWidth + 4;
+    const badgeY = localY + LABEL_BASELINE_OFFSET - badgeH / 2;
+    const badgeRadius = 3;
+
+    const bgColor = binding.kind === "Hyperparameter" ? "#e67e22" : "#1abc9c";
+    ctx.fillStyle = bgColor;
+    ctx.beginPath();
+    (ctx as any).roundRect(badgeX, badgeY, badgeW, badgeH, badgeRadius);
+    ctx.fill();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(badgeText, badgeX + badgePadX, badgeY + badgeH / 2);
+  }
+
+  ctx.restore();
 }
 
 /** Find the registered LiteGraph type key for a backend type_id. */
