@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   '@comfyorg/litegraph@0.17.2':
-    hash: 6e14e5004ca0b1305b7354125e8640433ce1a58b14ec81c3769ea423a2c3da94
+    hash: 421c6c4bd6ca754ee5bc54546c79ac29c2f464dafda2cc7c5516868349a2ce30
     path: patches/@comfyorg__litegraph@0.17.2.patch
 
 importers:
@@ -15,7 +15,7 @@ importers:
     dependencies:
       '@comfyorg/litegraph':
         specifier: ^0.17.2
-        version: 0.17.2(patch_hash=6e14e5004ca0b1305b7354125e8640433ce1a58b14ec81c3769ea423a2c3da94)
+        version: 0.17.2(patch_hash=421c6c4bd6ca754ee5bc54546c79ac29c2f464dafda2cc7c5516868349a2ce30)
     devDependencies:
       typescript:
         specifier: ^5.4.5
@@ -378,7 +378,7 @@ packages:
 
 snapshots:
 
-  '@comfyorg/litegraph@0.17.2(patch_hash=6e14e5004ca0b1305b7354125e8640433ce1a58b14ec81c3769ea423a2c3da94)': {}
+  '@comfyorg/litegraph@0.17.2(patch_hash=421c6c4bd6ca754ee5bc54546c79ac29c2f464dafda2cc7c5516868349a2ce30)': {}
 
   '@esbuild/aix-ppc64@0.21.5':
     optional: true
