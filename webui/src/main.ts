@@ -390,7 +390,7 @@ async function main() {
   };
 
   const onHyperparameters = () => {
-    const sid = canvas.sessionId;
+    const sid = canvas.rootSessionId;
     if (!sid) { showErrorDialog("请先打开一个节点图"); return; }
     openHyperparametersDialog(sid, () => { canvas.reloadCurrentSession().catch(console.error); }).catch(console.error);
   };
