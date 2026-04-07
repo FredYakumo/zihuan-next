@@ -65,11 +65,7 @@ export function registerNodeTypes(types: NodeTypeInfo[]): void {
 
 /** Convert a DataType (possibly nested) to a simple litegraph type string. */
 export function portTypeString(dt: string | object): string {
-  if (typeof dt === "string") {
-    // "Any" maps to LiteGraph's wildcard so it connects to all concrete types
-    if (dt === "Any") return "*";
-    return dt;
-  }
+  if (typeof dt === "string") return dt;
   // Handle Vec / other wrapper types
   const keys = Object.keys(dt as object);
   if (keys.length > 0) return `${keys[0]}<${Object.values(dt as object)[0] as string}>`;
