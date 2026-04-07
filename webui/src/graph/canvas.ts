@@ -2,11 +2,15 @@
 
 import { LGraph, LGraphCanvas, LiteGraph } from "@comfyorg/litegraph";
 import { graphs } from "../api/client";
-import type { NodeGraphDefinition, NodeDefinition, EdgeDefinition } from "../api/types";
+import type { NodeGraphDefinition, NodeDefinition, EdgeDefinition, NodeTypeInfo } from "../api/types";
 import { setupNodeWidgets } from "./widgets";
-import { portTypeString } from "./registry";
+import { portTypeString, getNodeTypeInfo } from "./registry";
 import type { BrainToolDefinition, EmbeddedFunctionConfig } from "../ui/dialogs";
+import { showNodeInfoDialog } from "../ui/dialogs";
 import { getLiteGraphColors, getPortColor, onThemeChange } from "../ui/theme";
+
+/** Title bar height constant (matches LiteGraph.NODE_TITLE_HEIGHT default). */
+const NODE_TITLE_HEIGHT = 30;
 
 export interface CanvasState {
   sessionId: string | null;
@@ -388,8 +392,34 @@ export class ZihuanCanvas {
         }
       }
     }
-    // Draw colored badge pills next to each bound input's label.
-    node.onDrawForeground = drawBindingBadges;
+    // Draw colored badge pills next to each bound input's label,
+    // and draw the help "?" button when the mouse is hovering the node.
+    node._helpVisible = false;
+    node.onMouseEnter = () => {
+      node._helpVisible = true;
+      this.lGraph.setDirtyCanvas(true, false);
+    };
+    node.onMouseLeave = () => {
+      node._helpVisible = false;
+      this.lGraph.setDirtyCanvas(true, false);
+    };
+    node.onDrawForeground = function(this: any, ctx: CanvasRenderingContext2D) {
+      drawBindingBadges.call(this, ctx);
+      drawHelpButton.call(this, ctx);
+    };
+    node.onMouseDown = (e: MouseEvent, pos: [number, number], _lCanvas: any): boolean | undefined => {
+      const btnX = node.size[0] - 12;
+      const btnY = -NODE_TITLE_HEIGHT / 2;
+      const dx = pos[0] - btnX;
+      const dy = pos[1] - btnY;
+      if (Math.sqrt(dx * dx + dy * dy) <= 10) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.showNodeHelpDialog(node);
+        return true;
+      }
+      return undefined;
+    };
 
     node.id = nodeDef.id;
     node.title = nodeDef.name;
@@ -932,6 +962,75 @@ export class ZihuanCanvas {
     await graphs.put(sid, updatedGraph);
     await this.reloadCurrentSession();
   }
+
+  // ─── Node help dialog ─────────────────────────────────────────────────────
+
+  /** Show the node info / help dialog for the given LiteGraph node. */
+  private showNodeHelpDialog(lNode: any): void {
+    const typeId: string = (lNode.constructor as any).zihuanTypeId ?? "";
+    const typeInfo: NodeTypeInfo | undefined = getNodeTypeInfo(typeId);
+    if (!typeInfo) return;
+
+    const nodeId: string = lNode.zihuanId ?? "";
+    const graph = this.state.graph;
+
+    // Build per-port connection info from the graph edge list.
+    const inputConns = typeInfo.input_ports.map((p) => {
+      const connectedTo: Array<{ nodeName: string; portName: string }> = [];
+      if (graph) {
+        for (const edge of graph.edges) {
+          if (edge.to_node_id === nodeId && edge.to_port === p.name) {
+            const fromNode = graph.nodes.find((n) => n.id === edge.from_node_id);
+            if (fromNode) connectedTo.push({ nodeName: fromNode.name, portName: edge.from_port });
+          }
+        }
+      }
+      return { portName: p.name, dataType: typeof p.data_type === "string" ? p.data_type : portTypeString(p.data_type), description: p.description, required: p.required, connectedTo };
+    });
+
+    const outputConns = typeInfo.output_ports.map((p) => {
+      const connectedTo: Array<{ nodeName: string; portName: string }> = [];
+      if (graph) {
+        for (const edge of graph.edges) {
+          if (edge.from_node_id === nodeId && edge.from_port === p.name) {
+            const toNode = graph.nodes.find((n) => n.id === edge.to_node_id);
+            if (toNode) connectedTo.push({ nodeName: toNode.name, portName: edge.to_port });
+          }
+        }
+      }
+      return { portName: p.name, dataType: typeof p.data_type === "string" ? p.data_type : portTypeString(p.data_type), description: p.description, required: p.required, connectedTo };
+    });
+
+    showNodeInfoDialog(typeInfo, inputConns, outputConns);
+  }
+}
+
+/** Draw the "?" help button in the top-right of the node title bar when hovered. */
+function drawHelpButton(this: any, ctx: CanvasRenderingContext2D): void {
+  if (!this._helpVisible) return;
+  // In LiteGraph's local node coordinate system, the title bar spans y ∈ [-NODE_TITLE_HEIGHT, 0]
+  // and body spans y ≥ 0. onDrawForeground is called with origin at node body top-left, so
+  // title bar center is at y = -NODE_TITLE_HEIGHT / 2.
+  const cx = (this.size[0] as number) - 14;
+  const cy = -NODE_TITLE_HEIGHT / 2;
+  const r = 8;
+
+  ctx.save();
+  // Circle background
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255,255,255,0.18)";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.55)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  // "?" text
+  ctx.font = "bold 11px sans-serif";
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("?", cx, cy + 0.5);
+  ctx.restore();
 }
 
 /** Draw colored badge pills to the right of each bound input port's label text.
