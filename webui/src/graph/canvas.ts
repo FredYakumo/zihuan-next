@@ -919,7 +919,8 @@ export class ZihuanCanvas {
   private async showHPPicker(lNode: any, portName: string, event: MouseEvent): Promise<void> {
     const sid = this.state.sessionId;
     if (!sid) return;
-    const { hyperparameters } = await graphs.getHyperparameters(sid);
+    const hpSid = this.rootSessionId ?? sid;
+    const { hyperparameters } = await graphs.getHyperparameters(hpSid);
     this.showBindingPicker(event, hyperparameters.map((h) => h.name), async (name) => {
       await graphs.updateNode(sid, lNode.zihuanId as string, {
         port_bindings: { [portName]: { kind: "hyperparameter", name } },
