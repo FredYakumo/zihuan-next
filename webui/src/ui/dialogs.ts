@@ -1,7 +1,7 @@
 // Modal dialog implementations for special node editors
 
 import { graphs } from "../api/client";
-import type { NodeDefinition, NodeGraphDefinition, Port, HyperParameter, GraphVariable, NodeTypeInfo } from "../api/types";
+import type { NodeDefinition, NodeGraphDefinition, Port, HyperParameter, GraphVariable, NodeTypeInfo, GraphMetadata } from "../api/types";
 
 // ─── Data types ──────────────────────────────────────────────────────────────
 
@@ -1469,7 +1469,7 @@ const BROWSER_STYLES = `
   .zh-wf-browser-close:hover { color: #e94560; }
   .zh-wf-browser-grid {
     flex: 1; overflow-y: auto; padding: 16px 20px;
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 14px; align-content: start;
   }
   .zh-wf-card {
@@ -1491,9 +1491,21 @@ const BROWSER_STYLES = `
     font-size: 36px; opacity: 0.25; user-select: none; color: #8ab4f8;
   }
   .zh-wf-card-name {
-    padding: 8px 10px; font-size: 12px; color: #cdd;
+    padding: 8px 10px 2px; font-size: 13px; color: #e0e8f0;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    border-top: 1px solid #1a2a3a; font-weight: 500;
+    border-top: 1px solid #1a2a3a; font-weight: 600;
+  }
+  .zh-wf-card-filename {
+    padding: 0 10px 2px; font-size: 10px; color: #6a8aaa;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .zh-wf-card-meta {
+    padding: 0 10px 8px; font-size: 11px; color: #8aaabb;
+    overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .zh-wf-card-version {
+    padding: 0 10px 6px; font-size: 10px; color: #5a7a8a;
   }
   .zh-wf-empty {
     grid-column: 1 / -1; color: #666; font-size: 14px;
@@ -1513,6 +1525,9 @@ export interface WorkflowEntry {
   name: string;
   file: string;
   cover_url: string | null;
+  display_name: string | null;
+  description: string | null;
+  version: string | null;
 }
 
 /** Show a card-grid browser for workflow_set entries. Returns the selected file name or null. */
@@ -1555,7 +1570,8 @@ export function showWorkflowBrowserDialog(workflows: WorkflowEntry[]): Promise<s
       for (const wf of workflows) {
         const card = document.createElement("div");
         card.className = "zh-wf-card";
-        card.title = wf.name;
+        const cardTitle = wf.display_name || wf.name;
+        card.title = [cardTitle, wf.file, wf.description].filter(Boolean).join("\n");
 
         const coverDiv = document.createElement("div");
         coverDiv.className = "zh-wf-card-cover";
@@ -1563,7 +1579,7 @@ export function showWorkflowBrowserDialog(workflows: WorkflowEntry[]): Promise<s
         if (wf.cover_url) {
           const img = document.createElement("img");
           img.src = wf.cover_url;
-          img.alt = wf.name;
+          img.alt = cardTitle;
           img.draggable = false;
           coverDiv.appendChild(img);
         } else {
@@ -1575,10 +1591,29 @@ export function showWorkflowBrowserDialog(workflows: WorkflowEntry[]): Promise<s
 
         const nameDiv = document.createElement("div");
         nameDiv.className = "zh-wf-card-name";
-        nameDiv.textContent = wf.name;
+        nameDiv.textContent = cardTitle;
+
+        const fileDiv = document.createElement("div");
+        fileDiv.className = "zh-wf-card-filename";
+        fileDiv.textContent = wf.file;
 
         card.appendChild(coverDiv);
         card.appendChild(nameDiv);
+        card.appendChild(fileDiv);
+
+        if (wf.description) {
+          const descDiv = document.createElement("div");
+          descDiv.className = "zh-wf-card-meta";
+          descDiv.textContent = wf.description;
+          card.appendChild(descDiv);
+        }
+
+        if (wf.version) {
+          const verDiv = document.createElement("div");
+          verDiv.className = "zh-wf-card-version";
+          verDiv.textContent = `v${wf.version}`;
+          card.appendChild(verDiv);
+        }
 
         card.addEventListener("click", () => {
           overlay.remove();
@@ -1595,6 +1630,93 @@ export function showWorkflowBrowserDialog(workflows: WorkflowEntry[]): Promise<s
     overlay.addEventListener("click", close);
     document.body.appendChild(overlay);
   });
+}
+
+// ─── Graph Metadata Dialog ────────────────────────────────────────────────────
+
+/**
+ * Open a dialog to view/edit the graph's name, description, and version.
+ * Calls `graphs.updateMetadata` and then `onSaved` when the user confirms.
+ */
+export async function openGraphMetadataDialog(
+  sessionId: string,
+  onSaved: () => void
+): Promise<void> {
+  ensureDialogStyles();
+  const { dialog, close } = openOverlay();
+  dialog.style.minWidth = "480px";
+  dialog.style.maxWidth = "600px";
+
+  const title = document.createElement("h3");
+  title.textContent = "编辑节点图信息";
+  dialog.appendChild(title);
+
+  let current: GraphMetadata = { name: null, description: null, version: null };
+  try {
+    current = await graphs.getMetadata(sessionId);
+  } catch { /* keep defaults */ }
+
+  const mk = (labelText: string, id: string) => {
+    const lbl = document.createElement("label");
+    lbl.htmlFor = id;
+    lbl.textContent = labelText;
+    dialog.appendChild(lbl);
+  };
+
+  mk("节点图名称", "meta-name");
+  const nameEl = document.createElement("input");
+  nameEl.id = "meta-name";
+  nameEl.type = "text";
+  nameEl.placeholder = "未命名";
+  nameEl.value = current.name ?? "";
+  dialog.appendChild(nameEl);
+
+  mk("版本", "meta-version");
+  const versionEl = document.createElement("input");
+  versionEl.id = "meta-version";
+  versionEl.type = "text";
+  versionEl.placeholder = "1.0.0";
+  versionEl.value = current.version ?? "";
+  dialog.appendChild(versionEl);
+
+  mk("描述", "meta-desc");
+  const descEl = document.createElement("textarea");
+  descEl.id = "meta-desc";
+  descEl.placeholder = "描述这个节点图的功能…";
+  descEl.style.minHeight = "100px";
+  descEl.value = current.description ?? "";
+  dialog.appendChild(descEl);
+
+  const btns = document.createElement("div");
+  btns.className = "zh-buttons";
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "取消";
+  cancelBtn.addEventListener("click", close);
+
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "primary";
+  saveBtn.textContent = "保存";
+  saveBtn.addEventListener("click", async () => {
+    const updated: GraphMetadata = {
+      name:        nameEl.value.trim() || null,
+      version:     versionEl.value.trim() || null,
+      description: descEl.value.trim() || null,
+    };
+    try {
+      await graphs.updateMetadata(sessionId, updated);
+      onSaved();
+      close();
+    } catch (e) {
+      showErrorDialog("保存节点图信息失败: " + (e as Error).message);
+    }
+  });
+
+  btns.appendChild(cancelBtn);
+  btns.appendChild(saveBtn);
+  dialog.appendChild(btns);
+
+  setTimeout(() => nameEl.focus(), 0);
 }
 
 // ─── Hyperparameters Dialog ───────────────────────────────────────────────────

@@ -4,7 +4,7 @@ use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use zihuan_node::graph_io::{GraphPosition, GraphSize, NodeDefinition, NodeGraphDefinition, PortBinding};
+use zihuan_node::graph_io::{GraphMetadata, GraphPosition, GraphSize, NodeDefinition, NodeGraphDefinition, PortBinding};
 
 use super::state::{AppState, GraphSession, GraphTabInfo};
 
@@ -441,6 +441,59 @@ pub async fn validate_graph(req: &mut Request, res: &mut Response, depot: &mut D
         "cycle_nodes": cycle_vec,
         "has_errors": has_errors,
     })));
+}
+
+// ─── Get / update graph metadata ─────────────────────────────────────────────
+
+#[handler]
+pub async fn get_metadata(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+    let state = depot.obtain::<Arc<AppState>>().unwrap();
+    let id = req.param::<String>("id").unwrap_or_default();
+    let sessions = state.sessions.read().unwrap();
+    match sessions.get(&id) {
+        Some(s) => res.render(Json(&s.graph.metadata)),
+        None => {
+            res.status_code(StatusCode::NOT_FOUND);
+            res.render(Json(serde_json::json!({"error": "Graph not found"})));
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct UpdateMetadataRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub version: Option<String>,
+}
+
+#[handler]
+pub async fn update_metadata(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+    let state = depot.obtain::<Arc<AppState>>().unwrap();
+    let id = req.param::<String>("id").unwrap_or_default();
+    let body: UpdateMetadataRequest = match req.parse_json().await {
+        Ok(v) => v,
+        Err(e) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(serde_json::json!({"error": e.to_string()})));
+            return;
+        }
+    };
+    let mut sessions = state.sessions.write().unwrap();
+    match sessions.get_mut(&id) {
+        Some(s) => {
+            s.graph.metadata = GraphMetadata {
+                name: body.name,
+                description: body.description,
+                version: body.version,
+            };
+            s.dirty = true;
+            res.render(Json(serde_json::json!({"ok": true})));
+        }
+        None => {
+            res.status_code(StatusCode::NOT_FOUND);
+            res.render(Json(serde_json::json!({"error": "Graph not found"})));
+        }
+    }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

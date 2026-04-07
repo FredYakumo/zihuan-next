@@ -10,6 +10,7 @@ import type {
   TaskEntry,
   HyperParameter,
   GraphVariable,
+  GraphMetadata,
 } from "./types";
 
 const BASE = "/api";
@@ -146,6 +147,15 @@ export const graphs = {
   ): Promise<{ ok: boolean }> {
     return request("PUT", `/graphs/${graphId}/variables`, { variables });
   },
+  getMetadata(graphId: string): Promise<GraphMetadata> {
+    return request("GET", `/graphs/${graphId}/metadata`);
+  },
+  updateMetadata(
+    graphId: string,
+    metadata: GraphMetadata
+  ): Promise<{ ok: boolean }> {
+    return request("PUT", `/graphs/${graphId}/metadata`, metadata);
+  },
 };
 
 // File I/O
@@ -183,7 +193,7 @@ export const workflows = {
   list(): Promise<{ files: string[] }> {
     return request("GET", "/workflow_set");
   },
-  listDetailed(): Promise<{ workflows: Array<{ name: string; file: string; cover_url: string | null }> }> {
+  listDetailed(): Promise<{ workflows: Array<{ name: string; file: string; cover_url: string | null; display_name: string | null; description: string | null; version: string | null }> }> {
     return request("GET", "/workflow_set/detailed");
   },
   save(graphId: string, name: string): Promise<{ ok: boolean; path: string }> {
