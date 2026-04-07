@@ -776,17 +776,17 @@ export class ZihuanCanvas {
     menu.style.cssText = `
       position:fixed;z-index:10000;
       left:${event.clientX}px;top:${event.clientY}px;
-      background:#1a1a2e;border:1px solid #2a2a4a;border-radius:4px;
-      box-shadow:0 4px 16px rgba(0,0,0,0.6);
-      font-family:sans-serif;font-size:13px;color:#e0e0e0;min-width:170px;overflow:hidden;
+      background:var(--toolbar-bg);border:1px solid var(--border);border-radius:4px;
+      box-shadow:0 4px 16px rgba(0,0,0,0.4);
+      font-family:sans-serif;font-size:13px;color:var(--text);min-width:170px;overflow:hidden;
     `;
 
     const makeItem = (label: string, enabled: boolean, onClick: () => void) => {
       const item = document.createElement("div");
       item.textContent = label;
-      item.style.cssText = `padding:8px 14px;cursor:${enabled ? "pointer" : "default"};border-bottom:1px solid #1a2a4a;color:${enabled ? "#e0e0e0" : "#555"};`;
+      item.style.cssText = `padding:8px 14px;cursor:${enabled ? "pointer" : "default"};border-bottom:1px solid var(--border);color:${enabled ? "var(--text)" : "var(--text-dim)"};`;
       if (enabled) {
-        item.addEventListener("mouseenter", () => { item.style.background = "#1a3a6e"; });
+        item.addEventListener("mouseenter", () => { item.style.background = "var(--node-hover)"; });
         item.addEventListener("mouseleave", () => { item.style.background = ""; });
         item.addEventListener("click", () => { menu.remove(); onClick(); });
       }
