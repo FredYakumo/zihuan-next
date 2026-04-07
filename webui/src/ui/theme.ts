@@ -53,6 +53,8 @@ export interface LiteGraphColors {
   eventLinkColor: string;
   connectingLinkColor: string;
   linkTypeColors: LinkTypeColors;
+  boundaryNodeHeader: string;  // function_inputs / function_outputs header color
+  boundaryNodeBg: string;      // function_inputs / function_outputs background color
 }
 
 const DARK_LITEGRAPH: LiteGraphColors = {
@@ -74,6 +76,8 @@ const DARK_LITEGRAPH: LiteGraphColors = {
   linkColor:          "#aaaaaa",
   eventLinkColor:     "#cccccc",
   connectingLinkColor:"#ffffff",
+  boundaryNodeHeader: "#0d4d48",  // deep teal
+  boundaryNodeBg:     "#051f1c",  // very dark teal
   linkTypeColors: {
     primitive: "#7ec8ff",   // sky blue  — String/Int/Float/Bool/Binary/Password
     complex:   "#ffb347",   // amber     — Json/MessageEvent/OpenAIMessage/QQMessage/FunctionTools/LLModel
@@ -102,6 +106,8 @@ const LIGHT_LITEGRAPH: LiteGraphColors = {
   linkColor:          "#9060c0",
   eventLinkColor:     "#a03090",
   connectingLinkColor:"#7030a8",
+  boundaryNodeHeader: "#0d9d92",  // bright teal
+  boundaryNodeBg:     "#c5eee9",  // light teal
   linkTypeColors: {
     primitive: "#3a80c0",   // blue
     complex:   "#cc7000",   // dark amber
@@ -111,11 +117,25 @@ const LIGHT_LITEGRAPH: LiteGraphColors = {
   },
 };
 
-/** Return the LiteGraph color set matching the currently active theme. */
+/**
+ * Return the LiteGraph color set matching the currently active theme.
+ */
 export function getLiteGraphColors(): LiteGraphColors {
   const tag = document.documentElement.dataset.theme;
   const isDark = tag ? tag === "dark" : !window.matchMedia("(prefers-color-scheme: light)").matches;
   return isDark ? DARK_LITEGRAPH : LIGHT_LITEGRAPH;
+}
+
+/**
+ * Return colors for function_inputs and function_outputs boundary nodes.
+ * These colors adapt to the current theme.
+ */
+export function getBoundaryNodeColors(): { header: string; bg: string } {
+  const colors = getLiteGraphColors();
+  return {
+    header: colors.boundaryNodeHeader,
+    bg: colors.boundaryNodeBg,
+  };
 }
 
 function getSystemTheme(): Theme {
