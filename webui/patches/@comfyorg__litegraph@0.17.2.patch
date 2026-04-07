@@ -1,0 +1,14 @@
+diff --git a/dist/litegraph.es.js b/dist/litegraph.es.js
+index ff10bf3d1f3d39327b1ae89a3f6187279de6f5b3..d9a8cb96f734f743c86796bb29be27dbc5f2e04c 100644
+--- a/dist/litegraph.es.js
++++ b/dist/litegraph.es.js
+@@ -12257,7 +12257,8 @@ class LGraphCanvas {
+           );
+         }
+       } else {
+-        const l = this.links_render_mode == LinkRenderType.LINEAR_LINK ? 15 : 10;
++        const dx = b[0] - a[0];
++        const l = this.links_render_mode == LinkRenderType.LINEAR_LINK ? 15 : (dx > 0 ? Math.max(30, Math.min(80, dx * 0.25)) : 30);
+         switch (startDir) {
+           case LinkDirection.LEFT:
+             innerA[0] += -l;
