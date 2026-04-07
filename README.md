@@ -49,9 +49,13 @@ The editor runs in your browser. The backend is a single Rust binary ([Salvo](ht
 
 ## Getting Started
 
-### Build from source
+### Option A: Download pre-built binary
 
-Requirements: **Rust** (stable), **Node.js 18+** and **pnpm**, **Redis**, **MySQL**.
+Download the latest release from the [Releases page](https://github.com/FredYakumo/zihuan-next/releases) *(releases coming soon)*, extract the archive, and run the executable directly — no build tools required.
+
+### Option B: Build from source
+
+Requirements: **Rust** (stable), **Node.js 18+** and **pnpm**.
 
 ```bash
 # 1. Clone
@@ -65,17 +69,16 @@ cd webui && pnpm install && cd ..
 cargo build --release
 ```
 
-### Configure and run
+### Run
 
 ```bash
-cp config.yaml.example config.yaml
-# Edit config.yaml: Bot Server URL, LLM endpoints, DB credentials
-
 docker compose -f docker/docker-compose.yaml up -d   # Redis (+ optional MySQL)
 
 ./target/release/zihuan_next                         # http://127.0.0.1:8080
 ./target/release/zihuan_next --host 0.0.0.0 --port 9000
 ```
+
+Configuration values (API keys, etc.) are managed as **hyperparameters** inside the node graph — open the Hyperparameters panel in the editor to set them.
 
 ### Build commands
 
