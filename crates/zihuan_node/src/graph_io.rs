@@ -53,6 +53,20 @@ pub struct GraphVariable {
     pub initial_value: Option<Value>,
 }
 
+/// Graph-level metadata: human-readable name, description, and semver version.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct GraphMetadata {
+    /// Human-readable graph name (may differ from the filename).
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Free-text description of what this graph does.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Semver-style version string, e.g. "1.0.0".
+    #[serde(default)]
+    pub version: Option<String>,
+}
+
 /// A graph-level hyperparameter (variable) that can be bound to node input ports.
 /// Values are NOT stored here – they live in a separate per-graph YAML file
 /// in the central app-data directory (`hyperparam_store`).
@@ -86,6 +100,8 @@ pub struct NodeGraphDefinition {
     pub hyperparameters: Vec<HyperParameter>,
     #[serde(default)]
     pub variables: Vec<GraphVariable>,
+    #[serde(default)]
+    pub metadata: GraphMetadata,
     #[serde(skip)]
     pub execution_results: HashMap<String, HashMap<String, DataValue>>,
 }
@@ -1275,6 +1291,7 @@ pub fn build_definition_from_graph(graph: &NodeGraph) -> NodeGraphDefinition {
         hyperparameter_groups: Vec::new(),
         hyperparameters: Vec::new(),
         variables: Vec::new(),
+        metadata: Default::default(),
         execution_results: HashMap::new(),
     }
 }

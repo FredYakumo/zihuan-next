@@ -915,6 +915,7 @@ export function buildToolbar(
   onSaveToWorkflows: () => void,
   onValidate: () => void,
   onBrowseWorkflows: () => void,
+  onEditGraphInfo: () => void,
   onTaskFailed: (message: string) => void,
 ): void {
   // Make the title a popup trigger
@@ -930,6 +931,7 @@ export function buildToolbar(
     { label: "另存为", shortcut: "Ctrl+Shift+S", onClick: onSaveAs },
     { label: "保存为工作流集", onClick: onSaveToWorkflows },
     { label: "浏览工作流集", onClick: onBrowseWorkflows },
+    { label: "编辑节点图信息...", onClick: onEditGraphInfo },
     { label: "验证", onClick: onValidate },
   ];
 

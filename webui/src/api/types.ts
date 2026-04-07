@@ -84,12 +84,19 @@ export interface GraphVariable {
   initial_value: unknown | null;
 }
 
+export interface GraphMetadata {
+  name: string | null;
+  description: string | null;
+  version: string | null;
+}
+
 export interface NodeGraphDefinition {
   nodes: NodeDefinition[];
   edges: EdgeDefinition[];
   hyperparameter_groups: string[];
   hyperparameters: HyperParameter[];
   variables: GraphVariable[];
+  metadata: GraphMetadata;
 }
 
 export interface GraphTabInfo {

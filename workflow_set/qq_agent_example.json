@@ -54,13 +54,13 @@
         "bot_server_url": "ws://localhost:3001"
       },
       "port_bindings": {
-        "bot_server_token": {
-          "kind": "hyperparameter",
-          "name": "BOT_SERVER_TOKEN"
-        },
         "qq_id": {
           "kind": "hyperparameter",
           "name": "BOT_ID"
+        },
+        "bot_server_token": {
+          "kind": "hyperparameter",
+          "name": "BOT_SERVER_TOKEN"
         }
       },
       "has_error": false,
@@ -197,17 +197,17 @@
       },
       "inline_values": {
         "mysql_database": "zihuan_aibot",
-        "mysql_port": "3306",
-        "mysql_host": "127.0.0.1"
+        "mysql_host": "127.0.0.1",
+        "mysql_port": "3306"
       },
       "port_bindings": {
-        "mysql_password": {
-          "kind": "hyperparameter",
-          "name": "MYSQL_PASSWORD"
-        },
         "mysql_user": {
           "kind": "hyperparameter",
           "name": "MYSQL_USER"
+        },
+        "mysql_password": {
+          "kind": "hyperparameter",
+          "name": "MYSQL_PASSWORD"
         }
       },
       "has_error": false,
@@ -377,6 +377,10 @@
         "timeout_secs": "600"
       },
       "port_bindings": {
+        "api_endpoint": {
+          "kind": "hyperparameter",
+          "name": "LLM_API_ENDPOINT"
+        },
         "api_key": {
           "kind": "hyperparameter",
           "name": "LLM_API_KEY"
@@ -384,10 +388,6 @@
         "model_name": {
           "kind": "hyperparameter",
           "name": "LLM_MODEL_NAME"
-        },
-        "api_endpoint": {
-          "kind": "hyperparameter",
-          "name": "LLM_API_ENDPOINT"
         }
       },
       "has_error": false,
@@ -913,6 +913,11 @@
             ],
             "hyperparameter_groups": [],
             "hyperparameters": [],
+            "metadata": {
+              "description": null,
+              "name": null,
+              "version": null
+            },
             "nodes": [
               {
                 "description": "Converts MessageEvent to LLM prompt string",
@@ -1624,6 +1629,11 @@
                         ],
                         "hyperparameter_groups": [],
                         "hyperparameters": [],
+                        "metadata": {
+                          "description": null,
+                          "name": null,
+                          "version": null
+                        },
                         "nodes": [
                           {
                             "description": "函数子图的输入边界节点",
@@ -3337,6 +3347,11 @@
             ],
             "hyperparameter_groups": [],
             "hyperparameters": [],
+            "metadata": {
+              "description": null,
+              "name": null,
+              "version": null
+            },
             "nodes": [
               {
                 "description": "Converts MessageEvent to LLM prompt string",
@@ -3403,7 +3418,10 @@
                   "x": -340.0,
                   "y": 280.0
                 },
-                "size": null
+                "size": {
+                  "height": 106.0,
+                  "width": 235.96151733398438
+                }
               },
               {
                 "description": "从消息事件中提取发送者的QQ号（字符串）",
@@ -3436,7 +3454,10 @@
                   "x": -360.0,
                   "y": 140.0
                 },
-                "size": null
+                "size": {
+                  "height": 60.0,
+                  "width": 159.064453125
+                }
               },
               {
                 "description": "使用 system prompt 和 user message 发起一次带动态 Tools 的 LLM 推理",
@@ -3566,6 +3587,11 @@
                         ],
                         "hyperparameter_groups": [],
                         "hyperparameters": [],
+                        "metadata": {
+                          "description": null,
+                          "name": null,
+                          "version": null
+                        },
                         "nodes": [
                           {
                             "description": "函数子图的输入边界节点",
@@ -4043,7 +4069,10 @@
                   "x": 1240.0,
                   "y": 360.0
                 },
-                "size": null
+                "size": {
+                  "height": 198.0,
+                  "width": 210.0
+                }
               },
               {
                 "description": "通过 ${变量名} 模板语法将输入变量格式化为字符串",
@@ -4104,11 +4133,11 @@
                   }
                 },
                 "position": {
-                  "x": 500.0,
-                  "y": 0.0
+                  "x": 560.0,
+                  "y": -100.0
                 },
                 "size": {
-                  "height": 120.0,
+                  "height": 138.0,
                   "width": 540.0
                 }
               },
@@ -4197,7 +4226,10 @@
                   "x": 2020.0,
                   "y": 0.0
                 },
-                "size": null
+                "size": {
+                  "height": 60.0,
+                  "width": 140.0
+                }
               },
               {
                 "description": "将单个元素封装为单元素 List",
@@ -4230,7 +4262,10 @@
                   "x": 1520.0,
                   "y": 0.0
                 },
-                "size": null
+                "size": {
+                  "height": 60.0,
+                  "width": 140.0
+                }
               },
               {
                 "description": "根据缓存 Ref 和 sender_id 读取当前运行期累计的 Vec<OpenAIMessage>",
@@ -4279,7 +4314,10 @@
                   "x": 500.0,
                   "y": 200.0
                 },
-                "size": null
+                "size": {
+                  "height": 98.0,
+                  "width": 210.0
+                }
               },
               {
                 "description": "将 vec2 拼接到 vec1 之后，要求两个 Vec 的元素类型一致",
@@ -4322,7 +4360,10 @@
                   "x": 1780.0,
                   "y": -20.0
                 },
-                "size": null
+                "size": {
+                  "height": 60.0,
+                  "width": 140.0
+                }
               },
               {
                 "description": "根据缓存 Ref、sender_id 与消息列表，覆写当前运行期累计的 Vec<OpenAIMessage>",
@@ -4369,7 +4410,10 @@
                   "x": 1820.0,
                   "y": 880.0
                 },
-                "size": null
+                "size": {
+                  "height": 98.0,
+                  "width": 210.0
+                }
               },
               {
                 "description": "原子检查并占用 sender_id 会话状态",
@@ -4426,7 +4470,10 @@
                   "x": -80.0,
                   "y": 140.0
                 },
-                "size": null
+                "size": {
+                  "height": 98.0,
+                  "width": 210.0
+                }
               },
               {
                 "description": "根据 Boolean 输入将同一份数据分流到 true 或 false 分支，另一分支不输出",
@@ -4477,7 +4524,10 @@
                   "x": 180.0,
                   "y": 80.0
                 },
-                "size": null
+                "size": {
+                  "height": 98.0,
+                  "width": 210.0
+                }
               },
               {
                 "description": "向QQ好友发送消息",
@@ -4530,7 +4580,10 @@
                   "x": 1340.0,
                   "y": -520.0
                 },
-                "size": null
+                "size": {
+                  "height": 98.0,
+                  "width": 210.0
+                }
               },
               {
                 "description": "QQMessageList data source with inline UI editor",
@@ -4618,7 +4671,10 @@
                   "x": 2260.0,
                   "y": 880.0
                 },
-                "size": null
+                "size": {
+                  "height": 78.0,
+                  "width": 210.0
+                }
               },
               {
                 "description": "等待 first 和 second 都到齐后，原样透传 second",
@@ -4657,7 +4713,10 @@
                   "x": 2040.0,
                   "y": 880.0
                 },
-                "size": null
+                "size": {
+                  "height": 60.0,
+                  "width": 140.0
+                }
               },
               {
                 "description": "将 vec2 拼接到 vec1 之后，要求两个 Vec 的元素类型一致",
@@ -4700,7 +4759,10 @@
                   "x": 1440.0,
                   "y": 760.0
                 },
-                "size": null
+                "size": {
+                  "height": 60.0,
+                  "width": 140.0
+                }
               },
               {
                 "description": "函数子图的输入边界节点",
@@ -4866,7 +4928,10 @@
                   "x": 220.0,
                   "y": -240.0
                 },
-                "size": null
+                "size": {
+                  "height": 60.0,
+                  "width": 228.14120483398438
+                }
               },
               {
                 "description": "从列表中按下标取元素，支持负数下标（-1为最后一个）",
@@ -4909,7 +4974,10 @@
                   "x": 1640.0,
                   "y": 380.0
                 },
-                "size": null
+                "size": {
+                  "height": 78.0,
+                  "width": 210.0
+                }
               },
               {
                 "description": "将 OpenAIMessage 的 content 字符串解析为 JSON",
@@ -4948,7 +5016,10 @@
                   "x": 1900.0,
                   "y": 380.0
                 },
-                "size": null
+                "size": {
+                  "height": 60.0,
+                  "width": 223.52011108398438
+                }
               },
               {
                 "description": "将 LLM 输出的 QQ 消息 JSON 二维数组转换为 Vec<Vec<QQMessage>>",
@@ -4991,7 +5062,10 @@
                   "x": 2140.0,
                   "y": 380.0
                 },
-                "size": null
+                "size": {
+                  "height": 60.0,
+                  "width": 197.82382202148438
+                }
               },
               {
                 "description": "向QQ好友批量发送多条消息",
@@ -5060,7 +5134,10 @@
                   "x": 2420.0,
                   "y": 380.0
                 },
-                "size": null
+                "size": {
+                  "height": 122.0,
+                  "width": 213.099609375
+                }
               },
               {
                 "description": "Preview OpenAIMessage list inside the node card with scrollable message items",
@@ -5144,7 +5221,10 @@
                   "x": 2400.0,
                   "y": 660.0
                 },
-                "size": null
+                "size": {
+                  "height": 98.0,
+                  "width": 210.0
+                }
               },
               {
                 "description": "QQMessageList data source with inline UI editor",
@@ -5232,7 +5312,10 @@
                   "x": 2180.0,
                   "y": 660.0
                 },
-                "size": null
+                "size": {
+                  "height": 60.0,
+                  "width": 140.0
+                }
               },
               {
                 "description": "向QQ好友发送消息",
@@ -5285,7 +5368,10 @@
                   "x": 3200.0,
                   "y": 620.0
                 },
-                "size": null
+                "size": {
+                  "height": 98.0,
+                  "width": 210.0
+                }
               },
               {
                 "description": "QQMessageList data source with inline UI editor",
@@ -5373,7 +5459,10 @@
                   "x": 2980.0,
                   "y": 620.0
                 },
-                "size": null
+                "size": {
+                  "height": 60.0,
+                  "width": 140.0
+                }
               }
             ],
             "variables": []
@@ -5617,5 +5706,10 @@
       "description": null
     }
   ],
-  "variables": []
+  "variables": [],
+  "metadata": {
+    "name": "QQ机器人",
+    "description": "以QQ账号的形式存在。具备回复消息，记忆好友、群聊消息内容，产生映像记忆，搜索网络，写代码，长消息折叠等。",
+    "version": "beta"
+  }
 }

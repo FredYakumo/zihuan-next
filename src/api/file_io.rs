@@ -43,6 +43,9 @@ pub struct WorkflowInfo {
     pub name: String,
     pub file: String,
     pub cover_url: Option<String>,
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+    pub version: Option<String>,
 }
 
 /// Return detailed workflow listing: name, json filename, optional cover URL.
@@ -77,7 +80,29 @@ pub async fn list_workflows_detailed(_req: &mut Request, res: &mut Response, _de
                 }
             });
 
-            Some(WorkflowInfo { name: stem, file, cover_url })
+            // Try to read metadata from the JSON file
+            let (display_name, description, version) =
+                std::fs::read_to_string(&p)
+                    .ok()
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                    .map(|v| {
+                        let dn = v.get("metadata")
+                            .and_then(|m| m.get("name"))
+                            .and_then(|n| n.as_str())
+                            .map(|s| s.to_string());
+                        let desc = v.get("metadata")
+                            .and_then(|m| m.get("description"))
+                            .and_then(|d| d.as_str())
+                            .map(|s| s.to_string());
+                        let ver = v.get("metadata")
+                            .and_then(|m| m.get("version"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        (dn, desc, ver)
+                    })
+                    .unwrap_or((None, None, None));
+
+            Some(WorkflowInfo { name: stem, file, cover_url, display_name, description, version })
         })
         .collect();
 

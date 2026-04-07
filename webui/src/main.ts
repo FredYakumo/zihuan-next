@@ -8,7 +8,7 @@ import { registerNodeTypes } from "./graph/registry";
 import { ZihuanCanvas } from "./graph/canvas";
 import { injectStyles, buildDOM, buildToolbar, buildCanvasPanelButtons, updateBreadcrumb, updateTabs, createLogToastOverlay } from "./ui/shell";
 import type { TabInfo } from "./ui/shell";
-import { showWorkflowsDialog, openHyperparametersDialog, openVariablesDialog, showAddNodeDialog, showSaveAsDialog, showWorkflowBrowserDialog, showErrorDialog } from "./ui/dialogs";
+import { showWorkflowsDialog, openHyperparametersDialog, openVariablesDialog, showAddNodeDialog, showSaveAsDialog, showWorkflowBrowserDialog, showErrorDialog, openGraphMetadataDialog } from "./ui/dialogs";
 import type { NodeTypeInfo } from "./api/types";
 
 async function main() {
@@ -439,6 +439,16 @@ async function main() {
     onSaveToWorkflows,
     onValidate,
     onBrowseWorkflows,
+    () => {
+      if (!activeTabId) {
+        showErrorDialog("请先打开或新建一个节点图。");
+        return;
+      }
+      openGraphMetadataDialog(activeTabId, () => {
+        // mark dirty so the tab shows the asterisk
+        setTabDirty(activeTabId!, true);
+      }).catch(console.error);
+    },
     (msg) => showErrorDialog(msg),
   );
 

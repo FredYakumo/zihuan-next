@@ -62,7 +62,10 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast) -> Router {
                             .put(hyperparams::update_hyperparameter_values))
                         .push(Router::with_path("variables")
                             .get(hyperparams::get_variables)
-                            .put(hyperparams::update_variables)),
+                            .put(hyperparams::update_variables))
+                        .push(Router::with_path("metadata")
+                            .get(graph::get_metadata)
+                            .put(graph::update_metadata)),
                 ),
         )
         // Tasks
