@@ -134,6 +134,11 @@ async function main() {
     backArrow.style.display = labels.length > 0 ? "" : "none";
   };
 
+  canvas.onGraphDirty = () => {
+    const sid = canvas.rootSessionId;
+    if (sid) setTabDirty(sid, true);
+  };
+
   // Log overlay (top-left toast) — created here so the WS handler below can close over addLog
   const addLog = createLogToastOverlay(canvasContainer);
 
@@ -244,7 +249,7 @@ async function main() {
   };
 
   const onSaveFile = async () => {
-    const sid = canvas.sessionId;
+    const sid = canvas.rootSessionId;
     if (!sid) {
       showErrorDialog("请先打开一个节点图");
       return;
@@ -284,7 +289,7 @@ async function main() {
   };
 
   const onSaveAs = async () => {
-    const sid = canvas.sessionId;
+    const sid = canvas.rootSessionId;
     if (!sid) { showErrorDialog("请先打开一个节点图"); return; }
     const currentTab = tabList.find((t) => t.id === sid);
     const defaultName = currentTab?.name ?? "untitled";
@@ -317,7 +322,7 @@ async function main() {
 
   // Save current graph into workflow_set/ directory
   const onSaveToWorkflows = async () => {
-    const sid = canvas.sessionId;
+    const sid = canvas.rootSessionId;
     if (!sid) { showErrorDialog("请先打开一个节点图"); return; }
     const currentTab = tabList.find((t) => t.id === sid);
     const defaultName = currentTab?.name ?? "untitled";
