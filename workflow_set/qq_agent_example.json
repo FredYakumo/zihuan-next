@@ -54,13 +54,13 @@
         "bot_server_url": "ws://localhost:3001"
       },
       "port_bindings": {
-        "bot_server_token": {
-          "kind": "hyperparameter",
-          "name": "BOT_SERVER_TOKEN"
-        },
         "qq_id": {
           "kind": "hyperparameter",
           "name": "BOT_ID"
+        },
+        "bot_server_token": {
+          "kind": "hyperparameter",
+          "name": "BOT_SERVER_TOKEN"
         }
       },
       "has_error": false,
@@ -201,13 +201,13 @@
         "mysql_port": "3306"
       },
       "port_bindings": {
-        "mysql_user": {
-          "kind": "hyperparameter",
-          "name": "MYSQL_USER"
-        },
         "mysql_password": {
           "kind": "hyperparameter",
           "name": "MYSQL_PASSWORD"
+        },
+        "mysql_user": {
+          "kind": "hyperparameter",
+          "name": "MYSQL_USER"
         }
       },
       "has_error": false,
@@ -381,13 +381,13 @@
           "kind": "hyperparameter",
           "name": "LLM_API_ENDPOINT"
         },
-        "model_name": {
-          "kind": "hyperparameter",
-          "name": "LLM_MODEL_NAME"
-        },
         "api_key": {
           "kind": "hyperparameter",
           "name": "LLM_API_KEY"
+        },
+        "model_name": {
+          "kind": "hyperparameter",
+          "name": "LLM_MODEL_NAME"
         }
       },
       "has_error": false,

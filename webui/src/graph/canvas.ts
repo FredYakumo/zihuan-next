@@ -42,6 +42,9 @@ export class ZihuanCanvas {
   /** Called whenever the breadcrumb navigation path changes */
   onNavigationChange?: (labels: string[]) => void;
 
+  /** Called whenever the graph is modified by the user (e.g. node moved) */
+  onGraphDirty?: () => void;
+
   /**
    * Called when the user right-clicks on an empty area of the canvas.
    * Receives the position in graph coordinates where the node should be placed.
@@ -101,6 +104,7 @@ export class ZihuanCanvas {
         this.lGraph.snapToGrid(selected);
         this.lGraph.setDirtyCanvas(true, true);
       }
+      this.onGraphDirty?.();
     };
 
     // Draw data-type labels at the connection midpoint.
@@ -236,6 +240,18 @@ export class ZihuanCanvas {
   }
 
   get sessionId(): string | null {
+    return this.state.sessionId;
+  }
+
+  /**
+   * Returns the root (top-level tab) session ID regardless of subgraph depth.
+   * When inside a subgraph the virtual session is not in the tab list; this
+   * getter always returns the session that corresponds to an open tab.
+   */
+  get rootSessionId(): string | null {
+    if (this.subgraphStack.length > 0) {
+      return this.subgraphStack[0].parentSessionId;
+    }
     return this.state.sessionId;
   }
 
