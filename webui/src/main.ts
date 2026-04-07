@@ -58,7 +58,7 @@ async function main() {
     if (activeTabId === id) return;
     activeTabId = id;
     renderTabs();
-    await canvas.loadSession(id);
+    await canvas.loadExternalSession(id);
     updateRunButton(id === runningSessionId);
   }
 
@@ -114,7 +114,7 @@ async function main() {
   async function createNewTab() {
     const tab = await graphs.create();
     openTab(tab.id, "未命名", false);
-    await canvas.loadSession(tab.id);
+    await canvas.loadExternalSession(tab.id);
   }
 
   // Wire breadcrumb navigation
@@ -194,7 +194,7 @@ async function main() {
         openTab(result.session_id, name, false, false);
         const tab = tabList.find((t) => t.id === result.session_id);
         if (tab) tab.fileHandle = handle;
-        await canvas.loadSession(result.session_id);
+        await canvas.loadExternalSession(result.session_id);
         return;
       } catch (e) {
         if ((e as Error).name === "AbortError") return; // user cancelled
@@ -212,7 +212,7 @@ async function main() {
         const result = await fileIO.upload(file);
         const name = file.name.replace(/\.json$/i, "");
         openTab(result.session_id, name, false, false);
-        await canvas.loadSession(result.session_id);
+        await canvas.loadExternalSession(result.session_id);
       } catch (e) {
         showErrorDialog(`打开文件失败: ${(e as Error).message}`);
       }
@@ -233,7 +233,7 @@ async function main() {
       const openResult = await fileIO.open("workflow_set/" + selected);
       const name = tabNameFrom("workflow_set/" + selected);
       openTab(openResult.session_id, name, false, true);
-      await canvas.loadSession(openResult.session_id);
+      await canvas.loadExternalSession(openResult.session_id);
     } catch (e) {
       showErrorDialog(`打开 workflow 失败: ${(e as Error).message}`);
     }
@@ -249,6 +249,13 @@ async function main() {
   };
 
   const onSaveFile = async () => {
+    // Flush any in-progress subgraph edits to the root session before saving
+    if (canvas.isInSubgraph) {
+      try { await canvas.flushSubgraphToRoot(); } catch (e) {
+        showErrorDialog(`保存前同步子图失败: ${(e as Error).message}`);
+        return;
+      }
+    }
     const sid = canvas.rootSessionId;
     if (!sid) {
       showErrorDialog("请先打开一个节点图");
@@ -289,6 +296,10 @@ async function main() {
   };
 
   const onSaveAs = async () => {
+    // Flush any in-progress subgraph edits before saving
+    if (canvas.isInSubgraph) {
+      try { await canvas.flushSubgraphToRoot(); } catch { /* non-fatal */ }
+    }
     const sid = canvas.rootSessionId;
     if (!sid) { showErrorDialog("请先打开一个节点图"); return; }
     const currentTab = tabList.find((t) => t.id === sid);
@@ -322,6 +333,10 @@ async function main() {
 
   // Save current graph into workflow_set/ directory
   const onSaveToWorkflows = async () => {
+    // Flush any in-progress subgraph edits before saving
+    if (canvas.isInSubgraph) {
+      try { await canvas.flushSubgraphToRoot(); } catch { /* non-fatal */ }
+    }
     const sid = canvas.rootSessionId;
     if (!sid) { showErrorDialog("请先打开一个节点图"); return; }
     const currentTab = tabList.find((t) => t.id === sid);
@@ -350,7 +365,7 @@ async function main() {
       const openResult = await fileIO.open("workflow_set/" + selected);
       const name = tabNameFrom("workflow_set/" + selected);
       openTab(openResult.session_id, name, false, true);
-      await canvas.loadSession(openResult.session_id);
+      await canvas.loadExternalSession(openResult.session_id);
     } catch (e) {
       showErrorDialog(`打开 workflow 失败: ${(e as Error).message}`);
     }
@@ -392,7 +407,15 @@ async function main() {
   const onHyperparameters = () => {
     const sid = canvas.rootSessionId;
     if (!sid) { showErrorDialog("请先打开一个节点图"); return; }
-    openHyperparametersDialog(sid, () => { canvas.reloadCurrentSession().catch(console.error); }).catch(console.error);
+    // Flush subgraph changes so the root session has the latest node data when the dialog reads it
+    const openDialog = () => openHyperparametersDialog(sid, () => { canvas.reloadCurrentSession().catch(console.error); }).catch(console.error);
+    if (canvas.isInSubgraph) {
+      canvas.flushSubgraphToRoot().then(openDialog).catch((e: Error) => {
+        showErrorDialog(`同步子图失败: ${e.message}`);
+      });
+    } else {
+      openDialog();
+    }
   };
 
   const onVariables = () => {
@@ -411,8 +434,8 @@ async function main() {
       : canvas.graphCenterPos();
     try {
       await graphs.addNode(sid, typeId, undefined, pos.x, pos.y);
-      await canvas.loadSession(sid);
-      setTabDirty(sid, true);
+      await canvas.reloadCurrentSession();
+      setTabDirty(canvas.rootSessionId ?? sid, true);
     } catch (e) {
       console.error("addNode error:", e);
       showErrorDialog(`添加节点失败: ${(e as Error).message}`);
@@ -479,6 +502,10 @@ async function main() {
     for (const tab of tabList) {
       if (!tab.dirty) continue;
       try {
+        // If the tab is the root session of an active subgraph, flush first
+        if (canvas.isInSubgraph && tab.id === canvas.rootSessionId) {
+          try { await canvas.flushSubgraphToRoot(); } catch { /* non-fatal */ }
+        }
         if (tab.fileHandle) {
           await writeViaFileHandle(tab.id, tab.fileHandle);
           tab.dirty = false;
