@@ -472,6 +472,14 @@ export class ZihuanCanvas {
     // Store backend id on the litegraph node
     node.zihuanId = nodeDef.id;
 
+    // Special styling for function boundary nodes — teal header to distinguish them
+    // from regular nodes, and mark them non-deletable.
+    if (nodeDef.node_type === "function_inputs" || nodeDef.node_type === "function_outputs") {
+      node.color   = "#0e5c4d";
+      node.bgcolor = "#082e26";
+      node.block_delete = true;
+    }
+
     this.lGraph.add(node);
     this.nodeMap.set(nodeDef.id, node);
 
@@ -550,6 +558,9 @@ export class ZihuanCanvas {
     const sessionId = this.state.sessionId;
     const nodeId: string | undefined = node.zihuanId;
     if (!sessionId || !nodeId) return;
+
+    // Boundary nodes must never be deleted.
+    if (nodeId === "__function_inputs__" || nodeId === "__function_outputs__") return;
 
     this.nodeMap.delete(nodeId);
     graphs
@@ -805,7 +816,11 @@ export class ZihuanCanvas {
       this.pasteNodes(graphX, graphY).catch(console.error);
     });
 
-    makeItem("删除", hasSelection, () => {
+    const hasDeletable = selectedNodes.some((lNode: any) => {
+      const nid: string | undefined = lNode.zihuanId;
+      return nid !== "__function_inputs__" && nid !== "__function_outputs__";
+    });
+    makeItem("删除", hasDeletable, () => {
       this.deleteSelectedNodes().catch(console.error);
     });
 
@@ -864,7 +879,10 @@ export class ZihuanCanvas {
     const selectedLNodes: any[] = Object.values((this.lCanvas as any).selected_nodes ?? {});
     if (selectedLNodes.length === 0) return;
     // Remove each selected node via LiteGraph — onNodeRemoved will sync to backend.
+    // Boundary nodes (function_inputs / function_outputs) are protected and skipped.
     for (const lNode of [...selectedLNodes]) {
+      const nid: string | undefined = lNode.zihuanId;
+      if (nid === "__function_inputs__" || nid === "__function_outputs__") continue;
       this.lGraph.remove(lNode);
     }
   }
