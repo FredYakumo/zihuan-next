@@ -13,7 +13,7 @@ This guide explains how to get the application running on your system.
     - [Option B: Build from Source](#option-b-build-from-source)
   - [Configuration](#configuration)
     - [Prerequisites](#prerequisites)
-    - [Config File](#config-file)
+    - [Hyperparameters](#hyperparameters)
   - [Running the Application](#running-the-application)
     - [Method 1: GUI Mode (Visual Editor)](#method-1-gui-mode-visual-editor)
       - [编辑器菜单与快捷键](#编辑器菜单与快捷键)
@@ -84,19 +84,16 @@ Before running, ensure optional dependencies are ready if you need them:
     alembic upgrade head
     ```
 
-### Config File
+### Hyperparameters
 
-The application requires a `config.yaml` file.
+Configuration values such as API keys, and database connection strings are managed as **hyperparameters** inside the node graph, not through a `config.yaml` file.
 
-1.  Copy the example config:
-    ```bash
-    cp config.yaml.example config.yaml
-    ```
-2.  Edit `config.yaml` to set your specific values:
-    - **BOT_SERVER_URL**: Your QQ bot's WebSocket interface.
-    - **TOKEN**: Authentication token.
-    - **REDIS_URL / MYSQL_URL**: Database connection strings.
-    - **LLM_API_BASE**: URL for your LLM provider (e.g., OpenAI, Local LLM).
+To set hyperparameter values:
+1. Open the node graph in the editor.
+2. Click the **Hyperparameters** panel (toolbar on the right side).
+3. Fill in the required values (e.g., API keys, endpoint URLs).
+
+Values are stored locally and reused across runs by `(group, name)` — renaming or moving the graph file does not break them. Sensitive values such as passwords are masked in the UI.
 
 ---
 
