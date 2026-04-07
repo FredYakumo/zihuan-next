@@ -7,7 +7,7 @@ import { setupNodeWidgets } from "./widgets";
 import { portTypeString, getNodeTypeInfo } from "./registry";
 import type { BrainToolDefinition, EmbeddedFunctionConfig } from "../ui/dialogs";
 import { showNodeInfoDialog } from "../ui/dialogs";
-import { getLiteGraphColors, getPortColor, onThemeChange } from "../ui/theme";
+import { getLiteGraphColors, getPortColor, onThemeChange, getBoundaryNodeColors } from "../ui/theme";
 
 /** Title bar height constant (matches LiteGraph.NODE_TITLE_HEIGHT default). */
 const NODE_TITLE_HEIGHT = 30;
@@ -319,6 +319,16 @@ export class ZihuanCanvas {
     tCtx.fill();
     (this.lCanvas as any).background_image = tile.toDataURL("image/png");
 
+    // Recolor boundary nodes to match the new theme
+    const boundaryColors = getBoundaryNodeColors();
+    const allNodes: any[] = (this.lGraph as any)._nodes ?? [];
+    for (const node of allNodes) {
+      if (node.type === "function_inputs" || node.type === "function_outputs") {
+        node.color = boundaryColors.header;
+        node.bgcolor = boundaryColors.bg;
+      }
+    }
+
     this.lGraph.setDirtyCanvas(true, true);
   }
 
@@ -475,8 +485,9 @@ export class ZihuanCanvas {
     // Special styling for function boundary nodes — teal header to distinguish them
     // from regular nodes, and mark them non-deletable.
     if (nodeDef.node_type === "function_inputs" || nodeDef.node_type === "function_outputs") {
-      node.color   = "#0e5c4d";
-      node.bgcolor = "#082e26";
+      const boundaryColors = getBoundaryNodeColors();
+      node.color = boundaryColors.header;
+      node.bgcolor = boundaryColors.bg;
       node.block_delete = true;
     }
 
