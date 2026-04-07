@@ -1,0 +1,2 @@
+patchedDependencies:
+  '@comfyorg/litegraph@0.17.2': patches/@comfyorg__litegraph@0.17.2.patch
