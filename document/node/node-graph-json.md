@@ -52,11 +52,30 @@ let has_errors = issues.iter().any(|i| i.severity == "error") || !cycles.is_empt
   "nodes": [ /* NodeDefinition[] */ ],
   "edges": [ /* EdgeDefinition[] */ ],
   "hyperparameters": [ /* HyperParameter[] */ ],  // optional
-  "variables": [ /* GraphVariable[] */ ]          // optional
+  "variables": [ /* GraphVariable[] */ ],          // optional
+  "metadata": {                                    // optional
+    "name":        "My Workflow",
+    "description": "What this graph does.",
+    "version":     "1.0.0"
+  }
 }
 ```
 
 `execution_results` exists in memory for UI display purposes but is **never** written to disk.
+
+---
+
+## GraphMetadata
+
+Editable from the **Zihuan Next → 编辑节点图信息** menu entry.
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string \| null` | Human-readable display name (may differ from the filename). |
+| `description` | `string \| null` | Free-text description of what the graph does. |
+| `version` | `string \| null` | Semver-style version string, e.g. `"1.0.0"`. |
+
+All fields are optional and default to `null`. When the workflow browser lists entries from `workflow_set/`, it shows `name`, `description`, `version`, the filename, and a cover image (if present).
 
 ---
 

@@ -55,11 +55,30 @@ let has_errors = issues.iter().any(|i| i.severity == "error") || !cycles.is_empt
   "nodes": [ /* NodeDefinition[] */ ],
   "edges": [ /* EdgeDefinition[] */ ],
   "hyperparameters": [ /* HyperParameter[] */ ],  // 可选
-  "variables": [ /* GraphVariable[] */ ]          // 可选
+  "variables": [ /* GraphVariable[] */ ],          // 可选
+  "metadata": {                                    // 可选
+    "name":        "我的工作流",
+    "description": "描述此图的功能。",
+    "version":     "1.0.0"
+  }
 }
 ```
 
 `execution_results` 在内存中用于 UI 显示，但**不会**写入磁盘。
+
+---
+
+## GraphMetadata（节点图元数据）
+
+可通过 **Zihuan Next → 编辑节点图信息** 菜单项进行编辑。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `name` | `string \| null` | 人类可读的显示名称（可与文件名不同）。 |
+| `description` | `string \| null` | 描述该图功能的自由文本。 |
+| `version` | `string \| null` | Semver 风格的版本字符串，如 `"1.0.0"`。 |
+
+所有字段均为可选，默认为 `null`。在浏览工作流集（`workflow_set/`）时，卡片会展示 `name`、`description`、`version`、文件名，以及封面图片（若存在）。
 
 ---
 
