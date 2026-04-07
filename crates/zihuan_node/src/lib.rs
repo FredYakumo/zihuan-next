@@ -85,6 +85,9 @@ pub struct Port {
     pub description: Option<String>,
     /// Whether this port is required, only for input ports
     pub required: bool,
+    /// Whether this port is hidden from the UI (internal plumbing, not user-connectable)
+    #[serde(default)]
+    pub hidden: bool,
 }
 
 impl Port {
@@ -94,6 +97,7 @@ impl Port {
             data_type,
             description: None,
             required: true,
+            hidden: false,
         }
     }
 
@@ -109,6 +113,11 @@ impl Port {
 
     pub fn optional(mut self) -> Self {
         self.required = false;
+        self
+    }
+
+    pub fn hidden(mut self) -> Self {
+        self.hidden = true;
         self
     }
 }

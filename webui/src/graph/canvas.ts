@@ -12,6 +12,15 @@ import { getLiteGraphColors, getPortColor, onThemeChange, getBoundaryNodeColors 
 /** Title bar height constant (matches LiteGraph.NODE_TITLE_HEIGHT default). */
 const NODE_TITLE_HEIGHT = 30;
 
+/**
+ * Filter out ports flagged as hidden by the backend. Hidden ports are internal
+ * plumbing (e.g. signature / runtime_values on function boundary nodes) that
+ * carry data via inline_values or runtime injection rather than user-drawn edges.
+ */
+function visibleInputPorts(ports: NodeDefinition["input_ports"]): NodeDefinition["input_ports"] {
+  return ports.filter((p) => !p.hidden);
+}
+
 export interface CanvasState {
   sessionId: string | null;
   graph: NodeGraphDefinition | null;
@@ -397,7 +406,8 @@ export class ZihuanCanvas {
     // which isn't available yet (node hasn't been added to the lGraph).
     node.inputs = [];
     node.outputs = [];
-    for (const p of nodeDef.input_ports) {
+    const visibleInPorts = visibleInputPorts(nodeDef.input_ports);
+    for (const p of visibleInPorts) {
       node.addInput(p.name, portTypeString(p.data_type as string | object));
     }
     for (const p of nodeDef.output_ports) {
@@ -408,8 +418,8 @@ export class ZihuanCanvas {
     // color_on  = type color (shown when connected)
     // color_off = type color if inline data provided, red if required+empty, gray otherwise
     if (node.inputs) {
-      for (let i = 0; i < nodeDef.input_ports.length; i++) {
-        const p = nodeDef.input_ports[i];
+      for (let i = 0; i < visibleInPorts.length; i++) {
+        const p = visibleInPorts[i];
         const col = getPortColor(portTypeString(p.data_type as string | object));
         const hasInlineValue = nodeDef.inline_values != null && nodeDef.inline_values[p.name] != null;
         node.inputs[i].color_on  = col;
@@ -429,8 +439,8 @@ export class ZihuanCanvas {
     const portBindings = nodeDef.port_bindings ?? {};
     node._portBindings = portBindings;
     if (node.inputs) {
-      for (let i = 0; i < nodeDef.input_ports.length; i++) {
-        const portName = nodeDef.input_ports[i].name;
+      for (let i = 0; i < visibleInPorts.length; i++) {
+        const portName = visibleInPorts[i].name;
         const binding = portBindings[portName];
         if (binding) {
           // Color the connector dot to signal the binding visually.
@@ -516,7 +526,7 @@ export class ZihuanCanvas {
     if (!fromDef || !toDef) return;
 
     const fromPortIdx = fromDef.output_ports.findIndex((p) => p.name === edge.from_port);
-    const toPortIdx = toDef.input_ports.findIndex((p) => p.name === edge.to_port);
+    const toPortIdx = visibleInputPorts(toDef.input_ports).findIndex((p) => p.name === edge.to_port);
     if (fromPortIdx < 0 || toPortIdx < 0) return;
 
     fromNode.connect(fromPortIdx, toNode, toPortIdx);
@@ -602,7 +612,7 @@ export class ZihuanCanvas {
       if (!fromDef || !toDef) continue;
 
       const fromPort = fromDef.output_ports[link.origin_slot];
-      const toPort = toDef.input_ports[link.target_slot];
+      const toPort = visibleInputPorts(toDef.input_ports)[link.target_slot];
       if (!fromPort || !toPort) continue;
 
       edgeDefs.push({
@@ -1050,7 +1060,7 @@ export class ZihuanCanvas {
     const graph = this.state.graph;
 
     // Build per-port connection info from the graph edge list.
-    const inputConns = typeInfo.input_ports.map((p) => {
+    const inputConns = typeInfo.input_ports.filter((p) => !p.hidden).map((p) => {
       const connectedTo: Array<{ nodeName: string; portName: string }> = [];
       if (graph) {
         for (const edge of graph.edges) {
