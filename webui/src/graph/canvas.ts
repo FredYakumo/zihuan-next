@@ -52,6 +52,17 @@ export class ZihuanCanvas {
     this.lGraph = new (LGraph as any)();
     this.lCanvas = new (LGraphCanvas as any)(canvasEl, this.lGraph);
 
+    // Patch isValidConnection so that "Any" typed ports accept all connections.
+    const _origIsValid = (LiteGraph as any).isValidConnection.bind(LiteGraph);
+    (LiteGraph as any).isValidConnection = function (type_a: unknown, type_b: unknown): boolean {
+      if (
+        type_a === "Any" || type_b === "Any" ||
+        (typeof type_a === "string" && type_a.toLowerCase() === "any") ||
+        (typeof type_b === "string" && type_b.toLowerCase() === "any")
+      ) return true;
+      return _origIsValid(type_a, type_b);
+    };
+
     // Apply pink-purple theme colours to LiteGraph, then subscribe to theme changes.
     this.applyLiteGraphTheme();
     onThemeChange(() => this.applyLiteGraphTheme());
@@ -112,8 +123,19 @@ export class ZihuanCanvas {
       for (const seg of renderedPaths) {
         // Skip Reroute objects (they have no origin_id) and wildcard type
         if (seg.origin_id === undefined) continue;
-        const typeName: string = String(seg.type ?? "");
+        let typeName: string = String(seg.type ?? "");
         if (!typeName || typeName === "*" || typeName === "null" || typeName === "undefined") continue;
+        // If the link type is "Any", resolve the concrete type through the graph
+        if (typeName === "Any" && this.state.graph) {
+          const originNode = this.lGraph.getNodeById(seg.origin_id) as any;
+          if (originNode?.zihuanId) {
+            const originDef = this.state.graph.nodes.find((n) => n.id === originNode.zihuanId);
+            const port = originDef?.output_ports[seg.origin_slot];
+            if (port) {
+              typeName = resolveConcretePortType(this.state.graph, originNode.zihuanId, port.name, false);
+            }
+          }
+        }
         const portKey = `${seg.origin_id}:${seg.origin_slot}`;
         if (drawnPorts.has(portKey)) continue;
         drawnPorts.add(portKey);
@@ -478,7 +500,10 @@ export class ZihuanCanvas {
       if (!originDef) continue;
       const port = originDef.output_ports[link.origin_slot];
       if (!port) continue;
-      link.color = getPortColor(portTypeString(port.data_type as string | object));
+      const resolvedType = this.state.graph
+        ? resolveConcretePortType(this.state.graph, originDef.id, port.name, false)
+        : portTypeString(port.data_type as string | object);
+      link.color = getPortColor(resolvedType);
     }
   }
 
@@ -1141,6 +1166,49 @@ function drawBadgePill(
 
   ctx.fillStyle = "#ffffff";
   ctx.fillText(badgeText, badgeX + badgePadX, badgeY + badgeH / 2);
+}
+
+/**
+ * Resolve the concrete DataType string for an output port, tracing through
+ * "Any"-typed passthrough nodes (switch_gate, boolean_branch, etc.) by
+ * following the graph edge definition backward.
+ */
+function resolveConcretePortType(
+  graph: NodeGraphDefinition,
+  nodeId: string,
+  portName: string,
+  isInput: boolean,
+  visited = new Set<string>(),
+): string {
+  const key = `${nodeId}:${isInput ? "in" : "out"}:${portName}`;
+  if (visited.has(key)) return "Any";
+  visited.add(key);
+
+  const nodeDef = graph.nodes.find((n) => n.id === nodeId);
+  if (!nodeDef) return "Any";
+
+  const ports = isInput ? nodeDef.input_ports : nodeDef.output_ports;
+  const port = ports.find((p) => p.name === portName);
+  if (!port) return "Any";
+
+  const dt = typeof port.data_type === "string" ? port.data_type : portTypeString(port.data_type);
+  if (dt !== "Any") return dt;
+
+  if (isInput) {
+    // Trace upstream: find the edge that feeds this input
+    const edge = graph.edges.find((e) => e.to_node_id === nodeId && e.to_port === portName);
+    if (edge) return resolveConcretePortType(graph, edge.from_node_id, edge.from_port, false, visited);
+    return "Any";
+  }
+
+  // Output port is Any: try to resolve through any Any-typed input ports
+  for (const inp of nodeDef.input_ports) {
+    const inDt = typeof inp.data_type === "string" ? inp.data_type : portTypeString(inp.data_type);
+    if (inDt !== "Any") continue;
+    const resolved = resolveConcretePortType(graph, nodeId, inp.name, true, visited);
+    if (resolved !== "Any") return resolved;
+  }
+  return "Any";
 }
 
 /** Find the registered LiteGraph type key for a backend type_id. */
