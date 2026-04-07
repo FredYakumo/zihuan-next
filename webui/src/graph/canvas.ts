@@ -809,6 +809,10 @@ export class ZihuanCanvas {
       this.deleteSelectedNodes().catch(console.error);
     });
 
+    makeItem("提取为函数子图", hasSelection && this.state.graph !== null, () => {
+      this.convertSelectionToFunction().catch(console.error);
+    });
+
     document.body.appendChild(menu);
 
     const dismiss = (e: MouseEvent) => {
@@ -1044,6 +1048,302 @@ export class ZihuanCanvas {
     });
 
     showNodeInfoDialog(typeInfo, inputConns, outputConns);
+  }
+
+  // ─── Convert selection to function subgraph ───────────────────────────────
+
+  /**
+   * Extract the currently selected nodes into a new `function` node.
+   *
+   * Algorithm:
+   *  1. Collect selected node IDs.
+   *  2. Classify every edge in the parent graph:
+   *     - internal: both endpoints selected → copied verbatim into the subgraph
+   *     - external_in: source outside selection, target inside → becomes a function input port
+   *     - external_out: source inside selection, target outside → becomes a function output port
+   *  3. Build the subgraph (selected nodes + __function_inputs__ / __function_outputs__ boundary nodes
+   *     + internal edges + boundary-connection edges).
+   *  4. Build the `function` NodeDefinition to replace the selection in the parent graph.
+   *  5. Rewrite parent graph edges: keep edges that don't touch the selection, rewire
+   *     external_in and external_out edges through the function node.
+   *  6. PUT the updated graph and reload.
+   */
+  private async convertSelectionToFunction(): Promise<void> {
+    const sid = this.state.sessionId;
+    const graph = this.state.graph;
+    if (!sid || !graph) return;
+
+    // 1. Collect selected backend node IDs
+    const selectedLNodes: any[] = Object.values((this.lCanvas as any).selected_nodes ?? {});
+    const selectedIds = new Set<string>();
+    for (const lNode of selectedLNodes) {
+      const id = lNode.zihuanId as string | undefined;
+      if (id) selectedIds.add(id);
+    }
+    if (selectedIds.size === 0) return;
+
+    // 2. Classify edges
+    type ExtInEdge  = { edge: EdgeDefinition; fnPortName: string };
+    type ExtOutEdge = { edge: EdgeDefinition; fnPortName: string };
+
+    const internalEdges: EdgeDefinition[] = [];
+    const externalInEdges: ExtInEdge[]    = [];  // outside → inside
+    const externalOutEdges: ExtOutEdge[]  = [];  // inside → outside
+
+    // Track used port names to avoid collisions
+    const usedInPortNames  = new Set<string>();
+    // For deduplication of output ports: (fromNode, fromPort) → fnPortName
+    const outPortKeyToName = new Map<string, string>();
+
+    const safePortName = (preferred: string, usedSet: Set<string>, nodeName: string, portName: string): string => {
+      if (!usedSet.has(preferred)) return preferred;
+      const alt = `${nodeName.replace(/[^a-zA-Z0-9]+/g, "_")}_${portName}`;
+      if (!usedSet.has(alt)) return alt;
+      // Last resort: append a counter
+      let i = 2;
+      while (usedSet.has(`${alt}_${i}`)) i++;
+      return `${alt}_${i}`;
+    };
+
+    // Helper: get Port data_type string for a given node+port
+    const getPortDataType = (nodeId: string, portName: string, isOutput: boolean): string => {
+      const nodeDef = graph.nodes.find(n => n.id === nodeId);
+      if (!nodeDef) return "Any";
+      const ports = isOutput ? nodeDef.output_ports : nodeDef.input_ports;
+      const port = ports.find(p => p.name === portName);
+      if (!port) return "Any";
+      return typeof port.data_type === "string" ? port.data_type : portTypeString(port.data_type as object);
+    };
+
+    const getNodeDisplayName = (nodeId: string): string => {
+      return graph.nodes.find(n => n.id === nodeId)?.name ?? nodeId;
+    };
+
+    for (const edge of graph.edges) {
+      const fromSel = selectedIds.has(edge.from_node_id);
+      const toSel   = selectedIds.has(edge.to_node_id);
+
+      if (fromSel && toSel) {
+        internalEdges.push(edge);
+      } else if (!fromSel && toSel) {
+        // external_in: one port per edge (inputs have at most one incoming edge)
+        const preferred  = edge.to_port;
+        const nodeName   = getNodeDisplayName(edge.to_node_id);
+        const fnPortName = safePortName(preferred, usedInPortNames, nodeName, edge.to_port);
+        usedInPortNames.add(fnPortName);
+        externalInEdges.push({ edge, fnPortName });
+      } else if (fromSel && !toSel) {
+        // external_out: deduplicated by (from_node, from_port)
+        const key = `${edge.from_node_id}::${edge.from_port}`;
+        if (!outPortKeyToName.has(key)) {
+          const usedOut    = new Set(outPortKeyToName.values());
+          const preferred  = edge.from_port;
+          const nodeName   = getNodeDisplayName(edge.from_node_id);
+          const fnPortName = safePortName(preferred, usedOut, nodeName, edge.from_port);
+          outPortKeyToName.set(key, fnPortName);
+        }
+        externalOutEdges.push({ edge, fnPortName: outPortKeyToName.get(key)! });
+      }
+      // else: both outside — kept in parent graph unchanged
+    }
+
+    // 3. Build function signature port defs
+    const fnInputPortDefs: Array<{ name: string; data_type: string }> = externalInEdges.map(ei => ({
+      name: ei.fnPortName,
+      data_type: getPortDataType(ei.edge.from_node_id, ei.edge.from_port, true),
+    }));
+
+    // Unique output defs (one per fnPortName)
+    const seenOutNames = new Set<string>();
+    const fnOutputPortDefs: Array<{ name: string; data_type: string }> = [];
+    for (const eo of externalOutEdges) {
+      if (!seenOutNames.has(eo.fnPortName)) {
+        seenOutNames.add(eo.fnPortName);
+        fnOutputPortDefs.push({
+          name: eo.fnPortName,
+          data_type: getPortDataType(eo.edge.from_node_id, eo.edge.from_port, true),
+        });
+      }
+    }
+
+    // 4. Compute centroid of selected nodes for function node placement
+    const selectedDefs = graph.nodes.filter(n => selectedIds.has(n.id));
+    const xs = selectedDefs.map(n => n.position?.x ?? 0);
+    const ys = selectedDefs.map(n => n.position?.y ?? 0);
+    const centroidX = xs.reduce((a, b) => a + b, 0) / (xs.length || 1);
+    const centroidY = ys.reduce((a, b) => a + b, 0) / (ys.length || 1);
+
+    // Boundary node X positions (relative to selected bounding box)
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const inputsBoundaryX  = minX - 300;
+    const outputsBoundaryX = maxX + 300;
+    const boundaryY        = centroidY;
+
+    // 5. Build __function_inputs__ boundary node
+    const fnInputsNodeInlineValues: Record<string, unknown> = {
+      signature: fnInputPortDefs,
+    };
+    const fnInputsNode: NodeDefinition = {
+      id: "__function_inputs__",
+      name: "函数输入",
+      description: "函数子图的输入边界节点",
+      node_type: "function_inputs",
+      input_ports: [
+        { name: "signature",       data_type: "Json", description: null, required: false },
+        { name: "runtime_values",  data_type: "Json", description: null, required: false },
+      ],
+      output_ports: fnInputPortDefs.map(p => ({
+        name: p.name,
+        data_type: p.data_type,
+        description: null,
+        required: false,
+      })),
+      dynamic_input_ports: false,
+      dynamic_output_ports: true,
+      position: { x: inputsBoundaryX, y: boundaryY },
+      size: { width: 220, height: 120 },
+      inline_values: fnInputsNodeInlineValues,
+      port_bindings: {},
+      has_error: false,
+      has_cycle: false,
+    };
+
+    // 6. Build __function_outputs__ boundary node
+    const fnOutputsNodeInlineValues: Record<string, unknown> = {
+      signature: fnOutputPortDefs,
+    };
+    const fnOutputsInputPorts: Array<{ name: string; data_type: string; description: null; required: boolean }> = [
+      { name: "signature", data_type: "Json", description: null, required: false },
+      ...fnOutputPortDefs.map(p => ({ name: p.name, data_type: p.data_type, description: null, required: false })),
+    ];
+    const fnOutputsNode: NodeDefinition = {
+      id: "__function_outputs__",
+      name: "函数输出",
+      description: "函数子图的输出边界节点",
+      node_type: "function_outputs",
+      input_ports: fnOutputsInputPorts,
+      output_ports: [],
+      dynamic_input_ports: true,
+      dynamic_output_ports: false,
+      position: { x: outputsBoundaryX, y: boundaryY },
+      size: { width: 220, height: 120 },
+      inline_values: fnOutputsNodeInlineValues,
+      port_bindings: {},
+      has_error: false,
+      has_cycle: false,
+    };
+
+    // 7. Build subgraph edges
+    //    a) internal edges (verbatim)
+    //    b) __function_inputs__ output → selected node input (one per externalInEdge)
+    //    c) selected node output → __function_outputs__ input (one per unique externalOutEdge key)
+    const subgraphEdges: EdgeDefinition[] = [
+      ...internalEdges,
+      ...externalInEdges.map(ei => ({
+        from_node_id: "__function_inputs__",
+        from_port: ei.fnPortName,
+        to_node_id: ei.edge.to_node_id,
+        to_port: ei.edge.to_port,
+      })),
+    ];
+    // Deduplicate output edges by (from_node, from_port) — already done via outPortKeyToName
+    const addedOutKeys = new Set<string>();
+    for (const eo of externalOutEdges) {
+      const key = `${eo.edge.from_node_id}::${eo.edge.from_port}`;
+      if (!addedOutKeys.has(key)) {
+        addedOutKeys.add(key);
+        subgraphEdges.push({
+          from_node_id: eo.edge.from_node_id,
+          from_port:    eo.edge.from_port,
+          to_node_id:   "__function_outputs__",
+          to_port:      eo.fnPortName,
+        });
+      }
+    }
+
+    // 8. Build EmbeddedFunctionConfig (matches Rust EmbeddedFunctionConfig / dialogs.ts)
+    const functionConfig = {
+      name:        "New Function",
+      description: "",
+      inputs:  fnInputPortDefs,
+      outputs: fnOutputPortDefs,
+      subgraph: {
+        nodes: [...selectedDefs, fnInputsNode, fnOutputsNode],
+        edges: subgraphEdges,
+        hyperparameter_groups: [],
+        hyperparameters: [],
+        variables: [],
+        metadata: { name: null, description: null, version: null },
+      } as NodeGraphDefinition,
+    };
+
+    // 9. Build the replacement function NodeDefinition in the parent graph
+    const fnNodeId = crypto.randomUUID();
+    const functionNode: NodeDefinition = {
+      id: fnNodeId,
+      name: "New Function",
+      description: null,
+      node_type: "function",
+      input_ports: fnInputPortDefs.map(p => ({
+        name: p.name,
+        data_type: p.data_type,
+        description: null,
+        required: false,
+      })),
+      output_ports: fnOutputPortDefs.map(p => ({
+        name: p.name,
+        data_type: p.data_type,
+        description: null,
+        required: false,
+      })),
+      dynamic_input_ports: true,
+      dynamic_output_ports: true,
+      position: { x: centroidX, y: centroidY },
+      size: { width: 220, height: 80 + Math.max(fnInputPortDefs.length, fnOutputPortDefs.length) * 20 },
+      inline_values: { function_config: functionConfig as unknown as Record<string, unknown> },
+      port_bindings: {},
+      has_error: false,
+      has_cycle: false,
+    };
+
+    // 10. Build updated parent graph
+    const newNodes: NodeDefinition[] = [
+      ...graph.nodes.filter(n => !selectedIds.has(n.id)),
+      functionNode,
+    ];
+
+    // Keep edges that don't touch the selection at all
+    const keptEdges: EdgeDefinition[] = graph.edges.filter(
+      e => !selectedIds.has(e.from_node_id) && !selectedIds.has(e.to_node_id)
+    );
+
+    // Rewire external_in: original source → function node's matching input port
+    const rewiredIn: EdgeDefinition[] = externalInEdges.map(ei => ({
+      from_node_id: ei.edge.from_node_id,
+      from_port:    ei.edge.from_port,
+      to_node_id:   fnNodeId,
+      to_port:      ei.fnPortName,
+    }));
+
+    // Rewire external_out: function node's output port → all original targets (fan-out)
+    const rewiredOut: EdgeDefinition[] = externalOutEdges.map(eo => ({
+      from_node_id: fnNodeId,
+      from_port:    eo.fnPortName,
+      to_node_id:   eo.edge.to_node_id,
+      to_port:      eo.edge.to_port,
+    }));
+
+    const newGraph: NodeGraphDefinition = {
+      ...graph,
+      nodes: newNodes,
+      edges: [...keptEdges, ...rewiredIn, ...rewiredOut],
+    };
+
+    // 11. Persist and reload
+    await graphs.put(sid, newGraph);
+    await this.reloadCurrentSession();
+    this.state.dirty = true;
   }
 }
 
