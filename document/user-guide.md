@@ -1,7 +1,5 @@
 # User Guide
 
-> **Target audience:** End users who want to install, configure, and run the zihuan-next bot application.
-
 This guide explains how to get the application running on your system.
 
 ---
@@ -18,7 +16,11 @@ This guide explains how to get the application running on your system.
     - [Config File](#config-file)
   - [Running the Application](#running-the-application)
     - [Method 1: GUI Mode (Visual Editor)](#method-1-gui-mode-visual-editor)
+      - [编辑器菜单与快捷键](#编辑器菜单与快捷键)
+      - [保存行为说明](#保存行为说明)
+      - [工作流集标记](#工作流集标记)
     - [Method 2: Headless Mode (CLI / Production)](#method-2-headless-mode-cli--production)
+    - [Method 3: Validate Mode (Pre-flight Check)](#method-3-validate-mode-pre-flight-check)
 
 ---
 

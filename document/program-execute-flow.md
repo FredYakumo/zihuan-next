@@ -1,7 +1,5 @@
 # Program Execution Flow
 
-> **Target audience:** Users and Developers interested in how the application initializes runs.
-
 This document outlines the internal execution flow of the zihuan-next system in its two primary modes: GUI and Headless.
 
 ---
