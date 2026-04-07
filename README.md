@@ -1,6 +1,6 @@
 # zihuan-next
-
-**An AI agent runner that lets you describe simple or event-driven agentic workflows using a node graph — get an AI Agent running in just a few steps, with clear visibility into how data flows through the pipeline. Ships with a collection of ready-to-use AI Agent templates.**
+> 🌐 English | [简体中文](README.zh-CN.md)
+**An AI agent runner engine that lets you describe simple or event-driven agentic workflows using a node graph — get an AI Agent running in just a few steps, with clear visibility into how data flows through the pipeline. Ships with a collection of ready-to-use AI Agent templates.**
 
 <img width="1248" height="880" alt="image" src="https://github.com/user-attachments/assets/3b781e53-1fcf-4b77-91ba-2d63299181c4" />
 
@@ -24,11 +24,9 @@ The editor runs in your browser. The backend is a single Rust binary ([Salvo](ht
 
 1. **Node Graphs for Data Flow** — Describe how data moves between steps; internal algorithms stay inside nodes.
 2. **Strongly Typed Ports** — Every port has a declared type, giving each connection a clear contract.
-3. **Browser-based Editor** — Litegraph.js canvas served by the Rust backend; no desktop installation needed.
-4. **REST + WebSocket API** — All graph operations (load, save, run, stop, hyperparams) are accessible via API, making the engine easy to script or embed.
-5. **Single Binary Deployment** — The frontend is compiled into the Rust binary via `rust-embed`; deploy one file.
-6. **Function Subgraphs and Agent Tools** — A `function` node can package a private subgraph as one reusable step and expose it as a callable tool for LLM-driven nodes.
-7. **Extensibility** — Add new nodes when a workflow needs new behavior; the graph stays simple.
+3. **Single Binary** — Only One binary application.
+4. **Function Subgraphs and Agent Tools** — A `function` node can package a private subgraph as one reusable step and expose it as a callable tool for LLM-driven nodes.
+5. **Extensibility** — Add new nodes when a workflow needs new behavior; the graph stays simple.
 
 ## Screenshots
 
