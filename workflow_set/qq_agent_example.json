@@ -196,18 +196,18 @@
         "height": 410.0
       },
       "inline_values": {
+        "mysql_port": "3306",
         "mysql_database": "zihuan_aibot",
-        "mysql_host": "127.0.0.1",
-        "mysql_port": "3306"
+        "mysql_host": "127.0.0.1"
       },
       "port_bindings": {
-        "mysql_user": {
-          "kind": "hyperparameter",
-          "name": "MYSQL_USER"
-        },
         "mysql_password": {
           "kind": "hyperparameter",
           "name": "MYSQL_PASSWORD"
+        },
+        "mysql_user": {
+          "kind": "hyperparameter",
+          "name": "MYSQL_USER"
         }
       },
       "has_error": false,
@@ -317,8 +317,8 @@
         "height": 142.0
       },
       "inline_values": {
-        "ttl_secs": "600",
-        "bucket_name": "message_id_cache"
+        "bucket_name": "message_id_cache",
+        "ttl_secs": "600"
       },
       "port_bindings": {},
       "has_error": false,

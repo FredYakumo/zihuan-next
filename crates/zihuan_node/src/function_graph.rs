@@ -90,18 +90,21 @@ pub fn hidden_function_config_port() -> Port {
     Port::new(FUNCTION_CONFIG_PORT, DataType::Json)
         .with_description("隐藏的函数配置 JSON")
         .optional()
+        .hidden()
 }
 
 pub fn hidden_function_signature_port() -> Port {
     Port::new(FUNCTION_SIGNATURE_PORT, DataType::Json)
         .with_description("隐藏的函数签名 JSON")
         .optional()
+        .hidden()
 }
 
 pub fn hidden_function_runtime_values_port() -> Port {
     Port::new(FUNCTION_RUNTIME_VALUES_PORT, DataType::Json)
         .with_description("运行时注入的函数输入 JSON")
         .optional()
+        .hidden()
 }
 
 pub fn is_hidden_function_port(node_type: &str, port_name: &str) -> bool {

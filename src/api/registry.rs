@@ -13,6 +13,7 @@ pub struct PortInfo {
     pub data_type: String,
     pub description: Option<String>,
     pub required: bool,
+    pub hidden: bool,
 }
 
 #[derive(Serialize)]
@@ -63,6 +64,7 @@ pub async fn get_registry(_req: &mut Request, res: &mut Response, _depot: &mut D
                         data_type: format!("{:?}", p.data_type),
                         description: p.description.clone(),
                         required: p.required,
+                        hidden: p.hidden,
                     })
                     .collect(),
                 output_ports: output_ports
@@ -72,6 +74,7 @@ pub async fn get_registry(_req: &mut Request, res: &mut Response, _depot: &mut D
                         data_type: format!("{:?}", p.data_type),
                         description: p.description.clone(),
                         required: p.required,
+                        hidden: p.hidden,
                     })
                     .collect(),
                 has_dynamic_input_ports: has_dyn_in,

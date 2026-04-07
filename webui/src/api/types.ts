@@ -5,6 +5,7 @@ export interface PortInfo {
   data_type: string;
   description: string | null;
   required: boolean;
+  hidden: boolean;
 }
 
 export interface NodeTypeInfo {
@@ -39,6 +40,7 @@ export interface Port {
   data_type: string | object;
   description: string | null;
   required: boolean;
+  hidden?: boolean;
 }
 
 export interface PortBinding {
