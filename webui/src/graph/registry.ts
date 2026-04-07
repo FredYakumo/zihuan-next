@@ -4,12 +4,21 @@ import { LiteGraph } from "@comfyorg/litegraph";
 import type { NodeTypeInfo } from "../api/types";
 import { getPortColor } from "../ui/theme";
 
+/** Module-level registry: type_id → NodeTypeInfo, populated by registerNodeTypes(). */
+const nodeTypeRegistry = new Map<string, NodeTypeInfo>();
+
+/** Look up metadata for a node type by its type_id. */
+export function getNodeTypeInfo(typeId: string): NodeTypeInfo | undefined {
+  return nodeTypeRegistry.get(typeId);
+}
+
 /**
  * Register all node types received from /api/registry/types with LiteGraph.
  * Each node type becomes a LiteGraph node class with its ports pre-defined.
  */
 export function registerNodeTypes(types: NodeTypeInfo[]): void {
   for (const info of types) {
+    nodeTypeRegistry.set(info.type_id, info);
     const inputPorts = info.input_ports;
     const outputPorts = info.output_ports;
     const hasDynIn = info.has_dynamic_input_ports;
@@ -56,7 +65,11 @@ export function registerNodeTypes(types: NodeTypeInfo[]): void {
 
 /** Convert a DataType (possibly nested) to a simple litegraph type string. */
 export function portTypeString(dt: string | object): string {
-  if (typeof dt === "string") return dt;
+  if (typeof dt === "string") {
+    // "Any" maps to LiteGraph's wildcard so it connects to all concrete types
+    if (dt === "Any") return "*";
+    return dt;
+  }
   // Handle Vec / other wrapper types
   const keys = Object.keys(dt as object);
   if (keys.length > 0) return `${keys[0]}<${Object.values(dt as object)[0] as string}>`;
