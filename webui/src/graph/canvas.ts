@@ -794,6 +794,39 @@ export class ZihuanCanvas {
     this.onNavigationChange(labels);
   }
 
+  /**
+   * Flush all pending in-progress subgraph changes up to the root session
+   * without exiting any subgraph. Iterates from deepest to shallowest level,
+   * calling each entry's saveBack so the root session reflects the latest edits.
+   */
+  async flushSubgraphToRoot(): Promise<void> {
+    if (this.subgraphStack.length === 0) return;
+    for (let i = this.subgraphStack.length - 1; i >= 0; i--) {
+      const entry = this.subgraphStack[i];
+      const graph = await graphs.get(entry.virtualSessionId);
+      await entry.saveBack(graph);
+    }
+  }
+
+  /**
+   * Load a session from an external context (e.g. tab switch or file open).
+   * Flushes any pending subgraph changes to the root session, then clears the
+   * navigation stack and loads the new session.
+   */
+  async loadExternalSession(sessionId: string): Promise<void> {
+    // Flush pending subgraph changes so work isn't silently discarded
+    if (this.subgraphStack.length > 0) {
+      try { await this.flushSubgraphToRoot(); } catch { /* non-fatal */ }
+      // Clean up virtual sessions
+      for (const entry of this.subgraphStack) {
+        try { await graphs.delete(entry.virtualSessionId); } catch { /* ignore */ }
+      }
+      this.subgraphStack = [];
+      this.onNavigationChange?.([]);
+    }
+    await this.loadSession(sessionId);
+  }
+
   // ─── Canvas context menu ──────────────────────────────────────────────────
 
   private showCanvasContextMenu(event: MouseEvent, graphX: number, graphY: number): void {
