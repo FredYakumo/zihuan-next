@@ -84,18 +84,20 @@ pub async fn execute_graph(req: &mut Request, res: &mut Response, depot: &mut De
         })
         .await;
 
-        let success = match result {
+        let (success, error_message) = match result {
             Ok(Ok(())) => {
                 info!("Graph execution completed successfully");
-                true
+                (true, None)
             }
             Ok(Err(e)) => {
-                error!("Graph execution error: {}", e);
-                false
+                let msg = e.to_string();
+                error!("Graph execution error: {}", msg);
+                (false, Some(msg))
             }
             Err(e) => {
-                error!("Graph execution panicked: {}", e);
-                false
+                let msg = e.to_string();
+                error!("Graph execution panicked: {}", msg);
+                (false, Some(msg))
             }
         };
 
@@ -117,6 +119,7 @@ pub async fn execute_graph(req: &mut Request, res: &mut Response, depot: &mut De
             match broadcast_tx.send(ServerMessage::TaskFinished {
                 task_id: task_id_clone,
                 success,
+                error: error_message,
             }) {
                 Ok(n) => info!("Broadcast TaskFinished(success={}) to {} receivers", success, n),
                 Err(e) => error!("Failed to broadcast TaskFinished: {}", e),

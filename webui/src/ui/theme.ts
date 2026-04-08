@@ -49,6 +49,8 @@ export interface LiteGraphColors {
   widgetText: string;
   widgetSecondary: string;
   widgetDisabled: string;
+  widgetButtonBg: string;    // button widget background (overrides LiteGraph's hardcoded #222)
+  widgetButtonText: string;  // button widget label text
   linkColor: string;
   eventLinkColor: string;
   connectingLinkColor: string;
@@ -73,6 +75,8 @@ const DARK_LITEGRAPH: LiteGraphColors = {
   widgetText:         "#e8e0f0",
   widgetSecondary:    "#706880",
   widgetDisabled:     "#383048",
+  widgetButtonBg:     "#2a1848",
+  widgetButtonText:   "#e8e0f0",
   linkColor:          "#aaaaaa",
   eventLinkColor:     "#cccccc",
   connectingLinkColor:"#ffffff",
@@ -103,6 +107,8 @@ const LIGHT_LITEGRAPH: LiteGraphColors = {
   widgetText:         "#1e0f35",
   widgetSecondary:    "#6a4890",
   widgetDisabled:     "#9a78b8",
+  widgetButtonBg:     "#ddc8f5",
+  widgetButtonText:   "#1e0f35",
   linkColor:          "#9060c0",
   eventLinkColor:     "#a03090",
   connectingLinkColor:"#7030a8",

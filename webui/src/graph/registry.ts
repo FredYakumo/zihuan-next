@@ -1,6 +1,6 @@
 // Register all node types from the API with LiteGraph
 
-import { LiteGraph } from "@comfyorg/litegraph";
+import { LiteGraph } from "litegraph.js";
 import type { NodeTypeInfo } from "../api/types";
 import { getPortColor } from "../ui/theme";
 

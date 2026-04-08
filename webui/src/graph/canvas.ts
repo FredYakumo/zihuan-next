@@ -1,6 +1,6 @@
 // Litegraph canvas wrapper — bridges LiteGraph and the Zihuan API
 
-import { LGraph, LGraphCanvas, LiteGraph } from "@comfyorg/litegraph";
+import { LGraph, LGraphCanvas, LiteGraph } from "litegraph.js";
 import { graphs } from "../api/client";
 import type { NodeGraphDefinition, NodeDefinition, EdgeDefinition, NodeTypeInfo } from "../api/types";
 import { setupNodeWidgets } from "./widgets";
@@ -99,18 +99,49 @@ export class ZihuanCanvas {
       origDrawNodeWidgets(node, posY, ctx);
       // Restore real values immediately after drawing.
       for (const { w, real } of savedPasswordValues) w.value = real;
+
+      // Re-draw button widgets with theme-aware colors.
+      // LiteGraph hardcodes "#222" as the button background, which is unreadable in
+      // the light theme where widget text is dark. Overdraw each button with the
+      // correct widgetButtonBg / widgetButtonText from the current theme.
+      if (node.widgets) {
+        const c = getLiteGraphColors();
+        const H: number = (LiteGraph as any).NODE_WIDGET_HEIGHT ?? 20;
+        const margin = 15;
+        const nodeWidth: number = node.size[0];
+        const showText: boolean = (this.lCanvas as any).ds?.scale > 0.5;
+        ctx.save();
+        ctx.globalAlpha = (this.lCanvas as any).editor_alpha ?? 1;
+        for (const w of node.widgets as any[]) {
+          if (w.type !== "button" || w.last_y === undefined) continue;
+          const ww: number = w.width || nodeWidth;
+          // Overdraw the hardcoded #222 rectangle with the themed button color.
+          ctx.fillStyle = c.widgetButtonBg;
+          ctx.strokeStyle = (LiteGraph as any).WIDGET_OUTLINE_COLOR;
+          ctx.fillRect(margin, w.last_y, ww - margin * 2, H);
+          if (showText && !w.disabled) ctx.strokeRect(margin, w.last_y, ww - margin * 2, H);
+          if (showText) {
+            ctx.fillStyle = c.widgetButtonText;
+            ctx.textAlign = "center";
+            ctx.font = `${(LiteGraph as any).NODE_TEXT_SIZE ?? 14}px Arial`;
+            ctx.fillText(w.label || w.name, ww * 0.5, w.last_y + H * 0.7);
+          }
+        }
+        ctx.restore();
+      }
+
       drawWidgetBindingBadges.call(node, ctx);
     };
 
     // Snap nodes to grid only on release, not during drag (avoids jitter and unnecessary work)
-    LiteGraph.alwaysSnapToGrid = false;
-    LiteGraph.CANVAS_GRID_SIZE = 10;
+    (LiteGraph as any).alwaysSnapToGrid = false;
+    (LiteGraph as any).CANVAS_GRID_SIZE = 10;
 
     // Snap selected nodes to grid after each drag ends
     (this.lCanvas as any).onNodeMoved = (_node: any) => {
-      const selected: Set<any> | undefined = (this.lCanvas as any).selectedItems;
-      if (selected?.size) {
-        this.lGraph.snapToGrid(selected);
+      const selected: Record<number, any> | undefined = (this.lCanvas as any).selected_nodes;
+      if (selected && Object.keys(selected).length) {
+        for (const node of Object.values(selected)) node.alignToGrid?.();
         this.lGraph.setDirtyCanvas(true, true);
       }
       this.onGraphDirty?.();
@@ -120,10 +151,26 @@ export class ZihuanCanvas {
     // If the midpoint falls inside any node's bounding box the label is shifted
     // upward until it clears the node's top edge.
     (this.lCanvas as any).onDrawForeground = (ctx: CanvasRenderingContext2D) => {
+      // Enhanced box-selection: draw styled selection rectangle on top of litegraph's default white one.
+      const dr: Float32Array | null = (this.lCanvas as any).dragging_rectangle ?? null;
+      if (dr && dr[2] !== 0) {
+        const bgColor: string = (this.lCanvas as any).clear_background_color || "#222";
+        const isLightBg = (parseInt(bgColor.slice(1, 3), 16) || 0) > 128;
+        ctx.save();
+        ctx.strokeStyle = isLightBg ? "#6030a8" : "#ffffff";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.fillStyle = isLightBg ? "rgba(96,48,168,0.12)" : "rgba(255,255,255,0.08)";
+        ctx.fillRect(dr[0], dr[1], dr[2], dr[3]);
+        ctx.strokeRect(dr[0], dr[1], dr[2], dr[3]);
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
+
       const scale: number = (this.lCanvas as any).ds?.scale ?? 1;
       if (scale < 0.3) return; // skip labels when zoomed out too far
-      const renderedPaths: Set<any> = (this.lCanvas as any).renderedPaths;
-      if (!renderedPaths) return;
+      const links = this.lGraph.links as Record<number, any>;
+      if (!links) return;
       const fontSize = Math.round(10 / scale);
       const titleH: number = (LiteGraph as any).NODE_TITLE_HEIGHT ?? 24;
       const allNodes: any[] = (this.lGraph as any)._nodes ?? [];
@@ -133,26 +180,25 @@ export class ZihuanCanvas {
       ctx.textBaseline = "middle";
       // Deduplicate: one label per (origin_id, origin_slot) pair.
       const drawnPorts = new Set<string>();
-      for (const seg of renderedPaths) {
-        // Skip Reroute objects (they have no origin_id) and wildcard type
-        if (seg.origin_id === undefined) continue;
-        let typeName: string = String(seg.type ?? "");
+      for (const link of Object.values(links)) {
+        if (!link || link.origin_id === undefined) continue;
+        let typeName: string = String(link.type ?? "");
         if (!typeName || typeName === "*" || typeName === "null" || typeName === "undefined") continue;
         // If the link type is "Any", resolve the concrete type through the graph
         if (typeName === "Any" && this.state.graph) {
-          const originNode = this.lGraph.getNodeById(seg.origin_id) as any;
+          const originNode = this.lGraph.getNodeById(link.origin_id) as any;
           if (originNode?.zihuanId) {
             const originDef = this.state.graph.nodes.find((n) => n.id === originNode.zihuanId);
-            const port = originDef?.output_ports[seg.origin_slot];
+            const port = originDef?.output_ports[link.origin_slot];
             if (port) {
               typeName = resolveConcretePortType(this.state.graph, originNode.zihuanId, port.name, false);
             }
           }
         }
-        const portKey = `${seg.origin_id}:${seg.origin_slot}`;
+        const portKey = `${link.origin_id}:${link.origin_slot}`;
         if (drawnPorts.has(portKey)) continue;
         drawnPorts.add(portKey);
-        const pos: Float32Array | number[] = seg._pos;
+        const pos: Float32Array | null = link._pos ?? null;
         if (!pos) continue;
         const x = pos[0];
         let y = pos[1];
@@ -185,12 +231,12 @@ export class ZihuanCanvas {
     };
 
     // Wire up LiteGraph change callbacks
-    this.lGraph.onAfterExecute = () => {};
+    (this.lGraph as any).onAfterExecute = () => {};
 
     // Listen to node add/remove/connect events
     this.lGraph.onNodeAdded = (node: any) => this.onNodeAdded(node);
-    this.lGraph.onNodeRemoved = (node: any) => this.onNodeRemoved(node);
-    this.lGraph.onConnectionChange = (node: any) => this.onConnectionChanged(node);
+    (this.lGraph as any).onNodeRemoved = (node: any) => this.onNodeRemoved(node);
+    (this.lGraph as any).onConnectionChange = (node: any) => this.onConnectionChanged(node);
 
     // Right-click context menu (capture phase so we preempt LiteGraph's own handler).
     canvasEl.addEventListener("contextmenu", (e: MouseEvent) => {

@@ -62,8 +62,8 @@ const DIALOG_STYLES = `
     background: var(--btn-bg); color: var(--text); cursor: pointer; font-size: 13px;
   }
   .zh-dialog button:hover { background: var(--btn-hover); }
-  .zh-dialog button.primary { background: var(--btn-primary); border-color: var(--btn-primary-hover); }
-  .zh-dialog button.primary:hover { background: var(--btn-primary-hover); }
+  .zh-dialog button.primary { background: var(--btn-primary); border-color: var(--btn-primary-hover); color: var(--btn-primary-text); }
+  .zh-dialog button.primary:hover { background: var(--btn-primary-hover); color: var(--btn-primary-text); }
   .zh-dialog button.danger { color: var(--accent); border-color: var(--accent); background: transparent; }
   .zh-dialog button.danger:hover { background: var(--accent-subtle); }
   .zh-dialog .zh-section-label {
