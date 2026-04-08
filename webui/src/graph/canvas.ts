@@ -286,7 +286,7 @@ export class ZihuanCanvas {
 
         // Widget-linked input slots are not in getSlotInPosition's standard vertical
         // slot layout.  Fall back to getWidgetOnPos and map the widget to its input.
-        const widget = (node as any).getWidgetOnPos(gx, gy, true);
+        const widget = (node as any).getWidgetOnPos?.(gx, gy, true);
         if (widget) {
           const inputs = (node as any).inputs as Array<{ name: string; widget?: { name: string } }> | undefined;
           if (inputs) {
