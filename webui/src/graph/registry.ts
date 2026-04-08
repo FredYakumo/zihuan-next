@@ -37,15 +37,17 @@ export function registerNodeTypes(types: NodeTypeInfo[]): void {
           const typeStr = portTypeString(port.data_type as string | object);
           this.addInput(port.name, typeStr);
           const last = this.inputs[this.inputs.length - 1];
-          last.color_on  = getPortColor(typeStr);
-          last.color_off = port.required ? "#e74c3c" : "#555568";
+          const col = getPortColor(typeStr);
+          last.color_on  = col;
+          last.color_off = port.required ? "#e74c3c" : col;
         }
         for (const port of outputPorts) {
           const typeStr = portTypeString(port.data_type as string | object);
           this.addOutput(port.name, typeStr);
           const last = this.outputs[this.outputs.length - 1];
-          last.color_on  = getPortColor(typeStr);
-          last.color_off = "#555568";
+          const col = getPortColor(typeStr);
+          last.color_on  = col;
+          last.color_off = col;
         }
         // Mark dynamic port nodes so the UI can show add-port buttons
         if (hasDynIn) (this as any).zihuanDynIn = true;

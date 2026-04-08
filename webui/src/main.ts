@@ -249,6 +249,8 @@ async function main() {
   };
 
   const onSaveFile = async () => {
+    // Flush node positions/sizes to the backend before saving
+    await canvas.syncPositions();
     // Flush any in-progress subgraph edits to the root session before saving
     if (canvas.isInSubgraph) {
       try { await canvas.flushSubgraphToRoot(); } catch (e) {
@@ -296,6 +298,8 @@ async function main() {
   };
 
   const onSaveAs = async () => {
+    // Flush node positions/sizes to the backend before saving
+    await canvas.syncPositions();
     // Flush any in-progress subgraph edits before saving
     if (canvas.isInSubgraph) {
       try { await canvas.flushSubgraphToRoot(); } catch { /* non-fatal */ }
@@ -333,6 +337,8 @@ async function main() {
 
   // Save current graph into workflow_set/ directory
   const onSaveToWorkflows = async () => {
+    // Flush node positions/sizes to the backend before saving
+    await canvas.syncPositions();
     // Flush any in-progress subgraph edits before saving
     if (canvas.isInSubgraph) {
       try { await canvas.flushSubgraphToRoot(); } catch { /* non-fatal */ }

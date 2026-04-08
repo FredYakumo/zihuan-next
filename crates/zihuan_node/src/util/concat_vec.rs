@@ -60,7 +60,7 @@ impl Node for ConcatVecNode {
             }
         };
 
-        if vec1_type != vec2_type {
+        if !vec1_type.is_compatible_with(&vec2_type) {
             return Err(zihuan_core::error::Error::ValidationError(format!(
                 "vec1 与 vec2 的元素类型不一致：vec1 为 {}，vec2 为 {}",
                 vec1_type, vec2_type
