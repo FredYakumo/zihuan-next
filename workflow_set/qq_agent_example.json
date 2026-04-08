@@ -10,19 +10,22 @@
           "name": "qq_id",
           "data_type": "String",
           "description": "QQ ID to login",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "bot_server_url",
           "data_type": "String",
           "description": "Bot服务器WebSocket地址",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "bot_server_token",
           "data_type": "Password",
           "description": "Bot服务器连接令牌",
-          "required": false
+          "required": false,
+          "hidden": false
         }
       ],
       "output_ports": [
@@ -30,13 +33,15 @@
           "name": "message_event",
           "data_type": "MessageEvent",
           "description": "Raw message event from QQ server",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "bot_adapter",
           "data_type": "BotAdapterRef",
           "description": "Shared reference to the bot adapter instance",
-          "required": true
+          "required": true,
+          "hidden": false
         }
       ],
       "dynamic_input_ports": false,
@@ -46,21 +51,21 @@
         "y": 330.0
       },
       "size": {
-        "width": 340.0,
-        "height": 160.0
+        "width": 253.6,
+        "height": 146.0
       },
       "inline_values": {
-        "qq_id": "2496875785",
-        "bot_server_url": "ws://localhost:3001"
+        "bot_server_url": "ws://localhost:3001",
+        "qq_id": "2496875785"
       },
       "port_bindings": {
-        "qq_id": {
-          "kind": "hyperparameter",
-          "name": "BOT_ID"
-        },
         "bot_server_token": {
           "kind": "hyperparameter",
           "name": "BOT_SERVER_TOKEN"
+        },
+        "qq_id": {
+          "kind": "hyperparameter",
+          "name": "BOT_ID"
         }
       },
       "has_error": false,
@@ -76,13 +81,15 @@
           "name": "message_event",
           "data_type": "MessageEvent",
           "description": "输入的消息事件",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "filter_type",
           "data_type": "String",
           "description": "过滤类型：private（好友消息）或 group（群组消息）",
-          "required": false
+          "required": false,
+          "hidden": false
         }
       ],
       "output_ports": [
@@ -90,13 +97,15 @@
           "name": "true_event",
           "data_type": "MessageEvent",
           "description": "消息类型匹配时的输出",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "false_event",
           "data_type": "MessageEvent",
           "description": "消息类型不匹配时的输出",
-          "required": true
+          "required": true,
+          "hidden": false
         }
       ],
       "dynamic_input_ports": false,
@@ -106,8 +115,8 @@
         "y": 540.0
       },
       "size": {
-        "width": 300.0,
-        "height": 140.0
+        "width": 211.6,
+        "height": 78.0
       },
       "inline_values": {
         "filter_type": "private"
@@ -126,55 +135,64 @@
           "name": "mysql_host",
           "data_type": "String",
           "description": "MySQL主机地址",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "mysql_port",
           "data_type": "Integer",
           "description": "MySQL端口号",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "mysql_user",
           "data_type": "String",
           "description": "MySQL用户名",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "mysql_password",
           "data_type": "String",
           "description": "MySQL密码",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "mysql_database",
           "data_type": "String",
           "description": "MySQL数据库名",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "reconnect_max_attempts",
           "data_type": "Integer",
           "description": "最大重连次数 (默认: 3)",
-          "required": false
+          "required": false,
+          "hidden": false
         },
         {
           "name": "reconnect_interval_secs",
           "data_type": "Integer",
           "description": "重连间隔秒数 (默认: 60)",
-          "required": false
+          "required": false,
+          "hidden": false
         },
         {
           "name": "max_connections",
           "data_type": "Integer",
           "description": "连接池最大连接数 (默认: 10)",
-          "required": false
+          "required": false,
+          "hidden": false
         },
         {
           "name": "acquire_timeout_secs",
           "data_type": "Integer",
           "description": "获取连接超时秒数 (默认: 30)",
-          "required": false
+          "required": false,
+          "hidden": false
         }
       ],
       "output_ports": [
@@ -182,7 +200,8 @@
           "name": "mysql_ref",
           "data_type": "MySqlRef",
           "description": "MySQL连接配置引用",
-          "required": true
+          "required": true,
+          "hidden": false
         }
       ],
       "dynamic_input_ports": false,
@@ -192,13 +211,13 @@
         "y": 560.0
       },
       "size": {
-        "width": 280.0,
+        "width": 278.8,
         "height": 410.0
       },
       "inline_values": {
+        "mysql_host": "127.0.0.1",
         "mysql_port": "3306",
-        "mysql_database": "zihuan_aibot",
-        "mysql_host": "127.0.0.1"
+        "mysql_database": "zihuan_aibot"
       },
       "port_bindings": {
         "mysql_password": {
@@ -223,13 +242,15 @@
           "name": "message_event",
           "data_type": "MessageEvent",
           "description": "消息事件",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "mysql_ref",
           "data_type": "MySqlRef",
           "description": "MySQL连接配置引用",
-          "required": true
+          "required": true,
+          "hidden": false
         }
       ],
       "output_ports": [
@@ -237,13 +258,15 @@
           "name": "success",
           "data_type": "Boolean",
           "description": "消息是否存储成功",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "message_event",
           "data_type": "MessageEvent",
           "description": "传递输入的消息事件",
-          "required": true
+          "required": true,
+          "hidden": false
         }
       ],
       "dynamic_input_ports": false,
@@ -271,25 +294,29 @@
           "name": "message_event",
           "data_type": "MessageEvent",
           "description": "消息事件",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "redis_ref",
           "data_type": "RedisRef",
           "description": "可选：Redis连接配置引用（若不提供则使用内存缓存）",
-          "required": false
+          "required": false,
+          "hidden": false
         },
         {
           "name": "bucket_name",
           "data_type": "String",
           "description": "可选：Redis存储桶/命名空间名称，默认 default",
-          "required": false
+          "required": false,
+          "hidden": false
         },
         {
           "name": "ttl_secs",
           "data_type": "Integer",
           "description": "可选：Redis缓存过期时间（秒），不设置则永久缓存",
-          "required": false
+          "required": false,
+          "hidden": false
         }
       ],
       "output_ports": [
@@ -297,13 +324,15 @@
           "name": "success",
           "data_type": "Boolean",
           "description": "消息是否缓存成功",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "message_event",
           "data_type": "MessageEvent",
           "description": "传递输入的消息事件",
-          "required": true
+          "required": true,
+          "hidden": false
         }
       ],
       "dynamic_input_ports": false,
@@ -313,12 +342,12 @@
         "y": 818.3542
       },
       "size": {
-        "width": 280.0,
+        "width": 228.4,
         "height": 142.0
       },
       "inline_values": {
-        "bucket_name": "message_id_cache",
-        "ttl_secs": "600"
+        "ttl_secs": "600",
+        "bucket_name": "message_id_cache"
       },
       "port_bindings": {},
       "has_error": false,
@@ -334,25 +363,29 @@
           "name": "model_name",
           "data_type": "String",
           "description": "模型名称，例如: gpt-4, deepseek-chat",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "api_endpoint",
           "data_type": "String",
           "description": "API端点URL，例如: https://api.openai.com/v1/chat/completions",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "api_key",
           "data_type": "Password",
           "description": "API密钥 (可选，某些本地模型不需要)",
-          "required": false
+          "required": false,
+          "hidden": false
         },
         {
           "name": "timeout_secs",
           "data_type": "Integer",
           "description": "超时秒数 (可选，默认120秒)",
-          "required": false
+          "required": false,
+          "hidden": false
         }
       ],
       "output_ports": [
@@ -360,7 +393,8 @@
           "name": "llm_model",
           "data_type": "LLModel",
           "description": "LLM模型引用，传递给LLMInfer等节点使用",
-          "required": true
+          "required": true,
+          "hidden": false
         }
       ],
       "dynamic_input_ports": false,
@@ -370,24 +404,24 @@
         "y": -60.0
       },
       "size": {
-        "width": 300.0,
+        "width": 210.0,
         "height": 190.0
       },
       "inline_values": {
         "timeout_secs": "600"
       },
       "port_bindings": {
-        "api_endpoint": {
+        "model_name": {
           "kind": "hyperparameter",
-          "name": "LLM_API_ENDPOINT"
+          "name": "LLM_MODEL_NAME"
         },
         "api_key": {
           "kind": "hyperparameter",
           "name": "LLM_API_KEY"
         },
-        "model_name": {
+        "api_endpoint": {
           "kind": "hyperparameter",
-          "name": "LLM_MODEL_NAME"
+          "name": "LLM_API_ENDPOINT"
         }
       },
       "has_error": false,
@@ -404,7 +438,8 @@
           "name": "time",
           "data_type": "String",
           "description": "当前本地时间字符串，格式为 YYYY-MM-DD HH:MM:SS",
-          "required": true
+          "required": true,
+          "hidden": false
         }
       ],
       "dynamic_input_ports": false,
@@ -432,13 +467,15 @@
           "name": "redis_ref",
           "data_type": "RedisRef",
           "description": "可选：Redis 连接配置引用（若不提供则使用内存缓存）",
-          "required": false
+          "required": false,
+          "hidden": false
         },
         {
           "name": "bucket_name",
           "data_type": "String",
           "description": "可选：缓存桶/命名空间名称，默认 default",
-          "required": false
+          "required": false,
+          "hidden": false
         }
       ],
       "output_ports": [
@@ -446,7 +483,8 @@
           "name": "cache_ref",
           "data_type": "OpenAIMessageSessionCacheRef",
           "description": "当前运行期的会话缓存引用，可供后续暂存/读取/覆写节点复用",
-          "required": true
+          "required": true,
+          "hidden": false
         }
       ],
       "dynamic_input_ports": false,
@@ -456,7 +494,7 @@
         "y": 1150.0
       },
       "size": {
-        "width": 218.07187,
+        "width": 210.0,
         "height": 78.0
       },
       "inline_values": {
@@ -477,7 +515,8 @@
           "name": "session_ref",
           "data_type": "SessionStateRef",
           "description": "运行时会话状态引用",
-          "required": true
+          "required": true,
+          "hidden": false
         }
       ],
       "dynamic_input_ports": false,
@@ -505,43 +544,50 @@
           "name": "message_event",
           "data_type": "MessageEvent",
           "description": "函数输入 'message_event'",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "qq_bot_adapter",
           "data_type": "BotAdapterRef",
           "description": "函数输入 'qq_bot_adapter'",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "time",
           "data_type": "String",
           "description": "函数输入 'time'",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "cache_ref",
           "data_type": "OpenAIMessageSessionCacheRef",
           "description": "函数输入 'cache_ref'",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "session_ref",
           "data_type": "SessionStateRef",
           "description": "函数输入 'session_ref'",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "llm_api_llm_model",
           "data_type": "LLModel",
           "description": "函数输入 'llm_api_llm_model'",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "tavily_ref",
           "data_type": "TavilyRef",
           "description": "函数输入 'tavily_ref'",
-          "required": true
+          "required": true,
+          "hidden": false
         }
       ],
       "output_ports": [],
@@ -552,8 +598,8 @@
         "y": 300.0
       },
       "size": {
-        "width": 240.0,
-        "height": 260.0
+        "width": 210.0,
+        "height": 178.0
       },
       "inline_values": {
         "function_config": {
@@ -611,12 +657,6 @@
                 "to_port": "vec1"
               },
               {
-                "from_node_id": "node_59",
-                "from_port": "messages",
-                "to_node_id": "node_8",
-                "to_port": "vec2"
-              },
-              {
                 "from_node_id": "node_57",
                 "from_port": "result",
                 "to_node_id": "node_40",
@@ -669,18 +709,6 @@
                 "from_port": "result",
                 "to_node_id": "node_7",
                 "to_port": "target_id"
-              },
-              {
-                "from_node_id": "node_59",
-                "from_port": "messages",
-                "to_node_id": "node_13",
-                "to_port": "vec1"
-              },
-              {
-                "from_node_id": "node_7",
-                "from_port": "output",
-                "to_node_id": "node_13",
-                "to_port": "vec2"
               },
               {
                 "from_node_id": "node_13",
@@ -785,12 +813,6 @@
                 "to_port": "sender_id"
               },
               {
-                "from_node_id": "node_4",
-                "from_port": "messages",
-                "to_node_id": "node_6",
-                "to_port": "vec2"
-              },
-              {
                 "from_node_id": "node_3",
                 "from_port": "system_prompt",
                 "to_node_id": "node_2",
@@ -813,12 +835,6 @@
                 "from_port": "output",
                 "to_node_id": "node_49",
                 "to_port": "content"
-              },
-              {
-                "from_node_id": "node_7",
-                "from_port": "output",
-                "to_node_id": "node_5",
-                "to_port": "array"
               },
               {
                 "from_node_id": "node_5",
@@ -931,12 +947,14 @@
                   {
                     "data_type": "MessageEvent",
                     "description": "MessageEvent containing message data",
+                    "hidden": false,
                     "name": "message_event",
                     "required": true
                   },
                   {
                     "data_type": "BotAdapterRef",
                     "description": "BotAdapter reference for context-aware system message",
+                    "hidden": false,
                     "name": "bot_adapter",
                     "required": true
                   }
@@ -949,24 +967,28 @@
                       "Vec": "OpenAIMessage"
                     },
                     "description": "MessageList containing system and user messages",
+                    "hidden": false,
                     "name": "messages",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "Merged readable message body",
+                    "hidden": false,
                     "name": "content",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "Referenced/replied message content",
+                    "hidden": false,
                     "name": "ref_content",
                     "required": true
                   },
                   {
                     "data_type": "Boolean",
                     "description": "Whether the message @'s the bot",
+                    "hidden": false,
                     "name": "is_at_me",
                     "required": true
                   },
@@ -975,16 +997,20 @@
                       "Vec": "String"
                     },
                     "description": "List of all @ targets in the message",
+                    "hidden": false,
                     "name": "at_target_list",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": -240.0,
-                  "y": 440.0
+                  "x": -240,
+                  "y": 440
                 },
-                "size": null
+                "size": {
+                  "height": 106,
+                  "width": 236.8000030517578
+                }
               },
               {
                 "description": "从群消息事件中提取群号（字符串）",
@@ -998,6 +1024,7 @@
                   {
                     "data_type": "MessageEvent",
                     "description": "输入的消息事件",
+                    "hidden": false,
                     "name": "message_event",
                     "required": true
                   }
@@ -1008,16 +1035,20 @@
                   {
                     "data_type": "String",
                     "description": "群号字符串",
+                    "hidden": false,
                     "name": "result",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 380.0,
-                  "y": 80.0
+                  "x": 380,
+                  "y": 80
                 },
-                "size": null
+                "size": {
+                  "height": 26,
+                  "width": 169.60000610351562
+                }
               },
               {
                 "description": "将字符串封装为 role=system 的 OpenAIMessage",
@@ -1033,12 +1064,14 @@
                   {
                     "data_type": "String",
                     "description": "系统提示词内容",
+                    "hidden": false,
                     "name": "content",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "OpenAIMessage 角色，可选 system / user / assistant / tool",
+                    "hidden": false,
                     "name": "role",
                     "required": true
                   }
@@ -1049,18 +1082,19 @@
                   {
                     "data_type": "OpenAIMessage",
                     "description": "role=system 的 OpenAIMessage",
+                    "hidden": false,
                     "name": "message",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2220.0,
-                  "y": 100.0
+                  "x": 2220,
+                  "y": 100
                 },
                 "size": {
-                  "height": 140.0,
-                  "width": 320.0
+                  "height": 136.3333282470703,
+                  "width": 308
                 }
               },
               {
@@ -1075,6 +1109,7 @@
                   {
                     "data_type": "Any",
                     "description": "要封装到数组中的元素",
+                    "hidden": false,
                     "name": "element",
                     "required": true
                   }
@@ -1085,16 +1120,20 @@
                   {
                     "data_type": "Any",
                     "description": "包含单个元素的 List",
+                    "hidden": false,
                     "name": "array",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2600.0,
-                  "y": 120.0
+                  "x": 2600,
+                  "y": 120
                 },
-                "size": null
+                "size": {
+                  "height": 26,
+                  "width": 140
+                }
               },
               {
                 "description": "将 vec2 拼接到 vec1 之后，要求两个 Vec 的元素类型一致",
@@ -1110,6 +1149,7 @@
                       "Vec": "Any"
                     },
                     "description": "前半部分列表",
+                    "hidden": false,
                     "name": "vec1",
                     "required": true
                   },
@@ -1118,6 +1158,7 @@
                       "Vec": "Any"
                     },
                     "description": "后半部分列表，将拼接到 vec1 后面",
+                    "hidden": false,
                     "name": "vec2",
                     "required": true
                   }
@@ -1128,16 +1169,20 @@
                   {
                     "data_type": "Any",
                     "description": "拼接后的列表，元素类型与输入列表一致",
+                    "hidden": false,
                     "name": "vec",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2100.0,
-                  "y": 360.0
+                  "x": 2100,
+                  "y": 360
                 },
-                "size": null
+                "size": {
+                  "height": 46,
+                  "width": 140
+                }
               },
               {
                 "description": "将 vec2 拼接到 vec1 之后，要求两个 Vec 的元素类型一致",
@@ -1153,6 +1198,7 @@
                       "Vec": "Any"
                     },
                     "description": "前半部分列表",
+                    "hidden": false,
                     "name": "vec1",
                     "required": true
                   },
@@ -1161,6 +1207,7 @@
                       "Vec": "Any"
                     },
                     "description": "后半部分列表，将拼接到 vec1 后面",
+                    "hidden": false,
                     "name": "vec2",
                     "required": true
                   }
@@ -1171,16 +1218,20 @@
                   {
                     "data_type": "Any",
                     "description": "拼接后的列表，元素类型与输入列表一致",
+                    "hidden": false,
                     "name": "vec",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2560.0,
-                  "y": 360.0
+                  "x": 2560,
+                  "y": 360
                 },
-                "size": null
+                "size": {
+                  "height": 46,
+                  "width": 140
+                }
               },
               {
                 "description": "根据缓存 Ref、sender_id 与消息列表，覆写当前运行期累计的 Vec<OpenAIMessage>",
@@ -1194,12 +1245,14 @@
                   {
                     "data_type": "OpenAIMessageSessionCacheRef",
                     "description": "OpenAIMessage 会话暂存节点输出的缓存引用",
+                    "hidden": false,
                     "name": "cache_ref",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "要覆写历史消息的 sender_id",
+                    "hidden": false,
                     "name": "sender_id",
                     "required": true
                   },
@@ -1208,6 +1261,7 @@
                       "Vec": "OpenAIMessage"
                     },
                     "description": "要写回并覆写到缓存中的 Vec<OpenAIMessage>",
+                    "hidden": false,
                     "name": "messages",
                     "required": true
                   }
@@ -1218,16 +1272,20 @@
                   {
                     "data_type": "Boolean",
                     "description": "是否成功覆写历史消息",
+                    "hidden": false,
                     "name": "success",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2680.0,
-                  "y": 740.0
+                  "x": 2680,
+                  "y": 740
                 },
-                "size": null
+                "size": {
+                  "height": 98,
+                  "width": 210
+                }
               },
               {
                 "description": "从消息事件中提取发送者的QQ号（字符串）",
@@ -1241,6 +1299,7 @@
                   {
                     "data_type": "MessageEvent",
                     "description": "输入的消息事件",
+                    "hidden": false,
                     "name": "message_event",
                     "required": true
                   }
@@ -1251,16 +1310,20 @@
                   {
                     "data_type": "String",
                     "description": "发送者的QQ号字符串",
+                    "hidden": false,
                     "name": "result",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 380.0,
-                  "y": 180.0
+                  "x": 380,
+                  "y": 180
                 },
-                "size": null
+                "size": {
+                  "height": 26,
+                  "width": 169.60000610351562
+                }
               },
               {
                 "description": "根据缓存 Ref 和 sender_id 读取当前运行期累计的 Vec<OpenAIMessage>",
@@ -1274,12 +1337,14 @@
                   {
                     "data_type": "OpenAIMessageSessionCacheRef",
                     "description": "OpenAIMessage 会话暂存节点输出的缓存引用",
+                    "hidden": false,
                     "name": "cache_ref",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "要读取历史消息的 sender_id",
+                    "hidden": false,
                     "name": "sender_id",
                     "required": true
                   },
@@ -1288,6 +1353,7 @@
                       "Vec": "OpenAIMessage"
                     },
                     "description": "可选：未读取到 sender_id 历史消息时输出的回退消息列表",
+                    "hidden": false,
                     "name": "fallback",
                     "required": false
                   }
@@ -1300,16 +1366,20 @@
                       "Vec": "OpenAIMessage"
                     },
                     "description": "读取到的历史 Vec<OpenAIMessage>",
+                    "hidden": false,
                     "name": "messages",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1500.0,
-                  "y": 460.0
+                  "x": 1500,
+                  "y": 460
                 },
-                "size": null
+                "size": {
+                  "height": 98,
+                  "width": 210
+                }
               },
               {
                 "description": "释放 sender_id 的会话占用状态",
@@ -1323,12 +1393,14 @@
                   {
                     "data_type": "SessionStateRef",
                     "description": "运行时会话状态引用",
+                    "hidden": false,
                     "name": "session_ref",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "会话发送者 ID",
+                    "hidden": false,
                     "name": "sender_id",
                     "required": true
                   }
@@ -1339,16 +1411,20 @@
                   {
                     "data_type": "Boolean",
                     "description": "是否成功释放当前 sender_id 的占用",
+                    "hidden": false,
                     "name": "released",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 3240.0,
-                  "y": 720.0
+                  "x": 3240,
+                  "y": 720
                 },
-                "size": null
+                "size": {
+                  "height": 78,
+                  "width": 210
+                }
               },
               {
                 "description": "原子检查并占用 sender_id 会话状态",
@@ -1362,18 +1438,21 @@
                   {
                     "data_type": "SessionStateRef",
                     "description": "运行时会话状态引用",
+                    "hidden": false,
                     "name": "session_ref",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "会话发送者 ID",
+                    "hidden": false,
                     "name": "sender_id",
                     "required": true
                   },
                   {
                     "data_type": "Json",
                     "description": "成功占用时写入的附加 JSON 状态",
+                    "hidden": false,
                     "name": "state_json",
                     "required": false
                   }
@@ -1384,28 +1463,34 @@
                   {
                     "data_type": "Boolean",
                     "description": "本次是否成功占用",
+                    "hidden": false,
                     "name": "claimed",
                     "required": true
                   },
                   {
                     "data_type": "Boolean",
                     "description": "当前 sender_id 是否正在处理中",
+                    "hidden": false,
                     "name": "in_session",
                     "required": true
                   },
                   {
                     "data_type": "Json",
                     "description": "当前 sender_id 的附加 JSON 状态",
+                    "hidden": false,
                     "name": "state_json",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 900.0,
-                  "y": 140.0
+                  "x": 900,
+                  "y": 140
                 },
-                "size": null
+                "size": {
+                  "height": 98,
+                  "width": 210
+                }
               },
               {
                 "description": "根据 Boolean 输入将同一份数据分流到 true 或 false 分支，另一分支不输出",
@@ -1419,12 +1504,14 @@
                   {
                     "data_type": "Boolean",
                     "description": "为 true 时走 true_output，否则走 false_output",
+                    "hidden": false,
                     "name": "condition",
                     "required": true
                   },
                   {
                     "data_type": "Any",
                     "description": "要分流到某个分支的输入值",
+                    "hidden": false,
                     "name": "input",
                     "required": true
                   }
@@ -1435,28 +1522,34 @@
                   {
                     "data_type": "Any",
                     "description": "condition=true 时输出",
+                    "hidden": false,
                     "name": "true_output",
                     "required": true
                   },
                   {
                     "data_type": "Any",
                     "description": "condition=false 时输出",
+                    "hidden": false,
                     "name": "false_output",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "实际走到的分支：true 或 false",
+                    "hidden": false,
                     "name": "branch_taken",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1180.0,
-                  "y": 140.0
+                  "x": 1180,
+                  "y": 140
                 },
-                "size": null
+                "size": {
+                  "height": 98,
+                  "width": 210
+                }
               },
               {
                 "description": "等待 first 和 second 都到齐后，原样透传 second",
@@ -1470,12 +1563,14 @@
                   {
                     "data_type": "Any",
                     "description": "用于串联依赖的前置输入，仅用于等待其到齐",
+                    "hidden": false,
                     "name": "first",
                     "required": true
                   },
                   {
                     "data_type": "Any",
                     "description": "在两个输入都到齐后原样透传的值",
+                    "hidden": false,
                     "name": "second",
                     "required": true
                   }
@@ -1486,16 +1581,20 @@
                   {
                     "data_type": "Any",
                     "description": "second 的原样输出",
+                    "hidden": false,
                     "name": "output",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2980.0,
-                  "y": 740.0
+                  "x": 2980,
+                  "y": 740
                 },
-                "size": null
+                "size": {
+                  "height": 46,
+                  "width": 140
+                }
               },
               {
                 "description": "使用 system prompt 和 user message 发起一次带动态 Tools 的 LLM 推理",
@@ -1682,12 +1781,14 @@
                               {
                                 "data_type": "Json",
                                 "description": "隐藏的函数签名 JSON",
+                                "hidden": true,
                                 "name": "signature",
                                 "required": false
                               },
                               {
                                 "data_type": "Json",
                                 "description": "运行时注入的函数输入 JSON",
+                                "hidden": true,
                                 "name": "runtime_values",
                                 "required": false
                               }
@@ -1698,60 +1799,68 @@
                               {
                                 "data_type": "String",
                                 "description": "函数输入 'target_id'",
+                                "hidden": false,
                                 "name": "target_id",
                                 "required": true
                               },
                               {
                                 "data_type": "LLModel",
                                 "description": "函数输入 'llm_ref'",
+                                "hidden": false,
                                 "name": "llm_ref",
                                 "required": true
                               },
                               {
                                 "data_type": "BotAdapterRef",
                                 "description": "函数输入 'bot_ref'",
+                                "hidden": false,
                                 "name": "bot_ref",
                                 "required": true
                               },
                               {
                                 "data_type": "String",
                                 "description": "函数输入 'metion_target_id'",
+                                "hidden": false,
                                 "name": "metion_target_id",
                                 "required": true
                               },
                               {
                                 "data_type": "TavilyRef",
                                 "description": "函数输入 'tavily_ref'",
+                                "hidden": false,
                                 "name": "tavily_ref",
                                 "required": true
                               },
                               {
                                 "data_type": "String",
                                 "description": "函数输入 'content'",
+                                "hidden": false,
                                 "name": "content",
                                 "required": true
                               },
                               {
                                 "data_type": "String",
                                 "description": "函数输入 'query'",
+                                "hidden": false,
                                 "name": "query",
                                 "required": true
                               },
                               {
                                 "data_type": "Integer",
                                 "description": "函数输入 'search_count'",
+                                "hidden": false,
                                 "name": "search_count",
                                 "required": true
                               }
                             ],
                             "port_bindings": {},
                             "position": {
-                              "x": -240.0,
-                              "y": 0.0
+                              "x": -240,
+                              "y": 0
                             },
                             "size": {
-                              "height": 120.0,
-                              "width": 220.0
+                              "height": 120,
+                              "width": 220
                             }
                           },
                           {
@@ -1766,18 +1875,21 @@
                               {
                                 "data_type": "TavilyRef",
                                 "description": "Tavily 搜索引用",
+                                "hidden": false,
                                 "name": "tavily_ref",
                                 "required": true
                               },
                               {
                                 "data_type": "String",
                                 "description": "搜索关键词或问题",
+                                "hidden": false,
                                 "name": "query",
                                 "required": true
                               },
                               {
                                 "data_type": "Integer",
                                 "description": "返回结果数量，必须大于 0",
+                                "hidden": false,
                                 "name": "search_count",
                                 "required": true
                               }
@@ -1790,14 +1902,15 @@
                                   "Vec": "String"
                                 },
                                 "description": "搜索结果列表，每项包含标题、链接、内容",
+                                "hidden": false,
                                 "name": "results",
                                 "required": true
                               }
                             ],
                             "port_bindings": {},
                             "position": {
-                              "x": 240.0,
-                              "y": 0.0
+                              "x": 240,
+                              "y": 0
                             },
                             "size": null
                           },
@@ -1822,6 +1935,7 @@
                               {
                                 "data_type": "Json",
                                 "description": "隐藏的函数签名 JSON",
+                                "hidden": true,
                                 "name": "signature",
                                 "required": false
                               },
@@ -1830,6 +1944,7 @@
                                   "Vec": "String"
                                 },
                                 "description": "函数输出 'results'",
+                                "hidden": false,
                                 "name": "results",
                                 "required": true
                               }
@@ -1839,12 +1954,12 @@
                             "output_ports": [],
                             "port_bindings": {},
                             "position": {
-                              "x": 720.0,
-                              "y": 0.0
+                              "x": 720,
+                              "y": 0
                             },
                             "size": {
-                              "height": 120.0,
-                              "width": 220.0
+                              "height": 120,
+                              "width": 220
                             }
                           },
                           {
@@ -1859,6 +1974,7 @@
                               {
                                 "data_type": "String",
                                 "description": "输入字符串",
+                                "hidden": false,
                                 "name": "text",
                                 "required": true
                               }
@@ -1869,14 +1985,15 @@
                               {
                                 "data_type": "QQMessage",
                                 "description": "输出 QQMessage PlainText 消息段",
+                                "hidden": false,
                                 "name": "result",
                                 "required": true
                               }
                             ],
                             "port_bindings": {},
                             "position": {
-                              "x": 100.0,
-                              "y": 240.0
+                              "x": 100,
+                              "y": 240
                             },
                             "size": null
                           },
@@ -1894,12 +2011,14 @@
                               {
                                 "data_type": "String",
                                 "description": "待判断的字符串",
+                                "hidden": false,
                                 "name": "input",
                                 "required": true
                               },
                               {
                                 "data_type": "Boolean",
                                 "description": "为 true 时先 trim 再判断，纯空格字符串将视为空；默认 false",
+                                "hidden": false,
                                 "name": "trim_before_check",
                                 "required": false
                               }
@@ -1910,14 +2029,15 @@
                               {
                                 "data_type": "Boolean",
                                 "description": "字符串非空则为 true，否则为 false",
+                                "hidden": false,
                                 "name": "result",
                                 "required": true
                               }
                             ],
                             "port_bindings": {},
                             "position": {
-                              "x": 100.0,
-                              "y": 120.0
+                              "x": 100,
+                              "y": 120
                             },
                             "size": null
                           },
@@ -1933,12 +2053,14 @@
                               {
                                 "data_type": "Boolean",
                                 "description": "Whether the switch is open",
+                                "hidden": false,
                                 "name": "enabled",
                                 "required": true
                               },
                               {
                                 "data_type": "Any",
                                 "description": "Input value to forward when enabled",
+                                "hidden": false,
                                 "name": "input",
                                 "required": true
                               }
@@ -1949,14 +2071,15 @@
                               {
                                 "data_type": "Any",
                                 "description": "Forwarded output value",
+                                "hidden": false,
                                 "name": "output",
                                 "required": true
                               }
                             ],
                             "port_bindings": {},
                             "position": {
-                              "x": 340.0,
-                              "y": 260.0
+                              "x": 340,
+                              "y": 260
                             },
                             "size": null
                           },
@@ -1972,12 +2095,14 @@
                               {
                                 "data_type": "BotAdapterRef",
                                 "description": "Bot适配器引用",
+                                "hidden": false,
                                 "name": "bot_adapter",
                                 "required": true
                               },
                               {
                                 "data_type": "String",
                                 "description": "目标群的群号",
+                                "hidden": false,
                                 "name": "target_id",
                                 "required": true
                               },
@@ -1986,6 +2111,7 @@
                                   "Vec": "QQMessage"
                                 },
                                 "description": "要发送的QQ消息段列表",
+                                "hidden": false,
                                 "name": "message",
                                 "required": true
                               }
@@ -1996,20 +2122,22 @@
                               {
                                 "data_type": "Boolean",
                                 "description": "是否发送成功",
+                                "hidden": false,
                                 "name": "success",
                                 "required": true
                               },
                               {
                                 "data_type": "Integer",
                                 "description": "服务器返回的消息ID",
+                                "hidden": false,
                                 "name": "message_id",
                                 "required": true
                               }
                             ],
                             "port_bindings": {},
                             "position": {
-                              "x": 720.0,
-                              "y": 120.0
+                              "x": 720,
+                              "y": 120
                             },
                             "size": null
                           },
@@ -2025,6 +2153,7 @@
                               {
                                 "data_type": "Any",
                                 "description": "要封装到数组中的元素",
+                                "hidden": false,
                                 "name": "element",
                                 "required": true
                               }
@@ -2035,14 +2164,15 @@
                               {
                                 "data_type": "Any",
                                 "description": "包含单个元素的 List",
+                                "hidden": false,
                                 "name": "array",
                                 "required": true
                               }
                             ],
                             "port_bindings": {},
                             "position": {
-                              "x": 600.0,
-                              "y": 260.0
+                              "x": 600,
+                              "y": 260
                             },
                             "size": null
                           }
@@ -2056,6 +2186,7 @@
                   {
                     "data_type": "LLModel",
                     "description": "LLM 模型引用，由 LLM API 节点提供",
+                    "hidden": false,
                     "name": "llm_model",
                     "required": true
                   },
@@ -2064,48 +2195,56 @@
                       "Vec": "OpenAIMessage"
                     },
                     "description": "消息列表（包含 system/user/assistant/tool 等角色）",
+                    "hidden": false,
                     "name": "messages",
                     "required": true
                   },
                   {
                     "data_type": "Json",
                     "description": "Tools 配置，由工具编辑器维护",
+                    "hidden": false,
                     "name": "tools_config",
                     "required": false
                   },
                   {
                     "data_type": "Json",
                     "description": "Brain 共享输入签名，由工具编辑器维护",
+                    "hidden": false,
                     "name": "shared_inputs",
                     "required": false
                   },
                   {
                     "data_type": "String",
                     "description": "Brain 共享输入 'target_id'",
+                    "hidden": false,
                     "name": "target_id",
                     "required": true
                   },
                   {
                     "data_type": "LLModel",
                     "description": "Brain 共享输入 'llm_ref'",
+                    "hidden": false,
                     "name": "llm_ref",
                     "required": true
                   },
                   {
                     "data_type": "BotAdapterRef",
                     "description": "Brain 共享输入 'bot_ref'",
+                    "hidden": false,
                     "name": "bot_ref",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "Brain 共享输入 'metion_target_id'",
+                    "hidden": false,
                     "name": "metion_target_id",
                     "required": true
                   },
                   {
                     "data_type": "TavilyRef",
                     "description": "Brain 共享输入 'tavily_ref'",
+                    "hidden": false,
                     "name": "tavily_ref",
                     "required": true
                   }
@@ -2118,16 +2257,20 @@
                       "Vec": "OpenAIMessage"
                     },
                     "description": "本次 Brain 运行新增的 assistant/tool 消息轨迹",
+                    "hidden": false,
                     "name": "output",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2960.0,
-                  "y": 340.0
+                  "x": 2960,
+                  "y": 340
                 },
-                "size": null
+                "size": {
+                  "height": 218,
+                  "width": 210
+                }
               },
               {
                 "description": "将 vec2 拼接到 vec1 之后，要求两个 Vec 的元素类型一致",
@@ -2143,6 +2286,7 @@
                       "Vec": "Any"
                     },
                     "description": "前半部分列表",
+                    "hidden": false,
                     "name": "vec1",
                     "required": true
                   },
@@ -2151,6 +2295,7 @@
                       "Vec": "Any"
                     },
                     "description": "后半部分列表，将拼接到 vec1 后面",
+                    "hidden": false,
                     "name": "vec2",
                     "required": true
                   }
@@ -2161,16 +2306,20 @@
                   {
                     "data_type": "Any",
                     "description": "拼接后的列表，元素类型与输入列表一致",
+                    "hidden": false,
                     "name": "vec",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2280.0,
-                  "y": 740.0
+                  "x": 2280,
+                  "y": 740
                 },
-                "size": null
+                "size": {
+                  "height": 46,
+                  "width": 140
+                }
               },
               {
                 "description": "函数子图的输入边界节点",
@@ -2215,12 +2364,14 @@
                   {
                     "data_type": "Json",
                     "description": "隐藏的函数签名 JSON",
+                    "hidden": true,
                     "name": "signature",
                     "required": false
                   },
                   {
                     "data_type": "Json",
                     "description": "运行时注入的函数输入 JSON",
+                    "hidden": true,
                     "name": "runtime_values",
                     "required": false
                   }
@@ -2231,54 +2382,61 @@
                   {
                     "data_type": "MessageEvent",
                     "description": "函数输入 'message_event'",
+                    "hidden": false,
                     "name": "message_event",
                     "required": true
                   },
                   {
                     "data_type": "BotAdapterRef",
                     "description": "函数输入 'qq_bot_adapter'",
+                    "hidden": false,
                     "name": "qq_bot_adapter",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "函数输入 'time'",
+                    "hidden": false,
                     "name": "time",
                     "required": true
                   },
                   {
                     "data_type": "OpenAIMessageSessionCacheRef",
                     "description": "函数输入 'cache_ref'",
+                    "hidden": false,
                     "name": "cache_ref",
                     "required": true
                   },
                   {
                     "data_type": "SessionStateRef",
                     "description": "函数输入 'session_ref'",
+                    "hidden": false,
                     "name": "session_ref",
                     "required": true
                   },
                   {
                     "data_type": "LLModel",
                     "description": "函数输入 'llm_api_llm_model'",
+                    "hidden": false,
                     "name": "llm_api_llm_model",
                     "required": true
                   },
                   {
                     "data_type": "TavilyRef",
                     "description": "函数输入 'tavily_ref'",
+                    "hidden": false,
                     "name": "tavily_ref",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": -180.0,
-                  "y": 80.0
+                  "x": -180,
+                  "y": 80
                 },
                 "size": {
-                  "height": 120.0,
-                  "width": 220.0
+                  "height": 120,
+                  "width": 220
                 }
               },
               {
@@ -2295,6 +2453,7 @@
                   {
                     "data_type": "Json",
                     "description": "隐藏的函数签名 JSON",
+                    "hidden": true,
                     "name": "signature",
                     "required": false
                   }
@@ -2304,12 +2463,12 @@
                 "output_ports": [],
                 "port_bindings": {},
                 "position": {
-                  "x": 3400.0,
-                  "y": 80.0
+                  "x": 3400,
+                  "y": 80
                 },
                 "size": {
-                  "height": 120.0,
-                  "width": 220.0
+                  "height": 120,
+                  "width": 220
                 }
               },
               {
@@ -2324,12 +2483,14 @@
                   {
                     "data_type": "Boolean",
                     "description": "Whether the switch is open",
+                    "hidden": false,
                     "name": "enabled",
                     "required": true
                   },
                   {
                     "data_type": "Any",
                     "description": "Input value to forward when enabled",
+                    "hidden": false,
                     "name": "input",
                     "required": true
                   }
@@ -2340,16 +2501,20 @@
                   {
                     "data_type": "Any",
                     "description": "Forwarded output value",
+                    "hidden": false,
                     "name": "output",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 660.0,
-                  "y": 160.0
+                  "x": 660,
+                  "y": 160
                 },
-                "size": null
+                "size": {
+                  "height": 78,
+                  "width": 210
+                }
               },
               {
                 "description": "通过 ${变量名} 模板语法将输入变量格式化为字符串",
@@ -2365,30 +2530,35 @@
                   {
                     "data_type": "String",
                     "description": "格式化模板字符串，使用 ${变量名} 语法引用输入变量",
+                    "hidden": false,
                     "name": "template",
                     "required": false
                   },
                   {
                     "data_type": "Any",
                     "description": "变量 角色名称",
+                    "hidden": false,
                     "name": "角色名称",
                     "required": true
                   },
                   {
                     "data_type": "Any",
                     "description": "变量 time",
+                    "hidden": false,
                     "name": "time",
                     "required": true
                   },
                   {
                     "data_type": "Any",
                     "description": "变量 sender_id",
+                    "hidden": false,
                     "name": "sender_id",
                     "required": true
                   },
                   {
                     "data_type": "Any",
                     "description": "变量 格式",
+                    "hidden": false,
                     "name": "格式",
                     "required": true
                   }
@@ -2399,6 +2569,7 @@
                   {
                     "data_type": "String",
                     "description": "格式化后的字符串",
+                    "hidden": false,
                     "name": "output",
                     "required": true
                   }
@@ -2410,12 +2581,12 @@
                   }
                 },
                 "position": {
-                  "x": 1580.0,
-                  "y": 100.0
+                  "x": 1660,
+                  "y": 10
                 },
                 "size": {
-                  "height": 120.0,
-                  "width": 540.0
+                  "height": 249.3333282470703,
+                  "width": 504
                 }
               },
               {
@@ -2433,16 +2604,20 @@
                   {
                     "data_type": "String",
                     "description": "固定的 QQ 消息 JSON 输出格式 prompt",
+                    "hidden": false,
                     "name": "system_prompt",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1360.0,
-                  "y": -60.0
+                  "x": 1360,
+                  "y": -60
                 },
-                "size": null
+                "size": {
+                  "height": 75.33332824707031,
+                  "width": 244
+                }
               },
               {
                 "description": "从列表中按下标取元素，支持负数下标（-1为最后一个）",
@@ -2460,12 +2635,14 @@
                       "Vec": "Any"
                     },
                     "description": "输入列表",
+                    "hidden": false,
                     "name": "array",
                     "required": true
                   },
                   {
                     "data_type": "Integer",
                     "description": "元素下标，负数表示从末尾倒数（-1为最后一个）",
+                    "hidden": false,
                     "name": "index",
                     "required": true
                   }
@@ -2476,16 +2653,20 @@
                   {
                     "data_type": "Any",
                     "description": "提取出的元素，类型与列表中元素的类型一致",
+                    "hidden": false,
                     "name": "element",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 3260.0,
-                  "y": 380.0
+                  "x": 3260,
+                  "y": 380
                 },
-                "size": null
+                "size": {
+                  "height": 78,
+                  "width": 210
+                }
               },
               {
                 "description": "将 OpenAIMessage 的 content 字符串解析为 JSON",
@@ -2499,6 +2680,7 @@
                   {
                     "data_type": "OpenAIMessage",
                     "description": "输入的 OpenAIMessage，其 content 必须是合法 JSON 字符串",
+                    "hidden": false,
                     "name": "message",
                     "required": true
                   }
@@ -2509,22 +2691,27 @@
                   {
                     "data_type": "Json",
                     "description": "由 OpenAIMessage.content 解析得到的 JSON",
+                    "hidden": false,
                     "name": "json",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "解析失败时输出原始 content 字符串",
+                    "hidden": false,
                     "name": "failed",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 3520.0,
-                  "y": 380.0
+                  "x": 3520,
+                  "y": 380
                 },
-                "size": null
+                "size": {
+                  "height": 46,
+                  "width": 168
+                }
               },
               {
                 "description": "向QQ群组批量发送多条消息",
@@ -2538,12 +2725,14 @@
                   {
                     "data_type": "BotAdapterRef",
                     "description": "Bot适配器引用",
+                    "hidden": false,
                     "name": "bot_adapter",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "目标群的群号",
+                    "hidden": false,
                     "name": "target_id",
                     "required": true
                   },
@@ -2554,12 +2743,14 @@
                       }
                     },
                     "description": "要发送的 QQ 消息批次列表",
+                    "hidden": false,
                     "name": "message_batches",
                     "required": true
                   },
                   {
                     "data_type": "Integer",
                     "description": "两次实际发送之间的间隔毫秒数，默认 0",
+                    "hidden": false,
                     "name": "delay_millis",
                     "required": false
                   }
@@ -2570,12 +2761,14 @@
                   {
                     "data_type": "Boolean",
                     "description": "是否所有实际发送批次都成功",
+                    "hidden": false,
                     "name": "success",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "批量发送汇总信息",
+                    "hidden": false,
                     "name": "summary",
                     "required": true
                   },
@@ -2584,16 +2777,20 @@
                       "Vec": "Integer"
                     },
                     "description": "每个输入批次对应的 message_id；失败或跳过为空批次时为 -1",
+                    "hidden": false,
                     "name": "message_ids",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 4000.0,
-                  "y": 380.0
+                  "x": 4000,
+                  "y": 380
                 },
-                "size": null
+                "size": {
+                  "height": 142,
+                  "width": 228.3999938964844
+                }
               },
               {
                 "description": "将 LLM 输出的 QQ 消息 JSON 二维数组转换为 Vec<Vec<QQMessage>>",
@@ -2607,6 +2804,7 @@
                   {
                     "data_type": "Json",
                     "description": "LLM 输出的 QQ 消息 JSON 二维数组",
+                    "hidden": false,
                     "name": "json",
                     "required": true
                   }
@@ -2621,22 +2819,27 @@
                       }
                     },
                     "description": "解析得到的 Vec<Vec<QQMessage>>",
+                    "hidden": false,
                     "name": "messages",
                     "required": true
                   },
                   {
                     "data_type": "Json",
                     "description": "转换失败时输出原始 JSON",
+                    "hidden": false,
                     "name": "failed",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 3740.0,
-                  "y": 380.0
+                  "x": 3740,
+                  "y": 380
                 },
-                "size": null
+                "size": {
+                  "height": 46,
+                  "width": 140
+                }
               },
               {
                 "description": "向QQ群组发送消息",
@@ -2650,12 +2853,14 @@
                   {
                     "data_type": "BotAdapterRef",
                     "description": "Bot适配器引用",
+                    "hidden": false,
                     "name": "bot_adapter",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "目标群的群号",
+                    "hidden": false,
                     "name": "target_id",
                     "required": true
                   },
@@ -2664,6 +2869,7 @@
                       "Vec": "QQMessage"
                     },
                     "description": "要发送的QQ消息段列表",
+                    "hidden": false,
                     "name": "message",
                     "required": true
                   }
@@ -2674,22 +2880,27 @@
                   {
                     "data_type": "Boolean",
                     "description": "是否发送成功",
+                    "hidden": false,
                     "name": "success",
                     "required": true
                   },
                   {
                     "data_type": "Integer",
                     "description": "服务器返回的消息ID",
+                    "hidden": false,
                     "name": "message_id",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 4000.0,
-                  "y": 660.0
+                  "x": 4000,
+                  "y": 660
                 },
-                "size": null
+                "size": {
+                  "height": 98,
+                  "width": 210
+                }
               },
               {
                 "description": "QQMessageList data source with inline UI editor",
@@ -2714,6 +2925,7 @@
                       "Vec": "QQMessage"
                     },
                     "description": "Vec<QQMessage> provided by UI inline editor",
+                    "hidden": false,
                     "name": "messages",
                     "required": false
                   }
@@ -2726,18 +2938,19 @@
                       "Vec": "QQMessage"
                     },
                     "description": "Output Vec<QQMessage> from UI data source",
+                    "hidden": false,
                     "name": "messages",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 3480.0,
-                  "y": 660.0
+                  "x": 3470,
+                  "y": 660
                 },
                 "size": {
-                  "height": 160.0,
-                  "width": 300.0
+                  "height": 160,
+                  "width": 300
                 }
               },
               {
@@ -2752,12 +2965,14 @@
                   {
                     "data_type": "Any",
                     "description": "用于串联依赖的前置输入，仅用于等待其到齐",
+                    "hidden": false,
                     "name": "first",
                     "required": true
                   },
                   {
                     "data_type": "Any",
                     "description": "在两个输入都到齐后原样透传的值",
+                    "hidden": false,
                     "name": "second",
                     "required": true
                   }
@@ -2768,16 +2983,20 @@
                   {
                     "data_type": "Any",
                     "description": "second 的原样输出",
+                    "hidden": false,
                     "name": "output",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 3780.0,
-                  "y": 660.0
+                  "x": 3780,
+                  "y": 660
                 },
-                "size": null
+                "size": {
+                  "height": 46,
+                  "width": 140
+                }
               },
               {
                 "description": "向QQ群组发送消息",
@@ -2791,12 +3010,14 @@
                   {
                     "data_type": "BotAdapterRef",
                     "description": "Bot适配器引用",
+                    "hidden": false,
                     "name": "bot_adapter",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "目标群的群号",
+                    "hidden": false,
                     "name": "target_id",
                     "required": true
                   },
@@ -2805,6 +3026,7 @@
                       "Vec": "QQMessage"
                     },
                     "description": "要发送的QQ消息段列表",
+                    "hidden": false,
                     "name": "message",
                     "required": true
                   }
@@ -2815,22 +3037,27 @@
                   {
                     "data_type": "Boolean",
                     "description": "是否发送成功",
+                    "hidden": false,
                     "name": "success",
                     "required": true
                   },
                   {
                     "data_type": "Integer",
                     "description": "服务器返回的消息ID",
+                    "hidden": false,
                     "name": "message_id",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 4780.0,
-                  "y": 620.0
+                  "x": 4780,
+                  "y": 620
                 },
-                "size": null
+                "size": {
+                  "height": 98,
+                  "width": 210
+                }
               },
               {
                 "description": "QQMessageList data source with inline UI editor",
@@ -2855,6 +3082,7 @@
                       "Vec": "QQMessage"
                     },
                     "description": "Vec<QQMessage> provided by UI inline editor",
+                    "hidden": false,
                     "name": "messages",
                     "required": false
                   }
@@ -2867,18 +3095,19 @@
                       "Vec": "QQMessage"
                     },
                     "description": "Output Vec<QQMessage> from UI data source",
+                    "hidden": false,
                     "name": "messages",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 4220.0,
-                  "y": 620.0
+                  "x": 4220,
+                  "y": 620
                 },
                 "size": {
-                  "height": 160.0,
-                  "width": 300.0
+                  "height": 160,
+                  "width": 300
                 }
               },
               {
@@ -2893,12 +3122,14 @@
                   {
                     "data_type": "Any",
                     "description": "用于串联依赖的前置输入，仅用于等待其到齐",
+                    "hidden": false,
                     "name": "first",
                     "required": true
                   },
                   {
                     "data_type": "Any",
                     "description": "在两个输入都到齐后原样透传的值",
+                    "hidden": false,
                     "name": "second",
                     "required": true
                   }
@@ -2909,16 +3140,20 @@
                   {
                     "data_type": "Any",
                     "description": "second 的原样输出",
+                    "hidden": false,
                     "name": "output",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 4540.0,
-                  "y": 620.0
+                  "x": 4540,
+                  "y": 620
                 },
-                "size": null
+                "size": {
+                  "height": 46,
+                  "width": 140
+                }
               }
             ],
             "variables": []
@@ -2939,43 +3174,50 @@
           "name": "message_event",
           "data_type": "MessageEvent",
           "description": "函数输入 'message_event'",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "qq_bot_adapter",
           "data_type": "BotAdapterRef",
           "description": "函数输入 'qq_bot_adapter'",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "time",
           "data_type": "String",
           "description": "函数输入 'time'",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "cache_ref",
           "data_type": "OpenAIMessageSessionCacheRef",
           "description": "函数输入 'cache_ref'",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "session_ref",
           "data_type": "SessionStateRef",
           "description": "函数输入 'session_ref'",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "llm_api_llm_model",
           "data_type": "LLModel",
           "description": "函数输入 'llm_api_llm_model'",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "tavily_ref",
           "data_type": "TavilyRef",
           "description": "函数输入 'tavily_ref'",
-          "required": true
+          "required": true,
+          "hidden": false
         }
       ],
       "output_ports": [],
@@ -2986,8 +3228,8 @@
         "y": -110.0
       },
       "size": {
-        "width": 240.0,
-        "height": 240.0
+        "width": 210.0,
+        "height": 178.0
       },
       "inline_values": {
         "function_config": {
@@ -3033,22 +3275,10 @@
                 "to_port": "content"
               },
               {
-                "from_node_id": "node_3",
-                "from_port": "messages",
-                "to_node_id": "node_32",
-                "to_port": "vec2"
-              },
-              {
                 "from_node_id": "node_31",
                 "from_port": "message",
                 "to_node_id": "node_41",
                 "to_port": "element"
-              },
-              {
-                "from_node_id": "node_45",
-                "from_port": "messages",
-                "to_node_id": "node_46",
-                "to_port": "vec2"
               },
               {
                 "from_node_id": "node_41",
@@ -3141,18 +3371,6 @@
                 "to_port": "target_id"
               },
               {
-                "from_node_id": "node_45",
-                "from_port": "messages",
-                "to_node_id": "node_9",
-                "to_port": "vec1"
-              },
-              {
-                "from_node_id": "node_17",
-                "from_port": "output",
-                "to_node_id": "node_9",
-                "to_port": "vec2"
-              },
-              {
                 "from_node_id": "node_9",
                 "from_port": "vec",
                 "to_node_id": "node_16",
@@ -3235,12 +3453,6 @@
                 "from_port": "tavily_ref",
                 "to_node_id": "node_17",
                 "to_port": "tavily_ref"
-              },
-              {
-                "from_node_id": "node_17",
-                "from_port": "output",
-                "to_node_id": "node_2",
-                "to_port": "array"
               },
               {
                 "from_node_id": "node_2",
@@ -3365,12 +3577,14 @@
                   {
                     "data_type": "MessageEvent",
                     "description": "MessageEvent containing message data",
+                    "hidden": false,
                     "name": "message_event",
                     "required": true
                   },
                   {
                     "data_type": "BotAdapterRef",
                     "description": "BotAdapter reference for context-aware system message",
+                    "hidden": false,
                     "name": "bot_adapter",
                     "required": true
                   }
@@ -3383,24 +3597,28 @@
                       "Vec": "OpenAIMessage"
                     },
                     "description": "MessageList containing system and user messages",
+                    "hidden": false,
                     "name": "messages",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "Merged readable message body",
+                    "hidden": false,
                     "name": "content",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "Referenced/replied message content",
+                    "hidden": false,
                     "name": "ref_content",
                     "required": true
                   },
                   {
                     "data_type": "Boolean",
                     "description": "Whether the message @'s the bot",
+                    "hidden": false,
                     "name": "is_at_me",
                     "required": true
                   },
@@ -3409,18 +3627,19 @@
                       "Vec": "String"
                     },
                     "description": "List of all @ targets in the message",
+                    "hidden": false,
                     "name": "at_target_list",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": -340.0,
-                  "y": 280.0
+                  "x": -340,
+                  "y": 280
                 },
                 "size": {
-                  "height": 106.0,
-                  "width": 235.96151733398438
+                  "height": 106,
+                  "width": 235.96152
                 }
               },
               {
@@ -3435,6 +3654,7 @@
                   {
                     "data_type": "MessageEvent",
                     "description": "输入的消息事件",
+                    "hidden": false,
                     "name": "message_event",
                     "required": true
                   }
@@ -3445,18 +3665,19 @@
                   {
                     "data_type": "String",
                     "description": "发送者的QQ号字符串",
+                    "hidden": false,
                     "name": "result",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": -360.0,
-                  "y": 140.0
+                  "x": -360,
+                  "y": 140
                 },
                 "size": {
-                  "height": 60.0,
-                  "width": 159.064453125
+                  "height": 60,
+                  "width": 159.06445
                 }
               },
               {
@@ -3636,12 +3857,14 @@
                               {
                                 "data_type": "Json",
                                 "description": "隐藏的函数签名 JSON",
+                                "hidden": true,
                                 "name": "signature",
                                 "required": false
                               },
                               {
                                 "data_type": "Json",
                                 "description": "运行时注入的函数输入 JSON",
+                                "hidden": true,
                                 "name": "runtime_values",
                                 "required": false
                               }
@@ -3652,54 +3875,61 @@
                               {
                                 "data_type": "String",
                                 "description": "函数输入 'target_id'",
+                                "hidden": false,
                                 "name": "target_id",
                                 "required": true
                               },
                               {
                                 "data_type": "LLModel",
                                 "description": "函数输入 'llm_ref'",
+                                "hidden": false,
                                 "name": "llm_ref",
                                 "required": true
                               },
                               {
                                 "data_type": "BotAdapterRef",
                                 "description": "函数输入 'bot_ref'",
+                                "hidden": false,
                                 "name": "bot_ref",
                                 "required": true
                               },
                               {
                                 "data_type": "TavilyRef",
                                 "description": "函数输入 'tavily_ref'",
+                                "hidden": false,
                                 "name": "tavily_ref",
                                 "required": true
                               },
                               {
                                 "data_type": "String",
                                 "description": "函数输入 'content'",
+                                "hidden": false,
                                 "name": "content",
                                 "required": true
                               },
                               {
                                 "data_type": "String",
                                 "description": "函数输入 'query'",
+                                "hidden": false,
                                 "name": "query",
                                 "required": true
                               },
                               {
                                 "data_type": "Integer",
                                 "description": "函数输入 'search_count'",
+                                "hidden": false,
                                 "name": "search_count",
                                 "required": true
                               }
                             ],
                             "port_bindings": {},
                             "position": {
-                              "x": -240.0,
-                              "y": 0.0
+                              "x": -240,
+                              "y": 0
                             },
                             "size": {
-                              "height": 120.0,
-                              "width": 220.0
+                              "height": 120,
+                              "width": 220
                             }
                           },
                           {
@@ -3714,18 +3944,21 @@
                               {
                                 "data_type": "TavilyRef",
                                 "description": "Tavily 搜索引用",
+                                "hidden": false,
                                 "name": "tavily_ref",
                                 "required": true
                               },
                               {
                                 "data_type": "String",
                                 "description": "搜索关键词或问题",
+                                "hidden": false,
                                 "name": "query",
                                 "required": true
                               },
                               {
                                 "data_type": "Integer",
                                 "description": "返回结果数量，必须大于 0",
+                                "hidden": false,
                                 "name": "search_count",
                                 "required": true
                               }
@@ -3738,16 +3971,20 @@
                                   "Vec": "String"
                                 },
                                 "description": "搜索结果列表，每项包含标题、链接、内容",
+                                "hidden": false,
                                 "name": "results",
                                 "required": true
                               }
                             ],
                             "port_bindings": {},
                             "position": {
-                              "x": 240.0,
-                              "y": 0.0
+                              "x": 624,
+                              "y": -64
                             },
-                            "size": null
+                            "size": {
+                              "height": 102,
+                              "width": 210
+                            }
                           },
                           {
                             "description": "函数子图的输出边界节点",
@@ -3770,6 +4007,7 @@
                               {
                                 "data_type": "Json",
                                 "description": "隐藏的函数签名 JSON",
+                                "hidden": true,
                                 "name": "signature",
                                 "required": false
                               },
@@ -3778,6 +4016,7 @@
                                   "Vec": "String"
                                 },
                                 "description": "函数输出 'results'",
+                                "hidden": false,
                                 "name": "results",
                                 "required": true
                               }
@@ -3787,12 +4026,12 @@
                             "output_ports": [],
                             "port_bindings": {},
                             "position": {
-                              "x": 720.0,
-                              "y": 0.0
+                              "x": 1330,
+                              "y": 0
                             },
                             "size": {
-                              "height": 120.0,
-                              "width": 220.0
+                              "height": 120,
+                              "width": 220
                             }
                           },
                           {
@@ -3807,12 +4046,14 @@
                               {
                                 "data_type": "BotAdapterRef",
                                 "description": "Bot适配器引用",
+                                "hidden": false,
                                 "name": "bot_adapter",
                                 "required": true
                               },
                               {
                                 "data_type": "String",
                                 "description": "目标好友的QQ号",
+                                "hidden": false,
                                 "name": "target_id",
                                 "required": true
                               },
@@ -3821,6 +4062,7 @@
                                   "Vec": "QQMessage"
                                 },
                                 "description": "要发送的QQ消息段列表",
+                                "hidden": false,
                                 "name": "message",
                                 "required": true
                               }
@@ -3831,22 +4073,27 @@
                               {
                                 "data_type": "Boolean",
                                 "description": "是否发送成功",
+                                "hidden": false,
                                 "name": "success",
                                 "required": true
                               },
                               {
                                 "data_type": "Integer",
                                 "description": "服务器返回的消息ID",
+                                "hidden": false,
                                 "name": "message_id",
                                 "required": true
                               }
                             ],
                             "port_bindings": {},
                             "position": {
-                              "x": 780.0,
-                              "y": 180.0
+                              "x": 1040,
+                              "y": 170
                             },
-                            "size": null
+                            "size": {
+                              "height": 98,
+                              "width": 210
+                            }
                           },
                           {
                             "description": "将字符串转换为 QQ 消息中的纯文本（PlainText）消息段",
@@ -3860,6 +4107,7 @@
                               {
                                 "data_type": "String",
                                 "description": "输入字符串",
+                                "hidden": false,
                                 "name": "text",
                                 "required": true
                               }
@@ -3870,16 +4118,20 @@
                               {
                                 "data_type": "QQMessage",
                                 "description": "输出 QQMessage PlainText 消息段",
+                                "hidden": false,
                                 "name": "result",
                                 "required": true
                               }
                             ],
                             "port_bindings": {},
                             "position": {
-                              "x": 100.0,
-                              "y": 240.0
+                              "x": 100,
+                              "y": 240
                             },
-                            "size": null
+                            "size": {
+                              "height": 60,
+                              "width": 210
+                            }
                           },
                           {
                             "description": "判断字符串是否非空，可选 trim_before_check 决定是否在判断前先去除两端空白",
@@ -3895,12 +4147,14 @@
                               {
                                 "data_type": "String",
                                 "description": "待判断的字符串",
+                                "hidden": false,
                                 "name": "input",
                                 "required": true
                               },
                               {
                                 "data_type": "Boolean",
                                 "description": "为 true 时先 trim 再判断，纯空格字符串将视为空；默认 false",
+                                "hidden": false,
                                 "name": "trim_before_check",
                                 "required": false
                               }
@@ -3911,16 +4165,20 @@
                               {
                                 "data_type": "Boolean",
                                 "description": "字符串非空则为 true，否则为 false",
+                                "hidden": false,
                                 "name": "result",
                                 "required": true
                               }
                             ],
                             "port_bindings": {},
                             "position": {
-                              "x": 380.0,
-                              "y": 220.0
+                              "x": 380,
+                              "y": 220
                             },
-                            "size": null
+                            "size": {
+                              "height": 82,
+                              "width": 210
+                            }
                           },
                           {
                             "description": "Forward input only when enabled is true",
@@ -3934,12 +4192,14 @@
                               {
                                 "data_type": "Boolean",
                                 "description": "Whether the switch is open",
+                                "hidden": false,
                                 "name": "enabled",
                                 "required": true
                               },
                               {
                                 "data_type": "Any",
                                 "description": "Input value to forward when enabled",
+                                "hidden": false,
                                 "name": "input",
                                 "required": true
                               }
@@ -3950,16 +4210,20 @@
                               {
                                 "data_type": "Any",
                                 "description": "Forwarded output value",
+                                "hidden": false,
                                 "name": "output",
                                 "required": true
                               }
                             ],
                             "port_bindings": {},
                             "position": {
-                              "x": 380.0,
-                              "y": 320.0
+                              "x": 380,
+                              "y": 370
                             },
-                            "size": null
+                            "size": {
+                              "height": 78,
+                              "width": 210
+                            }
                           },
                           {
                             "description": "将单个元素封装为单元素 List",
@@ -3973,6 +4237,7 @@
                               {
                                 "data_type": "Any",
                                 "description": "要封装到数组中的元素",
+                                "hidden": false,
                                 "name": "element",
                                 "required": true
                               }
@@ -3983,16 +4248,20 @@
                               {
                                 "data_type": "Any",
                                 "description": "包含单个元素的 List",
+                                "hidden": false,
                                 "name": "array",
                                 "required": true
                               }
                             ],
                             "port_bindings": {},
                             "position": {
-                              "x": 640.0,
-                              "y": 320.0
+                              "x": 640,
+                              "y": 340
                             },
-                            "size": null
+                            "size": {
+                              "height": 60,
+                              "width": 140
+                            }
                           }
                         ],
                         "variables": []
@@ -4004,6 +4273,7 @@
                   {
                     "data_type": "LLModel",
                     "description": "LLM 模型引用，由 LLM API 节点提供",
+                    "hidden": false,
                     "name": "llm_model",
                     "required": true
                   },
@@ -4012,42 +4282,49 @@
                       "Vec": "OpenAIMessage"
                     },
                     "description": "消息列表（包含 system/user/assistant/tool 等角色）",
+                    "hidden": false,
                     "name": "messages",
                     "required": true
                   },
                   {
                     "data_type": "Json",
                     "description": "Tools 配置，由工具编辑器维护",
+                    "hidden": false,
                     "name": "tools_config",
                     "required": false
                   },
                   {
                     "data_type": "Json",
                     "description": "Brain 共享输入签名，由工具编辑器维护",
+                    "hidden": false,
                     "name": "shared_inputs",
                     "required": false
                   },
                   {
                     "data_type": "String",
                     "description": "Brain 共享输入 'target_id'",
+                    "hidden": false,
                     "name": "target_id",
                     "required": true
                   },
                   {
                     "data_type": "LLModel",
                     "description": "Brain 共享输入 'llm_ref'",
+                    "hidden": false,
                     "name": "llm_ref",
                     "required": true
                   },
                   {
                     "data_type": "BotAdapterRef",
                     "description": "Brain 共享输入 'bot_ref'",
+                    "hidden": false,
                     "name": "bot_ref",
                     "required": true
                   },
                   {
                     "data_type": "TavilyRef",
                     "description": "Brain 共享输入 'tavily_ref'",
+                    "hidden": false,
                     "name": "tavily_ref",
                     "required": true
                   }
@@ -4060,18 +4337,19 @@
                       "Vec": "OpenAIMessage"
                     },
                     "description": "本次 Brain 运行新增的 assistant/tool 消息轨迹",
+                    "hidden": false,
                     "name": "output",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1240.0,
-                  "y": 360.0
+                  "x": 1240,
+                  "y": 360
                 },
                 "size": {
-                  "height": 198.0,
-                  "width": 210.0
+                  "height": 198,
+                  "width": 210
                 }
               },
               {
@@ -4088,30 +4366,35 @@
                   {
                     "data_type": "String",
                     "description": "格式化模板字符串，使用 ${变量名} 语法引用输入变量",
+                    "hidden": false,
                     "name": "template",
                     "required": false
                   },
                   {
                     "data_type": "Any",
                     "description": "变量 角色名称",
+                    "hidden": false,
                     "name": "角色名称",
                     "required": true
                   },
                   {
                     "data_type": "Any",
                     "description": "变量 time",
+                    "hidden": false,
                     "name": "time",
                     "required": true
                   },
                   {
                     "data_type": "Any",
                     "description": "变量 sender_id",
+                    "hidden": false,
                     "name": "sender_id",
                     "required": true
                   },
                   {
                     "data_type": "Any",
                     "description": "变量 格式",
+                    "hidden": false,
                     "name": "格式",
                     "required": true
                   }
@@ -4122,6 +4405,7 @@
                   {
                     "data_type": "String",
                     "description": "格式化后的字符串",
+                    "hidden": false,
                     "name": "output",
                     "required": true
                   }
@@ -4133,12 +4417,12 @@
                   }
                 },
                 "position": {
-                  "x": 560.0,
-                  "y": -100.0
+                  "x": 560,
+                  "y": -100
                 },
                 "size": {
-                  "height": 138.0,
-                  "width": 540.0
+                  "height": 138,
+                  "width": 210
                 }
               },
               {
@@ -4155,12 +4439,14 @@
                   {
                     "data_type": "String",
                     "description": "系统提示词内容",
+                    "hidden": false,
                     "name": "content",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "OpenAIMessage 角色，可选 system / user / assistant / tool",
+                    "hidden": false,
                     "name": "role",
                     "required": true
                   }
@@ -4171,18 +4457,19 @@
                   {
                     "data_type": "OpenAIMessage",
                     "description": "role=system 的 OpenAIMessage",
+                    "hidden": false,
                     "name": "message",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1180.0,
-                  "y": 0.0
+                  "x": 1180,
+                  "y": 0
                 },
                 "size": {
-                  "height": 140.0,
-                  "width": 320.0
+                  "height": 102,
+                  "width": 210
                 }
               },
               {
@@ -4199,6 +4486,7 @@
                       "Vec": "Any"
                     },
                     "description": "前半部分列表",
+                    "hidden": false,
                     "name": "vec1",
                     "required": true
                   },
@@ -4207,6 +4495,7 @@
                       "Vec": "Any"
                     },
                     "description": "后半部分列表，将拼接到 vec1 后面",
+                    "hidden": false,
                     "name": "vec2",
                     "required": true
                   }
@@ -4217,18 +4506,19 @@
                   {
                     "data_type": "Any",
                     "description": "拼接后的列表，元素类型与输入列表一致",
+                    "hidden": false,
                     "name": "vec",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2020.0,
-                  "y": 0.0
+                  "x": 2020,
+                  "y": 0
                 },
                 "size": {
-                  "height": 60.0,
-                  "width": 140.0
+                  "height": 60,
+                  "width": 140
                 }
               },
               {
@@ -4243,6 +4533,7 @@
                   {
                     "data_type": "Any",
                     "description": "要封装到数组中的元素",
+                    "hidden": false,
                     "name": "element",
                     "required": true
                   }
@@ -4253,18 +4544,19 @@
                   {
                     "data_type": "Any",
                     "description": "包含单个元素的 List",
+                    "hidden": false,
                     "name": "array",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1520.0,
-                  "y": 0.0
+                  "x": 1520,
+                  "y": 0
                 },
                 "size": {
-                  "height": 60.0,
-                  "width": 140.0
+                  "height": 60,
+                  "width": 140
                 }
               },
               {
@@ -4279,12 +4571,14 @@
                   {
                     "data_type": "OpenAIMessageSessionCacheRef",
                     "description": "OpenAIMessage 会话暂存节点输出的缓存引用",
+                    "hidden": false,
                     "name": "cache_ref",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "要读取历史消息的 sender_id",
+                    "hidden": false,
                     "name": "sender_id",
                     "required": true
                   },
@@ -4293,6 +4587,7 @@
                       "Vec": "OpenAIMessage"
                     },
                     "description": "可选：未读取到 sender_id 历史消息时输出的回退消息列表",
+                    "hidden": false,
                     "name": "fallback",
                     "required": false
                   }
@@ -4305,18 +4600,19 @@
                       "Vec": "OpenAIMessage"
                     },
                     "description": "读取到的历史 Vec<OpenAIMessage>",
+                    "hidden": false,
                     "name": "messages",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 500.0,
-                  "y": 200.0
+                  "x": 500,
+                  "y": 200
                 },
                 "size": {
-                  "height": 98.0,
-                  "width": 210.0
+                  "height": 98,
+                  "width": 210
                 }
               },
               {
@@ -4333,6 +4629,7 @@
                       "Vec": "Any"
                     },
                     "description": "前半部分列表",
+                    "hidden": false,
                     "name": "vec1",
                     "required": true
                   },
@@ -4341,6 +4638,7 @@
                       "Vec": "Any"
                     },
                     "description": "后半部分列表，将拼接到 vec1 后面",
+                    "hidden": false,
                     "name": "vec2",
                     "required": true
                   }
@@ -4351,18 +4649,19 @@
                   {
                     "data_type": "Any",
                     "description": "拼接后的列表，元素类型与输入列表一致",
+                    "hidden": false,
                     "name": "vec",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1780.0,
-                  "y": -20.0
+                  "x": 1780,
+                  "y": -20
                 },
                 "size": {
-                  "height": 60.0,
-                  "width": 140.0
+                  "height": 60,
+                  "width": 140
                 }
               },
               {
@@ -4377,12 +4676,14 @@
                   {
                     "data_type": "OpenAIMessageSessionCacheRef",
                     "description": "OpenAIMessage 会话暂存节点输出的缓存引用",
+                    "hidden": false,
                     "name": "cache_ref",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "要覆写历史消息的 sender_id",
+                    "hidden": false,
                     "name": "sender_id",
                     "required": true
                   },
@@ -4391,6 +4692,7 @@
                       "Vec": "OpenAIMessage"
                     },
                     "description": "要写回并覆写到缓存中的 Vec<OpenAIMessage>",
+                    "hidden": false,
                     "name": "messages",
                     "required": true
                   }
@@ -4401,18 +4703,19 @@
                   {
                     "data_type": "Boolean",
                     "description": "是否成功覆写历史消息",
+                    "hidden": false,
                     "name": "success",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1820.0,
-                  "y": 880.0
+                  "x": 1820,
+                  "y": 880
                 },
                 "size": {
-                  "height": 98.0,
-                  "width": 210.0
+                  "height": 98,
+                  "width": 210
                 }
               },
               {
@@ -4427,18 +4730,21 @@
                   {
                     "data_type": "SessionStateRef",
                     "description": "运行时会话状态引用",
+                    "hidden": false,
                     "name": "session_ref",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "会话发送者 ID",
+                    "hidden": false,
                     "name": "sender_id",
                     "required": true
                   },
                   {
                     "data_type": "Json",
                     "description": "成功占用时写入的附加 JSON 状态",
+                    "hidden": false,
                     "name": "state_json",
                     "required": false
                   }
@@ -4449,30 +4755,33 @@
                   {
                     "data_type": "Boolean",
                     "description": "本次是否成功占用",
+                    "hidden": false,
                     "name": "claimed",
                     "required": true
                   },
                   {
                     "data_type": "Boolean",
                     "description": "当前 sender_id 是否正在处理中",
+                    "hidden": false,
                     "name": "in_session",
                     "required": true
                   },
                   {
                     "data_type": "Json",
                     "description": "当前 sender_id 的附加 JSON 状态",
+                    "hidden": false,
                     "name": "state_json",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": -80.0,
-                  "y": 140.0
+                  "x": -80,
+                  "y": 140
                 },
                 "size": {
-                  "height": 98.0,
-                  "width": 210.0
+                  "height": 98,
+                  "width": 210
                 }
               },
               {
@@ -4487,12 +4796,14 @@
                   {
                     "data_type": "Boolean",
                     "description": "为 true 时走 true_output，否则走 false_output",
+                    "hidden": false,
                     "name": "condition",
                     "required": true
                   },
                   {
                     "data_type": "Any",
                     "description": "要分流到某个分支的输入值",
+                    "hidden": false,
                     "name": "input",
                     "required": true
                   }
@@ -4503,30 +4814,33 @@
                   {
                     "data_type": "Any",
                     "description": "condition=true 时输出",
+                    "hidden": false,
                     "name": "true_output",
                     "required": true
                   },
                   {
                     "data_type": "Any",
                     "description": "condition=false 时输出",
+                    "hidden": false,
                     "name": "false_output",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "实际走到的分支：true 或 false",
+                    "hidden": false,
                     "name": "branch_taken",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 180.0,
-                  "y": 80.0
+                  "x": 180,
+                  "y": 80
                 },
                 "size": {
-                  "height": 98.0,
-                  "width": 210.0
+                  "height": 98,
+                  "width": 210
                 }
               },
               {
@@ -4541,12 +4855,14 @@
                   {
                     "data_type": "BotAdapterRef",
                     "description": "Bot适配器引用",
+                    "hidden": false,
                     "name": "bot_adapter",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "目标好友的QQ号",
+                    "hidden": false,
                     "name": "target_id",
                     "required": true
                   },
@@ -4555,6 +4871,7 @@
                       "Vec": "QQMessage"
                     },
                     "description": "要发送的QQ消息段列表",
+                    "hidden": false,
                     "name": "message",
                     "required": true
                   }
@@ -4565,24 +4882,26 @@
                   {
                     "data_type": "Boolean",
                     "description": "是否发送成功",
+                    "hidden": false,
                     "name": "success",
                     "required": true
                   },
                   {
                     "data_type": "Integer",
                     "description": "服务器返回的消息ID",
+                    "hidden": false,
                     "name": "message_id",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1340.0,
-                  "y": -520.0
+                  "x": 1340,
+                  "y": -520
                 },
                 "size": {
-                  "height": 98.0,
-                  "width": 210.0
+                  "height": 98,
+                  "width": 210
                 }
               },
               {
@@ -4608,6 +4927,7 @@
                       "Vec": "QQMessage"
                     },
                     "description": "Vec<QQMessage> provided by UI inline editor",
+                    "hidden": false,
                     "name": "messages",
                     "required": false
                   }
@@ -4620,18 +4940,19 @@
                       "Vec": "QQMessage"
                     },
                     "description": "Output Vec<QQMessage> from UI data source",
+                    "hidden": false,
                     "name": "messages",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 820.0,
-                  "y": -520.0
+                  "x": 820,
+                  "y": -520
                 },
                 "size": {
-                  "height": 160.0,
-                  "width": 400.0
+                  "height": 160,
+                  "width": 400
                 }
               },
               {
@@ -4646,12 +4967,14 @@
                   {
                     "data_type": "SessionStateRef",
                     "description": "运行时会话状态引用",
+                    "hidden": false,
                     "name": "session_ref",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "会话发送者 ID",
+                    "hidden": false,
                     "name": "sender_id",
                     "required": true
                   }
@@ -4662,18 +4985,19 @@
                   {
                     "data_type": "Boolean",
                     "description": "是否成功释放当前 sender_id 的占用",
+                    "hidden": false,
                     "name": "released",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2260.0,
-                  "y": 880.0
+                  "x": 2260,
+                  "y": 880
                 },
                 "size": {
-                  "height": 78.0,
-                  "width": 210.0
+                  "height": 78,
+                  "width": 210
                 }
               },
               {
@@ -4688,12 +5012,14 @@
                   {
                     "data_type": "Any",
                     "description": "用于串联依赖的前置输入，仅用于等待其到齐",
+                    "hidden": false,
                     "name": "first",
                     "required": true
                   },
                   {
                     "data_type": "Any",
                     "description": "在两个输入都到齐后原样透传的值",
+                    "hidden": false,
                     "name": "second",
                     "required": true
                   }
@@ -4704,18 +5030,19 @@
                   {
                     "data_type": "Any",
                     "description": "second 的原样输出",
+                    "hidden": false,
                     "name": "output",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2040.0,
-                  "y": 880.0
+                  "x": 2040,
+                  "y": 880
                 },
                 "size": {
-                  "height": 60.0,
-                  "width": 140.0
+                  "height": 60,
+                  "width": 140
                 }
               },
               {
@@ -4732,6 +5059,7 @@
                       "Vec": "Any"
                     },
                     "description": "前半部分列表",
+                    "hidden": false,
                     "name": "vec1",
                     "required": true
                   },
@@ -4740,6 +5068,7 @@
                       "Vec": "Any"
                     },
                     "description": "后半部分列表，将拼接到 vec1 后面",
+                    "hidden": false,
                     "name": "vec2",
                     "required": true
                   }
@@ -4750,18 +5079,19 @@
                   {
                     "data_type": "Any",
                     "description": "拼接后的列表，元素类型与输入列表一致",
+                    "hidden": false,
                     "name": "vec",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1440.0,
-                  "y": 760.0
+                  "x": 1440,
+                  "y": 760
                 },
                 "size": {
-                  "height": 60.0,
-                  "width": 140.0
+                  "height": 60,
+                  "width": 140
                 }
               },
               {
@@ -4807,12 +5137,14 @@
                   {
                     "data_type": "Json",
                     "description": "隐藏的函数签名 JSON",
+                    "hidden": true,
                     "name": "signature",
                     "required": false
                   },
                   {
                     "data_type": "Json",
                     "description": "运行时注入的函数输入 JSON",
+                    "hidden": true,
                     "name": "runtime_values",
                     "required": false
                   }
@@ -4823,54 +5155,61 @@
                   {
                     "data_type": "MessageEvent",
                     "description": "函数输入 'message_event'",
+                    "hidden": false,
                     "name": "message_event",
                     "required": true
                   },
                   {
                     "data_type": "BotAdapterRef",
                     "description": "函数输入 'qq_bot_adapter'",
+                    "hidden": false,
                     "name": "qq_bot_adapter",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "函数输入 'time'",
+                    "hidden": false,
                     "name": "time",
                     "required": true
                   },
                   {
                     "data_type": "OpenAIMessageSessionCacheRef",
                     "description": "函数输入 'cache_ref'",
+                    "hidden": false,
                     "name": "cache_ref",
                     "required": true
                   },
                   {
                     "data_type": "SessionStateRef",
                     "description": "函数输入 'session_ref'",
+                    "hidden": false,
                     "name": "session_ref",
                     "required": true
                   },
                   {
                     "data_type": "LLModel",
                     "description": "函数输入 'llm_api_llm_model'",
+                    "hidden": false,
                     "name": "llm_api_llm_model",
                     "required": true
                   },
                   {
                     "data_type": "TavilyRef",
                     "description": "函数输入 'tavily_ref'",
+                    "hidden": false,
                     "name": "tavily_ref",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": -700.0,
-                  "y": 140.0
+                  "x": -700,
+                  "y": 140
                 },
                 "size": {
-                  "height": 120.0,
-                  "width": 220.0
+                  "height": 239.32555,
+                  "width": 249.90527
                 }
               },
               {
@@ -4887,6 +5226,7 @@
                   {
                     "data_type": "Json",
                     "description": "隐藏的函数签名 JSON",
+                    "hidden": true,
                     "name": "signature",
                     "required": false
                   }
@@ -4896,12 +5236,12 @@
                 "output_ports": [],
                 "port_bindings": {},
                 "position": {
-                  "x": 2700.0,
-                  "y": 260.0
+                  "x": 2700,
+                  "y": 260
                 },
                 "size": {
-                  "height": 120.0,
-                  "width": 220.0
+                  "height": 120,
+                  "width": 220
                 }
               },
               {
@@ -4919,18 +5259,19 @@
                   {
                     "data_type": "String",
                     "description": "固定的 QQ 消息 JSON 输出格式 prompt",
+                    "hidden": false,
                     "name": "system_prompt",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 220.0,
-                  "y": -240.0
+                  "x": 220,
+                  "y": -240
                 },
                 "size": {
-                  "height": 60.0,
-                  "width": 228.14120483398438
+                  "height": 60,
+                  "width": 228.1412
                 }
               },
               {
@@ -4949,12 +5290,14 @@
                       "Vec": "Any"
                     },
                     "description": "输入列表",
+                    "hidden": false,
                     "name": "array",
                     "required": true
                   },
                   {
                     "data_type": "Integer",
                     "description": "元素下标，负数表示从末尾倒数（-1为最后一个）",
+                    "hidden": false,
                     "name": "index",
                     "required": true
                   }
@@ -4965,18 +5308,19 @@
                   {
                     "data_type": "Any",
                     "description": "提取出的元素，类型与列表中元素的类型一致",
+                    "hidden": false,
                     "name": "element",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1640.0,
-                  "y": 380.0
+                  "x": 1640,
+                  "y": 380
                 },
                 "size": {
-                  "height": 78.0,
-                  "width": 210.0
+                  "height": 78,
+                  "width": 210
                 }
               },
               {
@@ -4991,6 +5335,7 @@
                   {
                     "data_type": "OpenAIMessage",
                     "description": "输入的 OpenAIMessage，其 content 必须是合法 JSON 字符串",
+                    "hidden": false,
                     "name": "message",
                     "required": true
                   }
@@ -5001,24 +5346,26 @@
                   {
                     "data_type": "Json",
                     "description": "由 OpenAIMessage.content 解析得到的 JSON",
+                    "hidden": false,
                     "name": "json",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "解析失败时输出原始 content 字符串",
+                    "hidden": false,
                     "name": "failed",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1900.0,
-                  "y": 380.0
+                  "x": 1900,
+                  "y": 380
                 },
                 "size": {
-                  "height": 60.0,
-                  "width": 223.52011108398438
+                  "height": 60,
+                  "width": 223.52011
                 }
               },
               {
@@ -5033,6 +5380,7 @@
                   {
                     "data_type": "Json",
                     "description": "LLM 输出的 QQ 消息 JSON 二维数组",
+                    "hidden": false,
                     "name": "json",
                     "required": true
                   }
@@ -5047,24 +5395,26 @@
                       }
                     },
                     "description": "解析得到的 Vec<Vec<QQMessage>>",
+                    "hidden": false,
                     "name": "messages",
                     "required": true
                   },
                   {
                     "data_type": "Json",
                     "description": "转换失败时输出原始 JSON",
+                    "hidden": false,
                     "name": "failed",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2140.0,
-                  "y": 380.0
+                  "x": 2140,
+                  "y": 380
                 },
                 "size": {
-                  "height": 60.0,
-                  "width": 197.82382202148438
+                  "height": 60,
+                  "width": 197.82382
                 }
               },
               {
@@ -5079,12 +5429,14 @@
                   {
                     "data_type": "BotAdapterRef",
                     "description": "Bot适配器引用",
+                    "hidden": false,
                     "name": "bot_adapter",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "目标好友的QQ号",
+                    "hidden": false,
                     "name": "target_id",
                     "required": true
                   },
@@ -5095,12 +5447,14 @@
                       }
                     },
                     "description": "要发送的 QQ 消息批次列表",
+                    "hidden": false,
                     "name": "message_batches",
                     "required": true
                   },
                   {
                     "data_type": "Integer",
                     "description": "两次实际发送之间的间隔毫秒数，默认 0",
+                    "hidden": false,
                     "name": "delay_millis",
                     "required": false
                   }
@@ -5111,12 +5465,14 @@
                   {
                     "data_type": "Boolean",
                     "description": "是否所有实际发送批次都成功",
+                    "hidden": false,
                     "name": "success",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "批量发送汇总信息",
+                    "hidden": false,
                     "name": "summary",
                     "required": true
                   },
@@ -5125,18 +5481,19 @@
                       "Vec": "Integer"
                     },
                     "description": "每个输入批次对应的 message_id；失败或跳过为空批次时为 -1",
+                    "hidden": false,
                     "name": "message_ids",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2420.0,
-                  "y": 380.0
+                  "x": 2420,
+                  "y": 380
                 },
                 "size": {
-                  "height": 122.0,
-                  "width": 213.099609375
+                  "height": 142,
+                  "width": 228.4
                 }
               },
               {
@@ -5153,6 +5510,7 @@
                       "Vec": "OpenAIMessage"
                     },
                     "description": "Vec<OpenAIMessage> to preview inside the node",
+                    "hidden": false,
                     "name": "messages",
                     "required": false
                   }
@@ -5162,12 +5520,12 @@
                 "output_ports": [],
                 "port_bindings": {},
                 "position": {
-                  "x": 860.0,
-                  "y": 680.0
+                  "x": 860,
+                  "y": 680
                 },
                 "size": {
-                  "height": 420.0,
-                  "width": 500.0
+                  "height": 420,
+                  "width": 500
                 }
               },
               {
@@ -5182,12 +5540,14 @@
                   {
                     "data_type": "BotAdapterRef",
                     "description": "Bot适配器引用",
+                    "hidden": false,
                     "name": "bot_adapter",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "目标好友的QQ号",
+                    "hidden": false,
                     "name": "target_id",
                     "required": true
                   },
@@ -5196,6 +5556,7 @@
                       "Vec": "QQMessage"
                     },
                     "description": "要发送的QQ消息段列表",
+                    "hidden": false,
                     "name": "message",
                     "required": true
                   }
@@ -5206,24 +5567,26 @@
                   {
                     "data_type": "Boolean",
                     "description": "是否发送成功",
+                    "hidden": false,
                     "name": "success",
                     "required": true
                   },
                   {
                     "data_type": "Integer",
                     "description": "服务器返回的消息ID",
+                    "hidden": false,
                     "name": "message_id",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2400.0,
-                  "y": 660.0
+                  "x": 2400,
+                  "y": 660
                 },
                 "size": {
-                  "height": 98.0,
-                  "width": 210.0
+                  "height": 98,
+                  "width": 210
                 }
               },
               {
@@ -5249,6 +5612,7 @@
                       "Vec": "QQMessage"
                     },
                     "description": "Vec<QQMessage> provided by UI inline editor",
+                    "hidden": false,
                     "name": "messages",
                     "required": false
                   }
@@ -5261,18 +5625,19 @@
                       "Vec": "QQMessage"
                     },
                     "description": "Output Vec<QQMessage> from UI data source",
+                    "hidden": false,
                     "name": "messages",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1880.0,
-                  "y": 660.0
+                  "x": 1880,
+                  "y": 660
                 },
                 "size": {
-                  "height": 160.0,
-                  "width": 300.0
+                  "height": 160,
+                  "width": 300
                 }
               },
               {
@@ -5287,12 +5652,14 @@
                   {
                     "data_type": "Any",
                     "description": "用于串联依赖的前置输入，仅用于等待其到齐",
+                    "hidden": false,
                     "name": "first",
                     "required": true
                   },
                   {
                     "data_type": "Any",
                     "description": "在两个输入都到齐后原样透传的值",
+                    "hidden": false,
                     "name": "second",
                     "required": true
                   }
@@ -5303,18 +5670,19 @@
                   {
                     "data_type": "Any",
                     "description": "second 的原样输出",
+                    "hidden": false,
                     "name": "output",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2180.0,
-                  "y": 660.0
+                  "x": 2180,
+                  "y": 660
                 },
                 "size": {
-                  "height": 60.0,
-                  "width": 140.0
+                  "height": 60,
+                  "width": 140
                 }
               },
               {
@@ -5329,12 +5697,14 @@
                   {
                     "data_type": "BotAdapterRef",
                     "description": "Bot适配器引用",
+                    "hidden": false,
                     "name": "bot_adapter",
                     "required": true
                   },
                   {
                     "data_type": "String",
                     "description": "目标好友的QQ号",
+                    "hidden": false,
                     "name": "target_id",
                     "required": true
                   },
@@ -5343,6 +5713,7 @@
                       "Vec": "QQMessage"
                     },
                     "description": "要发送的QQ消息段列表",
+                    "hidden": false,
                     "name": "message",
                     "required": true
                   }
@@ -5353,24 +5724,26 @@
                   {
                     "data_type": "Boolean",
                     "description": "是否发送成功",
+                    "hidden": false,
                     "name": "success",
                     "required": true
                   },
                   {
                     "data_type": "Integer",
                     "description": "服务器返回的消息ID",
+                    "hidden": false,
                     "name": "message_id",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 3200.0,
-                  "y": 620.0
+                  "x": 3200,
+                  "y": 620
                 },
                 "size": {
-                  "height": 98.0,
-                  "width": 210.0
+                  "height": 98,
+                  "width": 210
                 }
               },
               {
@@ -5396,6 +5769,7 @@
                       "Vec": "QQMessage"
                     },
                     "description": "Vec<QQMessage> provided by UI inline editor",
+                    "hidden": false,
                     "name": "messages",
                     "required": false
                   }
@@ -5408,18 +5782,19 @@
                       "Vec": "QQMessage"
                     },
                     "description": "Output Vec<QQMessage> from UI data source",
+                    "hidden": false,
                     "name": "messages",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2620.0,
-                  "y": 620.0
+                  "x": 2620,
+                  "y": 620
                 },
                 "size": {
-                  "height": 160.0,
-                  "width": 300.0
+                  "height": 160,
+                  "width": 300
                 }
               },
               {
@@ -5434,12 +5809,14 @@
                   {
                     "data_type": "Any",
                     "description": "用于串联依赖的前置输入，仅用于等待其到齐",
+                    "hidden": false,
                     "name": "first",
                     "required": true
                   },
                   {
                     "data_type": "Any",
                     "description": "在两个输入都到齐后原样透传的值",
+                    "hidden": false,
                     "name": "second",
                     "required": true
                   }
@@ -5450,18 +5827,19 @@
                   {
                     "data_type": "Any",
                     "description": "second 的原样输出",
+                    "hidden": false,
                     "name": "output",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2980.0,
-                  "y": 620.0
+                  "x": 2980,
+                  "y": 620
                 },
                 "size": {
-                  "height": 60.0,
-                  "width": 140.0
+                  "height": 60,
+                  "width": 140
                 }
               }
             ],
@@ -5483,13 +5861,15 @@
           "name": "api_token",
           "data_type": "Password",
           "description": "Tavily API Token",
-          "required": true
+          "required": true,
+          "hidden": false
         },
         {
           "name": "timeout_secs",
           "data_type": "Integer",
           "description": "可选：请求超时秒数，默认 30 秒",
-          "required": false
+          "required": false,
+          "hidden": false
         }
       ],
       "output_ports": [
@@ -5497,7 +5877,8 @@
           "name": "tavily_ref",
           "data_type": "TavilyRef",
           "description": "Tavily 搜索引用",
-          "required": true
+          "required": true,
+          "hidden": false
         }
       ],
       "dynamic_input_ports": false,
@@ -5565,24 +5946,6 @@
       "to_port": "time"
     },
     {
-      "from_node_id": "node_48",
-      "from_port": "cache_ref",
-      "to_node_id": "node_14",
-      "to_port": "cache_ref"
-    },
-    {
-      "from_node_id": "node_26",
-      "from_port": "session_ref",
-      "to_node_id": "node_14",
-      "to_port": "session_ref"
-    },
-    {
-      "from_node_id": "node_29",
-      "from_port": "llm_model",
-      "to_node_id": "node_14",
-      "to_port": "llm_api_llm_model"
-    },
-    {
       "from_node_id": "node_2",
       "from_port": "true_event",
       "to_node_id": "node_4",
@@ -5601,21 +5964,15 @@
       "to_port": "time"
     },
     {
-      "from_node_id": "node_48",
-      "from_port": "cache_ref",
+      "from_node_id": "node_29",
+      "from_port": "llm_model",
       "to_node_id": "node_4",
-      "to_port": "cache_ref"
-    },
-    {
-      "from_node_id": "node_26",
-      "from_port": "session_ref",
-      "to_node_id": "node_4",
-      "to_port": "session_ref"
+      "to_port": "llm_api_llm_model"
     },
     {
       "from_node_id": "node_29",
       "from_port": "llm_model",
-      "to_node_id": "node_4",
+      "to_node_id": "node_14",
       "to_port": "llm_api_llm_model"
     },
     {
@@ -5629,6 +5986,30 @@
       "from_port": "tavily_ref",
       "to_node_id": "node_4",
       "to_port": "tavily_ref"
+    },
+    {
+      "from_node_id": "node_26",
+      "from_port": "session_ref",
+      "to_node_id": "node_4",
+      "to_port": "session_ref"
+    },
+    {
+      "from_node_id": "node_48",
+      "from_port": "cache_ref",
+      "to_node_id": "node_4",
+      "to_port": "cache_ref"
+    },
+    {
+      "from_node_id": "node_26",
+      "from_port": "session_ref",
+      "to_node_id": "node_14",
+      "to_port": "session_ref"
+    },
+    {
+      "from_node_id": "node_48",
+      "from_port": "cache_ref",
+      "to_node_id": "node_14",
+      "to_port": "cache_ref"
     }
   ],
   "hyperparameter_groups": [

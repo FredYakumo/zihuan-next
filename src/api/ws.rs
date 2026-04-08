@@ -21,6 +21,8 @@ pub enum ServerMessage {
     TaskFinished {
         task_id: String,
         success: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
     },
     TaskStopped {
         task_id: String,
