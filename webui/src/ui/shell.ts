@@ -164,7 +164,7 @@ const STYLES = `
     border: 0;
     cursor: pointer;
     background-color: var(--btn-primary);
-    color: var(--text);
+    color: var(--btn-primary-text);
     font-size: 13px;
   }
   #canvas-container > .graphdialog button:hover {
@@ -985,7 +985,7 @@ export function buildToolbar(
       taskStatus.textContent = success ? "Done ✓" : "Failed ✗";
       taskStatus.className = "task-status";
       if (!success) {
-        onTaskFailed("执行失败");
+        onTaskFailed(msg.error ? `执行失败: ${msg.error}` : "执行失败");
       }
       setTimeout(() => {
         taskStatus.textContent = "Idle";
