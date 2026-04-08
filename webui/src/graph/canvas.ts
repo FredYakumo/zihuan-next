@@ -64,7 +64,12 @@ export class ZihuanCanvas {
     this.lGraph = new (LGraph as any)();
     this.lCanvas = new (LGraphCanvas as any)(canvasEl, this.lGraph);
 
-    // Patch isValidConnection so that "Any" typed ports accept all connections.
+    // Suppress LiteGraph's built-in context menu (fired from mousedown/pointerdown).
+    // Our own contextmenu-event capture handler handles all cases instead.
+    (this.lCanvas as any).processContextMenu = () => {};
+
+    // Patch isValidConnection so that "Any" typed ports accept all connections,
+    // and Vec<Any> ports accept any Vec<…> typed connections.
     const _origIsValid = (LiteGraph as any).isValidConnection.bind(LiteGraph);
     (LiteGraph as any).isValidConnection = function (type_a: unknown, type_b: unknown): boolean {
       if (
@@ -72,6 +77,12 @@ export class ZihuanCanvas {
         (typeof type_a === "string" && type_a.toLowerCase() === "any") ||
         (typeof type_b === "string" && type_b.toLowerCase() === "any")
       ) return true;
+      // Vec<Any> is compatible with any Vec<…> (covariant wildcard).
+      if (typeof type_a === "string" && typeof type_b === "string") {
+        const isVecAny = (t: string) => /^Vec<Any>$/i.test(t);
+        const isVec    = (t: string) => /^Vec<.+>/i.test(t);
+        if ((isVecAny(type_a) && isVec(type_b)) || (isVecAny(type_b) && isVec(type_a))) return true;
+      }
       return _origIsValid(type_a, type_b);
     };
 
@@ -86,6 +97,18 @@ export class ZihuanCanvas {
     // AFTER the widget backgrounds are rendered (so badges are visible on top).
     const origDrawNodeWidgets = (this.lCanvas as any).drawNodeWidgets.bind(this.lCanvas);
     (this.lCanvas as any).drawNodeWidgets = (node: any, posY: any, ctx: CanvasRenderingContext2D) => {
+      // Sync widget disabled state with port connection state.
+      // When an input port has an active wire its inline widget should appear
+      // greyed-out and non-interactive (LiteGraph applies 50% alpha + no stroke).
+      if (node.inputs && node.widgets) {
+        for (const input of node.inputs as any[]) {
+          if (!input.widget) continue;
+          const widgetName: string = typeof input.widget === "object" ? input.widget.name : input.widget;
+          const w = (node.widgets as any[]).find((ww: any) => ww.name === widgetName);
+          if (w) w.disabled = input.link != null;
+        }
+      }
+
       // Temporarily mask password widget values so they render as bullets on canvas.
       const savedPasswordValues: Array<{ w: any; real: any }> = [];
       if (node.widgets) {
@@ -462,22 +485,31 @@ export class ZihuanCanvas {
 
     // Apply type-based port dot colours for all slots.
     // color_on  = type color (shown when connected)
-    // color_off = type color if inline data provided, red if required+empty, gray otherwise
+    // color_off = red if required+empty, otherwise the type color
+    // "Any"-typed ports resolve their concrete type through upstream/downstream edges.
     if (node.inputs) {
       for (let i = 0; i < visibleInPorts.length; i++) {
         const p = visibleInPorts[i];
-        const col = getPortColor(portTypeString(p.data_type as string | object));
+        const typeStr = portTypeString(p.data_type as string | object);
+        const resolvedType = typeStr === "Any" && this.state.graph
+          ? resolveConcretePortType(this.state.graph, nodeDef.id, p.name, true)
+          : typeStr;
+        const col = getPortColor(resolvedType);
         const hasInlineValue = nodeDef.inline_values != null && nodeDef.inline_values[p.name] != null;
         node.inputs[i].color_on  = col;
-        node.inputs[i].color_off = hasInlineValue ? col : (p.required ? "#e74c3c" : "#555568");
+        node.inputs[i].color_off = (!hasInlineValue && p.required) ? "#e74c3c" : col;
       }
     }
     if (node.outputs) {
       for (let i = 0; i < nodeDef.output_ports.length; i++) {
         const p = nodeDef.output_ports[i];
-        const col = getPortColor(portTypeString(p.data_type as string | object));
+        const typeStr = portTypeString(p.data_type as string | object);
+        const resolvedType = typeStr === "Any" && this.state.graph
+          ? resolveConcretePortType(this.state.graph, nodeDef.id, p.name, false)
+          : typeStr;
+        const col = getPortColor(resolvedType);
         node.outputs[i].color_on  = col;
-        node.outputs[i].color_off = "#555568";
+        node.outputs[i].color_off = col;
       }
     }
 
@@ -531,9 +563,6 @@ export class ZihuanCanvas {
     if (nodeDef.position) {
       node.pos = [nodeDef.position.x, nodeDef.position.y];
     }
-    if (nodeDef.size) {
-      node.size = [nodeDef.size.width, nodeDef.size.height];
-    }
 
     // Store backend id on the litegraph node
     node.zihuanId = nodeDef.id;
@@ -550,7 +579,9 @@ export class ZihuanCanvas {
     this.lGraph.add(node);
     this.nodeMap.set(nodeDef.id, node);
 
-    // Set up inline value widgets and special editor buttons
+    // Set up inline value widgets and special editor buttons.
+    // NOTE: addWidget() calls setSize(computeSize()) internally, so any size
+    // assignment before this point would be overwritten by auto-sizing.
     setupNodeWidgets(
       node,
       nodeDef,
@@ -560,6 +591,12 @@ export class ZihuanCanvas {
         this.enterSubgraph(parentNodeDef, mode, toolIndex, toolDef, functionConfig).catch(console.error);
       }
     );
+
+    // Restore saved size AFTER widgets are set up so it overrides the auto-size
+    // computed by addWidget(). New nodes (no saved size) keep the computed size.
+    if (nodeDef.size) {
+      node.size = [nodeDef.size.width, nodeDef.size.height];
+    }
   }
 
   private connectLGraphEdge(edge: EdgeDefinition): void {
@@ -682,23 +719,28 @@ export class ZihuanCanvas {
     }
   }
 
-  /** Sync node positions after drag to the backend. */
-  syncPositions(): void {
+  /** Sync node positions and sizes to the backend. Returns a Promise that resolves
+   * once all updateNode requests have settled, so callers can await before saving. */
+  async syncPositions(): Promise<void> {
     const sessionId = this.state.sessionId;
     if (!sessionId) return;
 
+    const promises: Promise<unknown>[] = [];
     for (const [nodeId, node] of this.nodeMap) {
       if (node.pos) {
-        graphs
-          .updateNode(sessionId, nodeId, {
-            x: node.pos[0] as number,
-            y: node.pos[1] as number,
-            width: node.size?.[0] as number | undefined,
-            height: node.size?.[1] as number | undefined,
-          })
-          .catch(() => {});
+        promises.push(
+          graphs
+            .updateNode(sessionId, nodeId, {
+              x: node.pos[0] as number,
+              y: node.pos[1] as number,
+              width: node.size?.[0] as number | undefined,
+              height: node.size?.[1] as number | undefined,
+            })
+            .catch(() => {})
+        );
       }
     }
+    await Promise.all(promises);
   }
 
   /** Resize the LiteGraph canvas, updating both the DOM element and LiteGraph's internal viewport.

@@ -2,6 +2,7 @@
 
 import type { NodeDefinition } from "../api/types";
 import { graphs } from "../api/client";
+import { LiteGraph } from "litegraph.js";
 import {
   openFormatStringEditor,
   openJsonExtractEditor,
@@ -203,14 +204,35 @@ function setupSimpleInlineWidgets(
       if (dt === "Password" && w) (w as any)._isPassword = true;
       addedWidget = true;
     }
-    // Link widget to its input slot so LiteGraph collapses the double row
-    // and automatically greys out the widget when a wire is connected.
+    // Link widget to its input slot for right-click binding and badge rendering.
+    // Suppress the duplicate slot label so only the widget row is visible;
+    // widgets_start_y (set below) moves the widget up to the same row as the dot.
     if (addedWidget) {
       const inputIdx = (lNode.inputs as any[])?.findIndex((inp: any) => inp.name === key) ?? -1;
       if (inputIdx >= 0) {
         lNode.inputs[inputIdx].widget = { name: key };
+        // Empty label → LiteGraph skips drawing the slot name text, removing
+        // the duplicate label that would otherwise appear left of the dot.
+        lNode.inputs[inputIdx].label = "";
       }
     }
     // Other types (refs, etc.) don't get inline widgets
+  }
+
+  // Co-locate each widget with its linked input slot row.
+  // LiteGraph v0.7.18 does NOT do this automatically — we must set widgets_start_y
+  // so the first widget aligns with the first widget-linked slot row.
+  const SLOT_H: number = (LiteGraph as any).NODE_SLOT_HEIGHT ?? 20;
+  const WIDGET_H: number = (LiteGraph as any).NODE_WIDGET_HEIGHT ?? 20;
+  const slotStartY: number = (lNode.constructor as any).slot_start_y ?? 0;
+  const firstLinkedIdx = (lNode.inputs as any[])?.findIndex((inp: any) => inp.widget) ?? -1;
+  if (firstLinkedIdx >= 0) {
+    // Center the first widget on the same y as the first widget-linked slot.
+    const slotCenterY = slotStartY + (firstLinkedIdx + 0.7) * SLOT_H;
+    lNode.widgets_start_y = slotCenterY - WIDGET_H / 2 - 2;
+    // Recompute node height only when no explicit size is saved (new node).
+    if (!nodeDef.size) {
+      lNode.size = lNode.computeSize();
+    }
   }
 }

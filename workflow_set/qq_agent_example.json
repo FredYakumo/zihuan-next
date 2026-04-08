@@ -59,13 +59,13 @@
         "qq_id": "2496875785"
       },
       "port_bindings": {
-        "bot_server_token": {
-          "kind": "hyperparameter",
-          "name": "BOT_SERVER_TOKEN"
-        },
         "qq_id": {
           "kind": "hyperparameter",
           "name": "BOT_ID"
+        },
+        "bot_server_token": {
+          "kind": "hyperparameter",
+          "name": "BOT_SERVER_TOKEN"
         }
       },
       "has_error": false,
@@ -215,9 +215,9 @@
         "height": 410.0
       },
       "inline_values": {
+        "mysql_database": "zihuan_aibot",
         "mysql_host": "127.0.0.1",
-        "mysql_port": "3306",
-        "mysql_database": "zihuan_aibot"
+        "mysql_port": "3306"
       },
       "port_bindings": {
         "mysql_password": {
@@ -415,13 +415,13 @@
           "kind": "hyperparameter",
           "name": "LLM_MODEL_NAME"
         },
-        "api_key": {
-          "kind": "hyperparameter",
-          "name": "LLM_API_KEY"
-        },
         "api_endpoint": {
           "kind": "hyperparameter",
           "name": "LLM_API_ENDPOINT"
+        },
+        "api_key": {
+          "kind": "hyperparameter",
+          "name": "LLM_API_KEY"
         }
       },
       "has_error": false,
@@ -919,12 +919,6 @@
                 "from_port": "messages",
                 "to_node_id": "node_18",
                 "to_port": "second"
-              },
-              {
-                "from_node_id": "node_18",
-                "from_port": "output",
-                "to_node_id": "node_16",
-                "to_port": "message"
               }
             ],
             "hyperparameter_groups": [],
@@ -1093,8 +1087,8 @@
                   "y": 100
                 },
                 "size": {
-                  "height": 136.3333282470703,
-                  "width": 308
+                  "height": 102,
+                  "width": 210
                 }
               },
               {
@@ -2581,12 +2575,12 @@
                   }
                 },
                 "position": {
-                  "x": 1660,
-                  "y": 10
+                  "x": 1680,
+                  "y": -180
                 },
                 "size": {
-                  "height": 249.3333282470703,
-                  "width": 504
+                  "height": 138,
+                  "width": 550
                 }
               },
               {
@@ -3225,7 +3219,7 @@
       "dynamic_output_ports": true,
       "position": {
         "x": 1530.0,
-        "y": -110.0
+        "y": -60.0
       },
       "size": {
         "width": 210.0,
@@ -3305,12 +3299,6 @@
                 "to_port": "sender_id"
               },
               {
-                "from_node_id": "node_5",
-                "from_port": "result",
-                "to_node_id": "node_34",
-                "to_port": "input"
-              },
-              {
                 "from_node_id": "node_36",
                 "from_port": "messages",
                 "to_node_id": "node_35",
@@ -3323,64 +3311,10 @@
                 "to_port": "condition"
               },
               {
-                "from_node_id": "node_34",
-                "from_port": "true_output",
-                "to_node_id": "node_28",
-                "to_port": "sender_id"
-              },
-              {
-                "from_node_id": "node_34",
-                "from_port": "true_output",
-                "to_node_id": "node_45",
-                "to_port": "sender_id"
-              },
-              {
-                "from_node_id": "node_34",
-                "from_port": "true_output",
-                "to_node_id": "node_16",
-                "to_port": "sender_id"
-              },
-              {
-                "from_node_id": "node_16",
-                "from_port": "success",
-                "to_node_id": "node_42",
-                "to_port": "first"
-              },
-              {
-                "from_node_id": "node_42",
-                "from_port": "output",
-                "to_node_id": "node_37",
-                "to_port": "sender_id"
-              },
-              {
-                "from_node_id": "node_34",
-                "from_port": "true_output",
-                "to_node_id": "node_42",
-                "to_port": "second"
-              },
-              {
-                "from_node_id": "node_34",
-                "from_port": "false_output",
-                "to_node_id": "node_35",
-                "to_port": "target_id"
-              },
-              {
-                "from_node_id": "node_34",
-                "from_port": "true_output",
-                "to_node_id": "node_17",
-                "to_port": "target_id"
-              },
-              {
-                "from_node_id": "node_9",
-                "from_port": "vec",
-                "to_node_id": "node_16",
-                "to_port": "messages"
-              },
-              {
-                "from_node_id": "__function_inputs__",
-                "from_port": "message_event",
-                "to_node_id": "node_3",
-                "to_port": "message_event"
+                "from_node_id": "node_6",
+                "from_port": "messages",
+                "to_node_id": "node_7",
+                "to_port": "message_batches"
               },
               {
                 "from_node_id": "__function_inputs__",
@@ -3390,105 +3324,33 @@
               },
               {
                 "from_node_id": "__function_inputs__",
-                "from_port": "qq_bot_adapter",
-                "to_node_id": "node_3",
-                "to_port": "bot_adapter"
-              },
-              {
-                "from_node_id": "__function_inputs__",
-                "from_port": "qq_bot_adapter",
-                "to_node_id": "node_35",
-                "to_port": "bot_adapter"
-              },
-              {
-                "from_node_id": "__function_inputs__",
-                "from_port": "qq_bot_adapter",
-                "to_node_id": "node_17",
-                "to_port": "bot_ref"
-              },
-              {
-                "from_node_id": "__function_inputs__",
-                "from_port": "time",
-                "to_node_id": "node_28",
-                "to_port": "time"
-              },
-              {
-                "from_node_id": "__function_inputs__",
-                "from_port": "cache_ref",
-                "to_node_id": "node_45",
-                "to_port": "cache_ref"
-              },
-              {
-                "from_node_id": "__function_inputs__",
-                "from_port": "cache_ref",
-                "to_node_id": "node_16",
-                "to_port": "cache_ref"
-              },
-              {
-                "from_node_id": "__function_inputs__",
                 "from_port": "session_ref",
                 "to_node_id": "node_33",
                 "to_port": "session_ref"
               },
               {
                 "from_node_id": "__function_inputs__",
-                "from_port": "session_ref",
-                "to_node_id": "node_37",
-                "to_port": "session_ref"
-              },
-              {
-                "from_node_id": "__function_inputs__",
-                "from_port": "llm_api_llm_model",
-                "to_node_id": "node_17",
-                "to_port": "llm_model"
-              },
-              {
-                "from_node_id": "__function_inputs__",
-                "from_port": "llm_api_llm_model",
-                "to_node_id": "node_17",
-                "to_port": "llm_ref"
-              },
-              {
-                "from_node_id": "__function_inputs__",
-                "from_port": "tavily_ref",
-                "to_node_id": "node_17",
-                "to_port": "tavily_ref"
-              },
-              {
-                "from_node_id": "node_2",
-                "from_port": "element",
-                "to_node_id": "node_4",
-                "to_port": "message"
+                "from_port": "message_event",
+                "to_node_id": "node_3",
+                "to_port": "message_event"
               },
               {
                 "from_node_id": "__function_inputs__",
                 "from_port": "qq_bot_adapter",
-                "to_node_id": "node_7",
+                "to_node_id": "node_3",
                 "to_port": "bot_adapter"
+              },
+              {
+                "from_node_id": "node_5",
+                "from_port": "result",
+                "to_node_id": "node_34",
+                "to_port": "input"
               },
               {
                 "from_node_id": "node_34",
                 "from_port": "true_output",
-                "to_node_id": "node_7",
-                "to_port": "target_id"
-              },
-              {
-                "from_node_id": "node_6",
-                "from_port": "messages",
-                "to_node_id": "node_7",
-                "to_port": "message_batches"
-              },
-              {
-                "from_node_id": "node_4",
-                "from_port": "json",
-                "to_node_id": "node_6",
-                "to_port": "json"
-              },
-              {
-                "from_node_id": "node_17",
-                "from_port": "output",
-                "to_node_id": "node_8",
-                "to_port": "messages"
+                "to_node_id": "node_28",
+                "to_port": "sender_id"
               },
               {
                 "from_node_id": "node_1",
@@ -3498,63 +3360,9 @@
               },
               {
                 "from_node_id": "__function_inputs__",
-                "from_port": "qq_bot_adapter",
-                "to_node_id": "node_10",
-                "to_port": "bot_adapter"
-              },
-              {
-                "from_node_id": "node_34",
-                "from_port": "true_output",
-                "to_node_id": "node_10",
-                "to_port": "target_id"
-              },
-              {
-                "from_node_id": "node_4",
-                "from_port": "failed",
-                "to_node_id": "node_12",
-                "to_port": "first"
-              },
-              {
-                "from_node_id": "node_11",
-                "from_port": "messages",
-                "to_node_id": "node_12",
-                "to_port": "second"
-              },
-              {
-                "from_node_id": "node_12",
-                "from_port": "output",
-                "to_node_id": "node_10",
-                "to_port": "message"
-              },
-              {
-                "from_node_id": "node_14",
-                "from_port": "messages",
-                "to_node_id": "node_15",
-                "to_port": "second"
-              },
-              {
-                "from_node_id": "node_15",
-                "from_port": "output",
-                "to_node_id": "node_13",
-                "to_port": "message"
-              },
-              {
-                "from_node_id": "node_6",
-                "from_port": "failed",
-                "to_node_id": "node_15",
-                "to_port": "first"
-              },
-              {
-                "from_node_id": "__function_inputs__",
-                "from_port": "qq_bot_adapter",
-                "to_node_id": "node_13",
-                "to_port": "bot_adapter"
-              },
-              {
-                "from_node_id": "node_34",
-                "from_port": "true_output",
-                "to_node_id": "node_13",
-                "to_port": "target_id"
+                "from_port": "time",
+                "to_node_id": "node_28",
+                "to_port": "time"
               }
             ],
             "hyperparameter_groups": [],
@@ -3634,7 +3442,7 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": -340,
+                  "x": -300,
                   "y": 280
                 },
                 "size": {
@@ -3672,8 +3480,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": -360,
-                  "y": 140
+                  "x": -440,
+                  "y": -70
                 },
                 "size": {
                   "height": 60,
@@ -4344,8 +4152,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1240,
-                  "y": 360
+                  "x": 2360,
+                  "y": 50
                 },
                 "size": {
                   "height": 198,
@@ -4417,12 +4225,12 @@
                   }
                 },
                 "position": {
-                  "x": 560,
-                  "y": -100
+                  "x": 590,
+                  "y": -160
                 },
                 "size": {
-                  "height": 138,
-                  "width": 210
+                  "height": 150.33333,
+                  "width": 501
                 }
               },
               {
@@ -4464,8 +4272,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1180,
-                  "y": 0
+                  "x": 1110,
+                  "y": -270
                 },
                 "size": {
                   "height": 102,
@@ -4513,8 +4321,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2020,
-                  "y": 0
+                  "x": 2130,
+                  "y": -70
                 },
                 "size": {
                   "height": 60,
@@ -4551,8 +4359,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1520,
-                  "y": 0
+                  "x": 1440,
+                  "y": -120
                 },
                 "size": {
                   "height": 60,
@@ -4607,8 +4415,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 500,
-                  "y": 200
+                  "x": 1080,
+                  "y": 50
                 },
                 "size": {
                   "height": 98,
@@ -4656,8 +4464,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1780,
-                  "y": -20
+                  "x": 1520,
+                  "y": 40
                 },
                 "size": {
                   "height": 60,
@@ -4776,8 +4584,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": -80,
-                  "y": 140
+                  "x": 90,
+                  "y": 270
                 },
                 "size": {
                   "height": 98,
@@ -4835,8 +4643,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 180,
-                  "y": 80
+                  "x": 270,
+                  "y": 40
                 },
                 "size": {
                   "height": 98,
@@ -5236,8 +5044,8 @@
                 "output_ports": [],
                 "port_bindings": {},
                 "position": {
-                  "x": 2700,
-                  "y": 260
+                  "x": 2940,
+                  "y": 200
                 },
                 "size": {
                   "height": 120,
@@ -5266,8 +5074,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 220,
-                  "y": -240
+                  "x": 150,
+                  "y": -200
                 },
                 "size": {
                   "height": 60,
@@ -5315,8 +5123,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1640,
-                  "y": 380
+                  "x": 2680,
+                  "y": 90
                 },
                 "size": {
                   "height": 78,
@@ -5360,8 +5168,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1900,
-                  "y": 380
+                  "x": 3040,
+                  "y": 190
                 },
                 "size": {
                   "height": 60,
@@ -5488,7 +5296,7 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2420,
+                  "x": 3110,
                   "y": 380
                 },
                 "size": {
@@ -5928,88 +5736,10 @@
       "to_port": "message_event"
     },
     {
-      "from_node_id": "node_2",
-      "from_port": "false_event",
-      "to_node_id": "node_14",
-      "to_port": "message_event"
-    },
-    {
-      "from_node_id": "node_1",
-      "from_port": "bot_adapter",
-      "to_node_id": "node_14",
-      "to_port": "qq_bot_adapter"
-    },
-    {
-      "from_node_id": "node_30",
-      "from_port": "time",
-      "to_node_id": "node_14",
-      "to_port": "time"
-    },
-    {
-      "from_node_id": "node_2",
-      "from_port": "true_event",
-      "to_node_id": "node_4",
-      "to_port": "message_event"
-    },
-    {
-      "from_node_id": "node_1",
-      "from_port": "bot_adapter",
-      "to_node_id": "node_4",
-      "to_port": "qq_bot_adapter"
-    },
-    {
-      "from_node_id": "node_30",
-      "from_port": "time",
-      "to_node_id": "node_4",
-      "to_port": "time"
-    },
-    {
       "from_node_id": "node_29",
       "from_port": "llm_model",
       "to_node_id": "node_4",
       "to_port": "llm_api_llm_model"
-    },
-    {
-      "from_node_id": "node_29",
-      "from_port": "llm_model",
-      "to_node_id": "node_14",
-      "to_port": "llm_api_llm_model"
-    },
-    {
-      "from_node_id": "node_tavily",
-      "from_port": "tavily_ref",
-      "to_node_id": "node_14",
-      "to_port": "tavily_ref"
-    },
-    {
-      "from_node_id": "node_tavily",
-      "from_port": "tavily_ref",
-      "to_node_id": "node_4",
-      "to_port": "tavily_ref"
-    },
-    {
-      "from_node_id": "node_26",
-      "from_port": "session_ref",
-      "to_node_id": "node_4",
-      "to_port": "session_ref"
-    },
-    {
-      "from_node_id": "node_48",
-      "from_port": "cache_ref",
-      "to_node_id": "node_4",
-      "to_port": "cache_ref"
-    },
-    {
-      "from_node_id": "node_26",
-      "from_port": "session_ref",
-      "to_node_id": "node_14",
-      "to_port": "session_ref"
-    },
-    {
-      "from_node_id": "node_48",
-      "from_port": "cache_ref",
-      "to_node_id": "node_14",
-      "to_port": "cache_ref"
     }
   ],
   "hyperparameter_groups": [
