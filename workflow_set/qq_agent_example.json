@@ -55,17 +55,17 @@
         "height": 146.0
       },
       "inline_values": {
-        "bot_server_url": "ws://localhost:3001",
-        "qq_id": "2496875785"
+        "qq_id": "2496875785",
+        "bot_server_url": "ws://localhost:3001"
       },
       "port_bindings": {
-        "qq_id": {
-          "kind": "hyperparameter",
-          "name": "BOT_ID"
-        },
         "bot_server_token": {
           "kind": "hyperparameter",
           "name": "BOT_SERVER_TOKEN"
+        },
+        "qq_id": {
+          "kind": "hyperparameter",
+          "name": "BOT_ID"
         }
       },
       "has_error": false,
@@ -215,8 +215,8 @@
         "height": 410.0
       },
       "inline_values": {
-        "mysql_database": "zihuan_aibot",
         "mysql_host": "127.0.0.1",
+        "mysql_database": "zihuan_aibot",
         "mysql_port": "3306"
       },
       "port_bindings": {
@@ -411,17 +411,17 @@
         "timeout_secs": "600"
       },
       "port_bindings": {
-        "model_name": {
+        "api_key": {
           "kind": "hyperparameter",
-          "name": "LLM_MODEL_NAME"
+          "name": "LLM_API_KEY"
         },
         "api_endpoint": {
           "kind": "hyperparameter",
           "name": "LLM_API_ENDPOINT"
         },
-        "api_key": {
+        "model_name": {
           "kind": "hyperparameter",
-          "name": "LLM_API_KEY"
+          "name": "LLM_MODEL_NAME"
         }
       },
       "has_error": false,
@@ -1003,7 +1003,7 @@
                 },
                 "size": {
                   "height": 106,
-                  "width": 236.8000030517578
+                  "width": 236.8
                 }
               },
               {
@@ -1041,7 +1041,7 @@
                 },
                 "size": {
                   "height": 26,
-                  "width": 169.60000610351562
+                  "width": 169.6
                 }
               },
               {
@@ -1316,7 +1316,7 @@
                 },
                 "size": {
                   "height": 26,
-                  "width": 169.60000610351562
+                  "width": 169.6
                 }
               },
               {
@@ -2609,7 +2609,7 @@
                   "y": -60
                 },
                 "size": {
-                  "height": 75.33332824707031,
+                  "height": 75.33333,
                   "width": 244
                 }
               },
@@ -2783,7 +2783,7 @@
                 },
                 "size": {
                   "height": 142,
-                  "width": 228.3999938964844
+                  "width": 228.4
                 }
               },
               {
@@ -4225,12 +4225,12 @@
                   }
                 },
                 "position": {
-                  "x": 590,
+                  "x": 580,
                   "y": -160
                 },
                 "size": {
-                  "height": 150.33333,
-                  "width": 501
+                  "height": 148.33333,
+                  "width": 504
                 }
               },
               {
