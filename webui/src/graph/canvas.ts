@@ -154,6 +154,7 @@ export class ZihuanCanvas {
       }
 
       drawWidgetBindingBadges.call(node, ctx);
+      drawInlineOutputLabels(node, ctx);
     };
 
     // Snap nodes to grid only on release, not during drag (avoids jitter and unnecessary work)
@@ -1686,6 +1687,55 @@ function resolveConcretePortType(
     if (resolved !== "Any") return resolved;
   }
   return "Any";
+}
+
+/**
+ * Re-draw output slot labels AFTER widget backgrounds for nodes with inline widgets.
+ * LiteGraph's draw order is: slot labels → onDrawForeground → widgets.  Widget
+ * backgrounds from drawNodeWidgets therefore cover output labels that were drawn
+ * earlier.  This function runs at the very end of the drawNodeWidgets override so
+ * it paints output labels on top, restoring their visibility.
+ * Only fires on nodes where setupSimpleInlineWidgets set _hasInlineWidgets=true.
+ */
+function drawInlineOutputLabels(node: any, ctx: CanvasRenderingContext2D): void {
+  if (!node._hasInlineWidgets || !node.outputs?.length) return;
+
+  const SLOT_H: number = (LiteGraph as any).NODE_SLOT_HEIGHT ?? 20;
+  const FONT_SIZE: number = (LiteGraph as any).NODE_SUBTEXT_SIZE ?? 12;
+  const colors = getLiteGraphColors();
+  const textColor: string = colors.nodeText;
+  const bgColor: string = node.bgcolor || colors.nodeBg;
+  const nodeWidth: number = node.size[0];
+  // Right-aligned text ending just before the output dot (mirrors LiteGraph's own slot label offset).
+  const textX = nodeWidth - SLOT_H - 2;
+
+  ctx.save();
+  ctx.font = `${FONT_SIZE}px Arial`;
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+
+  for (let i = 0; i < node.outputs.length; i++) {
+    const output = node.outputs[i];
+    if (!output) continue;
+    const label: string = output.label != null ? String(output.label) : output.name;
+    if (!label) continue;
+
+    // getOutputPos returns graph-space coords; subtract node.pos[1] for node-local Y.
+    const [, gy] = node.getOutputPos(i);
+    const localY = gy - node.pos[1];
+
+    // Erase the widget background region behind this label, then redraw the text.
+    const textMetrics = ctx.measureText(label);
+    const bgW = textMetrics.width + 8;
+    const bgH = FONT_SIZE + 4;
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(textX - textMetrics.width - 4, localY - bgH / 2, bgW, bgH);
+
+    ctx.fillStyle = textColor;
+    ctx.fillText(label, textX, localY);
+  }
+
+  ctx.restore();
 }
 
 /** Find the registered LiteGraph type key for a backend type_id. */
