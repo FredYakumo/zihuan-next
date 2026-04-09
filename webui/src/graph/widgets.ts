@@ -230,6 +230,9 @@ function setupSimpleInlineWidgets(
     // Center the first widget on the same y as the first widget-linked slot.
     const slotCenterY = slotStartY + (firstLinkedIdx + 0.7) * SLOT_H;
     lNode.widgets_start_y = slotCenterY - WIDGET_H / 2 - 2;
+    // Mark this node so drawInlineOutputLabels knows to re-draw output labels
+    // on top of the widget backgrounds that would otherwise cover them.
+    lNode._hasInlineWidgets = true;
     // Recompute node height only when no explicit size is saved (new node).
     if (!nodeDef.size) {
       lNode.size = lNode.computeSize();
