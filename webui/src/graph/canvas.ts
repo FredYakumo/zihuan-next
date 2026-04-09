@@ -1714,15 +1714,17 @@ function drawInlineOutputLabels(node: any, ctx: CanvasRenderingContext2D): void 
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
 
+  const slotStartY: number = (node.constructor as any).slot_start_y ?? 0;
+
   for (let i = 0; i < node.outputs.length; i++) {
     const output = node.outputs[i];
     if (!output) continue;
     const label: string = output.label != null ? String(output.label) : output.name;
     if (!label) continue;
 
-    // getOutputPos returns graph-space coords; subtract node.pos[1] for node-local Y.
-    const [, gy] = node.getOutputPos(i);
-    const localY = gy - node.pos[1];
+    // Mirror LiteGraph's own output slot Y formula (node-local coordinate).
+    // All outputs use default vertical slots so index == draw order.
+    const localY = (i + 0.7) * SLOT_H + slotStartY;
 
     // Erase the widget background region behind this label, then redraw the text.
     const textMetrics = ctx.measureText(label);
