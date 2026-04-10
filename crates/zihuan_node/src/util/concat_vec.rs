@@ -34,7 +34,7 @@ impl Node for ConcatVecNode {
         port! { name = "vec2", ty = Vec(Any), desc = "后半部分列表，将拼接到 vec1 后面" },
     ];
 
-    node_output![port! { name = "vec", ty = Any, desc = "拼接后的列表，元素类型与输入列表一致" },];
+    node_output![port! { name = "vec", ty = Vec(Any), desc = "拼接后的列表，元素类型与输入列表一致" },];
 
     fn execute(
         &mut self,
