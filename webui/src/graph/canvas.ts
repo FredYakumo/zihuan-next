@@ -208,14 +208,15 @@ export class ZihuanCanvas {
         if (!link || link.origin_id === undefined) continue;
         let typeName: string = String(link.type ?? "");
         if (!typeName || typeName === "*" || typeName === "null" || typeName === "undefined") continue;
-        // If the link type is "Any", resolve the concrete type through the graph
-        if (typeName === "Any" && this.state.graph) {
+        // If the link type contains "Any" (e.g. "Any", "Vec<Any>"), resolve to concrete type
+        if (typeName.includes("Any") && this.state.graph) {
           const originNode = this.lGraph.getNodeById(link.origin_id) as any;
           if (originNode?.zihuanId) {
             const originDef = this.state.graph.nodes.find((n) => n.id === originNode.zihuanId);
             const port = originDef?.output_ports[link.origin_slot];
             if (port) {
-              typeName = resolveConcretePortType(this.state.graph, originNode.zihuanId, port.name, false);
+              const resolved = resolveConcretePortType(this.state.graph, originNode.zihuanId, port.name, false);
+              if (!resolved.includes("Any")) typeName = resolved;
             }
           }
         }
@@ -1651,6 +1652,14 @@ function drawBadgePill(
  * "Any"-typed passthrough nodes (switch_gate, boolean_branch, etc.) by
  * following the graph edge definition backward.
  */
+/** Extract the outer type wrapper and inner type from a string like "Vec<Any>". */
+function parseWrappedAny(dt: string): { prefix: string; inner: string } | null {
+  const m = dt.match(/^([^<]+)<(.+)>$/);
+  if (!m) return null;
+  if (!m[2].includes("Any")) return null;
+  return { prefix: m[1], inner: m[2] };
+}
+
 function resolveConcretePortType(
   graph: NodeGraphDefinition,
   nodeId: string,
@@ -1670,16 +1679,53 @@ function resolveConcretePortType(
   if (!port) return "Any";
 
   const dt = typeof port.data_type === "string" ? port.data_type : portTypeString(port.data_type);
-  if (dt !== "Any") return dt;
+  // If the type contains no "Any" at all, it's already concrete
+  if (!dt.includes("Any")) return dt;
 
   if (isInput) {
     // Trace upstream: find the edge that feeds this input
     const edge = graph.edges.find((e) => e.to_node_id === nodeId && e.to_port === portName);
-    if (edge) return resolveConcretePortType(graph, edge.from_node_id, edge.from_port, false, visited);
-    return "Any";
+    if (edge) {
+      const upstream = resolveConcretePortType(graph, edge.from_node_id, edge.from_port, false, visited);
+      // For Vec<Any> input: if upstream is Vec<Concrete>, use it directly
+      const wrapped = parseWrappedAny(dt);
+      if (wrapped && upstream.startsWith(`${wrapped.prefix}<`) && !upstream.includes("Any")) {
+        return upstream;
+      }
+      if (upstream !== "Any") return upstream;
+    }
+    return dt;
   }
 
-  // Output port is Any: try to resolve through any Any-typed input ports
+  // Output port contains "Any": try to resolve through input ports
+  const wrapped = parseWrappedAny(dt);
+  if (wrapped) {
+    // e.g. output type is Vec<Any> — look for Vec<Any> inputs to trace upstream
+    for (const inp of nodeDef.input_ports) {
+      const inDt = typeof inp.data_type === "string" ? inp.data_type : portTypeString(inp.data_type);
+      if (!inDt.includes("Any")) continue;
+      const inWrapped = parseWrappedAny(inDt);
+      if (inWrapped && inWrapped.prefix === wrapped.prefix) {
+        // Same wrapper (e.g. both Vec<Any>): trace upstream, get concrete inner type
+        const resolved = resolveConcretePortType(graph, nodeId, inp.name, true, visited);
+        if (!resolved.includes("Any")) return resolved;
+        // If upstream is also Vec<Concrete>, return it
+        if (resolved.startsWith(`${wrapped.prefix}<`)) return resolved;
+      }
+    }
+    // Also try plain Any inputs (e.g. element → Vec<element_type>)
+    for (const inp of nodeDef.input_ports) {
+      const inDt = typeof inp.data_type === "string" ? inp.data_type : portTypeString(inp.data_type);
+      if (inDt !== "Any") continue;
+      const resolved = resolveConcretePortType(graph, nodeId, inp.name, true, visited);
+      if (resolved !== "Any" && !resolved.includes("Any")) {
+        return `${wrapped.prefix}<${resolved}>`;
+      }
+    }
+    return dt;
+  }
+
+  // Plain Any output: try to resolve through any Any-typed input ports
   for (const inp of nodeDef.input_ports) {
     const inDt = typeof inp.data_type === "string" ? inp.data_type : portTypeString(inp.data_type);
     if (inDt !== "Any") continue;

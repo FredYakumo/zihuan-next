@@ -31,7 +31,7 @@ impl Node for StackNode {
 
     node_input![port! { name = "element", ty = Any, desc = "要封装到数组中的元素" },];
 
-    node_output![port! { name = "array", ty = Any, desc = "包含单个元素的 List" },];
+    node_output![port! { name = "array", ty = Vec(Any), desc = "包含单个元素的 List" },];
 
     fn execute(
         &mut self,
