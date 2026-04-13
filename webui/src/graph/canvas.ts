@@ -217,7 +217,7 @@ export class ZihuanCanvas {
       }
 
       const scale: number = (this.lCanvas as any).ds?.scale ?? 1;
-      if (scale < 0.3) return; // skip labels when zoomed out too far
+      if (scale < 0.6) return; // skip labels when zoomed out too far (match LiteGraph's low_quality_zoom_threshold)
       const links = this.lGraph.links as Record<number, any>;
       if (!links) return;
       const fontSize = Math.round(10 / scale);
