@@ -360,6 +360,23 @@ export class ZihuanCanvas {
     return this.state.sessionId;
   }
 
+  /** Get current canvas viewport state (offset and scale). */
+  getCanvasViewport(): { offset: [number, number]; scale: number } | null {
+    const ds = (this.lCanvas as any).ds as { offset: [number, number]; scale: number } | undefined;
+    if (!ds) return null;
+    return { offset: [...ds.offset] as [number, number], scale: ds.scale };
+  }
+
+  /** Set canvas viewport state (offset and scale). */
+  setCanvasViewport(offset: [number, number], scale: number): void {
+    const ds = (this.lCanvas as any).ds;
+    if (ds) {
+      ds.offset = [...offset];
+      ds.scale = scale;
+      this.lGraph.setDirtyCanvas(true, true);
+    }
+  }
+
   /** Apply theme-aware colour tokens to LiteGraph global and canvas-instance settings. */
   private applyLiteGraphTheme(): void {
     const c = getLiteGraphColors();
