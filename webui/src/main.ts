@@ -36,6 +36,76 @@ async function main() {
   // ── Tab state ────────────────────────────────────────────────────────────
   let tabList: TabInfo[] = [];
   let activeTabId: string | null = null;
+  let skipWorkspaceSave = false;  // Set true during restoration to avoid overwriting
+
+  // ── Workspace persistence (localStorage) ─────────────────────────────────
+  const WORKSPACE_KEY = "zh-workspace";
+
+  interface TabSnapshot {
+    workflowPath?: string;       // For workflow_set files: path like "workflow_set/my_graph.json"
+    workflowJSON?: object;       // For local/new files: full graph JSON
+    name: string;
+    isWorkflowSet: boolean;
+    canvasOffset?: [number, number];
+    canvasScale?: number;
+  }
+
+  interface WorkspaceState {
+    tabs: TabSnapshot[];
+    activeTabIndex: number;
+  }
+
+  async function saveWorkspaceState() {
+    if (skipWorkspaceSave) return;
+    const viewport = canvas.getCanvasViewport();
+    const tabsToSave: TabSnapshot[] = [];
+
+    for (const tab of tabList) {
+      if (tab.isWorkflowSet) {
+        // workflow_set file: only save path
+        tabsToSave.push({
+          workflowPath: `workflow_set/${tab.name}.json`,
+          name: tab.name,
+          isWorkflowSet: true,
+          canvasOffset: tab.id === activeTabId ? viewport?.offset : undefined,
+          canvasScale: tab.id === activeTabId ? viewport?.scale : undefined,
+        });
+      } else {
+        // Local file or new graph: save full JSON
+        try {
+          const graphJSON = await graphs.get(tab.id);
+          tabsToSave.push({
+            workflowJSON: graphJSON,
+            name: tab.name,
+            isWorkflowSet: false,
+            canvasOffset: tab.id === activeTabId ? viewport?.offset : undefined,
+            canvasScale: tab.id === activeTabId ? viewport?.scale : undefined,
+          });
+        } catch {
+          // Skip if failed to get graph JSON
+        }
+      }
+    }
+
+    const savedIndex = tabList.findIndex(t => t.id === activeTabId);
+
+    const state: WorkspaceState = {
+      tabs: tabsToSave,
+      activeTabIndex: savedIndex >= 0 ? savedIndex : 0,
+    };
+
+    localStorage.setItem(WORKSPACE_KEY, JSON.stringify(state));
+  }
+
+  function loadWorkspaceState(): WorkspaceState | null {
+    const stored = localStorage.getItem(WORKSPACE_KEY);
+    if (!stored) return null;
+    try {
+      return JSON.parse(stored);
+    } catch {
+      return null;
+    }
+  }
 
   function renderTabs() {
     updateTabs(
@@ -60,6 +130,7 @@ async function main() {
     renderTabs();
     await canvas.loadExternalSession(id);
     updateRunButton(id === runningSessionId);
+    await saveWorkspaceState();
   }
 
   async function closeTab(id: string) {
@@ -80,13 +151,15 @@ async function main() {
         canvas.clearCanvas();
         renderTabs();
         updateRunButton(false);
+        await saveWorkspaceState();
       }
     } else {
       renderTabs();
+await saveWorkspaceState();
     }
   }
 
-  function openTab(id: string, name: string, dirty = false, isWorkflowSet = false) {
+  async function openTab(id: string, name: string, dirty = false, isWorkflowSet = false) {
     const existing = tabList.findIndex((t) => t.id === id);
     if (existing !== -1) {
       tabList[existing].name = name;
@@ -97,6 +170,7 @@ async function main() {
     }
     activeTabId = id;
     renderTabs();
+    await saveWorkspaceState();
   }
 
   function setTabDirty(id: string, dirty: boolean) {
@@ -113,7 +187,7 @@ async function main() {
 
   async function createNewTab() {
     const tab = await graphs.create();
-    openTab(tab.id, "未命名", false);
+    await openTab(tab.id, "未命名", false);
     await canvas.loadExternalSession(tab.id);
   }
 
@@ -191,7 +265,7 @@ async function main() {
         const file = await handle.getFile();
         const result = await fileIO.upload(file);
         const name = file.name.replace(/\.json$/i, "");
-        openTab(result.session_id, name, false, false);
+        await openTab(result.session_id, name, false, false);
         const tab = tabList.find((t) => t.id === result.session_id);
         if (tab) tab.fileHandle = handle;
         await canvas.loadExternalSession(result.session_id);
@@ -211,7 +285,7 @@ async function main() {
       try {
         const result = await fileIO.upload(file);
         const name = file.name.replace(/\.json$/i, "");
-        openTab(result.session_id, name, false, false);
+        await openTab(result.session_id, name, false, false);
         await canvas.loadExternalSession(result.session_id);
       } catch (e) {
         showErrorDialog(`打开文件失败: ${(e as Error).message}`);
@@ -232,7 +306,7 @@ async function main() {
       if (!selected) return;
       const openResult = await fileIO.open("workflow_set/" + selected);
       const name = tabNameFrom("workflow_set/" + selected);
-      openTab(openResult.session_id, name, false, true);
+      await openTab(openResult.session_id, name, false, true);
       await canvas.loadExternalSession(openResult.session_id);
     } catch (e) {
       showErrorDialog(`打开 workflow 失败: ${(e as Error).message}`);
@@ -370,7 +444,7 @@ async function main() {
       if (!selected) return;
       const openResult = await fileIO.open("workflow_set/" + selected);
       const name = tabNameFrom("workflow_set/" + selected);
-      openTab(openResult.session_id, name, false, true);
+      await openTab(openResult.session_id, name, false, true);
       await canvas.loadExternalSession(openResult.session_id);
     } catch (e) {
       showErrorDialog(`打开 workflow 失败: ${(e as Error).message}`);
@@ -554,11 +628,77 @@ async function main() {
   // Start position sync
   canvas.startPositionSync(3000);
 
-  // ── Create default unnamed graph on startup ──────────────────────────────
+  // ── Restore workspace or create default tab ───────────────────────────────
+  async function restoreOrCreateTabs() {
+    const state = loadWorkspaceState();
+    let lastCanvasState: { offset: [number, number]; scale: number } | null = null;
+
+    // Disable saving during restoration
+    skipWorkspaceSave = true;
+
+    if (state && state.tabs.length > 0) {
+      for (let i = 0; i < state.tabs.length; i++) {
+        const tab = state.tabs[i];
+
+        if (tab.isWorkflowSet && tab.workflowPath) {
+          // Restore workflow_set file by path
+          try {
+            const openResult = await fileIO.open(tab.workflowPath);
+            tabList.push({ id: openResult.session_id, name: tab.name, dirty: false, isWorkflowSet: true });
+            await canvas.loadExternalSession(openResult.session_id);
+
+            if (i === state.activeTabIndex && tab.canvasOffset && tab.canvasScale) {
+              lastCanvasState = { offset: tab.canvasOffset, scale: tab.canvasScale };
+            }
+          } catch {
+            console.warn(`无法恢复 ${tab.workflowPath}，跳过`);
+          }
+        } else if (tab.workflowJSON) {
+          // Restore local/new graph from JSON
+          try {
+            const newTab = await graphs.create();
+            await graphs.put(newTab.id, tab.workflowJSON as any);
+            tabList.push({ id: newTab.id, name: tab.name, dirty: false, isWorkflowSet: false });
+            await canvas.loadExternalSession(newTab.id);
+
+            if (i === state.activeTabIndex && tab.canvasOffset && tab.canvasScale) {
+              lastCanvasState = { offset: tab.canvasOffset, scale: tab.canvasScale };
+            }
+          } catch {
+            console.warn(`无法恢复工作流 ${tab.name}，跳过`);
+          }
+        }
+      }
+
+      // Switch to the previously active tab
+      if (tabList.length > 0 && state.activeTabIndex < tabList.length) {
+        const activeTab = tabList[state.activeTabIndex];
+        if (activeTab) {
+          activeTabId = activeTab.id;
+          renderTabs();
+          await canvas.loadExternalSession(activeTab.id);
+          updateRunButton(activeTab.id === runningSessionId);
+          // Restore canvas viewport
+          if (lastCanvasState) {
+            canvas.setCanvasViewport(lastCanvasState.offset, lastCanvasState.scale);
+          }
+        }
+      }
+    }
+
+    // Re-enable saving after restoration
+    skipWorkspaceSave = false;
+
+    // If no tabs were restored, create a new empty one
+    if (tabList.length === 0) {
+      await createNewTab();
+    }
+  }
+
   try {
-    await createNewTab();
+    await restoreOrCreateTabs();
   } catch {
-    // Startup graph creation failed — user can create one manually
+    // Startup restoration failed — user can create one manually
   }
 }
 
