@@ -55,17 +55,17 @@
         "height": 146.0
       },
       "inline_values": {
-        "qq_id": "2496875785",
-        "bot_server_url": "ws://localhost:3001"
+        "bot_server_url": "ws://localhost:3001",
+        "qq_id": "2496875785"
       },
       "port_bindings": {
-        "bot_server_token": {
-          "kind": "hyperparameter",
-          "name": "BOT_SERVER_TOKEN"
-        },
         "qq_id": {
           "kind": "hyperparameter",
           "name": "BOT_ID"
+        },
+        "bot_server_token": {
+          "kind": "hyperparameter",
+          "name": "BOT_SERVER_TOKEN"
         }
       },
       "has_error": false,
@@ -220,13 +220,13 @@
         "mysql_port": "3306"
       },
       "port_bindings": {
-        "mysql_password": {
-          "kind": "hyperparameter",
-          "name": "MYSQL_PASSWORD"
-        },
         "mysql_user": {
           "kind": "hyperparameter",
           "name": "MYSQL_USER"
+        },
+        "mysql_password": {
+          "kind": "hyperparameter",
+          "name": "MYSQL_PASSWORD"
         }
       },
       "has_error": false,
@@ -346,8 +346,8 @@
         "height": 142.0
       },
       "inline_values": {
-        "ttl_secs": "600",
-        "bucket_name": "message_id_cache"
+        "bucket_name": "message_id_cache",
+        "ttl_secs": "600"
       },
       "port_bindings": {},
       "has_error": false,
@@ -404,7 +404,7 @@
         "y": -60.0
       },
       "size": {
-        "width": 210.0,
+        "width": 354.0,
         "height": 190.0
       },
       "inline_values": {
@@ -415,13 +415,13 @@
           "kind": "hyperparameter",
           "name": "LLM_API_KEY"
         },
-        "api_endpoint": {
-          "kind": "hyperparameter",
-          "name": "LLM_API_ENDPOINT"
-        },
         "model_name": {
           "kind": "hyperparameter",
           "name": "LLM_MODEL_NAME"
+        },
+        "api_endpoint": {
+          "kind": "hyperparameter",
+          "name": "LLM_API_ENDPOINT"
         }
       },
       "has_error": false,
@@ -445,7 +445,7 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 300.0,
+        "x": 160.0,
         "y": -170.0
       },
       "size": {
@@ -1003,7 +1003,7 @@
                 },
                 "size": {
                   "height": 106,
-                  "width": 236.8
+                  "width": 236.8000030517578
                 }
               },
               {
@@ -1041,7 +1041,7 @@
                 },
                 "size": {
                   "height": 26,
-                  "width": 169.6
+                  "width": 169.60000610351562
                 }
               },
               {
@@ -1112,7 +1112,9 @@
                 "node_type": "stack",
                 "output_ports": [
                   {
-                    "data_type": "Any",
+                    "data_type": {
+                      "Vec": "Any"
+                    },
                     "description": "包含单个元素的 List",
                     "hidden": false,
                     "name": "array",
@@ -1161,7 +1163,9 @@
                 "node_type": "concat_vec",
                 "output_ports": [
                   {
-                    "data_type": "Any",
+                    "data_type": {
+                      "Vec": "Any"
+                    },
                     "description": "拼接后的列表，元素类型与输入列表一致",
                     "hidden": false,
                     "name": "vec",
@@ -1210,7 +1214,9 @@
                 "node_type": "concat_vec",
                 "output_ports": [
                   {
-                    "data_type": "Any",
+                    "data_type": {
+                      "Vec": "Any"
+                    },
                     "description": "拼接后的列表，元素类型与输入列表一致",
                     "hidden": false,
                     "name": "vec",
@@ -1316,7 +1322,7 @@
                 },
                 "size": {
                   "height": 26,
-                  "width": 169.6
+                  "width": 169.60000610351562
                 }
               },
               {
@@ -2156,7 +2162,9 @@
                             "node_type": "stack",
                             "output_ports": [
                               {
-                                "data_type": "Any",
+                                "data_type": {
+                                  "Vec": "Any"
+                                },
                                 "description": "包含单个元素的 List",
                                 "hidden": false,
                                 "name": "array",
@@ -2298,7 +2306,9 @@
                 "node_type": "concat_vec",
                 "output_ports": [
                   {
-                    "data_type": "Any",
+                    "data_type": {
+                      "Vec": "Any"
+                    },
                     "description": "拼接后的列表，元素类型与输入列表一致",
                     "hidden": false,
                     "name": "vec",
@@ -2609,7 +2619,7 @@
                   "y": -60
                 },
                 "size": {
-                  "height": 75.33333,
+                  "height": 75.33332824707031,
                   "width": 244
                 }
               },
@@ -2783,7 +2793,7 @@
                 },
                 "size": {
                   "height": 142,
-                  "width": 228.4
+                  "width": 228.3999938964844
                 }
               },
               {
@@ -3447,7 +3457,7 @@
                 },
                 "size": {
                   "height": 106,
-                  "width": 235.96152
+                  "width": 235.9615173339844
                 }
               },
               {
@@ -3485,7 +3495,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 159.06445
+                  "width": 159.064453125
                 }
               },
               {
@@ -4054,7 +4064,9 @@
                             "node_type": "stack",
                             "output_ports": [
                               {
-                                "data_type": "Any",
+                                "data_type": {
+                                  "Vec": "Any"
+                                },
                                 "description": "包含单个元素的 List",
                                 "hidden": false,
                                 "name": "array",
@@ -4229,7 +4241,7 @@
                   "y": -160
                 },
                 "size": {
-                  "height": 148.33333,
+                  "height": 148.3333282470703,
                   "width": 504
                 }
               },
@@ -4312,7 +4324,9 @@
                 "node_type": "concat_vec",
                 "output_ports": [
                   {
-                    "data_type": "Any",
+                    "data_type": {
+                      "Vec": "Any"
+                    },
                     "description": "拼接后的列表，元素类型与输入列表一致",
                     "hidden": false,
                     "name": "vec",
@@ -4350,7 +4364,9 @@
                 "node_type": "stack",
                 "output_ports": [
                   {
-                    "data_type": "Any",
+                    "data_type": {
+                      "Vec": "Any"
+                    },
                     "description": "包含单个元素的 List",
                     "hidden": false,
                     "name": "array",
@@ -4455,7 +4471,9 @@
                 "node_type": "concat_vec",
                 "output_ports": [
                   {
-                    "data_type": "Any",
+                    "data_type": {
+                      "Vec": "Any"
+                    },
                     "description": "拼接后的列表，元素类型与输入列表一致",
                     "hidden": false,
                     "name": "vec",
@@ -4885,7 +4903,9 @@
                 "node_type": "concat_vec",
                 "output_ports": [
                   {
-                    "data_type": "Any",
+                    "data_type": {
+                      "Vec": "Any"
+                    },
                     "description": "拼接后的列表，元素类型与输入列表一致",
                     "hidden": false,
                     "name": "vec",
@@ -5016,8 +5036,8 @@
                   "y": 140
                 },
                 "size": {
-                  "height": 239.32555,
-                  "width": 249.90527
+                  "height": 239.32554626464844,
+                  "width": 249.9052734375
                 }
               },
               {
@@ -5079,7 +5099,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 228.1412
+                  "width": 228.1412048339844
                 }
               },
               {
@@ -5173,7 +5193,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 223.52011
+                  "width": 223.5201110839844
                 }
               },
               {
@@ -5222,7 +5242,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 197.82382
+                  "width": 197.8238220214844
                 }
               },
               {
@@ -5301,7 +5321,7 @@
                 },
                 "size": {
                   "height": 142,
-                  "width": 228.4
+                  "width": 228.3999938964844
                 }
               },
               {
@@ -5693,11 +5713,11 @@
       "dynamic_output_ports": false,
       "position": {
         "x": 150.0,
-        "y": 170.0
+        "y": 190.0
       },
       "size": {
-        "width": 210.0,
-        "height": 102.0
+        "width": 360.0,
+        "height": 103.0
       },
       "inline_values": {},
       "port_bindings": {
@@ -5740,6 +5760,18 @@
       "from_port": "llm_model",
       "to_node_id": "node_4",
       "to_port": "llm_api_llm_model"
+    },
+    {
+      "from_node_id": "node_30",
+      "from_port": "time",
+      "to_node_id": "node_4",
+      "to_port": "time"
+    },
+    {
+      "from_node_id": "node_tavily",
+      "from_port": "tavily_ref",
+      "to_node_id": "node_4",
+      "to_port": "tavily_ref"
     }
   ],
   "hyperparameter_groups": [

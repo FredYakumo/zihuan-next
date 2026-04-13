@@ -93,6 +93,31 @@ export class ZihuanCanvas {
     // Use orthogonal routing (STRAIGHT_LINK = 0): horizontal → vertical → horizontal
     (this.lCanvas as any).links_render_mode = 0;
 
+    // Fix LiteGraph's STRAIGHT_LINK rendering when dragging to/from the mouse,
+    // where the end direction being CENTER causes a weird 90° curve at the endpoint.
+    const origRenderLink = (LGraphCanvas.prototype as any).renderLink;
+    (LGraphCanvas.prototype as any).renderLink = function(
+      ctx: CanvasRenderingContext2D,
+      a: any,
+      b: any,
+      link: any,
+      skip_border: boolean,
+      flow: boolean,
+      color: string,
+      start_dir: number,
+      end_dir: number,
+      num_sublines: number
+    ) {
+      if (this.links_render_mode === 0 /* LiteGraph.STRAIGHT_LINK */) {
+        // LiteGraph's STRAIGHT_LINK implementation has a bug where if start_dir is LEFT or end_dir is CENTER 
+        // (like when dragging backward or towards the mouse), it applies the offset to the Y-axis instead of X.
+        // Forcing RIGHT and LEFT ensures it always uses horizontal offsets for our left/right ports.
+        start_dir = 4 /* LiteGraph.RIGHT */;
+        end_dir = 3 /* LiteGraph.LEFT */;
+      }
+      return origRenderLink.call(this, ctx, a, b, link, skip_border, flow, color, start_dir, end_dir, num_sublines);
+    };
+
     // Override drawNodeWidgets to draw binding badges on widget-linked slots
     // AFTER the widget backgrounds are rendered (so badges are visible on top).
     const origDrawNodeWidgets = (this.lCanvas as any).drawNodeWidgets.bind(this.lCanvas);
