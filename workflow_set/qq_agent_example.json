@@ -47,8 +47,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 150.0,
-        "y": 330.0
+        "x": 170.0,
+        "y": 350.0
       },
       "size": {
         "width": 253.6,
@@ -215,9 +215,9 @@
         "height": 410.0
       },
       "inline_values": {
-        "mysql_host": "127.0.0.1",
+        "mysql_port": "3306",
         "mysql_database": "zihuan_aibot",
-        "mysql_port": "3306"
+        "mysql_host": "127.0.0.1"
       },
       "port_bindings": {
         "mysql_user": {
@@ -411,17 +411,17 @@
         "timeout_secs": "600"
       },
       "port_bindings": {
-        "api_key": {
+        "api_endpoint": {
           "kind": "hyperparameter",
-          "name": "LLM_API_KEY"
+          "name": "LLM_API_ENDPOINT"
         },
         "model_name": {
           "kind": "hyperparameter",
           "name": "LLM_MODEL_NAME"
         },
-        "api_endpoint": {
+        "api_key": {
           "kind": "hyperparameter",
-          "name": "LLM_API_ENDPOINT"
+          "name": "LLM_API_KEY"
         }
       },
       "has_error": false,
@@ -2204,14 +2204,14 @@
                   {
                     "data_type": "Json",
                     "description": "Tools 配置，由工具编辑器维护",
-                    "hidden": false,
+                    "hidden": true,
                     "name": "tools_config",
                     "required": false
                   },
                   {
                     "data_type": "Json",
                     "description": "Brain 共享输入签名，由工具编辑器维护",
-                    "hidden": false,
+                    "hidden": true,
                     "name": "shared_inputs",
                     "required": false
                   },
@@ -3229,7 +3229,7 @@
       "dynamic_output_ports": true,
       "position": {
         "x": 1530.0,
-        "y": -60.0
+        "y": -80.0
       },
       "size": {
         "width": 210.0,
@@ -3373,6 +3373,60 @@
                 "from_port": "time",
                 "to_node_id": "node_28",
                 "to_port": "time"
+              },
+              {
+                "from_node_id": "node_34",
+                "from_port": "true_output",
+                "to_node_id": "node_45",
+                "to_port": "sender_id"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "cache_ref",
+                "to_node_id": "node_45",
+                "to_port": "cache_ref"
+              },
+              {
+                "from_node_id": "node_45",
+                "from_port": "messages",
+                "to_node_id": "node_46",
+                "to_port": "vec2"
+              },
+              {
+                "from_node_id": "node_3",
+                "from_port": "messages",
+                "to_node_id": "node_32",
+                "to_port": "vec2"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "llm_api_llm_model",
+                "to_node_id": "node_17",
+                "to_port": "llm_model"
+              },
+              {
+                "from_node_id": "node_34",
+                "from_port": "true_output",
+                "to_node_id": "node_17",
+                "to_port": "target_id"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "llm_api_llm_model",
+                "to_node_id": "node_17",
+                "to_port": "llm_ref"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "tavily_ref",
+                "to_node_id": "node_17",
+                "to_port": "tavily_ref"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "qq_bot_adapter",
+                "to_node_id": "node_17",
+                "to_port": "bot_ref"
               }
             ],
             "hyperparameter_groups": [],
@@ -3457,7 +3511,7 @@
                 },
                 "size": {
                   "height": 106,
-                  "width": 235.9615173339844
+                  "width": 235.96152
                 }
               },
               {
@@ -3495,7 +3549,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 159.064453125
+                  "width": 159.06445
                 }
               },
               {
@@ -4109,14 +4163,14 @@
                   {
                     "data_type": "Json",
                     "description": "Tools 配置，由工具编辑器维护",
-                    "hidden": false,
+                    "hidden": true,
                     "name": "tools_config",
                     "required": false
                   },
                   {
                     "data_type": "Json",
                     "description": "Brain 共享输入签名，由工具编辑器维护",
-                    "hidden": false,
+                    "hidden": true,
                     "name": "shared_inputs",
                     "required": false
                   },
@@ -4241,7 +4295,7 @@
                   "y": -160
                 },
                 "size": {
-                  "height": 148.3333282470703,
+                  "height": 148.33333,
                   "width": 504
                 }
               },
@@ -4602,8 +4656,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 90,
-                  "y": 270
+                  "x": 70,
+                  "y": 460
                 },
                 "size": {
                   "height": 98,
@@ -4661,8 +4715,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 270,
-                  "y": 40
+                  "x": 380,
+                  "y": 150
                 },
                 "size": {
                   "height": 98,
@@ -5032,12 +5086,12 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": -700,
-                  "y": 140
+                  "x": -990,
+                  "y": 0
                 },
                 "size": {
-                  "height": 239.32554626464844,
-                  "width": 249.9052734375
+                  "height": 239.32555,
+                  "width": 249.90527
                 }
               },
               {
@@ -5064,8 +5118,8 @@
                 "output_ports": [],
                 "port_bindings": {},
                 "position": {
-                  "x": 2940,
-                  "y": 200
+                  "x": 3840,
+                  "y": 150
                 },
                 "size": {
                   "height": 120,
@@ -5099,7 +5153,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 228.1412048339844
+                  "width": 228.1412
                 }
               },
               {
@@ -5193,7 +5247,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 223.5201110839844
+                  "width": 223.52011
                 }
               },
               {
@@ -5242,7 +5296,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 197.8238220214844
+                  "width": 197.82382
                 }
               },
               {
@@ -5321,7 +5375,7 @@
                 },
                 "size": {
                   "height": 142,
-                  "width": 228.3999938964844
+                  "width": 228.4
                 }
               },
               {
@@ -5771,6 +5825,72 @@
       "from_node_id": "node_tavily",
       "from_port": "tavily_ref",
       "to_node_id": "node_4",
+      "to_port": "tavily_ref"
+    },
+    {
+      "from_node_id": "node_2",
+      "from_port": "true_event",
+      "to_node_id": "node_4",
+      "to_port": "message_event"
+    },
+    {
+      "from_node_id": "node_1",
+      "from_port": "bot_adapter",
+      "to_node_id": "node_4",
+      "to_port": "qq_bot_adapter"
+    },
+    {
+      "from_node_id": "node_26",
+      "from_port": "session_ref",
+      "to_node_id": "node_4",
+      "to_port": "session_ref"
+    },
+    {
+      "from_node_id": "node_48",
+      "from_port": "cache_ref",
+      "to_node_id": "node_4",
+      "to_port": "cache_ref"
+    },
+    {
+      "from_node_id": "node_2",
+      "from_port": "false_event",
+      "to_node_id": "node_14",
+      "to_port": "message_event"
+    },
+    {
+      "from_node_id": "node_1",
+      "from_port": "bot_adapter",
+      "to_node_id": "node_14",
+      "to_port": "qq_bot_adapter"
+    },
+    {
+      "from_node_id": "node_30",
+      "from_port": "time",
+      "to_node_id": "node_14",
+      "to_port": "time"
+    },
+    {
+      "from_node_id": "node_48",
+      "from_port": "cache_ref",
+      "to_node_id": "node_14",
+      "to_port": "cache_ref"
+    },
+    {
+      "from_node_id": "node_26",
+      "from_port": "session_ref",
+      "to_node_id": "node_14",
+      "to_port": "session_ref"
+    },
+    {
+      "from_node_id": "node_29",
+      "from_port": "llm_model",
+      "to_node_id": "node_14",
+      "to_port": "llm_api_llm_model"
+    },
+    {
+      "from_node_id": "node_tavily",
+      "from_port": "tavily_ref",
+      "to_node_id": "node_14",
       "to_port": "tavily_ref"
     }
   ],
