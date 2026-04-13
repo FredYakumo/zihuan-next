@@ -523,12 +523,15 @@ impl Node for BrainNode {
                 .with_description("LLM 模型引用，由 LLM API 节点提供"),
             Port::new("messages", DataType::Vec(Box::new(DataType::OpenAIMessage)))
                 .with_description("消息列表（包含 system/user/assistant/tool 等角色）"),
+            // Hidden ports: managed via "管理工具" button dialog
             Port::new(BRAIN_TOOLS_CONFIG_PORT, DataType::Json)
                 .with_description("Tools 配置，由工具编辑器维护")
-                .optional(),
+                .optional()
+                .hidden(),
             Port::new(BRAIN_SHARED_INPUTS_PORT, DataType::Json)
                 .with_description("Brain 共享输入签名，由工具编辑器维护")
-                .optional(),
+                .optional()
+                .hidden(),
         ];
         ports.extend(shared_inputs_ports(&self.shared_inputs));
         ports
