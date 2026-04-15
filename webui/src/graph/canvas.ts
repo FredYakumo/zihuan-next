@@ -152,33 +152,112 @@ export class ZihuanCanvas {
       // LiteGraph hardcodes "#222" as the button background, which is unreadable in
       // the light theme where widget text is dark. Overdraw each button with the
       // correct widgetButtonBg / widgetButtonText from the current theme.
+      // Also re-draw text/number widgets to truncate values based on available width.
+      // For nodes with inline widgets (widget shares a row with input+output ports),
+      // replace the full-width widget background with a compact value box on the right.
+      // The input port label is then redrawn on the left by drawInlineInputLabels.
       if (node.widgets) {
         const c = getLiteGraphColors();
         const H: number = (LiteGraph as any).NODE_WIDGET_HEIGHT ?? 20;
         const margin = 15;
         const nodeWidth: number = node.size[0];
         const showText: boolean = (this.lCanvas as any).ds?.scale > 0.5;
+        const isInline = !!(node as any)._hasInlineWidgets;
         ctx.save();
         ctx.globalAlpha = (this.lCanvas as any).editor_alpha ?? 1;
         for (const w of node.widgets as any[]) {
-          if (w.type !== "button" || w.last_y === undefined) continue;
+          if (w.last_y === undefined) continue;
           const ww: number = w.width || nodeWidth;
-          // Overdraw the hardcoded #222 rectangle with the themed button color.
-          ctx.fillStyle = c.widgetButtonBg;
-          ctx.strokeStyle = (LiteGraph as any).WIDGET_OUTLINE_COLOR;
-          ctx.fillRect(margin, w.last_y, ww - margin * 2, H);
-          if (showText && !w.disabled) ctx.strokeRect(margin, w.last_y, ww - margin * 2, H);
-          if (showText) {
-            ctx.fillStyle = c.widgetButtonText;
-            ctx.textAlign = "center";
-            ctx.font = `${(LiteGraph as any).NODE_TEXT_SIZE ?? 14}px Arial`;
-            ctx.fillText(w.label || w.name, ww * 0.5, w.last_y + H * 0.7);
+
+          if (isInline) {
+            // Erase the full-width LiteGraph widget background back to node color.
+            ctx.fillStyle = c.nodeBg;
+            ctx.fillRect(margin, w.last_y, ww - margin * 2, H);
+
+            if (w.type === "button") {
+              // Button widgets still need a visible box for click affordance.
+              const INLINE_RIGHT = 25;
+              const VALUE_BOX_W = 70;
+              const boxRightX = ww - margin - INLINE_RIGHT;
+              const boxLeftX = Math.max(margin + 5, boxRightX - VALUE_BOX_W);
+              const boxW = boxRightX - boxLeftX;
+              ctx.fillStyle = c.widgetButtonBg;
+              ctx.strokeStyle = (LiteGraph as any).WIDGET_OUTLINE_COLOR;
+              ctx.fillRect(boxLeftX, w.last_y, boxW, H);
+              if (showText && !w.disabled) ctx.strokeRect(boxLeftX, w.last_y, boxW, H);
+              if (showText) {
+                ctx.fillStyle = c.widgetButtonText;
+                ctx.textAlign = "center";
+                ctx.font = `${(LiteGraph as any).NODE_TEXT_SIZE ?? 14}px Arial`;
+                ctx.fillText(w.label || w.name, boxLeftX + boxW * 0.5, w.last_y + H * 0.7);
+              }
+            } else if ((w.type === "text" || w.type === "number") && showText) {
+              // Show value as plain right-aligned text – no box background.
+              // Find the input slot index that owns this widget.
+              const inputIdx = (node.inputs as any[])?.findIndex(
+                (inp: any) => inp.widget &&
+                  (typeof inp.widget === "object" ? inp.widget.name : inp.widget) === w.name
+              ) ?? -1;
+              const rowOutput = inputIdx >= 0 ? (node.outputs as any[])?.[inputIdx] : undefined;
+              // Suppress the value when a *different-named* output shares this row
+              // (e.g. filter_type input + false_event output): the output label takes
+              // visual ownership of the right side.
+              // For same-named outputs (pass-through basic types like String/Integer),
+              // show the actual data value instead of the redundant port-name label.
+              const suppressedByOutput =
+                rowOutput && rowOutput.name !== (node.inputs as any[])?.[inputIdx]?.name;
+              if (!suppressedByOutput) {
+                const valStr = w.type === "number"
+                  ? Number(w.value).toFixed(w.options?.precision ?? 3)
+                  : String(w.value ?? "");
+                const FSIZE: number = (LiteGraph as any).NODE_SUBTEXT_SIZE ?? 12;
+                ctx.font = `${FSIZE}px Arial`;
+                const truncatedVal = truncateText(ctx, valStr, Math.max(0, ww - margin * 2 - 30));
+                ctx.textAlign = "right";
+                ctx.fillStyle = w.disabled ? c.widgetDisabled : c.widgetText;
+                ctx.fillText(truncatedVal, ww - margin, w.last_y + H * 0.7);
+              }
+            }
+          } else {
+            // Non-inline widgets: existing overdraw logic.
+            const widgetW = ww - margin * 2;
+            if (w.type === "button") {
+              // Overdraw the hardcoded #222 rectangle with the themed button color.
+              ctx.fillStyle = c.widgetButtonBg;
+              ctx.strokeStyle = (LiteGraph as any).WIDGET_OUTLINE_COLOR;
+              ctx.fillRect(margin, w.last_y, widgetW, H);
+              if (showText && !w.disabled) ctx.strokeRect(margin, w.last_y, widgetW, H);
+              if (showText) {
+                ctx.fillStyle = c.widgetButtonText;
+                ctx.textAlign = "center";
+                ctx.font = `${(LiteGraph as any).NODE_TEXT_SIZE ?? 14}px Arial`;
+                ctx.fillText(w.label || w.name, ww * 0.5, w.last_y + H * 0.7);
+              }
+            } else if ((w.type === "text" || w.type === "number") && showText) {
+              // Re-draw value text truncated to fit available width.
+              // LiteGraph hardcodes a 30-char limit; we compute the px-based limit.
+              const label = w.label || w.name || "";
+              const labelW = label ? ctx.measureText(label).width + 8 : 0;
+              const maxValW = Math.max(0, widgetW - labelW - 20);
+              let valStr: string;
+              if (w.type === "number") {
+                valStr = Number(w.value).toFixed(w.options?.precision ?? 3);
+              } else {
+                valStr = String(w.value ?? "");
+              }
+              const truncatedVal = truncateText(ctx, valStr, maxValW);
+              ctx.font = `${(LiteGraph as any).NODE_TEXT_SIZE ?? 14}px Arial`;
+              ctx.textAlign = "right";
+              ctx.fillStyle = w.disabled ? c.widgetDisabled : c.widgetText;
+              ctx.fillText(truncatedVal, ww - margin * 2, w.last_y + H * 0.7);
+            }
           }
         }
         ctx.restore();
       }
 
       drawWidgetBindingBadges.call(node, ctx);
+      drawInlineInputLabels(node, ctx);
       drawInlineOutputLabels(node, ctx);
     };
 
@@ -1778,6 +1857,47 @@ function resolveConcretePortType(
 }
 
 /**
+ * Re-draw input slot labels AFTER widget backgrounds for nodes with inline widgets.
+ * LiteGraph's draw order causes the full-width widget background to cover any input
+ * labels drawn earlier.  The inline widget overdraw erases the full widget background
+ * and draws only a compact value box on the right, so we must repaint the input label
+ * on the left to restore its visibility.
+ * Only fires on nodes where setupSimpleInlineWidgets set _hasInlineWidgets=true.
+ */
+function drawInlineInputLabels(node: any, ctx: CanvasRenderingContext2D): void {
+  if (!node._hasInlineWidgets || !node.inputs?.length) return;
+
+  const SLOT_H: number = (LiteGraph as any).NODE_SLOT_HEIGHT ?? 20;
+  const FONT_SIZE: number = (LiteGraph as any).NODE_SUBTEXT_SIZE ?? 12;
+  const colors = getLiteGraphColors();
+  const textColor: string = colors.nodeText;
+  const slotStartY: number = (node.constructor as any).slot_start_y ?? 0;
+  // Left-aligned text starting just after the input dot (dot center at SLOT_H*0.5 ≈ 10).
+  const textX = SLOT_H + 2;
+
+  ctx.save();
+  ctx.font = `${FONT_SIZE}px Arial`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+
+  for (let i = 0; i < node.inputs.length; i++) {
+    const input = node.inputs[i];
+    if (!input?.widget) continue; // only widget-linked inputs need repainting
+
+    // label was cleared to "" in setupSimpleInlineWidgets; use name as the display text.
+    const label: string = input.name;
+    if (!label) continue;
+
+    const localY = (i + 0.7) * SLOT_H + slotStartY;
+
+    ctx.fillStyle = textColor;
+    ctx.fillText(label, textX, localY);
+  }
+
+  ctx.restore();
+}
+
+/**
  * Re-draw output slot labels AFTER widget backgrounds for nodes with inline widgets.
  * LiteGraph's draw order is: slot labels → onDrawForeground → widgets.  Widget
  * backgrounds from drawNodeWidgets therefore cover output labels that were drawn
@@ -1810,6 +1930,12 @@ function drawInlineOutputLabels(node: any, ctx: CanvasRenderingContext2D): void 
     const label: string = output.label != null ? String(output.label) : output.name;
     if (!label) continue;
 
+    // Skip if the widget-linked input at the same slot index has the same port name.
+    // That means this is a pass-through basic type node (e.g. String/Integer) and the
+    // actual data value is rendered there instead of the redundant port-name label.
+    const correspondingInput = (node.inputs as any[])?.[i];
+    if (correspondingInput?.widget && correspondingInput.name === output.name) continue;
+
     // Mirror LiteGraph's own output slot Y formula (node-local coordinate).
     // All outputs use default vertical slots so index == draw order.
     const localY = (i + 0.7) * SLOT_H + slotStartY;
@@ -1836,4 +1962,23 @@ function findRegisteredType(typeId: string): string | null {
     if (cls.zihuanTypeId === typeId) return key;
   }
   return null;
+}
+
+/** Truncate text to fit within maxWidth, appending ellipsis if truncated. */
+function truncateText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+  if (maxWidth <= 0) return "";
+  const metrics = ctx.measureText(text);
+  if (metrics.width <= maxWidth) return text;
+  const ellipsis = "…";
+  const ellipsisW = ctx.measureText(ellipsis).width;
+  if (maxWidth <= ellipsisW) return ellipsis;
+  // Binary search for the longest prefix that fits
+  let lo = 0, hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    const w = ctx.measureText(text.slice(0, mid) + ellipsis).width;
+    if (w <= maxWidth) lo = mid;
+    else hi = mid - 1;
+  }
+  return text.slice(0, lo) + ellipsis;
 }
