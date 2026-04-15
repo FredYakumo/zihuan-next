@@ -8,6 +8,7 @@ import {
   openJsonExtractEditor,
   openFunctionSignatureEditor,
   openBrainToolsEditor,
+  openQQMessageListEditor,
   type BrainToolDefinition,
   type EmbeddedFunctionConfig,
 } from "../ui/dialogs";
@@ -43,6 +44,9 @@ export function setupNodeWidgets(
       break;
     case "string_data":
       setupStringDataWidgets(lNode, nodeDef, getSessionId, onRefresh);
+      break;
+    case "qq_message_list_data":
+      setupQQMessageListWidgets(lNode, nodeDef, getSessionId, onRefresh);
       break;
     default:
       setupSimpleInlineWidgets(lNode, nodeDef, getSessionId, onRefresh);
@@ -152,6 +156,23 @@ function setupStringDataWidgets(
   });
 }
 
+// ─── QQMessage List Data ──────────────────────────────────────────────────────
+
+function setupQQMessageListWidgets(
+  lNode: any,
+  nodeDef: NodeDefinition,
+  getSessionId: () => string | null,
+  onRefresh: () => void
+): void {
+  const messages = (nodeDef.inline_values?.["messages"] as Array<{ type: string; data: unknown }> | undefined) ?? [];
+  const preview = messages.length > 0 ? `编辑消息列表 (${messages.length})` : "编辑消息列表";
+  lNode.addWidget("button", preview, null, () => {
+    const sid = getSessionId();
+    if (!sid) { alert("请先打开一个图。"); return; }
+    openQQMessageListEditor(nodeDef, sid, onRefresh);
+  });
+}
+
 // ─── Simple inline value widgets (text / number / toggle) ─────────────────────
 
 function setupSimpleInlineWidgets(
@@ -236,6 +257,9 @@ function setupSimpleInlineWidgets(
     // Recompute node height only when no explicit size is saved (new node).
     if (!nodeDef.size) {
       lNode.size = lNode.computeSize();
+      // Enforce minimum width for inline layout: input dot zone (30) + content (60) + output zone (40).
+      const INLINE_MIN_W = 130;
+      if (lNode.size[0] < INLINE_MIN_W) lNode.size[0] = INLINE_MIN_W;
     }
   }
 }

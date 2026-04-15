@@ -810,7 +810,180 @@ export function openBrainToolsEditor(
   render();
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── QQMessage List Editor ─────────────────────────────────────────────────────
+
+export interface QQMessageItem {
+  type: "text" | "at" | "reply";
+  data: { text?: string; target?: string; id?: number };
+}
+
+export function openQQMessageListEditor(
+  nodeDef: NodeDefinition,
+  sessionId: string,
+  onSaved: () => void
+): void {
+  const { dialog, close } = openOverlay();
+
+  const rawMessages = (nodeDef.inline_values?.["messages"] as QQMessageItem[] | undefined) ?? [];
+  // Deep copy to avoid mutating original
+  const messages: QQMessageItem[] = JSON.parse(JSON.stringify(rawMessages));
+
+  const render = () => {
+    dialog.innerHTML = `<h3>编辑 QQ 消息列表</h3>
+      <div class="zh-hint">支持三种消息类型：text(文本)、at(@某人)、reply(回复)</div>
+    `;
+
+    const listLabel = document.createElement("div");
+    listLabel.className = "zh-section-label";
+    listLabel.textContent = `消息列表 (${messages.length})`;
+    dialog.appendChild(listLabel);
+
+    const listContainer = document.createElement("div");
+    messages.forEach((msg, idx) => {
+      listContainer.appendChild(buildMessageCard(msg, idx));
+    });
+    dialog.appendChild(listContainer);
+
+    const addBtn = document.createElement("button");
+    addBtn.textContent = "+ 添加消息";
+    addBtn.style.marginBottom = "12px";
+    addBtn.addEventListener("click", () => {
+      messages.push({ type: "text", data: { text: "" } });
+      close();
+      openQQMessageListEditor(
+        { ...nodeDef, inline_values: { ...nodeDef.inline_values, messages } },
+        sessionId, onSaved
+      );
+    });
+    dialog.appendChild(addBtn);
+
+    const btns = document.createElement("div");
+    btns.className = "zh-buttons";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.textContent = "取消";
+    cancelBtn.addEventListener("click", close);
+
+    const saveBtn = document.createElement("button");
+    saveBtn.textContent = "保存";
+    saveBtn.className = "primary";
+    saveBtn.addEventListener("click", async () => {
+      try {
+        await graphs.updateNode(sessionId, nodeDef.id, {
+          inline_values: {
+            messages: messages as unknown as unknown[],
+          } as Record<string, unknown>,
+        });
+        close();
+        onSaved();
+      } catch (e) {
+        alert("保存失败: " + (e as Error).message);
+      }
+    });
+
+    btns.appendChild(cancelBtn);
+    btns.appendChild(saveBtn);
+    dialog.appendChild(btns);
+  };
+
+  const buildMessageCard = (msg: QQMessageItem, idx: number): HTMLElement => {
+    const card = document.createElement("div");
+    card.className = "zh-tool-card";
+
+    // Header row with type selector and delete button
+    const headerRow = document.createElement("div");
+    headerRow.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:8px;";
+
+    const typeSelect = document.createElement("select");
+    ["text", "at", "reply"].forEach(t => {
+      const opt = document.createElement("option");
+      opt.value = t;
+      opt.textContent = t === "text" ? "文本" : t === "at" ? "@提及" : "回复";
+      if (t === msg.type) opt.selected = true;
+      typeSelect.appendChild(opt);
+    });
+    typeSelect.style.minWidth = "100px";
+    typeSelect.addEventListener("change", () => {
+      const newType = typeSelect.value as "text" | "at" | "reply";
+      // Reset data based on new type
+      if (newType === "text") {
+        messages[idx] = { type: "text", data: { text: "" } };
+      } else if (newType === "at") {
+        messages[idx] = { type: "at", data: { target: "" } };
+      } else {
+        messages[idx] = { type: "reply", data: { id: 0 } };
+      }
+      close();
+      openQQMessageListEditor(
+        { ...nodeDef, inline_values: { ...nodeDef.inline_values, messages } },
+        sessionId, onSaved
+      );
+    });
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.textContent = "✕ 删除";
+    deleteBtn.className = "danger";
+    deleteBtn.style.padding = "4px 8px";
+    deleteBtn.addEventListener("click", () => {
+      messages.splice(idx, 1);
+      close();
+      openQQMessageListEditor(
+        { ...nodeDef, inline_values: { ...nodeDef.inline_values, messages } },
+        sessionId, onSaved
+      );
+    });
+
+    headerRow.appendChild(typeSelect);
+    headerRow.appendChild(deleteBtn);
+    card.appendChild(headerRow);
+
+    // Dynamic content based on message type
+    if (msg.type === "text") {
+      const label = document.createElement("label");
+      label.textContent = "文本内容";
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = msg.data.text ?? "";
+      input.placeholder = "输入消息文本";
+      input.addEventListener("input", () => {
+        messages[idx].data.text = input.value;
+      });
+      card.appendChild(label);
+      card.appendChild(input);
+    } else if (msg.type === "at") {
+      const label = document.createElement("label");
+      label.textContent = "目标 QQ 号";
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = msg.data.target ?? "";
+      input.placeholder = "QQ 号 (如: 123456)";
+      input.addEventListener("input", () => {
+        messages[idx].data.target = input.value;
+      });
+      card.appendChild(label);
+      card.appendChild(input);
+    } else if (msg.type === "reply") {
+      const label = document.createElement("label");
+      label.textContent = "回复消息 ID";
+      const input = document.createElement("input");
+      input.type = "number";
+      input.value = String(msg.data.id ?? 0);
+      input.placeholder = "消息 ID";
+      input.addEventListener("input", () => {
+        const val = parseInt(input.value, 10);
+        messages[idx].data.id = isNaN(val) ? 0 : val;
+      });
+      card.appendChild(label);
+      card.appendChild(input);
+    }
+
+    return card;
+  };
+
+  render();
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
