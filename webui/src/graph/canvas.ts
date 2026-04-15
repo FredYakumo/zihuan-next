@@ -837,6 +837,7 @@ export class ZihuanCanvas {
         .put(sessionId, updatedGraph)
         .catch((e) => console.error("[Canvas] put graph (edges) failed:", e));
       this.state.dirty = true;
+      this.onGraphDirty?.();
       this.colorizeAllLinks();
       this.lGraph.setDirtyCanvas(true, false);
     }
