@@ -1693,7 +1693,7 @@ function drawBindingBadges(
     if (!binding) continue;
 
     const localY = (verticalSlotIndex + 0.7) * SLOT_HEIGHT + ((<any>this.constructor).slot_start_y || 0);
-    drawBadgePill(ctx, portName, binding, LABEL_X, localY + LABEL_BASELINE_OFFSET, FONT_SIZE);
+    drawBadgePill(ctx, portName, binding, LABEL_X, localY + LABEL_BASELINE_OFFSET, FONT_SIZE, this.size[0]);
   }
 
   ctx.restore();
@@ -1733,7 +1733,7 @@ function drawWidgetBindingBadges(
     const wy: number = widget.last_y ?? widget.y ?? 0;
     const centerY = wy + WIDGET_HEIGHT * 0.5;
 
-    drawBadgePill(ctx, input.name, binding, LABEL_X, centerY, FONT_SIZE);
+    drawBadgePill(ctx, input.name, binding, LABEL_X, centerY, FONT_SIZE, this.size[0]);
   }
 
   ctx.restore();
@@ -1746,18 +1746,36 @@ function drawBadgePill(
   binding: { kind: string; name: string },
   labelX: number,
   centerY: number,
-  fontSize: number
+  fontSize: number,
+  nodeWidth: number
 ): void {
   const labelWidth = ctx.measureText(portName).width;
-  const badgeText = (binding.kind === "hyperparameter" ? "\u2191" : "\u27f2") + binding.name;
+  const badgePrefix = binding.kind === "hyperparameter" ? "\u2191" : "\u27f2";
+  const fullBadgeText = badgePrefix + binding.name;
   const badgePadX = 4;
   const badgePadY = 2;
-  const badgeTextW = ctx.measureText(badgeText).width;
   const badgeH = fontSize + badgePadY * 2;
-  const badgeW = badgeTextW + badgePadX * 2;
   const badgeX = labelX + labelWidth + 4;
   const badgeY = centerY - badgeH / 2;
   const badgeRadius = 3;
+
+  const maxBadgeWidth = Math.max(0, nodeWidth - badgeX - 10);
+  const prefixWidth = ctx.measureText(badgePrefix).width;
+  let badgeText = fullBadgeText;
+  if (maxBadgeWidth <= 0) {
+    return;
+  }
+  if (ctx.measureText(fullBadgeText).width > maxBadgeWidth) {
+    if (prefixWidth + ctx.measureText("…").width <= maxBadgeWidth) {
+      badgeText = truncateText(ctx, fullBadgeText, maxBadgeWidth);
+    } else if (prefixWidth <= maxBadgeWidth) {
+      badgeText = badgePrefix;
+    } else {
+      return;
+    }
+  }
+  const badgeTextW = ctx.measureText(badgeText).width;
+  const badgeW = badgeTextW + badgePadX * 2;
 
   const bgColor = binding.kind === "hyperparameter" ? "#e67e22" : "#1abc9c";
   ctx.fillStyle = bgColor;
