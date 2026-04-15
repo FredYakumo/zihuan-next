@@ -215,18 +215,18 @@
         "height": 410.0
       },
       "inline_values": {
-        "mysql_host": "127.0.0.1",
         "mysql_database": "zihuan_aibot",
-        "mysql_port": "3306"
+        "mysql_port": "3306",
+        "mysql_host": "127.0.0.1"
       },
       "port_bindings": {
-        "mysql_password": {
-          "kind": "hyperparameter",
-          "name": "MYSQL_PASSWORD"
-        },
         "mysql_user": {
           "kind": "hyperparameter",
           "name": "MYSQL_USER"
+        },
+        "mysql_password": {
+          "kind": "hyperparameter",
+          "name": "MYSQL_PASSWORD"
         }
       },
       "has_error": false,
@@ -346,8 +346,8 @@
         "height": 121.83149
       },
       "inline_values": {
-        "ttl_secs": "600",
-        "bucket_name": "message_id_cache"
+        "bucket_name": "message_id_cache",
+        "ttl_secs": "600"
       },
       "port_bindings": {},
       "has_error": false,
@@ -401,7 +401,7 @@
       "dynamic_output_ports": false,
       "position": {
         "x": 150.0,
-        "y": -60.0
+        "y": -50.0
       },
       "size": {
         "width": 354.0,
@@ -411,17 +411,17 @@
         "timeout_secs": "600"
       },
       "port_bindings": {
-        "model_name": {
+        "api_endpoint": {
           "kind": "hyperparameter",
-          "name": "LLM_MODEL_NAME"
+          "name": "LLM_API_ENDPOINT"
         },
         "api_key": {
           "kind": "hyperparameter",
           "name": "LLM_API_KEY"
         },
-        "api_endpoint": {
+        "model_name": {
           "kind": "hyperparameter",
-          "name": "LLM_API_ENDPOINT"
+          "name": "LLM_MODEL_NAME"
         }
       },
       "has_error": false,
@@ -5796,6 +5796,48 @@
       "from_port": "mysql_ref",
       "to_node_id": "node_12",
       "to_port": "mysql_ref"
+    },
+    {
+      "from_node_id": "node_29",
+      "from_port": "llm_model",
+      "to_node_id": "node_4",
+      "to_port": "llm_api_llm_model"
+    },
+    {
+      "from_node_id": "node_tavily",
+      "from_port": "tavily_ref",
+      "to_node_id": "node_4",
+      "to_port": "tavily_ref"
+    },
+    {
+      "from_node_id": "node_2",
+      "from_port": "true_event",
+      "to_node_id": "node_4",
+      "to_port": "message_event"
+    },
+    {
+      "from_node_id": "node_1",
+      "from_port": "bot_adapter",
+      "to_node_id": "node_4",
+      "to_port": "qq_bot_adapter"
+    },
+    {
+      "from_node_id": "node_30",
+      "from_port": "time",
+      "to_node_id": "node_4",
+      "to_port": "time"
+    },
+    {
+      "from_node_id": "node_26",
+      "from_port": "session_ref",
+      "to_node_id": "node_4",
+      "to_port": "session_ref"
+    },
+    {
+      "from_node_id": "node_48",
+      "from_port": "cache_ref",
+      "to_node_id": "node_4",
+      "to_port": "cache_ref"
     }
   ],
   "hyperparameter_groups": [
