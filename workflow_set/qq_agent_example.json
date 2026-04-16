@@ -55,17 +55,17 @@
         "height": 146.0
       },
       "inline_values": {
-        "bot_server_url": "ws://localhost:3001",
-        "qq_id": "2496875785"
+        "qq_id": "2496875785",
+        "bot_server_url": "ws://localhost:3001"
       },
       "port_bindings": {
-        "qq_id": {
-          "kind": "hyperparameter",
-          "name": "BOT_ID"
-        },
         "bot_server_token": {
           "kind": "hyperparameter",
           "name": "BOT_SERVER_TOKEN"
+        },
+        "qq_id": {
+          "kind": "hyperparameter",
+          "name": "BOT_ID"
         }
       },
       "has_error": false,
@@ -215,18 +215,18 @@
         "height": 410.0
       },
       "inline_values": {
-        "mysql_database": "zihuan_aibot",
+        "mysql_host": "127.0.0.1",
         "mysql_port": "3306",
-        "mysql_host": "127.0.0.1"
+        "mysql_database": "zihuan_aibot"
       },
       "port_bindings": {
-        "mysql_user": {
-          "kind": "hyperparameter",
-          "name": "MYSQL_USER"
-        },
         "mysql_password": {
           "kind": "hyperparameter",
           "name": "MYSQL_PASSWORD"
+        },
+        "mysql_user": {
+          "kind": "hyperparameter",
+          "name": "MYSQL_USER"
         }
       },
       "has_error": false,
@@ -346,8 +346,8 @@
         "height": 121.83149
       },
       "inline_values": {
-        "bucket_name": "message_id_cache",
-        "ttl_secs": "600"
+        "ttl_secs": "600",
+        "bucket_name": "message_id_cache"
       },
       "port_bindings": {},
       "has_error": false,
@@ -411,6 +411,10 @@
         "timeout_secs": "600"
       },
       "port_bindings": {
+        "model_name": {
+          "kind": "hyperparameter",
+          "name": "LLM_MODEL_NAME"
+        },
         "api_endpoint": {
           "kind": "hyperparameter",
           "name": "LLM_API_ENDPOINT"
@@ -418,10 +422,6 @@
         "api_key": {
           "kind": "hyperparameter",
           "name": "LLM_API_KEY"
-        },
-        "model_name": {
-          "kind": "hyperparameter",
-          "name": "LLM_MODEL_NAME"
         }
       },
       "has_error": false,
@@ -3511,7 +3511,7 @@
                 },
                 "size": {
                   "height": 106,
-                  "width": 235.9615173339844
+                  "width": 235.96152
                 }
               },
               {
@@ -3549,7 +3549,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 159.064453125
+                  "width": 159.06445
                 }
               },
               {
@@ -4234,7 +4234,7 @@
                 "has_error": false,
                 "id": "node_28",
                 "inline_values": {
-                  "template": "你的角色是${角色名称}。现在时间是${time}，你的QQ好友${sender_id}向你发送了一条消息。\r你可以选择调用相关工工具来获取信息，并发送QQ消息回复对方。也可以不回复对方，发送空的JSON数组。\n以下是你的输出格式，必须严格遵守\n对于超过250字过长的文本，请拆成多段，每一段信息要足够完整。\n当你决定调用工具时，请在工具 content 里用一句话说明你即将做什么（例如\"我将搜索关于xxx的信息\"）。\n${格式}"
+                  "template": "你的角色是${角色名称}。现在时间是${time}，你的QQ好友${sender_id}向你发送了一条消息。\n你可以选择调用相关工工具来获取信息，并发送QQ消息回复对方。也可以不回复对方，发送空的JSON数组。\n以下是你的输出格式，必须严格遵守\n对于超过250字过长的文本，请拆成多段，每一段信息要足够完整。\n当你决定调用工具时，请在工具 content 里用一句话说明你即将做什么（例如\"我将搜索关于xxx的信息\"）。\n${格式}"
                 },
                 "input_ports": [
                   {
@@ -4249,28 +4249,28 @@
                     "description": "变量 角色名称",
                     "hidden": false,
                     "name": "角色名称",
-                    "required": true
+                    "required": false
                   },
                   {
                     "data_type": "Any",
                     "description": "变量 time",
                     "hidden": false,
                     "name": "time",
-                    "required": true
+                    "required": false
                   },
                   {
                     "data_type": "Any",
                     "description": "变量 sender_id",
                     "hidden": false,
                     "name": "sender_id",
-                    "required": true
+                    "required": false
                   },
                   {
                     "data_type": "Any",
                     "description": "变量 格式",
                     "hidden": false,
                     "name": "格式",
-                    "required": true
+                    "required": false
                   }
                 ],
                 "name": "格式化字符串",
@@ -4295,7 +4295,7 @@
                   "y": -160
                 },
                 "size": {
-                  "height": 148.3333282470703,
+                  "height": 148.33333,
                   "width": 504
                 }
               },
@@ -5090,8 +5090,8 @@
                   "y": 0
                 },
                 "size": {
-                  "height": 239.32554626464844,
-                  "width": 249.9052734375
+                  "height": 239.32555,
+                  "width": 249.90527
                 }
               },
               {
@@ -5153,7 +5153,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 228.1412048339844
+                  "width": 228.1412
                 }
               },
               {
@@ -5247,7 +5247,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 223.5201110839844
+                  "width": 223.52011
                 }
               },
               {
@@ -5296,7 +5296,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 197.8238220214844
+                  "width": 197.82382
                 }
               },
               {
@@ -5375,7 +5375,7 @@
                 },
                 "size": {
                   "height": 142,
-                  "width": 228.3999938964844
+                  "width": 228.4
                 }
               },
               {
