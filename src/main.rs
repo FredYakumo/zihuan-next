@@ -45,8 +45,13 @@ async fn main() {
     log_forwarder::set_broadcast(broadcast.clone());
 
     let listen_addr = format!("{}:{}", args.host, args.port);
+    let display_addr = match args.host.as_str() {
+        "0.0.0.0" => format!("127.0.0.1:{}", args.port),
+        "::" => format!("[::1]:{}", args.port),
+        _ => listen_addr.clone(),
+    };
     info!("Starting web server on http://{}", listen_addr);
-    info!("Open your browser at  http://{}", listen_addr);
+    info!("Open your browser at  http://{}", display_addr);
 
     let router = api::build_router(Arc::clone(&state), broadcast);
     let service = salvo::Service::new(router);
