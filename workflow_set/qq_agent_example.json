@@ -55,17 +55,17 @@
         "height": 146.0
       },
       "inline_values": {
-        "qq_id": "2496875785",
-        "bot_server_url": "ws://localhost:3001"
+        "bot_server_url": "ws://localhost:3001",
+        "qq_id": "2496875785"
       },
       "port_bindings": {
-        "bot_server_token": {
-          "kind": "hyperparameter",
-          "name": "BOT_SERVER_TOKEN"
-        },
         "qq_id": {
           "kind": "hyperparameter",
           "name": "BOT_ID"
+        },
+        "bot_server_token": {
+          "kind": "hyperparameter",
+          "name": "BOT_SERVER_TOKEN"
         }
       },
       "has_error": false,
@@ -216,8 +216,8 @@
       },
       "inline_values": {
         "mysql_host": "127.0.0.1",
-        "mysql_port": "3306",
-        "mysql_database": "zihuan_aibot"
+        "mysql_database": "zihuan_aibot",
+        "mysql_port": "3306"
       },
       "port_bindings": {
         "mysql_password": {
@@ -346,8 +346,8 @@
         "height": 121.83149
       },
       "inline_values": {
-        "ttl_secs": "600",
-        "bucket_name": "message_id_cache"
+        "bucket_name": "message_id_cache",
+        "ttl_secs": "600"
       },
       "port_bindings": {},
       "has_error": false,
@@ -3511,7 +3511,7 @@
                 },
                 "size": {
                   "height": 106,
-                  "width": 235.96152
+                  "width": 235.9615173339844
                 }
               },
               {
@@ -3549,7 +3549,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 159.06445
+                  "width": 159.064453125
                 }
               },
               {
@@ -4249,28 +4249,28 @@
                     "description": "变量 角色名称",
                     "hidden": false,
                     "name": "角色名称",
-                    "required": false
+                    "required": true
                   },
                   {
                     "data_type": "Any",
                     "description": "变量 time",
                     "hidden": false,
                     "name": "time",
-                    "required": false
+                    "required": true
                   },
                   {
                     "data_type": "Any",
                     "description": "变量 sender_id",
                     "hidden": false,
                     "name": "sender_id",
-                    "required": false
+                    "required": true
                   },
                   {
                     "data_type": "Any",
                     "description": "变量 格式",
                     "hidden": false,
                     "name": "格式",
-                    "required": false
+                    "required": true
                   }
                 ],
                 "name": "格式化字符串",
@@ -4295,7 +4295,7 @@
                   "y": -160
                 },
                 "size": {
-                  "height": 148.33333,
+                  "height": 148.3333282470703,
                   "width": 504
                 }
               },
@@ -5090,8 +5090,8 @@
                   "y": 0
                 },
                 "size": {
-                  "height": 239.32555,
-                  "width": 249.90527
+                  "height": 239.32554626464844,
+                  "width": 249.9052734375
                 }
               },
               {
@@ -5153,7 +5153,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 228.1412
+                  "width": 228.1412048339844
                 }
               },
               {
@@ -5247,7 +5247,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 223.52011
+                  "width": 223.5201110839844
                 }
               },
               {
@@ -5296,7 +5296,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 197.82382
+                  "width": 197.8238220214844
                 }
               },
               {
@@ -5375,7 +5375,7 @@
                 },
                 "size": {
                   "height": 142,
-                  "width": 228.4
+                  "width": 228.3999938964844
                 }
               },
               {
