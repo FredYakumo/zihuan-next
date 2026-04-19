@@ -3,6 +3,7 @@ pub mod file_io;
 pub mod graph;
 pub mod graph_exec_helpers;
 pub mod hyperparams;
+pub mod log;
 pub mod registry;
 pub mod state;
 pub mod ws;
@@ -77,6 +78,8 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast) -> Router {
         // File I/O (not graph-scoped)
         .push(Router::with_path("file/open").post(file_io::open_file))
         .push(Router::with_path("file/upload").post(file_io::upload_graph))
+        // Frontend log forwarding
+        .push(Router::with_path("log").post(log::frontend_log))
         // Workflows directory
         .push(Router::with_path("workflow_set").get(file_io::list_workflows))
         .push(Router::with_path("workflow_set/save").post(file_io::save_to_workflows))
