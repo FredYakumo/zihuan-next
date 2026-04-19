@@ -32,6 +32,7 @@ async function main() {
 
   // Create canvas
   const canvas = new ZihuanCanvas(canvasEl);
+  canvas.nodeTypes = nodeTypes;
 
   // ── Tab state ────────────────────────────────────────────────────────────
   let tabList: TabInfo[] = [];

@@ -2,16 +2,29 @@
 
 import { LGraph, LGraphCanvas, LiteGraph } from "litegraph.js";
 import { graphs } from "../api/client";
+import { logger } from "../api/logger";
 import type { NodeGraphDefinition, NodeDefinition, EdgeDefinition, NodeTypeInfo } from "../api/types";
 import { setupNodeWidgets } from "./widgets";
 import { portTypeString, getNodeTypeInfo } from "./registry";
-import type { BrainToolDefinition, EmbeddedFunctionConfig } from "../ui/dialogs";
-import { showNodeInfoDialog } from "../ui/dialogs";
+import type { BrainToolDefinition, EmbeddedFunctionConfig, ConnectPortChoice, PortSelectOption } from "../ui/dialogs";
+import { showNodeInfoDialog, showConnectPortDialog, showPortSelectDialog, showAddNodeDialog } from "../ui/dialogs";
 import { getLiteGraphColors, getPortColor, onThemeChange, getBoundaryNodeColors } from "../ui/theme";
 import { getInlineRowCenterY } from "./inline_layout";
 
 /** Title bar height constant (matches LiteGraph.NODE_TITLE_HEIGHT default). */
 const NODE_TITLE_HEIGHT = 30;
+
+/** Whether two data-type strings are connection-compatible.
+ *  Mirrors the patched LiteGraph.isValidConnection logic applied in the constructor. */
+function isCompatibleTypes(a: string, b: string): boolean {
+  if (!a || !b || a === "*" || b === "*") return true;
+  const lower = (s: string) => s.toLowerCase();
+  if (lower(a) === "any" || lower(b) === "any") return true;
+  const isVecAny = (t: string) => /^Vec<Any>$/i.test(t);
+  const isVec    = (t: string) => /^Vec<.+>/i.test(t);
+  if ((isVecAny(a) && isVec(b)) || (isVecAny(b) && isVec(a))) return true;
+  return a === b;
+}
 
 function getInlineWidgetInputIndex(node: any, widget: any): number {
   if (typeof widget?._inlineInputIndex === "number") return widget._inlineInputIndex;
@@ -56,6 +69,12 @@ export class ZihuanCanvas {
   private subgraphStack: SubgraphStackEntry[] = [];
   /** In-memory node clipboard for copy/paste */
   private nodeClipboard: NodeDefinition[] = [];
+  /** Guard flag: true while rebuildCanvas() is running, suppresses change callbacks */
+  private _rebuilding = false;
+
+  /** All registered node types — populated from main.ts after registry load. Used by the
+   *  connection-drop-on-empty dialog to offer "新建节点" and to auto-connect after creation. */
+  nodeTypes: NodeTypeInfo[] = [];
 
   /** Called whenever the breadcrumb navigation path changes */
   onNavigationChange?: (labels: string[]) => void;
@@ -388,6 +407,57 @@ export class ZihuanCanvas {
       ctx.restore();
     };
 
+    // When the user drags a connection from a port and releases on empty space LiteGraph calls:
+    //   • showConnectionMenu (without Shift) — normal drop
+    //   • showSearchBox       (with Shift + allow_searchbox) — shift-drop
+    // We override both to show our custom port-browser dialog instead.
+    (LiteGraph as any).release_link_on_empty_shows_menu = true;
+
+    // Helper: extract common fields and dispatch to our handler
+    const dispatchConnectionDrop = (
+      sourceNode: any,
+      slotFrom: any,
+      isFromOutput: boolean,
+      e: MouseEvent,
+    ) => {
+      const sourceNodeId: string | undefined = sourceNode?.zihuanId;
+      if (!sourceNodeId || !slotFrom) return;
+      const [gx, gy] = (this.lCanvas as any).convertEventToCanvasOffset(e) as [number, number];
+      const sourceType: string = (slotFrom.type as string) ?? "*";
+      this.handleConnectionDropOnEmpty(
+        sourceNodeId,
+        slotFrom.name as string,
+        sourceType,
+        isFromOutput,
+        gx,
+        gy,
+      ).catch(console.error);
+    };
+
+    // Normal drop (no Shift): LiteGraph calls showConnectionMenu
+    //   options = { nodeFrom, slotFrom, e }   when dragging from output
+    //   options = { nodeTo,   slotTo,   e }   when dragging from input
+    (this.lCanvas as any).showConnectionMenu = (options: any) => {
+      const e: MouseEvent = options?.e;
+      if (!e) return;
+      if (options?.nodeFrom) {
+        dispatchConnectionDrop(options.nodeFrom, options.slotFrom, true, e);
+      } else if (options?.nodeTo) {
+        dispatchConnectionDrop(options.nodeTo, options.slotTo, false, e);
+      }
+    };
+
+    // Shift-drop: LiteGraph calls showSearchBox
+    //   options = { node_from, slot_from, ... }   when dragging from output
+    //   options = { node_to,   slot_to,   ... }   when dragging from input
+    (this.lCanvas as any).showSearchBox = (e: MouseEvent, options: any) => {
+      if (options?.node_from) {
+        dispatchConnectionDrop(options.node_from, options.slot_from, true, e);
+      } else if (options?.node_to) {
+        dispatchConnectionDrop(options.node_to, options.slot_to, false, e);
+      }
+    };
+
     // Wire up LiteGraph change callbacks
     (this.lGraph as any).onAfterExecute = () => {};
 
@@ -596,21 +666,26 @@ export class ZihuanCanvas {
 
   /** Rebuild the LiteGraph canvas from a NodeGraphDefinition. */
   public rebuildCanvas(def: NodeGraphDefinition): void {
-    this.lGraph.clear();
-    this.nodeMap.clear();
+    this._rebuilding = true;
+    try {
+      this.lGraph.clear();
+      this.nodeMap.clear();
 
-    // Add nodes
-    for (const nodeDef of def.nodes) {
-      this.addLGraphNode(nodeDef);
+      // Add nodes
+      for (const nodeDef of def.nodes) {
+        this.addLGraphNode(nodeDef);
+      }
+
+      // Add edges
+      for (const edge of def.edges) {
+        this.connectLGraphEdge(edge);
+      }
+
+      this.colorizeAllLinks();
+      this.lGraph.setDirtyCanvas(true, true);
+    } finally {
+      this._rebuilding = false;
     }
-
-    // Add edges
-    for (const edge of def.edges) {
-      this.connectLGraphEdge(edge);
-    }
-
-    this.colorizeAllLinks();
-    this.lGraph.setDirtyCanvas(true, true);
   }
 
   private addLGraphNode(nodeDef: NodeDefinition): void {
@@ -754,7 +829,10 @@ export class ZihuanCanvas {
   private connectLGraphEdge(edge: EdgeDefinition): void {
     const fromNode = this.nodeMap.get(edge.from_node_id) as any;
     const toNode = this.nodeMap.get(edge.to_node_id) as any;
-    if (!fromNode || !toNode) return;
+    if (!fromNode || !toNode) {
+      logger.warn(`[Canvas] connectLGraphEdge: node not found — from=${edge.from_node_id} to=${edge.to_node_id}`);
+      return;
+    }
 
     const fromDef = this.state.graph?.nodes.find((n) => n.id === edge.from_node_id);
     const toDef = this.state.graph?.nodes.find((n) => n.id === edge.to_node_id);
@@ -762,7 +840,14 @@ export class ZihuanCanvas {
 
     const fromPortIdx = fromDef.output_ports.findIndex((p) => p.name === edge.from_port);
     const toPortIdx = visibleInputPorts(toDef.input_ports).findIndex((p) => p.name === edge.to_port);
-    if (fromPortIdx < 0 || toPortIdx < 0) return;
+    if (fromPortIdx < 0 || toPortIdx < 0) {
+      logger.warn(
+        `[Canvas] connectLGraphEdge: port not found — ` +
+        `${edge.from_node_id}.${edge.from_port}(out=${fromPortIdx}) -> ` +
+        `${edge.to_node_id}.${edge.to_port}(in=${toPortIdx})`
+      );
+      return;
+    }
 
     fromNode.connect(fromPortIdx, toNode, toPortIdx);
   }
@@ -828,6 +913,9 @@ export class ZihuanCanvas {
   }
 
   private onConnectionChanged(node: any): void {
+    // Skip callbacks fired during rebuildCanvas — edges are already correct.
+    if (this._rebuilding) return;
+
     // Re-sync the full edge list from the canvas to the backend
     const sessionId = this.state.sessionId;
     if (!sessionId) return;
@@ -869,6 +957,141 @@ export class ZihuanCanvas {
       this.onGraphDirty?.();
       this.colorizeAllLinks();
       this.lGraph.setDirtyCanvas(true, false);
+    }
+  }
+
+  /**
+   * Called when the user drops a connection wire on empty canvas space.
+   * Shows a dialog to pick a target port from existing nodes or to create a new node.
+   *
+   * @param sourceNodeId   Backend node id of the source node
+   * @param sourcePortName Name of the dragged port on the source node
+   * @param sourceType     DataType string of the source port
+   * @param isFromOutput   true → dragged from output (look for compatible input ports)
+   *                       false → dragged from input (look for compatible output ports)
+   * @param graphX / graphY  Graph-space drop coordinates for new-node placement
+   */
+  private async handleConnectionDropOnEmpty(
+    sourceNodeId: string,
+    sourcePortName: string,
+    sourceType: string,
+    isFromOutput: boolean,
+    graphX: number,
+    graphY: number,
+  ): Promise<void> {
+    const sid = this.state.sessionId;
+    if (!sid) return;
+
+    const currentNodes = this.state.graph?.nodes ?? [];
+
+    const choice: ConnectPortChoice | null = await showConnectPortDialog(
+      currentNodes,
+      sourceNodeId,
+      sourcePortName,
+      sourceType,
+      isFromOutput,
+    );
+    if (!choice) return;
+
+    if (choice.kind === "existing") {
+      // Connect to an existing node's port
+      const srcLNode = this.nodeMap.get(sourceNodeId);
+      const tgtLNode = this.nodeMap.get(choice.targetNodeId);
+      if (!srcLNode || !tgtLNode) return;
+
+      if (isFromOutput) {
+        // source output → target input
+        const outSlot: number = (srcLNode.outputs as any[]).findIndex(
+          (o: any) => o.name === sourcePortName,
+        );
+        const inSlot: number = (tgtLNode.inputs as any[]).findIndex(
+          (i: any) => i.name === choice.targetPortName,
+        );
+        if (outSlot >= 0 && inSlot >= 0) {
+          srcLNode.connect(outSlot, tgtLNode, inSlot);
+        }
+      } else {
+        // source input → target output
+        const outSlot: number = (tgtLNode.outputs as any[]).findIndex(
+          (o: any) => o.name === choice.targetPortName,
+        );
+        const inSlot: number = (srcLNode.inputs as any[]).findIndex(
+          (i: any) => i.name === sourcePortName,
+        );
+        if (outSlot >= 0 && inSlot >= 0) {
+          tgtLNode.connect(outSlot, srcLNode, inSlot);
+        }
+      }
+      // onConnectionChanged fires automatically and syncs to backend
+      return;
+    }
+
+    // ── New node ─────────────────────────────────────────────────────────────
+    const typeId = await showAddNodeDialog(this.nodeTypes);
+    if (!typeId) return;
+
+    let newNodeId: string;
+    try {
+      const result = await graphs.addNode(sid, typeId, undefined, graphX, graphY);
+      newNodeId = result.id;
+    } catch (e) {
+      console.error("[Canvas] addNode failed:", e);
+      return;
+    }
+    await this.reloadCurrentSession();
+    this.state.dirty = true;
+    this.onGraphDirty?.();
+
+    // Find the new node definition to check its ports
+    const newNodeDef = this.state.graph?.nodes.find((n) => n.id === newNodeId);
+    if (!newNodeDef) return;
+
+    // Collect candidate ports (hidden ports excluded, only non-hidden are exposed to LiteGraph)
+    const candidatePorts: PortSelectOption[] = [];
+    const checkPorts = (portsArr: typeof newNodeDef.input_ports, wantInput: boolean) => {
+      for (const p of portsArr) {
+        if (p.hidden) continue;
+        const pt = typeof p.data_type === "string"
+          ? p.data_type
+          : Object.keys(p.data_type as object).length > 0
+            ? `${Object.keys(p.data_type as object)[0]}<${Object.values(p.data_type as object)[0] as string}>`
+            : "*";
+        // compatibility: source output→ new input, or source input → new output
+        const compatible = isFromOutput
+          ? wantInput && isCompatibleTypes(sourceType, pt)
+          : !wantInput && isCompatibleTypes(sourceType, pt);
+        if (compatible) {
+          candidatePorts.push({ portName: p.name, dataType: pt, isInput: wantInput });
+        }
+      }
+    };
+    checkPorts(newNodeDef.input_ports, true);
+    checkPorts(newNodeDef.output_ports, false);
+
+    if (candidatePorts.length === 0) return; // no auto-connect, node is still created
+
+    let chosenPort: PortSelectOption | null;
+    if (candidatePorts.length === 1) {
+      chosenPort = candidatePorts[0];
+    } else {
+      chosenPort = await showPortSelectDialog(candidatePorts);
+    }
+    if (!chosenPort) return;
+
+    const srcLNode = this.nodeMap.get(sourceNodeId);
+    const newLNode = this.nodeMap.get(newNodeId);
+    if (!srcLNode || !newLNode) return;
+
+    if (isFromOutput) {
+      // source output → new node input
+      const outSlot = (srcLNode.outputs as any[]).findIndex((o: any) => o.name === sourcePortName);
+      const inSlot = (newLNode.inputs as any[]).findIndex((i: any) => i.name === chosenPort!.portName);
+      if (outSlot >= 0 && inSlot >= 0) srcLNode.connect(outSlot, newLNode, inSlot);
+    } else {
+      // new node output → source input
+      const outSlot = (newLNode.outputs as any[]).findIndex((o: any) => o.name === chosenPort!.portName);
+      const inSlot = (srcLNode.inputs as any[]).findIndex((i: any) => i.name === sourcePortName);
+      if (outSlot >= 0 && inSlot >= 0) newLNode.connect(outSlot, srcLNode, inSlot);
     }
   }
 

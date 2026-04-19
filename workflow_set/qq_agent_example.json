@@ -216,8 +216,8 @@
       },
       "inline_values": {
         "mysql_port": "3306",
-        "mysql_database": "zihuan_aibot",
-        "mysql_host": "127.0.0.1"
+        "mysql_host": "127.0.0.1",
+        "mysql_database": "zihuan_aibot"
       },
       "port_bindings": {
         "mysql_password": {
@@ -272,8 +272,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 630.0,
-        "y": 640.0
+        "x": 590.0,
+        "y": 590.0
       },
       "size": {
         "width": 214.4414,
@@ -346,8 +346,8 @@
         "height": 121.83149
       },
       "inline_values": {
-        "bucket_name": "message_id_cache",
-        "ttl_secs": "600"
+        "ttl_secs": "600",
+        "bucket_name": "message_id_cache"
       },
       "port_bindings": {},
       "has_error": false,
@@ -411,6 +411,10 @@
         "timeout_secs": "600"
       },
       "port_bindings": {
+        "api_endpoint": {
+          "kind": "hyperparameter",
+          "name": "LLM_API_ENDPOINT"
+        },
         "api_key": {
           "kind": "hyperparameter",
           "name": "LLM_API_KEY"
@@ -418,10 +422,6 @@
         "model_name": {
           "kind": "hyperparameter",
           "name": "LLM_MODEL_NAME"
-        },
-        "api_endpoint": {
-          "kind": "hyperparameter",
-          "name": "LLM_API_ENDPOINT"
         }
       },
       "has_error": false,
@@ -445,8 +445,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 160.0,
-        "y": -170.0
+        "x": 150.0,
+        "y": -210.0
       },
       "size": {
         "width": 140.0,
@@ -594,8 +594,8 @@
       "dynamic_input_ports": true,
       "dynamic_output_ports": true,
       "position": {
-        "x": 1840.0,
-        "y": 300.0
+        "x": 1830.0,
+        "y": 290.0
       },
       "size": {
         "width": 210.0,
@@ -5863,6 +5863,114 @@
       "from_port": "message_event",
       "to_node_id": "node_2",
       "to_port": "message_event"
+    },
+    {
+      "from_node_id": "node_29",
+      "from_port": "llm_model",
+      "to_node_id": "node_4",
+      "to_port": "llm_api_llm_model"
+    },
+    {
+      "from_node_id": "node_tavily",
+      "from_port": "tavily_ref",
+      "to_node_id": "node_4",
+      "to_port": "tavily_ref"
+    },
+    {
+      "from_node_id": "node_11",
+      "from_port": "mysql_ref",
+      "to_node_id": "node_12",
+      "to_port": "mysql_ref"
+    },
+    {
+      "from_node_id": "node_1",
+      "from_port": "message_event",
+      "to_node_id": "node_12",
+      "to_port": "message_event"
+    },
+    {
+      "from_node_id": "node_26",
+      "from_port": "session_ref",
+      "to_node_id": "node_4",
+      "to_port": "session_ref"
+    },
+    {
+      "from_node_id": "node_48",
+      "from_port": "cache_ref",
+      "to_node_id": "node_4",
+      "to_port": "cache_ref"
+    },
+    {
+      "from_node_id": "node_30",
+      "from_port": "time",
+      "to_node_id": "node_1",
+      "to_port": "qq_id"
+    },
+    {
+      "from_node_id": "node_30",
+      "from_port": "time",
+      "to_node_id": "node_4",
+      "to_port": "time"
+    },
+    {
+      "from_node_id": "node_30",
+      "from_port": "time",
+      "to_node_id": "node_14",
+      "to_port": "time"
+    },
+    {
+      "from_node_id": "node_2",
+      "from_port": "true_event",
+      "to_node_id": "node_4",
+      "to_port": "message_event"
+    },
+    {
+      "from_node_id": "node_2",
+      "from_port": "false_event",
+      "to_node_id": "node_14",
+      "to_port": "message_event"
+    },
+    {
+      "from_node_id": "node_1",
+      "from_port": "message_event",
+      "to_node_id": "node_27",
+      "to_port": "message_event"
+    },
+    {
+      "from_node_id": "node_1",
+      "from_port": "bot_adapter",
+      "to_node_id": "node_4",
+      "to_port": "qq_bot_adapter"
+    },
+    {
+      "from_node_id": "node_1",
+      "from_port": "bot_adapter",
+      "to_node_id": "node_14",
+      "to_port": "qq_bot_adapter"
+    },
+    {
+      "from_node_id": "node_48",
+      "from_port": "cache_ref",
+      "to_node_id": "node_14",
+      "to_port": "cache_ref"
+    },
+    {
+      "from_node_id": "node_26",
+      "from_port": "session_ref",
+      "to_node_id": "node_14",
+      "to_port": "session_ref"
+    },
+    {
+      "from_node_id": "node_29",
+      "from_port": "llm_model",
+      "to_node_id": "node_14",
+      "to_port": "llm_api_llm_model"
+    },
+    {
+      "from_node_id": "node_tavily",
+      "from_port": "tavily_ref",
+      "to_node_id": "node_14",
+      "to_port": "tavily_ref"
     }
   ],
   "hyperparameter_groups": [
