@@ -334,3 +334,86 @@ See [../node/function-subgraphs.md](../node/function-subgraphs.md) for the full 
 - Dialogs and the node-type selector must render above the canvas layer (z-order).
 - The Rust side is the single source of truth. Slint holds no persistent state.
 - Hyperparameter values are stored in a separate YAML file, not in the graph JSON.
+
+---
+
+## WebUI — LiteGraph inline widget rendering (webui/)
+
+> This section applies to the browser-based canvas in `webui/src/graph/`. It is separate from the Slint system described above.
+
+### Background: LiteGraph draw order
+
+LiteGraph draws a node in this fixed order:
+
+1. Node body (background shape)
+2. `onDrawForeground` (binding badges for non-widget slots)
+3. **Input slot dots and labels** — labels at `x ≈ slotHeight + 2` (left side)
+4. **Output slot dots and labels** — labels right-aligned near the right dot
+5. **`drawNodeWidgets()`** — widget backgrounds and text, drawn **on top of everything above**
+
+Step 5 always overwrites whatever was drawn in steps 3–4. For nodes that have inline widgets sharing a row with visible ports, this creates conflicts that must be resolved with custom overdraw.
+
+### Inline widget layout model
+
+An **inline widget** is a widget pinned to a specific input-port row via `widget.y`, so it renders on the same horizontal row as the port dot (not stacked below all ports). This is set up by `setupSimpleInlineWidgets` in `webui/src/graph/widgets.ts`.
+
+Key properties set per widget during setup:
+
+| Property | Purpose |
+|----------|---------|
+| `input.label = ""` | Suppress LiteGraph's native slot label (the widget background covers it anyway; we repaint it later) |
+| `input.widget = { name: key }` | Links the slot to the widget for click detection and right-click binding |
+| `widget.y = getInlineWidgetTopY(node, inputIdx)` | Pins the widget to its slot row — avoids LiteGraph's default `+4 px` per-widget drift |
+| `widget._inlineInputIndex = inputIdx` | Cache for fast slot-index lookup during drawing |
+| `node._hasInlineWidgets = true` | Flag that enables the custom inline rendering path |
+| `node.widgets_start_y` | Set so LiteGraph's `computeSize()` calculates the correct node height |
+
+The canonical Y formula (in `webui/src/graph/inline_layout.ts`):
+
+```
+rowCenterY = slot_start_y + (slotIndex + 0.7) × NODE_SLOT_HEIGHT
+widgetTopY = rowCenterY − NODE_WIDGET_HEIGHT / 2
+```
+
+This matches LiteGraph's own `getConnectionPos` formula, so widget tops, slot dots, and drawn text all share the same vertical baseline.
+
+### Custom draw override — drawNodeWidgets
+
+After calling `origDrawNodeWidgets` (which renders full-width widget backgrounds and covers port labels), the override does the following for inline nodes:
+
+1. **Erase** the full-width LiteGraph widget background with `nodeBg` so it no longer covers the port area.
+2. **Redraw the value** right-aligned as plain text. When an output label occupies the same row, the value is pushed left to avoid overlap; the output label's erase+redraw in step 5 then cleans up any residual overlap.
+3. **`drawWidgetBindingBadges()`** — draw hyperparameter / variable binding pill badges on top.
+4. **`drawInlineInputLabels()`** — repaint input slot names (cleared in step 1 above) left-aligned at `x = SLOT_H + 2`.
+5. **`drawInlineOutputLabels()`** — repaint output labels; erases residual content in the label region first, then draws the label on top.
+
+**The draw order (erase → value → badges → input labels → output labels) must not be changed.** Each step depends on the previous one having run.
+
+### Invariants — do not break
+
+| Invariant | Where enforced | Why |
+|-----------|---------------|-----|
+| `input.label = ""` on every inline-widget-linked input | `widgets.ts` `setupSimpleInlineWidgets` | LiteGraph draws slot labels before widgets; clearing the label prevents a ghost label from bleeding through the erase |
+| `widget.y` pinned to `getInlineWidgetTopY(node, idx)` | `widgets.ts` | Without this LiteGraph auto-increments `posY += H + 4` per widget, causing lower rows to drift `4 px × row-index` off their slot |
+| `widget._inlineInputIndex` cache | `widgets.ts` | Used by `getInlineWidgetInputIndex()` in `canvas.ts` to resolve which slot owns a widget during drawing without a linear scan each frame |
+| Erase before redrawing labels | `canvas.ts` draw override | If the erase is removed, the LiteGraph widget background covers input labels; if the repaint is removed, labels disappear entirely |
+| Output labels redrawn last | `canvas.ts` draw override | Output labels sit over the widget area; they must be the final layer or they get erased by earlier steps |
+| Value right-edge calculation respects the output label | `canvas.ts` draw override | When input[i] and output[i] share a row, the value text must stop left of the output label's start |
+| `getInlineRowCenterY` used for **all** inline Y positions | `inline_layout.ts` | All rendering systems (widget draw, value text, input labels, output labels, badges) must use the same formula or they drift apart |
+
+### Output label conflict on asymmetric nodes
+
+LiteGraph positions output[i] at the same Y as input[i]. On nodes where inputs > outputs (e.g. MySQL node: 9 inputs, 1 output), output[0]'s label (`mysql_ref`) appears on the same visual row as input[0] (`mysql_host`). This is **expected** — the output dot is physically at that Y coordinate. The value text and output label coexist by the value being pushed left and the output label being erased+redrawn on the right.
+
+Pass-through ports (same name on both an input and its corresponding output, e.g. a `String` passthrough node) are handled specially: `drawInlineOutputLabels` skips the output label for that row, and the input's value text occupies the full width instead.
+
+### File map
+
+| File | Responsibility |
+|------|---------------|
+| `webui/src/graph/inline_layout.ts` | Canonical Y-geometry helpers (`getInlineRowCenterY`, `getInlineWidgetTopY`, etc.) |
+| `webui/src/graph/widgets.ts` — `setupSimpleInlineWidgets` | Creates widgets, sets `widget.y`, `_inlineInputIndex`, `input.label=""`, `_hasInlineWidgets` |
+| `webui/src/graph/canvas.ts` — `drawNodeWidgets` override | Erase → value redraw → badges → input labels → output labels |
+| `webui/src/graph/canvas.ts` — `drawInlineInputLabels` | Repaints suppressed input slot names after the erase step |
+| `webui/src/graph/canvas.ts` — `drawInlineOutputLabels` | Repaints output slot labels (with local erase) at the end of the overdraw pass |
+| `webui/src/graph/canvas.ts` — `drawWidgetBindingBadges` | Draws colored pill badges for hyperparameter/variable-bound ports |

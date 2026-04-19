@@ -18,5 +18,9 @@
     "python.analysis.include": [
         "${workspaceFolder}"
     ],
-    "editor.formatOnSave": false
+    "editor.formatOnSave": false,
+    "chat.tools.terminal.autoApprove": {
+        "cargo test": true,
+        "pnpm": true
+    }
 }

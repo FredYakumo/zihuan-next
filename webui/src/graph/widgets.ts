@@ -2,7 +2,6 @@
 
 import type { NodeDefinition } from "../api/types";
 import { graphs } from "../api/client";
-import { LiteGraph } from "litegraph.js";
 import {
   openFormatStringEditor,
   openJsonExtractEditor,
@@ -12,6 +11,7 @@ import {
   type BrainToolDefinition,
   type EmbeddedFunctionConfig,
 } from "../ui/dialogs";
+import { getInlineWidgetTopY } from "./inline_layout";
 
 /** Called for every node added to the canvas after the node is created. */
 export function setupNodeWidgets(
@@ -186,48 +186,45 @@ function setupSimpleInlineWidgets(
     const existingValue = nodeDef.inline_values?.[key];
     const dt = typeof port.data_type === "string" ? port.data_type : "Any";
 
-    let addedWidget = false;
+    let addedWidget: any | null = null;
     if (dt === "Boolean") {
-      lNode.addWidget("toggle", key, existingValue ?? false, async (val: boolean) => {
+      addedWidget = lNode.addWidget("toggle", key, existingValue ?? false, async (val: boolean) => {
         const sid = getSessionId();
         if (!sid) return;
         try {
           await graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: val } });
         } catch (e) { console.error("widget update failed", e); }
       });
-      addedWidget = true;
     } else if (dt === "Integer") {
-      lNode.addWidget("number", key, existingValue ?? 0, async (val: number) => {
+      addedWidget = lNode.addWidget("number", key, existingValue ?? 0, async (val: number) => {
         const sid = getSessionId();
         if (!sid) return;
         try {
           await graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: Math.trunc(val) } });
         } catch (e) { console.error("widget update failed", e); }
       }, { precision: 0, step: 10 });
-      addedWidget = true;
     } else if (dt === "Float") {
-      lNode.addWidget("number", key, existingValue ?? 0, async (val: number) => {
+      addedWidget = lNode.addWidget("number", key, existingValue ?? 0, async (val: number) => {
         const sid = getSessionId();
         if (!sid) return;
         try {
           await graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: val } });
         } catch (e) { console.error("widget update failed", e); }
       });
-      addedWidget = true;
     } else if (dt === "String" || dt === "Password") {
-      const w = lNode.addWidget("text", key, String(existingValue ?? ""), async (val: string) => {
+      addedWidget = lNode.addWidget("text", key, String(existingValue ?? ""), async (val: string) => {
         const sid = getSessionId();
         if (!sid) return;
         try {
           await graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: val } });
         } catch (e) { console.error("widget update failed", e); }
       });
-      if (dt === "Password" && w) (w as any)._isPassword = true;
-      addedWidget = true;
+      if (dt === "Password" && addedWidget) (addedWidget as any)._isPassword = true;
     }
     // Link widget to its input slot for right-click binding and badge rendering.
     // Suppress the duplicate slot label so only the widget row is visible;
-    // widgets_start_y (set below) moves the widget up to the same row as the dot.
+    // widget.y (set below) pins every inline widget to its corresponding slot row,
+    // avoiding LiteGraph's default +4px per-widget drift between rows.
     if (addedWidget) {
       const inputIdx = (lNode.inputs as any[])?.findIndex((inp: any) => inp.name === key) ?? -1;
       if (inputIdx >= 0) {
@@ -235,22 +232,19 @@ function setupSimpleInlineWidgets(
         // Empty label → LiteGraph skips drawing the slot name text, removing
         // the duplicate label that would otherwise appear left of the dot.
         lNode.inputs[inputIdx].label = "";
+        addedWidget.y = getInlineWidgetTopY(lNode, inputIdx);
+        addedWidget._inlineInputIndex = inputIdx;
       }
     }
     // Other types (refs, etc.) don't get inline widgets
   }
 
-  // Co-locate each widget with its linked input slot row.
-  // LiteGraph v0.7.18 does NOT do this automatically — we must set widgets_start_y
-  // so the first widget aligns with the first widget-linked slot row.
-  const SLOT_H: number = (LiteGraph as any).NODE_SLOT_HEIGHT ?? 20;
-  const WIDGET_H: number = (LiteGraph as any).NODE_WIDGET_HEIGHT ?? 20;
-  const slotStartY: number = (lNode.constructor as any).slot_start_y ?? 0;
+  // Co-locate the widget stack with its first linked input slot row.
+  // Individual widget.y values pin every inline widget to its own slot row,
+  // while widgets_start_y keeps LiteGraph's auto-size and first-row origin sane.
   const firstLinkedIdx = (lNode.inputs as any[])?.findIndex((inp: any) => inp.widget) ?? -1;
   if (firstLinkedIdx >= 0) {
-    // Center the first widget on the same y as the first widget-linked slot.
-    const slotCenterY = slotStartY + (firstLinkedIdx + 0.7) * SLOT_H;
-    lNode.widgets_start_y = slotCenterY - WIDGET_H / 2 - 2;
+    lNode.widgets_start_y = getInlineWidgetTopY(lNode, firstLinkedIdx);
     // Mark this node so drawInlineOutputLabels knows to re-draw output labels
     // on top of the widget backgrounds that would otherwise cover them.
     lNode._hasInlineWidgets = true;
