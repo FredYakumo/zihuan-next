@@ -299,3 +299,86 @@ center_y = node.y + GRID_SIZE * (NODE_HEADER_ROWS + port_index + 0.5)
 - 保存时：将工具配置序列化为 JSON，存储在 `inline_values["tools_config"]` 中
 - `brain` 输出端口保持静态；只有 `output` 保持可见，类型为 `Vec<OpenAIMessage>`
 - 每个工具行都可以打开其嵌入的子图编辑器页面
+
+---
+
+## WebUI — LiteGraph 行内组件渲染（webui/）
+
+> 本节适用于 `webui/src/graph/` 中的浏览器画布，与上述 Slint 系统无关。
+
+### 背景：LiteGraph 绘制顺序
+
+LiteGraph 按以下固定顺序绘制节点：
+
+1. 节点主体（背景形状）
+2. `onDrawForeground`（非组件插槽的绑定徽章）
+3. **输入插槽圆点和标签** — 标签位于 `x ≈ slotHeight + 2`（左侧）
+4. **输出插槽圆点和标签** — 标签右对齐，靠近右侧圆点
+5. **`drawNodeWidgets()`** — 组件背景和文本，绘制在**以上所有内容之上**
+
+第 5 步总是覆盖第 3-4 步绘制的内容。对于行内组件与可见端口共享同一行的节点，必须通过自定义覆盖绘制来解决冲突。
+
+### 行内组件布局模型
+
+**行内组件**是通过 `widget.y` 固定到特定输入端口行的组件，使其与端口圆点在同一水平行上渲染（而非堆叠在所有端口下方）。这由 `webui/src/graph/widgets.ts` 中的 `setupSimpleInlineWidgets` 设置。
+
+设置时每个组件设置的关键属性：
+
+| 属性 | 用途 |
+|------|------|
+| `input.label = ""` | 抑制 LiteGraph 原生插槽标签（组件背景会覆盖它；我们之后重新绘制） |
+| `input.widget = { name: key }` | 将插槽链接到组件，用于点击检测和右键绑定 |
+| `widget.y = getInlineWidgetTopY(node, inputIdx)` | 将组件固定到其插槽行 — 避免 LiteGraph 默认每组件 `+4 px` 的漂移 |
+| `widget._inlineInputIndex = inputIdx` | 绘制时快速查找插槽索引的缓存 |
+| `node._hasInlineWidgets = true` | 启用自定义行内渲染路径的标志 |
+| `node.widgets_start_y` | 设置后 LiteGraph 的 `computeSize()` 能正确计算节点高度 |
+
+标准 Y 坐标公式（位于 `webui/src/graph/inline_layout.ts`）：
+
+```
+rowCenterY = slot_start_y + (slotIndex + 0.7) × NODE_SLOT_HEIGHT
+widgetTopY = rowCenterY − NODE_WIDGET_HEIGHT / 2
+```
+
+此公式与 LiteGraph 自身的 `getConnectionPos` 公式一致，使组件顶部、插槽圆点和绘制文本共享相同的垂直基线。
+
+### 自定义绘制覆盖 — drawNodeWidgets
+
+调用 `origDrawNodeWidgets`（渲染全宽组件背景并覆盖端口标签）之后，覆盖对行内节点执行以下操作：
+
+1. **擦除** LiteGraph 的全宽组件背景为 `nodeBg`，使其不再覆盖端口区域。
+2. **重绘数值**为右对齐纯文本。当输出标签占据同一行时，数值向左推移以避免重叠；第 5 步的输出标签擦除+重绘会清理残留重叠。
+3. **`drawWidgetBindingBadges()`** — 在顶部绘制超参数/变量绑定徽章。
+4. **`drawInlineInputLabels()`** — 重绘输入插槽名称（在第 1 步中被清除），左对齐于 `x = SLOT_H + 2`。
+5. **`drawInlineOutputLabels()`** — 重绘输出标签；先擦除标签区域内的残留内容，再在上方绘制标签。
+
+**绘制顺序（擦除 → 数值 → 徽章 → 输入标签 → 输出标签）不可更改。**每一步都依赖于前一步已完成。
+
+### 不可违反的不变量
+
+| 不变量 | 强制位置 | 原因 |
+|--------|---------|------|
+| 每个行内组件关联的输入设置 `input.label = ""` | `widgets.ts` `setupSimpleInlineWidgets` | LiteGraph 在组件之前绘制插槽标签；清除标签可防止幽灵标签透过擦除显现 |
+| `widget.y` 固定为 `getInlineWidgetTopY(node, idx)` | `widgets.ts` | 否则 LiteGraph 会每组件自动增加 `posY += H + 4`，导致下方行偏移 `4 px × 行索引` |
+| `widget._inlineInputIndex` 缓存 | `widgets.ts` | 被 `canvas.ts` 中的 `getInlineWidgetInputIndex()` 使用，避免每帧线性扫描 |
+| 重绘标签前必须先擦除 | `canvas.ts` 绘制覆盖 | 不擦除则 LiteGraph 组件背景覆盖输入标签；不重绘则标签完全消失 |
+| 输出标签最后重绘 | `canvas.ts` 绘制覆盖 | 输出标签覆盖在组件区域上；必须是最终层，否则会被早期步骤再次擦除 |
+| 数值右边界计算须尊重输出标签 | `canvas.ts` 绘制覆盖 | 当 input[i] 和 output[i] 共享同一行时，数值文本必须停在输出标签起始位置之前 |
+| **所有**行内 Y 坐标使用 `getInlineRowCenterY` | `inline_layout.ts` | 所有渲染系统（组件绘制、数值文本、输入标签、输出标签、徽章）必须使用同一公式，否则在某些节点高度下会产生偏移 |
+
+### 非对称节点上的输出标签冲突
+
+LiteGraph 将 output[i] 定位在与 input[i] 相同的 Y 坐标。当输入数 > 输出数时（如 MySQL 节点：9 个输入、1 个输出），output[0] 的标签（`mysql_ref`）出现在与 input[0]（`mysql_host`）相同的视觉行上。这是**预期行为** — 输出圆点物理上就在该 Y 坐标。数值文本和输出标签通过数值向左推移、输出标签在右侧擦除+重绘来共存。
+
+直通端口（同名同时出现在输入和对应输出上，如 `String` 直通节点）有特殊处理：`drawInlineOutputLabels` 跳过该行的输出标签，输入的数值文本改为占满全宽。
+
+### 文件映射
+
+| 文件 | 职责 |
+|------|------|
+| `webui/src/graph/inline_layout.ts` | 标准 Y 坐标几何辅助函数（`getInlineRowCenterY`、`getInlineWidgetTopY` 等） |
+| `webui/src/graph/widgets.ts` — `setupSimpleInlineWidgets` | 创建组件，设置 `widget.y`、`_inlineInputIndex`、`input.label=""`、`_hasInlineWidgets` |
+| `webui/src/graph/canvas.ts` — `drawNodeWidgets` 覆盖 | 擦除 → 数值重绘 → 徽章 → 输入标签 → 输出标签 |
+| `webui/src/graph/canvas.ts` — `drawInlineInputLabels` | 擦除步骤后重绘被抑制的输入插槽名称 |
+| `webui/src/graph/canvas.ts` — `drawInlineOutputLabels` | 在覆盖绘制末尾重绘输出插槽标签（带局部擦除） |
+| `webui/src/graph/canvas.ts` — `drawWidgetBindingBadges` | 绘制超参数/变量绑定的彩色徽章 |

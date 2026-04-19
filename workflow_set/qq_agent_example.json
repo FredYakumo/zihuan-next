@@ -55,17 +55,17 @@
         "height": 146.0
       },
       "inline_values": {
-        "bot_server_url": "ws://localhost:3001",
-        "qq_id": "2496875785"
+        "qq_id": "2496875785",
+        "bot_server_url": "ws://localhost:3001"
       },
       "port_bindings": {
-        "qq_id": {
-          "kind": "hyperparameter",
-          "name": "BOT_ID"
-        },
         "bot_server_token": {
           "kind": "hyperparameter",
           "name": "BOT_SERVER_TOKEN"
+        },
+        "qq_id": {
+          "kind": "hyperparameter",
+          "name": "BOT_ID"
         }
       },
       "has_error": false,
@@ -211,13 +211,13 @@
         "y": 560.0
       },
       "size": {
-        "width": 278.8,
-        "height": 410.0
+        "width": 377.9077,
+        "height": 401.06308
       },
       "inline_values": {
-        "mysql_host": "127.0.0.1",
+        "mysql_port": "3306",
         "mysql_database": "zihuan_aibot",
-        "mysql_port": "3306"
+        "mysql_host": "127.0.0.1"
       },
       "port_bindings": {
         "mysql_password": {
@@ -411,6 +411,10 @@
         "timeout_secs": "600"
       },
       "port_bindings": {
+        "api_key": {
+          "kind": "hyperparameter",
+          "name": "LLM_API_KEY"
+        },
         "model_name": {
           "kind": "hyperparameter",
           "name": "LLM_MODEL_NAME"
@@ -418,10 +422,6 @@
         "api_endpoint": {
           "kind": "hyperparameter",
           "name": "LLM_API_ENDPOINT"
-        },
-        "api_key": {
-          "kind": "hyperparameter",
-          "name": "LLM_API_KEY"
         }
       },
       "has_error": false,
@@ -5782,6 +5782,79 @@
       },
       "has_error": false,
       "has_cycle": false
+    },
+    {
+      "id": "55982720-81c4-4892-b06a-e872305b86a4",
+      "name": "redis",
+      "description": null,
+      "node_type": "redis",
+      "input_ports": [
+        {
+          "name": "redis_host",
+          "data_type": "String",
+          "description": "Redis主机地址",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "redis_port",
+          "data_type": "Integer",
+          "description": "Redis端口号",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "redis_db",
+          "data_type": "Integer",
+          "description": "Redis数据库编号 (默认: 0)",
+          "required": false,
+          "hidden": false
+        },
+        {
+          "name": "redis_password",
+          "data_type": "String",
+          "description": "Redis密码",
+          "required": false,
+          "hidden": false
+        },
+        {
+          "name": "reconnect_max_attempts",
+          "data_type": "Integer",
+          "description": "最大重连次数 (默认: 3)",
+          "required": false,
+          "hidden": false
+        },
+        {
+          "name": "reconnect_interval_secs",
+          "data_type": "Integer",
+          "description": "重连间隔秒数 (默认: 60)",
+          "required": false,
+          "hidden": false
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "redis_ref",
+          "data_type": "RedisRef",
+          "description": "Redis连接配置引用",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 140.0,
+        "y": 1290.0
+      },
+      "size": {
+        "width": 278.8,
+        "height": 182.30934
+      },
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false
     }
   ],
   "edges": [
@@ -5790,54 +5863,6 @@
       "from_port": "message_event",
       "to_node_id": "node_2",
       "to_port": "message_event"
-    },
-    {
-      "from_node_id": "node_11",
-      "from_port": "mysql_ref",
-      "to_node_id": "node_12",
-      "to_port": "mysql_ref"
-    },
-    {
-      "from_node_id": "node_29",
-      "from_port": "llm_model",
-      "to_node_id": "node_4",
-      "to_port": "llm_api_llm_model"
-    },
-    {
-      "from_node_id": "node_tavily",
-      "from_port": "tavily_ref",
-      "to_node_id": "node_4",
-      "to_port": "tavily_ref"
-    },
-    {
-      "from_node_id": "node_2",
-      "from_port": "true_event",
-      "to_node_id": "node_4",
-      "to_port": "message_event"
-    },
-    {
-      "from_node_id": "node_1",
-      "from_port": "bot_adapter",
-      "to_node_id": "node_4",
-      "to_port": "qq_bot_adapter"
-    },
-    {
-      "from_node_id": "node_30",
-      "from_port": "time",
-      "to_node_id": "node_4",
-      "to_port": "time"
-    },
-    {
-      "from_node_id": "node_26",
-      "from_port": "session_ref",
-      "to_node_id": "node_4",
-      "to_port": "session_ref"
-    },
-    {
-      "from_node_id": "node_48",
-      "from_port": "cache_ref",
-      "to_node_id": "node_4",
-      "to_port": "cache_ref"
     }
   ],
   "hyperparameter_groups": [

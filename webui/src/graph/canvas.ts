@@ -8,9 +8,18 @@ import { portTypeString, getNodeTypeInfo } from "./registry";
 import type { BrainToolDefinition, EmbeddedFunctionConfig } from "../ui/dialogs";
 import { showNodeInfoDialog } from "../ui/dialogs";
 import { getLiteGraphColors, getPortColor, onThemeChange, getBoundaryNodeColors } from "../ui/theme";
+import { getInlineRowCenterY } from "./inline_layout";
 
 /** Title bar height constant (matches LiteGraph.NODE_TITLE_HEIGHT default). */
 const NODE_TITLE_HEIGHT = 30;
+
+function getInlineWidgetInputIndex(node: any, widget: any): number {
+  if (typeof widget?._inlineInputIndex === "number") return widget._inlineInputIndex;
+  return (node.inputs as any[])?.findIndex(
+    (inp: any) => inp.widget &&
+      (typeof inp.widget === "object" ? inp.widget.name : inp.widget) === widget?.name
+  ) ?? -1;
+}
 
 /**
  * Filter out ports flagged as hidden by the backend. Hidden ports are internal
@@ -168,6 +177,10 @@ export class ZihuanCanvas {
         for (const w of node.widgets as any[]) {
           if (w.last_y === undefined) continue;
           const ww: number = w.width || nodeWidth;
+          const inlineInputIdx = isInline ? getInlineWidgetInputIndex(node, w) : -1;
+          const inlineRowCenterY = inlineInputIdx >= 0
+            ? getInlineRowCenterY(node, inlineInputIdx)
+            : w.last_y + H * 0.5;
 
           if (isInline) {
             // Erase the full-width LiteGraph widget background back to node color.
@@ -188,34 +201,50 @@ export class ZihuanCanvas {
               if (showText) {
                 ctx.fillStyle = c.widgetButtonText;
                 ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
                 ctx.font = `${(LiteGraph as any).NODE_TEXT_SIZE ?? 14}px Arial`;
-                ctx.fillText(w.label || w.name, boxLeftX + boxW * 0.5, w.last_y + H * 0.7);
+                ctx.fillText(w.label || w.name, boxLeftX + boxW * 0.5, inlineRowCenterY);
               }
             } else if ((w.type === "text" || w.type === "number") && showText) {
               // Show value as plain right-aligned text – no box background.
-              // Find the input slot index that owns this widget.
-              const inputIdx = (node.inputs as any[])?.findIndex(
-                (inp: any) => inp.widget &&
-                  (typeof inp.widget === "object" ? inp.widget.name : inp.widget) === w.name
-              ) ?? -1;
-              const rowOutput = inputIdx >= 0 ? (node.outputs as any[])?.[inputIdx] : undefined;
-              // Suppress the value when a *different-named* output shares this row
-              // (e.g. filter_type input + false_event output): the output label takes
-              // visual ownership of the right side.
-              // For same-named outputs (pass-through basic types like String/Integer),
-              // show the actual data value instead of the redundant port-name label.
-              const suppressedByOutput =
-                rowOutput && rowOutput.name !== (node.inputs as any[])?.[inputIdx]?.name;
-              if (!suppressedByOutput) {
+              // When an output label occupies the same row, position the value to the
+              // LEFT of that label so both are visible. drawInlineOutputLabels will
+              // erase+redraw the output label on top of any overlap.
+              const rowOutput = inlineInputIdx >= 0 ? (node.outputs as any[])?.[inlineInputIdx] : undefined;
+              // For same-name pass-through ports the output label is suppressed, so
+              // the full width is available for the value.
+              const inputAtRow = inlineInputIdx >= 0 ? (node.inputs as any[])?.[inlineInputIdx] : undefined;
+              const isSameNamePassthrough = rowOutput && rowOutput.name === inputAtRow?.name;
+              let valueRightX = ww - margin;
+              if (rowOutput && !isSameNamePassthrough) {
+                const FSIZE_TMP: number = (LiteGraph as any).NODE_SUBTEXT_SIZE ?? 12;
+                const SLOT_H_TMP: number = (LiteGraph as any).NODE_SLOT_HEIGHT ?? 20;
+                ctx.font = `${FSIZE_TMP}px Arial`;
+                const outLabel: string = rowOutput.label ?? rowOutput.name ?? "";
+                const outLabelW = outLabel ? ctx.measureText(outLabel).width : 0;
+                const outLabelRightX = nodeWidth - SLOT_H_TMP - 2;
+                valueRightX = Math.min(valueRightX, outLabelRightX - outLabelW - 4);
+              }
+              // Compute left X: right after the input label text
+              const inputLabelStr: string = inputAtRow?.name ?? "";
+              const SLOT_H_LBL: number = (LiteGraph as any).NODE_SLOT_HEIGHT ?? 20;
+              const labelTextX = SLOT_H_LBL + 2;
+              const FSIZE_LBL: number = (LiteGraph as any).NODE_SUBTEXT_SIZE ?? 12;
+              ctx.font = `${FSIZE_LBL}px Arial`;
+              const inputLabelW = inputLabelStr ? ctx.measureText(inputLabelStr).width : 0;
+              const valueLeftX = labelTextX + inputLabelW + 6;
+
+              if (valueRightX > valueLeftX + 10) {
                 const valStr = w.type === "number"
                   ? Number(w.value).toFixed(w.options?.precision ?? 3)
                   : String(w.value ?? "");
                 const FSIZE: number = (LiteGraph as any).NODE_SUBTEXT_SIZE ?? 12;
                 ctx.font = `${FSIZE}px Arial`;
-                const truncatedVal = truncateText(ctx, valStr, Math.max(0, ww - margin * 2 - 30));
-                ctx.textAlign = "right";
+                const truncatedVal = truncateText(ctx, valStr, Math.max(0, valueRightX - valueLeftX));
+                ctx.textAlign = "left";
+                ctx.textBaseline = "middle";
                 ctx.fillStyle = w.disabled ? c.widgetDisabled : c.widgetText;
-                ctx.fillText(truncatedVal, ww - margin, w.last_y + H * 0.7);
+                ctx.fillText(truncatedVal, valueLeftX, inlineRowCenterY);
               }
             }
           } else {
@@ -1710,7 +1739,6 @@ function drawWidgetBindingBadges(
 
   const FONT_SIZE = 12;
   const FONT = "Arial";
-  const WIDGET_HEIGHT: number = (LiteGraph as any).NODE_WIDGET_HEIGHT || 20;
   const MARGIN: number = 15; // BaseWidget.margin
   const LABEL_X = MARGIN * 2; // widget label starts at margin*2
 
@@ -1729,9 +1757,7 @@ function drawWidgetBindingBadges(
     const widget = (this.widgets as any[]).find((w: any) => w.name === widgetName);
     if (!widget) continue;
 
-    // widget.last_y is set by drawWidgets (just ran); widget.y is set by arrange().
-    const wy: number = widget.last_y ?? widget.y ?? 0;
-    const centerY = wy + WIDGET_HEIGHT * 0.5;
+    const centerY = getInlineRowCenterY(this, i);
 
     drawBadgePill(ctx, input.name, binding, LABEL_X, centerY, FONT_SIZE, this.size[0]);
   }
@@ -1886,12 +1912,11 @@ function resolveConcretePortType(
 function drawInlineInputLabels(node: any, ctx: CanvasRenderingContext2D): void {
   if (!node._hasInlineWidgets || !node.inputs?.length) return;
 
-  const SLOT_H: number = (LiteGraph as any).NODE_SLOT_HEIGHT ?? 20;
   const FONT_SIZE: number = (LiteGraph as any).NODE_SUBTEXT_SIZE ?? 12;
   const colors = getLiteGraphColors();
   const textColor: string = colors.nodeText;
-  const slotStartY: number = (node.constructor as any).slot_start_y ?? 0;
   // Left-aligned text starting just after the input dot (dot center at SLOT_H*0.5 ≈ 10).
+  const SLOT_H: number = (LiteGraph as any).NODE_SLOT_HEIGHT ?? 20;
   const textX = SLOT_H + 2;
 
   ctx.save();
@@ -1907,7 +1932,7 @@ function drawInlineInputLabels(node: any, ctx: CanvasRenderingContext2D): void {
     const label: string = input.name;
     if (!label) continue;
 
-    const localY = (i + 0.7) * SLOT_H + slotStartY;
+    const localY = getInlineRowCenterY(node, i);
 
     ctx.fillStyle = textColor;
     ctx.fillText(label, textX, localY);
@@ -1927,21 +1952,19 @@ function drawInlineInputLabels(node: any, ctx: CanvasRenderingContext2D): void {
 function drawInlineOutputLabels(node: any, ctx: CanvasRenderingContext2D): void {
   if (!node._hasInlineWidgets || !node.outputs?.length) return;
 
-  const SLOT_H: number = (LiteGraph as any).NODE_SLOT_HEIGHT ?? 20;
   const FONT_SIZE: number = (LiteGraph as any).NODE_SUBTEXT_SIZE ?? 12;
   const colors = getLiteGraphColors();
   const textColor: string = colors.nodeText;
   const bgColor: string = node.bgcolor || colors.nodeBg;
   const nodeWidth: number = node.size[0];
   // Right-aligned text ending just before the output dot (mirrors LiteGraph's own slot label offset).
+  const SLOT_H: number = (LiteGraph as any).NODE_SLOT_HEIGHT ?? 20;
   const textX = nodeWidth - SLOT_H - 2;
 
   ctx.save();
   ctx.font = `${FONT_SIZE}px Arial`;
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
-
-  const slotStartY: number = (node.constructor as any).slot_start_y ?? 0;
 
   for (let i = 0; i < node.outputs.length; i++) {
     const output = node.outputs[i];
@@ -1957,7 +1980,7 @@ function drawInlineOutputLabels(node: any, ctx: CanvasRenderingContext2D): void 
 
     // Mirror LiteGraph's own output slot Y formula (node-local coordinate).
     // All outputs use default vertical slots so index == draw order.
-    const localY = (i + 0.7) * SLOT_H + slotStartY;
+    const localY = getInlineRowCenterY(node, i);
 
     // Erase the widget background region behind this label, then redraw the text.
     const textMetrics = ctx.measureText(label);
