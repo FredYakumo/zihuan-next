@@ -1,52 +1,10 @@
 import type { NodeTypeInfo } from "../../api/types";
 import { ensureDialogStyles, openOverlay } from "./base";
 import type { PortConnInfo } from "./types";
-
-const NODE_INFO_STYLE_ID = "zh-ni-styles";
+import "./node_dialogs.css";
 
 function ensureNodeInfoStyles(): void {
-  if (document.getElementById(NODE_INFO_STYLE_ID)) return;
-  const s = document.createElement("style");
-  s.id = NODE_INFO_STYLE_ID;
-  s.textContent = `
-    .zh-ni-dialog { min-width: 640px; max-width: 960px; overflow-y: auto; }
-    .zh-ni-header {
-      margin-bottom: 14px; padding-bottom: 12px;
-      border-bottom: 1px solid var(--border);
-    }
-    .zh-ni-title { margin: 0 0 6px; font-size: 16px; font-weight: bold; color: var(--link); }
-    .zh-ni-desc { font-size: 12px; color: var(--text-muted); line-height: 1.6; margin: 0; }
-    .zh-ni-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 16px; }
-    .zh-ni-col-title {
-      font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em;
-      color: var(--text-muted); border-bottom: 1px solid var(--border);
-      padding-bottom: 6px; margin-bottom: 10px;
-    }
-    .zh-ni-port {
-      margin-bottom: 12px; padding: 8px 10px; border-radius: 6px;
-      background: var(--node-hover); border: 1px solid var(--border);
-    }
-    .zh-ni-port-top { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
-    .zh-ni-port-name { font-size: 13px; color: var(--text); font-weight: 600; font-family: monospace; }
-    .zh-ni-type-badge {
-      font-size: 10px; padding: 2px 7px; border-radius: 10px;
-      background: var(--tab-inactive); border: 1px solid var(--border);
-      color: var(--link); white-space: nowrap; font-weight: 500;
-    }
-    .zh-ni-required {
-      font-size: 10px; font-weight: 600; color: var(--accent);
-      padding: 1px 5px; border-radius: 4px;
-      background: var(--accent-subtle); border: 1px solid var(--accent);
-    }
-    .zh-ni-port-desc { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
-    .zh-ni-conn {
-      font-size: 11px; color: var(--run-color); margin-top: 4px;
-      padding-top: 4px; border-top: 1px solid var(--border);
-      font-family: monospace;
-    }
-    .zh-ni-empty { font-size: 12px; color: var(--text-dim); font-style: italic; padding: 8px 0; }
-  `;
-  document.head.appendChild(s);
+  // Styles are injected via CSS import (node_dialogs.css)
 }
 
 function buildPortSection(ports: PortConnInfo[], showConnections: boolean): HTMLElement {
@@ -109,82 +67,7 @@ export function showAddNodeDialog(nodeTypes: NodeTypeInfo[]): Promise<string | n
   ensureDialogStyles();
   ensureNodeInfoStyles();
 
-  const extraStyleId = "zh-add-node-styles";
-  if (!document.getElementById(extraStyleId)) {
-    const s = document.createElement("style");
-    s.id = extraStyleId;
-    s.textContent = `
-      .zh-an-dialog {
-        min-width: 900px; max-width: 1200px; max-height: 86vh;
-        display: flex; flex-direction: row; gap: 0; padding: 0; overflow: hidden;
-      }
-      .zh-an-left {
-        width: 420px; flex-shrink: 0; padding: 20px;
-        display: flex; flex-direction: column;
-      }
-      .zh-an-right {
-        flex: 1; border-left: 1px solid var(--border); padding: 20px;
-        overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
-        min-width: 0; background: var(--node-hover);
-      }
-      .zh-an-search {
-        width: 100%; box-sizing: border-box; padding: 7px 10px;
-        background: var(--input-bg); border: 1px solid var(--border); border-radius: 4px;
-        color: var(--text); font-size: 13px; margin-bottom: 10px; outline: none;
-      }
-      .zh-an-search:focus { border-color: var(--link); }
-      .zh-an-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-      .zh-an-tab {
-        padding: 3px 12px; border-radius: 4px; border: 1px solid var(--border);
-        background: var(--tab-inactive); color: var(--text-muted); cursor: pointer; font-size: 12px;
-        transition: background 0.1s, color 0.1s;
-      }
-      .zh-an-tab:hover { background: var(--btn-hover); color: var(--text); }
-      .zh-an-tab.active { background: var(--btn-primary); border-color: var(--btn-primary-hover); color: #fff; }
-      .zh-an-list {
-        flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;
-        min-height: 200px;
-      }
-      .zh-an-item {
-        display: flex; flex-direction: column; gap: 2px;
-        padding: 8px 12px; border: 1px solid var(--border); border-radius: 5px;
-        cursor: pointer; background: var(--bg); transition: background 0.1s, border-color 0.1s;
-      }
-      .zh-an-item:hover, .zh-an-item.active {
-        background: var(--btn-hover); border-color: var(--link);
-      }
-      .zh-an-item-top { display: flex; align-items: center; gap: 8px; }
-      .zh-an-name { font-size: 13px; font-weight: bold; color: var(--text); flex: 1; }
-      .zh-an-badge {
-        font-size: 10px; padding: 1px 7px; border-radius: 10px;
-        background: var(--tab-inactive); border: 1px solid var(--border); color: var(--link);
-        white-space: nowrap;
-      }
-      .zh-an-desc { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
-      .zh-an-empty { padding: 20px; text-align: center; color: var(--text-dim); font-size: 13px; }
-      .zh-an-detail-placeholder {
-        color: var(--text-dim); font-size: 13px;
-        margin: auto; text-align: center; padding: 40px 20px;
-        border: 1px dashed var(--border); border-radius: 8px;
-      }
-      .zh-an-detail-title { font-size: 15px; font-weight: bold; color: var(--link); margin: 0 0 4px; }
-      .zh-an-detail-desc { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
-      .zh-an-detail-section {
-        font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em;
-        color: var(--text-muted); border-bottom: 1px solid var(--border);
-        padding-bottom: 5px; margin-bottom: 8px;
-      }
-      .zh-an-detail-port {
-        margin-bottom: 10px; padding: 7px 9px; border-radius: 6px;
-        background: var(--bg); border: 1px solid var(--border);
-      }
-      .zh-an-detail-port-top { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; flex-wrap: wrap; }
-      .zh-an-detail-port-name { font-size: 13px; color: var(--text); font-weight: 600; font-family: monospace; }
-      .zh-an-detail-port-desc { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
-      .zh-an-footer { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; }
-    `;
-    document.head.appendChild(s);
-  }
+  // Styles are injected via CSS import (node_dialogs.css)
 
   const visibleTypes = nodeTypes.filter((n) => n.category !== "内部");
   const cats = ["全部", ...Array.from(new Set(visibleTypes.map((n) => n.category)))];

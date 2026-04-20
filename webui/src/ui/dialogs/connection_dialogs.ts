@@ -2,74 +2,10 @@ import type { NodeDefinition } from "../../api/types";
 import { ensureDialogStyles, openOverlay } from "./base";
 import { isValidConnectionType } from "./shared";
 import type { ConnectPortChoice, PortSelectOption } from "./types";
-
-const CP_STYLE_ID = "zh-cp-styles";
+import "./connection_dialogs.css";
 
 function ensureConnectPortStyles(): void {
-  if (document.getElementById(CP_STYLE_ID)) return;
-  const s = document.createElement("style");
-  s.id = CP_STYLE_ID;
-  s.textContent = `
-    .zh-cp-dialog {
-      min-width: 520px; max-width: 700px; max-height: 82vh;
-      display: flex; flex-direction: column; padding: 0 !important; overflow: hidden;
-    }
-    .zh-cp-header {
-      padding: 24px 32px 14px; border-bottom: 1px solid var(--border);
-      display: flex; flex-direction: column; gap: 6px; flex-shrink: 0;
-    }
-    .zh-cp-header h3 { margin: 0; font-size: 16px; color: var(--link); }
-    .zh-cp-source-info {
-      font-size: 12px; color: var(--text-muted);
-      display: flex; align-items: center; gap: 6px;
-    }
-    .zh-cp-badge {
-      display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 12px;
-      background: var(--tab-inactive); border: 1px solid var(--border); color: var(--link);
-      font-family: monospace; white-space: nowrap;
-    }
-    .zh-cp-search {
-      margin: 16px 32px 0; box-sizing: border-box; width: calc(100% - 64px);
-      padding: 10px 14px; background: var(--input-bg); border: 1px solid var(--border);
-      border-radius: 6px; color: var(--text); font-size: 13px; outline: none;
-      flex-shrink: 0; transition: border-color 0.2s;
-    }
-    .zh-cp-search:focus { border-color: var(--link); }
-    .zh-cp-list {
-      flex: 1; overflow-y: scroll; padding: 16px 16px 24px 32px;
-      display: flex; flex-direction: column; gap: 5px; box-sizing: border-box;
-    }
-    .zh-cp-list::-webkit-scrollbar { width: 10px; }
-    .zh-cp-list::-webkit-scrollbar-track { background: transparent; }
-    .zh-cp-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; border: 2px solid var(--bg); }
-    .zh-cp-list::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
-    .zh-cp-new-node {
-      display: flex; align-items: center; justify-content: center; gap: 6px;
-      padding: 12px; border-radius: 6px;
-      border: 1px dashed var(--border); cursor: pointer;
-      background: transparent; color: var(--text);
-      font-size: 13px; margin-bottom: 10px;
-      transition: background 0.1s, border-color 0.1s, color 0.1s;
-    }
-    .zh-cp-new-node:hover { background: var(--btn-hover); border-color: var(--link); color: var(--link); }
-    .zh-cp-node-header {
-      font-size: 11px; font-weight: bold; text-transform: uppercase;
-      letter-spacing: 0.5px; color: var(--text-muted);
-      border-bottom: 1px solid var(--border); padding: 6px 0 4px;
-      margin-top: 8px; margin-bottom: 4px;
-    }
-    .zh-cp-port-item {
-      display: flex; align-items: center; gap: 12px;
-      padding: 8px 12px; border-radius: 6px; cursor: pointer;
-      background: transparent; border: 1px solid var(--border);
-      transition: background 0.1s, border-color 0.1s;
-    }
-    .zh-cp-port-item:hover { background: var(--btn-hover); border-color: var(--link); }
-    .zh-cp-port-name { font-size: 13px; color: var(--text); font-family: monospace; flex: 1; }
-    .zh-cp-empty { padding: 24px; text-align: center; color: var(--text-dim); font-size: 13px; }
-    .zh-cp-footer { padding: 12px 32px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; flex-shrink: 0; }
-  `;
-  document.head.appendChild(s);
+  // Styles are injected via CSS import (connection_dialogs.css)
 }
 
 export function showConnectPortDialog(
