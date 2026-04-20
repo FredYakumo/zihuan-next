@@ -10,7 +10,7 @@ import {
   openQQMessageListEditor,
   type BrainToolDefinition,
   type EmbeddedFunctionConfig,
-} from "../ui/dialogs";
+} from "../ui/dialogs/index";
 import { getInlineWidgetTopY } from "./inline_layout";
 
 /** Called for every node added to the canvas after the node is created. */
