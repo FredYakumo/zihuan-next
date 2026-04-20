@@ -49,7 +49,7 @@
 }
 .zh-wf-card-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .zh-wf-card-cover .zh-wf-no-cover {
-  font-size: 36px; opacity: 0.25; user-select: none; color: var(--link);
+  font-size: 36px; opacity: 0.25; -webkit-user-select: none; user-select: none; color: var(--link);
 }
 .zh-wf-card-name {
   padding: 8px 10px 2px; font-size: 13px; color: var(--text);
