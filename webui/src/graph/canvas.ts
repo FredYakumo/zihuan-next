@@ -6,8 +6,9 @@ import { logger } from "../api/logger";
 import type { NodeGraphDefinition, NodeDefinition, EdgeDefinition, NodeTypeInfo } from "../api/types";
 import { setupNodeWidgets } from "./widgets";
 import { portTypeString, getNodeTypeInfo } from "./registry";
-import type { BrainToolDefinition, EmbeddedFunctionConfig, ConnectPortChoice, PortSelectOption } from "../ui/dialogs";
-import { showNodeInfoDialog, showConnectPortDialog, showPortSelectDialog, showAddNodeDialog } from "../ui/dialogs";
+import type { BrainToolDefinition, EmbeddedFunctionConfig, ConnectPortChoice, PortSelectOption } from "../ui/dialogs/types";
+import { showConnectPortDialog, showPortSelectDialog } from "../ui/dialogs/connection_dialogs";
+import { showAddNodeDialog, showNodeInfoDialog } from "../ui/dialogs/node_dialogs";
 import { getLiteGraphColors, getPortColor, onThemeChange, getBoundaryNodeColors } from "../ui/theme";
 import { getInlineRowCenterY } from "./inline_layout";
 

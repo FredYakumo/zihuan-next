@@ -6,10 +6,13 @@ import { registry, graphs, fileIO, tasks, workflows as workflowsApi } from "./ap
 import { ws } from "./api/ws";
 import { registerNodeTypes } from "./graph/registry";
 import { ZihuanCanvas } from "./graph/canvas";
-import { injectStyles, buildDOM, buildToolbar, buildCanvasPanelButtons, updateBreadcrumb, updateTabs, createLogToastOverlay } from "./ui/shell";
-import type { TabInfo } from "./ui/shell";
-import { showWorkflowsDialog, openHyperparametersDialog, openVariablesDialog, showAddNodeDialog, showSaveAsDialog, showWorkflowBrowserDialog, showErrorDialog, openGraphMetadataDialog } from "./ui/dialogs";
+import { injectStyles, buildDOM, buildToolbar, buildCanvasPanelButtons, updateBreadcrumb, updateTabs, createLogToastOverlay, type TabInfo } from "./ui/shell/index";
+import { showWorkflowsDialog, openHyperparametersDialog, openVariablesDialog, showAddNodeDialog, showSaveAsDialog, showWorkflowBrowserDialog, showErrorDialog, openGraphMetadataDialog } from "./ui/dialogs/index";
 import type { NodeTypeInfo } from "./api/types";
+import { loadWorkspaceState, saveWorkspaceState, tabNameFrom } from "./app/workspace";
+import { registerGlobalShortcuts } from "./app/shortcuts";
+import { observeCanvasResize, registerUnsavedChangesWarning, startAutoSaveLoop } from "./app/lifecycle";
+import { registerTaskRuntimeHandlers } from "./app/task_runtime";
 
 async function main() {
   initTheme();
@@ -39,74 +42,13 @@ async function main() {
   let activeTabId: string | null = null;
   let skipWorkspaceSave = false;  // Set true during restoration to avoid overwriting
 
-  // ── Workspace persistence (localStorage) ─────────────────────────────────
-  const WORKSPACE_KEY = "zh-workspace";
-
-  interface TabSnapshot {
-    workflowPath?: string;       // For workflow_set files: path like "workflow_set/my_graph.json"
-    workflowJSON?: object;       // For local/new files: full graph JSON
-    name: string;
-    isWorkflowSet: boolean;
-    canvasOffset?: [number, number];
-    canvasScale?: number;
-  }
-
-  interface WorkspaceState {
-    tabs: TabSnapshot[];
-    activeTabIndex: number;
-  }
-
-  async function saveWorkspaceState() {
-    if (skipWorkspaceSave) return;
-    const viewport = canvas.getCanvasViewport();
-    const tabsToSave: TabSnapshot[] = [];
-
-    for (const tab of tabList) {
-      if (tab.isWorkflowSet) {
-        // workflow_set file: only save path
-        tabsToSave.push({
-          workflowPath: `workflow_set/${tab.name}.json`,
-          name: tab.name,
-          isWorkflowSet: true,
-          canvasOffset: tab.id === activeTabId ? viewport?.offset : undefined,
-          canvasScale: tab.id === activeTabId ? viewport?.scale : undefined,
-        });
-      } else {
-        // Local file or new graph: save full JSON
-        try {
-          const graphJSON = await graphs.get(tab.id);
-          tabsToSave.push({
-            workflowJSON: graphJSON,
-            name: tab.name,
-            isWorkflowSet: false,
-            canvasOffset: tab.id === activeTabId ? viewport?.offset : undefined,
-            canvasScale: tab.id === activeTabId ? viewport?.scale : undefined,
-          });
-        } catch {
-          // Skip if failed to get graph JSON
-        }
-      }
-    }
-
-    const savedIndex = tabList.findIndex(t => t.id === activeTabId);
-
-    const state: WorkspaceState = {
-      tabs: tabsToSave,
-      activeTabIndex: savedIndex >= 0 ? savedIndex : 0,
-    };
-
-    localStorage.setItem(WORKSPACE_KEY, JSON.stringify(state));
-  }
-
-  function loadWorkspaceState(): WorkspaceState | null {
-    const stored = localStorage.getItem(WORKSPACE_KEY);
-    if (!stored) return null;
-    try {
-      return JSON.parse(stored);
-    } catch {
-      return null;
-    }
-  }
+  const persistWorkspaceState = () => saveWorkspaceState({
+    tabList,
+    activeTabId,
+    skipWorkspaceSave,
+    getViewport: () => canvas.getCanvasViewport(),
+    getGraphJson: (sessionId) => graphs.get(sessionId),
+  });
 
   function renderTabs() {
     updateTabs(
@@ -131,7 +73,7 @@ async function main() {
     renderTabs();
     await canvas.loadExternalSession(id);
     updateRunButton(id === runningSessionId);
-    await saveWorkspaceState();
+    await persistWorkspaceState();
   }
 
   async function closeTab(id: string) {
@@ -152,11 +94,11 @@ async function main() {
         canvas.clearCanvas();
         renderTabs();
         updateRunButton(false);
-        await saveWorkspaceState();
+        await persistWorkspaceState();
       }
     } else {
       renderTabs();
-await saveWorkspaceState();
+      await persistWorkspaceState();
     }
   }
 
@@ -171,19 +113,12 @@ await saveWorkspaceState();
     }
     activeTabId = id;
     renderTabs();
-    await saveWorkspaceState();
+    await persistWorkspaceState();
   }
 
   function setTabDirty(id: string, dirty: boolean) {
     const tab = tabList.find((t) => t.id === id);
     if (tab) { tab.dirty = dirty; renderTabs(); }
-  }
-
-  /** Derive a display name from a file path or fall back to "未命名". */
-  function tabNameFrom(filePath: string | null, fallback = "未命名"): string {
-    if (!filePath) return fallback;
-    const base = filePath.split(/[\\/]/).pop() ?? fallback;
-    return base.replace(/\.json$/i, "");
   }
 
   async function createNewTab() {
@@ -223,23 +158,13 @@ await saveWorkspaceState();
   // Late-bound so the WS handler can be registered before updateRunButton is available
   let updateRunButton: (isRunning: boolean) => void = () => {};
   let appendLogEntry: (level: string, message: string, timestamp: string) => void = () => {};
-  ws.onMessage((msg) => {
-    if (msg.type === "TaskStarted") {
-      currentTaskId = msg.task_id;
-      runningSessionId = msg.graph_session_id;
-      if (msg.graph_session_id === activeTabId) {
-        updateRunButton(true);
-      }
-    }
-    if (msg.type === "TaskFinished" || msg.type === "TaskStopped") {
-      currentTaskId = null;
-      runningSessionId = null;
-      updateRunButton(false);
-    }
-    if (msg.type === "LogMessage") {
-      addLog(msg.level, msg.message);
-      appendLogEntry(msg.level, msg.message, msg.timestamp);
-    }
+  registerTaskRuntimeHandlers(ws, {
+    getActiveTabId: () => activeTabId,
+    setCurrentTaskId: (taskId) => { currentTaskId = taskId; },
+    setRunningSessionId: (sessionId) => { runningSessionId = sessionId; },
+    updateRunButton: (isRunning) => updateRunButton(isRunning),
+    addLog,
+    appendLogEntry: (level, message, timestamp) => appendLogEntry(level, message, timestamp),
   });
 
   // ── Toolbar actions ──────────────────────────────────────────────────────
@@ -556,24 +481,11 @@ await saveWorkspaceState();
     (msg) => showErrorDialog(msg),
   );
 
-  // ── Global keyboard shortcuts ────────────────────────────────────────────
-  document.addEventListener("keydown", (e) => {
-    const target = e.target as HTMLElement;
-    const inInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
-    if (!e.ctrlKey && !e.metaKey) return;
-    if (e.key === "n" && !e.shiftKey && !inInput) {
-      e.preventDefault();
-      onNewGraph();
-    } else if (e.key === "o" && !e.shiftKey && !inInput) {
-      e.preventDefault();
-      onOpenFile();
-    } else if (e.key === "s" && e.shiftKey) {
-      e.preventDefault();
-      onSaveAs();
-    } else if (e.key === "s" && !e.shiftKey) {
-      e.preventDefault();
-      onSaveFile();
-    }
+  registerGlobalShortcuts({
+    onNewGraph,
+    onOpenFile,
+    onSaveFile,
+    onSaveAs,
   });
 
   // ── Auto-save ──────────────────────────────────────────────────────────────
@@ -608,14 +520,9 @@ await saveWorkspaceState();
       }
     }
   };
-  setInterval(() => { autoSave().catch(console.error); }, 30_000);
+  startAutoSaveLoop(autoSave, 30_000);
 
-  // Warn before leaving the page when there are unsaved dirty tabs
-  window.addEventListener("beforeunload", (e) => {
-    if (tabList.some((t) => t.dirty)) {
-      e.preventDefault();
-    }
-  });
+  registerUnsavedChangesWarning(() => tabList.some((t) => t.dirty));
 
   // Auto-resize canvas to fill its container
   const resizeCanvas = () => {
@@ -623,8 +530,7 @@ await saveWorkspaceState();
     const h = canvasContainer.clientHeight;
     if (w > 0 && h > 0) canvas.resize(w, h);
   };
-  resizeCanvas();
-  new ResizeObserver(resizeCanvas).observe(canvasContainer);
+  observeCanvasResize(canvasContainer, resizeCanvas);
 
   // Start position sync
   canvas.startPositionSync(3000);
