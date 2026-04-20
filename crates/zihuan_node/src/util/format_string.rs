@@ -118,7 +118,8 @@ impl Node for FormatStringNode {
         // apply_inline_config before the dynamic variable ports are known.
         let mut ports = vec![Port::new("template", DataType::String)
             .with_description("格式化模板字符串，使用 ${变量名} 语法引用输入变量")
-            .optional()];
+            .optional()
+            .hidden()];
         ports.extend(self.variables.iter().map(|var| {
             Port::new(var.clone(), DataType::Any).with_description(format!("变量 {var}"))
         }));
