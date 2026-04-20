@@ -146,6 +146,23 @@ export class ZihuanCanvas {
       return origRenderLink.call(this, ctx, a, b, link, skip_border, flow, color, start_dir, end_dir, num_sublines);
     };
 
+    // Patch drawNodeShape so that when a node provides onDrawTitleText,
+    // the default title text rendering is skipped (otherwise both draw).
+    const origDrawNodeShape = (LGraphCanvas.prototype as any).drawNodeShape;
+    (LGraphCanvas.prototype as any).drawNodeShape = function (
+      node: any, ctx: CanvasRenderingContext2D, size: any,
+      fgColor: string, bgColor: string, selected: boolean, mouse_over: boolean
+    ) {
+      if (node.onDrawTitleText) {
+        const origGetTitle = node.getTitle;
+        node.getTitle = () => "";
+        origDrawNodeShape.call(this, node, ctx, size, fgColor, bgColor, selected, mouse_over);
+        node.getTitle = origGetTitle;
+      } else {
+        origDrawNodeShape.call(this, node, ctx, size, fgColor, bgColor, selected, mouse_over);
+      }
+    };
+
     // Override drawNodeWidgets to draw binding badges on widget-linked slots
     // AFTER the widget backgrounds are rendered (so badges are visible on top).
     const origDrawNodeWidgets = (this.lCanvas as any).drawNodeWidgets.bind(this.lCanvas);
@@ -786,6 +803,27 @@ export class ZihuanCanvas {
 
     node.id = nodeDef.id;
     node.title = nodeDef.name;
+
+    // Truncate node title with ellipsis if it exceeds the card width
+    node.onDrawTitleText = function (
+      this: any,
+      ctx: CanvasRenderingContext2D,
+      title_height: number,
+      size: [number, number],
+      _scale: number,
+      font: string,
+      selected: boolean
+    ) {
+      ctx.font = font;
+      ctx.textAlign = "left";
+      ctx.fillStyle = selected
+        ? (LiteGraph as any).NODE_SELECTED_TITLE_COLOR
+        : (this.constructor.title_text_color || (LiteGraph as any).NODE_TITLE_COLOR);
+      const title = String(this.title);
+      const maxWidth = size[0] - title_height - 8;
+      const truncated = truncateText(ctx, title, maxWidth);
+      ctx.fillText(truncated, title_height, LiteGraph.NODE_TITLE_TEXT_Y - title_height);
+    };
 
     if (nodeDef.position) {
       node.pos = [nodeDef.position.x, nodeDef.position.y];
