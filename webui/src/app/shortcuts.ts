@@ -3,6 +3,8 @@ export interface GlobalShortcutHandlers {
   onOpenFile: () => void | Promise<void>;
   onSaveFile: () => void | Promise<void>;
   onSaveAs: () => void | Promise<void>;
+  onUndo: () => void | Promise<void>;
+  onRedo: () => void | Promise<void>;
 }
 
 export function registerGlobalShortcuts(handlers: GlobalShortcutHandlers): void {
@@ -27,6 +29,12 @@ export function registerGlobalShortcuts(handlers: GlobalShortcutHandlers): void 
     } else if (e.key === "s" && !e.shiftKey) {
       e.preventDefault();
       invoke(handlers.onSaveFile);
+    } else if (e.key === "z" && !e.shiftKey && !inInput) {
+      e.preventDefault();
+      invoke(handlers.onUndo);
+    } else if ((e.key === "y" && !e.shiftKey && !inInput) || (e.key === "z" && e.shiftKey && !inInput)) {
+      e.preventDefault();
+      invoke(handlers.onRedo);
     }
-  });
+  }, true); // capture phase — fires before canvas-level handlers (LiteGraph uses capture:true on canvas)
 }

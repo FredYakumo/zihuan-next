@@ -62,6 +62,12 @@
   background: var(--node-hover);
 }
 
+#toolbar-menu .menu-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
 #toolbar-menu .menu-item .menu-shortcut {
   color: var(--text-dim);
   font-size: 11px;
@@ -79,6 +85,28 @@
 
 #toolbar .task-status.running {
   color: var(--run-color);
+}
+
+#toolbar .toolbar-icon-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 14px;
+  height: 28px;
+  padding: 0 8px;
+  line-height: 1;
+  transition: background 0.12s;
+}
+
+#toolbar .toolbar-icon-btn:hover:not(:disabled) {
+  background: var(--node-hover);
+}
+
+#toolbar .toolbar-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 #main {

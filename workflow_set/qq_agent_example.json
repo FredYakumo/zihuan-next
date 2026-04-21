@@ -55,8 +55,8 @@
         "height": 146.0
       },
       "inline_values": {
-        "bot_server_url": "ws://localhost:3001",
-        "qq_id": "2496875785"
+        "qq_id": "2496875785",
+        "bot_server_url": "ws://localhost:3001"
       },
       "port_bindings": {
         "qq_id": {
@@ -215,9 +215,9 @@
         "height": 401.06308
       },
       "inline_values": {
+        "mysql_host": "127.0.0.1",
         "mysql_port": "3306",
-        "mysql_database": "zihuan_aibot",
-        "mysql_host": "127.0.0.1"
+        "mysql_database": "zihuan_aibot"
       },
       "port_bindings": {
         "mysql_password": {
@@ -346,8 +346,8 @@
         "height": 121.83149
       },
       "inline_values": {
-        "bucket_name": "message_id_cache",
-        "ttl_secs": "600"
+        "ttl_secs": "600",
+        "bucket_name": "message_id_cache"
       },
       "port_bindings": {},
       "has_error": false,
@@ -979,7 +979,7 @@
                 },
                 "size": {
                   "height": 106,
-                  "width": 236.8
+                  "width": 236.8000030517578
                 }
               },
               {
@@ -1017,7 +1017,7 @@
                 },
                 "size": {
                   "height": 26,
-                  "width": 169.6
+                  "width": 169.60000610351562
                 }
               },
               {
@@ -1109,7 +1109,7 @@
                 },
                 "size": {
                   "height": 26,
-                  "width": 169.6
+                  "width": 169.60000610351562
                 }
               },
               {
@@ -2477,7 +2477,7 @@
                 },
                 "size": {
                   "height": 142,
-                  "width": 228.4
+                  "width": 228.3999938964844
                 }
               },
               {
@@ -2863,11 +2863,15 @@
                         "name": "sender_id"
                       },
                       {
-                        "data_type": "String",
+                        "data_type": {
+                          "Vec": "OpenAIMessage"
+                        },
                         "name": "vec2"
                       },
                       {
-                        "data_type": "String",
+                        "data_type": {
+                          "Vec": "OpenAIMessage"
+                        },
                         "name": "__vec2"
                       }
                     ],
@@ -3237,7 +3241,7 @@
                             "y": -60
                           },
                           "size": {
-                            "height": 75.33333,
+                            "height": 75.33332824707031,
                             "width": 244
                           }
                         },
@@ -3327,7 +3331,7 @@
                           "port_bindings": {},
                           "position": {
                             "x": 1060,
-                            "y": 116.666664
+                            "y": 116.66666412353516
                           },
                           "size": {
                             "height": 120,
@@ -3371,7 +3375,7 @@
                           "port_bindings": {},
                           "position": {
                             "x": 2900,
-                            "y": 116.666664
+                            "y": 116.66666412353516
                           },
                           "size": {
                             "height": 120,
@@ -3898,7 +3902,7 @@
                 },
                 "size": {
                   "height": 106,
-                  "width": 235.9615173339844
+                  "width": 235.96152
                 }
               },
               {
@@ -3936,7 +3940,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 159.064453125
+                  "width": 159.06445
                 }
               },
               {
@@ -4678,11 +4682,11 @@
                   }
                 },
                 "position": {
-                  "x": 580,
-                  "y": -160
+                  "x": 480,
+                  "y": -300
                 },
                 "size": {
-                  "height": 148.3333282470703,
+                  "height": 148.33333,
                   "width": 504
                 }
               },
@@ -4776,8 +4780,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2130,
-                  "y": -70
+                  "x": 2200,
+                  "y": -340
                 },
                 "size": {
                   "height": 60,
@@ -4816,8 +4820,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1440,
-                  "y": -120
+                  "x": 1560,
+                  "y": -290
                 },
                 "size": {
                   "height": 60,
@@ -4923,8 +4927,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1520,
-                  "y": 40
+                  "x": 1860,
+                  "y": -260
                 },
                 "size": {
                   "height": 60,
@@ -5108,118 +5112,6 @@
                 "size": {
                   "height": 98,
                   "width": 210
-                }
-              },
-              {
-                "description": "向QQ好友发送消息",
-                "dynamic_input_ports": false,
-                "dynamic_output_ports": false,
-                "has_cycle": false,
-                "has_error": false,
-                "id": "node_35",
-                "inline_values": {},
-                "input_ports": [
-                  {
-                    "data_type": "BotAdapterRef",
-                    "description": "Bot适配器引用",
-                    "hidden": false,
-                    "name": "bot_adapter",
-                    "required": true
-                  },
-                  {
-                    "data_type": "String",
-                    "description": "目标好友的QQ号",
-                    "hidden": false,
-                    "name": "target_id",
-                    "required": true
-                  },
-                  {
-                    "data_type": {
-                      "Vec": "QQMessage"
-                    },
-                    "description": "要发送的QQ消息段列表",
-                    "hidden": false,
-                    "name": "message",
-                    "required": true
-                  }
-                ],
-                "name": "发送好友消息",
-                "node_type": "send_friend_message",
-                "output_ports": [
-                  {
-                    "data_type": "Boolean",
-                    "description": "是否发送成功",
-                    "hidden": false,
-                    "name": "success",
-                    "required": true
-                  },
-                  {
-                    "data_type": "Integer",
-                    "description": "服务器返回的消息ID",
-                    "hidden": false,
-                    "name": "message_id",
-                    "required": true
-                  }
-                ],
-                "port_bindings": {},
-                "position": {
-                  "x": 1340,
-                  "y": -520
-                },
-                "size": {
-                  "height": 98,
-                  "width": 210
-                }
-              },
-              {
-                "description": "QQMessageList data source with inline UI editor",
-                "dynamic_input_ports": false,
-                "dynamic_output_ports": false,
-                "has_cycle": false,
-                "has_error": false,
-                "id": "node_36",
-                "inline_values": {
-                  "messages": [
-                    {
-                      "data": {
-                        "text": "我还在思考，你别急"
-                      },
-                      "type": "text"
-                    }
-                  ]
-                },
-                "input_ports": [
-                  {
-                    "data_type": {
-                      "Vec": "QQMessage"
-                    },
-                    "description": "Vec<QQMessage> provided by UI inline editor",
-                    "hidden": false,
-                    "name": "messages",
-                    "required": false
-                  }
-                ],
-                "name": "QQMessageList Data",
-                "node_type": "qq_message_list_data",
-                "output_ports": [
-                  {
-                    "data_type": {
-                      "Vec": "QQMessage"
-                    },
-                    "description": "Output Vec<QQMessage> from UI data source",
-                    "hidden": false,
-                    "name": "messages",
-                    "required": true
-                  }
-                ],
-                "port_bindings": {},
-                "position": {
-                  "x": 820,
-                  "y": -520
-                },
-                "size": {
-                  "height": 160,
-                  "width": 400
                 }
               },
               {
@@ -5477,8 +5369,8 @@
                   "y": 0
                 },
                 "size": {
-                  "height": 239.32554626464844,
-                  "width": 249.9052734375
+                  "height": 239.32555,
+                  "width": 249.90527
                 }
               },
               {
@@ -5540,7 +5432,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 228.1412048339844
+                  "width": 228.1412
                 }
               },
               {
@@ -5634,7 +5526,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 223.5201110839844
+                  "width": 223.52011
                 }
               },
               {
@@ -5683,7 +5575,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 197.8238220214844
+                  "width": 197.82382
                 }
               },
               {
@@ -5762,7 +5654,7 @@
                 },
                 "size": {
                   "height": 142,
-                  "width": 228.3999938964844
+                  "width": 228.4
                 }
               },
               {
@@ -6220,12 +6112,6 @@
       "to_port": "message_event"
     },
     {
-      "from_node_id": "node_29",
-      "from_port": "llm_model",
-      "to_node_id": "node_4",
-      "to_port": "llm_api_llm_model"
-    },
-    {
       "from_node_id": "node_tavily",
       "from_port": "tavily_ref",
       "to_node_id": "node_4",
@@ -6244,18 +6130,6 @@
       "to_port": "message_event"
     },
     {
-      "from_node_id": "node_26",
-      "from_port": "session_ref",
-      "to_node_id": "node_4",
-      "to_port": "session_ref"
-    },
-    {
-      "from_node_id": "node_48",
-      "from_port": "cache_ref",
-      "to_node_id": "node_4",
-      "to_port": "cache_ref"
-    },
-    {
       "from_node_id": "node_30",
       "from_port": "time",
       "to_node_id": "node_1",
@@ -6264,20 +6138,8 @@
     {
       "from_node_id": "node_30",
       "from_port": "time",
-      "to_node_id": "node_4",
-      "to_port": "time"
-    },
-    {
-      "from_node_id": "node_30",
-      "from_port": "time",
       "to_node_id": "node_14",
       "to_port": "time"
-    },
-    {
-      "from_node_id": "node_2",
-      "from_port": "true_event",
-      "to_node_id": "node_4",
-      "to_port": "message_event"
     },
     {
       "from_node_id": "node_2",
@@ -6290,12 +6152,6 @@
       "from_port": "message_event",
       "to_node_id": "node_27",
       "to_port": "message_event"
-    },
-    {
-      "from_node_id": "node_1",
-      "from_port": "bot_adapter",
-      "to_node_id": "node_4",
-      "to_port": "qq_bot_adapter"
     },
     {
       "from_node_id": "node_1",
@@ -6326,6 +6182,42 @@
       "from_port": "tavily_ref",
       "to_node_id": "node_14",
       "to_port": "tavily_ref"
+    },
+    {
+      "from_node_id": "node_1",
+      "from_port": "message_event",
+      "to_node_id": "node_4",
+      "to_port": "message_event"
+    },
+    {
+      "from_node_id": "node_1",
+      "from_port": "bot_adapter",
+      "to_node_id": "node_4",
+      "to_port": "qq_bot_adapter"
+    },
+    {
+      "from_node_id": "node_30",
+      "from_port": "time",
+      "to_node_id": "node_4",
+      "to_port": "time"
+    },
+    {
+      "from_node_id": "node_48",
+      "from_port": "cache_ref",
+      "to_node_id": "node_4",
+      "to_port": "cache_ref"
+    },
+    {
+      "from_node_id": "node_26",
+      "from_port": "session_ref",
+      "to_node_id": "node_4",
+      "to_port": "session_ref"
+    },
+    {
+      "from_node_id": "node_29",
+      "from_port": "llm_model",
+      "to_node_id": "node_4",
+      "to_port": "llm_api_llm_model"
     }
   ],
   "hyperparameter_groups": [
