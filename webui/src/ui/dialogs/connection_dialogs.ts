@@ -1,6 +1,6 @@
 import type { NodeDefinition } from "../../api/types";
 import { ensureDialogStyles, openOverlay } from "./base";
-import { isValidConnectionType } from "./shared";
+import { isValidConnectionType } from "./data_types";
 import type { ConnectPortChoice, PortSelectOption } from "./types";
 import "./connection_dialogs.css";
 

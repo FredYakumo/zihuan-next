@@ -1,25 +1,5 @@
 import type { FunctionPortDef } from "./types";
-
-export const DATA_TYPES = [
-  "String", "Integer", "Float", "Boolean", "Json", "Any",
-  "MessageEvent", "OpenAIMessage", "QQMessage", "FunctionTools",
-  "BotAdapterRef", "RedisRef", "MySqlRef", "TavilyRef",
-  "SessionStateRef", "OpenAIMessageSessionCacheRef", "Password", "LLModel",
-  "LoopControlRef", "Binary",
-];
-
-export function dataTypeSelect(value = "String", id?: string): HTMLSelectElement {
-  const sel = document.createElement("select");
-  if (id) sel.id = id;
-  for (const dt of DATA_TYPES) {
-    const opt = document.createElement("option");
-    opt.value = dt;
-    opt.textContent = dt;
-    if (dt === value) opt.selected = true;
-    sel.appendChild(opt);
-  }
-  return sel;
-}
+import { dataTypeSelect } from "./data_types";
 
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
@@ -89,13 +69,4 @@ export function buildPortListEditor(
     .filter((p) => p.name);
 }
 
-export function isValidConnectionType(a: string, b: string): boolean {
-  if (!a || !b) return true;
-  if (a === "*" || b === "*") return true;
-  const lower = (s: string) => s.toLowerCase();
-  if (lower(a) === "any" || lower(b) === "any") return true;
-  const isVecAny = (t: string) => /^Vec<Any>$/i.test(t);
-  const isVec = (t: string) => /^Vec<.+>/i.test(t);
-  if ((isVecAny(a) && isVec(b)) || (isVecAny(b) && isVec(a))) return true;
-  return a === b;
-}
+export { isValidConnectionType } from "./data_types";

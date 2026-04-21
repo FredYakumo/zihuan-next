@@ -1,5 +1,6 @@
 export * from "./base";
 export * from "./types";
+export * from "./data_types";
 export * from "./shared";
 export * from "./editors";
 export * from "./connection_dialogs";
