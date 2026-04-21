@@ -1,7 +1,8 @@
 import { graphs } from "../../api/client";
 import type { NodeDefinition, Port } from "../../api/types";
 import { openOverlay } from "./base";
-import { buildPortListEditor, dataTypeSelect, escapeHtml, extractTemplateVars } from "./shared";
+import { buildPortListEditor, escapeHtml, extractTemplateVars } from "./shared";
+import { dataTypeSelect } from "./data_types";
 import type {
   BrainToolDefinition,
   EmbeddedFunctionConfig,

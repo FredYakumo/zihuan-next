@@ -1,7 +1,7 @@
 import { graphs } from "../../api/client";
 import type { GraphMetadata, GraphVariable, HyperParameter } from "../../api/types";
 import { ensureDialogStyles, openOverlay, showErrorDialog } from "./base";
-import { dataTypeSelect } from "./shared";
+import { dataTypeSelect } from "./data_types";
 
 export const HP_SCALAR_TYPES = ["String", "Integer", "Float", "Boolean", "Password"] as const;
 
