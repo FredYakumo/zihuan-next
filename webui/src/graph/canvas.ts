@@ -3,6 +3,7 @@
 import { LGraph, LGraphCanvas, LiteGraph } from "litegraph.js";
 import { graphs } from "../api/client";
 import { logger } from "../api/logger";
+import { HistoryManager } from "./history";
 import type { NodeGraphDefinition, NodeDefinition, EdgeDefinition, NodeTypeInfo } from "../api/types";
 import { setupNodeWidgets } from "./widgets";
 import { portTypeString, getNodeTypeInfo } from "./registry";
@@ -73,6 +74,15 @@ export class ZihuanCanvas {
   /** Guard flag: true while rebuildCanvas() is running, suppresses change callbacks */
   private _rebuilding = false;
 
+  /** Snapshot history for undo/redo — reset on tab load, not on internal reloads */
+  private history = new HistoryManager<NodeGraphDefinition>();
+
+  /** Debounce timer ID for widget-triggered history pushes */
+  private _widgetMutationTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Debounce timer ID for node-move history pushes */
+  private _nodeMoveTimer: ReturnType<typeof setTimeout> | null = null;
+
   /** All registered node types — populated from main.ts after registry load. Used by the
    *  connection-drop-on-empty dialog to offer "新建节点" and to auto-connect after creation. */
   nodeTypes: NodeTypeInfo[] = [];
@@ -82,6 +92,9 @@ export class ZihuanCanvas {
 
   /** Called whenever the graph is modified by the user (e.g. node moved) */
   onGraphDirty?: () => void;
+
+  /** Called whenever the undo/redo stack changes (use to update button states) */
+  onHistoryChange?: () => void;
 
   /**
    * Called when the user right-clicks on an empty area of the canvas.
@@ -339,6 +352,7 @@ export class ZihuanCanvas {
         this.lGraph.setDirtyCanvas(true, true);
       }
       this.onGraphDirty?.();
+      this.onNodesMoved();
     };
 
     // Draw data-type labels at the connection midpoint.
@@ -679,6 +693,8 @@ export class ZihuanCanvas {
   async loadSession(sessionId: string): Promise<void> {
     const def = await graphs.get(sessionId);
     this.state = { sessionId, graph: def, dirty: false };
+    this.history.reset(def);
+    this.onHistoryChange?.();
     this.rebuildCanvas(def);
   }
 
@@ -855,7 +871,8 @@ export class ZihuanCanvas {
       () => { this.reloadCurrentSession().catch(console.error); },
       (parentNodeDef, mode, toolIndex, toolDef, functionConfig) => {
         this.enterSubgraph(parentNodeDef, mode, toolIndex, toolDef, functionConfig).catch(console.error);
-      }
+      },
+      () => { this.onWidgetMutated(); }
     );
 
     // Restore saved size AFTER widgets are set up so it overrides the auto-size
@@ -926,15 +943,25 @@ export class ZihuanCanvas {
 
     graphs
       .addNode(sessionId, typeId, node.title ?? undefined, x, y)
-      .then((result) => {
+      .then(async (result) => {
         node.zihuanId = result.id;
         this.nodeMap.set(result.id, node);
         this.state.dirty = true;
+        // Refresh state.graph from backend to get the canonical node def, then push history
+        try {
+          const updated = await graphs.get(sessionId);
+          this.state.graph = updated;
+          this.history.push(updated);
+          this.onHistoryChange?.();
+        } catch { /* non-fatal — history just won't have this entry */ }
       })
       .catch((e) => console.error("[Canvas] addNode failed:", e));
   }
 
   private onNodeRemoved(node: any): void {
+    // Skip callbacks fired during rebuildCanvas — nodes are being replaced, not deleted.
+    if (this._rebuilding) return;
+
     const sessionId = this.state.sessionId;
     const nodeId: string | undefined = node.zihuanId;
     if (!sessionId || !nodeId) return;
@@ -945,8 +972,15 @@ export class ZihuanCanvas {
     this.nodeMap.delete(nodeId);
     graphs
       .deleteNode(sessionId, nodeId)
-      .then(() => {
+      .then(async () => {
         this.state.dirty = true;
+        // Refresh state.graph from backend, then push history
+        try {
+          const updated = await graphs.get(sessionId);
+          this.state.graph = updated;
+          this.history.push(updated);
+          this.onHistoryChange?.();
+        } catch { /* non-fatal */ }
       })
       .catch((e) => console.error("[Canvas] deleteNode failed:", e));
   }
@@ -991,6 +1025,10 @@ export class ZihuanCanvas {
       this.state.graph = updatedGraph;
       graphs
         .put(sessionId, updatedGraph)
+        .then(() => {
+          this.history.push(updatedGraph);
+          this.onHistoryChange?.();
+        })
         .catch((e) => console.error("[Canvas] put graph (edges) failed:", e));
       this.state.dirty = true;
       this.onGraphDirty?.();
@@ -1181,6 +1219,98 @@ export class ZihuanCanvas {
     const def = await graphs.get(sid);
     this.state.graph = def;
     this.rebuildCanvas(def);
+  }
+
+  /**
+   * Called (debounced) whenever an inline widget value changes.
+   * Waits 500 ms after the last change before refreshing state.graph and
+   * pushing a history snapshot so that per-keystroke typing doesn't flood history.
+   */
+  private onWidgetMutated(): void {
+    if (this._widgetMutationTimer !== null) {
+      clearTimeout(this._widgetMutationTimer);
+    }
+    this._widgetMutationTimer = setTimeout(async () => {
+      this._widgetMutationTimer = null;
+      const sid = this.state.sessionId;
+      if (!sid) return;
+      try {
+        const updated = await graphs.get(sid);
+        this.state.graph = updated;
+        this.history.push(updated);
+        this.onHistoryChange?.();
+      } catch { /* non-fatal */ }
+    }, 500);
+  }
+
+  /**
+   * Called (debounced) whenever nodes are moved by the user.
+   * Waits 300 ms after the last move before persisting positions and pushing history.
+   */
+  private onNodesMoved(): void {
+    if (this._nodeMoveTimer !== null) {
+      clearTimeout(this._nodeMoveTimer);
+    }
+    this._nodeMoveTimer = setTimeout(async () => {
+      this._nodeMoveTimer = null;
+      const sid = this.state.sessionId;
+      if (!sid || !this.state.graph) return;
+      // Sync LiteGraph node positions back into state.graph
+      const updatedNodes = this.state.graph.nodes.map((nodeDef) => {
+        const lgNode = this.nodeMap.get(nodeDef.id) as any;
+        if (!lgNode?.pos) return nodeDef;
+        return {
+          ...nodeDef,
+          position: { x: Math.round(lgNode.pos[0]), y: Math.round(lgNode.pos[1]) },
+        };
+      });
+      const updatedGraph = { ...this.state.graph, nodes: updatedNodes };
+      try {
+        await graphs.put(sid, updatedGraph);
+        this.state.graph = updatedGraph;
+        this.history.push(updatedGraph);
+        this.onHistoryChange?.();
+      } catch (e) {
+        console.error("[Canvas] onNodesMoved put failed:", e);
+      }
+    }, 300);
+  }
+
+  // ─── Undo / Redo ──────────────────────────────────────────────────────────
+
+  canUndo(): boolean {
+    return this.history.canUndo();
+  }
+
+  canRedo(): boolean {
+    return this.history.canRedo();
+  }
+
+  async undo(): Promise<void> {
+    const snapshot = this.history.undo();
+    if (!snapshot) return;
+    await this.applyHistorySnapshot(snapshot);
+  }
+
+  async redo(): Promise<void> {
+    const snapshot = this.history.redo();
+    if (!snapshot) return;
+    await this.applyHistorySnapshot(snapshot);
+  }
+
+  private async applyHistorySnapshot(snapshot: NodeGraphDefinition): Promise<void> {
+    const sid = this.state.sessionId;
+    if (!sid) return;
+    try {
+      await graphs.put(sid, snapshot);
+      this.state.graph = snapshot;
+      this.state.dirty = true;
+      this.onGraphDirty?.();
+      this.rebuildCanvas(snapshot);
+      this.onHistoryChange?.();
+    } catch (e) {
+      console.error("[Canvas] applyHistorySnapshot failed:", e);
+    }
   }
 
   /** Enter a function or brain-tool subgraph by creating a virtual session. */

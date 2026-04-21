@@ -25,7 +25,8 @@ export function setupNodeWidgets(
     toolIndex?: number,
     toolDef?: BrainToolDefinition,
     functionConfig?: EmbeddedFunctionConfig
-  ) => void
+  ) => void,
+  onMutated?: () => void
 ): void {
   const typeId = nodeDef.node_type;
 
@@ -43,13 +44,13 @@ export function setupNodeWidgets(
       setupBrainWidgets(lNode, nodeDef, getSessionId, onRefresh, onEnterSubgraph);
       break;
     case "string_data":
-      setupStringDataWidgets(lNode, nodeDef, getSessionId, onRefresh);
+      setupStringDataWidgets(lNode, nodeDef, getSessionId, onRefresh, onMutated);
       break;
     case "qq_message_list_data":
       setupQQMessageListWidgets(lNode, nodeDef, getSessionId, onRefresh);
       break;
     default:
-      setupSimpleInlineWidgets(lNode, nodeDef, getSessionId, onRefresh);
+      setupSimpleInlineWidgets(lNode, nodeDef, getSessionId, onRefresh, onMutated);
       break;
   }
 }
@@ -144,7 +145,8 @@ function setupStringDataWidgets(
   lNode: any,
   nodeDef: NodeDefinition,
   getSessionId: () => string | null,
-  onRefresh: () => void
+  onRefresh: () => void,
+  onMutated?: () => void
 ): void {
   const currentValue = String(nodeDef.inline_values?.["text"] ?? "");
   lNode.addWidget("text", "text", currentValue, async (val: string) => {
@@ -152,6 +154,7 @@ function setupStringDataWidgets(
     if (!sid) return;
     try {
       await graphs.updateNode(sid, nodeDef.id, { inline_values: { text: val } });
+      onMutated?.();
     } catch (e) { console.error("widget update failed", e); }
   });
 }
@@ -179,7 +182,8 @@ function setupSimpleInlineWidgets(
   lNode: any,
   nodeDef: NodeDefinition,
   getSessionId: () => string | null,
-  onRefresh: () => void
+  onRefresh: () => void,
+  onMutated?: () => void
 ): void {
   for (const port of nodeDef.input_ports) {
     const key = port.name;
@@ -193,6 +197,7 @@ function setupSimpleInlineWidgets(
         if (!sid) return;
         try {
           await graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: val } });
+          onMutated?.();
         } catch (e) { console.error("widget update failed", e); }
       });
     } else if (dt === "Integer") {
@@ -201,6 +206,7 @@ function setupSimpleInlineWidgets(
         if (!sid) return;
         try {
           await graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: Math.trunc(val) } });
+          onMutated?.();
         } catch (e) { console.error("widget update failed", e); }
       }, { precision: 0, step: 10 });
     } else if (dt === "Float") {
@@ -209,6 +215,7 @@ function setupSimpleInlineWidgets(
         if (!sid) return;
         try {
           await graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: val } });
+          onMutated?.();
         } catch (e) { console.error("widget update failed", e); }
       });
     } else if (dt === "String" || dt === "Password") {
@@ -217,6 +224,7 @@ function setupSimpleInlineWidgets(
         if (!sid) return;
         try {
           await graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: val } });
+          onMutated?.();
         } catch (e) { console.error("widget update failed", e); }
       });
       if (dt === "Password" && addedWidget) (addedWidget as any)._isPassword = true;
