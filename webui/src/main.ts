@@ -459,7 +459,10 @@ async function main() {
     onStopTask,
   ));
 
-  buildToolbar(
+  const onUndo = () => { canvas.undo().catch(console.error); };
+  const onRedo = () => { canvas.redo().catch(console.error); };
+
+  const { updateUndoRedoButtons } = buildToolbar(
     toolbar,
     onNewGraph,
     onOpenFile,
@@ -479,13 +482,21 @@ async function main() {
       }).catch(console.error);
     },
     (msg) => showErrorDialog(msg),
+    onUndo,
+    onRedo,
   );
+
+  canvas.onHistoryChange = () => {
+    updateUndoRedoButtons(canvas.canUndo(), canvas.canRedo());
+  };
 
   registerGlobalShortcuts({
     onNewGraph,
     onOpenFile,
     onSaveFile,
     onSaveAs,
+    onUndo,
+    onRedo,
   });
 
   // ── Auto-save ──────────────────────────────────────────────────────────────

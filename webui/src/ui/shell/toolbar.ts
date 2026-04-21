@@ -11,24 +11,33 @@ export function buildToolbar(
   onBrowseWorkflows: () => void,
   onEditGraphInfo: () => void,
   onTaskFailed: (message: string) => void,
-): void {
+  onUndo: () => void,
+  onRedo: () => void,
+): { updateUndoRedoButtons: (canUndo: boolean, canRedo: boolean) => void } {
   const titleEl = toolbar.querySelector<HTMLElement>(".title")!;
 
   const menu = document.createElement("div");
   menu.id = "toolbar-menu";
 
-  const menuItems: Array<{ label: string; shortcut?: string; onClick: () => void }> = [
+  const menuItems: Array<{ label: string; shortcut?: string; onClick: () => void; separator?: boolean }> = [
     { label: "新建", shortcut: "Ctrl+N", onClick: onNewGraph },
     { label: "打开...", shortcut: "Ctrl+O", onClick: onOpenFile },
     { label: "保存", shortcut: "Ctrl+S", onClick: onSaveFile },
     { label: "另存为", shortcut: "Ctrl+Shift+S", onClick: onSaveAs },
-    { label: "保存为工作流集", onClick: onSaveToWorkflows },
+    { label: "撤回", shortcut: "Ctrl+Z", onClick: onUndo, separator: true },
+    { label: "重做", shortcut: "Ctrl+Y", onClick: onRedo },
+    { label: "保存为工作流集", onClick: onSaveToWorkflows, separator: true },
     { label: "浏览工作流集", onClick: onBrowseWorkflows },
     { label: "编辑节点图信息...", onClick: onEditGraphInfo },
     { label: "验证", onClick: onValidate },
   ];
 
   for (const item of menuItems) {
+    if (item.separator) {
+      const sep = document.createElement("div");
+      sep.className = "menu-separator";
+      menu.appendChild(sep);
+    }
     const el = document.createElement("div");
     el.className = "menu-item";
     const labelSpan = document.createElement("span");
@@ -57,6 +66,25 @@ export function buildToolbar(
   document.addEventListener("click", () => {
     menu.classList.remove("open");
   });
+
+  // Undo / Redo buttons
+  const undoBtn = document.createElement("button");
+  undoBtn.id = "toolbar-undo";
+  undoBtn.className = "toolbar-icon-btn";
+  undoBtn.title = "撤回 (Ctrl+Z)";
+  undoBtn.textContent = "↩";
+  undoBtn.disabled = true;
+  undoBtn.addEventListener("click", () => onUndo());
+  toolbar.appendChild(undoBtn);
+
+  const redoBtn = document.createElement("button");
+  redoBtn.id = "toolbar-redo";
+  redoBtn.className = "toolbar-icon-btn";
+  redoBtn.title = "重做 (Ctrl+Y)";
+  redoBtn.textContent = "↪";
+  redoBtn.disabled = true;
+  redoBtn.addEventListener("click", () => onRedo());
+  toolbar.appendChild(redoBtn);
 
   const spacer = document.createElement("span");
   spacer.className = "spacer";
@@ -90,4 +118,11 @@ export function buildToolbar(
       }, 3000);
     }
   });
+
+  return {
+    updateUndoRedoButtons(canUndo: boolean, canRedo: boolean): void {
+      undoBtn.disabled = !canUndo;
+      redoBtn.disabled = !canRedo;
+    },
+  };
 }
