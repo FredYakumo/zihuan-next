@@ -2047,8 +2047,11 @@ export class ZihuanCanvas {
 
     // 11. Persist and reload
     await graphs.put(sid, newGraph);
+    this.history.push(newGraph);
+    this.onHistoryChange?.();
     await this.reloadCurrentSession();
     this.state.dirty = true;
+    this.onGraphDirty?.();
   }
 }
 
