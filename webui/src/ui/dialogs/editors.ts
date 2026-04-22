@@ -391,6 +391,7 @@ export function openFunctionSignatureEditor(
 
     try {
       await graphs.updateNode(sessionId, nodeDef.id, {
+        name: updatedConfig.name,
         inline_values: { function_config: updatedConfig as unknown as Record<string, unknown> },
       });
       close();
