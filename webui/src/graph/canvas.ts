@@ -15,6 +15,8 @@ import { getInlineRowCenterY } from "./inline_layout";
 
 /** Title bar height constant (matches LiteGraph.NODE_TITLE_HEIGHT default). */
 const NODE_TITLE_HEIGHT = 30;
+/** Height of the description band rendered directly below the title bar on function nodes. */
+const DESC_BAND_HEIGHT = 20;
 
 /** Whether two data-type strings are connection-compatible.
  *  Mirrors the patched LiteGraph.isValidConnection logic applied in the constructor. */
@@ -43,6 +45,22 @@ function getInlineWidgetInputIndex(node: any, widget: any): number {
  */
 function visibleInputPorts(ports: NodeDefinition["input_ports"]): NodeDefinition["input_ports"] {
   return ports.filter((p) => !p.hidden);
+}
+
+function isNodeGraphDefinitionLike(value: unknown): value is NodeGraphDefinition {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const graph = value as Partial<NodeGraphDefinition>;
+  return Array.isArray(graph.nodes)
+    && Array.isArray(graph.edges)
+    && Array.isArray(graph.hyperparameter_groups)
+    && Array.isArray(graph.hyperparameters)
+    && Array.isArray(graph.variables);
+}
+
+function hasVisibleSubgraphContent(graph: NodeGraphDefinition): boolean {
+  return graph.nodes.some(
+    (node) => node.id !== "__function_inputs__" && node.id !== "__function_outputs__"
+  );
 }
 
 export interface CanvasState {
@@ -162,6 +180,7 @@ export class ZihuanCanvas {
 
     // Patch drawNodeShape so that when a node provides onDrawTitleText,
     // the default title text rendering is skipped (otherwise both draw).
+    // Also draws the function-description band just below the title bar.
     const origDrawNodeShape = (LGraphCanvas.prototype as any).drawNodeShape;
     (LGraphCanvas.prototype as any).drawNodeShape = function (
       node: any, ctx: CanvasRenderingContext2D, size: any,
@@ -174,6 +193,25 @@ export class ZihuanCanvas {
         node.getTitle = origGetTitle;
       } else {
         origDrawNodeShape.call(this, node, ctx, size, fgColor, bgColor, selected, mouse_over);
+      }
+      // Draw description band for function nodes that have a non-empty description.
+      const desc: string = node._functionDescription ?? "";
+      const descH: number = node._descHeight ?? 0;
+      if (desc && descH > 0) {
+        const colors = getLiteGraphColors();
+        ctx.save();
+        ctx.fillStyle = node.color ?? colors.nodeHeader;
+        ctx.globalAlpha = 0.85;
+        ctx.fillRect(0, 0, size[0], descH);
+        ctx.globalAlpha = 0.8;
+        ctx.font = `italic 11px Arial`;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = colors.nodeTitleText;
+        const maxWidth = size[0] - 12;
+        const truncated = truncateText(ctx, desc, maxWidth);
+        ctx.fillText(truncated, 6, descH / 2);
+        ctx.restore();
       }
     };
 
@@ -738,10 +776,10 @@ export class ZihuanCanvas {
     node.outputs = [];
     const visibleInPorts = visibleInputPorts(nodeDef.input_ports);
     for (const p of visibleInPorts) {
-      node.addInput(p.name, portTypeString(p.data_type as string | object));
+      node.addInput(p.name, portTypeString(p.data_type));
     }
     for (const p of nodeDef.output_ports) {
-      node.addOutput(p.name, portTypeString(p.data_type as string | object));
+      node.addOutput(p.name, portTypeString(p.data_type));
     }
 
     // Apply type-based port dot colours for all slots.
@@ -751,7 +789,7 @@ export class ZihuanCanvas {
     if (node.inputs) {
       for (let i = 0; i < visibleInPorts.length; i++) {
         const p = visibleInPorts[i];
-        const typeStr = portTypeString(p.data_type as string | object);
+        const typeStr = portTypeString(p.data_type);
         const resolvedType = typeStr === "Any" && this.state.graph
           ? resolveConcretePortType(this.state.graph, nodeDef.id, p.name, true)
           : typeStr;
@@ -764,7 +802,7 @@ export class ZihuanCanvas {
     if (node.outputs) {
       for (let i = 0; i < nodeDef.output_ports.length; i++) {
         const p = nodeDef.output_ports[i];
-        const typeStr = portTypeString(p.data_type as string | object);
+        const typeStr = portTypeString(p.data_type);
         const resolvedType = typeStr === "Any" && this.state.graph
           ? resolveConcretePortType(this.state.graph, nodeDef.id, p.name, false)
           : typeStr;
@@ -858,6 +896,28 @@ export class ZihuanCanvas {
       node.block_delete = true;
     }
 
+    // For function nodes with a non-empty description, create a unique subclass
+    // with slot_start_y = DESC_BAND_HEIGHT so that LiteGraph automatically offsets
+    // all slot positions, port dots, wire endpoints, and node height below the band.
+    if (nodeDef.node_type === "function") {
+      const funcCfg = nodeDef.inline_values?.["function_config"] as EmbeddedFunctionConfig | undefined;
+      const description = funcCfg?.description?.trim() ?? "";
+      if (description) {
+        const BaseClass = Object.getPrototypeOf(node).constructor;
+        const DescClass = class extends BaseClass {};
+        DescClass.title = BaseClass.title;
+        DescClass.desc = BaseClass.desc;
+        (DescClass as any).zihuanTypeId = (BaseClass as any).zihuanTypeId;
+        (DescClass as any).title_text_color = (BaseClass as any).title_text_color;
+        (DescClass as any).title_color = (BaseClass as any).title_color;
+        (DescClass as any).min_height = (BaseClass as any).min_height;
+        (DescClass as any).slot_start_y = DESC_BAND_HEIGHT;
+        Object.setPrototypeOf(node, DescClass.prototype);
+        node._descHeight = DESC_BAND_HEIGHT;
+        node._functionDescription = description;
+      }
+    }
+
     this.lGraph.add(node);
     this.nodeMap.set(nodeDef.id, node);
 
@@ -923,7 +983,7 @@ export class ZihuanCanvas {
       if (!port) continue;
       const resolvedType = this.state.graph
         ? resolveConcretePortType(this.state.graph, originDef.id, port.name, false)
-        : portTypeString(port.data_type as string | object);
+        : portTypeString(port.data_type);
       link.color = getPortColor(resolvedType);
     }
   }
@@ -1128,11 +1188,7 @@ export class ZihuanCanvas {
     const checkPorts = (portsArr: typeof newNodeDef.input_ports, wantInput: boolean) => {
       for (const p of portsArr) {
         if (p.hidden) continue;
-        const pt = typeof p.data_type === "string"
-          ? p.data_type
-          : Object.keys(p.data_type as object).length > 0
-            ? `${Object.keys(p.data_type as object)[0]}<${Object.values(p.data_type as object)[0] as string}>`
-            : "*";
+        const pt = portTypeString(p.data_type);
         // compatibility: source output→ new input, or source input → new output
         const compatible = isFromOutput
           ? wantInput && isCompatibleTypes(sourceType, pt)
@@ -1338,6 +1394,17 @@ export class ZihuanCanvas {
       return;
     }
 
+    const shouldRejectEmptySubgraph =
+      !isNodeGraphDefinitionLike(subgraphDef)
+      || (subgraphDef.nodes.length === 0
+        && (parentNodeDef.input_ports.length > 0 || parentNodeDef.output_ports.length > 0));
+    if (shouldRejectEmptySubgraph) {
+      alert(
+        "这个子图配置看起来已经损坏：内部节点列表为空。为避免再次覆盖已有配置，系统已阻止打开空子图。\n\n请先重新从文件加载工作流，或从历史版本恢复该函数节点。"
+      );
+      return;
+    }
+
     // Create a virtual graph session to hold the subgraph
     const tab = await graphs.create();
     const virtualSessionId = tab.id;
@@ -1345,6 +1412,16 @@ export class ZihuanCanvas {
 
     // Define how to save the subgraph back to the parent node
     const saveBack = async (modifiedGraph: NodeGraphDefinition): Promise<void> => {
+      if (!isNodeGraphDefinitionLike(modifiedGraph)) {
+        alert("子图保存失败：收到的子图数据结构无效，已阻止覆盖父节点配置。");
+        return;
+      }
+      const originalHadContent = hasVisibleSubgraphContent(subgraphDef);
+      if (originalHadContent && modifiedGraph.nodes.length === 0) {
+        alert("子图保存已阻止：修改后的子图为空，继续保存会覆盖原有内部节点。");
+        return;
+      }
+
       if (mode === "function" && functionConfig) {
         const updatedConfig: EmbeddedFunctionConfig = { ...functionConfig, subgraph: modifiedGraph };
         const parentGraph = await graphs.get(parentSessionId);
@@ -1736,7 +1813,7 @@ export class ZihuanCanvas {
           }
         }
       }
-      return { portName: p.name, dataType: typeof p.data_type === "string" ? p.data_type : portTypeString(p.data_type), description: p.description, required: p.required, connectedTo };
+      return { portName: p.name, dataType: portTypeString(p.data_type), description: p.description, required: p.required, connectedTo };
     });
 
     const outputConns = typeInfo.output_ports.map((p) => {
@@ -1749,7 +1826,7 @@ export class ZihuanCanvas {
           }
         }
       }
-      return { portName: p.name, dataType: typeof p.data_type === "string" ? p.data_type : portTypeString(p.data_type), description: p.description, required: p.required, connectedTo };
+      return { portName: p.name, dataType: portTypeString(p.data_type), description: p.description, required: p.required, connectedTo };
     });
 
     showNodeInfoDialog(typeInfo, inputConns, outputConns);
@@ -1817,7 +1894,7 @@ export class ZihuanCanvas {
       const ports = isOutput ? nodeDef.output_ports : nodeDef.input_ports;
       const port = ports.find(p => p.name === portName);
       if (!port) return "Any";
-      return typeof port.data_type === "string" ? port.data_type : portTypeString(port.data_type as object);
+      return portTypeString(port.data_type);
     };
 
     const getNodeDisplayName = (nodeId: string): string => {

@@ -1,8 +1,9 @@
 // Register all node types from the API with LiteGraph
 
 import { LiteGraph } from "litegraph.js";
-import type { NodeTypeInfo } from "../api/types";
+import type { NodeTypeInfo, DataTypeMetaData } from "../api/types";
 import { getPortColor } from "../ui/theme";
+import { normalizeDataType } from "../ui/dialogs/data_types";
 
 /** Module-level registry: type_id → NodeTypeInfo, populated by registerNodeTypes(). */
 const nodeTypeRegistry = new Map<string, NodeTypeInfo>();
@@ -34,7 +35,7 @@ export function registerNodeTypes(types: NodeTypeInfo[]): void {
       constructor() {
         super(info.display_name);
         for (const port of inputPorts) {
-          const typeStr = portTypeString(port.data_type as string | object);
+          const typeStr = portTypeString(port.data_type);
           this.addInput(port.name, typeStr);
           const last = this.inputs[this.inputs.length - 1];
           const col = getPortColor(typeStr);
@@ -42,7 +43,7 @@ export function registerNodeTypes(types: NodeTypeInfo[]): void {
           last.color_off = port.required ? "#e74c3c" : col;
         }
         for (const port of outputPorts) {
-          const typeStr = portTypeString(port.data_type as string | object);
+          const typeStr = portTypeString(port.data_type);
           this.addOutput(port.name, typeStr);
           const last = this.outputs[this.outputs.length - 1];
           const col = getPortColor(typeStr);
@@ -65,11 +66,7 @@ export function registerNodeTypes(types: NodeTypeInfo[]): void {
   }
 }
 
-/** Convert a DataType (possibly nested) to a simple litegraph type string. */
-export function portTypeString(dt: string | object): string {
-  if (typeof dt === "string") return dt;
-  // Handle Vec / other wrapper types
-  const keys = Object.keys(dt as object);
-  if (keys.length > 0) return `${keys[0]}<${Object.values(dt as object)[0] as string}>`;
-  return "*";
+/** Convert a DataTypeMetaData value to a simple litegraph type string. */
+export function portTypeString(dt: DataTypeMetaData): string {
+  return normalizeDataType(dt);
 }

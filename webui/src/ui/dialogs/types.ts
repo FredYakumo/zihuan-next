@@ -1,8 +1,8 @@
-import type { NodeGraphDefinition } from "../../api/types";
+import type { NodeGraphDefinition, DataTypeMetaData } from "../../api/types";
 
 export interface FunctionPortDef {
   name: string;
-  data_type: string;
+  data_type: DataTypeMetaData;
 }
 
 export interface EmbeddedFunctionConfig {
@@ -15,7 +15,7 @@ export interface EmbeddedFunctionConfig {
 
 export interface ToolParamDef {
   name: string;
-  data_type: string;
+  data_type: DataTypeMetaData;
   desc: string;
 }
 
