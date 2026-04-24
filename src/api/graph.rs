@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use salvo::prelude::*;
 use salvo::writing::Json;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use uuid::Uuid;
+use zihuan_node::function_graph::embedded_function_config_from_value;
 use zihuan_node::graph_io::{GraphMetadata, GraphPosition, GraphSize, NodeDefinition, NodeGraphDefinition, PortBinding};
 
 use super::state::{AppState, GraphSession, GraphTabInfo};
@@ -256,7 +257,31 @@ pub async fn update_node(req: &mut Request, res: &mut Response, depot: &mut Depo
     }
     if let Some(iv) = body.inline_values {
         if let serde_json::Value::Object(map) = iv {
-            for (k, v) in map {
+            for (k, mut v) in map {
+                if node.node_type == "function" && k == "function_config" {
+                    let existing_value = node.inline_values.get(&k);
+                    let existing_cfg = existing_value.and_then(embedded_function_config_from_value);
+                    let incoming_cfg = embedded_function_config_from_value(&v);
+
+                    match (existing_cfg, incoming_cfg) {
+                        (Some(existing_cfg), Some(mut incoming_cfg)) => {
+                            let existing_has_content = existing_cfg.subgraph.nodes.iter().any(|n| {
+                                n.id != "__function_inputs__" && n.id != "__function_outputs__"
+                            });
+                            let incoming_is_empty = incoming_cfg.subgraph.nodes.is_empty();
+
+                            if existing_has_content && incoming_is_empty {
+                                incoming_cfg.subgraph = existing_cfg.subgraph;
+                                if let Ok(merged) = serde_json::to_value(&incoming_cfg) {
+                                    v = merged;
+                                }
+                            }
+                        }
+                        (Some(_), None) => continue,
+                        _ => {}
+                    }
+                }
+
                 node.inline_values.insert(k, v);
             }
         }
