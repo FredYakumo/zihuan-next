@@ -1,5 +1,6 @@
 import type { FunctionPortDef } from "./types";
-import { dataTypeSelect } from "./data_types";
+import type { DataTypeMetaData } from "../../api/types";
+import { cloneDataTypeMetaData, dataTypeSelect, parseDisplayDataType } from "./data_types";
 
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
@@ -25,7 +26,12 @@ export function buildPortListEditor(
   ports: FunctionPortDef[],
   _showDesc?: boolean,
 ): () => FunctionPortDef[] {
-  const items: Array<{ nameEl: HTMLInputElement; typeEl: HTMLSelectElement; descEl?: HTMLInputElement }> = [];
+  const items: Array<{
+    nameEl: HTMLInputElement;
+    typeEl: HTMLSelectElement;
+    dataType: DataTypeMetaData;
+    descEl?: HTMLInputElement;
+  }> = [];
 
   const addRow = (port?: FunctionPortDef) => {
     const row = document.createElement("div");
@@ -37,6 +43,14 @@ export function buildPortListEditor(
     nameEl.value = port?.name ?? "";
 
     const typeEl = dataTypeSelect(port?.data_type ?? "String");
+    const item = {
+      nameEl,
+      typeEl,
+      dataType: cloneDataTypeMetaData(port?.data_type ?? "String"),
+    };
+    typeEl.addEventListener("change", () => {
+      item.dataType = parseDisplayDataType(typeEl.value);
+    });
 
     const removeBtn = document.createElement("button");
     removeBtn.textContent = "✕";
@@ -53,7 +67,7 @@ export function buildPortListEditor(
     row.appendChild(removeBtn);
     container.insertBefore(row, addBtn);
 
-    items.push({ nameEl, typeEl });
+    items.push(item);
   };
 
   const addBtn = document.createElement("button");
@@ -65,7 +79,10 @@ export function buildPortListEditor(
   for (const p of ports) addRow(p);
 
   return () => items
-    .map((it) => ({ name: it.nameEl.value.trim(), data_type: it.typeEl.value }))
+    .map((it) => ({
+      name: it.nameEl.value.trim(),
+      data_type: cloneDataTypeMetaData(it.dataType),
+    }))
     .filter((p) => p.name);
 }
 

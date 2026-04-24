@@ -1,5 +1,23 @@
 // TypeScript types mirroring the Rust API structs
 
+/**
+ * Object-variant form of a DataType as serialized by Rust serde.
+ * Tuple variants like `Vec(T)` become `{"Vec": T}`, `Custom(s)` becomes `{"Custom": s}`.
+ */
+export type DataTypeMetaDataObject = { Vec: DataTypeMetaData } | { Custom: string };
+
+/**
+ * Raw DataType as received from the backend — either a plain string (unit variant)
+ * or a JSON object (tuple variant). Mirrors the Rust `DataType` enum.
+ *
+ * Unit variants:  "Any" | "String" | "Integer" | "Float" | "Boolean" | "Json" | "Binary" |
+ *                 "Password" | "MessageEvent" | "OpenAIMessage" | "QQMessage" | "FunctionTools" |
+ *                 "BotAdapterRef" | "RedisRef" | "MySqlRef" | "TavilyRef" |
+ *                 "SessionStateRef" | "OpenAIMessageSessionCacheRef" | "LLModel" | "LoopControlRef"
+ * Tuple variants: { Vec: DataTypeMetaData } | { Custom: string }
+ */
+export type DataTypeMetaData = string | DataTypeMetaDataObject;
+
 export interface PortInfo {
   name: string;
   data_type: string;
@@ -37,7 +55,7 @@ export interface GraphSize {
 
 export interface Port {
   name: string;
-  data_type: string | object;
+  data_type: DataTypeMetaData;
   description: string | null;
   required: boolean;
   hidden?: boolean;
@@ -82,7 +100,7 @@ export interface HyperParameter {
 
 export interface GraphVariable {
   name: string;
-  data_type: string;
+  data_type: DataTypeMetaData;
   initial_value: unknown | null;
 }
 

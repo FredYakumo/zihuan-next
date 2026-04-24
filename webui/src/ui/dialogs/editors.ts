@@ -2,7 +2,8 @@ import { graphs } from "../../api/client";
 import type { NodeDefinition, Port } from "../../api/types";
 import { openOverlay } from "./base";
 import { buildPortListEditor, escapeHtml, extractTemplateVars } from "./shared";
-import { dataTypeSelect } from "./data_types";
+import { cloneDataTypeMetaData, dataTypeSelect, parseDisplayDataType } from "./data_types";
+import type { DataTypeMetaData } from "../../api/types";
 import type {
   BrainToolDefinition,
   EmbeddedFunctionConfig,
@@ -540,11 +541,20 @@ export function openBrainToolsEditor(
     card.appendChild(paramLabel);
 
     const paramContainer = document.createElement("div");
-    const paramItems: Array<{ nameEl: HTMLInputElement; typeEl: HTMLSelectElement; descEl: HTMLInputElement }> = [];
+    const paramItems: Array<{
+      nameEl: HTMLInputElement;
+      typeEl: HTMLSelectElement;
+      descEl: HTMLInputElement;
+      dataType: DataTypeMetaData;
+    }> = [];
 
     const syncParams = () => {
       tools[idx].parameters = paramItems
-        .map((it) => ({ name: it.nameEl.value.trim(), data_type: it.typeEl.value, desc: it.descEl.value.trim() }))
+        .map((it) => ({
+          name: it.nameEl.value.trim(),
+          data_type: cloneDataTypeMetaData(it.dataType),
+          desc: it.descEl.value.trim(),
+        }))
         .filter((p) => p.name);
     };
 
@@ -582,8 +592,18 @@ export function openBrainToolsEditor(
       row.appendChild(removeBtn);
       paramContainer.insertBefore(row, addParamBtn);
 
-      paramItems.push({ nameEl, typeEl, descEl });
-      [nameEl, typeEl, descEl].forEach((el) => el.addEventListener("change", syncParams));
+      const item = {
+        nameEl,
+        typeEl,
+        descEl,
+        dataType: cloneDataTypeMetaData(param?.data_type ?? "String"),
+      };
+      typeEl.addEventListener("change", () => {
+        item.dataType = parseDisplayDataType(typeEl.value);
+        syncParams();
+      });
+      paramItems.push(item);
+      [nameEl, descEl].forEach((el) => el.addEventListener("change", syncParams));
     };
 
     const addParamBtn = document.createElement("button");

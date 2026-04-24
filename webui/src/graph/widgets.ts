@@ -2,6 +2,7 @@
 
 import type { NodeDefinition } from "../api/types";
 import { graphs } from "../api/client";
+import { portTypeString } from "./registry";
 import {
   openFormatStringEditor,
   openJsonExtractEditor,
@@ -188,7 +189,7 @@ function setupSimpleInlineWidgets(
   for (const port of nodeDef.input_ports) {
     const key = port.name;
     const existingValue = nodeDef.inline_values?.[key];
-    const dt = typeof port.data_type === "string" ? port.data_type : "Any";
+    const dt = portTypeString(port.data_type);
 
     let addedWidget: any | null = null;
     if (dt === "Boolean") {
