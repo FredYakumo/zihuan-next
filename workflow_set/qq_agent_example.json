@@ -215,9 +215,9 @@
         "height": 401.06308
       },
       "inline_values": {
+        "mysql_port": "3306",
         "mysql_host": "127.0.0.1",
-        "mysql_database": "zihuan_aibot",
-        "mysql_port": "3306"
+        "mysql_database": "zihuan_aibot"
       },
       "port_bindings": {
         "mysql_user": {
@@ -346,8 +346,8 @@
         "height": 121.83149
       },
       "inline_values": {
-        "bucket_name": "message_id_cache",
-        "ttl_secs": "600"
+        "ttl_secs": "600",
+        "bucket_name": "message_id_cache"
       },
       "port_bindings": {},
       "has_error": false,
@@ -411,6 +411,10 @@
         "timeout_secs": "600"
       },
       "port_bindings": {
+        "api_key": {
+          "kind": "hyperparameter",
+          "name": "LLM_API_KEY"
+        },
         "api_endpoint": {
           "kind": "hyperparameter",
           "name": "LLM_API_ENDPOINT"
@@ -418,10 +422,6 @@
         "model_name": {
           "kind": "hyperparameter",
           "name": "LLM_MODEL_NAME"
-        },
-        "api_key": {
-          "kind": "hyperparameter",
-          "name": "LLM_API_KEY"
         }
       },
       "has_error": false,
@@ -5658,7 +5658,7 @@
                 "id": "656c7245-a650-4190-9ccf-e169fadcb418",
                 "inline_values": {
                   "function_config": {
-                    "description": "",
+                    "description": "加载System prompt, 用户会话历史消息, 本次消息事件中的消息",
                     "inputs": [
                       {
                         "data_type": "Any",
@@ -5669,18 +5669,24 @@
                         "name": "time"
                       },
                       {
-                        "data_type": "Vec<OpenAIMessage>",
+                        "data_type": {
+                          "Vec": "OpenAIMessage"
+                        },
                         "name": "vec2"
                       },
                       {
-                        "data_type": "Vec<OpenAIMessage>",
+                        "data_type": {
+                          "Vec": "OpenAIMessage"
+                        },
                         "name": "__vec2"
                       }
                     ],
                     "name": "消息加载",
                     "outputs": [
                       {
-                        "data_type": "Vec<OpenAIMessage>",
+                        "data_type": {
+                          "Vec": "OpenAIMessage"
+                        },
                         "name": "vec"
                       }
                     ],
@@ -5824,7 +5830,7 @@
                             "y": -300
                           },
                           "size": {
-                            "height": 148.33333,
+                            "height": 148.3333282470703,
                             "width": 504
                           }
                         },
@@ -6044,7 +6050,7 @@
                           },
                           "size": {
                             "height": 60,
-                            "width": 228.1412
+                            "width": 228.1412048339844
                           }
                         },
                         {
@@ -6065,11 +6071,15 @@
                                 "name": "time"
                               },
                               {
-                                "data_type": "Vec<OpenAIMessage>",
+                                "data_type": {
+                                  "Vec": "OpenAIMessage"
+                                },
                                 "name": "vec2"
                               },
                               {
-                                "data_type": "Vec<OpenAIMessage>",
+                                "data_type": {
+                                  "Vec": "OpenAIMessage"
+                                },
                                 "name": "__vec2"
                               }
                             ]
@@ -6077,13 +6087,15 @@
                           "input_ports": [
                             {
                               "data_type": "Json",
-                              "description": null,
+                              "description": "隐藏的函数签名 JSON",
+                              "hidden": true,
                               "name": "signature",
                               "required": false
                             },
                             {
                               "data_type": "Json",
-                              "description": null,
+                              "description": "运行时注入的函数输入 JSON",
+                              "hidden": true,
                               "name": "runtime_values",
                               "required": false
                             }
@@ -6093,33 +6105,41 @@
                           "output_ports": [
                             {
                               "data_type": "Any",
-                              "description": null,
+                              "description": "函数输入 'sender_id'",
+                              "hidden": false,
                               "name": "sender_id",
-                              "required": false
+                              "required": true
                             },
                             {
                               "data_type": "String",
-                              "description": null,
+                              "description": "函数输入 'time'",
+                              "hidden": false,
                               "name": "time",
-                              "required": false
+                              "required": true
                             },
                             {
-                              "data_type": "Vec<OpenAIMessage>",
-                              "description": null,
+                              "data_type": {
+                                "Vec": "OpenAIMessage"
+                              },
+                              "description": "函数输入 'vec2'",
+                              "hidden": false,
                               "name": "vec2",
-                              "required": false
+                              "required": true
                             },
                             {
-                              "data_type": "Vec<OpenAIMessage>",
-                              "description": null,
+                              "data_type": {
+                                "Vec": "OpenAIMessage"
+                              },
+                              "description": "函数输入 '__vec2'",
+                              "hidden": false,
                               "name": "__vec2",
-                              "required": false
+                              "required": true
                             }
                           ],
                           "port_bindings": {},
                           "position": {
                             "x": -150,
-                            "y": -276.6666666666667
+                            "y": -276.6666564941406
                           },
                           "size": {
                             "height": 120,
@@ -6136,7 +6156,9 @@
                           "inline_values": {
                             "signature": [
                               {
-                                "data_type": "Vec<Any>",
+                                "data_type": {
+                                  "Vec": "OpenAIMessage"
+                                },
                                 "name": "vec"
                               }
                             ]
@@ -6144,15 +6166,19 @@
                           "input_ports": [
                             {
                               "data_type": "Json",
-                              "description": null,
+                              "description": "隐藏的函数签名 JSON",
+                              "hidden": true,
                               "name": "signature",
                               "required": false
                             },
                             {
-                              "data_type": "Vec<Any>",
-                              "description": null,
+                              "data_type": {
+                                "Vec": "OpenAIMessage"
+                              },
+                              "description": "函数输出 'vec'",
+                              "hidden": false,
                               "name": "vec",
-                              "required": false
+                              "required": true
                             }
                           ],
                           "name": "函数输出",
@@ -6161,7 +6187,7 @@
                           "port_bindings": {},
                           "position": {
                             "x": 2500,
-                            "y": -276.6666666666667
+                            "y": -276.6666564941406
                           },
                           "size": {
                             "height": 120,
@@ -6176,54 +6202,54 @@
                 "input_ports": [
                   {
                     "data_type": "Any",
-                    "description": null,
+                    "description": "函数输入 'sender_id'",
                     "hidden": false,
                     "name": "sender_id",
-                    "required": false
+                    "required": true
                   },
                   {
                     "data_type": "String",
-                    "description": null,
+                    "description": "函数输入 'time'",
                     "hidden": false,
                     "name": "time",
-                    "required": false
+                    "required": true
                   },
                   {
                     "data_type": {
                       "Vec": "OpenAIMessage"
                     },
-                    "description": null,
+                    "description": "函数输入 'vec2'",
                     "hidden": false,
                     "name": "vec2",
-                    "required": false
+                    "required": true
                   },
                   {
                     "data_type": {
                       "Vec": "OpenAIMessage"
                     },
-                    "description": null,
+                    "description": "函数输入 '__vec2'",
                     "hidden": false,
                     "name": "__vec2",
-                    "required": false
+                    "required": true
                   }
                 ],
-                "name": "New Function",
+                "name": "消息加载",
                 "node_type": "function",
                 "output_ports": [
                   {
                     "data_type": {
-                      "Vec": "Any"
+                      "Vec": "OpenAIMessage"
                     },
-                    "description": null,
+                    "description": "函数输出 'vec'",
                     "hidden": false,
                     "name": "vec",
-                    "required": false
+                    "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1226.6666,
-                  "y": -276.66666
+                  "x": 1230,
+                  "y": -280
                 },
                 "size": {
                   "height": 160,
