@@ -1,4 +1,4 @@
-use std::process::Command;
+0use std::process::Command;
 
 fn main() {
     // Re-run this build script only when web sources change
@@ -10,7 +10,7 @@ fn main() {
     println!("cargo:rerun-if-changed=webui/tsconfig.json");
 
     // On Windows pnpm is a .ps1/.cmd script, not a plain executable,
-    // so we invoke it through cmd.exe.
+    // so invoke it through cmd.exe.
     let status = if cfg!(target_os = "windows") {
         Command::new("cmd")
             .args(["/c", "pnpm", "run", "build"])
