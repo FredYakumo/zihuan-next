@@ -215,18 +215,18 @@
         "height": 401.06308
       },
       "inline_values": {
-        "mysql_port": "3306",
         "mysql_host": "127.0.0.1",
-        "mysql_database": "zihuan_aibot"
+        "mysql_database": "zihuan_aibot",
+        "mysql_port": "3306"
       },
       "port_bindings": {
-        "mysql_user": {
-          "kind": "hyperparameter",
-          "name": "MYSQL_USER"
-        },
         "mysql_password": {
           "kind": "hyperparameter",
           "name": "MYSQL_PASSWORD"
+        },
+        "mysql_user": {
+          "kind": "hyperparameter",
+          "name": "MYSQL_USER"
         }
       },
       "has_error": false,
@@ -346,8 +346,8 @@
         "height": 121.83149
       },
       "inline_values": {
-        "ttl_secs": "600",
-        "bucket_name": "message_id_cache"
+        "bucket_name": "message_id_cache",
+        "ttl_secs": "600"
       },
       "port_bindings": {},
       "has_error": false,
@@ -411,10 +411,6 @@
         "timeout_secs": "600"
       },
       "port_bindings": {
-        "api_key": {
-          "kind": "hyperparameter",
-          "name": "LLM_API_KEY"
-        },
         "api_endpoint": {
           "kind": "hyperparameter",
           "name": "LLM_API_ENDPOINT"
@@ -422,6 +418,10 @@
         "model_name": {
           "kind": "hyperparameter",
           "name": "LLM_MODEL_NAME"
+        },
+        "api_key": {
+          "kind": "hyperparameter",
+          "name": "LLM_API_KEY"
         }
       },
       "has_error": false,
@@ -3872,7 +3872,7 @@
                 },
                 "size": {
                   "height": 106,
-                  "width": 235.96152
+                  "width": 235.9615173339844
                 }
               },
               {
@@ -3910,7 +3910,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 159.06445
+                  "width": 159.064453125
                 }
               },
               {
@@ -5077,8 +5077,8 @@
                   "y": 0
                 },
                 "size": {
-                  "height": 239.32555,
-                  "width": 249.90527
+                  "height": 239.32554626464844,
+                  "width": 249.9052734375
                 }
               },
               {
@@ -5204,7 +5204,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 223.52011
+                  "width": 223.5201110839844
                 }
               },
               {
@@ -5253,7 +5253,7 @@
                 },
                 "size": {
                   "height": 60,
-                  "width": 197.82382
+                  "width": 197.8238220214844
                 }
               },
               {
@@ -5332,7 +5332,7 @@
                 },
                 "size": {
                   "height": 142,
-                  "width": 228.4
+                  "width": 228.3999938964844
                 }
               },
               {
@@ -5650,7 +5650,7 @@
                 }
               },
               {
-                "description": null,
+                "description": "加载System prompt, 用户会话历史消息, 本次消息事件中的消息",
                 "dynamic_input_ports": true,
                 "dynamic_output_ports": true,
                 "has_cycle": false,
