@@ -59,13 +59,13 @@
         "bot_server_url": "ws://localhost:3001"
       },
       "port_bindings": {
-        "qq_id": {
-          "kind": "hyperparameter",
-          "name": "BOT_ID"
-        },
         "bot_server_token": {
           "kind": "hyperparameter",
           "name": "BOT_SERVER_TOKEN"
+        },
+        "qq_id": {
+          "kind": "hyperparameter",
+          "name": "BOT_ID"
         }
       },
       "has_error": false,
@@ -111,8 +111,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1110.0,
-        "y": 540.0
+        "x": 1120.0,
+        "y": 530.0
       },
       "size": {
         "width": 367.08,
@@ -207,8 +207,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 150.0,
-        "y": 560.0
+        "x": 170.0,
+        "y": 570.0
       },
       "size": {
         "width": 377.9077,
@@ -272,8 +272,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 590.0,
-        "y": 590.0
+        "x": 690.0,
+        "y": 640.0
       },
       "size": {
         "width": 214.4414,
@@ -346,8 +346,8 @@
         "height": 121.83149
       },
       "inline_values": {
-        "bucket_name": "message_id_cache",
-        "ttl_secs": "600"
+        "ttl_secs": "600",
+        "bucket_name": "message_id_cache"
       },
       "port_bindings": {},
       "has_error": false,
@@ -415,13 +415,13 @@
           "kind": "hyperparameter",
           "name": "LLM_API_ENDPOINT"
         },
-        "model_name": {
-          "kind": "hyperparameter",
-          "name": "LLM_MODEL_NAME"
-        },
         "api_key": {
           "kind": "hyperparameter",
           "name": "LLM_API_KEY"
+        },
+        "model_name": {
+          "kind": "hyperparameter",
+          "name": "LLM_MODEL_NAME"
         }
       },
       "has_error": false,
@@ -490,7 +490,7 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 150.0,
+        "x": 180.0,
         "y": 1150.0
       },
       "size": {
@@ -522,8 +522,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 150.0,
-        "y": 1030.0
+        "x": 180.0,
+        "y": 1040.0
       },
       "size": {
         "width": 179.9,
@@ -594,12 +594,12 @@
       "dynamic_input_ports": true,
       "dynamic_output_ports": true,
       "position": {
-        "x": 1830.0,
-        "y": 290.0
+        "x": 1800.0,
+        "y": 210.0
       },
       "size": {
-        "width": 210.0,
-        "height": 178.0
+        "width": 230.0,
+        "height": 230.0
       },
       "inline_values": {
         "function_config": {
@@ -2054,7 +2054,7 @@
                 "port_bindings": {},
                 "position": {
                   "x": 2960,
-                  "y": 340
+                  "y": 240
                 },
                 "size": {
                   "height": 218,
@@ -2105,7 +2105,7 @@
                 "port_bindings": {},
                 "position": {
                   "x": 2280,
-                  "y": 740
+                  "y": 730
                 },
                 "size": {
                   "height": 46,
@@ -2885,12 +2885,6 @@
                     "subgraph": {
                       "edges": [
                         {
-                          "from_node_id": "node_49",
-                          "from_port": "message",
-                          "to_node_id": "node_50",
-                          "to_port": "element"
-                        },
-                        {
                           "from_node_id": "node_50",
                           "from_port": "array",
                           "to_node_id": "node_8",
@@ -2939,10 +2933,10 @@
                           "to_port": "vec2"
                         },
                         {
-                          "from_node_id": "node_6",
-                          "from_port": "vec",
-                          "to_node_id": "__function_outputs__",
-                          "to_port": "vec"
+                          "from_node_id": "node_49",
+                          "from_port": "message",
+                          "to_node_id": "node_50",
+                          "to_port": "element"
                         }
                       ],
                       "hyperparameter_groups": [],
@@ -2992,8 +2986,8 @@
                           ],
                           "port_bindings": {},
                           "position": {
-                            "x": 2220,
-                            "y": 100
+                            "x": 2330,
+                            "y": -170
                           },
                           "size": {
                             "height": 102,
@@ -3032,7 +3026,7 @@
                           ],
                           "port_bindings": {},
                           "position": {
-                            "x": 2600,
+                            "x": 2450,
                             "y": 120
                           },
                           "size": {
@@ -3511,12 +3505,12 @@
       "dynamic_input_ports": true,
       "dynamic_output_ports": true,
       "position": {
-        "x": 1530.0,
-        "y": -80.0
+        "x": 1580.0,
+        "y": -90.0
       },
       "size": {
-        "width": 210.0,
-        "height": 178.0
+        "width": 239.0,
+        "height": 215.0
       },
       "inline_values": {
         "function_config": {
@@ -3788,6 +3782,36 @@
                 "from_port": "vec",
                 "to_node_id": "node_9",
                 "to_port": "vec1"
+              },
+              {
+                "from_node_id": "node_6",
+                "from_port": "failed",
+                "to_node_id": "node_15",
+                "to_port": "first"
+              },
+              {
+                "from_node_id": "node_14",
+                "from_port": "messages",
+                "to_node_id": "node_15",
+                "to_port": "second"
+              },
+              {
+                "from_node_id": "node_15",
+                "from_port": "output",
+                "to_node_id": "node_13",
+                "to_port": "message"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "qq_bot_adapter",
+                "to_node_id": "node_13",
+                "to_port": "bot_adapter"
+              },
+              {
+                "from_node_id": "node_34",
+                "from_port": "true_output",
+                "to_node_id": "node_13",
+                "to_port": "target_id"
               }
             ],
             "hyperparameter_groups": [],
@@ -4814,8 +4838,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 380,
-                  "y": 150
+                  "x": 320,
+                  "y": 190
                 },
                 "size": {
                   "height": 98,
@@ -5545,8 +5569,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 3200,
-                  "y": 620
+                  "x": 3320,
+                  "y": 640
                 },
                 "size": {
                   "height": 98,
@@ -6417,12 +6441,6 @@
     {
       "from_node_id": "node_30",
       "from_port": "time",
-      "to_node_id": "node_1",
-      "to_port": "qq_id"
-    },
-    {
-      "from_node_id": "node_30",
-      "from_port": "time",
       "to_node_id": "node_14",
       "to_port": "time"
     },
@@ -6467,12 +6485,6 @@
       "from_port": "tavily_ref",
       "to_node_id": "node_14",
       "to_port": "tavily_ref"
-    },
-    {
-      "from_node_id": "node_1",
-      "from_port": "message_event",
-      "to_node_id": "node_4",
-      "to_port": "message_event"
     },
     {
       "from_node_id": "node_1",

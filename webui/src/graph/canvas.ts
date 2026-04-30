@@ -11,7 +11,8 @@ import type { BrainToolDefinition, EmbeddedFunctionConfig, ConnectPortChoice, Po
 import { showConnectPortDialog, showPortSelectDialog } from "../ui/dialogs/connection_dialogs";
 import { showAddNodeDialog, showNodeInfoDialog } from "../ui/dialogs/node_dialogs";
 import { getLiteGraphColors, getPortColor, onThemeChange, getBoundaryNodeColors } from "../ui/theme";
-import { getInlineRowCenterY } from "./inline_layout";
+import { getInlineRowCenterY, getInlineWidgetHeight, getInlineWidgetTopY } from "./inline_layout";
+import { computeLinkGeometry, pointOnLinkGeometry, traceLinkPath } from "./link_layout";
 
 /** Title bar height constant (matches LiteGraph.NODE_TITLE_HEIGHT default). */
 const NODE_TITLE_HEIGHT = 30;
@@ -36,6 +37,45 @@ function getInlineWidgetInputIndex(node: any, widget: any): number {
     (inp: any) => inp.widget &&
       (typeof inp.widget === "object" ? inp.widget.name : inp.widget) === widget?.name
   ) ?? -1;
+}
+
+function getInputLinkedWidget(node: any, input: any): any | null {
+  if (!node?.widgets || !input?.widget) return null;
+  const widgetName: string = typeof input.widget === "object" ? input.widget.name : input.widget;
+  return (node.widgets as any[]).find((widget: any) => widget?.name === widgetName) ?? null;
+}
+
+function isInlineInputOccupied(node: any, input: any): boolean {
+  if (!node?._hasInlineWidgets || !input?.widget) return false;
+  return input.link != null || !!node._portBindings?.[input.name];
+}
+
+function findInlineInputAtPosition(
+  node: any,
+  graphX: number,
+  graphY: number,
+): { slot: number; input: any } | null {
+  if (!node?._hasInlineWidgets || !node?.inputs?.length || !node?.pos || !node?.size) return null;
+
+  const localX = graphX - node.pos[0];
+  const localY = graphY - node.pos[1];
+  const widgetWidth = Number(node.size[0] ?? 0);
+  if (widgetWidth <= 0) return null;
+
+  if (localX < 6 || localX > widgetWidth - 12) return null;
+
+  const widgetHeight = getInlineWidgetHeight();
+  for (let i = 0; i < node.inputs.length; i++) {
+    const input = node.inputs[i];
+    if (!input?.widget) continue;
+
+    const top = getInlineWidgetTopY(node, i);
+    if (localY >= top && localY <= top + widgetHeight) {
+      return { slot: i, input };
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -150,11 +190,13 @@ export class ZihuanCanvas {
     this.applyLiteGraphTheme();
     onThemeChange(() => this.applyLiteGraphTheme());
 
-    // Use orthogonal routing (STRAIGHT_LINK = 0): horizontal → vertical → horizontal
-    (this.lCanvas as any).links_render_mode = 0;
+    // Use spline mode for drag previews; committed links use our custom Bezier
+    // renderer for a ComfyUI-like curved appearance.
+    (this.lCanvas as any).links_render_mode = (LiteGraph as any).SPLINE_LINK ?? 2;
 
-    // Fix LiteGraph's STRAIGHT_LINK rendering when dragging to/from the mouse,
-    // where the end direction being CENTER causes a weird 90° curve at the endpoint.
+    // Use a custom renderer for committed links so the final wire shape matches
+    // a ComfyUI-style smooth Bezier curve. Temporary drag links still use
+    // LiteGraph's spline renderer to keep interaction behavior stable.
     const origRenderLink = (LGraphCanvas.prototype as any).renderLink;
     (LGraphCanvas.prototype as any).renderLink = function(
       ctx: CanvasRenderingContext2D,
@@ -168,14 +210,74 @@ export class ZihuanCanvas {
       end_dir: number,
       num_sublines: number
     ) {
-      if (this.links_render_mode === 0 /* LiteGraph.STRAIGHT_LINK */) {
-        // LiteGraph's STRAIGHT_LINK implementation has a bug where if start_dir is LEFT or end_dir is CENTER 
-        // (like when dragging backward or towards the mouse), it applies the offset to the Y-axis instead of X.
-        // Forcing RIGHT and LEFT ensures it always uses horizontal offsets for our left/right ports.
-        start_dir = 4 /* LiteGraph.RIGHT */;
-        end_dir = 3 /* LiteGraph.LEFT */;
+      const shouldUseCustomRenderer = !!link
+        && (!num_sublines || num_sublines <= 1);
+
+      if (!shouldUseCustomRenderer) {
+        return origRenderLink.call(this, ctx, a, b, link, skip_border, flow, color, start_dir, end_dir, num_sublines);
       }
-      return origRenderLink.call(this, ctx, a, b, link, skip_border, flow, color, start_dir, end_dir, num_sublines);
+
+      this.visible_links.push(link);
+
+      if (!color && link) {
+        color = link.color || (LGraphCanvas as any).link_type_colors?.[link.type];
+      }
+      if (!color) color = this.default_link_color;
+      if (link != null && this.highlighted_links?.[link.id]) color = "#FFF";
+
+      const fanout = getLinkFanoutInfo(this, link);
+      const geometry = computeLinkGeometry(
+        { x: a[0], y: a[1] },
+        { x: b[0], y: b[1] },
+        fanout.index,
+        fanout.count,
+      );
+
+      if (!link._pos) link._pos = new Float32Array(2);
+      link._pos[0] = geometry.midPoint.x;
+      link._pos[1] = geometry.midPoint.y;
+      (link as any)._zhLabelPos = [geometry.labelAnchor.x, geometry.labelAnchor.y];
+      (link as any)._zhFanoutCount = fanout.count;
+
+      const colors = getLiteGraphColors();
+      const mainWidth = Math.max(2.6, (this.connections_width ?? 3) - 0.05);
+      const haloWidth = mainWidth + 3.2;
+
+      ctx.save();
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      if (!skip_border && (this.ds?.scale ?? 1) > 0.5) {
+        ctx.beginPath();
+        traceLinkPath(ctx, geometry);
+        ctx.lineWidth = haloWidth;
+        ctx.strokeStyle = colors.linkHalo;
+        ctx.stroke();
+      }
+
+      ctx.beginPath();
+      traceLinkPath(ctx, geometry);
+      ctx.lineWidth = mainWidth;
+      ctx.strokeStyle = color;
+      ctx.stroke();
+
+      if (flow) {
+        ctx.fillStyle = color;
+        const dotRadius = Math.max(2.6, mainWidth * 0.9);
+        const now = typeof (LiteGraph as any).getTime === "function"
+          ? (LiteGraph as any).getTime()
+          : Date.now();
+        for (let i = 0; i < 5; i++) {
+          const t = (now * 0.001 + i * 0.18) % 1;
+          const pos = pointOnLinkGeometry(geometry, t);
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y, dotRadius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      ctx.restore();
+      return;
     };
 
     // Patch drawNodeShape so that when a node provides onDrawTitleText,
@@ -219,15 +321,13 @@ export class ZihuanCanvas {
     // AFTER the widget backgrounds are rendered (so badges are visible on top).
     const origDrawNodeWidgets = (this.lCanvas as any).drawNodeWidgets.bind(this.lCanvas);
     (this.lCanvas as any).drawNodeWidgets = (node: any, posY: any, ctx: CanvasRenderingContext2D) => {
-      // Sync widget disabled state with port connection state.
-      // When an input port has an active wire its inline widget should appear
-      // greyed-out and non-interactive (LiteGraph applies 50% alpha + no stroke).
+      // Generic inline rows become visually occupied when their input is bound
+      // or connected, so the linked widget must stop reacting to clicks.
       if (node.inputs && node.widgets) {
         for (const input of node.inputs as any[]) {
           if (!input.widget) continue;
-          const widgetName: string = typeof input.widget === "object" ? input.widget.name : input.widget;
-          const w = (node.widgets as any[]).find((ww: any) => ww.name === widgetName);
-          if (w) w.disabled = input.link != null;
+          const w = getInputLinkedWidget(node, input);
+          if (w) w.disabled = isInlineInputOccupied(node, input) || input.link != null;
         }
       }
 
@@ -266,6 +366,8 @@ export class ZihuanCanvas {
           if (w.last_y === undefined) continue;
           const ww: number = w.width || nodeWidth;
           const inlineInputIdx = isInline ? getInlineWidgetInputIndex(node, w) : -1;
+          const inlineInput = inlineInputIdx >= 0 ? (node.inputs as any[])?.[inlineInputIdx] : undefined;
+          const inlineRowOccupied = !!inlineInput && isInlineInputOccupied(node, inlineInput);
           const inlineRowCenterY = inlineInputIdx >= 0
             ? getInlineRowCenterY(node, inlineInputIdx)
             : w.last_y + H * 0.5;
@@ -274,6 +376,8 @@ export class ZihuanCanvas {
             // Erase the full-width LiteGraph widget background back to node color.
             ctx.fillStyle = c.nodeBg;
             ctx.fillRect(margin, w.last_y, ww - margin * 2, H);
+
+            if (inlineRowOccupied) continue;
 
             if (w.type === "button") {
               // Button widgets still need a visible box for click affordance.
@@ -420,21 +524,27 @@ export class ZihuanCanvas {
       const fontSize = Math.round(10 / scale);
       const titleH: number = (LiteGraph as any).NODE_TITLE_HEIGHT ?? 24;
       const allNodes: any[] = (this.lGraph as any)._nodes ?? [];
+      const colors = getLiteGraphColors();
       ctx.save();
       ctx.font = `bold ${fontSize}px sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      // Deduplicate: one label per (origin_id, origin_slot) pair.
-      const drawnPorts = new Set<string>();
+      const occupiedRects: Array<{ left: number; top: number; right: number; bottom: number }> = [];
       for (const link of Object.values(links)) {
         if (!link || link.origin_id === undefined) continue;
         let typeName: string = String(link.type ?? "");
         if (!typeName || typeName === "*" || typeName === "null" || typeName === "undefined") continue;
         // If the link type contains "Any" (e.g. "Any", "Vec<Any>"), resolve to concrete type
+        const originNode = this.lGraph.getNodeById(link.origin_id) as any;
+        const targetNode = this.lGraph.getNodeById(link.target_id) as any;
+        const originDef = originNode?.zihuanId && this.state.graph
+          ? this.state.graph.nodes.find((n) => n.id === originNode.zihuanId)
+          : undefined;
+        const targetDef = targetNode?.zihuanId && this.state.graph
+          ? this.state.graph.nodes.find((n) => n.id === targetNode.zihuanId)
+          : undefined;
         if (typeName.includes("Any") && this.state.graph) {
-          const originNode = this.lGraph.getNodeById(link.origin_id) as any;
           if (originNode?.zihuanId) {
-            const originDef = this.state.graph.nodes.find((n) => n.id === originNode.zihuanId);
             const port = originDef?.output_ports[link.origin_slot];
             if (port) {
               const resolved = resolveConcretePortType(this.state.graph, originNode.zihuanId, port.name, false);
@@ -442,37 +552,53 @@ export class ZihuanCanvas {
             }
           }
         }
-        const portKey = `${link.origin_id}:${link.origin_slot}`;
-        if (drawnPorts.has(portKey)) continue;
-        drawnPorts.add(portKey);
-        const pos: Float32Array | null = link._pos ?? null;
-        if (!pos) continue;
-        const x = pos[0];
-        let y = pos[1];
+        const rawLabel = typeName;
+
+        const labelPos = getLinkLabelPosition(link);
+        if (!labelPos) continue;
+        const x = labelPos[0];
+        let y = labelPos[1];
         const padding = 3 / scale;
-        const metrics = ctx.measureText(typeName);
+        const labelText = truncateText(ctx, rawLabel, 240 / scale);
+        const metrics = ctx.measureText(labelText);
         const pw = metrics.width + padding * 2;
         const ph = fontSize + padding * 2;
-        // If the label center falls inside any node, push it above that node's top edge.
-        for (const node of allNodes) {
-          if (!node.pos || !node.size) continue;
-          const nx = node.pos[0];
-          const ny = node.pos[1] - titleH;
-          const nw = node.size[0];
-          const nh = node.size[1] + titleH;
-          if (x > nx && x < nx + nw && y > ny && y < ny + nh) {
-            y = ny - ph / 2 - 2 / scale;
+        for (let attempt = 0; attempt < 6; attempt++) {
+          let overlapsNode = false;
+          for (const node of allNodes) {
+            if (!node.pos || !node.size) continue;
+            const nx = node.pos[0];
+            const ny = node.pos[1] - titleH;
+            const nw = node.size[0];
+            const nh = node.size[1] + titleH;
+            if (x > nx && x < nx + nw && y > ny && y < ny + nh) {
+              y = ny - ph / 2 - 4 / scale;
+              overlapsNode = true;
+            }
           }
+
+          const rect = {
+            left: x - pw / 2,
+            top: y - ph / 2,
+            right: x + pw / 2,
+            bottom: y + ph / 2,
+          };
+          const overlapsLabel = occupiedRects.some((other) => rectsOverlap(rect, other));
+          if (!overlapsNode && !overlapsLabel) {
+            occupiedRects.push(rect);
+            break;
+          }
+          y -= ph + 4 / scale;
         }
         const rx = 3 / scale;
         // Pill background
-        ctx.fillStyle = "rgba(0,0,0,0.65)";
+        ctx.fillStyle = colors.linkLabelBg;
         ctx.beginPath();
         (ctx as any).roundRect(x - pw / 2, y - ph / 2, pw, ph, rx);
         ctx.fill();
         // Label text
-        ctx.fillStyle = "#ffffff";
-        ctx.fillText(typeName, x, y);
+        ctx.fillStyle = colors.linkLabelText;
+        ctx.fillText(labelText, x, y);
       }
       ctx.restore();
     };
@@ -557,6 +683,14 @@ export class ZihuanCanvas {
             this.showPortBindingMenu(node, found.slot, portName, e);
             return;
           }
+        }
+
+        const inlineInputHit = findInlineInputAtPosition(node, gx, gy);
+        if (inlineInputHit?.input?.name) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.showPortBindingMenu(node, inlineInputHit.slot, inlineInputHit.input.name, e);
+          return;
         }
 
         // Widget-linked input slots are not in getSlotInPosition's standard vertical
@@ -2130,6 +2264,60 @@ export class ZihuanCanvas {
     this.state.dirty = true;
     this.onGraphDirty?.();
   }
+}
+
+function getLinkFanoutInfo(canvas: any, link: any): { index: number; count: number } {
+  const links = canvas.graph?.links ? Object.values(canvas.graph.links).filter(Boolean) as any[] : [];
+  const siblings = links
+    .filter((candidate) =>
+      candidate.origin_id === link.origin_id && candidate.origin_slot === link.origin_slot
+    )
+    .sort((lhs, rhs) => compareLinkTargets(canvas, lhs, rhs));
+  if (siblings.length === 0) return { index: 0, count: 1 };
+  const idx = siblings.findIndex((candidate) => candidate.id === link.id);
+  return { index: idx >= 0 ? idx : 0, count: siblings.length };
+}
+
+function compareLinkTargets(canvas: any, lhs: any, rhs: any): number {
+  const left = getLinkTargetSortPoint(canvas, lhs);
+  const right = getLinkTargetSortPoint(canvas, rhs);
+  return left.y - right.y
+    || left.x - right.x
+    || (lhs.target_slot ?? 0) - (rhs.target_slot ?? 0)
+    || String(lhs.target_id ?? "").localeCompare(String(rhs.target_id ?? ""))
+    || (lhs.id ?? 0) - (rhs.id ?? 0);
+}
+
+function getLinkTargetSortPoint(canvas: any, link: any): { x: number; y: number } {
+  const targetNode = canvas.graph?.getNodeById?.(link.target_id);
+  if (targetNode?.getConnectionPos) {
+    const pos = new Float32Array(2);
+    targetNode.getConnectionPos(true, link.target_slot, pos);
+    return { x: pos[0], y: pos[1] };
+  }
+  return {
+    x: targetNode?.pos?.[0] ?? 0,
+    y: targetNode?.pos?.[1] ?? 0,
+  };
+}
+
+function getLinkLabelPosition(link: any): [number, number] | null {
+  const customPos = (link as any)?._zhLabelPos as ArrayLike<number> | undefined;
+  if (customPos && typeof customPos.length === "number" && customPos.length >= 2) {
+    return [customPos[0], customPos[1]];
+  }
+  const pos = link?._pos as ArrayLike<number> | null | undefined;
+  if (pos && typeof pos.length === "number" && pos.length >= 2) {
+    return [pos[0], pos[1]];
+  }
+  return null;
+}
+
+function rectsOverlap(
+  a: { left: number; top: number; right: number; bottom: number },
+  b: { left: number; top: number; right: number; bottom: number },
+): boolean {
+  return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
 }
 
 /** Draw the "?" help button in the top-right of the node title bar when hovered. */

@@ -411,9 +411,21 @@ Pass-through ports (same name on both an input and its corresponding output, e.g
 
 | File | Responsibility |
 |------|---------------|
+| `webui/src/graph/link_layout.ts` | Connection geometry helpers for committed links: fan-out separation, curve control points, and label anchors |
 | `webui/src/graph/inline_layout.ts` | Canonical Y-geometry helpers (`getInlineRowCenterY`, `getInlineWidgetTopY`, etc.) |
 | `webui/src/graph/widgets.ts` — `setupSimpleInlineWidgets` | Creates widgets, sets `widget.y`, `_inlineInputIndex`, `input.label=""`, `_hasInlineWidgets` |
 | `webui/src/graph/canvas.ts` — `drawNodeWidgets` override | Erase → value redraw → badges → input labels → output labels |
 | `webui/src/graph/canvas.ts` — `drawInlineInputLabels` | Repaints suppressed input slot names after the erase step |
 | `webui/src/graph/canvas.ts` — `drawInlineOutputLabels` | Repaints output slot labels (with local erase) at the end of the overdraw pass |
 | `webui/src/graph/canvas.ts` — `drawWidgetBindingBadges` | Draws colored pill badges for hyperparameter/variable-bound ports |
+
+### Custom link rendering invariants
+
+Committed graph links in the browser canvas no longer rely entirely on LiteGraph's stock orthogonal path. `canvas.ts` uses `link_layout.ts` to render a **ComfyUI-style smooth Bezier curve** with these invariants:
+
+- The curve must separate visibly from the source port early, using a strong horizontal pull on the source-side control point. This avoids the "vertical trunk" ambiguity where a downward wire looks detached from the node that emitted it.
+- Multiple links that fan out from the same output port must diverge near the source side, not only near the targets. The fan-out offset is computed per `(origin_id, origin_slot)` group.
+- Label anchors belong to individual rendered links, not to a deduplicated output-port midpoint. When an output fans out to several targets, each visible wire keeps its own anchor so users can tell which target a label belongs to.
+- Temporary drag links use LiteGraph's spline renderer so preview wires stay visually close to the committed curved result.
+
+If you touch browser link rendering in the future, preserve those invariants unless you deliberately redesign the canvas interaction model.
