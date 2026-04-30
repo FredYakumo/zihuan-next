@@ -150,6 +150,132 @@ They also:
 
 ---
 
+## Brain Engine (`crates/zihuan_llm/src/agent/brain.rs`)
+
+The `Brain` struct is the shared runtime engine that powers both `BrainNode` and higher-level handler nodes such as `QqMessageHandlerNode`. It lives in `crates/zihuan_llm/src/agent/brain.rs` and is the single canonical implementation of the LLM ↔ tool call loop.
+
+### Architecture
+
+```
+Brain
+├── llm: Arc<dyn LLMBase>          ← the language model
+└── tools: Vec<Box<dyn BrainTool>> ← registered tools
+```
+
+`Brain` is decoupled from the node system — it has no knowledge of `DataValue`, ports, or graphs. Callers assemble a `Brain`, hand it a `Vec<OpenAIMessage>`, and receive back the new messages produced during that run.
+
+### BrainTool trait
+
+```rust
+pub trait BrainTool: Send + Sync + 'static {
+    /// LLM-facing function spec (name, description, JSON schema of parameters).
+    fn spec(&self) -> Arc<dyn FunctionTool>;
+    /// Execute the tool. `call_content` is the assistant message text for this
+    /// turn (useful for sending a progress notification before doing the work).
+    fn execute(&self, call_content: &str, arguments: &Value) -> String;
+}
+```
+
+Implement `BrainTool` to wrap any callable resource — a function subgraph, a REST API, a Rust function — without touching the loop logic.
+
+**Current implementations**
+
+| Type | Location | What it does |
+|---|---|---|
+| `SubgraphBrainTool` | `brain_node.rs` | Executes a `BrainToolDefinition` function subgraph |
+| `TavilyBrainTool` | `qq_message_handler_node.rs` | Calls the Tavily search API and sends a progress notification |
+
+### BrainStopReason
+
+```rust
+pub enum BrainStopReason {
+    Done,                          // last response had no tool calls
+    TransportError(String),        // LLM returned a transport-level error string
+    MaxIterationsReached,          // hit MAX_TOOL_ITERATIONS without a final message
+}
+```
+
+### Brain API
+
+```rust
+// Construction
+let brain = Brain::new(llm_arc);
+
+// Builder-style tool registration (takes ownership)
+let brain = brain.with_tool(MyTool { ... });
+
+// In-place tool registration
+brain.add_tool(MyTool { ... });
+
+// Run the loop
+let (output_messages, stop_reason) = brain.run(conversation_messages);
+```
+
+`Brain::run` returns all **new** messages produced during the run (assistant turns + tool results + final assistant message). The caller's input messages are not repeated in the output.
+
+### Loop behavior
+
+1. `sanitize_messages_for_inference` — drop dangling tool-call segments from the history before the first inference.
+2. Call `llm.inference(messages, tools)`.
+3. If the response content starts with a known transport-error prefix → return `TransportError`.
+4. If the response has no tool calls → return `Done`.
+5. For each tool call: find the matching `BrainTool` by `spec().name()`, call `execute(content, arguments)`, append a `tool` role result message.
+6. Repeat from step 2 until `Done`, `TransportError`, or `MAX_TOOL_ITERATIONS` (default `25`) is reached.
+
+### sanitize_messages_for_inference
+
+```rust
+pub fn sanitize_messages_for_inference(messages: Vec<OpenAIMessage>) -> Vec<OpenAIMessage>
+```
+
+Removes incomplete or orphaned tool-call sequences so the conversation passed to the LLM is always structurally valid:
+
+- If an `assistant` message with `tool_calls` is followed by another `assistant+tool_calls` before all results arrived → the first segment is dropped.
+- `tool` role messages whose `tool_call_id` has no matching pending call → dropped.
+- A `tool_calls` segment still open at the end of history → dropped.
+
+This guard runs once at the start of every `Brain::run` call.
+
+### Adding a new BrainTool
+
+1. Create a struct that holds whatever state the tool needs.
+2. Implement `BrainTool`:
+   - `spec()` — return an `Arc<dyn FunctionTool>` describing the tool name, description, and JSON-schema parameters.
+   - `execute()` — do the work, return a JSON string (`"{\"key\": \"value\"}"`).
+3. Pass the tool to `Brain::with_tool` or `Brain::add_tool` before calling `run`.
+
+```rust
+struct GreetTool;
+
+impl BrainTool for GreetTool {
+    fn spec(&self) -> Arc<dyn FunctionTool> {
+        Arc::new(SimpleSpec {
+            name: "greet",
+            description: "Say hello to someone",
+            params: json!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Person's name" }
+                },
+                "required": ["name"]
+            }),
+        })
+    }
+
+    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
+        let name = arguments["name"].as_str().unwrap_or("stranger");
+        serde_json::json!({ "greeting": format!("Hello, {name}!") }).to_string()
+    }
+}
+
+// Usage
+let (messages, reason) = Brain::new(llm)
+    .with_tool(GreetTool)
+    .run(conversation);
+```
+
+---
+
 ## UI Model
 
 Brain tool subgraph editing uses the same page-stack navigation model as function subgraphs.
