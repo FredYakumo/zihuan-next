@@ -54,6 +54,9 @@ export interface LiteGraphColors {
   linkColor: string;
   eventLinkColor: string;
   connectingLinkColor: string;
+  linkHalo: string;
+  linkLabelBg: string;
+  linkLabelText: string;
   linkTypeColors: LinkTypeColors;
   boundaryNodeHeader: string;  // function_inputs / function_outputs header color
   boundaryNodeBg: string;      // function_inputs / function_outputs background color
@@ -80,6 +83,9 @@ const DARK_LITEGRAPH: LiteGraphColors = {
   linkColor:          "#aaaaaa",
   eventLinkColor:     "#cccccc",
   connectingLinkColor:"#ffffff",
+  linkHalo:           "rgba(8, 8, 14, 0.55)",
+  linkLabelBg:        "rgba(6, 6, 10, 0.78)",
+  linkLabelText:      "#ffffff",
   boundaryNodeHeader: "#0d4d48",  // deep teal
   boundaryNodeBg:     "#051f1c",  // very dark teal
   linkTypeColors: {
@@ -112,6 +118,9 @@ const LIGHT_LITEGRAPH: LiteGraphColors = {
   linkColor:          "#9060c0",
   eventLinkColor:     "#a03090",
   connectingLinkColor:"#7030a8",
+  linkHalo:           "rgba(255, 255, 255, 0.96)",
+  linkLabelBg:        "rgba(49, 22, 80, 0.84)",
+  linkLabelText:      "#ffffff",
   boundaryNodeHeader: "#0d9d92",  // bright teal
   boundaryNodeBg:     "#c5eee9",  // light teal
   linkTypeColors: {
