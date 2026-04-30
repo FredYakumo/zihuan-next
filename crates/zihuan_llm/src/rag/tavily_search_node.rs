@@ -59,7 +59,7 @@ impl TavilySearchNode {
             .collect()
     }
 
-    fn execute_with_endpoint(
+    pub(crate) fn execute_with_endpoint(
         tavily_ref: &TavilyRef,
         query: &str,
         search_count: i64,
@@ -170,4 +170,3 @@ impl Node for TavilySearchNode {
         Ok(outputs)
     }
 }
-
