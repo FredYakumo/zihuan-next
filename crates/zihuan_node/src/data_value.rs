@@ -86,6 +86,12 @@ pub struct SessionStateEntry {
     pub(crate) claim_token: Option<u64>,
 }
 
+impl SessionStateEntry {
+    pub fn claim_token(&self) -> Option<u64> {
+        self.claim_token
+    }
+}
+
 #[derive(Clone)]
 pub struct SessionStateRef {
     pub node_id: String,
