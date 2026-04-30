@@ -18,6 +18,7 @@ pub fn init_node_registry() -> Result<()> {
     use zihuan_llm::brain_node::BrainNode;
     use zihuan_llm::llm_api_node::LLMApiNode;
     use zihuan_llm::llm_infer_node::LLMInferNode;
+    use zihuan_llm::qq_message_handler_node::QqMessageHandlerNode;
     use zihuan_llm::rag::tavily_provider_node::TavilyProviderNode;
     use zihuan_llm::rag::tavily_search_node::TavilySearchNode;
 
@@ -63,6 +64,14 @@ pub fn init_node_registry() -> Result<()> {
     );
 
     // Bot adapter nodes
+    register_node!(
+        "qq_message_handler",
+        "QQ消息处理器",
+        "Bot适配器",
+        "QQ 消息总处理节点：内部完成好友/群聊分流、会话占用、历史缓存、Brain+Tavily 推理与消息发送",
+        QqMessageHandlerNode
+    );
+
     register_node!(
         "bot_adapter",
         "QQ机器人适配器",

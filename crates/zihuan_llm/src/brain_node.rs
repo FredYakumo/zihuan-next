@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use log::{info, warn};
+use log::info;
 use serde_json::{json, Map, Value};
 
 use zihuan_core::error::{Error, Result};
@@ -9,8 +9,11 @@ use crate::brain_tool::{
     brain_shared_inputs_from_value, brain_tool_input_signature, BrainToolDefinition, ToolParamDef,
     BRAIN_SHARED_INPUTS_PORT, BRAIN_TOOLS_CONFIG_PORT, BRAIN_TOOL_FIXED_CONTENT_INPUT,
 };
+use crate::agent::brain::{
+    Brain, BrainStopReason, BrainTool, MAX_TOOL_ITERATIONS,
+};
 use zihuan_llm_types::tooling::FunctionTool;
-use zihuan_llm_types::{InferenceParam, OpenAIMessage};
+use zihuan_llm_types::OpenAIMessage;
 use zihuan_node::function_graph::{
     sync_function_subgraph_signature, FunctionPortDef, FUNCTION_INPUTS_NODE_ID,
     FUNCTION_OUTPUTS_NODE_ID,
@@ -21,8 +24,6 @@ use zihuan_node::util::function::{
     data_value_from_json_with_declared_type, inject_runtime_values_into_function_inputs_node,
 };
 use zihuan_node::{DataType, DataValue, Node, Port};
-
-const MAX_TOOL_ITERATIONS: usize = 25;
 
 #[derive(Debug, Clone)]
 struct BrainFunctionTool {
@@ -209,140 +210,45 @@ fn validate_tool_definitions(
     Ok(normalized)
 }
 
-#[derive(Debug, Clone)]
-pub struct BrainNode {
-    id: String,
-    name: String,
-    shared_inputs: Vec<FunctionPortDef>,
-    tool_definitions: Vec<BrainToolDefinition>,
+fn build_tool_error_message(message: impl Into<String>) -> String {
+    Value::Object(Map::from_iter([(
+        "error".to_string(),
+        Value::String(message.into()),
+    )]))
+    .to_string()
 }
 
-impl BrainNode {
-    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
-        Self {
-            id: id.into(),
-            name: name.into(),
-            shared_inputs: Vec::new(),
-            tool_definitions: Vec::new(),
+// ─────────────────────────────────────────────────────────────────────────────
+// SubgraphBrainTool — wraps a BrainToolDefinition for use with Brain
+// ─────────────────────────────────────────────────────────────────────────────
+
+struct SubgraphBrainTool {
+    node_id: String,
+    shared_inputs: Vec<FunctionPortDef>,
+    definition: BrainToolDefinition,
+    shared_runtime_values: HashMap<String, DataValue>,
+}
+
+impl BrainTool for SubgraphBrainTool {
+    fn spec(&self) -> Arc<dyn FunctionTool> {
+        Arc::new(BrainFunctionTool::new(self.definition.clone()))
+    }
+
+    fn execute(&self, call_content: &str, arguments: &Value) -> String {
+        match self.run_subgraph(call_content.to_string(), arguments.clone()) {
+            Ok(result) => result,
+            Err(e) => build_tool_error_message(e.to_string()),
         }
     }
+}
 
-    fn set_shared_inputs(&mut self, shared_inputs: Vec<FunctionPortDef>) -> Result<()> {
-        self.shared_inputs = validate_shared_inputs(&shared_inputs)?;
-        self.tool_definitions = validate_tool_definitions(&self.tool_definitions, &self.shared_inputs)?;
-        Ok(())
+impl SubgraphBrainTool {
+    fn wrap_error(&self, msg: impl Into<String>) -> Error {
+        Error::ValidationError(format!("[NODE_ERROR:{}] {}", self.node_id, msg.into()))
     }
 
-    fn set_tool_definitions(&mut self, tool_definitions: Vec<BrainToolDefinition>) -> Result<()> {
-        self.tool_definitions = validate_tool_definitions(&tool_definitions, &self.shared_inputs)?;
-        Ok(())
-    }
-
-    fn output_ports_static() -> Vec<Port> {
-        vec![Port::new("output", DataType::Vec(Box::new(DataType::OpenAIMessage)))
-            .with_description("本次 Brain 运行新增的 assistant/tool 消息轨迹")]
-    }
-
-    fn sanitize_messages_for_inference(messages: Vec<OpenAIMessage>) -> Vec<OpenAIMessage> {
-        let mut sanitized = Vec::with_capacity(messages.len());
-        let mut pending_tool_calls: Option<(usize, HashSet<String>)> = None;
-
-        for message in messages {
-            if !message.tool_calls.is_empty() {
-                if let Some((start_index, unresolved_ids)) = pending_tool_calls.take() {
-                    warn!(
-                        "[BrainNode] Dropping incomplete assistant tool-call segment before a new assistant tool-call message: unresolved_ids={:?}",
-                        unresolved_ids
-                    );
-                    sanitized.truncate(start_index);
-                }
-
-                let tool_call_ids = message
-                    .tool_calls
-                    .iter()
-                    .map(|tool_call| tool_call.id.clone())
-                    .collect::<HashSet<_>>();
-                let start_index = sanitized.len();
-                sanitized.push(message);
-
-                if !tool_call_ids.is_empty() {
-                    pending_tool_calls = Some((start_index, tool_call_ids));
-                }
-                continue;
-            }
-
-            if matches!(message.role, zihuan_llm_types::MessageRole::Tool) {
-                let tool_call_id = message.tool_call_id.clone();
-                let mut should_keep_tool_message = false;
-
-                if let Some((_, unresolved_ids)) = pending_tool_calls.as_mut() {
-                    if let Some(tool_call_id) = tool_call_id.as_ref() {
-                        if unresolved_ids.remove(tool_call_id) {
-                            should_keep_tool_message = true;
-                        }
-                    }
-                }
-
-                if should_keep_tool_message {
-                    sanitized.push(message);
-                    if pending_tool_calls
-                        .as_ref()
-                        .is_some_and(|(_, unresolved_ids)| unresolved_ids.is_empty())
-                    {
-                        pending_tool_calls = None;
-                    }
-                } else {
-                    match pending_tool_calls.as_ref() {
-                        Some(_) => {
-                            warn!(
-                                "[BrainNode] Dropping orphan tool message without matching pending tool_call_id: {:?}",
-                                tool_call_id
-                            );
-                        }
-                        None => {
-                            warn!(
-                                "[BrainNode] Dropping tool message because no assistant tool-call message is pending: {:?}",
-                                tool_call_id
-                            );
-                        }
-                    }
-                }
-                continue;
-            }
-
-            if let Some((start_index, unresolved_ids)) = pending_tool_calls.take() {
-                warn!(
-                    "[BrainNode] Dropping incomplete assistant tool-call segment before non-tool message: unresolved_ids={:?}",
-                    unresolved_ids
-                );
-                sanitized.truncate(start_index);
-            }
-
-            sanitized.push(message);
-        }
-
-        if let Some((start_index, unresolved_ids)) = pending_tool_calls {
-            warn!(
-                "[BrainNode] Dropping dangling assistant tool-call segment at end of history: unresolved_ids={:?}",
-                unresolved_ids
-            );
-            sanitized.truncate(start_index);
-        }
-
-        sanitized
-    }
-
-    fn wrap_error(&self, message: impl Into<String>) -> Error {
-        Error::ValidationError(format!("[NODE_ERROR:{}] {}", self.id, message.into()))
-    }
-
-    fn execute_tool_subgraph(
-        &self,
-        tool: &BrainToolDefinition,
-        shared_runtime_values: HashMap<String, DataValue>,
-        tool_call_content: String,
-        arguments: Value,
-    ) -> Result<String> {
+    fn run_subgraph(&self, tool_call_content: String, arguments: Value) -> Result<String> {
+        let tool = &self.definition;
         for node in &tool.subgraph.nodes {
             if NODE_REGISTRY.is_event_producer(&node.node_type) {
                 return Err(self.wrap_error(format!(
@@ -363,7 +269,7 @@ impl BrainNode {
             }
         };
 
-        let mut runtime_values = shared_runtime_values;
+        let mut runtime_values = self.shared_runtime_values.clone();
         runtime_values.insert(
             BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(),
             DataValue::String(tool_call_content),
@@ -454,13 +360,48 @@ impl BrainNode {
 
         Ok(Value::Object(result_payload).to_string())
     }
+}
 
-    fn build_tool_error_message(&self, message: impl Into<String>) -> String {
-        Value::Object(Map::from_iter([(
-            "error".to_string(),
-            Value::String(message.into()),
-        )]))
-        .to_string()
+// ─────────────────────────────────────────────────────────────────────────────
+// BrainNode
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct BrainNode {
+    id: String,
+    name: String,
+    shared_inputs: Vec<FunctionPortDef>,
+    tool_definitions: Vec<BrainToolDefinition>,
+}
+
+impl BrainNode {
+    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            shared_inputs: Vec::new(),
+            tool_definitions: Vec::new(),
+        }
+    }
+
+    fn set_shared_inputs(&mut self, shared_inputs: Vec<FunctionPortDef>) -> Result<()> {
+        self.shared_inputs = validate_shared_inputs(&shared_inputs)?;
+        self.tool_definitions = validate_tool_definitions(&self.tool_definitions, &self.shared_inputs)?;
+        Ok(())
+    }
+
+    fn set_tool_definitions(&mut self, tool_definitions: Vec<BrainToolDefinition>) -> Result<()> {
+        self.tool_definitions = validate_tool_definitions(&tool_definitions, &self.shared_inputs)?;
+        Ok(())
+    }
+
+    fn output_ports_static() -> Vec<Port> {
+        vec![Port::new("output", DataType::Vec(Box::new(DataType::OpenAIMessage)))
+            .with_description("本次 Brain 运行新增的 assistant/tool 消息轨迹")]
+    }
+
+    fn wrap_error(&self, message: impl Into<String>) -> Error {
+        Error::ValidationError(format!("[NODE_ERROR:{}] {}", self.id, message.into()))
     }
 
     pub fn tool_specs(&self) -> Vec<Arc<dyn FunctionTool>> {
@@ -606,101 +547,46 @@ impl Node for BrainNode {
 
         let model = match inputs.get("llm_model") {
             Some(DataValue::LLModel(model)) => model.clone(),
-            _ => {
-                return Err(self.wrap_error("缺少必填输入 llm_model"));
-            }
+            _ => return Err(self.wrap_error("缺少必填输入 llm_model")),
         };
 
-        let mut conversation =
-            Self::sanitize_messages_for_inference(Self::parse_messages_input(&inputs)?);
-        let mut output_messages = Vec::new();
+        let messages = Self::parse_messages_input(&inputs)?;
         let shared_runtime_values = self.parse_shared_inputs_input(&inputs)?;
-        let tool_specs = self.tool_specs();
 
-        for iteration in 0..MAX_TOOL_ITERATIONS {
-            let response = model.inference(&InferenceParam {
-                messages: &conversation,
-                tools: Some(&tool_specs),
+        let mut brain = Brain::new(model);
+        for tool_def in &self.tool_definitions {
+            brain.add_tool(SubgraphBrainTool {
+                node_id: self.id.clone(),
+                shared_inputs: self.shared_inputs.clone(),
+                definition: tool_def.clone(),
+                shared_runtime_values: shared_runtime_values.clone(),
             });
-
-            if let Some(content) = response.content.as_deref() {
-                let is_transport_error = content.starts_with("Error: API request failed")
-                    || content.starts_with("Error: Failed to send request")
-                    || content.starts_with("Error: Failed to parse response")
-                    || content.starts_with("Error: Invalid response structure");
-                if is_transport_error {
-                    return Err(self.wrap_error(format!("LLM request failed: {content}")));
-                }
-            }
-
-            if response.tool_calls.is_empty() {
-                output_messages.push(response);
-                let mut outputs = HashMap::new();
-                outputs.insert(
-                    "output".to_string(),
-                    DataValue::Vec(
-                        Box::new(DataType::OpenAIMessage),
-                        output_messages
-                            .into_iter()
-                            .map(DataValue::OpenAIMessage)
-                            .collect(),
-                    ),
-                );
-                self.validate_outputs(&outputs)?;
-                return Ok(outputs);
-            }
-
-            info!(
-                "[BrainNode] iteration {} processing {} tool call(s)",
-                iteration + 1,
-                response.tool_calls.len()
-            );
-
-            conversation.push(response.clone());
-            output_messages.push(response.clone());
-            let tool_call_content = response.content.clone().unwrap_or_default();
-
-            for tool_call in response.tool_calls {
-                let tool_result_content = if let Some(tool) = self
-                    .tool_definitions
-                    .iter()
-                    .find(|tool| tool.name == tool_call.function.name)
-                {
-                    match self.execute_tool_subgraph(
-                        tool,
-                        shared_runtime_values.clone(),
-                        tool_call_content.clone(),
-                        tool_call.function.arguments.clone(),
-                    ) {
-                        Ok(result) => result,
-                        Err(error) => self.build_tool_error_message(error.to_string()),
-                    }
-                } else {
-                    self.build_tool_error_message(format!(
-                        "Tool '{}' not found",
-                        tool_call.function.name
-                    ))
-                };
-
-                info!(
-                    "[BrainNode] tool result {}({}) => {}",
-                    tool_call.function.name,
-                    tool_call.id,
-                    tool_result_content
-                );
-
-                let tool_result_message = OpenAIMessage::tool_result(
-                    tool_call.id.clone(),
-                    tool_result_content,
-                );
-                conversation.push(tool_result_message.clone());
-                output_messages.push(tool_result_message);
-            }
         }
 
-        Err(self.wrap_error(format!(
-            "Brain tool loop exceeded max iterations ({MAX_TOOL_ITERATIONS})"
-        )))
+        let (output_messages, stop_reason) = brain.run(messages);
+
+        match stop_reason {
+            BrainStopReason::TransportError(content) => {
+                return Err(self.wrap_error(format!("LLM request failed: {content}")));
+            }
+            BrainStopReason::MaxIterationsReached => {
+                return Err(self.wrap_error(format!(
+                    "Brain tool loop exceeded max iterations ({MAX_TOOL_ITERATIONS})"
+                )));
+            }
+            BrainStopReason::Done => {}
+        }
+
+        let mut outputs = HashMap::new();
+        outputs.insert(
+            "output".to_string(),
+            DataValue::Vec(
+                Box::new(DataType::OpenAIMessage),
+                output_messages.into_iter().map(DataValue::OpenAIMessage).collect(),
+            ),
+        );
+        self.validate_outputs(&outputs)?;
+        Ok(outputs)
     }
 }
 
