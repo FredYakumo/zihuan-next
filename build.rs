@@ -1,4 +1,4 @@
-0use std::process::Command;
+use std::process::Command;
 
 fn main() {
     // Re-run this build script only when web sources change
