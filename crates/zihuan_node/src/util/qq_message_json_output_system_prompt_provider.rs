@@ -1,7 +1,7 @@
-use zihuan_core::error::Result;
-use zihuan_bot_types::natural_language_reply::qq_message_json_output_system_prompt;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
+use zihuan_bot_types::natural_language_reply::qq_message_json_output_system_prompt;
+use zihuan_core::error::Result;
 
 pub struct QQMessageJsonOutputSystemPromptProviderNode {
     id: String,
@@ -32,7 +32,9 @@ impl Node for QQMessageJsonOutputSystemPromptProviderNode {
 
     node_input![];
 
-    node_output![port! { name = "system_prompt", ty = String, desc = "固定的 QQ 消息二维 JSON 输出格式 prompt" },];
+    node_output![
+        port! { name = "system_prompt", ty = String, desc = "固定的 QQ 消息二维 JSON 输出格式 prompt" },
+    ];
 
     fn execute(
         &mut self,

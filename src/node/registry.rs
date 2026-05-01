@@ -308,6 +308,7 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
             Some(DataValue::OpenAIMessage(zihuan_llm::OpenAIMessage {
                 role,
                 content,
+                reasoning_content: None,
                 tool_calls: Vec::new(),
                 tool_call_id: None,
             }))

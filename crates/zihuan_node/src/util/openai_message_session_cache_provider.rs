@@ -1,4 +1,3 @@
-use zihuan_core::error::Result;
 use crate::data_value::{OpenAIMessageSessionCacheRef, RedisConfig};
 use crate::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 use log::{debug, info, warn};
@@ -6,6 +5,7 @@ use redis::{aio::ConnectionManager, AsyncCommands};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::task::block_in_place;
+use zihuan_core::error::Result;
 
 pub struct OpenAIMessageSessionCacheProviderNode {
     id: String,

@@ -1,9 +1,9 @@
-use zihuan_core::config::pct_encode;
-use zihuan_core::error::Result;
 use crate::data_value::RedisConfig;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 use std::sync::Arc;
+use zihuan_core::config::pct_encode;
+use zihuan_core::error::Result;
 
 /// Redis configuration node - builds Redis connection config from input ports
 pub struct RedisNode {

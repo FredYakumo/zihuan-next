@@ -1,6 +1,6 @@
+use std::collections::HashMap;
 use zihuan_core::error::{Error, Result};
 use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
-use std::collections::HashMap;
 
 pub struct TavilySearchNode {
     id: String,
@@ -14,7 +14,6 @@ impl TavilySearchNode {
             name: name.into(),
         }
     }
-
 }
 
 impl Node for TavilySearchNode {
@@ -65,7 +64,9 @@ impl Node for TavilySearchNode {
         };
 
         if query.is_empty() {
-            return Err(Error::ValidationError("query must not be blank".to_string()));
+            return Err(Error::ValidationError(
+                "query must not be blank".to_string(),
+            ));
         }
 
         let search_count = match inputs.get("search_count") {

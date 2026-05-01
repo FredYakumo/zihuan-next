@@ -110,17 +110,15 @@ pub async fn get_theme(req: &mut Request, res: &mut Response, _depot: &mut Depot
 
     let path = std::path::Path::new("custom_themes").join(format!("{}.json", name));
     match std::fs::read_to_string(&path) {
-        Ok(content) => {
-            match serde_json::from_str::<ThemeConfig>(&content) {
-                Ok(config) => {
-                    res.render(Json(normalize_theme_config(config)));
-                }
-                Err(e) => {
-                    res.status_code(StatusCode::UNPROCESSABLE_ENTITY);
-                    res.render(Json(serde_json::json!({ "error": e.to_string() })));
-                }
+        Ok(content) => match serde_json::from_str::<ThemeConfig>(&content) {
+            Ok(config) => {
+                res.render(Json(normalize_theme_config(config)));
             }
-        }
+            Err(e) => {
+                res.status_code(StatusCode::UNPROCESSABLE_ENTITY);
+                res.render(Json(serde_json::json!({ "error": e.to_string() })));
+            }
+        },
         Err(_) => {
             res.status_code(StatusCode::NOT_FOUND);
             res.render(Json(serde_json::json!({ "error": "Theme not found" })));

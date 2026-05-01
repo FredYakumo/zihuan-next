@@ -9,7 +9,6 @@ use tokio::sync::broadcast;
 
 use super::state::AppState;
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ServerMessage {
@@ -46,7 +45,6 @@ pub enum ClientMessage {
     Ping,
 }
 
-
 /// Broadcast sender for server → all WS clients
 pub type WsBroadcast = broadcast::Sender<ServerMessage>;
 
@@ -54,7 +52,6 @@ pub fn create_broadcast() -> WsBroadcast {
     let (tx, _) = broadcast::channel(256);
     tx
 }
-
 
 #[handler]
 pub async fn ws_handler(
@@ -65,10 +62,11 @@ pub async fn ws_handler(
     let state = depot.obtain::<Arc<AppState>>().unwrap().clone();
     let broadcast_tx = depot.obtain::<WsBroadcast>().unwrap().clone();
 
-    WebSocketUpgrade::new().upgrade(req, res, move |ws| {
-        handle_ws_connection(ws, state, broadcast_tx)
-    })
-    .await
+    WebSocketUpgrade::new()
+        .upgrade(req, res, move |ws| {
+            handle_ws_connection(ws, state, broadcast_tx)
+        })
+        .await
 }
 
 async fn handle_ws_connection(ws: WebSocket, state: Arc<AppState>, broadcast_tx: WsBroadcast) {

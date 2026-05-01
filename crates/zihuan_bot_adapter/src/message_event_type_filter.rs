@@ -1,7 +1,7 @@
 use crate::models::event_model::{MessageEvent, MessageType};
+use std::collections::HashMap;
 use zihuan_core::error::Result;
 use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
-use std::collections::HashMap;
 
 pub struct MessageEventTypeFilterNode {
     id: String,

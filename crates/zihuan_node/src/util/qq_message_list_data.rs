@@ -1,6 +1,6 @@
-use zihuan_core::error::Result;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
+use zihuan_core::error::Result;
 
 pub struct QQMessageListDataNode {
     id: String,
@@ -48,9 +48,7 @@ impl Node for QQMessageListDataNode {
             .get("messages")
             .cloned()
             .filter(|v| matches!(v, DataValue::Vec(..)))
-            .unwrap_or_else(|| {
-                DataValue::Vec(Box::new(crate::DataType::QQMessage), Vec::new())
-            });
+            .unwrap_or_else(|| DataValue::Vec(Box::new(crate::DataType::QQMessage), Vec::new()));
         outputs.insert("messages".to_string(), value);
 
         self.validate_outputs(&outputs)?;

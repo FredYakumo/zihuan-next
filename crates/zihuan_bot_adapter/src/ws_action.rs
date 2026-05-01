@@ -1,9 +1,9 @@
 use crate::adapter::SharedBotAdapter;
-use zihuan_core::error::Result;
 use serde_json::Value;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::oneshot;
 use tokio::task::block_in_place;
+use zihuan_core::error::Result;
 
 /// Global counter for generating unique echo IDs.
 static ECHO_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -38,9 +38,7 @@ pub fn response_message_id(response: &Value) -> Option<i64> {
         .and_then(|data| json_i64(data.get("message_id")))
 }
 
-pub fn qq_message_list_to_json(
-    messages: &[crate::models::message::Message],
-) -> serde_json::Value {
+pub fn qq_message_list_to_json(messages: &[crate::models::message::Message]) -> serde_json::Value {
     serde_json::Value::Array(
         messages
             .iter()

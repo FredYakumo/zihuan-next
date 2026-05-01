@@ -3,13 +3,13 @@ use std::thread;
 use std::time::Duration;
 
 use crate::adapter::SharedBotAdapter;
-use crate::models::message::Message;
+use crate::models::message::{ForwardMessage, ForwardNodeMessage, Message};
 use crate::ws_action::{
     json_i64, qq_message_list_to_json, response_message_id, response_success, ws_send_action,
 };
+use log::{info, warn};
 use zihuan_core::error::{Error, Result};
 use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
-use log::{info, warn};
 
 pub const TARGET_TYPE_FRIEND: &str = "friend";
 pub const TARGET_TYPE_GROUP: &str = "group";
@@ -101,6 +101,11 @@ pub fn qq_message_text_length(messages: &[Message]) -> usize {
         .iter()
         .map(|message| match message {
             Message::PlainText(text) => text.text.chars().count(),
+            Message::Forward(forward) => forward
+                .content
+                .iter()
+                .map(|node| qq_message_text_length(&node.content))
+                .sum(),
             _ => 0,
         })
         .sum()
@@ -120,6 +125,7 @@ pub fn describe_message_segments(messages: &[Message]) -> String {
             }
             Message::At(at) => format!("at:{}", at.target.as_deref().unwrap_or("null")),
             Message::Reply(reply) => format!("reply:{}", reply.id),
+            Message::Forward(forward) => format!("forward:{}nodes", forward.content.len()),
         })
         .collect::<Vec<_>>()
         .join(" | ");
@@ -132,6 +138,84 @@ pub fn describe_message_segments(messages: &[Message]) -> String {
     )
 }
 
+fn forward_nodes_to_json(nodes: &[ForwardNodeMessage]) -> serde_json::Value {
+    serde_json::Value::Array(
+        nodes
+            .iter()
+            .map(|node| {
+                let mut data = serde_json::Map::new();
+
+                if let Some(id) = node.id.as_deref() {
+                    data.insert("id".to_string(), serde_json::Value::String(id.to_string()));
+                }
+                if let Some(user_id) = node.user_id.as_deref() {
+                    data.insert(
+                        "user_id".to_string(),
+                        serde_json::Value::String(user_id.to_string()),
+                    );
+                    data.insert(
+                        "uin".to_string(),
+                        serde_json::Value::String(user_id.to_string()),
+                    );
+                }
+                if let Some(nickname) = node.nickname.as_deref() {
+                    data.insert(
+                        "nickname".to_string(),
+                        serde_json::Value::String(nickname.to_string()),
+                    );
+                    data.insert(
+                        "name".to_string(),
+                        serde_json::Value::String(nickname.to_string()),
+                    );
+                }
+                if !node.content.is_empty() {
+                    data.insert(
+                        "content".to_string(),
+                        qq_message_list_to_json(&node.content),
+                    );
+                }
+
+                serde_json::json!({
+                    "type": "node",
+                    "data": data,
+                })
+            })
+            .collect(),
+    )
+}
+
+fn forward_payload(
+    target_type: &str,
+    target_id: &str,
+    forward: &ForwardMessage,
+) -> Result<(&'static str, serde_json::Value)> {
+    if forward.content.is_empty() {
+        return Err(Error::ValidationError(
+            "forward message must contain at least one node".to_string(),
+        ));
+    }
+
+    let messages = forward_nodes_to_json(&forward.content);
+    let action_name = if target_type == TARGET_TYPE_GROUP {
+        "send_group_forward_msg"
+    } else {
+        "send_private_forward_msg"
+    };
+    let params = if target_type == TARGET_TYPE_GROUP {
+        serde_json::json!({
+            "group_id": target_id,
+            "messages": messages,
+        })
+    } else {
+        serde_json::json!({
+            "user_id": target_id,
+            "messages": messages,
+        })
+    };
+
+    Ok((action_name, params))
+}
+
 fn send_one_batch(
     adapter_ref: &SharedBotAdapter,
     target_type: &str,
@@ -139,22 +223,37 @@ fn send_one_batch(
     batch_index: usize,
     messages: &[Message],
 ) -> Result<SendBatchResult> {
-    let params = if target_type == TARGET_TYPE_GROUP {
-        serde_json::json!({
-            "group_id": target_id,
-            "message": qq_message_list_to_json(messages),
-        })
-    } else {
-        serde_json::json!({
-            "user_id": target_id,
-            "message": qq_message_list_to_json(messages),
-        })
-    };
+    let contains_forward = messages
+        .iter()
+        .any(|message| matches!(message, Message::Forward(_)));
+    if contains_forward && (messages.len() != 1 || !matches!(messages[0], Message::Forward(_))) {
+        return Err(Error::ValidationError(
+            "forward message batch must contain exactly one forward message".to_string(),
+        ));
+    }
 
-    let action_name = if target_type == TARGET_TYPE_GROUP {
-        "send_group_msg"
+    let (action_name, params) = if let [Message::Forward(forward)] = messages {
+        forward_payload(target_type, target_id, forward)?
     } else {
-        "send_private_msg"
+        let params = if target_type == TARGET_TYPE_GROUP {
+            serde_json::json!({
+                "group_id": target_id,
+                "message": qq_message_list_to_json(messages),
+            })
+        } else {
+            serde_json::json!({
+                "user_id": target_id,
+                "message": qq_message_list_to_json(messages),
+            })
+        };
+
+        let action_name = if target_type == TARGET_TYPE_GROUP {
+            "send_group_msg"
+        } else {
+            "send_private_msg"
+        };
+
+        (action_name, params)
     };
 
     let response = ws_send_action(adapter_ref, action_name, params)?;
@@ -334,7 +433,8 @@ pub fn build_send_summary(
         return format!("未发送任何批次，目标={target_type}:{target_id}，共接收 0 批。");
     }
 
-    let sent_results: Vec<&SendBatchResult> = results.iter().filter(|result| !result.skipped).collect();
+    let sent_results: Vec<&SendBatchResult> =
+        results.iter().filter(|result| !result.skipped).collect();
     let success_count = sent_results.iter().filter(|result| result.success).count();
     let failure_count = sent_results.len().saturating_sub(success_count);
     let skipped_count = results.iter().filter(|result| result.skipped).count();
@@ -400,13 +500,18 @@ pub fn execute_fixed_target_batch_send(
 ) -> Result<HashMap<String, DataValue>> {
     let bot_adapter = match inputs.get("bot_adapter") {
         Some(DataValue::BotAdapterRef(handle)) => crate::adapter::shared_from_handle(handle),
-        _ => return Err(Error::InvalidNodeInput("bot_adapter is required".to_string())),
+        _ => {
+            return Err(Error::InvalidNodeInput(
+                "bot_adapter is required".to_string(),
+            ))
+        }
     };
     let target_id = match inputs.get("target_id") {
         Some(DataValue::String(value)) => value.clone(),
         _ => return Err(Error::InvalidNodeInput("target_id is required".to_string())),
     };
-    let batches = qq_message_batches_from_data_value(inputs.get("message_batches"), "message_batches")?;
+    let batches =
+        qq_message_batches_from_data_value(inputs.get("message_batches"), "message_batches")?;
     let delay_millis = delay_millis_from_data_value(inputs.get("delay_millis"), "delay_millis")?;
     let results = send_qq_message_batches_with_delay(
         &bot_adapter,
@@ -485,12 +590,7 @@ impl Node for SendQQMessageBatchesNode {
         let target_type = normalize_target_type(inputs.get("target_type"));
         let batches =
             qq_message_batches_from_data_value(inputs.get("message_batches"), "message_batches")?;
-        let results = send_qq_message_batches(
-            &bot_adapter_ref,
-            target_type,
-            &target_id,
-            &batches,
-        );
+        let results = send_qq_message_batches(&bot_adapter_ref, target_type, &target_id, &batches);
 
         let mut outputs = HashMap::new();
         outputs.insert(
@@ -567,11 +667,11 @@ mod tests {
         TARGET_TYPE_GROUP,
     };
     use crate::models::message::{AtTargetMessage, Message, PlainTextMessage};
-    use zihuan_core::error::Result;
-    use zihuan_node::{DataType, DataValue, Node};
     use serde_json::json;
     use std::collections::HashMap;
     use std::time::{Duration, Instant};
+    use zihuan_core::error::Result;
+    use zihuan_node::{DataType, DataValue, Node};
 
     #[test]
     fn describe_segments_includes_preview() {

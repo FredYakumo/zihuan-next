@@ -12,11 +12,12 @@ pub mod ws;
 use std::sync::Arc;
 
 use rust_embed::RustEmbed;
+use salvo::http::{HeaderMap, Method};
 use salvo::prelude::*;
 use salvo::serve_static::static_embed;
 
 use state::AppState;
-use ws::{WsBroadcast, ws_handler};
+use ws::{ws_handler, WsBroadcast};
 
 /// Embedded frontend assets (populated after `cd webui && pnpm run build`)
 #[derive(RustEmbed)]
@@ -24,7 +25,11 @@ use ws::{WsBroadcast, ws_handler};
 struct WebAssets;
 
 /// Build the Salvo router with all API endpoints and static file serving.
-pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast) -> Router {
+pub fn build_router(
+    state: Arc<AppState>,
+    broadcast: WsBroadcast,
+    canonical_local_origin: Option<String>,
+) -> Router {
     // API routes
     let api = Router::new()
         // Registry
@@ -58,15 +63,21 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast) -> Router {
                         .push(Router::with_path("execute").post(execution::execute_graph))
                         .push(Router::with_path("file/save").post(file_io::save_file))
                         .push(Router::with_path("file/download").get(file_io::download_graph))
-                        .push(Router::with_path("hyperparameters")
-                            .get(hyperparams::get_hyperparameters)
-                            .put(hyperparams::update_hyperparameter_values))
-                        .push(Router::with_path("variables")
-                            .get(hyperparams::get_variables)
-                            .put(hyperparams::update_variables))
-                        .push(Router::with_path("metadata")
-                            .get(graph::get_metadata)
-                            .put(graph::update_metadata)),
+                        .push(
+                            Router::with_path("hyperparameters")
+                                .get(hyperparams::get_hyperparameters)
+                                .put(hyperparams::update_hyperparameter_values),
+                        )
+                        .push(
+                            Router::with_path("variables")
+                                .get(hyperparams::get_variables)
+                                .put(hyperparams::update_variables),
+                        )
+                        .push(
+                            Router::with_path("metadata")
+                                .get(graph::get_metadata)
+                                .put(graph::update_metadata),
+                        ),
                 ),
         )
         // Tasks
@@ -96,16 +107,144 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast) -> Router {
         );
 
     // Inject state into depot for all API handlers (REST + WebSocket)
-    Router::new()
+    let mut router = Router::new();
+    if let Some(origin) = canonical_local_origin {
+        router = router.hoop(CanonicalLocalRedirect::new(origin));
+    }
+
+    router
         .push(
             Router::with_path("api")
-                .hoop(
-                    salvo::affix_state::inject(Arc::clone(&state))
-                        .inject(broadcast),
-                )
+                .hoop(salvo::affix_state::inject(Arc::clone(&state)).inject(broadcast))
                 .push(Router::with_path("ws").goal(ws_handler))
                 .push(api),
         )
         // Serve frontend static files (fallback SPA routing handled by static_embed)
         .push(Router::with_path("<**rest>").get(static_embed::<WebAssets>().fallback("index.html")))
+}
+
+struct CanonicalLocalRedirect {
+    canonical_origin: String,
+}
+
+impl CanonicalLocalRedirect {
+    fn new(canonical_origin: String) -> Self {
+        Self { canonical_origin }
+    }
+}
+
+#[async_trait]
+impl Handler for CanonicalLocalRedirect {
+    async fn handle(
+        &self,
+        req: &mut Request,
+        depot: &mut Depot,
+        res: &mut Response,
+        ctrl: &mut FlowCtrl,
+    ) {
+        if matches!(*req.method(), Method::GET | Method::HEAD)
+            && should_redirect_local_host(req.headers(), &self.canonical_origin)
+        {
+            let path_and_query = req
+                .uri()
+                .path_and_query()
+                .map(|value| value.as_str())
+                .unwrap_or("/");
+            res.render(Redirect::temporary(format!(
+                "{}{}",
+                self.canonical_origin, path_and_query
+            )));
+            ctrl.skip_rest();
+            return;
+        }
+
+        ctrl.call_next(req, depot, res).await;
+    }
+}
+
+fn should_redirect_local_host(headers: &HeaderMap, canonical_local_origin: &str) -> bool {
+    let Some(host_header) = headers.get("host").and_then(|value| value.to_str().ok()) else {
+        return false;
+    };
+
+    let Some(request_host) = normalize_host(host_header) else {
+        return false;
+    };
+    let Some(canonical_host) = canonical_host(canonical_local_origin) else {
+        return false;
+    };
+
+    !is_trusted_loopback_host(&request_host) && request_host != canonical_host
+}
+
+fn canonical_host(origin: &str) -> Option<String> {
+    origin
+        .split_once("://")
+        .map(|(_, remainder)| remainder)
+        .and_then(normalize_host)
+}
+
+fn normalize_host(host: &str) -> Option<String> {
+    let host = host.trim();
+    if host.is_empty() {
+        return None;
+    }
+
+    if host.starts_with('[') {
+        return host
+            .split_once(']')
+            .map(|(addr, _)| format!("{addr}]").to_ascii_lowercase());
+    }
+
+    match host.split_once(':') {
+        Some((name, _)) => Some(name.to_ascii_lowercase()),
+        None => Some(host.to_ascii_lowercase()),
+    }
+}
+
+fn is_trusted_loopback_host(host: &str) -> bool {
+    matches!(host, "localhost" | "127.0.0.1" | "[::1]")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use salvo::http::header::HOST;
+
+    #[test]
+    fn normalize_host_strips_port_and_keeps_ipv6_brackets() {
+        assert_eq!(
+            normalize_host("Example.com:8080").as_deref(),
+            Some("example.com")
+        );
+        assert_eq!(
+            normalize_host("127.0.0.1:8080").as_deref(),
+            Some("127.0.0.1")
+        );
+        assert_eq!(normalize_host("[::1]:8080").as_deref(), Some("[::1]"));
+    }
+
+    #[test]
+    fn redirects_non_trusted_alias_to_loopback_origin() {
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, "yukaridev:8080".parse().unwrap());
+
+        assert!(should_redirect_local_host(
+            &headers,
+            "http://127.0.0.1:8080"
+        ));
+    }
+
+    #[test]
+    fn keeps_trusted_loopback_hosts() {
+        for host in ["localhost:8080", "127.0.0.1:8080", "[::1]:8080"] {
+            let mut headers = HeaderMap::new();
+            headers.insert(HOST, host.parse().unwrap());
+
+            assert!(!should_redirect_local_host(
+                &headers,
+                "http://127.0.0.1:8080"
+            ));
+        }
+    }
 }

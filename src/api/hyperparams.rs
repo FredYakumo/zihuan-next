@@ -20,10 +20,7 @@ pub async fn get_hyperparameters(req: &mut Request, res: &mut Response, depot: &
                 .file_path
                 .as_deref()
                 .map(|fp| {
-                    hyperparam_store::load_hyperparameter_values(
-                        std::path::Path::new(fp),
-                        &s.graph,
-                    )
+                    hyperparam_store::load_hyperparameter_values(std::path::Path::new(fp), &s.graph)
                 })
                 .unwrap_or_default();
 

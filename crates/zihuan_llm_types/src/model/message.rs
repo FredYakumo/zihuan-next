@@ -8,6 +8,8 @@ use super::message_role::MessageRole;
 pub struct OpenAIMessage {
     pub role: MessageRole,
     pub content: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tool_calls: Vec<ToolCalls>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -19,6 +21,7 @@ impl OpenAIMessage {
         Self {
             role: MessageRole::System,
             content: Some(content.into()),
+            reasoning_content: None,
             tool_calls: Vec::new(),
             tool_call_id: None,
         }
@@ -28,6 +31,7 @@ impl OpenAIMessage {
         Self {
             role: MessageRole::User,
             content: Some(content.into()),
+            reasoning_content: None,
             tool_calls: Vec::new(),
             tool_call_id: None,
         }
@@ -37,6 +41,7 @@ impl OpenAIMessage {
         Self {
             role: MessageRole::Tool,
             content: Some(content.into()),
+            reasoning_content: None,
             tool_calls: Vec::new(),
             tool_call_id: Some(tool_call_id.into()),
         }

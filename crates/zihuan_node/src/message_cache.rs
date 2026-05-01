@@ -1,5 +1,3 @@
-use zihuan_bot_types::message::Message;
-use zihuan_core::error::Result;
 use crate::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 use log::{debug, info, warn};
 use redis::{aio::ConnectionManager, AsyncCommands};
@@ -7,6 +5,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::task::block_in_place;
+use zihuan_bot_types::message::Message;
+use zihuan_core::error::Result;
 
 /// Message Cache Node — caches a MessageEvent to Redis (with optional TTL) or falls back to
 /// an in-process memory store when Redis is not provided or temporarily unavailable.

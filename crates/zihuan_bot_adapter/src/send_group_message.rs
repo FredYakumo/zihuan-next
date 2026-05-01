@@ -1,13 +1,11 @@
-use crate::send_qq_message_batches::{
-    describe_message_segments, qq_messages_from_data_value,
-};
+use crate::send_qq_message_batches::{describe_message_segments, qq_messages_from_data_value};
 use crate::ws_action::{
     json_i64, qq_message_list_to_json, response_message_id, response_success, ws_send_action,
 };
-use zihuan_core::error::Result;
-use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::{info, warn};
 use std::collections::HashMap;
+use zihuan_core::error::Result;
+use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
 
 pub struct SendGroupMessageNode {
     id: String,

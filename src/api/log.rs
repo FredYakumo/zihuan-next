@@ -23,10 +23,10 @@ pub async fn frontend_log(req: &mut Request, res: &mut Response) {
 
     match body.level.to_lowercase().as_str() {
         "error" => log::error!("[UI] {}", body.message),
-        "warn"  => log::warn!("[UI] {}", body.message),
+        "warn" => log::warn!("[UI] {}", body.message),
         "debug" => log::debug!("[UI] {}", body.message),
         "trace" => log::trace!("[UI] {}", body.message),
-        _       => log::info!("[UI] {}", body.message),
+        _ => log::info!("[UI] {}", body.message),
     }
 
     res.render(Json(serde_json::json!({"ok": true})));

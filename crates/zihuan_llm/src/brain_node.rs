@@ -4,14 +4,12 @@ use std::sync::Arc;
 use log::info;
 use serde_json::{json, Map, Value};
 
-use zihuan_core::error::{Error, Result};
+use crate::agent::brain::{Brain, BrainStopReason, BrainTool, MAX_TOOL_ITERATIONS};
 use crate::brain_tool::{
     brain_shared_inputs_from_value, brain_tool_input_signature, BrainToolDefinition, ToolParamDef,
     BRAIN_SHARED_INPUTS_PORT, BRAIN_TOOLS_CONFIG_PORT, BRAIN_TOOL_FIXED_CONTENT_INPUT,
 };
-use crate::agent::brain::{
-    Brain, BrainStopReason, BrainTool, MAX_TOOL_ITERATIONS,
-};
+use zihuan_core::error::{Error, Result};
 use zihuan_llm_types::tooling::FunctionTool;
 use zihuan_llm_types::OpenAIMessage;
 use zihuan_node::function_graph::{
@@ -161,16 +159,24 @@ fn validate_tool_definitions(
         let tool_id = tool.id.trim();
         let tool_name = tool.name.trim();
         if tool_id.is_empty() {
-            return Err(Error::ValidationError("Tool id cannot be empty".to_string()));
+            return Err(Error::ValidationError(
+                "Tool id cannot be empty".to_string(),
+            ));
         }
         if tool_name.is_empty() {
-            return Err(Error::ValidationError("Tool name cannot be empty".to_string()));
+            return Err(Error::ValidationError(
+                "Tool name cannot be empty".to_string(),
+            ));
         }
         if !seen_ids.insert(tool_id.to_string()) {
-            return Err(Error::ValidationError(format!("Duplicate tool id: {tool_id}")));
+            return Err(Error::ValidationError(format!(
+                "Duplicate tool id: {tool_id}"
+            )));
         }
         if !seen_names.insert(tool_name.to_string()) {
-            return Err(Error::ValidationError(format!("Duplicate tool name: {tool_name}")));
+            return Err(Error::ValidationError(format!(
+                "Duplicate tool name: {tool_name}"
+            )));
         }
 
         let mut seen_param_names = HashSet::new();
@@ -308,7 +314,12 @@ impl SubgraphBrainTool {
             .nodes
             .iter_mut()
             .find(|node| node.id == FUNCTION_INPUTS_NODE_ID)
-            .ok_or_else(|| self.wrap_error(format!("Tool '{}' 缺少 function_inputs 边界节点", tool.name)))?;
+            .ok_or_else(|| {
+                self.wrap_error(format!(
+                    "Tool '{}' 缺少 function_inputs 边界节点",
+                    tool.name
+                ))
+            })?;
         function_inputs_node.inline_values.insert(
             zihuan_node::function_graph::FUNCTION_SIGNATURE_PORT.to_string(),
             serde_json::to_value(&input_signature).unwrap_or(Value::Null),
@@ -318,7 +329,12 @@ impl SubgraphBrainTool {
             .nodes
             .iter_mut()
             .find(|node| node.id == FUNCTION_OUTPUTS_NODE_ID)
-            .ok_or_else(|| self.wrap_error(format!("Tool '{}' 缺少 function_outputs 边界节点", tool.name)))?;
+            .ok_or_else(|| {
+                self.wrap_error(format!(
+                    "Tool '{}' 缺少 function_outputs 边界节点",
+                    tool.name
+                ))
+            })?;
         function_outputs_node.inline_values.insert(
             zihuan_node::function_graph::FUNCTION_SIGNATURE_PORT.to_string(),
             serde_json::to_value(&tool.outputs).unwrap_or(Value::Null),
@@ -326,18 +342,21 @@ impl SubgraphBrainTool {
 
         let mut graph = build_node_graph_from_definition(&subgraph)
             .map_err(|e| self.wrap_error(format!("Tool '{}' 子图构建失败: {e}", tool.name)))?;
-        inject_runtime_values_into_function_inputs_node(&mut graph, runtime_values).map_err(|e| {
-            self.wrap_error(format!("Tool '{}' 注入子图运行时输入失败: {e}", tool.name))
-        })?;
+        inject_runtime_values_into_function_inputs_node(&mut graph, runtime_values).map_err(
+            |e| self.wrap_error(format!("Tool '{}' 注入子图运行时输入失败: {e}", tool.name)),
+        )?;
         let execution_result = graph.execute_and_capture_results();
         if let Some(error_message) = execution_result.error_message {
-            return Err(
-                self.wrap_error(format!("Tool '{}' 子图执行失败: {error_message}", tool.name))
-            );
+            return Err(self.wrap_error(format!(
+                "Tool '{}' 子图执行失败: {error_message}",
+                tool.name
+            )));
         }
 
         let mut result_payload = Map::new();
-        if let Some(result_node_values) = execution_result.node_results.get(FUNCTION_OUTPUTS_NODE_ID) {
+        if let Some(result_node_values) =
+            execution_result.node_results.get(FUNCTION_OUTPUTS_NODE_ID)
+        {
             for port in &tool.outputs {
                 let value = result_node_values.get(&port.name).ok_or_else(|| {
                     self.wrap_error(format!(
@@ -386,7 +405,8 @@ impl BrainNode {
 
     fn set_shared_inputs(&mut self, shared_inputs: Vec<FunctionPortDef>) -> Result<()> {
         self.shared_inputs = validate_shared_inputs(&shared_inputs)?;
-        self.tool_definitions = validate_tool_definitions(&self.tool_definitions, &self.shared_inputs)?;
+        self.tool_definitions =
+            validate_tool_definitions(&self.tool_definitions, &self.shared_inputs)?;
         Ok(())
     }
 
@@ -396,8 +416,10 @@ impl BrainNode {
     }
 
     fn output_ports_static() -> Vec<Port> {
-        vec![Port::new("output", DataType::Vec(Box::new(DataType::OpenAIMessage)))
-            .with_description("本次 Brain 运行新增的 assistant/tool 消息轨迹")]
+        vec![
+            Port::new("output", DataType::Vec(Box::new(DataType::OpenAIMessage)))
+                .with_description("本次 Brain 运行新增的 assistant/tool 消息轨迹"),
+        ]
     }
 
     fn wrap_error(&self, message: impl Into<String>) -> Error {
@@ -530,7 +552,10 @@ impl Node for BrainNode {
         }
     }
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         if let Some(DataValue::Json(value)) = inputs.get(BRAIN_SHARED_INPUTS_PORT) {
@@ -582,7 +607,10 @@ impl Node for BrainNode {
             "output".to_string(),
             DataValue::Vec(
                 Box::new(DataType::OpenAIMessage),
-                output_messages.into_iter().map(DataValue::OpenAIMessage).collect(),
+                output_messages
+                    .into_iter()
+                    .map(DataValue::OpenAIMessage)
+                    .collect(),
             ),
         );
         self.validate_outputs(&outputs)?;
@@ -775,7 +803,11 @@ mod tests {
     fn brain_output_is_static_output_message_list_only() {
         ensure_registry_initialized();
         let node = BrainNode::new("brain_1", "Brain");
-        let output_names: Vec<String> = node.output_ports().into_iter().map(|port| port.name).collect();
+        let output_names: Vec<String> = node
+            .output_ports()
+            .into_iter()
+            .map(|port| port.name)
+            .collect();
         assert_eq!(output_names, vec!["output"]);
     }
 
@@ -792,7 +824,11 @@ mod tests {
         )]))
         .unwrap();
 
-        let input_names: Vec<String> = node.input_ports().into_iter().map(|port| port.name).collect();
+        let input_names: Vec<String> = node
+            .input_ports()
+            .into_iter()
+            .map(|port| port.name)
+            .collect();
         assert!(input_names.contains(&"llm_model".to_string()));
         assert!(input_names.contains(&"messages".to_string()));
         assert!(input_names.contains(&"tools_config".to_string()));
@@ -807,6 +843,7 @@ mod tests {
         let tool_call_message = OpenAIMessage {
             role: MessageRole::Assistant,
             content: Some("calling tool".to_string()),
+            reasoning_content: None,
             tool_calls: vec![ToolCalls {
                 id: "tool_call_1".to_string(),
                 type_name: "function".to_string(),
@@ -820,6 +857,7 @@ mod tests {
         let final_message = OpenAIMessage {
             role: MessageRole::Assistant,
             content: Some("done".to_string()),
+            reasoning_content: None,
             tool_calls: Vec::new(),
             tool_call_id: None,
         };
@@ -887,6 +925,7 @@ mod tests {
             OpenAIMessage {
                 role: MessageRole::Assistant,
                 content: Some("call missing".to_string()),
+                reasoning_content: None,
                 tool_calls: vec![ToolCalls {
                     id: "missing_1".to_string(),
                     type_name: "function".to_string(),
@@ -900,6 +939,7 @@ mod tests {
             OpenAIMessage {
                 role: MessageRole::Assistant,
                 content: Some("recovered".to_string()),
+                reasoning_content: None,
                 tool_calls: Vec::new(),
                 tool_call_id: None,
             },
@@ -911,7 +951,10 @@ mod tests {
             .execute(HashMap::from([
                 ("llm_model".to_string(), DataValue::LLModel(llm.clone())),
                 ("messages".to_string(), messages_input()),
-                (BRAIN_TOOLS_CONFIG_PORT.to_string(), DataValue::Json(json!([]))),
+                (
+                    BRAIN_TOOLS_CONFIG_PORT.to_string(),
+                    DataValue::Json(json!([])),
+                ),
             ]))
             .unwrap();
 
@@ -942,6 +985,7 @@ mod tests {
         let llm = Arc::new(SequenceLlm::new(vec![OpenAIMessage {
             role: MessageRole::Assistant,
             content: Some("plain reply".to_string()),
+            reasoning_content: None,
             tool_calls: Vec::new(),
             tool_call_id: None,
         }]));
@@ -997,6 +1041,7 @@ mod tests {
             OpenAIMessage {
                 role: MessageRole::Assistant,
                 content: Some("calling tool".to_string()),
+                reasoning_content: None,
                 tool_calls: vec![ToolCalls {
                     id: "tool_call_1".to_string(),
                     type_name: "function".to_string(),
@@ -1010,6 +1055,7 @@ mod tests {
             OpenAIMessage {
                 role: MessageRole::Assistant,
                 content: Some("done".to_string()),
+                reasoning_content: None,
                 tool_calls: Vec::new(),
                 tool_call_id: None,
             },
@@ -1052,6 +1098,7 @@ mod tests {
             OpenAIMessage {
                 role: MessageRole::Assistant,
                 content: Some("calling tool".to_string()),
+                reasoning_content: None,
                 tool_calls: vec![ToolCalls {
                     id: "tool_call_1".to_string(),
                     type_name: "function".to_string(),
@@ -1065,6 +1112,7 @@ mod tests {
             OpenAIMessage {
                 role: MessageRole::Assistant,
                 content: Some("done".to_string()),
+                reasoning_content: None,
                 tool_calls: Vec::new(),
                 tool_call_id: None,
             },
@@ -1088,21 +1136,26 @@ mod tests {
             .execute(HashMap::from([
                 ("llm_model".to_string(), DataValue::LLModel(agent_llm)),
                 ("messages".to_string(), messages_input()),
-                ("llm_ref".to_string(), DataValue::LLModel(shared_llm.clone())),
+                (
+                    "llm_ref".to_string(),
+                    DataValue::LLModel(shared_llm.clone()),
+                ),
             ]))
             .unwrap();
 
         match outputs.get("output") {
-            Some(DataValue::Vec(_, items)) => match &items[1] {
-                DataValue::OpenAIMessage(message) => {
-                    assert_eq!(message.role, MessageRole::Tool);
-                    assert_eq!(
+            Some(DataValue::Vec(_, items)) => {
+                match &items[1] {
+                    DataValue::OpenAIMessage(message) => {
+                        assert_eq!(message.role, MessageRole::Tool);
+                        assert_eq!(
                         message.content.as_deref(),
                         Some("{\"llm_ref\":{\"model_name\":\"sequence-llm\",\"type\":\"LLModel\"}}")
                     );
+                    }
+                    other => panic!("unexpected tool result item: {other:?}"),
                 }
-                other => panic!("unexpected tool result item: {other:?}"),
-            },
+            }
             other => panic!("unexpected output: {other:?}"),
         }
     }
@@ -1190,6 +1243,7 @@ mod tests {
             OpenAIMessage {
                 role: MessageRole::Assistant,
                 content: Some("call with context".to_string()),
+                reasoning_content: None,
                 tool_calls: vec![ToolCalls {
                     id: "tool_call_1".to_string(),
                     type_name: "function".to_string(),
@@ -1203,6 +1257,7 @@ mod tests {
             OpenAIMessage {
                 role: MessageRole::Assistant,
                 content: Some("done".to_string()),
+                reasoning_content: None,
                 tool_calls: Vec::new(),
                 tool_call_id: None,
             },
@@ -1226,7 +1281,10 @@ mod tests {
             Some(DataValue::Vec(_, items)) => match &items[1] {
                 DataValue::OpenAIMessage(message) => {
                     assert_eq!(message.role, MessageRole::Tool);
-                    assert_eq!(message.content.as_deref(), Some("{\"content\":\"call with context\"}"));
+                    assert_eq!(
+                        message.content.as_deref(),
+                        Some("{\"content\":\"call with context\"}")
+                    );
                 }
                 other => panic!("unexpected tool result item: {other:?}"),
             },
@@ -1265,6 +1323,7 @@ mod tests {
             OpenAIMessage {
                 role: MessageRole::Assistant,
                 content: None,
+                reasoning_content: None,
                 tool_calls: vec![ToolCalls {
                     id: "tool_call_1".to_string(),
                     type_name: "function".to_string(),
@@ -1278,6 +1337,7 @@ mod tests {
             OpenAIMessage {
                 role: MessageRole::Assistant,
                 content: Some("done".to_string()),
+                reasoning_content: None,
                 tool_calls: Vec::new(),
                 tool_call_id: None,
             },

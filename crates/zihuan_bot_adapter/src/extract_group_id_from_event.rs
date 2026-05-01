@@ -67,8 +67,8 @@ impl Node for ExtractGroupIdFromEventNode {
 mod tests {
     use super::ExtractGroupIdFromEventNode;
     use crate::models::event_model::{MessageEvent, MessageType, Sender};
-    use zihuan_node::{DataValue, Node};
     use std::collections::HashMap;
+    use zihuan_node::{DataValue, Node};
 
     fn make_event(message_type: MessageType, group_id: Option<i64>) -> MessageEvent {
         MessageEvent {

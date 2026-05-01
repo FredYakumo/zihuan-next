@@ -1,5 +1,5 @@
-use zihuan_core::error::Result;
 use serde_json::{json, Value};
+use zihuan_core::error::Result;
 
 pub trait FunctionTool: Send + Sync + std::fmt::Debug {
     fn name(&self) -> &str;

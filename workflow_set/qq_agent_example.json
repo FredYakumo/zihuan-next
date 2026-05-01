@@ -60,10 +60,6 @@
         "bot_server_token": ""
       },
       "port_bindings": {
-        "qq_id": {
-          "kind": "hyperparameter",
-          "name": "BOT_ID"
-        },
         "bot_server_url": {
           "kind": "hyperparameter",
           "name": "BOT_SERVER_URL"
@@ -71,6 +67,10 @@
         "bot_server_token": {
           "kind": "hyperparameter",
           "name": "BOT_SERVER_TOKEN"
+        },
+        "qq_id": {
+          "kind": "hyperparameter",
+          "name": "BOT_ID"
         }
       },
       "has_error": false,
@@ -167,23 +167,23 @@
       },
       "inline_values": {
         "acquire_timeout_secs": 0,
-        "reconnect_max_attempts": 0,
-        "mysql_port": "3306",
-        "mysql_user": "",
-        "mysql_database": "zihuan_aibot",
-        "mysql_password": "",
         "max_connections": 0,
         "reconnect_interval_secs": 0,
-        "mysql_host": "127.0.0.1"
+        "mysql_host": "127.0.0.1",
+        "mysql_port": "3306",
+        "mysql_database": "zihuan_aibot",
+        "mysql_password": "",
+        "reconnect_max_attempts": 0,
+        "mysql_user": ""
       },
       "port_bindings": {
-        "mysql_database": {
-          "kind": "hyperparameter",
-          "name": "MYSQL_DB"
-        },
         "mysql_user": {
           "kind": "hyperparameter",
           "name": "MYSQL_USER"
+        },
+        "mysql_database": {
+          "kind": "hyperparameter",
+          "name": "MYSQL_DB"
         },
         "mysql_password": {
           "kind": "hyperparameter",
@@ -369,16 +369,12 @@
         "height": 190.0
       },
       "inline_values": {
-        "timeout_secs": "600",
-        "model_name": "",
+        "api_key": "",
         "api_endpoint": "",
-        "api_key": ""
+        "timeout_secs": "600",
+        "model_name": ""
       },
       "port_bindings": {
-        "model_name": {
-          "kind": "hyperparameter",
-          "name": "LLM_MODEL_NAME"
-        },
         "api_endpoint": {
           "kind": "hyperparameter",
           "name": "LLM_API_ENDPOINT"
@@ -386,6 +382,10 @@
         "api_key": {
           "kind": "hyperparameter",
           "name": "LLM_API_KEY"
+        },
+        "model_name": {
+          "kind": "hyperparameter",
+          "name": "LLM_MODEL_NAME"
         }
       },
       "has_error": false,
@@ -539,8 +539,8 @@
         "height": 103.0
       },
       "inline_values": {
-        "api_token": "",
-        "timeout_secs": 0
+        "timeout_secs": 0,
+        "api_token": ""
       },
       "port_bindings": {
         "api_token": {
@@ -620,12 +620,12 @@
         "height": 182.30934
       },
       "inline_values": {
-        "redis_password": "",
-        "redis_host": "127.0.0.1",
-        "redis_port": 0,
         "reconnect_interval_secs": 0,
+        "redis_host": "127.0.0.1",
+        "reconnect_max_attempts": 0,
         "redis_db": 0,
-        "reconnect_max_attempts": 0
+        "redis_port": 0,
+        "redis_password": ""
       },
       "port_bindings": {},
       "has_error": false,

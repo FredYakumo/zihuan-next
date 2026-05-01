@@ -81,28 +81,37 @@ pub async fn list_workflows_detailed(_req: &mut Request, res: &mut Response, _de
             });
 
             // Try to read metadata from the JSON file
-            let (display_name, description, version) =
-                std::fs::read_to_string(&p)
-                    .ok()
-                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-                    .map(|v| {
-                        let dn = v.get("metadata")
-                            .and_then(|m| m.get("name"))
-                            .and_then(|n| n.as_str())
-                            .map(|s| s.to_string());
-                        let desc = v.get("metadata")
-                            .and_then(|m| m.get("description"))
-                            .and_then(|d| d.as_str())
-                            .map(|s| s.to_string());
-                        let ver = v.get("metadata")
-                            .and_then(|m| m.get("version"))
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-                        (dn, desc, ver)
-                    })
-                    .unwrap_or((None, None, None));
+            let (display_name, description, version) = std::fs::read_to_string(&p)
+                .ok()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                .map(|v| {
+                    let dn = v
+                        .get("metadata")
+                        .and_then(|m| m.get("name"))
+                        .and_then(|n| n.as_str())
+                        .map(|s| s.to_string());
+                    let desc = v
+                        .get("metadata")
+                        .and_then(|m| m.get("description"))
+                        .and_then(|d| d.as_str())
+                        .map(|s| s.to_string());
+                    let ver = v
+                        .get("metadata")
+                        .and_then(|m| m.get("version"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    (dn, desc, ver)
+                })
+                .unwrap_or((None, None, None));
 
-            Some(WorkflowInfo { name: stem, file, cover_url, display_name, description, version })
+            Some(WorkflowInfo {
+                name: stem,
+                file,
+                cover_url,
+                display_name,
+                description,
+                version,
+            })
         })
         .collect();
 
@@ -129,10 +138,8 @@ pub async fn serve_workflow_cover(req: &mut Request, res: &mut Response, _depot:
                 "webp" => "image/webp",
                 _ => "application/octet-stream",
             };
-            res.headers_mut().insert(
-                salvo::http::header::CONTENT_TYPE,
-                mime.parse().unwrap(),
-            );
+            res.headers_mut()
+                .insert(salvo::http::header::CONTENT_TYPE, mime.parse().unwrap());
             res.write_body(bytes).ok();
         }
         Err(_) => {
@@ -209,7 +216,6 @@ pub async fn save_to_workflows(req: &mut Request, res: &mut Response, depot: &mu
     }
 }
 
-
 #[derive(Deserialize)]
 pub struct OpenFileRequest {
     pub path: String,
@@ -230,10 +236,14 @@ pub async fn open_file(req: &mut Request, res: &mut Response, depot: &mut Depot)
     let result = zihuan_node::load_graph_definition_from_json_with_migration(&body.path);
     match result {
         Ok(loaded) => {
-            let zihuan_node::LoadedGraphDefinition { mut graph, migrated } = loaded;
+            let zihuan_node::LoadedGraphDefinition {
+                mut graph,
+                migrated,
+            } = loaded;
             zihuan_node::ensure_positions(&mut graph);
             let session_id = uuid::Uuid::new_v4().to_string();
-            let session = super::state::GraphSession::new(session_id.clone(), graph, Some(body.path));
+            let session =
+                super::state::GraphSession::new(session_id.clone(), graph, Some(body.path));
             let mut sessions = state.sessions.write().unwrap();
             sessions.insert(session_id.clone(), session);
             res.render(Json(serde_json::json!({
@@ -247,7 +257,6 @@ pub async fn open_file(req: &mut Request, res: &mut Response, depot: &mut Depot)
         }
     }
 }
-
 
 #[derive(Deserialize)]
 pub struct SaveFileRequest {
@@ -277,10 +286,7 @@ pub async fn save_file(req: &mut Request, res: &mut Response, depot: &mut Depot)
         }
     };
 
-    let save_path = body
-        .path
-        .clone()
-        .or_else(|| session.file_path.clone());
+    let save_path = body.path.clone().or_else(|| session.file_path.clone());
 
     let save_path = match save_path {
         Some(p) => p,
@@ -311,7 +317,6 @@ pub async fn save_file(req: &mut Request, res: &mut Response, depot: &mut Depot)
         }
     }
 }
-
 
 #[handler]
 pub async fn upload_graph(req: &mut Request, res: &mut Response, depot: &mut Depot) {
@@ -348,7 +353,6 @@ pub async fn upload_graph(req: &mut Request, res: &mut Response, depot: &mut Dep
     res.render(Json(serde_json::json!({"session_id": session_id})));
 }
 
-
 #[handler]
 pub async fn download_graph(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
@@ -369,7 +373,8 @@ pub async fn download_graph(req: &mut Request, res: &mut Response, depot: &mut D
                 true,
             )
             .unwrap();
-            res.add_header("Content-Type", "application/json", true).unwrap();
+            res.add_header("Content-Type", "application/json", true)
+                .unwrap();
             res.write_body(json.into_bytes());
         }
         None => {

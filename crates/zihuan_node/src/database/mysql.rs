@@ -1,5 +1,3 @@
-use zihuan_core::config::pct_encode;
-use zihuan_core::error::Result;
 use crate::data_value::MySqlConfig;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::{debug, info, warn};
@@ -8,6 +6,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::block_in_place;
+use zihuan_core::config::pct_encode;
+use zihuan_core::error::Result;
 
 const DEFAULT_MAX_CONNECTIONS: u32 = 10;
 const DEFAULT_ACQUIRE_TIMEOUT_SECS: u64 = 30;
@@ -222,7 +222,9 @@ impl Node for MySqlNode {
                 _ => None,
             })
             .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("mysql_password is required".to_string())
+                zihuan_core::error::Error::InvalidNodeInput(
+                    "mysql_password is required".to_string(),
+                )
             })?;
 
         let database = inputs
@@ -232,7 +234,9 @@ impl Node for MySqlNode {
                 _ => None,
             })
             .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("mysql_database is required".to_string())
+                zihuan_core::error::Error::InvalidNodeInput(
+                    "mysql_database is required".to_string(),
+                )
             })?;
 
         // Build URL from components

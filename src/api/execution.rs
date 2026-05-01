@@ -80,17 +80,17 @@ fn run_graph_blocking(
     // Link the external stop flag to the graph's internal stop flag
     let graph_flag = graph.get_stop_flag();
     let flag_clone = Arc::clone(&stop_flag);
-    std::thread::spawn(move || {
-        loop {
-            if flag_clone.load(std::sync::atomic::Ordering::Relaxed) {
-                graph_flag.store(true, std::sync::atomic::Ordering::Relaxed);
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(100));
+    std::thread::spawn(move || loop {
+        if flag_clone.load(std::sync::atomic::Ordering::Relaxed) {
+            graph_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+            break;
         }
+        std::thread::sleep(std::time::Duration::from_millis(100));
     });
     crate::log_forwarder::scope_task(task_id, || {
-        graph.execute().map_err(|e| format!("Execution failed: {e}").into())
+        graph
+            .execute()
+            .map_err(|e| format!("Execution failed: {e}").into())
     })
 }
 
@@ -130,14 +130,19 @@ pub async fn rerun_task(req: &mut Request, res: &mut Response, depot: &mut Depot
             res.render(Json(serde_json::json!({"error": "This task cannot be rerun because it has no saved file path"})));
             return;
         };
-        (file_path, body.and_then(|v| v.user_ip).or_else(|| fallback_ip.clone()))
+        (
+            file_path,
+            body.and_then(|v| v.user_ip).or_else(|| fallback_ip.clone()),
+        )
     };
 
     let loaded = match zihuan_node::load_graph_definition_from_json_with_migration(&file_path) {
         Ok(loaded) => loaded,
         Err(e) => {
             res.status_code(StatusCode::UNPROCESSABLE_ENTITY);
-            res.render(Json(serde_json::json!({"error": format!("Failed to reload graph: {e}")})));
+            res.render(Json(
+                serde_json::json!({"error": format!("Failed to reload graph: {e}")}),
+            ));
             return;
         }
     };
@@ -280,11 +285,11 @@ fn start_graph_task(
             append_task_error_detail(&state_clone, &task_id_clone, detailed);
         }
 
-        state_clone
-            .tasks
-            .lock()
-            .unwrap()
-            .finish_task(&task_id_clone, status.clone(), error_message.clone());
+        state_clone.tasks.lock().unwrap().finish_task(
+            &task_id_clone,
+            status.clone(),
+            error_message.clone(),
+        );
 
         match status {
             TaskStatus::Stopped => {
@@ -301,7 +306,10 @@ fn start_graph_task(
                     success,
                     error: error_message,
                 }) {
-                    Ok(n) => info!("Broadcast TaskFinished(success={}) to {} receivers", success, n),
+                    Ok(n) => info!(
+                        "Broadcast TaskFinished(success={}) to {} receivers",
+                        success, n
+                    ),
                     Err(e) => error!("Failed to broadcast TaskFinished: {}", e),
                 }
             }

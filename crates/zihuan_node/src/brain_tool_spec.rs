@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::function_graph::{
-    default_function_subgraph, FunctionPortDef, FUNCTION_OUTPUTS_NODE_ID,
-};
+use crate::function_graph::{default_function_subgraph, FunctionPortDef, FUNCTION_OUTPUTS_NODE_ID};
 use crate::graph_io::NodeGraphDefinition;
 use crate::DataType;
 

@@ -1,7 +1,5 @@
-use zihuan_bot_types::event_model::MessageEvent;
-use zihuan_llm_types::tooling::FunctionTool;
-use reqwest::blocking::Client;
 use redis::{aio::ConnectionManager, AsyncCommands};
+use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::mysql::MySqlPool;
@@ -11,6 +9,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::Mutex as TokioMutex;
+use zihuan_bot_types::event_model::MessageEvent;
+use zihuan_llm_types::tooling::FunctionTool;
 
 tokio::task_local! {
     pub static SESSION_CLAIM_CONTEXT: Arc<SessionClaimContext>;
@@ -86,7 +86,11 @@ impl TavilyRef {
         }
     }
 
-    pub fn search(&self, query: &str, search_count: i64) -> zihuan_core::error::Result<Vec<String>> {
+    pub fn search(
+        &self,
+        query: &str,
+        search_count: i64,
+    ) -> zihuan_core::error::Result<Vec<String>> {
         let client = Client::builder().timeout(self.timeout).build()?;
         let response = client
             .post("https://api.tavily.com/search")
@@ -120,7 +124,12 @@ impl TavilyRef {
         Ok(parsed
             .results
             .into_iter()
-            .map(|item| format!("标题: {}\n链接: {}\n内容: {}", item.title, item.url, item.content))
+            .map(|item| {
+                format!(
+                    "标题: {}\n链接: {}\n内容: {}",
+                    item.title, item.url, item.content
+                )
+            })
             .collect())
     }
 }
@@ -373,7 +382,8 @@ impl OpenAIMessageSessionCacheRef {
             if let Some(cm) = cm_guard.as_mut() {
                 let existing_json: Option<String> = cm.get(&key).await?;
                 if let Some(raw) = existing_json {
-                    let messages: Vec<zihuan_llm_types::OpenAIMessage> = serde_json::from_str(&raw)?;
+                    let messages: Vec<zihuan_llm_types::OpenAIMessage> =
+                        serde_json::from_str(&raw)?;
                     return Ok(messages);
                 }
             }
@@ -950,7 +960,9 @@ impl fmt::Debug for DataValue {
             DataValue::BotAdapterRef(_) => f.debug_tuple("BotAdapterRef").finish(),
             DataValue::RedisRef(config) => f.debug_tuple("RedisRef").field(config).finish(),
             DataValue::MySqlRef(config) => f.debug_tuple("MySqlRef").field(config).finish(),
-            DataValue::TavilyRef(tavily_ref) => f.debug_tuple("TavilyRef").field(tavily_ref).finish(),
+            DataValue::TavilyRef(tavily_ref) => {
+                f.debug_tuple("TavilyRef").field(tavily_ref).finish()
+            }
             DataValue::SessionStateRef(session_ref) => {
                 f.debug_tuple("SessionStateRef").field(session_ref).finish()
             }

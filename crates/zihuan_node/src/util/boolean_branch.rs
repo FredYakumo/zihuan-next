@@ -1,6 +1,6 @@
-use zihuan_core::error::Result;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
+use zihuan_core::error::Result;
 
 /// Routes a single input value to one of two outputs based on a boolean condition.
 pub struct BooleanBranchNode {
@@ -56,10 +56,9 @@ impl Node for BooleanBranchNode {
             }
         };
 
-        let input = inputs
-            .get("input")
-            .cloned()
-            .ok_or_else(|| zihuan_core::error::Error::ValidationError("input 输入不存在".to_string()))?;
+        let input = inputs.get("input").cloned().ok_or_else(|| {
+            zihuan_core::error::Error::ValidationError("input 输入不存在".to_string())
+        })?;
 
         let mut outputs = HashMap::new();
         if condition {
@@ -84,9 +83,9 @@ impl Node for BooleanBranchNode {
 #[cfg(test)]
 mod tests {
     use super::BooleanBranchNode;
-    use zihuan_core::error::Result;
     use crate::{DataValue, Node};
     use std::collections::HashMap;
+    use zihuan_core::error::Result;
 
     #[test]
     fn routes_to_true_output_when_condition_is_true() -> Result<()> {

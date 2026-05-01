@@ -1,8 +1,6 @@
 use crate::adapter::{BotAdapter, BotAdapterConfig, SharedBotAdapter};
 use crate::event;
 use crate::models::event_model::MessageEvent;
-use zihuan_core::error::Result;
-use zihuan_node::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 use log::{error, info};
 use std::collections::HashMap;
 use std::sync::{
@@ -13,6 +11,8 @@ use tokio::select;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::block_in_place;
+use zihuan_core::error::Result;
+use zihuan_node::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 
 pub struct BotAdapterNode {
     id: String,
@@ -165,9 +165,7 @@ impl Node for BotAdapterNode {
 
     fn on_update(&mut self) -> Result<Option<HashMap<String, DataValue>>> {
         let event_rx = self.event_rx.as_ref().ok_or_else(|| {
-            zihuan_core::error::Error::ValidationError(
-                "Bot adapter is not initialized".to_string(),
-            )
+            zihuan_core::error::Error::ValidationError("Bot adapter is not initialized".to_string())
         })?;
         let error_rx = self.error_rx.as_ref();
         let stop_flag = self.stop_flag.clone();
@@ -294,7 +292,7 @@ impl Node for BotAdapterNode {
         outputs.insert(
             "bot_adapter".to_string(),
             DataValue::BotAdapterRef(
-                self.adapter_handle.clone().unwrap() as zihuan_bot_types::BotAdapterHandle,
+                self.adapter_handle.clone().unwrap() as zihuan_bot_types::BotAdapterHandle
             ),
         );
         self.validate_outputs(&outputs)?;
