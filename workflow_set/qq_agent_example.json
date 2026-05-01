@@ -59,13 +59,13 @@
         "qq_id": "2496875785"
       },
       "port_bindings": {
-        "bot_server_token": {
-          "kind": "hyperparameter",
-          "name": "BOT_SERVER_TOKEN"
-        },
         "qq_id": {
           "kind": "hyperparameter",
           "name": "BOT_ID"
+        },
+        "bot_server_token": {
+          "kind": "hyperparameter",
+          "name": "BOT_SERVER_TOKEN"
         }
       },
       "has_error": false,
@@ -161,9 +161,9 @@
         "height": 401.06308
       },
       "inline_values": {
-        "mysql_database": "zihuan_aibot",
         "mysql_port": "3306",
-        "mysql_host": "127.0.0.1"
+        "mysql_host": "127.0.0.1",
+        "mysql_database": "zihuan_aibot"
       },
       "port_bindings": {
         "mysql_password": {
@@ -357,13 +357,13 @@
         "timeout_secs": "600"
       },
       "port_bindings": {
-        "api_key": {
-          "kind": "hyperparameter",
-          "name": "LLM_API_KEY"
-        },
         "model_name": {
           "kind": "hyperparameter",
           "name": "LLM_MODEL_NAME"
+        },
+        "api_key": {
+          "kind": "hyperparameter",
+          "name": "LLM_API_KEY"
         },
         "api_endpoint": {
           "kind": "hyperparameter",
@@ -759,7 +759,7 @@
       "data_type": "Password",
       "group": "default",
       "required": true,
-      "description": null
+      "description": "admin"
     },
     {
       "name": "LLM_API_KEY",

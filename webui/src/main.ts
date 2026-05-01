@@ -2,7 +2,7 @@ import "./ui/theme.css";
 import { initTheme, loadThemes, getThemeNames, getCurrentThemeName, setTheme } from "./ui/theme";
 import { registry, graphs } from "./api/client";
 import { ws } from "./api/ws";
-import type { NodeTypeInfo } from "./api/types";
+import type { NodeTypeInfo, TaskEntry } from "./api/types";
 import { registerNodeTypes } from "./graph/registry";
 import { ZihuanCanvas } from "./graph/canvas";
 import {
@@ -17,10 +17,12 @@ import { showErrorDialog } from "./ui/dialogs/index";
 import { registerGlobalShortcuts } from "./app/shortcuts";
 import { observeCanvasResize, registerUnsavedChangesWarning, startAutoSaveLoop } from "./app/lifecycle";
 import { registerTaskRuntimeHandlers } from "./app/task_runtime";
+import { TaskManagerStore } from "./app/task_manager";
 import { TabManager } from "./app/tab_manager";
 import { SaveManager } from "./app/save_manager";
 import { GraphActions } from "./app/graph_actions";
 import { WorkspaceController } from "./app/workspace_controller";
+import { openTaskManagerDialog } from "./ui/dialogs/index";
 
 async function main() {
   initTheme();
@@ -44,9 +46,10 @@ async function main() {
   canvas.nodeTypes = nodeTypes;
 
   let currentTaskId: string | null = null;
-  let runningSessionId: string | null = null;
   let updateRunButton: (isRunning: boolean) => void = () => {};
   let appendLogEntry: (level: string, message: string, timestamp: string) => void = () => {};
+  let setToolbarTaskState: (tasks: TaskEntry[]) => void = () => {};
+  const taskStore = new TaskManagerStore();
 
   const tabs = new TabManager({
     onSwitchTab: (id) => { switchTab(id).catch(console.error); },
@@ -64,7 +67,7 @@ async function main() {
   const workspace = new WorkspaceController({
     canvas,
     tabs,
-    getRunningSessionId: () => runningSessionId,
+    isSessionRunning: (sessionId) => taskStore.getRunningTaskForSession(sessionId) !== null,
     updateRunButton: (isRunning) => updateRunButton(isRunning),
     createNewTab,
   });
@@ -73,7 +76,7 @@ async function main() {
     if (tabs.getActiveTabId() === id) return;
     tabs.setActiveTabId(id);
     await canvas.loadExternalSession(id);
-    updateRunButton(id === runningSessionId);
+    updateRunButton(taskStore.getRunningTaskForSession(id) !== null);
     await workspace.persistWorkspaceState();
   }
 
@@ -85,11 +88,6 @@ async function main() {
     try {
       await graphs.delete(id);
     } catch {}
-
-    if (id === runningSessionId) {
-      runningSessionId = null;
-      updateRunButton(false);
-    }
 
     if (activeBeforeClose === id) {
       const next = tabs.getNextTabAfterRemoval(index);
@@ -110,7 +108,7 @@ async function main() {
     const tab = await graphs.create();
     await tabs.openTab(tab.id, "未命名", false);
     await canvas.loadExternalSession(tab.id);
-    updateRunButton(tab.id === runningSessionId);
+    updateRunButton(taskStore.getRunningTaskForSession(tab.id) !== null);
     await workspace.persistWorkspaceState();
   }
 
@@ -136,12 +134,17 @@ async function main() {
 
   const addLog = createLogToastOverlay(canvasContainer);
   registerTaskRuntimeHandlers(ws, {
-    getActiveTabId: () => tabs.getActiveTabId(),
-    setCurrentTaskId: (taskId) => { currentTaskId = taskId; },
-    setRunningSessionId: (sessionId) => { runningSessionId = sessionId; },
-    updateRunButton: (isRunning) => updateRunButton(isRunning),
+    onTaskLifecycleChanged: () => {
+      taskStore.refresh().catch(console.error);
+    },
     addLog,
     appendLogEntry: (level, message, timestamp) => appendLogEntry(level, message, timestamp),
+  });
+
+  ws.onMessage((msg) => {
+    if (msg.type === "TaskFinished" && !msg.success) {
+      showErrorDialog(msg.error ? `执行失败: ${msg.error}` : "执行失败");
+    }
   });
 
   canvas.onAddNodeRequest = (gx, gy) => {
@@ -169,7 +172,7 @@ async function main() {
   const onUndo = () => { canvas.undo().catch(console.error); };
   const onRedo = () => { canvas.redo().catch(console.error); };
 
-  const { updateUndoRedoButtons } = buildToolbar(
+  const { updateUndoRedoButtons, setTaskState } = buildToolbar(
     toolbar,
     onNewGraph,
     onOpenFile,
@@ -179,13 +182,22 @@ async function main() {
     onValidate,
     onBrowseWorkflows,
     () => { graphActions.openGraphMetadata().catch(console.error); },
-    (msg) => showErrorDialog(msg),
+    () => openTaskManagerDialog(taskStore),
+    (taskId) => { taskStore.stopTask(taskId).catch((error) => showErrorDialog(`结束任务失败: ${(error as Error).message}`)); },
     onUndo,
     onRedo,
     getThemeNames,
     getCurrentThemeName,
     setTheme,
   );
+  setToolbarTaskState = setTaskState;
+
+  taskStore.subscribe((tasks) => {
+    setToolbarTaskState(tasks);
+    currentTaskId = taskStore.getRunningTaskForSession(tabs.getActiveTabId())?.id ?? null;
+    updateRunButton(currentTaskId !== null);
+  });
+  taskStore.start();
 
   canvas.onHistoryChange = () => {
     updateUndoRedoButtons(canvas.canUndo(), canvas.canRedo());

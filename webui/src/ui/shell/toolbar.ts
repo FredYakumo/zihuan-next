@@ -1,6 +1,10 @@
-import { ws } from "../../api/ws";
+import type { TaskEntry } from "../../api/types";
 import { getThemeConfig } from "../theme";
 import { openOverlay } from "../dialogs/base";
+
+function taskLabel(task: Pick<TaskEntry, "graph_name" | "is_workflow_set">): string {
+  return task.is_workflow_set ? `${task.graph_name} [工作流集]` : task.graph_name;
+}
 
 export function buildToolbar(
   toolbar: HTMLElement,
@@ -12,13 +16,17 @@ export function buildToolbar(
   onValidate: () => void,
   onBrowseWorkflows: () => void,
   onEditGraphInfo: () => void,
-  onTaskFailed: (message: string) => void,
+  onOpenTaskManager: () => void,
+  onStopTask: (taskId: string) => void,
   onUndo: () => void,
   onRedo: () => void,
   getThemeNames: () => Array<{ name: string; display_name: string; mode: string }>,
   getCurrentThemeName: () => string,
   onSwitchTheme: (name: string) => void,
-): { updateUndoRedoButtons: (canUndo: boolean, canRedo: boolean) => void } {
+): {
+  updateUndoRedoButtons: (canUndo: boolean, canRedo: boolean) => void;
+  setTaskState: (tasks: TaskEntry[]) => void;
+} {
   const titleEl = toolbar.querySelector<HTMLElement>(".title")!;
 
   const menu = document.createElement("div");
@@ -258,39 +266,131 @@ export function buildToolbar(
   spacer.className = "spacer";
   toolbar.appendChild(spacer);
 
-  const taskStatus = document.createElement("span");
+  const taskStatusWrap = document.createElement("div");
+  taskStatusWrap.className = "task-status-wrap";
+
+  const taskStatus = document.createElement("button");
   taskStatus.className = "task-status";
   taskStatus.id = "task-status";
   taskStatus.textContent = "Idle";
-  toolbar.appendChild(taskStatus);
+  taskStatus.type = "button";
+  taskStatus.title = "查看任务状态";
+  taskStatus.addEventListener("click", onOpenTaskManager);
+  taskStatusWrap.appendChild(taskStatus);
 
-  ws.onMessage((msg) => {
-    if (msg.type === "TaskStarted") {
-      taskStatus.textContent = `Running: ${msg.graph_name}`;
-      taskStatus.className = "task-status running";
-    } else if (msg.type === "TaskFinished") {
-      const success = msg.success;
-      taskStatus.textContent = success ? "Done ✓" : "Failed ✗";
+  const taskPopover = document.createElement("div");
+  taskPopover.className = "task-status-popover";
+  taskStatusWrap.appendChild(taskPopover);
+  toolbar.appendChild(taskStatusWrap);
+
+  let latestTasks: TaskEntry[] = [];
+  let hideTimer: number | null = null;
+
+  const cancelHide = (): void => {
+    if (hideTimer !== null) {
+      window.clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+  };
+
+  const closePopover = (): void => {
+    cancelHide();
+    taskPopover.classList.remove("open");
+  };
+
+  const scheduleHide = (): void => {
+    cancelHide();
+    hideTimer = window.setTimeout(() => {
+      taskPopover.classList.remove("open");
+    }, 120);
+  };
+
+  const renderTaskPopover = (): void => {
+    taskPopover.innerHTML = "";
+    const runningTasks = latestTasks.filter((task) => task.is_running);
+    if (runningTasks.length === 0) {
+      return;
+    }
+
+    const header = document.createElement("div");
+    header.className = "task-popover-header";
+    header.textContent = "正在运行的任务";
+    taskPopover.appendChild(header);
+
+    for (const task of runningTasks.slice(0, 5)) {
+      const row = document.createElement("div");
+      row.className = "task-popover-row";
+
+      const name = document.createElement("span");
+      name.className = "task-popover-name";
+      name.textContent = taskLabel(task);
+      row.appendChild(name);
+
+      const stopBtn = document.createElement("button");
+      stopBtn.type = "button";
+      stopBtn.className = "task-popover-stop";
+      stopBtn.textContent = "结束";
+      stopBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        onStopTask(task.id);
+      });
+      row.appendChild(stopBtn);
+      taskPopover.appendChild(row);
+    }
+
+    if (runningTasks.length > 5) {
+      const more = document.createElement("div");
+      more.className = "task-popover-more";
+      more.textContent = `还有 ${runningTasks.length - 5} 个任务未显示`;
+      taskPopover.appendChild(more);
+    }
+
+    const openBtn = document.createElement("button");
+    openBtn.type = "button";
+    openBtn.className = "task-popover-open";
+    openBtn.textContent = "打开任务管理器";
+    openBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      closePopover();
+      onOpenTaskManager();
+    });
+    taskPopover.appendChild(openBtn);
+  };
+
+  const renderTaskStatus = (): void => {
+    const runningTasks = latestTasks.filter((task) => task.is_running);
+    if (runningTasks.length === 0) {
+      taskStatus.textContent = "Idle";
       taskStatus.className = "task-status";
-      if (!success) {
-        onTaskFailed(msg.error ? `执行失败: ${msg.error}` : "执行失败");
-      }
-      setTimeout(() => {
-        taskStatus.textContent = "Idle";
-      }, 5000);
-    } else if (msg.type === "TaskStopped") {
-      taskStatus.textContent = "Stopped";
-      taskStatus.className = "task-status";
-      setTimeout(() => {
-        taskStatus.textContent = "Idle";
-      }, 3000);
+      closePopover();
+      return;
+    }
+
+    taskStatus.className = "task-status running";
+    taskStatus.textContent = runningTasks.length === 1
+      ? `运行中: ${taskLabel(runningTasks[0])}`
+      : `运行中: ${runningTasks.length} 个任务`;
+    renderTaskPopover();
+  };
+
+  taskStatusWrap.addEventListener("mouseenter", () => {
+    cancelHide();
+    if (latestTasks.some((task) => task.is_running)) {
+      taskPopover.classList.add("open");
     }
   });
+  taskStatusWrap.addEventListener("mouseleave", scheduleHide);
+
+  renderTaskStatus();
 
   return {
     updateUndoRedoButtons(canUndo: boolean, canRedo: boolean): void {
       undoBtn.disabled = !canUndo;
       redoBtn.disabled = !canRedo;
+    },
+    setTaskState(tasks: TaskEntry[]): void {
+      latestTasks = [...tasks];
+      renderTaskStatus();
     },
   };
 }

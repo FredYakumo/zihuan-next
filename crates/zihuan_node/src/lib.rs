@@ -273,6 +273,7 @@ pub struct NodeGraph {
     pub inline_values: HashMap<String, HashMap<String, DataValue>>,
     runtime_variable_store: RuntimeVariableStore,
     stop_flag: Arc<AtomicBool>,
+    execution_task_id: Option<String>,
     execution_callback: Option<
         Arc<dyn Fn(&str, &HashMap<String, DataValue>, &HashMap<String, DataValue>) + Send + Sync>,
     >,
@@ -289,6 +290,7 @@ impl NodeGraph {
             inline_values: HashMap::new(),
             runtime_variable_store: Arc::new(RwLock::new(HashMap::new())),
             stop_flag: Arc::new(AtomicBool::new(false)),
+            execution_task_id: None,
             execution_callback: None,
             edges: Vec::new(),
             definition: None,
@@ -305,6 +307,10 @@ impl NodeGraph {
             + 'static,
     {
         self.execution_callback = Some(Arc::new(callback));
+    }
+
+    pub fn set_execution_task_id(&mut self, task_id: Option<String>) {
+        self.execution_task_id = task_id;
     }
 
     pub fn set_edges(&mut self, edges: Vec<EdgeDefinition>) {
@@ -1539,11 +1545,14 @@ impl NodeGraph {
         let connected_nodes = connected_nodes.clone();
         let input_sources = input_sources.clone();
         let runtime_variable_store = self.runtime_variable_store.clone();
+        let execution_task_id = self.execution_task_id.clone();
         let handle = self.event_task_handle()?;
 
         let join = handle.spawn(async move {
             let claim_context = Arc::new(crate::data_value::SessionClaimContext::default());
-            crate::data_value::SESSION_CLAIM_CONTEXT
+            let scoped_task_id = execution_task_id.clone();
+            let graph_task_id = execution_task_id.clone();
+            let run_future = crate::data_value::SESSION_CLAIM_CONTEXT
                 .scope(claim_context.clone(), async move {
                     let result = tokio::task::block_in_place(|| -> Result<()> {
                         let mut event_graph = crate::registry::build_node_graph_from_definition(&definition)?;
@@ -1551,6 +1560,7 @@ impl NodeGraph {
                             event_graph.execution_callback = Some(callback);
                         }
                         event_graph.set_runtime_variable_store(runtime_variable_store.clone());
+                        event_graph.set_execution_task_id(graph_task_id.clone());
                         event_graph.stop_flag = stop_flag.clone();
                         event_graph.execute_single_event_with_edges(
                             &node_id,
@@ -1590,8 +1600,13 @@ impl NodeGraph {
                             *guard = Some(err);
                         }
                     }
-                })
-                .await;
+                });
+
+            if let Some(task_id) = scoped_task_id {
+                crate::data_value::EXECUTION_TASK_ID.scope(task_id, run_future).await;
+            } else {
+                run_future.await;
+            }
         });
 
         self.event_task_handles.push(join);
@@ -1634,11 +1649,14 @@ impl NodeGraph {
         let event_producer_set = event_producer_set.clone();
         let ordered = ordered.to_vec();
         let runtime_variable_store = self.runtime_variable_store.clone();
+        let execution_task_id = self.execution_task_id.clone();
         let handle = self.event_task_handle()?;
 
         let join = handle.spawn(async move {
             let claim_context = Arc::new(crate::data_value::SessionClaimContext::default());
-            crate::data_value::SESSION_CLAIM_CONTEXT
+            let scoped_task_id = execution_task_id.clone();
+            let graph_task_id = execution_task_id.clone();
+            let run_future = crate::data_value::SESSION_CLAIM_CONTEXT
                 .scope(claim_context.clone(), async move {
                     let result = tokio::task::block_in_place(|| -> Result<()> {
                         let mut event_graph = crate::registry::build_node_graph_from_definition(&definition)?;
@@ -1646,6 +1664,7 @@ impl NodeGraph {
                             event_graph.execution_callback = Some(callback);
                         }
                         event_graph.set_runtime_variable_store(runtime_variable_store.clone());
+                        event_graph.set_execution_task_id(graph_task_id.clone());
                         event_graph.stop_flag = stop_flag.clone();
                         event_graph.execute_single_event(
                             &node_id,
@@ -1684,8 +1703,13 @@ impl NodeGraph {
                             *guard = Some(err);
                         }
                     }
-                })
-                .await;
+                });
+
+            if let Some(task_id) = scoped_task_id {
+                crate::data_value::EXECUTION_TASK_ID.scope(task_id, run_future).await;
+            } else {
+                run_future.await;
+            }
         });
 
         self.event_task_handles.push(join);
@@ -2875,6 +2899,7 @@ mod tests {
             hyperparameters: Vec::new(),
             variables: Vec::new(),
             execution_results: HashMap::new(),
+            metadata: crate::graph_io::GraphMetadata::default(),
         };
 
         let mut graph = crate::registry::build_node_graph_from_definition(&definition)?;
@@ -2913,6 +2938,7 @@ mod tests {
                 initial_value: Some(serde_json::Value::String("hello".to_string())),
             }],
             execution_results: HashMap::new(),
+            metadata: crate::graph_io::GraphMetadata::default(),
         };
 
         let mut graph = crate::registry::build_node_graph_from_definition(&definition)?;

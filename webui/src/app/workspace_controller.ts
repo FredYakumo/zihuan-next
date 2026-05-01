@@ -7,7 +7,7 @@ import { loadWorkspaceState, saveWorkspaceState } from "./workspace";
 export interface WorkspaceControllerOptions {
   canvas: ZihuanCanvas;
   tabs: TabManager;
-  getRunningSessionId: () => string | null;
+  isSessionRunning: (sessionId: string | null) => boolean;
   updateRunButton: (isRunning: boolean) => void;
   createNewTab: () => Promise<void>;
 }
@@ -71,7 +71,7 @@ export class WorkspaceController {
           if (activeTab) {
             this.options.tabs.setActiveTabId(activeTab.id);
             await this.options.canvas.loadExternalSession(activeTab.id);
-            this.options.updateRunButton(activeTab.id === this.options.getRunningSessionId());
+            this.options.updateRunButton(this.options.isSessionRunning(activeTab.id));
             if (lastCanvasState) {
               this.options.canvas.setCanvasViewport(lastCanvasState.offset, lastCanvasState.scale);
             }
