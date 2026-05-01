@@ -9,6 +9,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::block_in_place;
 
+const DEFAULT_MAX_CONNECTIONS: u32 = 10;
+const DEFAULT_ACQUIRE_TIMEOUT_SECS: u64 = 30;
+
 /// MySQL node - builds a persistent connection pool from input ports and
 /// passes it downstream via MySqlRef. The pool is cached keyed on the
 /// connection URL; it is recreated only when the URL (or credentials) change.
@@ -120,6 +123,34 @@ impl MySqlNode {
         self.last_url = Some(url_str);
         Ok(pool)
     }
+
+    fn sanitize_max_connections(raw: Option<&DataValue>) -> u32 {
+        match raw {
+            Some(DataValue::Integer(value)) if *value > 0 => *value as u32,
+            Some(DataValue::Integer(value)) => {
+                warn!(
+                    "[MySqlNode] Invalid max_connections={} — falling back to default {}",
+                    value, DEFAULT_MAX_CONNECTIONS
+                );
+                DEFAULT_MAX_CONNECTIONS
+            }
+            _ => DEFAULT_MAX_CONNECTIONS,
+        }
+    }
+
+    fn sanitize_acquire_timeout_secs(raw: Option<&DataValue>) -> u64 {
+        match raw {
+            Some(DataValue::Integer(value)) if *value > 0 => *value as u64,
+            Some(DataValue::Integer(value)) => {
+                warn!(
+                    "[MySqlNode] Invalid acquire_timeout_secs={} — falling back to default {}s",
+                    value, DEFAULT_ACQUIRE_TIMEOUT_SECS
+                );
+                DEFAULT_ACQUIRE_TIMEOUT_SECS
+            }
+            _ => DEFAULT_ACQUIRE_TIMEOUT_SECS,
+        }
+    }
 }
 
 impl Node for MySqlNode {
@@ -215,21 +246,10 @@ impl Node for MySqlNode {
             Some(format!("mysql://{}@{}:{}/{}", user, host, port, database))
         };
 
-        let max_connections = inputs
-            .get("max_connections")
-            .and_then(|v| match v {
-                DataValue::Integer(i) => Some(*i as u32),
-                _ => None,
-            })
-            .unwrap_or(10);
+        let max_connections = Self::sanitize_max_connections(inputs.get("max_connections"));
 
-        let acquire_timeout_secs = inputs
-            .get("acquire_timeout_secs")
-            .and_then(|v| match v {
-                DataValue::Integer(i) => Some(*i as u64),
-                _ => None,
-            })
-            .unwrap_or(30);
+        let acquire_timeout_secs =
+            Self::sanitize_acquire_timeout_secs(inputs.get("acquire_timeout_secs"));
 
         let max_attempts = inputs.get("reconnect_max_attempts").and_then(|v| match v {
             DataValue::Integer(i) => Some(*i as u32),
@@ -267,5 +287,42 @@ impl Node for MySqlNode {
         );
         self.validate_outputs(&outputs)?;
         Ok(outputs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_pool_settings_fall_back_to_defaults() {
+        assert_eq!(
+            MySqlNode::sanitize_max_connections(Some(&DataValue::Integer(0))),
+            DEFAULT_MAX_CONNECTIONS
+        );
+        assert_eq!(
+            MySqlNode::sanitize_max_connections(Some(&DataValue::Integer(-3))),
+            DEFAULT_MAX_CONNECTIONS
+        );
+        assert_eq!(
+            MySqlNode::sanitize_acquire_timeout_secs(Some(&DataValue::Integer(0))),
+            DEFAULT_ACQUIRE_TIMEOUT_SECS
+        );
+        assert_eq!(
+            MySqlNode::sanitize_acquire_timeout_secs(Some(&DataValue::Integer(-8))),
+            DEFAULT_ACQUIRE_TIMEOUT_SECS
+        );
+    }
+
+    #[test]
+    fn valid_pool_settings_are_preserved() {
+        assert_eq!(
+            MySqlNode::sanitize_max_connections(Some(&DataValue::Integer(25))),
+            25
+        );
+        assert_eq!(
+            MySqlNode::sanitize_acquire_timeout_secs(Some(&DataValue::Integer(12))),
+            12
+        );
     }
 }

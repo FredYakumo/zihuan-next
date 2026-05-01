@@ -14,6 +14,8 @@ import {
 } from "../ui/dialogs/index";
 import { getInlineWidgetTopY } from "./inline_layout";
 
+type WidgetMutationCallback = (pending?: Promise<unknown>) => void;
+
 /** Called for every node added to the canvas after the node is created. */
 export function setupNodeWidgets(
   lNode: any,
@@ -27,7 +29,7 @@ export function setupNodeWidgets(
     toolDef?: BrainToolDefinition,
     functionConfig?: EmbeddedFunctionConfig
   ) => void,
-  onMutated?: () => void
+  onMutated?: WidgetMutationCallback
 ): void {
   const typeId = nodeDef.node_type;
 
@@ -163,15 +165,17 @@ function setupStringDataWidgets(
   nodeDef: NodeDefinition,
   getSessionId: () => string | null,
   onRefresh: () => void,
-  onMutated?: () => void
+  onMutated?: WidgetMutationCallback
 ): void {
   const currentValue = String(nodeDef.inline_values?.["text"] ?? "");
-  lNode.addWidget("text", "text", currentValue, async (val: string) => {
+  const widget = lNode.addWidget("text", "text", currentValue, async (val: string) => {
     const sid = getSessionId();
     if (!sid) return;
+    widget._zihuanTouched = true;
+    const pending = graphs.updateNode(sid, nodeDef.id, { inline_values: { text: val } });
+    onMutated?.(pending);
     try {
-      await graphs.updateNode(sid, nodeDef.id, { inline_values: { text: val } });
-      onMutated?.();
+      await pending;
     } catch (e) { console.error("widget update failed", e); }
   });
 }
@@ -200,7 +204,7 @@ function setupSimpleInlineWidgets(
   nodeDef: NodeDefinition,
   getSessionId: () => string | null,
   onRefresh: () => void,
-  onMutated?: () => void
+  onMutated?: WidgetMutationCallback
 ): void {
   for (const port of nodeDef.input_ports) {
     const key = port.name;
@@ -212,36 +216,44 @@ function setupSimpleInlineWidgets(
       addedWidget = lNode.addWidget("toggle", key, existingValue ?? false, async (val: boolean) => {
         const sid = getSessionId();
         if (!sid) return;
+        addedWidget!._zihuanTouched = true;
+        const pending = graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: val } });
+        onMutated?.(pending);
         try {
-          await graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: val } });
-          onMutated?.();
+          await pending;
         } catch (e) { console.error("widget update failed", e); }
       });
     } else if (dt === "Integer") {
       addedWidget = lNode.addWidget("number", key, existingValue ?? 0, async (val: number) => {
         const sid = getSessionId();
         if (!sid) return;
+        addedWidget!._zihuanTouched = true;
+        const pending = graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: Math.trunc(val) } });
+        onMutated?.(pending);
         try {
-          await graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: Math.trunc(val) } });
-          onMutated?.();
+          await pending;
         } catch (e) { console.error("widget update failed", e); }
       }, { precision: 0, step: 10 });
     } else if (dt === "Float") {
       addedWidget = lNode.addWidget("number", key, existingValue ?? 0, async (val: number) => {
         const sid = getSessionId();
         if (!sid) return;
+        addedWidget!._zihuanTouched = true;
+        const pending = graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: val } });
+        onMutated?.(pending);
         try {
-          await graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: val } });
-          onMutated?.();
+          await pending;
         } catch (e) { console.error("widget update failed", e); }
       });
     } else if (dt === "String" || dt === "Password") {
       addedWidget = lNode.addWidget("text", key, String(existingValue ?? ""), async (val: string) => {
         const sid = getSessionId();
         if (!sid) return;
+        addedWidget!._zihuanTouched = true;
+        const pending = graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: val } });
+        onMutated?.(pending);
         try {
-          await graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: val } });
-          onMutated?.();
+          await pending;
         } catch (e) { console.error("widget update failed", e); }
       });
       if (dt === "Password" && addedWidget) (addedWidget as any)._isPassword = true;
