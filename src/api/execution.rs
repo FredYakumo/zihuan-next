@@ -1,3 +1,4 @@
+use chrono::Local;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -8,7 +9,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use super::state::AppState;
-use super::state::TaskStatus;
+use super::state::{TaskLogEntry, TaskStatus};
 use super::ws::{ServerMessage, WsBroadcast};
 use crate::util::hyperparam_store;
 
@@ -233,35 +234,51 @@ fn start_graph_task(
         })
         .await;
 
-        let (status, success, error_message) = match result {
+        let (status, success, error_message, detailed_error_message) = match result {
             Ok(Ok(())) if stop_flag_check.load(Ordering::Relaxed) => {
                 info!("Graph execution stopped by user");
-                (TaskStatus::Stopped, false, None)
+                (TaskStatus::Stopped, false, None, None)
             }
             Ok(Ok(())) => {
                 info!("Graph execution completed successfully");
-                (TaskStatus::Success, true, None)
+                (TaskStatus::Success, true, None, None)
             }
             Ok(Err(e)) if stop_flag_check.load(Ordering::Relaxed) => {
                 let msg = e.to_string();
                 info!("Graph execution stopped with interruption: {}", msg);
-                (TaskStatus::Stopped, false, None)
+                (TaskStatus::Stopped, false, None, None)
             }
             Ok(Err(e)) => {
-                let msg = e.to_string();
-                error!("Graph execution error: {}", msg);
-                (TaskStatus::Failed, false, Some(msg))
+                let detailed = e.to_string();
+                let summary = summarize_graph_error(&detailed);
+                let stack_preview = summarize_backtrace_preview(&detailed, 6);
+                if stack_preview.is_empty() {
+                    error!("Graph execution error: {}", summary);
+                } else {
+                    error!("Graph execution error: {}\n{}", summary, stack_preview);
+                }
+                (TaskStatus::Failed, false, Some(summary), Some(detailed))
             }
             Err(e) if stop_flag_check.load(Ordering::Relaxed) => {
                 info!("Graph execution join stopped: {}", e);
-                (TaskStatus::Stopped, false, None)
+                (TaskStatus::Stopped, false, None, None)
             }
             Err(e) => {
-                let msg = e.to_string();
-                error!("Graph execution panicked: {}", msg);
-                (TaskStatus::Failed, false, Some(msg))
+                let detailed = format!("Graph execution panicked: {e}");
+                let summary = summarize_graph_error(&detailed);
+                let stack_preview = summarize_backtrace_preview(&detailed, 6);
+                if stack_preview.is_empty() {
+                    error!("Graph execution panicked: {}", summary);
+                } else {
+                    error!("Graph execution panicked: {}\n{}", summary, stack_preview);
+                }
+                (TaskStatus::Failed, false, Some(summary), Some(detailed))
             }
         };
+
+        if let Some(detailed) = detailed_error_message.as_ref() {
+            append_task_error_detail(&state_clone, &task_id_clone, detailed);
+        }
 
         state_clone
             .tasks
@@ -325,4 +342,45 @@ fn request_client_ip(req: &Request) -> Option<String> {
                 .map(ToOwned::to_owned)
         })
         .or_else(|| Some(req.remote_addr().to_string()))
+}
+
+fn summarize_graph_error(message: &str) -> String {
+    message
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && *line != "[DEBUG_BACKTRACE]")
+        .unwrap_or("Graph execution failed")
+        .to_string()
+}
+
+fn summarize_backtrace_preview(message: &str, max_lines: usize) -> String {
+    let Some((_, backtrace)) = message.split_once("[DEBUG_BACKTRACE]") else {
+        return String::new();
+    };
+
+    backtrace
+        .lines()
+        .map(str::trim_end)
+        .filter(|line| {
+            let trimmed = line.trim();
+            !trimmed.is_empty()
+                && (trimmed.contains(".rs:")
+                    || trimmed.starts_with("at ")
+                    || trimmed.chars().next().is_some_and(|c| c.is_ascii_digit()))
+        })
+        .take(max_lines)
+        .map(|line| format!("  {line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn append_task_error_detail(state: &AppState, task_id: &str, detailed: &str) {
+    let _ = state.tasks.lock().unwrap().append_task_log(
+        task_id,
+        &TaskLogEntry {
+            timestamp: Local::now().format("%H:%M:%S%.3f").to_string(),
+            level: "ERROR_DETAIL".to_string(),
+            message: detailed.to_string(),
+        },
+    );
 }

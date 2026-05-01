@@ -23,6 +23,15 @@ export interface GraphActionsOptions {
 export class GraphActions {
   constructor(private readonly options: GraphActionsOptions) {}
 
+  private summarizeErrorMessage(error: unknown, fallback: string): string {
+    const message = error instanceof Error ? error.message : String(error ?? "");
+    return message
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => line.length > 0)
+      ?? fallback;
+  }
+
   async openLocalFile(): Promise<void> {
     if ("showOpenFilePicker" in window) {
       type ShowOpenFilePicker = (opts?: object) => Promise<FileSystemFileHandle[]>;
@@ -123,7 +132,8 @@ export class GraphActions {
       await this.options.canvas.flushPendingWidgetMutations();
       await graphs.execute(sid);
     } catch (e) {
-      showErrorDialog(`执行失败: ${(e as Error).message}`);
+      const summary = this.summarizeErrorMessage(e, "执行失败");
+      showErrorDialog(`执行失败: ${summary}\n\n详细信息请到任务管理器的“日志”中查看。`);
     }
   }
 

@@ -48,6 +48,9 @@ function openTaskLogsDialog(task: TaskEntry, entries: TaskLogEntry[]): void {
       const msg = document.createElement("span");
       msg.className = "log-entry-msg";
       msg.textContent = entry.message;
+      if (entry.level === "ERROR_DETAIL") {
+        row.classList.add("log-entry-detail");
+      }
       row.appendChild(msg);
       list.appendChild(row);
     }
