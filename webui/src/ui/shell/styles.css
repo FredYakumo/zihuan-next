@@ -621,19 +621,40 @@
   font-size: 12px;
 }
 
-.task-manager-close,
-.task-log-close {
-  border: none;
-  background: transparent;
+.task-manager-dialog .task-manager-close,
+.task-log-dialog .task-log-close {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  padding: 0;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.04);
   color: var(--text-muted);
-  font-size: 24px;
+  font-size: 20px;
+  font-weight: 500;
   line-height: 1;
   cursor: pointer;
+  box-sizing: border-box;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.12s;
 }
 
-.task-manager-close:hover,
-.task-log-close:hover {
+.task-manager-dialog .task-manager-close:hover,
+.task-log-dialog .task-log-close:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(233, 69, 96, 0.32);
   color: var(--accent);
+}
+
+.task-manager-dialog .task-manager-close:active,
+.task-log-dialog .task-log-close:active {
+  transform: scale(0.96);
 }
 
 .task-manager-body,
