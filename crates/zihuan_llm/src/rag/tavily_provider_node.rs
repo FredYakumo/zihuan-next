@@ -64,17 +64,12 @@ impl Node for TavilyProviderNode {
 
         let timeout_secs = match inputs.get("timeout_secs") {
             Some(DataValue::Integer(value)) if *value > 0 => *value as u64,
-            Some(DataValue::Integer(_)) => {
-                return Err(Error::ValidationError(
-                    "timeout_secs must be greater than 0".to_string(),
-                ))
-            }
+            Some(DataValue::Integer(_)) | None => 30,
             Some(_) => {
                 return Err(Error::ValidationError(
                     "timeout_secs must be an integer".to_string(),
                 ))
             }
-            None => 30,
         };
 
         let tavily_ref = Arc::new(TavilyRef::new(
@@ -151,5 +146,26 @@ mod tests {
             .expect_err("empty token should be rejected");
 
         assert!(err.to_string().contains("api_token"));
+    }
+
+    #[test]
+    fn falls_back_to_default_when_timeout_is_zero() -> Result<()> {
+        let mut node = TavilyProviderNode::new("provider", "Provider");
+        let outputs = node.execute(HashMap::from([
+            (
+                "api_token".to_string(),
+                DataValue::Password("secret-token".to_string()),
+            ),
+            ("timeout_secs".to_string(), DataValue::Integer(0)),
+        ]))?;
+
+        match outputs.get("tavily_ref") {
+            Some(DataValue::TavilyRef(tavily_ref)) => {
+                assert_eq!(tavily_ref.timeout, Duration::from_secs(30));
+            }
+            other => panic!("unexpected output: {:?}", other),
+        }
+
+        Ok(())
     }
 }

@@ -1,7 +1,8 @@
 use zihuan_bot_types::event_model::MessageEvent;
 use zihuan_llm_types::tooling::FunctionTool;
+use reqwest::blocking::Client;
 use redis::{aio::ConnectionManager, AsyncCommands};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::mysql::MySqlPool;
 use std::collections::HashMap;
@@ -65,12 +66,62 @@ pub struct TavilyRef {
     pub timeout: Duration,
 }
 
+#[derive(Debug, Deserialize)]
+struct TavilySearchResponse {
+    results: Vec<TavilySearchItem>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TavilySearchItem {
+    title: String,
+    url: String,
+    content: String,
+}
+
 impl TavilyRef {
     pub fn new(api_token: impl Into<String>, timeout: Duration) -> Self {
         Self {
             api_token: api_token.into(),
             timeout,
         }
+    }
+
+    pub fn search(&self, query: &str, search_count: i64) -> zihuan_core::error::Result<Vec<String>> {
+        let client = Client::builder().timeout(self.timeout).build()?;
+        let response = client
+            .post("https://api.tavily.com/search")
+            .bearer_auth(&self.api_token)
+            .json(&serde_json::json!({
+                "query": query,
+                "max_results": search_count,
+                "search_depth": "advanced",
+                "include_answer": false,
+                "include_images": false,
+                "include_raw_content": false,
+            }))
+            .send()?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().unwrap_or_default();
+            return Err(zihuan_core::error::Error::StringError(format!(
+                "Tavily search request failed with status {}: {}",
+                status, body
+            )));
+        }
+
+        let body = response.text()?;
+        let parsed: TavilySearchResponse = serde_json::from_str(&body).map_err(|err| {
+            zihuan_core::error::Error::StringError(format!(
+                "Failed to parse Tavily search response: {err}"
+            ))
+        })?;
+
+        Ok(parsed
+            .results
+            .into_iter()
+            .map(|item| format!("标题: {}\n链接: {}\n内容: {}", item.title, item.url, item.content))
+            .collect())
     }
 }
 
