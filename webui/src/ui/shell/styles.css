@@ -589,6 +589,19 @@
   word-break: break-all;
 }
 
+.log-entry.log-entry-detail {
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+  margin-top: 4px;
+}
+
+.log-entry.log-entry-detail .log-entry-msg {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .task-manager-dialog {
   width: min(1120px, 94vw);
   max-height: 84vh;
