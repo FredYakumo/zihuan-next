@@ -1,5 +1,5 @@
 import "./ui/theme.css";
-import { initTheme } from "./ui/theme";
+import { initTheme, loadThemes, getThemeNames, getCurrentThemeName, setTheme } from "./ui/theme";
 import { registry, graphs } from "./api/client";
 import { ws } from "./api/ws";
 import type { NodeTypeInfo } from "./api/types";
@@ -24,6 +24,7 @@ import { WorkspaceController } from "./app/workspace_controller";
 
 async function main() {
   initTheme();
+  await loadThemes();
   injectStyles();
   const { toolbar, canvasContainer, canvasEl, backArrow } = buildDOM();
 
@@ -181,6 +182,9 @@ async function main() {
     (msg) => showErrorDialog(msg),
     onUndo,
     onRedo,
+    getThemeNames,
+    getCurrentThemeName,
+    setTheme,
   );
 
   canvas.onHistoryChange = () => {

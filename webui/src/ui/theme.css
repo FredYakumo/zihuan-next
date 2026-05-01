@@ -1,225 +1,46 @@
 /*
- * Zihuan Next — Color Token Definitions
+ * Zihuan Next — Minimal theme fallback
  *
- * Dark pink-purple theme (default) / Light lavender theme
- *
- * Layers:
- *   :root                                — dark defaults (no FOUC on dark systems)
- *   @media (prefers-color-scheme: light) — auto light from system (pure CSS, zero-JS)
- *   [data-theme="dark"]                  — explicit dark override (via localStorage)
- *   [data-theme="light"]                 — explicit light override (via localStorage)
+ * Full themes are loaded dynamically by theme.ts and injected as
+ * [data-theme="xxx"] rules. The :root values here prevent a FOUC
+ * before JS runs.
  */
 
-/* ─── Dark defaults ──────────────────────────────────────────── */
 :root {
-  /* Backgrounds */
-  --bg:              #111114;   /* canvas / main background */
-  --bg-deep:         #161228;   /* status bar / tabs bar / log dialog */
-  --toolbar-bg:      #241a40;   /* toolbar / sidebar / panel backdrop */
-
-  /* Text */
-  --text:            #e8e0f0;   /* primary text — soft lavender-white */
-  --text-muted:      #a090b8;   /* secondary / placeholder */
-  --text-dim:        #706880;   /* keyboard shortcuts, hints */
-  --text-faint:      #504860;   /* status bar, close buttons */
-  --text-faint2:     #383048;   /* separators, muted timestamps */
-
-  /* Accent */
-  --accent:          #d07bb8;   /* pink-purple — close hover, stop button, danger */
-  --accent-subtle:   rgba(208, 123, 184, 0.12); /* danger button hover tint */
-
-  /* Borders & hover surfaces */
-  --border:          #222228;
-  --node-hover:      #1c1c24;
-  --tab-inactive:    #271848;
-
-  /* Links & headings */
-  --link:            #b07acc;   /* category headers, dialog h3 */
-
-  /* Run button */
-  --run-color:       #7ecba8;
-
-  /* Inputs */
-  --input-bg:        #0e0e12;
-
-  /* Buttons */
-  --btn-bg:          #1e1e26;
-  --btn-hover:       #282834;
-  --btn-primary:     #7b3fa8;
-  --btn-primary-hover: #8f52c0;
+  --bg:              #050505;
+  --bg-deep:         #0f0f0f;
+  --toolbar-bg:      #1a1a1a;
+  --text:            #e6e6e6;
+  --text-muted:      #a0a0a0;
+  --text-dim:        #707070;
+  --text-faint:      #505050;
+  --text-faint2:     #383838;
+  --accent:          #3b82f6;
+  --accent-subtle:   rgba(59, 130, 246, 0.12);
+  --border:          #222222;
+  --node-hover:      #1c1c1c;
+  --tab-inactive:    #252525;
+  --link:            #60a5fa;
+  --run-color:       #22c55e;
+  --input-bg:        #0a0a0a;
+  --btn-bg:          #1e1e1e;
+  --btn-hover:       #2a2a2a;
+  --btn-primary:     #2563eb;
+  --btn-primary-hover: #3b82f6;
   --btn-primary-text: #ffffff;
-
-  /* Tool card */
-  --tool-card-bg:      #0d0d10;
-  --tool-card-summary: #c090e0;
-
-  /* Floating panel */
-  --float-bg:        rgba(17, 17, 20, 0.95);
-
-  /* Log toast */
-  --toast-text:      #e8e0f0;
-
-  /* Log stream dialog */
-  --log-stream-bg:   #0c0c10;
-
-  /* Log badge colors */
-  --badge-info-bg:      #1b3a1f;
-  --badge-info-text:    #a5d6a7;
-  --badge-warn-bg:      #4a2000;
-  --badge-warn-text:    #ffcc80;
-  --badge-error-bg:     #3a0010;
-  --badge-error-text:   #ef9a9a;
-  --badge-debug-bg:     #0d2a5a;
-  --badge-debug-text:   #90caf9;
-  --badge-trace-bg:     #1e2a30;
-  --badge-trace-text:   #b0bec5;
-}
-
-/* ─── Light lavender theme (system auto) ─────────────────────────────────── */
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg:              #fdf8ff;
-    --bg-deep:         #f0e8fd;
-    --toolbar-bg:      #ede0f8;
-
-    --text:            #1e0f35;
-    --text-muted:      #6a4890;
-    --text-dim:        #8a62a8;
-    --text-faint:      #9a78b8;
-    --text-faint2:     #b090c8;
-
-    --accent:          #a03090;
-    --accent-subtle:   rgba(160, 48, 144, 0.10);
-
-    --border:          #d8c0ec;
-    --node-hover:      #ead8f8;
-    --tab-inactive:    #e0d0f5;
-
-    --link:            #7030a8;
-    --run-color:       #2a7a52;
-
-    --input-bg:        #f8f2fd;
-
-    --btn-bg:          #ead8f8;
-    --btn-hover:       #ddc8f5;
-    --btn-primary:     #7030a8;
-    --btn-primary-hover: #8a40c0;
-    --btn-primary-text: #ffffff;
-
-    --tool-card-bg:      #f2eaff;
-    --tool-card-summary: #5a2880;
-
-    --float-bg:        rgba(237, 224, 248, 0.95);
-    --toast-text:      #1e0f35;
-    --log-stream-bg:   #f0e8fd;
-
-    --badge-info-bg:      #c8f0cc;
-    --badge-info-text:    #1b5e20;
-    --badge-warn-bg:      #ffe0b2;
-    --badge-warn-text:    #bf5000;
-    --badge-error-bg:     #ffcdd2;
-    --badge-error-text:   #7f0000;
-    --badge-debug-bg:     #bbdefb;
-    --badge-debug-text:   #0d47a1;
-    --badge-trace-bg:     #cfd8dc;
-    --badge-trace-text:   #37474f;
-  }
-}
-
-/* ─── Explicit dark override ─────────────────────────────────────────────── */
-[data-theme="dark"] {
-  --bg:              #111114;
-  --bg-deep:         #161228;
-  --toolbar-bg:      #241a40;
-
-  --text:            #e8e0f0;
-  --text-muted:      #a090b8;
-  --text-dim:        #706880;
-  --text-faint:      #504860;
-  --text-faint2:     #383048;
-
-  --accent:          #d07bb8;
-  --accent-subtle:   rgba(208, 123, 184, 0.12);
-
-  --border:          #222228;
-  --node-hover:      #1c1c24;
-  --tab-inactive:    #271848;
-
-  --link:            #b07acc;
-  --run-color:       #7ecba8;
-
-  --input-bg:        #0e0e12;
-
-  --btn-bg:          #1e1e26;
-  --btn-hover:       #282834;
-  --btn-primary:     #7b3fa8;
-  --btn-primary-hover: #8f52c0;
-  --btn-primary-text: #ffffff;
-
-  --tool-card-bg:      #0d0d10;
-  --tool-card-summary: #c090e0;
-
-  --float-bg:        rgba(17, 17, 20, 0.95);
-  --toast-text:      #e8e0f0;
-  --log-stream-bg:   #0c0c10;
-
-  --badge-info-bg:      #1b3a1f;
-  --badge-info-text:    #a5d6a7;
-  --badge-warn-bg:      #4a2000;
-  --badge-warn-text:    #ffcc80;
-  --badge-error-bg:     #3a0010;
-  --badge-error-text:   #ef9a9a;
-  --badge-debug-bg:     #0d2a5a;
-  --badge-debug-text:   #90caf9;
-  --badge-trace-bg:     #1e2a30;
-  --badge-trace-text:   #b0bec5;
-}
-
-/* ─── Explicit light override ────────────────────────────────────────────── */
-[data-theme="light"] {
-  --bg:              #fdf8ff;
-  --bg-deep:         #f0e8fd;
-  --toolbar-bg:      #ede0f8;
-
-  --text:            #1e0f35;
-  --text-muted:      #6a4890;
-  --text-dim:        #8a62a8;
-  --text-faint:      #9a78b8;
-  --text-faint2:     #b090c8;
-
-  --accent:          #a03090;
-  --accent-subtle:   rgba(160, 48, 144, 0.10);
-
-  --border:          #d8c0ec;
-  --node-hover:      #ead8f8;
-  --tab-inactive:    #e0d0f5;
-
-  --link:            #7030a8;
-  --run-color:       #2a7a52;
-
-  --input-bg:        #f8f2fd;
-
-  --btn-bg:          #ead8f8;
-  --btn-hover:       #ddc8f5;
-  --btn-primary:     #7030a8;
-  --btn-primary-hover: #8a40c0;
-  --btn-primary-text: #ffffff;
-
-  --tool-card-bg:      #f2eaff;
-  --tool-card-summary: #5a2880;
-
-  --float-bg:        rgba(237, 224, 248, 0.95);
-  --toast-text:      #1e0f35;
-  --log-stream-bg:   #f0e8fd;
-
-  --badge-info-bg:      #c8f0cc;
-  --badge-info-text:    #1b5e20;
-  --badge-warn-bg:      #ffe0b2;
-  --badge-warn-text:    #bf5000;
-  --badge-error-bg:     #ffcdd2;
-  --badge-error-text:   #7f0000;
-  --badge-debug-bg:     #bbdefb;
-  --badge-debug-text:   #0d47a1;
-  --badge-trace-bg:     #cfd8dc;
-  --badge-trace-text:   #37474f;
+  --tool-card-bg:      #0a0a0a;
+  --tool-card-summary: #60a5fa;
+  --float-bg:        rgba(13, 13, 13, 0.95);
+  --toast-text:      #e6e6e6;
+  --log-stream-bg:   #0a0a0a;
+  --badge-info-bg:      #0d2d1a;
+  --badge-info-text:    #4ade80;
+  --badge-warn-bg:      #3a2a00;
+  --badge-warn-text:    #facc15;
+  --badge-error-bg:     #3a0000;
+  --badge-error-text:   #f87171;
+  --badge-debug-bg:     #0a1a3a;
+  --badge-debug-text:   #60a5fa;
+  --badge-trace-bg:     #1a1a1a;
+  --badge-trace-text:   #a0a0a0;
 }

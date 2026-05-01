@@ -1,7 +1,7 @@
 //! Shared brain engine: `sanitize_messages_for_inference`, `BrainTool` trait, and `Brain` struct.
 //!
 //! `Brain` encapsulates the multi-turn LLM ↔ tool call loop so that both
-//! `BrainNode` and higher-level handler nodes can reuse the same logic.
+//! `BrainNode` and higher-level agent nodes can reuse the same logic.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -19,7 +19,7 @@ pub const MAX_TOOL_ITERATIONS: usize = 25;
 /// that the sequence passed to the LLM is always well-formed.
 ///
 /// Mirrors the logic that was duplicated in `BrainNode::sanitize_messages_for_inference`
-/// and in `qq_message_handler_node::sanitize_messages`.
+/// and in `qq_message_agent_node::sanitize_messages`.
 pub fn sanitize_messages_for_inference(messages: Vec<OpenAIMessage>) -> Vec<OpenAIMessage> {
     let mut sanitized: Vec<OpenAIMessage> = Vec::with_capacity(messages.len());
     let mut pending: Option<(usize, HashSet<String>)> = None;

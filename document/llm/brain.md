@@ -152,7 +152,7 @@ They also:
 
 ## Brain Engine (`crates/zihuan_llm/src/agent/brain.rs`)
 
-The `Brain` struct is the shared runtime engine that powers both `BrainNode` and higher-level handler nodes such as `QqMessageHandlerNode`. It lives in `crates/zihuan_llm/src/agent/brain.rs` and is the single canonical implementation of the LLM ↔ tool call loop.
+The `Brain` struct is the shared runtime engine that powers both `BrainNode` and higher-level agent nodes such as `QqMessageAgentNode`. It lives in `crates/zihuan_llm/src/agent/brain.rs` and is the single canonical implementation of the LLM ↔ tool call loop.
 
 ### Architecture
 
@@ -183,7 +183,7 @@ Implement `BrainTool` to wrap any callable resource — a function subgraph, a R
 | Type | Location | What it does |
 |---|---|---|
 | `SubgraphBrainTool` | `brain_node.rs` | Executes a `BrainToolDefinition` function subgraph |
-| `TavilyBrainTool` | `qq_message_handler_node.rs` | Calls the Tavily search API and sends a progress notification |
+| `TavilyBrainTool` | `qq_message_agent_node.rs` | Calls the Tavily search API and sends a progress notification |
 
 ### BrainStopReason
 

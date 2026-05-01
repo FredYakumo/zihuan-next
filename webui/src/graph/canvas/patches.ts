@@ -42,12 +42,13 @@ export function installLiteGraphPatches(): void {
       return originalRenderLink.call(this, ctx, a, b, link, skipBorder, flow, color, startDir, endDir, numSublines);
     }
 
+    const colors = getLiteGraphColors();
     this.visible_links.push(link);
     if (!color && link) {
       color = link.color || (LGraphCanvas as any).link_type_colors?.[link.type];
     }
     if (!color) color = this.default_link_color;
-    if (link != null && this.highlighted_links?.[link.id]) color = "#FFF";
+    if (link != null && this.highlighted_links?.[link.id]) color = colors.highlightedLinkColor;
 
     const fanout = getLinkFanoutInfo(this, link);
     const geometry = computeLinkGeometry(
@@ -62,8 +63,6 @@ export function installLiteGraphPatches(): void {
     link._pos[1] = geometry.midPoint.y;
     link._zhLabelPos = [geometry.labelAnchor.x, geometry.labelAnchor.y];
     link._zhFanoutCount = fanout.count;
-
-    const colors = getLiteGraphColors();
     const mainWidth = Math.max(2.6, (this.connections_width ?? 3) - 0.05);
     const haloWidth = mainWidth + 3.2;
     ctx.save();
@@ -136,6 +135,36 @@ export function installLiteGraphPatches(): void {
       const truncated = truncateText(ctx, desc, maxWidth);
       ctx.fillText(truncated, 6, descHeight / 2);
       ctx.restore();
+    }
+  };
+
+  // Tighten port hit zones to prevent accidental connection drags when clicking
+  // on the node body near an input/output port.  LiteGraph's default is ±15×10 px
+  // which extends 15 px into the node body on the input side.  We narrow it to
+  // ±8×5 px so the user must click within ~8 px of the port circle itself.
+  const originalProcessMouseDown = (LGraphCanvas.prototype as any).processMouseDown;
+  (LGraphCanvas.prototype as any).processMouseDown = function (e: any) {
+    const node: any = this.graph?.getNodeOnPos?.(e.canvasX, e.canvasY, this.visible_nodes);
+    if (!node) return originalProcessMouseDown.call(this, e);
+
+    const TIGHT_H = 8;
+    const TIGHT_V = 5;
+    const originalGetConnectionPos = node.getConnectionPos.bind(node);
+    node.getConnectionPos = function (is_input: boolean, slot: number, out?: Float32Array): [number, number] {
+      const pos = originalGetConnectionPos(is_input, slot, out);
+      const dx = Math.abs(e.canvasX - pos[0]);
+      const dy = Math.abs(e.canvasY - pos[1]);
+      if (dx > TIGHT_H || dy > TIGHT_V) {
+        // Move the port to a far-away position so the default hit check fails
+        if (out) { out[0] = -99999; out[1] = -99999; }
+        return [-99999, -99999] as unknown as [number, number];
+      }
+      return pos;
+    };
+    try {
+      return originalProcessMouseDown.call(this, e);
+    } finally {
+      node.getConnectionPos = originalGetConnectionPos;
     }
   };
 }
