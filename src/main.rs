@@ -19,11 +19,9 @@ lazy_static! {
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Zihuan Next — node-graph workflow engine (web UI)")]
 struct Args {
-    /// Host address to listen on
     #[arg(long, default_value = "127.0.0.1", env = "ZIHUAN_HOST")]
     host: String,
 
-    /// TCP port to listen on
     #[arg(long, default_value_t = 8080, env = "ZIHUAN_PORT")]
     port: u16,
 }
