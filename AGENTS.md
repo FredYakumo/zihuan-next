@@ -102,6 +102,15 @@ After UI changes:
   - `message_event_type_filter`
   - `preview_message_list`
 
+## Code Search
+
+When navigating or searching the codebase, prefer using the configured LSP MCP tools:
+
+- **Rust code**: use the `rust-analyzer` MCP server (via `rust-analyzer-mcp`).
+- **TypeScript code**: use the `typescript` MCP server (via `@mizchi/lsmcp`).
+
+These tools provide accurate symbol search, goto-definition, and find-references without relying on text-only grep.
+
 ## Useful References
 
 - `README.md`
