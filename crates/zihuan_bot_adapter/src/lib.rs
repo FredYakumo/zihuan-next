@@ -5,6 +5,7 @@ pub mod extract_group_id_from_event;
 pub mod extract_message_from_event;
 pub mod extract_sender_id_from_event;
 pub mod message_event_type_filter;
+pub mod message_helpers;
 pub mod message_sender;
 pub mod models;
 pub mod send_friend_message;

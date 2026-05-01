@@ -47,109 +47,25 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 170.0,
-        "y": 350.0
+        "x": 250.0,
+        "y": 220.0
       },
       "size": {
         "width": 253.6,
         "height": 146.0
       },
       "inline_values": {
-        "qq_id": "2496875785",
-        "bot_server_url": "ws://localhost:3001"
+        "bot_server_url": "ws://localhost:3001",
+        "qq_id": "2496875785"
       },
       "port_bindings": {
-        "qq_id": {
-          "kind": "hyperparameter",
-          "name": "BOT_ID"
-        },
         "bot_server_token": {
           "kind": "hyperparameter",
           "name": "BOT_SERVER_TOKEN"
-        }
-      },
-      "has_error": false,
-      "has_cycle": false
-    },
-    {
-      "id": "node_2",
-      "name": "QQ消息处理器",
-      "description": "QQ 消息总处理节点：内部完成好友/群聊分流、会话占用、历史缓存、Brain+Tavily 推理与消息发送",
-      "node_type": "qq_message_handler",
-      "input_ports": [
-        {
-          "name": "message_event",
-          "data_type": "MessageEvent",
-          "description": "来自 bot_adapter 的消息事件",
-          "required": true,
-          "hidden": false
         },
-        {
-          "name": "qq_bot_adapter",
-          "data_type": "BotAdapterRef",
-          "description": "Bot 适配器引用，用于发送消息",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "time",
-          "data_type": "String",
-          "description": "当前时间字符串，注入 system prompt",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "bot_name",
-          "data_type": "String",
-          "description": "机器人角色名称，注入 system prompt",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "cache_ref",
-          "data_type": "OpenAIMessageSessionCacheRef",
-          "description": "OpenAIMessage 会话历史缓存引用",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "session_ref",
-          "data_type": "SessionStateRef",
-          "description": "运行时会话占用引用，防止并发推理",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "llm_model",
-          "data_type": "LLModel",
-          "description": "LLM 模型引用",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "tavily_ref",
-          "data_type": "TavilyRef",
-          "description": "Tavily 搜索引用",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "output_ports": [],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1110.0,
-        "y": 220.0
-      },
-      "size": {
-        "width": 329.0,
-        "height": 250.0
-      },
-      "inline_values": {},
-      "port_bindings": {
-        "bot_name": {
+        "qq_id": {
           "kind": "hyperparameter",
-          "name": "BOT_NAME"
+          "name": "BOT_ID"
         }
       },
       "has_error": false,
@@ -237,17 +153,17 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 170.0,
-        "y": 570.0
+        "x": 250.0,
+        "y": 920.0
       },
       "size": {
         "width": 377.9077,
         "height": 401.06308
       },
       "inline_values": {
-        "mysql_host": "127.0.0.1",
+        "mysql_database": "zihuan_aibot",
         "mysql_port": "3306",
-        "mysql_database": "zihuan_aibot"
+        "mysql_host": "127.0.0.1"
       },
       "port_bindings": {
         "mysql_password": {
@@ -302,8 +218,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 690.0,
-        "y": 640.0
+        "x": 880.0,
+        "y": 820.0
       },
       "size": {
         "width": 214.4414,
@@ -368,8 +284,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 970.0,
-        "y": 810.0
+        "x": 880.0,
+        "y": 640.0
       },
       "size": {
         "width": 233.22218,
@@ -430,8 +346,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 160.0,
-        "y": -70.0
+        "x": 250.0,
+        "y": 680.0
       },
       "size": {
         "width": 354.0,
@@ -475,8 +391,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 150.0,
-        "y": -210.0
+        "x": 890.0,
+        "y": 400.0
       },
       "size": {
         "width": 140.0,
@@ -520,8 +436,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 180.0,
-        "y": 1150.0
+        "x": 250.0,
+        "y": 420.0
       },
       "size": {
         "width": 210.0,
@@ -552,8 +468,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 180.0,
-        "y": 1040.0
+        "x": 250.0,
+        "y": 550.0
       },
       "size": {
         "width": 179.9,
@@ -597,8 +513,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 150.0,
-        "y": 190.0
+        "x": 250.0,
+        "y": 1380.0
       },
       "size": {
         "width": 360.0,
@@ -675,8 +591,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 190.0,
-        "y": 1290.0
+        "x": 440.0,
+        "y": 1590.0
       },
       "size": {
         "width": 278.8,
@@ -684,6 +600,90 @@
       },
       "inline_values": {},
       "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false
+    },
+    {
+      "id": "af5bf69d-328d-41d1-99f6-4d917c75803b",
+      "name": "qq message agent",
+      "description": null,
+      "node_type": "qq_message_agent",
+      "input_ports": [
+        {
+          "name": "message_event",
+          "data_type": "MessageEvent",
+          "description": "来自 bot_adapter 的消息事件",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "qq_bot_adapter",
+          "data_type": "BotAdapterRef",
+          "description": "Bot 适配器引用，用于发送消息",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "time",
+          "data_type": "String",
+          "description": "当前时间字符串，注入 system prompt",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "bot_name",
+          "data_type": "String",
+          "description": "机器人角色名称，注入 system prompt",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "cache_ref",
+          "data_type": "OpenAIMessageSessionCacheRef",
+          "description": "OpenAIMessage 会话历史缓存引用",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "session_ref",
+          "data_type": "SessionStateRef",
+          "description": "运行时会话占用引用，防止并发推理",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "llm_model",
+          "data_type": "LLModel",
+          "description": "LLM 模型引用",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "tavily_ref",
+          "data_type": "TavilyRef",
+          "description": "Tavily 搜索引用",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "output_ports": [],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 1330.0,
+        "y": 350.0
+      },
+      "size": {
+        "width": 265.54913,
+        "height": 295.2409
+      },
+      "inline_values": {},
+      "port_bindings": {
+        "bot_name": {
+          "kind": "hyperparameter",
+          "name": "BOT_NAME"
+        }
+      },
       "has_error": false,
       "has_cycle": false
     }
@@ -710,43 +710,43 @@
     {
       "from_node_id": "node_1",
       "from_port": "message_event",
-      "to_node_id": "node_2",
+      "to_node_id": "af5bf69d-328d-41d1-99f6-4d917c75803b",
       "to_port": "message_event"
     },
     {
       "from_node_id": "node_1",
       "from_port": "bot_adapter",
-      "to_node_id": "node_2",
+      "to_node_id": "af5bf69d-328d-41d1-99f6-4d917c75803b",
       "to_port": "qq_bot_adapter"
     },
     {
       "from_node_id": "node_30",
       "from_port": "time",
-      "to_node_id": "node_2",
+      "to_node_id": "af5bf69d-328d-41d1-99f6-4d917c75803b",
       "to_port": "time"
     },
     {
       "from_node_id": "node_48",
       "from_port": "cache_ref",
-      "to_node_id": "node_2",
+      "to_node_id": "af5bf69d-328d-41d1-99f6-4d917c75803b",
       "to_port": "cache_ref"
     },
     {
       "from_node_id": "node_26",
       "from_port": "session_ref",
-      "to_node_id": "node_2",
+      "to_node_id": "af5bf69d-328d-41d1-99f6-4d917c75803b",
       "to_port": "session_ref"
     },
     {
       "from_node_id": "node_29",
       "from_port": "llm_model",
-      "to_node_id": "node_2",
+      "to_node_id": "af5bf69d-328d-41d1-99f6-4d917c75803b",
       "to_port": "llm_model"
     },
     {
       "from_node_id": "node_tavily",
       "from_port": "tavily_ref",
-      "to_node_id": "node_2",
+      "to_node_id": "af5bf69d-328d-41d1-99f6-4d917c75803b",
       "to_port": "tavily_ref"
     }
   ],

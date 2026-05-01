@@ -1,4 +1,4 @@
-//! QQ 消息总处理节点
+//! QQ Message Agent 节点
 //!
 //! 将顶层图中的 `message_event_type_filter` + `好友消息处理` + `群聊消息处理` 三段结构收敛成一个节点。
 //!
@@ -24,9 +24,12 @@ use serde_json::Value;
 use tokio::task::block_in_place;
 
 use zihuan_bot_adapter::adapter::shared_from_handle;
+use zihuan_bot_adapter::message_helpers::{
+    get_bot_id, send_friend_batches, send_friend_progress_notification, send_friend_text,
+    send_group_batches, send_group_progress_notification, send_group_text,
+};
 use zihuan_bot_adapter::models::event_model::MessageType;
-use zihuan_bot_adapter::models::message::{AtTargetMessage, Message, MessageProp, PlainTextMessage};
-use zihuan_bot_adapter::ws_action::ws_send_action;
+use zihuan_bot_adapter::models::message::{Message, MessageProp};
 use zihuan_bot_types::natural_language_reply::{json_value_to_qq_message_vec, qq_message_json_output_system_prompt};
 use zihuan_core::error::{Error, Result};
 use crate::agent::brain::{Brain, BrainTool};
@@ -37,7 +40,7 @@ use zihuan_node::data_value::{
 };
 use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
 
-const LOG_PREFIX: &str = "[QqMessageHandlerNode]";
+const LOG_PREFIX: &str = "[QqMessageAgentNode]";
 const BUSY_REPLY: &str = "我还在思考中，你别急";
 const FALLBACK_REPLY: &str = "对不起,我无法回复这条消息";
 
@@ -143,109 +146,6 @@ fn extract_user_text(msg_list: &[Message], bot_id: &str) -> String {
     text
 }
 
-/// Retrieve the bot's QQ ID from the adapter.
-fn get_bot_id(adapter: &zihuan_bot_adapter::adapter::SharedBotAdapter) -> String {
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        block_in_place(|| {
-            let guard = handle.block_on(adapter.lock());
-            guard.get_bot_id().to_string()
-        })
-    } else {
-        adapter.blocking_lock().get_bot_id().to_string()
-    }
-}
-
-/// Send a single plain-text message to a friend.
-fn send_friend_text(
-    adapter: &zihuan_bot_adapter::adapter::SharedBotAdapter,
-    target_id: &str,
-    text: &str,
-) {
-    let params = serde_json::json!({
-        "user_id": target_id,
-        "message": [{ "type": "text", "data": { "text": text } }]
-    });
-    if let Err(e) = ws_send_action(adapter, "send_private_msg", params) {
-        warn!("{LOG_PREFIX} Failed to send friend text to {target_id}: {e}");
-    }
-}
-
-/// Send a single plain-text message to a group.
-fn send_group_text(
-    adapter: &zihuan_bot_adapter::adapter::SharedBotAdapter,
-    target_id: &str,
-    text: &str,
-) {
-    let params = serde_json::json!({
-        "group_id": target_id,
-        "message": [{ "type": "text", "data": { "text": text } }]
-    });
-    if let Err(e) = ws_send_action(adapter, "send_group_msg", params) {
-        warn!("{LOG_PREFIX} Failed to send group text to {target_id}: {e}");
-    }
-}
-
-/// Send Vec<Vec<QQMessage>> batches to a friend (mirrors SendFriendMessageBatchesNode behaviour).
-fn send_friend_batches(
-    adapter: &zihuan_bot_adapter::adapter::SharedBotAdapter,
-    target_id: &str,
-    batches: &[Vec<Message>],
-) {
-    use zihuan_bot_adapter::send_qq_message_batches::send_qq_message_batches;
-    let results = send_qq_message_batches(adapter, "friend", target_id, batches);
-    let all_ok = results.iter().filter(|r| !r.skipped).all(|r| r.success);
-    info!("{LOG_PREFIX} Sent friend batches to {target_id}: all_ok={all_ok}, batches={}", batches.len());
-}
-
-/// Send Vec<Vec<QQMessage>> batches to a group (mirrors SendGroupMessageBatchesNode behaviour).
-fn send_group_batches(
-    adapter: &zihuan_bot_adapter::adapter::SharedBotAdapter,
-    target_id: &str,
-    batches: &[Vec<Message>],
-) {
-    use zihuan_bot_adapter::send_qq_message_batches::send_qq_message_batches;
-    let results = send_qq_message_batches(adapter, "group", target_id, batches);
-    let all_ok = results.iter().filter(|r| !r.skipped).all(|r| r.success);
-    info!("{LOG_PREFIX} Sent group batches to {target_id}: all_ok={all_ok}, batches={}", batches.len());
-}
-
-/// Send an `@mention + plain_text` progress notification to a group.
-/// Used inside tool execution to tell the group "I'm searching for X".
-fn send_group_progress_notification(
-    adapter: &zihuan_bot_adapter::adapter::SharedBotAdapter,
-    group_id: &str,
-    mention_target_id: &str,
-    content: &str,
-) {
-    if content.trim().is_empty() {
-        return;
-    }
-    use zihuan_bot_adapter::ws_action::qq_message_list_to_json;
-    let messages = vec![
-        Message::At(AtTargetMessage { target: Some(mention_target_id.to_string()) }),
-        Message::PlainText(PlainTextMessage { text: content.to_string() }),
-    ];
-    let params = serde_json::json!({
-        "group_id": group_id,
-        "message": qq_message_list_to_json(&messages),
-    });
-    if let Err(e) = ws_send_action(adapter, "send_group_msg", params) {
-        warn!("{LOG_PREFIX} Failed to send group progress notification: {e}");
-    }
-}
-
-/// Send a progress notification to a friend (no @mention, just text).
-fn send_friend_progress_notification(
-    adapter: &zihuan_bot_adapter::adapter::SharedBotAdapter,
-    target_id: &str,
-    content: &str,
-) {
-    if content.trim().is_empty() {
-        return;
-    }
-    send_friend_text(adapter, target_id, content);
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // TavilyBrainTool — Tavily search wrapped as a BrainTool
 // ─────────────────────────────────────────────────────────────────────────────
@@ -328,12 +228,12 @@ impl BrainTool for TavilyBrainTool {
 // Node
 // ─────────────────────────────────────────────────────────────────────────────
 
-pub struct QqMessageHandlerNode {
+pub struct QqMessageAgentNode {
     id: String,
     name: String,
 }
 
-impl QqMessageHandlerNode {
+impl QqMessageAgentNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -506,7 +406,7 @@ impl QqMessageHandlerNode {
     }
 }
 
-impl Node for QqMessageHandlerNode {
+impl Node for QqMessageAgentNode {
     fn id(&self) -> &str {
         &self.id
     }
@@ -516,7 +416,7 @@ impl Node for QqMessageHandlerNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("QQ 消息总处理节点：内部完成好友/群聊分流、会话占用、历史缓存、Brain+Tavily 推理与消息发送")
+        Some("使用Brain智能体响应消息事件，智能体会结合自身状态对消息事件进行判断并做出响应。")
     }
 
     node_input![
