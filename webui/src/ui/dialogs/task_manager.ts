@@ -151,18 +151,19 @@ export function openTaskManagerDialog(store: TaskManagerStore): void {
       row.appendChild(nameCell);
 
       const startCell = document.createElement("div");
-      startCell.className = "task-cell";
+      startCell.className = "task-cell task-cell-meta";
       startCell.textContent = formatTaskTimestamp(task.start_time);
       row.appendChild(startCell);
 
       const durationCell = document.createElement("div");
-      durationCell.className = "task-cell";
+      durationCell.className = "task-cell task-cell-meta";
       durationCell.textContent = formatTaskDuration(task);
       row.appendChild(durationCell);
 
       const ipCell = document.createElement("div");
-      ipCell.className = "task-cell";
+      ipCell.className = "task-cell task-cell-ip";
       ipCell.textContent = task.user_ip ?? "-";
+      ipCell.title = task.user_ip ?? "-";
       row.appendChild(ipCell);
 
       const actionCell = document.createElement("div");

@@ -603,7 +603,7 @@
 }
 
 .task-manager-dialog {
-  width: min(1120px, 94vw);
+  width: min(1200px, 96vw);
   max-height: 84vh;
   display: flex;
   flex-direction: column;
@@ -676,6 +676,10 @@
   padding: 16px 20px;
 }
 
+.task-manager-body {
+  overflow-x: hidden;
+}
+
 .task-manager-footer {
   padding: 14px 20px 20px;
   border-top: 1px solid var(--border);
@@ -694,23 +698,32 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
 }
 
 .task-row {
   display: grid;
-  grid-template-columns: minmax(280px, 2.4fr) minmax(180px, 1.3fr) minmax(120px, 1fr) minmax(120px, 0.9fr) minmax(220px, 1.4fr);
+  grid-template-columns: minmax(0, 2.3fr) minmax(140px, 1.15fr) minmax(90px, 0.75fr) minmax(120px, 0.95fr) minmax(180px, 1fr);
   gap: 12px;
-  align-items: center;
+  align-items: start;
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: rgba(255,255,255,0.02);
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .task-row-head {
   background: rgba(255,255,255,0.05);
   font-weight: 600;
   color: var(--text-muted);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  backdrop-filter: blur(8px);
 }
 
 .task-cell {
@@ -719,10 +732,20 @@
   min-width: 0;
 }
 
+.task-cell-meta {
+  white-space: nowrap;
+}
+
+.task-cell-ip {
+  word-break: break-all;
+  color: var(--text-muted);
+}
+
 .task-cell-name {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
 }
 
 .task-name {
@@ -741,6 +764,8 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  justify-content: flex-start;
+  min-width: 0;
 }
 
 .task-action-btn {
@@ -801,5 +826,9 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+  }
+
+  .task-cell-meta {
+    white-space: normal;
   }
 }
