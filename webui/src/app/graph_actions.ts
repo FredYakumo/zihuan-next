@@ -100,6 +100,8 @@ export class GraphActions {
       return;
     }
     try {
+      await this.options.canvas.syncInlineWidgetValues();
+      await this.options.canvas.flushPendingWidgetMutations();
       const result = await graphs.validate(sid);
       if (result.has_errors) {
         const msgs = result.issues.map((issue) => `[${issue.severity}] ${issue.message}`).join("\n");
@@ -117,6 +119,8 @@ export class GraphActions {
       return;
     }
     try {
+      await this.options.canvas.syncInlineWidgetValues();
+      await this.options.canvas.flushPendingWidgetMutations();
       await graphs.execute(sid);
     } catch (e) {
       showErrorDialog(`执行失败: ${(e as Error).message}`);
@@ -148,12 +152,18 @@ export class GraphActions {
       }).catch(console.error);
 
     if (this.options.canvas.isInSubgraph) {
-      this.options.canvas.flushSubgraphToRoot().then(openDialog).catch((e: Error) => {
+      this.options.canvas.syncInlineWidgetValues().then(() =>
+        this.options.canvas.flushPendingWidgetMutations()
+      ).then(() =>
+        this.options.canvas.flushSubgraphToRoot()
+      ).then(openDialog).catch((e: Error) => {
         showErrorDialog(`同步子图失败: ${e.message}`);
       });
       return;
     }
 
+    await this.options.canvas.syncInlineWidgetValues();
+    await this.options.canvas.flushPendingWidgetMutations();
     openDialog();
   }
 
@@ -163,6 +173,8 @@ export class GraphActions {
       showErrorDialog("请先打开一个节点图");
       return;
     }
+    await this.options.canvas.syncInlineWidgetValues();
+    await this.options.canvas.flushPendingWidgetMutations();
     openVariablesDialog(sid, () => {
       this.options.canvas.reloadCurrentSession().catch(console.error);
     }).catch(console.error);

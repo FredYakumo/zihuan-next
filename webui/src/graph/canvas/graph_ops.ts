@@ -68,7 +68,71 @@ export class CanvasGraphOps {
     this.rebuildCanvas(def);
   }
 
-  onWidgetMutated(): void {
+  async syncInlineWidgetValues(): Promise<void> {
+    const sid = this.canvas.state.sessionId;
+    const graph = this.canvas.state.graph;
+    if (!sid || !graph) return;
+
+    let changed = false;
+    const updatedGraph: NodeGraphDefinition = {
+      ...graph,
+      nodes: graph.nodes.map((nodeDef) => {
+        const lNode = this.canvas.nodeMap.get(nodeDef.id);
+        if (!lNode?.inputs?.length || !lNode?.widgets?.length) return nodeDef;
+
+        let nextInlineValues: Record<string, unknown> | null = null;
+        for (const input of lNode.inputs as Array<{ name?: string; widget?: { name?: string } | string; link?: unknown }>) {
+          const portName = input?.name;
+          if (!portName || input.link != null || !input.widget) continue;
+          const widgetName = typeof input.widget === "object" ? input.widget.name : input.widget;
+          if (!widgetName) continue;
+          const widget = (lNode.widgets as Array<{ name?: string; value?: unknown; _zihuanTouched?: boolean }>).find(
+            (candidate) => candidate?.name === widgetName
+          );
+          if (!widget) continue;
+          const hadInlineValue = Object.prototype.hasOwnProperty.call(nodeDef.inline_values ?? {}, portName);
+          if (!hadInlineValue && !widget._zihuanTouched) continue;
+
+          const widgetValue = widget.value ?? "";
+          const existingValue = nodeDef.inline_values?.[portName];
+          if (existingValue === widgetValue) continue;
+
+          nextInlineValues ??= { ...(nodeDef.inline_values ?? {}) };
+          nextInlineValues[portName] = widgetValue;
+        }
+
+        if (!nextInlineValues) return nodeDef;
+        changed = true;
+        return { ...nodeDef, inline_values: nextInlineValues };
+      }),
+    };
+
+    if (!changed) return;
+    await graphs.put(sid, updatedGraph);
+    this.canvas.state.graph = updatedGraph;
+    this.canvas.history.push(updatedGraph);
+    this.canvas.onHistoryChange?.();
+  }
+
+  trackWidgetMutation(pending?: Promise<unknown>): void {
+    if (pending) {
+      this.canvas._pendingWidgetMutations.add(pending);
+      pending.finally(() => {
+        this.canvas._pendingWidgetMutations.delete(pending);
+      });
+    }
+    this.canvas.onGraphDirty?.();
+  }
+
+  async flushPendingWidgetMutations(): Promise<void> {
+    while (this.canvas._pendingWidgetMutations.size > 0) {
+      const pendingNow = Array.from(this.canvas._pendingWidgetMutations);
+      await Promise.allSettled(pendingNow);
+    }
+  }
+
+  onWidgetMutated(pending?: Promise<unknown>): void {
+    this.trackWidgetMutation(pending);
     if (this.canvas._widgetMutationTimer !== null) {
       clearTimeout(this.canvas._widgetMutationTimer);
     }
@@ -303,7 +367,7 @@ export class CanvasGraphOps {
       ) => {
         this.canvas.enterSubgraph(parentNodeDef, mode, toolIndex, toolDef, functionConfig).catch(console.error);
       },
-      () => { this.onWidgetMutated(); },
+      (pending?: Promise<unknown>) => { this.onWidgetMutated(pending); },
     );
 
     if (nodeDef.size) {
