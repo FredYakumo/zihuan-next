@@ -56,14 +56,10 @@
       },
       "inline_values": {
         "qq_id": "2496875785",
-        "bot_server_token": "",
-        "bot_server_url": "ws://localhost:3001"
+        "bot_server_url": "ws://localhost:3001",
+        "bot_server_token": ""
       },
       "port_bindings": {
-        "bot_server_token": {
-          "kind": "hyperparameter",
-          "name": "BOT_SERVER_TOKEN"
-        },
         "qq_id": {
           "kind": "hyperparameter",
           "name": "BOT_ID"
@@ -71,6 +67,10 @@
         "bot_server_url": {
           "kind": "hyperparameter",
           "name": "BOT_SERVER_URL"
+        },
+        "bot_server_token": {
+          "kind": "hyperparameter",
+          "name": "BOT_SERVER_TOKEN"
         }
       },
       "has_error": false,
@@ -166,17 +166,21 @@
         "height": 401.06308
       },
       "inline_values": {
-        "mysql_port": "3306",
-        "mysql_password": "",
-        "mysql_database": "zihuan_aibot",
         "acquire_timeout_secs": 0,
-        "max_connections": 0,
-        "mysql_user": "",
-        "reconnect_interval_secs": 0,
         "reconnect_max_attempts": 0,
+        "mysql_port": "3306",
+        "mysql_user": "",
+        "mysql_database": "zihuan_aibot",
+        "mysql_password": "",
+        "max_connections": 0,
+        "reconnect_interval_secs": 0,
         "mysql_host": "127.0.0.1"
       },
       "port_bindings": {
+        "mysql_database": {
+          "kind": "hyperparameter",
+          "name": "MYSQL_DB"
+        },
         "mysql_user": {
           "kind": "hyperparameter",
           "name": "MYSQL_USER"
@@ -184,10 +188,6 @@
         "mysql_password": {
           "kind": "hyperparameter",
           "name": "MYSQL_PASSWORD"
-        },
-        "mysql_database": {
-          "kind": "hyperparameter",
-          "name": "MYSQL_DB"
         }
       },
       "has_error": false,
@@ -307,8 +307,8 @@
         "height": 121.83149
       },
       "inline_values": {
-        "ttl_secs": "600",
-        "bucket_name": "message_id_cache"
+        "bucket_name": "message_id_cache",
+        "ttl_secs": "600"
       },
       "port_bindings": {},
       "has_error": false,
@@ -375,6 +375,10 @@
         "api_key": ""
       },
       "port_bindings": {
+        "model_name": {
+          "kind": "hyperparameter",
+          "name": "LLM_MODEL_NAME"
+        },
         "api_endpoint": {
           "kind": "hyperparameter",
           "name": "LLM_API_ENDPOINT"
@@ -382,10 +386,6 @@
         "api_key": {
           "kind": "hyperparameter",
           "name": "LLM_API_KEY"
-        },
-        "model_name": {
-          "kind": "hyperparameter",
-          "name": "LLM_MODEL_NAME"
         }
       },
       "has_error": false,
@@ -620,12 +620,12 @@
         "height": 182.30934
       },
       "inline_values": {
+        "redis_password": "",
         "redis_host": "127.0.0.1",
         "redis_port": 0,
-        "redis_password": "",
-        "reconnect_max_attempts": 0,
         "reconnect_interval_secs": 0,
-        "redis_db": 0
+        "redis_db": 0,
+        "reconnect_max_attempts": 0
       },
       "port_bindings": {},
       "has_error": false,

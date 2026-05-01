@@ -1,24 +1,6 @@
 use zihuan_core::error::{Error, Result};
-use zihuan_node::data_value::TavilyRef;
 use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
-use reqwest::blocking::Client;
-use serde::Deserialize;
-use serde_json::{json, Value};
 use std::collections::HashMap;
-
-const TAVILY_SEARCH_ENDPOINT: &str = "https://api.tavily.com/search";
-
-#[derive(Debug, Deserialize)]
-struct TavilySearchResponse {
-    results: Vec<TavilySearchItem>,
-}
-
-#[derive(Debug, Deserialize)]
-struct TavilySearchItem {
-    title: String,
-    url: String,
-    content: String,
-}
 
 pub struct TavilySearchNode {
     id: String,
@@ -33,60 +15,6 @@ impl TavilySearchNode {
         }
     }
 
-    fn build_request_body(query: &str, search_count: i64) -> Value {
-        json!({
-            "query": query,
-            "max_results": search_count,
-            "search_depth": "advanced",
-            "include_answer": false,
-            "include_images": false,
-            "include_raw_content": false,
-        })
-    }
-
-    fn format_result(item: TavilySearchItem) -> String {
-        format!(
-            "标题: {}\n链接: {}\n内容: {}",
-            item.title, item.url, item.content
-        )
-    }
-
-    fn parse_results(response: TavilySearchResponse) -> Vec<String> {
-        response
-            .results
-            .into_iter()
-            .map(Self::format_result)
-            .collect()
-    }
-
-    pub(crate) fn execute_with_endpoint(
-        tavily_ref: &TavilyRef,
-        query: &str,
-        search_count: i64,
-        endpoint: &str,
-    ) -> Result<Vec<String>> {
-        let client = Client::builder().timeout(tavily_ref.timeout).build()?;
-        let response = client
-            .post(endpoint)
-            .bearer_auth(&tavily_ref.api_token)
-            .json(&Self::build_request_body(query, search_count))
-            .send()?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().unwrap_or_default();
-            return Err(Error::StringError(format!(
-                "Tavily search request failed with status {}: {}",
-                status, body
-            )));
-        }
-
-        let body = response.text()?;
-        let parsed: TavilySearchResponse = serde_json::from_str(&body).map_err(|err| {
-            Error::StringError(format!("Failed to parse Tavily search response: {err}"))
-        })?;
-        Ok(Self::parse_results(parsed))
-    }
 }
 
 impl Node for TavilySearchNode {
@@ -155,8 +83,7 @@ impl Node for TavilySearchNode {
             ));
         }
 
-        let results =
-            Self::execute_with_endpoint(tavily_ref.as_ref(), &query, search_count, TAVILY_SEARCH_ENDPOINT)?;
+        let results = tavily_ref.search(&query, search_count)?;
 
         let outputs = HashMap::from([(
             "results".to_string(),
