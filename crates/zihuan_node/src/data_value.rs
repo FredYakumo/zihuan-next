@@ -15,6 +15,10 @@ tokio::task_local! {
     pub static SESSION_CLAIM_CONTEXT: Arc<SessionClaimContext>;
 }
 
+tokio::task_local! {
+    pub static EXECUTION_TASK_ID: String;
+}
+
 /// Redis connection configuration, passed between nodes as a reference
 #[derive(Debug, Clone)]
 pub struct RedisConfig {

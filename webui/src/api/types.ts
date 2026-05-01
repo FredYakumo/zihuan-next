@@ -143,9 +143,22 @@ export interface TaskEntry {
   id: string;
   graph_name: string;
   graph_session_id: string;
+  file_path: string | null;
+  is_workflow_set: boolean;
   start_time: string;
   is_running: boolean;
   end_time: string | null;
+  user_ip: string | null;
+  status: "running" | "success" | "failed" | "stopped";
+  error_message: string | null;
+  log_path: string | null;
+  can_rerun: boolean;
+}
+
+export interface TaskLogEntry {
+  timestamp: string;
+  level: string;
+  message: string;
 }
 
 // WebSocket message types

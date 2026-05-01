@@ -7,3 +7,4 @@ export * from "./connection_dialogs";
 export * from "./node_dialogs";
 export * from "./workflow_dialogs";
 export * from "./graph_dialogs";
+export * from "./task_manager";

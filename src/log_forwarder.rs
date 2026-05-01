@@ -9,13 +9,21 @@ use chrono::Local;
 use log::{Log, Metadata, Record};
 use log_util::log_util::LogUtil;
 use once_cell::sync::OnceCell;
+use std::cell::RefCell;
+use std::sync::Arc;
 
+use crate::api::state::{AppState, TaskLogEntry};
 use crate::api::ws::{ServerMessage, WsBroadcast};
 
 // ── Statics ───────────────────────────────────────────────────────────────────
 
 static BROADCAST: OnceCell<WsBroadcast> = OnceCell::new();
 static FORWARDER: OnceCell<LogForwarder> = OnceCell::new();
+static APP_STATE: OnceCell<Arc<AppState>> = OnceCell::new();
+
+thread_local! {
+    static CURRENT_TASK_ID: RefCell<Option<String>> = const { RefCell::new(None) };
+}
 
 // ── LogForwarder ──────────────────────────────────────────────────────────────
 
@@ -44,6 +52,18 @@ impl Log for LogForwarder {
             let level = record.level().to_string();
             let message = format!("{}", record.args());
             let timestamp = Local::now().format("%H:%M:%S%.3f").to_string();
+            if let Some(task_id) = current_task_id() {
+                if let Some(state) = APP_STATE.get() {
+                    let _ = state.tasks.lock().unwrap().append_task_log(
+                        &task_id,
+                        &TaskLogEntry {
+                            timestamp: timestamp.clone(),
+                            level: level.clone(),
+                            message: message.clone(),
+                        },
+                    );
+                }
+            }
             // Ignore errors: no receivers yet, channel full, etc.
             let _ = tx.send(ServerMessage::LogMessage {
                 level,
@@ -81,4 +101,26 @@ pub fn init(inner: &'static LogUtil) {
 /// Safe to call multiple times; only the first call takes effect.
 pub fn set_broadcast(tx: WsBroadcast) {
     let _ = BROADCAST.set(tx);
+}
+
+pub fn set_app_state(state: Arc<AppState>) {
+    let _ = APP_STATE.set(state);
+}
+
+pub fn scope_task<T>(task_id: impl Into<String>, f: impl FnOnce() -> T) -> T {
+    let task_id = task_id.into();
+    CURRENT_TASK_ID.with(|cell| {
+        let previous = cell.replace(Some(task_id));
+        let result = f();
+        cell.replace(previous);
+        result
+    })
+}
+
+fn current_task_id() -> Option<String> {
+    CURRENT_TASK_ID.with(|cell| cell.borrow().clone()).or_else(|| {
+        zihuan_node::data_value::EXECUTION_TASK_ID
+            .try_with(Clone::clone)
+            .ok()
+    })
 }
