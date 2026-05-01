@@ -14,7 +14,6 @@ use std::sync::Arc;
 use rust_embed::RustEmbed;
 use salvo::prelude::*;
 use salvo::serve_static::static_embed;
-use salvo::cors::Cors;
 
 use state::AppState;
 use ws::{WsBroadcast, ws_handler};
@@ -74,7 +73,10 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast) -> Router {
         .push(
             Router::with_path("tasks")
                 .get(execution::list_tasks)
-                .push(Router::with_path("<task_id>/stop").post(execution::stop_task)),
+                .delete(execution::clear_non_running_tasks)
+                .push(Router::with_path("<task_id>/stop").post(execution::stop_task))
+                .push(Router::with_path("<task_id>/rerun").post(execution::rerun_task))
+                .push(Router::with_path("<task_id>/logs").get(execution::get_task_logs)),
         )
         // File I/O (not graph-scoped)
         .push(Router::with_path("file/open").post(file_io::open_file))

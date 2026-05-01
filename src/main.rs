@@ -41,6 +41,7 @@ async fn main() {
     let args = Args::parse();
 
     let state = Arc::new(api::state::AppState::new());
+    log_forwarder::set_app_state(Arc::clone(&state));
     let broadcast = api::ws::create_broadcast();
     log_forwarder::set_broadcast(broadcast.clone());
 

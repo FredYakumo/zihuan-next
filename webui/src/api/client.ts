@@ -8,6 +8,7 @@ import type {
   NodeTypeInfo,
   ValidationResult,
   TaskEntry,
+  TaskLogEntry,
   HyperParameter,
   GraphVariable,
   GraphMetadata,
@@ -185,6 +186,15 @@ export const tasks = {
   },
   stop(taskId: string): Promise<{ ok: boolean }> {
     return request("POST", `/tasks/${taskId}/stop`);
+  },
+  rerun(taskId: string): Promise<{ task_id: string }> {
+    return request("POST", `/tasks/${taskId}/rerun`, {});
+  },
+  logs(taskId: string): Promise<{ entries: TaskLogEntry[] }> {
+    return request("GET", `/tasks/${taskId}/logs`);
+  },
+  clearFinished(): Promise<{ ok: boolean; cleared: number }> {
+    return request("DELETE", "/tasks");
   },
 };
 
