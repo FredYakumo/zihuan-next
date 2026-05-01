@@ -53,7 +53,7 @@ The editor runs in your browser. The backend is a single Rust binary ([Salvo](ht
 
 ### Option A: Download pre-built binary
 
-Download the latest release from the [Releases page](https://github.com/FredYakumo/zihuan-next/releases) *(releases coming soon)*, extract the archive, and run the executable directly — no build tools required.
+Download the latest release from the [Releases page](https://github.com/FredYakumo/zihuan-next/releases/latest)., extract the archive, and run the executable directly — no build tools required.
 
 ### Option B: Build from source
 
@@ -81,6 +81,22 @@ docker compose -f docker/docker-compose.yaml up -d   # Redis (+ optional MySQL)
 ```
 
 Configuration values (API keys, etc.) are managed as **hyperparameters** inside the node graph — open the Hyperparameters panel in the editor to set them.
+
+### Initialize the MySQL schema (optional)
+
+Required only if you plan to use the MySQL message store. Skip this step if you are running with Redis-only persistence.
+
+1. Copy `config.yaml.example` to `config.yaml` and fill in the `MYSQL_*` fields with the credentials of your local MySQL instance.
+2. Install the Python toolchain ([uv](https://docs.astral.sh/uv/) recommended) and create the virtualenv.
+3. Run Alembic to create / upgrade the schema:
+
+```bash
+cp config.yaml.example config.yaml          # then edit MYSQL_* fields
+uv sync                                     # install Python deps (alembic, sqlalchemy, pymysql)
+uv run alembic upgrade head                 # apply all migrations to the configured database
+```
+
+The MySQL connection used by Alembic is built from the `MYSQL_*` fields in `config.yaml`; the Rust runtime itself does **not** read these fields and accepts a database URL through the relevant node input port at runtime.
 
 ### Build commands
 

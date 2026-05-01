@@ -1,15 +1,20 @@
-# LLM Configuration
-natural_language_model_api: http://api.your_llm_api.com/completion
-natural_language_model_api_key: sk-your-api-key
-natural_language_model_name: gpt-5.2
-agent_model_api: http://api.your_llm_api.com/completion
-agent_model_api_key: sk-your-api-key
-agent_model_name: "Claude Haiku 4.5"
+# =============================================================================
+# zihuan-next configuration
+# Copy this file to `config.yaml` and edit the values you need.
+#
+# This file is consumed only by the Python Alembic migrations
+# (`utils/config_loader.py`) when running `alembic upgrade head` to create or
+# migrate the message-store schema.
+#
+# At runtime the Rust binary does NOT read this file. Bot, Redis and database
+# connections are configured per-graph through node input ports
+# (BotAdapterNode, RedisNode, MySqlNode), or via environment variables such as
+# DATABASE_URL=mysql://user:password@127.0.0.1:3306/dbname
+# =============================================================================
 
-# Note: BOT_SERVER_URL, BOT_SERVER_TOKEN, Redis and MySQL configurations
-# have been moved to node-level input ports (BotAdapterNode, RedisNode, MySqlNode).
-# Use environment variables or configure them directly in the node graph:
-#   BOT_SERVER_URL=ws://127.0.0.1:3001
-#   BOT_SERVER_TOKEN=your_token
-#   REDIS_URL=redis://localhost:6379/0
-#   DATABASE_URL=mysql://user:password@127.0.0.1:3306/dbname
+# MySQL configuration used by Alembic to build the SQLAlchemy URL.
+MYSQL_HOST: 127.0.0.1
+MYSQL_PORT: 3306
+MYSQL_USER: zihuan
+MYSQL_PASSWORD: your_mysql_password
+MYSQL_DATABASE: zihuan_database
