@@ -326,3 +326,31 @@ If upstream input starts including those types, you should first define:
 - `src/node/data_value.rs`
 - `src/node/util/qq_message_list_data.rs`
 - `src/node/util/string_to_plain_text.rs`
+
+## Programmatic Sending Helpers
+
+When code outside the node-graph needs to send QQ messages (for example inside an LLM node that drives the bot directly), use the helpers in `crates/zihuan_bot_adapter/src/message_helpers.rs` rather than duplicating `ws_send_action` calls.
+
+```rust
+use zihuan_bot_adapter::message_helpers::{
+    get_bot_id,
+    send_friend_text,
+    send_group_text,
+    send_friend_batches,
+    send_group_batches,
+    send_group_progress_notification,
+    send_friend_progress_notification,
+};
+```
+
+| Function | Purpose |
+|---|---|
+| `get_bot_id(adapter)` | Returns the bot's own QQ ID as a `String` |
+| `send_friend_text(adapter, target_id, text)` | Sends a plain-text message to a friend |
+| `send_group_text(adapter, target_id, text)` | Sends a plain-text message to a group |
+| `send_friend_batches(adapter, target_id, batches)` | Sends `Vec<Vec<Message>>` batches to a friend |
+| `send_group_batches(adapter, target_id, batches)` | Sends `Vec<Vec<Message>>` batches to a group |
+| `send_group_progress_notification(adapter, group_id, mention_id, content)` | Sends `@mention + text` to a group (used for tool progress) |
+| `send_friend_progress_notification(adapter, target_id, content)` | Sends a plain progress message to a friend |
+
+All functions handle Tokio context automatically via `block_in_place` and are safe to call from a synchronous node `execute()` running on a Tokio worker thread.

@@ -6,6 +6,7 @@ pub mod hyperparams;
 pub mod log;
 pub mod registry;
 pub mod state;
+pub mod themes;
 pub mod ws;
 
 use std::sync::Arc;
@@ -84,7 +85,13 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast) -> Router {
         .push(Router::with_path("workflow_set").get(file_io::list_workflows))
         .push(Router::with_path("workflow_set/save").post(file_io::save_to_workflows))
         .push(Router::with_path("workflow_set/detailed").get(file_io::list_workflows_detailed))
-        .push(Router::with_path("workflow_set/cover/<filename>").get(file_io::serve_workflow_cover));
+        .push(Router::with_path("workflow_set/cover/<filename>").get(file_io::serve_workflow_cover))
+        // Themes
+        .push(
+            Router::with_path("themes")
+                .get(themes::list_themes)
+                .push(Router::with_path("<name>").get(themes::get_theme)),
+        );
 
     // Inject state into depot for all API handlers (REST + WebSocket)
     Router::new()

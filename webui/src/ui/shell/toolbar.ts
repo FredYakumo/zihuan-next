@@ -1,4 +1,6 @@
 import { ws } from "../../api/ws";
+import { getThemeConfig } from "../theme";
+import { openOverlay } from "../dialogs/base";
 
 export function buildToolbar(
   toolbar: HTMLElement,
@@ -13,6 +15,9 @@ export function buildToolbar(
   onTaskFailed: (message: string) => void,
   onUndo: () => void,
   onRedo: () => void,
+  getThemeNames: () => Array<{ name: string; display_name: string; mode: string }>,
+  getCurrentThemeName: () => string,
+  onSwitchTheme: (name: string) => void,
 ): { updateUndoRedoButtons: (canUndo: boolean, canRedo: boolean) => void } {
   const titleEl = toolbar.querySelector<HTMLElement>(".title")!;
 
@@ -56,11 +61,174 @@ export function buildToolbar(
     menu.appendChild(el);
   }
 
+  // ─── Theme picker dialog ──────────────────────────────────────────────────────
+
+  const themeSep = document.createElement("div");
+  themeSep.className = "menu-separator";
+  menu.appendChild(themeSep);
+
+  const themeItem = document.createElement("div");
+  themeItem.className = "menu-item";
+  themeItem.innerHTML = `<span>主题</span>`;
+  themeItem.addEventListener("click", () => {
+    menu.classList.remove("open");
+    openThemeDialog();
+  });
+  menu.appendChild(themeItem);
+
+  // Theme preview tooltip (shared, positioned fixed)
+  const themePreview = document.createElement("div");
+  themePreview.id = "theme-preview";
+  themePreview.style.cssText =
+    "position:fixed;width:180px;height:130px;border-radius:6px;" +
+    "border:1px solid var(--border);box-shadow:0 6px 20px rgba(0,0,0,0.5);" +
+    "z-index:10002;display:none;overflow:hidden;font-size:11px;" +
+    "font-family:sans-serif;pointer-events:none;";
+  themePreview.innerHTML = `
+    <div id="tp-toolbar" style="height:24px;display:flex;align-items:center;padding:0 8px;gap:4px;">
+      <span style="font-weight:bold;">预览</span>
+      <span class="tp-text-muted" style="margin-left:auto;">Aa</span>
+    </div>
+    <div id="tp-body" style="padding:8px;display:flex;flex-direction:column;gap:6px;">
+      <div class="tp-text">主文字颜色</div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <div id="tp-accent" style="width:16px;height:16px;border-radius:3px;"></div>
+        <span class="tp-text-muted">强调色</span>
+      </div>
+      <div id="tp-btn" style="padding:3px 10px;border-radius:3px;display:inline-block;width:fit-content;">按钮</div>
+    </div>
+  `;
+  document.body.appendChild(themePreview);
+
+  function openThemeDialog(): void {
+    const { overlay, dialog, close } = openOverlay();
+    dialog.style.minWidth = "320px";
+    dialog.style.maxWidth = "420px";
+
+    const title = document.createElement("h3");
+    title.textContent = "选择主题";
+    dialog.appendChild(title);
+
+    const current = getCurrentThemeName();
+    const list = document.createElement("div");
+    list.style.cssText = "display:flex;flex-direction:column;gap:4px;margin-top:8px;";
+
+    for (const t of getThemeNames()) {
+      const row = document.createElement("div");
+      row.className = "menu-item";
+      row.style.cssText =
+        "padding:8px 12px;border-radius:4px;cursor:pointer;" +
+        "display:flex;align-items:center;justify-content:space-between;" +
+        "border:1px solid transparent;transition:border-color 0.12s,background 0.12s;";
+      row.innerHTML = `
+        <span style="display:flex;align-items:center;gap:8px;">
+          <span class="tp-color-dot" style="width:12px;height:12px;border-radius:50%;display:inline-block;background:${getThemeAccentColor(t.name)};"></span>
+          <span>${t.display_name}</span>
+        </span>
+      `;
+      if (t.name === current) {
+        const check = document.createElement("span");
+        check.textContent = "✓";
+        check.style.color = "var(--run-color)";
+        row.appendChild(check);
+      }
+
+      row.addEventListener("mouseenter", () => {
+        row.style.background = "var(--node-hover)";
+        row.style.borderColor = "var(--border)";
+        showPreview(t.name, row);
+      });
+      row.addEventListener("mouseleave", () => {
+        row.style.background = "transparent";
+        row.style.borderColor = "transparent";
+        hidePreview();
+      });
+      row.addEventListener("click", () => {
+        hidePreview();
+        onSwitchTheme(t.name);
+        close();
+      });
+
+      list.appendChild(row);
+    }
+    dialog.appendChild(list);
+
+    const btns = document.createElement("div");
+    btns.className = "zh-buttons";
+    btns.style.marginTop = "16px";
+    const cancelBtn = document.createElement("button");
+    cancelBtn.textContent = "取消";
+    cancelBtn.addEventListener("click", () => {
+      hidePreview();
+      close();
+    });
+    btns.appendChild(cancelBtn);
+    dialog.appendChild(btns);
+
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) {
+        hidePreview();
+        close();
+      }
+    });
+  }
+
+  function getThemeAccentColor(name: string): string {
+    const config = getThemeConfig(name);
+    return config?.css["--accent"] ?? "#3b82f6";
+  }
+
+  function showPreview(name: string, anchor: HTMLElement): void {
+    const config = getThemeConfig(name);
+    if (!config) return;
+    const css = config.css;
+    const lg = config.litegraph;
+
+    const rect = anchor.getBoundingClientRect();
+    // Position preview to the right of the dialog row, or above if no space
+    let left = rect.right + 12;
+    let top = rect.top;
+    if (left + 180 > window.innerWidth) {
+      left = rect.left - 192;
+    }
+    if (top + 130 > window.innerHeight) {
+      top = window.innerHeight - 140;
+    }
+    themePreview.style.left = `${left}px`;
+    themePreview.style.top = `${top}px`;
+    themePreview.style.display = "block";
+
+    const tpToolbar = themePreview.querySelector<HTMLElement>("#tp-toolbar")!;
+    const tpBody = themePreview.querySelector<HTMLElement>("#tp-body")!;
+    const tpAccent = themePreview.querySelector<HTMLElement>("#tp-accent")!;
+    const tpBtn = themePreview.querySelector<HTMLElement>("#tp-btn")!;
+
+    themePreview.style.background = css["--bg"] ?? lg.canvasBg ?? "#0d0d0d";
+    themePreview.style.color = css["--text"] ?? lg.nodeTitleText ?? "#e6e6e6";
+    tpToolbar.style.background = css["--toolbar-bg"] ?? lg.nodeHeader ?? "#1a1a1a";
+    tpBody.style.background = css["--bg"] ?? lg.canvasBg ?? "#0d0d0d";
+    tpAccent.style.background = css["--accent"] ?? "#3b82f6";
+    tpBtn.style.background = css["--btn-primary"] ?? "#2563eb";
+    tpBtn.style.color = css["--btn-primary-text"] ?? "#ffffff";
+
+    themePreview.querySelectorAll(".tp-text").forEach((el) => {
+      (el as HTMLElement).style.color = css["--text"] ?? "#e6e6e6";
+    });
+    themePreview.querySelectorAll(".tp-text-muted").forEach((el) => {
+      (el as HTMLElement).style.color = css["--text-muted"] ?? "#a0a0a0";
+    });
+  }
+
+  function hidePreview(): void {
+    themePreview.style.display = "none";
+  }
+
   toolbar.appendChild(menu);
 
   titleEl.addEventListener("click", (e) => {
     e.stopPropagation();
     menu.classList.toggle("open");
+    hidePreview();
   });
 
   document.addEventListener("click", () => {
