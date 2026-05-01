@@ -18,6 +18,7 @@ use zihuan_bot_adapter::models::message::{
 use zihuan_core::error::{Error, Result};
 use zihuan_core::runtime::block_async;
 use zihuan_llm_types::tooling::FunctionTool;
+use zihuan_llm_types::InferenceParam;
 use zihuan_llm_types::OpenAIMessage;
 use zihuan_node::data_value::{
     OpenAIMessageSessionCacheRef, SessionClaim, SessionStateRef, TavilyRef, SESSION_CLAIM_CONTEXT,
@@ -28,6 +29,7 @@ const LOG_PREFIX: &str = "[QqMessageAgentNode]";
 const BUSY_REPLY: &str = "我还在思考中，你别急";
 const MAX_REPLY_CHARS: usize = 250;
 const MAX_FORWARD_NODE_CHARS: usize = 800;
+const DEFAULT_MAX_MESSAGE_LENGTH: usize = 500;
 
 /// System prompt template (shared, private variant).
 fn build_private_system_prompt(
@@ -508,17 +510,28 @@ fn split_text_hard(content: &str, max_chars: usize) -> Vec<String> {
 }
 
 fn build_forward_message(content: &str, bot_id: &str, bot_name: &str) -> Result<ForwardMessage> {
-    let nodes: Vec<ForwardNodeMessage> =
-        split_text_by_semantic_boundaries(content, MAX_FORWARD_NODE_CHARS)
-            .into_iter()
-            .filter(|chunk| !chunk.trim().is_empty())
-            .map(|chunk| ForwardNodeMessage {
-                user_id: Some(bot_id.to_string()),
-                nickname: Some(bot_name.to_string()),
-                id: None,
-                content: vec![Message::PlainText(PlainTextMessage { text: chunk })],
-            })
-            .collect();
+    build_forward_message_from_chunks(
+        split_text_by_semantic_boundaries(content, MAX_FORWARD_NODE_CHARS),
+        bot_id,
+        bot_name,
+    )
+}
+
+fn build_forward_message_from_chunks(
+    chunks: Vec<String>,
+    bot_id: &str,
+    bot_name: &str,
+) -> Result<ForwardMessage> {
+    let nodes: Vec<ForwardNodeMessage> = chunks
+        .into_iter()
+        .filter(|chunk| !chunk.trim().is_empty())
+        .map(|chunk| ForwardNodeMessage {
+            user_id: Some(bot_id.to_string()),
+            nickname: Some(bot_name.to_string()),
+            id: None,
+            content: vec![Message::PlainText(PlainTextMessage { text: chunk })],
+        })
+        .collect();
 
     if nodes.is_empty() {
         return Err(Error::ValidationError(
@@ -530,6 +543,77 @@ fn build_forward_message(content: &str, bot_id: &str, bot_name: &str) -> Result<
         id: None,
         content: nodes,
     })
+}
+
+fn split_text_with_llm_for_forward(
+    llm: &Arc<dyn zihuan_llm_types::llm_base::LLMBase>,
+    content: &str,
+) -> Result<Vec<String>> {
+    let messages = vec![
+        OpenAIMessage::system(format!(
+            "你是一个中文长文本整理助手。你的任务是把用户给出的长文本拆成适合 QQ 转发消息节点展示的多个自然语义片段。\n\
+             你必须满足这些规则：\n\
+             1. 只输出纯 JSON 字符串数组，例如 [\"第一段\", \"第二段\"]，不要输出 markdown、代码块或解释。\n\
+             2. 不要改写原文事实，不要新增信息，不要省略关键内容。\n\
+             3. 按自然语义分段，优先保持段落、列表项、主题边界完整。\n\
+             4. 每个数组元素控制在 {MAX_FORWARD_NODE_CHARS} 字以内，尽量不要太碎。\n\
+             5. 如果原文本来就适合直接分段展示，只做分段，不要总结。"
+        )),
+        OpenAIMessage::user(content.to_string()),
+    ];
+    let param = InferenceParam {
+        messages: &messages,
+        tools: None,
+    };
+    let response = llm.inference(&param);
+    let response_text = response.content.unwrap_or_default();
+    if response_text.starts_with("Error:") {
+        return Err(Error::StringError(format!(
+            "forward splitting LLM request failed: {response_text}"
+        )));
+    }
+    if !response.tool_calls.is_empty() {
+        return Err(Error::ValidationError(
+            "forward splitting LLM unexpectedly returned tool calls".to_string(),
+        ));
+    }
+
+    let chunks: Vec<String> = serde_json::from_str(response_text.trim()).map_err(|e| {
+        Error::ValidationError(format!(
+            "failed to parse forward splitting LLM response: {e}"
+        ))
+    })?;
+
+    let chunks: Vec<String> = chunks
+        .into_iter()
+        .map(|chunk| chunk.trim().to_string())
+        .filter(|chunk| !chunk.is_empty())
+        .collect();
+
+    if chunks.is_empty() {
+        return Err(Error::ValidationError(
+            "forward splitting LLM returned empty chunks".to_string(),
+        ));
+    }
+
+    Ok(chunks)
+}
+
+fn build_forward_message_via_llm(
+    llm: &Arc<dyn zihuan_llm_types::llm_base::LLMBase>,
+    content: &str,
+    bot_id: &str,
+    bot_name: &str,
+) -> Result<ForwardMessage> {
+    match split_text_with_llm_for_forward(llm, content) {
+        Ok(chunks) => build_forward_message_from_chunks(chunks, bot_id, bot_name),
+        Err(err) => {
+            warn!(
+                "{LOG_PREFIX} Forward splitting LLM failed, falling back to local semantic split: {err}"
+            );
+            build_forward_message(content, bot_id, bot_name)
+        }
+    }
 }
 
 type SharedPendingReplyState = Arc<Mutex<PendingReplyState>>;
@@ -994,6 +1078,7 @@ impl QqMessageAgentNode {
         session: &Arc<SessionStateRef>,
         llm: &Arc<dyn zihuan_llm_types::llm_base::LLMBase>,
         tavily: &Arc<TavilyRef>,
+        max_message_length: usize,
     ) -> Result<()> {
         let is_group = event.message_type == MessageType::Group;
         let sender_id = event.sender.user_id.to_string();
@@ -1035,8 +1120,18 @@ impl QqMessageAgentNode {
         }
 
         let result = self.handle_claimed(
-            event, adapter, time, bot_name, cache, session, llm, tavily, &sender_id, &target_id,
+            event,
+            adapter,
+            time,
+            bot_name,
+            cache,
+            session,
+            llm,
+            tavily,
+            &sender_id,
+            &target_id,
             is_group,
+            max_message_length,
         );
 
         release_session(session, &sender_id, claim_token);
@@ -1057,6 +1152,7 @@ impl QqMessageAgentNode {
         sender_id: &str,
         target_id: &str,
         is_group: bool,
+        max_message_length: usize,
     ) -> Result<()> {
         let bot_id = get_bot_id(adapter);
         let user_msg = OpenAIMessage::user(build_user_message(event, &bot_id, bot_name));
@@ -1149,10 +1245,30 @@ impl QqMessageAgentNode {
             info!("{LOG_PREFIX} no_reply was selected, skipping QQ send");
         } else {
             let mut batches = pending_snapshot.batches;
-            let has_forward_reply = batches
+            let mut has_forward_reply = batches
                 .iter()
                 .flatten()
                 .any(|message| matches!(message, Message::Forward(_)));
+            let final_assistant_text = final_assistant_text.and_then(|content| {
+                if content.chars().count() > max_message_length {
+                    match build_forward_message_via_llm(llm, &content, &bot_id, bot_name) {
+                        Ok(forward) => {
+                            has_forward_reply = true;
+                            batches.push(vec![Message::Forward(forward)]);
+                            None
+                        }
+                        Err(err) => {
+                            warn!(
+                                "{LOG_PREFIX} Failed to convert long assistant reply into forward message: {err}"
+                            );
+                            Some(content)
+                        }
+                    }
+                } else {
+                    Some(content)
+                }
+            });
+
             if let Some(content) = final_assistant_text {
                 let sender_card = event.sender.card.as_str();
                 batches.extend(assistant_reply_batches(
@@ -1232,6 +1348,7 @@ impl Node for QqMessageAgentNode {
         port! { name = "session_ref",    ty = SessionStateRef,                 desc = "运行时会话占用引用，防止并发推理" },
         port! { name = "llm_model",      ty = LLModel,                         desc = "LLM 模型引用" },
         port! { name = "tavily_ref",     ty = TavilyRef,                       desc = "Tavily 搜索引用" },
+        port! { name = "max_message_length", ty = Integer,                     desc = "可选：最终回复超过该字数时强制转为 forward，默认 500", optional },
     ];
 
     node_output![];
@@ -1274,9 +1391,23 @@ impl Node for QqMessageAgentNode {
             Some(DataValue::TavilyRef(t)) => t.clone(),
             _ => return Err(self.wrap_err("tavily_ref is required")),
         };
+        let max_message_length = match inputs.get("max_message_length") {
+            Some(DataValue::Integer(value)) if *value > 0 => *value as usize,
+            Some(DataValue::Integer(_)) => DEFAULT_MAX_MESSAGE_LENGTH,
+            None => DEFAULT_MAX_MESSAGE_LENGTH,
+            _ => return Err(self.wrap_err("max_message_length must be an integer when provided")),
+        };
 
         self.handle(
-            &event, &adapter, &time, &bot_name, &cache, &session, &llm, &tavily,
+            &event,
+            &adapter,
+            &time,
+            &bot_name,
+            &cache,
+            &session,
+            &llm,
+            &tavily,
+            max_message_length,
         )?;
 
         Ok(HashMap::new())
