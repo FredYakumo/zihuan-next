@@ -143,7 +143,10 @@ async function main() {
 
   ws.onMessage((msg) => {
     if (msg.type === "TaskFinished" && !msg.success) {
-      showErrorDialog(msg.error ? `执行失败: ${msg.error}` : "执行失败");
+      const summary = msg.error?.trim() || "执行失败";
+      showErrorDialog(
+        `执行失败: ${summary}\n\n任务 ID: ${msg.task_id}\n详细信息请到任务管理器的“日志”中查看。`
+      );
     }
   });
 
