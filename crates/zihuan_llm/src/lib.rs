@@ -8,7 +8,6 @@ pub mod llm_infer_node;
 pub mod model;
 pub mod natural_language_reply;
 pub mod prompt;
-pub mod qq_message_agent_node;
 pub mod rag;
 pub mod tooling;
 pub mod util;
