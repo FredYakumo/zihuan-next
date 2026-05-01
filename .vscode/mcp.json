@@ -8,6 +8,11 @@
       "type": "stdio",
       "command": "npx",
       "args": ["-y", "@mizchi/lsmcp", "-p", "typescript"]
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@anthropic-ai/playwright-mcp"]
     }
   }
 }

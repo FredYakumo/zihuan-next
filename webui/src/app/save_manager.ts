@@ -109,6 +109,8 @@ export class SaveManager {
   }
 
   async autoSaveDirtyTabs(): Promise<void> {
+    await this.options.canvas.syncInlineWidgetValues();
+    await this.options.canvas.flushPendingWidgetMutations();
     for (const tab of this.options.tabs.getTabs()) {
       if (!tab.dirty) continue;
       try {
@@ -139,6 +141,8 @@ export class SaveManager {
   }
 
   private async flushBeforeSave(strictFlush: boolean): Promise<string | null> {
+    await this.options.canvas.syncInlineWidgetValues();
+    await this.options.canvas.flushPendingWidgetMutations();
     await this.options.canvas.syncPositions();
     if (this.options.canvas.isInSubgraph) {
       try {

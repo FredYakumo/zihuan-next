@@ -20,6 +20,7 @@ export class ZihuanCanvas implements CanvasFacade {
   history = new HistoryManager<NodeGraphDefinition>();
   _widgetMutationTimer: ReturnType<typeof setTimeout> | null = null;
   _nodeMoveTimer: ReturnType<typeof setTimeout> | null = null;
+  _pendingWidgetMutations = new Set<Promise<unknown>>();
   nodeTypes: NodeTypeInfo[] = [];
 
   onNavigationChange?: (labels: string[]) => void;
@@ -95,6 +96,7 @@ export class ZihuanCanvas implements CanvasFacade {
     this.state = { sessionId: null, graph: null, dirty: false };
     this.nodeMap.clear();
     this.subgraphStack = [];
+    this._pendingWidgetMutations.clear();
     this.lGraph.clear();
     this.onNavigationChange?.([]);
   }
@@ -123,6 +125,14 @@ export class ZihuanCanvas implements CanvasFacade {
 
   async reloadCurrentSession(): Promise<void> {
     await this.graphOps.reloadCurrentSession();
+  }
+
+  async syncInlineWidgetValues(): Promise<void> {
+    await this.graphOps.syncInlineWidgetValues();
+  }
+
+  async flushPendingWidgetMutations(): Promise<void> {
+    await this.graphOps.flushPendingWidgetMutations();
   }
 
   canUndo(): boolean {

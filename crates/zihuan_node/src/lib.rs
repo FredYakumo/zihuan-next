@@ -1,6 +1,7 @@
 use log::{error, info};
 use serde_json::{json, Value};
 use std::future::Future;
+use std::backtrace::Backtrace;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex, RwLock,
@@ -336,6 +337,39 @@ impl NodeGraph {
             .map(|b| b.name.clone())
     }
 
+    fn node_type_label(node: &dyn Node) -> &'static str {
+        match node.node_type() {
+            NodeType::Simple => "simple",
+            NodeType::EventProducer => "event_producer",
+        }
+    }
+
+    fn format_debug_backtrace() -> String {
+        if cfg!(debug_assertions) {
+            format!("\n[DEBUG_BACKTRACE]\n{}", Backtrace::force_capture())
+        } else {
+            String::new()
+        }
+    }
+
+    fn wrap_node_error(
+        node_id: &str,
+        node: &dyn Node,
+        stage: &str,
+        err: zihuan_core::error::Error,
+    ) -> zihuan_core::error::Error {
+        zihuan_core::error::Error::ValidationError(format!(
+            "[NODE_ERROR:{}] Node '{}' (type='{}', category='{}', stage='{}') failed: {}{}",
+            node_id,
+            node.name(),
+            std::any::type_name_of_val(node),
+            Self::node_type_label(node),
+            stage,
+            err,
+            Self::format_debug_backtrace(),
+        ))
+    }
+
     pub fn set_runtime_variable_store(&mut self, store: RuntimeVariableStore) {
         self.runtime_variable_store = store.clone();
         for node in self.nodes.values_mut() {
@@ -420,7 +454,16 @@ impl NodeGraph {
         for (node_id, node) in self.nodes.iter_mut() {
             node.set_runtime_variable_store(self.runtime_variable_store.clone());
             node.on_graph_start().map_err(|e| {
-                zihuan_core::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
+                let node_ref: &dyn Node = node.as_ref();
+                zihuan_core::error::Error::ValidationError(format!(
+                    "[NODE_ERROR:{}] Node '{}' (type='{}', category='{}', stage='on_graph_start') failed: {}{}",
+                    node_id,
+                    node_ref.name(),
+                    std::any::type_name_of_val(node_ref),
+                    Self::node_type_label(node_ref),
+                    e,
+                    Self::format_debug_backtrace(),
+                ))
             })?;
         }
 
@@ -645,7 +688,9 @@ impl NodeGraph {
                         node_id
                     ))
                 })?;
-                let outputs = node.execute(inputs)?;
+                let outputs = node
+                    .execute(inputs)
+                    .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
                 for (key, value) in outputs {
                     if data_pool.contains_key(&key) {
                         return Err(zihuan_core::error::Error::ValidationError(format!(
@@ -711,7 +756,9 @@ impl NodeGraph {
                     node_id
                 ))
             })?;
-            let outputs = node.execute(inputs)?;
+                let outputs = node
+                    .execute(inputs)
+                    .map_err(|e| Self::wrap_node_error(node_id, node.as_ref(), "execute", e))?;
             for (key, value) in outputs {
                 if base_data_pool.contains_key(&key) {
                     return Err(zihuan_core::error::Error::ValidationError(format!(
@@ -1106,7 +1153,9 @@ impl NodeGraph {
                             node_id
                         ))
                     })?;
-                    node.execute(inputs)?
+                    node.execute(inputs).map_err(|e| {
+                        Self::wrap_node_error(&node_id, node.as_ref(), "execute", e)
+                    })?
                 };
 
                 if let Some(cb) = &self.execution_callback {
@@ -1178,7 +1227,9 @@ impl NodeGraph {
                         node_id
                     ))
                 })?;
-                node.execute(inputs)?
+                node.execute(inputs).map_err(|e| {
+                    Self::wrap_node_error(node_id, node.as_ref(), "execute", e)
+                })?
             };
             self.insert_outputs(&mut base_data_pool, node_id, outputs);
         }
@@ -1350,7 +1401,9 @@ impl NodeGraph {
                             node_id
                         ))
                     })?;
-                    node.execute(inputs.clone())?
+                    node.execute(inputs.clone()).map_err(|e| {
+                        Self::wrap_node_error(&node_id, node.as_ref(), "execute", e)
+                    })?
                 };
 
                 if let Some(cb) = &self.execution_callback {
@@ -1492,7 +1545,8 @@ impl NodeGraph {
             }
         }
 
-        node.validate_inputs(&inputs)?;
+        node.validate_inputs(&inputs)
+            .map_err(|e| Self::wrap_node_error(node_id, node, "validate_inputs", e))?;
         Ok(Some(inputs))
     }
 
@@ -1790,10 +1844,7 @@ impl NodeGraph {
                     ))
                 })?;
                 node.execute(inputs).map_err(|e| {
-                    zihuan_core::error::Error::ValidationError(format!(
-                        "[NODE_ERROR:{}] {}",
-                        ordered_id, e
-                    ))
+                    Self::wrap_node_error(ordered_id, node.as_ref(), "execute", e)
                 })?
             };
 
@@ -1875,9 +1926,9 @@ impl NodeGraph {
             })?;
 
             let inputs_clone = self.execution_callback.as_ref().map(|_| inputs.clone());
-            let outputs = node.execute(inputs).map_err(|e| {
-                zihuan_core::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", ordered_id, e))
-            })?;
+            let outputs = node
+                .execute(inputs)
+                .map_err(|e| Self::wrap_node_error(ordered_id, node.as_ref(), "execute", e))?;
 
             if let Some(cb) = &self.execution_callback {
                 if let Some(inp) = inputs_clone {
@@ -1922,7 +1973,8 @@ impl NodeGraph {
                 return Ok(None);
             }
         }
-        node.validate_inputs(&inputs)?;
+        node.validate_inputs(&inputs)
+            .map_err(|e| Self::wrap_node_error(node_id, node, "validate_inputs", e))?;
         Ok(Some(inputs))
     }
 
@@ -1979,9 +2031,8 @@ impl NodeGraph {
                 ))
             })?;
 
-            node.on_start(inputs).map_err(|e| {
-                zihuan_core::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
-            })?;
+            node.on_start(inputs)
+                .map_err(|e| Self::wrap_node_error(node_id, node.as_ref(), "on_start", e))?;
             node.set_stop_flag(Arc::clone(&self.stop_flag));
         }
 
@@ -2000,9 +2051,9 @@ impl NodeGraph {
                     ))
                 })?;
 
-                let update_result = node.on_update().map_err(|e| {
-                    zihuan_core::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
-                });
+                let update_result = node
+                    .on_update()
+                    .map_err(|e| Self::wrap_node_error(node_id, node.as_ref(), "on_update", e));
                 let update_result = match update_result {
                     Ok(value) => value,
                     Err(err) => {
@@ -2014,7 +2065,9 @@ impl NodeGraph {
                 };
                 match update_result {
                     Some(outputs) => {
-                        node.validate_outputs(&outputs)?;
+                        node.validate_outputs(&outputs).map_err(|e| {
+                            Self::wrap_node_error(node_id, node.as_ref(), "validate_outputs", e)
+                        })?;
                         outputs
                     }
                     None => break,
@@ -2089,9 +2142,8 @@ impl NodeGraph {
                     node_id
                 ))
             })?;
-            node.on_start(inputs).map_err(|e| {
-                zihuan_core::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
-            })?;
+            node.on_start(inputs)
+                .map_err(|e| Self::wrap_node_error(node_id, node.as_ref(), "on_start", e))?;
             node.set_stop_flag(Arc::clone(&self.stop_flag));
         }
 
@@ -2110,9 +2162,9 @@ impl NodeGraph {
                     ))
                 })?;
 
-                let update_result = node.on_update().map_err(|e| {
-                    zihuan_core::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
-                });
+                let update_result = node
+                    .on_update()
+                    .map_err(|e| Self::wrap_node_error(node_id, node.as_ref(), "on_update", e));
                 let update_result = match update_result {
                     Ok(value) => value,
                     Err(err) => {
@@ -2124,7 +2176,9 @@ impl NodeGraph {
                 };
                 match update_result {
                     Some(outputs) => {
-                        node.validate_outputs(&outputs)?;
+                        node.validate_outputs(&outputs).map_err(|e| {
+                            Self::wrap_node_error(node_id, node.as_ref(), "validate_outputs", e)
+                        })?;
                         outputs
                     }
                     None => break,

@@ -56,6 +56,7 @@
       },
       "inline_values": {
         "qq_id": "2496875785",
+        "bot_server_token": "",
         "bot_server_url": "ws://localhost:3001"
       },
       "port_bindings": {
@@ -165,22 +166,28 @@
         "height": 401.06308
       },
       "inline_values": {
-        "mysql_host": "127.0.0.1",
+        "mysql_port": "3306",
+        "mysql_password": "",
         "mysql_database": "zihuan_aibot",
-        "mysql_port": "3306"
+        "acquire_timeout_secs": 0,
+        "max_connections": 0,
+        "mysql_user": "",
+        "reconnect_interval_secs": 0,
+        "reconnect_max_attempts": 0,
+        "mysql_host": "127.0.0.1"
       },
       "port_bindings": {
         "mysql_user": {
           "kind": "hyperparameter",
           "name": "MYSQL_USER"
         },
-        "mysql_database": {
-          "kind": "hyperparameter",
-          "name": "MYSQL_DB"
-        },
         "mysql_password": {
           "kind": "hyperparameter",
           "name": "MYSQL_PASSWORD"
+        },
+        "mysql_database": {
+          "kind": "hyperparameter",
+          "name": "MYSQL_DB"
         }
       },
       "has_error": false,
@@ -300,8 +307,8 @@
         "height": 121.83149
       },
       "inline_values": {
-        "bucket_name": "message_id_cache",
-        "ttl_secs": "600"
+        "ttl_secs": "600",
+        "bucket_name": "message_id_cache"
       },
       "port_bindings": {},
       "has_error": false,
@@ -362,20 +369,23 @@
         "height": 190.0
       },
       "inline_values": {
-        "timeout_secs": "600"
+        "timeout_secs": "600",
+        "model_name": "",
+        "api_endpoint": "",
+        "api_key": ""
       },
       "port_bindings": {
-        "model_name": {
+        "api_endpoint": {
           "kind": "hyperparameter",
-          "name": "LLM_MODEL_NAME"
+          "name": "LLM_API_ENDPOINT"
         },
         "api_key": {
           "kind": "hyperparameter",
           "name": "LLM_API_KEY"
         },
-        "api_endpoint": {
+        "model_name": {
           "kind": "hyperparameter",
-          "name": "LLM_API_ENDPOINT"
+          "name": "LLM_MODEL_NAME"
         }
       },
       "has_error": false,
@@ -528,7 +538,10 @@
         "width": 360.0,
         "height": 103.0
       },
-      "inline_values": {},
+      "inline_values": {
+        "api_token": "",
+        "timeout_secs": 0
+      },
       "port_bindings": {
         "api_token": {
           "kind": "hyperparameter",
@@ -599,14 +612,21 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 440.0,
+        "x": 300.0,
         "y": 1590.0
       },
       "size": {
         "width": 278.8,
         "height": 182.30934
       },
-      "inline_values": {},
+      "inline_values": {
+        "redis_host": "127.0.0.1",
+        "redis_port": 0,
+        "redis_password": "",
+        "reconnect_max_attempts": 0,
+        "reconnect_interval_secs": 0,
+        "redis_db": 0
+      },
       "port_bindings": {},
       "has_error": false,
       "has_cycle": false
@@ -685,7 +705,9 @@
         "width": 265.54913,
         "height": 295.2409
       },
-      "inline_values": {},
+      "inline_values": {
+        "bot_name": ""
+      },
       "port_bindings": {
         "bot_name": {
           "kind": "hyperparameter",
@@ -756,6 +778,12 @@
       "from_port": "tavily_ref",
       "to_node_id": "af5bf69d-328d-41d1-99f6-4d917c75803b",
       "to_port": "tavily_ref"
+    },
+    {
+      "from_node_id": "55982720-81c4-4892-b06a-e872305b86a4",
+      "from_port": "redis_ref",
+      "to_node_id": "node_27",
+      "to_port": "redis_ref"
     }
   ],
   "hyperparameter_groups": [
