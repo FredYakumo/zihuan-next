@@ -316,6 +316,20 @@ impl NodeGraph {
         self.reset_runtime_variables_from_definition();
     }
 
+    /// If `port_name` on `node_id` is bound to a hyperparameter, return the HP name.
+    /// Used to produce a clearer error message when the HP has no value set.
+    fn port_binding_hp_name(&self, node_id: &str, port_name: &str) -> Option<String> {
+        self.definition
+            .as_ref()?
+            .nodes
+            .iter()
+            .find(|n| n.id == node_id)?
+            .port_bindings
+            .get(port_name)
+            .filter(|b| b.kind == crate::graph_io::PortBindingKind::Hyperparameter)
+            .map(|b| b.name.clone())
+    }
+
     pub fn set_runtime_variable_store(&mut self, store: RuntimeVariableStore) {
         self.runtime_variable_store = store.clone();
         for node in self.nodes.values_mut() {
@@ -537,10 +551,20 @@ impl NodeGraph {
                         .unwrap_or(false);
 
                     if !has_inline {
-                        return Err(zihuan_core::error::Error::ValidationError(format!(
-                            "Required input port '{}' for node '{}' is not bound",
-                            port.name, node_id
-                        )));
+                        let msg = if let Some(hp_name) =
+                            self.port_binding_hp_name(node_id, &port.name)
+                        {
+                            format!(
+                                "Hyperparameter '{}' is bound to required port '{}' on node '{}' but has no value set",
+                                hp_name, port.name, node_id
+                            )
+                        } else {
+                            format!(
+                                "Required input port '{}' for node '{}' is not bound",
+                                port.name, node_id
+                            )
+                        };
+                        return Err(zihuan_core::error::Error::ValidationError(msg));
                     }
                 }
             }
@@ -812,10 +836,20 @@ impl NodeGraph {
                         .unwrap_or(false);
 
                     if !has_inline {
-                        return Err(zihuan_core::error::Error::ValidationError(format!(
-                            "Required input port '{}' for node '{}' is not bound",
-                            port.name, node_id
-                        )));
+                        let msg = if let Some(hp_name) =
+                            self.port_binding_hp_name(node_id, &port.name)
+                        {
+                            format!(
+                                "Hyperparameter '{}' is bound to required port '{}' on node '{}' but has no value set",
+                                hp_name, port.name, node_id
+                            )
+                        } else {
+                            format!(
+                                "Required input port '{}' for node '{}' is not bound",
+                                port.name, node_id
+                            )
+                        };
+                        return Err(zihuan_core::error::Error::ValidationError(msg));
                     }
                 }
             }
@@ -998,10 +1032,20 @@ impl NodeGraph {
                     .map(|m| m.contains_key(&port.name))
                     .unwrap_or(false);
                 if !has_edge && !has_inline_value {
-                    return Err(zihuan_core::error::Error::ValidationError(format!(
-                        "Required input port '{}' for node '{}' is not bound",
-                        port.name, node_id
-                    )));
+                    let msg = if let Some(hp_name) =
+                        self.port_binding_hp_name(node_id, &port.name)
+                    {
+                        format!(
+                            "Hyperparameter '{}' is bound to required port '{}' on node '{}' but has no value set",
+                            hp_name, port.name, node_id
+                        )
+                    } else {
+                        format!(
+                            "Required input port '{}' for node '{}' is not bound",
+                            port.name, node_id
+                        )
+                    };
+                    return Err(zihuan_core::error::Error::ValidationError(msg));
                 }
             }
         }
@@ -1232,10 +1276,20 @@ impl NodeGraph {
                     .map(|m| m.contains_key(&port.name))
                     .unwrap_or(false);
                 if !has_edge && !has_inline_value {
-                    return Err(zihuan_core::error::Error::ValidationError(format!(
-                        "Required input port '{}' for node '{}' is not bound",
-                        port.name, node_id
-                    )));
+                    let msg = if let Some(hp_name) =
+                        self.port_binding_hp_name(node_id, &port.name)
+                    {
+                        format!(
+                            "Hyperparameter '{}' is bound to required port '{}' on node '{}' but has no value set",
+                            hp_name, port.name, node_id
+                        )
+                    } else {
+                        format!(
+                            "Required input port '{}' for node '{}' is not bound",
+                            port.name, node_id
+                        )
+                    };
+                    return Err(zihuan_core::error::Error::ValidationError(msg));
                 }
             }
         }
