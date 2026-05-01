@@ -55,8 +55,8 @@
         "height": 146.0
       },
       "inline_values": {
-        "bot_server_url": "ws://localhost:3001",
-        "qq_id": "2496875785"
+        "qq_id": "2496875785",
+        "bot_server_url": "ws://localhost:3001"
       },
       "port_bindings": {
         "bot_server_token": {
@@ -66,6 +66,10 @@
         "qq_id": {
           "kind": "hyperparameter",
           "name": "BOT_ID"
+        },
+        "bot_server_url": {
+          "kind": "hyperparameter",
+          "name": "BOT_SERVER_URL"
         }
       },
       "has_error": false,
@@ -161,18 +165,22 @@
         "height": 401.06308
       },
       "inline_values": {
-        "mysql_database": "zihuan_aibot",
         "mysql_host": "127.0.0.1",
+        "mysql_database": "zihuan_aibot",
         "mysql_port": "3306"
       },
       "port_bindings": {
-        "mysql_password": {
-          "kind": "hyperparameter",
-          "name": "MYSQL_PASSWORD"
-        },
         "mysql_user": {
           "kind": "hyperparameter",
           "name": "MYSQL_USER"
+        },
+        "mysql_database": {
+          "kind": "hyperparameter",
+          "name": "MYSQL_DB"
+        },
+        "mysql_password": {
+          "kind": "hyperparameter",
+          "name": "MYSQL_PASSWORD"
         }
       },
       "has_error": false,
@@ -357,13 +365,13 @@
         "timeout_secs": "600"
       },
       "port_bindings": {
-        "api_key": {
-          "kind": "hyperparameter",
-          "name": "LLM_API_KEY"
-        },
         "model_name": {
           "kind": "hyperparameter",
           "name": "LLM_MODEL_NAME"
+        },
+        "api_key": {
+          "kind": "hyperparameter",
+          "name": "LLM_API_KEY"
         },
         "api_endpoint": {
           "kind": "hyperparameter",
@@ -820,6 +828,20 @@
     {
       "name": "TAVILY_API_KEY",
       "data_type": "Password",
+      "group": "default",
+      "required": true,
+      "description": null
+    },
+    {
+      "name": "MYSQL_DB",
+      "data_type": "String",
+      "group": "default",
+      "required": true,
+      "description": null
+    },
+    {
+      "name": "BOT_SERVER_URL",
+      "data_type": "String",
       "group": "default",
       "required": true,
       "description": null

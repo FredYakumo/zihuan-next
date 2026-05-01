@@ -241,6 +241,23 @@ impl QqMessageAgentNode {
             target_id
         );
 
+        if is_group {
+            let bot_id = get_bot_id(adapter);
+            let msg_prop = MessageProp::from_messages_with_bot_name(
+                &event.message_list,
+                Some(&bot_id),
+                Some(bot_name),
+            );
+            if !msg_prop.is_at_me {
+                info!(
+                    "{LOG_PREFIX} Skipping group message without @ mention: sender={} target={}",
+                    sender_id,
+                    target_id
+                );
+                return Ok(());
+            }
+        }
+
         //  Session claim
         let (claimed, claim_token) = try_claim_session(session, &sender_id);
         if !claimed {
