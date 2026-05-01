@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "rust-analyzer": {
+      "type": "stdio",
+      "command": "/home/fredyakumo/.cargo/bin/rust-analyzer-mcp"
+    },
+    "typescript": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@mizchi/lsmcp", "-p", "typescript"]
+    }
+  }
+}
