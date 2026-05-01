@@ -1,8 +1,3 @@
-//! Shared brain engine: `sanitize_messages_for_inference`, `BrainTool` trait, and `Brain` struct.
-//!
-//! `Brain` encapsulates the multi-turn LLM ↔ tool call loop so that both
-//! `BrainNode` and higher-level agent nodes can reuse the same logic.
-
 use std::collections::HashSet;
 use std::sync::Arc;
 
