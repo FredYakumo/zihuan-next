@@ -181,8 +181,31 @@ pub struct MessageProp {
 }
 
 impl MessageProp {
+    fn text_mentions_bot_name(messages: &[Message], bot_name: Option<&str>) -> bool {
+        let bot_name = match bot_name.map(str::trim) {
+            Some(name) if !name.is_empty() => name,
+            _ => return false,
+        };
+
+        let mention_patterns = [format!("@{bot_name}"), format!("＠{bot_name}")];
+
+        messages.iter().any(|message| {
+            matches!(message, Message::PlainText(plain) if mention_patterns.iter().any(|pattern| plain.text.contains(pattern)))
+        })
+    }
+
     /// Build a MessageProp from a list of messages.
     pub fn from_messages(messages: &[Message], bot_id: Option<&str>) -> Self {
+        Self::from_messages_with_bot_name(messages, bot_id, None)
+    }
+
+    /// Build a MessageProp from a list of messages, allowing bot_name-based
+    /// mention detection when upstream @ segments were parsed as plain text.
+    pub fn from_messages_with_bot_name(
+        messages: &[Message],
+        bot_id: Option<&str>,
+        bot_name: Option<&str>,
+    ) -> Self {
         use std::collections::HashSet;
 
         let mut content_parts: Vec<String> = Vec::with_capacity(messages.len());
@@ -219,9 +242,9 @@ impl MessageProp {
         };
 
         let is_at_me = match bot_id {
-            Some(id) => at_targets.iter().any(|t| t.to_string() == *id),
+            Some(id) => at_targets.iter().any(|t| t == id),
             None => false,
-        };
+        } || Self::text_mentions_bot_name(messages, bot_name);
 
         MessageProp {
             content,

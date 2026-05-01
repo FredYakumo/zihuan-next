@@ -1,4 +1,5 @@
 pub mod brain;
+pub mod qq_message_agent_node;
 
 /// Base trait for all event-driven agents.
 ///
