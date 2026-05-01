@@ -41,6 +41,8 @@ export interface LiteGraphColors {
 export interface ThemeConfig {
   name: string;
   display_name: string;
+  class_name: string;
+  schema: "light" | "dark";
   mode: string;
   css: Record<string, string>;
   litegraph: LiteGraphColors;
@@ -52,12 +54,15 @@ const themeListeners: Array<() => void> = [];
 
 let allThemes: Map<string, ThemeConfig> = new Map();
 let currentThemeName = "default_dark";
+let systemThemeMediaQuery: MediaQueryList | null = null;
 
 // ─── Built-in default themes ──────────────────────────────────────────────────
 
 const DEFAULT_DARK: ThemeConfig = {
   name: "default_dark",
   display_name: "默认暗色",
+  class_name: "default",
+  schema: "dark",
   mode: "dark",
   css: {
     "--bg": "#050505",
@@ -137,6 +142,8 @@ const DEFAULT_DARK: ThemeConfig = {
 const DEFAULT_LIGHT: ThemeConfig = {
   name: "default_light",
   display_name: "默认亮色",
+  class_name: "default",
+  schema: "light",
   mode: "light",
   css: {
     "--bg": "#ffffff",
@@ -242,12 +249,18 @@ export async function loadThemes(): Promise<void> {
     const res = await fetchWithTimeout("/api/themes", 3000);
     if (!res.ok) return;
     const data = await res.json();
-    const items = data.themes as Array<{ name: string; display_name: string; mode: string }>;
+    const items = data.themes as Array<{
+      name: string;
+      display_name: string;
+      class_name: string;
+      schema: "light" | "dark";
+      mode: string;
+    }>;
     for (const item of items) {
       try {
         const detailRes = await fetchWithTimeout(`/api/themes/${item.name}`, 3000);
         if (detailRes.ok) {
-          const config = (await detailRes.json()) as ThemeConfig;
+          const config = normalizeThemeConfig((await detailRes.json()) as ThemeConfig);
           allThemes.set(config.name, config);
         }
       } catch {
@@ -262,7 +275,7 @@ export async function loadThemes(): Promise<void> {
 
   // Re-apply the stored/system theme now that its config is definitely loaded
   const stored = migrateOldThemeName(localStorage.getItem(STORAGE_KEY));
-  const target = stored ?? getSystemThemeName();
+  const target = stored ? getSystemResolvedThemeName(stored) : getSystemThemeName();
   if (allThemes.has(target)) {
     currentThemeName = target;
     applyTheme(target);
@@ -290,10 +303,67 @@ function generateThemeStyles(): void {
 
 // ─── Theme query / switching ──────────────────────────────────────────────────
 
-export function getThemeNames(): Array<{ name: string; display_name: string; mode: string }> {
+function getSystemMode(): "light" | "dark" {
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+function getThemeSchema(theme: ThemeConfig): "light" | "dark" {
+  return theme.schema ?? (theme.mode === "light" ? "light" : "dark");
+}
+
+function inferThemeClassName(name: string): string {
+  if (name.endsWith("_light")) return name.slice(0, -"_light".length);
+  if (name.endsWith("_dark")) return name.slice(0, -"_dark".length);
+  return name;
+}
+
+function normalizeThemeConfig(config: ThemeConfig): ThemeConfig {
+  const schema = config.schema ?? (config.mode === "light" ? "light" : "dark");
+  return {
+    ...config,
+    class_name: config.class_name ?? inferThemeClassName(config.name),
+    schema,
+    mode: config.mode ?? schema,
+  };
+}
+
+function getPairedThemeName(name: string, schema: "light" | "dark"): string | null {
+  const theme = allThemes.get(name);
+  if (!theme) return null;
+
+  for (const candidate of allThemes.values()) {
+    if (candidate.class_name === theme.class_name && getThemeSchema(candidate) === schema) {
+      return candidate.name;
+    }
+  }
+  return null;
+}
+
+function resolveThemeForMode(name: string, schema: "light" | "dark"): string {
+  const pairedName = getPairedThemeName(name, schema);
+  return pairedName ?? name;
+}
+
+function getSystemResolvedThemeName(name: string): string {
+  return resolveThemeForMode(name, getSystemMode());
+}
+
+export function getThemeNames(): Array<{
+  name: string;
+  display_name: string;
+  class_name: string;
+  schema: "light" | "dark";
+  mode: string;
+}> {
   const list = Array.from(allThemes.values());
   list.sort((a, b) => a.name.localeCompare(b.name));
-  return list.map((t) => ({ name: t.name, display_name: t.display_name, mode: t.mode }));
+  return list.map((t) => ({
+    name: t.name,
+    display_name: t.display_name,
+    class_name: t.class_name,
+    schema: getThemeSchema(t),
+    mode: t.mode,
+  }));
 }
 
 export function getCurrentThemeName(): string {
@@ -324,9 +394,15 @@ function applyTheme(name: string): void {
 }
 
 function getSystemThemeName(): string {
-  return window.matchMedia("(prefers-color-scheme: light)").matches
-    ? "default_light"
-    : "default_dark";
+  return getSystemMode() === "light" ? "default_light" : "default_dark";
+}
+
+function handleSystemThemeChange(): void {
+  const stored = migrateOldThemeName(localStorage.getItem(STORAGE_KEY));
+  const target = stored ? getSystemResolvedThemeName(stored) : getSystemThemeName();
+  if (!allThemes.has(target) || target === currentThemeName) return;
+  currentThemeName = target;
+  applyTheme(target);
 }
 
 // ─── Init (sync, called before DOM is built) ──────────────────────────────────
@@ -337,18 +413,16 @@ function getSystemThemeName(): string {
  */
 export function initTheme(): void {
   const stored = migrateOldThemeName(localStorage.getItem(STORAGE_KEY));
-  const name = stored ?? getSystemThemeName();
+  const name = stored ? getSystemResolvedThemeName(stored) : getSystemThemeName();
   currentThemeName = name;
   document.documentElement.dataset.theme = name;
 
-  // Watch system changes when no user preference is stored
-  window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", (e) => {
-    if (!localStorage.getItem(STORAGE_KEY)) {
-      const sys = e.matches ? "default_light" : "default_dark";
-      currentThemeName = sys;
-      applyTheme(sys);
-    }
-  });
+  if (!systemThemeMediaQuery) {
+    systemThemeMediaQuery = window.matchMedia("(prefers-color-scheme: light)");
+    systemThemeMediaQuery.addEventListener("change", () => {
+      handleSystemThemeChange();
+    });
+  }
 }
 
 // ─── Theme-change listeners ───────────────────────────────────────────────────

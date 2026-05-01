@@ -20,7 +20,13 @@ export function buildToolbar(
   onStopTask: (taskId: string) => void,
   onUndo: () => void,
   onRedo: () => void,
-  getThemeNames: () => Array<{ name: string; display_name: string; mode: string }>,
+  getThemeNames: () => Array<{
+    name: string;
+    display_name: string;
+    class_name: string;
+    schema: "light" | "dark";
+    mode: string;
+  }>,
   getCurrentThemeName: () => string,
   onSwitchTheme: (name: string) => void,
 ): {
