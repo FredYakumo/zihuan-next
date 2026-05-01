@@ -1,27 +1,8 @@
-//! QQ Message Agent 节点
-//!
-//! 将顶层图中的 `message_event_type_filter` + `好友消息处理` + `群聊消息处理` 三段结构收敛成一个节点。
-//!
-//! 执行顺序（好友/群聊公共流程）：
-//! 1. 从 `MessageEvent` 提取 `sender_id` 与 `target_id`（群聊时为 `group_id`）
-//! 2. 尝试占用 `session_ref`（同一 sender 同时只允许一个推理在跑）
-//!    - 好友：占用失败 → 发送"我还在思考中，你别急"并返回
-//!    - 群聊：占用失败 → 静默跳过
-//! 3. 从 `cache_ref` 加载历史消息
-//! 4. 提取本条消息文本，构造 user message，并拼装带角色/时间/格式约束的 system prompt
-//! 5. 拼接历史 + user message，调用 Brain 推理（含 Tavily 搜索工具）
-//!    - 工具调用时，若 content 非空则先向目标发送进度通知消息
-//! 6. 取 Brain 输出最后一条 assistant message，解析 QQ JSON
-//!    - 解析成功 → 批量发送；失败 → 发送兜底"对不起,我无法回复这条消息"
-//! 7. 将历史 + Brain 输出全部写回 cache_ref
-//! 8. 释放 session_ref
-
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use log::{info, warn};
 use serde_json::Value;
-use tokio::task::block_in_place;
 
 use zihuan_bot_adapter::adapter::shared_from_handle;
 use zihuan_bot_adapter::message_helpers::{
@@ -32,6 +13,7 @@ use zihuan_bot_adapter::models::event_model::MessageType;
 use zihuan_bot_adapter::models::message::{Message, MessageProp};
 use zihuan_bot_types::natural_language_reply::{json_value_to_qq_message_vec, qq_message_json_output_system_prompt};
 use zihuan_core::error::{Error, Result};
+use zihuan_core::runtime::block_async;
 use crate::agent::brain::{Brain, BrainTool};
 use zihuan_llm_types::OpenAIMessage;
 use zihuan_llm_types::tooling::FunctionTool;
@@ -67,23 +49,6 @@ fn build_group_system_prompt(bot_name: &str, time: &str, sender_id: &str, format
          当你决定调用工具时，请在工具 content 里用一句话说明你即将做什么（例如\"我将搜索关于xxx的信息\"）。\n\
          {format_prompt}"
     )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers — mirror the behaviour that used to live inside function subgraphs
-// ─────────────────────────────────────────────────────────────────────────────
-
-fn block_async<F, T>(f: F) -> T
-where
-    F: std::future::Future<Output = T>,
-{
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        block_in_place(|| handle.block_on(f))
-    } else {
-        tokio::runtime::Runtime::new()
-            .expect("tokio runtime")
-            .block_on(f)
-    }
 }
 
 fn load_history(cache: &Arc<OpenAIMessageSessionCacheRef>, sender_id: &str) -> Vec<OpenAIMessage> {

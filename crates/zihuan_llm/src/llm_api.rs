@@ -15,7 +15,6 @@ pub struct LLMAPI {
 }
 
 impl LLMAPI {
-    /// Create a new LLMAPI instance
     pub fn new(
         model_name: String,
         api_endpoint: String,

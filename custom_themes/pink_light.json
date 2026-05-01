@@ -1,6 +1,8 @@
 {
   "name": "pink_light",
   "display_name": "粉色亮色",
+  "class_name": "pink",
+  "schema": "light",
   "mode": "light",
   "css": {
     "--bg": "#fdf8ff",

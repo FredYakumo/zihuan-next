@@ -1,6 +1,8 @@
 {
   "name": "pink_dark",
   "display_name": "粉色暗色",
+  "class_name": "pink",
+  "schema": "dark",
   "mode": "dark",
   "css": {
     "--bg": "#111114",
