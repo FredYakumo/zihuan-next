@@ -17,7 +17,11 @@ lazy_static! {
 }
 
 #[derive(Parser, Debug)]
-#[command(author, version, about = "Zihuan Next — node-graph workflow engine (web UI)")]
+#[command(
+    author,
+    version,
+    about = "Zihuan Next — node-graph workflow engine (web UI)"
+)]
 struct Args {
     #[arg(long, default_value = "127.0.0.1", env = "ZIHUAN_HOST")]
     host: String,
@@ -49,10 +53,16 @@ async fn main() {
         "::" => format!("[::1]:{}", args.port),
         _ => listen_addr.clone(),
     };
+    let canonical_local_origin = match args.host.as_str() {
+        "127.0.0.1" => Some(format!("http://127.0.0.1:{}", args.port)),
+        "::1" => Some(format!("http://[::1]:{}", args.port)),
+        "localhost" => Some(format!("http://localhost:{}", args.port)),
+        _ => None,
+    };
     info!("Starting web server on http://{}", listen_addr);
     info!("Open your browser at  http://{}", display_addr);
 
-    let router = api::build_router(Arc::clone(&state), broadcast);
+    let router = api::build_router(Arc::clone(&state), broadcast, canonical_local_origin);
     let service = salvo::Service::new(router);
     let acceptor = salvo::conn::TcpListener::new(&listen_addr)
         .try_bind()

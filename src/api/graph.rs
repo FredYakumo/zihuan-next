@@ -5,7 +5,9 @@ use salvo::writing::Json;
 use serde::Deserialize;
 use uuid::Uuid;
 use zihuan_node::function_graph::embedded_function_config_from_value;
-use zihuan_node::graph_io::{GraphMetadata, GraphPosition, GraphSize, NodeDefinition, NodeGraphDefinition, PortBinding};
+use zihuan_node::graph_io::{
+    GraphMetadata, GraphPosition, GraphSize, NodeDefinition, NodeGraphDefinition, PortBinding,
+};
 
 use super::state::{AppState, GraphSession, GraphTabInfo};
 
@@ -156,8 +158,14 @@ pub async fn add_node(req: &mut Request, res: &mut Response, depot: &mut Depot) 
         output_ports,
         dynamic_input_ports: dyn_in,
         dynamic_output_ports: dyn_out,
-        position: Some(GraphPosition { x: body.x, y: body.y }),
-        size: Some(GraphSize { width: 200.0, height: 120.0 }),
+        position: Some(GraphPosition {
+            x: body.x,
+            y: body.y,
+        }),
+        size: Some(GraphSize {
+            width: 200.0,
+            height: 120.0,
+        }),
         inline_values: Default::default(),
         port_bindings: Default::default(),
         has_error: false,
@@ -245,14 +253,20 @@ pub async fn update_node(req: &mut Request, res: &mut Response, depot: &mut Depo
         if let Some(sz) = &mut node.size {
             sz.width = w;
         } else {
-            node.size = Some(GraphSize { width: w, height: 100.0 });
+            node.size = Some(GraphSize {
+                width: w,
+                height: 100.0,
+            });
         }
     }
     if let Some(h) = body.height {
         if let Some(sz) = &mut node.size {
             sz.height = h;
         } else {
-            node.size = Some(GraphSize { width: 200.0, height: h });
+            node.size = Some(GraphSize {
+                width: 200.0,
+                height: h,
+            });
         }
     }
     if let Some(iv) = body.inline_values {
@@ -265,9 +279,10 @@ pub async fn update_node(req: &mut Request, res: &mut Response, depot: &mut Depo
 
                     match (existing_cfg, incoming_cfg) {
                         (Some(existing_cfg), Some(mut incoming_cfg)) => {
-                            let existing_has_content = existing_cfg.subgraph.nodes.iter().any(|n| {
-                                n.id != "__function_inputs__" && n.id != "__function_outputs__"
-                            });
+                            let existing_has_content =
+                                existing_cfg.subgraph.nodes.iter().any(|n| {
+                                    n.id != "__function_inputs__" && n.id != "__function_outputs__"
+                                });
                             let incoming_is_empty = incoming_cfg.subgraph.nodes.is_empty();
 
                             if existing_has_content && incoming_is_empty {
@@ -369,9 +384,10 @@ pub async fn add_edge(req: &mut Request, res: &mut Response, depot: &mut Depot) 
     };
 
     // Prevent duplicate edges to same target port
-    session.graph.edges.retain(|e| {
-        !(e.to_node_id == body.target_node && e.to_port == body.target_port)
-    });
+    session
+        .graph
+        .edges
+        .retain(|e| !(e.to_node_id == body.target_node && e.to_port == body.target_port));
 
     session
         .graph

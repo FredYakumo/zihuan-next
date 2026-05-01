@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
+use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use zihuan_core::error::{Error, Result};
 use zihuan_llm_types::OpenAIMessage;
-use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 
 pub struct ToolResultNode {
     id: String,
@@ -75,10 +75,10 @@ impl Node for ToolResultNode {
 #[cfg(test)]
 mod tests {
     use super::ToolResultNode;
-    use zihuan_llm_types::MessageRole;
     use crate::{DataValue, Node};
     use serde_json::json;
     use std::collections::HashMap;
+    use zihuan_llm_types::MessageRole;
 
     fn tool_call_json(tool_call_id: &str) -> DataValue {
         DataValue::Json(json!({ "tool_call_id": tool_call_id, "arguments": {} }))

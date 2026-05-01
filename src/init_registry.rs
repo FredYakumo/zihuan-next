@@ -15,10 +15,10 @@ pub fn init_node_registry() -> Result<()> {
         SendFriendMessageBatchesNode, SendFriendMessageNode, SendGroupMessageBatchesNode,
         SendGroupMessageNode, SendQQMessageBatchesNode,
     };
+    use zihuan_llm::agent::qq_message_agent_node::QqMessageAgentNode;
     use zihuan_llm::brain_node::BrainNode;
     use zihuan_llm::llm_api_node::LLMApiNode;
     use zihuan_llm::llm_infer_node::LLMInferNode;
-    use zihuan_llm::agent::qq_message_agent_node::QqMessageAgentNode;
     use zihuan_llm::rag::tavily_provider_node::TavilyProviderNode;
     use zihuan_llm::rag::tavily_search_node::TavilySearchNode;
 

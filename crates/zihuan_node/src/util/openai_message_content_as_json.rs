@@ -1,8 +1,8 @@
-use zihuan_core::error::{Error, Result};
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::{info, warn};
 use serde_json::Value;
 use std::collections::HashMap;
+use zihuan_core::error::{Error, Result};
 
 /// Parses the `content` string of an `OpenAIMessage` into JSON.
 pub struct OpenAIMessageContentAsJsonNode {
@@ -32,7 +32,9 @@ impl Node for OpenAIMessageContentAsJsonNode {
         Some("将 OpenAIMessage 的 content 字符串解析为 JSON")
     }
 
-    node_input![port! { name = "message", ty = OpenAIMessage, desc = "输入的 OpenAIMessage，其 content 必须是合法 JSON 字符串" },];
+    node_input![
+        port! { name = "message", ty = OpenAIMessage, desc = "输入的 OpenAIMessage，其 content 必须是合法 JSON 字符串" },
+    ];
 
     node_output![
         port! { name = "json", ty = Json, desc = "由 OpenAIMessage.content 解析得到的 JSON" },
@@ -50,9 +52,10 @@ impl Node for OpenAIMessageContentAsJsonNode {
             _ => return Err(Error::InvalidNodeInput("message is required".to_string())),
         };
 
-        let content = message.content.as_ref().ok_or_else(|| {
-            Error::ValidationError("OpenAIMessage content is None".to_string())
-        })?;
+        let content = message
+            .content
+            .as_ref()
+            .ok_or_else(|| Error::ValidationError("OpenAIMessage content is None".to_string()))?;
 
         let outputs = match serde_json::from_str(content) {
             Ok(json) => {
@@ -138,9 +141,9 @@ impl Node for OpenAIMessageContentAsJsonNode {
 #[cfg(test)]
 mod tests {
     use super::OpenAIMessageContentAsJsonNode;
-    use zihuan_llm_types::{MessageRole, OpenAIMessage};
     use crate::{DataValue, Node};
     use std::collections::HashMap;
+    use zihuan_llm_types::{MessageRole, OpenAIMessage};
 
     fn message(content: Option<&str>) -> OpenAIMessage {
         OpenAIMessage {
@@ -197,7 +200,10 @@ mod tests {
             Some(DataValue::String(raw)) => assert_eq!(raw, "not-json"),
             other => panic!("expected failed output with raw string, got: {:?}", other),
         }
-        assert!(!outputs.contains_key("json"), "json port should not be set on failure");
+        assert!(
+            !outputs.contains_key("json"),
+            "json port should not be set on failure"
+        );
     }
 
     #[test]
@@ -239,7 +245,11 @@ mod tests {
         match outputs.get("json") {
             Some(DataValue::Json(value)) => {
                 let arr = value.as_array().expect("recovered result must be an array");
-                assert_eq!(arr.len(), 2, "should have 2 inner batches after bracket-closing");
+                assert_eq!(
+                    arr.len(),
+                    2,
+                    "should have 2 inner batches after bracket-closing"
+                );
             }
             other => panic!("expected json output, got: {:?}", other),
         }

@@ -1,8 +1,8 @@
-use zihuan_core::error::{Error, Result};
-use zihuan_bot_types::natural_language_reply::json_value_to_qq_message_vec as parse_json_to_qq_messages;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::{info, warn};
 use std::collections::HashMap;
+use zihuan_bot_types::natural_language_reply::json_value_to_qq_message_vec as parse_json_to_qq_messages;
+use zihuan_core::error::{Error, Result};
 
 pub struct JsonToQQMessageVecNode {
     id: String,
@@ -78,10 +78,8 @@ impl Node for JsonToQQMessageVecNode {
                     "[JsonToQQMessageVecNode] Conversion failed: {} — routing to failed output",
                     e
                 );
-                let outputs = HashMap::from([(
-                    "failed".to_string(),
-                    DataValue::Json(json_value.clone()),
-                )]);
+                let outputs =
+                    HashMap::from([("failed".to_string(), DataValue::Json(json_value.clone()))]);
                 self.validate_outputs(&outputs)?;
                 Ok(outputs)
             }
@@ -92,9 +90,9 @@ impl Node for JsonToQQMessageVecNode {
 #[cfg(test)]
 mod tests {
     use super::JsonToQQMessageVecNode;
-    use zihuan_bot_types::message::Message;
     use crate::{DataType, DataValue, Node};
     use std::collections::HashMap;
+    use zihuan_bot_types::message::Message;
 
     #[test]
     fn outputs_vec_of_qq_message_batches() {
@@ -144,10 +142,13 @@ mod tests {
         match outputs.get("messages") {
             Some(DataValue::Vec(_, batches)) => match &batches[0] {
                 DataValue::Vec(_, items) => {
-                    assert!(matches!(items.as_slice(), [
-                        DataValue::QQMessage(Message::At(_)),
-                        DataValue::QQMessage(Message::PlainText(_))
-                    ]));
+                    assert!(matches!(
+                        items.as_slice(),
+                        [
+                            DataValue::QQMessage(Message::At(_)),
+                            DataValue::QQMessage(Message::PlainText(_))
+                        ]
+                    ));
                 }
                 other => panic!("unexpected first batch output: {:?}", other),
             },

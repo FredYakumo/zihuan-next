@@ -1,9 +1,9 @@
-use zihuan_core::error::Result;
 use crate::data_value::LoopControl;
 use crate::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use zihuan_core::error::Result;
 
 pub struct LoopNode {
     id: String,

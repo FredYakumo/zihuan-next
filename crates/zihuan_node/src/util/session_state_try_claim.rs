@@ -1,4 +1,3 @@
-use zihuan_core::error::Result;
 use crate::data_value::{SessionClaim, SessionStateRef, SESSION_CLAIM_CONTEXT};
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::info;
@@ -6,6 +5,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::task::block_in_place;
+use zihuan_core::error::Result;
 
 pub struct SessionStateTryClaimNode {
     id: String,
@@ -141,7 +141,6 @@ impl Node for SessionStateTryClaimNode {
 #[cfg(test)]
 mod tests {
     use super::SessionStateTryClaimNode;
-    use zihuan_core::error::Result;
     use crate::data_value::{SessionClaimContext, SESSION_CLAIM_CONTEXT};
     use crate::util::{
         SessionStateClearNode, SessionStateGetNode, SessionStateProviderNode,
@@ -151,6 +150,7 @@ mod tests {
     use serde_json::json;
     use std::collections::HashMap;
     use std::sync::Arc;
+    use zihuan_core::error::Result;
 
     fn provider_ref() -> Result<DataValue> {
         let mut provider = SessionStateProviderNode::new("session_provider", "Session Provider");

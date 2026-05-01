@@ -74,6 +74,8 @@ pub enum Message {
     At(AtTargetMessage),
     #[serde(rename = "reply", alias = "replay")]
     Reply(ReplyMessage),
+    #[serde(rename = "forward")]
+    Forward(ForwardMessage),
 }
 
 impl fmt::Display for Message {
@@ -82,6 +84,7 @@ impl fmt::Display for Message {
             Message::PlainText(msg) => write!(f, "{}", msg),
             Message::At(msg) => write!(f, "{}", msg),
             Message::Reply(msg) => write!(f, "{}", msg),
+            Message::Forward(msg) => write!(f, "{}", msg),
         }
     }
 }
@@ -92,6 +95,7 @@ impl MessageBase for Message {
             Message::PlainText(_) => "text",
             Message::At(_) => "at",
             Message::Reply(_) => "reply",
+            Message::Forward(_) => "forward",
         }
     }
 }
@@ -167,6 +171,54 @@ impl MessageBase for ReplyMessage {
     }
 }
 
+/// Forward / merged-forward message.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ForwardMessage {
+    #[serde(
+        default,
+        deserialize_with = "deserialize_option_string_from_string_or_number"
+    )]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub content: Vec<ForwardNodeMessage>,
+}
+
+impl fmt::Display for ForwardMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(id) = self.id.as_deref() {
+            write!(f, "[Forward of message ID {}]", id)
+        } else {
+            write!(f, "[Forward with {} node(s)]", self.content.len())
+        }
+    }
+}
+
+impl MessageBase for ForwardMessage {
+    fn get_type(&self) -> &'static str {
+        "forward"
+    }
+}
+
+/// One node in a merged-forward payload.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ForwardNodeMessage {
+    #[serde(
+        default,
+        alias = "uin",
+        deserialize_with = "deserialize_option_string_from_string_or_number"
+    )]
+    pub user_id: Option<String>,
+    #[serde(default, alias = "name")]
+    pub nickname: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_option_string_from_string_or_number"
+    )]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub content: Vec<Message>,
+}
+
 /// Abstracts and encapsulates the raw messages received by the bot, refining them into structured fields convenient for LLM processing:
 /// - `content`: The merged readable body (text/@/reply, etc.), used directly for feeding to the model
 /// - `ref_content`: Contextual summary from reference/reply chains (e.g., replied content), used to supplement context
@@ -233,12 +285,20 @@ impl MessageProp {
 
         let content = {
             let s = content_parts.join(" ");
-            if s.trim().is_empty() { None } else { Some(s) }
+            if s.trim().is_empty() {
+                None
+            } else {
+                Some(s)
+            }
         };
 
         let ref_content = {
             let s = ref_parts.join("\n");
-            if s.trim().is_empty() { None } else { Some(s) }
+            if s.trim().is_empty() {
+                None
+            } else {
+                Some(s)
+            }
         };
 
         let is_at_me = match bot_id {

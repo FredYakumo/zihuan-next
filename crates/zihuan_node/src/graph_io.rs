@@ -4,7 +4,6 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::Path;
 
-use zihuan_core::error::Result;
 use crate::brain_tool_spec::{
     brain_shared_inputs_from_value, brain_tool_input_signature, BrainToolDefinition,
     BRAIN_SHARED_INPUTS_PORT, BRAIN_TOOLS_CONFIG_PORT,
@@ -15,6 +14,7 @@ use crate::function_graph::{
     sync_function_node_definition, sync_function_subgraph_signature,
 };
 use crate::{DataValue, Node, NodeGraph, Port};
+use zihuan_core::error::Result;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -1346,28 +1346,49 @@ mod tests {
             }
             impl StubBrainNode {
                 fn new(id: String, name: String) -> Self {
-                    Self { id, name, extra_inputs: Vec::new() }
+                    Self {
+                        id,
+                        name,
+                        extra_inputs: Vec::new(),
+                    }
                 }
             }
             impl crate::Node for StubBrainNode {
-                fn id(&self) -> &str { &self.id }
-                fn name(&self) -> &str { &self.name }
-                fn node_type(&self) -> crate::NodeType { crate::NodeType::Simple }
+                fn id(&self) -> &str {
+                    &self.id
+                }
+                fn name(&self) -> &str {
+                    &self.name
+                }
+                fn node_type(&self) -> crate::NodeType {
+                    crate::NodeType::Simple
+                }
                 fn input_ports(&self) -> Vec<crate::Port> {
                     let mut ports = vec![
                         crate::Port::new("llm_model", crate::DataType::LLModel),
-                        crate::Port::new("messages", crate::DataType::Vec(Box::new(crate::DataType::OpenAIMessage))),
+                        crate::Port::new(
+                            "messages",
+                            crate::DataType::Vec(Box::new(crate::DataType::OpenAIMessage)),
+                        ),
                         crate::Port::new(BRAIN_TOOLS_CONFIG_PORT, crate::DataType::Json).optional(),
-                        crate::Port::new(BRAIN_SHARED_INPUTS_PORT, crate::DataType::Json).optional(),
+                        crate::Port::new(BRAIN_SHARED_INPUTS_PORT, crate::DataType::Json)
+                            .optional(),
                     ];
                     ports.extend(self.extra_inputs.clone());
                     ports
                 }
                 fn output_ports(&self) -> Vec<crate::Port> {
-                    vec![crate::Port::new("output", crate::DataType::Vec(Box::new(crate::DataType::OpenAIMessage)))]
+                    vec![crate::Port::new(
+                        "output",
+                        crate::DataType::Vec(Box::new(crate::DataType::OpenAIMessage)),
+                    )]
                 }
-                fn has_dynamic_input_ports(&self) -> bool { true }
-                fn has_dynamic_output_ports(&self) -> bool { false }
+                fn has_dynamic_input_ports(&self) -> bool {
+                    true
+                }
+                fn has_dynamic_output_ports(&self) -> bool {
+                    false
+                }
                 fn apply_inline_config(
                     &mut self,
                     inline_values: &std::collections::HashMap<String, crate::DataValue>,
@@ -1387,14 +1408,23 @@ mod tests {
                     }
                     Ok(())
                 }
-                fn execute(&mut self, _inputs: std::collections::HashMap<String, crate::DataValue>) -> zihuan_core::error::Result<std::collections::HashMap<String, crate::DataValue>> {
+                fn execute(
+                    &mut self,
+                    _inputs: std::collections::HashMap<String, crate::DataValue>,
+                ) -> zihuan_core::error::Result<std::collections::HashMap<String, crate::DataValue>>
+                {
                     Ok(std::collections::HashMap::new())
                 }
             }
-            crate::registry::NODE_REGISTRY.register(
-                "brain", "Brain (test stub)", "AI", "Stub node for in-crate tests",
-                std::sync::Arc::new(|id, name| Box::new(StubBrainNode::new(id, name))),
-            ).ok();
+            crate::registry::NODE_REGISTRY
+                .register(
+                    "brain",
+                    "Brain (test stub)",
+                    "AI",
+                    "Stub node for in-crate tests",
+                    std::sync::Arc::new(|id, name| Box::new(StubBrainNode::new(id, name))),
+                )
+                .ok();
         });
     }
 
@@ -1826,4 +1856,3 @@ mod tests {
         )));
     }
 }
-

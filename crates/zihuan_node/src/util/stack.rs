@@ -1,6 +1,6 @@
-use zihuan_core::error::Result;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
+use zihuan_core::error::Result;
 
 pub struct StackNode {
     id: String,
@@ -39,10 +39,9 @@ impl Node for StackNode {
     ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
-        let element = inputs
-            .get("element")
-            .cloned()
-            .ok_or_else(|| zihuan_core::error::Error::ValidationError("元素输入不存在".to_string()))?;
+        let element = inputs.get("element").cloned().ok_or_else(|| {
+            zihuan_core::error::Error::ValidationError("元素输入不存在".to_string())
+        })?;
 
         let element_type = element.data_type();
         let mut outputs = HashMap::new();

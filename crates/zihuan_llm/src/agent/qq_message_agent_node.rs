@@ -5,14 +5,16 @@ use log::{info, warn};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::agent::brain::{Brain, BrainTool, BrainStopReason};
+use crate::agent::brain::{Brain, BrainStopReason, BrainTool};
 use zihuan_bot_adapter::adapter::shared_from_handle;
 use zihuan_bot_adapter::message_helpers::{
     get_bot_id, send_friend_batches, send_friend_progress_notification, send_friend_text,
-    send_group_batches, send_group_progress_notification, send_group_text,
+    send_group_batches, send_group_progress_notification,
 };
 use zihuan_bot_adapter::models::event_model::MessageType;
-use zihuan_bot_adapter::models::message::{AtTargetMessage, Message, MessageProp, PlainTextMessage};
+use zihuan_bot_adapter::models::message::{
+    AtTargetMessage, ForwardMessage, ForwardNodeMessage, Message, MessageProp, PlainTextMessage,
+};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::runtime::block_async;
 use zihuan_llm_types::tooling::FunctionTool;
@@ -24,48 +26,95 @@ use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
 
 const LOG_PREFIX: &str = "[QqMessageAgentNode]";
 const BUSY_REPLY: &str = "我还在思考中，你别急";
-const FALLBACK_REPLY: &str = "对不起,我无法回复这条消息";
 const MAX_REPLY_CHARS: usize = 250;
+const MAX_FORWARD_NODE_CHARS: usize = 800;
 
 /// System prompt template (shared, private variant).
-fn build_private_system_prompt(bot_name: &str, time: &str, sender_id: &str) -> String {
+fn build_private_system_prompt(
+    bot_name: &str,
+    bot_id: &str,
+    time: &str,
+    sender_id: &str,
+    sender_name: &str,
+) -> String {
     format!(
-        "你的角色是{bot_name}。现在时间是{time}，你的QQ好友{sender_id}向你发送了一条消息。\n\
+        "你的名字叫`{bot_name}`(QQ号为`{bot_id}`)。现在时间是{time}，你的QQ好友`{sender_name}`(QQ号`{sender_id}`)向你发送了一条消息。\n\
+         重要规则：当前 user 消息永远代表发送者，不代表你自己；如果消息里出现 @你，那只是对你的呼叫，不是在引入新的说话人；当用户问“你是谁/你叫什么”时，请以你自己的身份回答。\n\
+         如果你要在群里或消息结构里 @ 某个人，不要把 @xxx 直接写进最终自然语言；必须调用 `reply_at` 或 `reply_combine_text` 来发送真正的 @ 消息段。\n\
          你可以选择调用相关工具来获取信息，并通过 reply_* 工具把特定 QQ 消息加入待发送列表。\n\
          最终请直接输出你想发送给对方的自然语言，不要输出 JSON、代码块或额外格式说明。\n\
          如果你调用了 reply_* 工具，这些工具加入的消息会先发送，你最后一条 assistant 自然语言回复会作为最后一条普通文本消息追加发送。\n\
          如果你决定这轮不回复，请调用 no_reply；调用后本轮不会发送任何 QQ 消息，但你仍然需要正常完成这一轮 assistant 收尾。\n\
          `reply_plain_text` 用于追加纯文本消息；`reply_at` 用于追加单独的 @ 消息；`reply_combine_text` 用于在同一次发送里组合 at 和文本片段。\n\
+         当你需要输出较长总结、长文档解读、分点说明或超过一两屏的正文时，优先调用 `reply_forward_text`；它会把长正文整理成转发消息，适合给对方点开查看详情。\n\
+         使用 `reply_forward_text` 后，最终 assistant 自然语言回复应保持简短，只用一两句话提醒对方查看你刚发的转发消息，不要把长正文再重复一遍。\n\
          对于超过250字的最终自然语言回复，系统会自动拆分发送。\n\
          当你决定调用工具时，请在工具 content 里用一句话说明你即将做什么（例如\"我将搜索关于xxx的信息\"）。"
     )
 }
 
 /// System prompt template (group variant).
-fn build_group_system_prompt(bot_name: &str, time: &str, sender_id: &str) -> String {
+fn build_group_system_prompt(
+    bot_name: &str,
+    bot_id: &str,
+    time: &str,
+    sender_id: &str,
+    sender_name: &str,
+    group_name: &str,
+    group_id: &str,
+) -> String {
     format!(
-        "你的角色是{bot_name}。现在时间是{time}，你的QQ群友{sender_id}向你发送了一条消息。\n\
+        "你的名字叫`{bot_name}`(QQ号为`{bot_id}`)。现在时间是{time}，你正在`{group_name}`群(群号:{group_id})里聊天，群友`{sender_name}`(QQ号`{sender_id}`)向你发送了一条消息。\n\
+         重要规则：当前 user 消息永远代表发送者，不代表你自己；如果消息里出现 @你，那只是对你的呼叫，不是在引入新的说话人；当用户问“你是谁/你叫什么”时，请以你自己的身份回答。\n\
+         如果你要 @ 某个人，不要把 @xxx 直接写进最终自然语言；必须调用 `reply_at` 或 `reply_combine_text` 来发送真正的 @ 消息段。当前这位发送者的 QQ 号是`{sender_id}`。\n\
          你可以选择调用相关工具来获取信息，并通过 reply_* 工具把特定 QQ 消息加入待发送列表。\n\
          最终请直接输出你想发送到群里的自然语言，不要输出 JSON、代码块或额外格式说明。\n\
          如果你调用了 reply_* 工具，这些工具加入的消息会先发送，你最后一条 assistant 自然语言回复会作为最后一条普通文本消息追加发送。\n\
          如果你决定这轮不回复，请调用 no_reply；调用后本轮不会发送任何 QQ 消息，但你仍然需要正常完成这一轮 assistant 收尾。\n\
          `reply_plain_text` 用于追加纯文本消息；`reply_at` 用于追加单独的 @ 消息；`reply_combine_text` 用于在同一次发送里组合 at 和文本片段。\n\
+         当你需要输出较长总结、长文档解读、分点说明或超过一两屏的正文时，优先调用 `reply_forward_text`；它会把长正文整理成转发消息，适合给群友点开查看详情。\n\
+         使用 `reply_forward_text` 后，最终 assistant 自然语言回复应保持简短，通常先 @ 发送者，再用一两句话提醒对方查看你刚发的转发消息，不要把长正文再重复一遍。\n\
          对于超过250字的最终自然语言回复，系统会自动拆分发送。\n\
          当你决定调用工具时，请在工具 content 里用一句话说明你即将做什么（例如\"我将搜索关于xxx的信息\"）。"
     )
 }
 
-fn load_history(cache: &Arc<OpenAIMessageSessionCacheRef>, sender_id: &str) -> Vec<OpenAIMessage> {
-    block_async(cache.get_messages(sender_id)).unwrap_or_default()
+fn conversation_history_key(
+    bot_id: &str,
+    sender_id: &str,
+    is_group: bool,
+    group_id: Option<i64>,
+) -> String {
+    if is_group {
+        format!(
+            "group:{bot_id}:{}:{sender_id}",
+            group_id.unwrap_or_default()
+        )
+    } else {
+        format!("private:{bot_id}:{sender_id}")
+    }
+}
+
+fn load_history(
+    cache: &Arc<OpenAIMessageSessionCacheRef>,
+    history_key: &str,
+    legacy_key: &str,
+) -> Vec<OpenAIMessage> {
+    let history = block_async(cache.get_messages(history_key)).unwrap_or_default();
+    if history.is_empty() && history_key != legacy_key {
+        block_async(cache.get_messages(legacy_key)).unwrap_or_default()
+    } else {
+        history
+    }
 }
 
 fn save_history(
     cache: &Arc<OpenAIMessageSessionCacheRef>,
-    sender_id: &str,
+    history_key: &str,
     messages: Vec<OpenAIMessage>,
 ) {
-    if let Err(e) = block_async(cache.set_messages(sender_id, messages)) {
-        warn!("{LOG_PREFIX} Failed to save history for {sender_id}: {e}");
+    if let Err(e) = block_async(cache.set_messages(history_key, messages)) {
+        warn!("{LOG_PREFIX} Failed to save history for {history_key}: {e}");
     }
 }
 
@@ -96,40 +145,198 @@ fn release_session(session: &Arc<SessionStateRef>, sender_id: &str, claim_token:
     info!("{LOG_PREFIX} Released session for {sender_id}: released={released}");
 }
 
-/// Extract the plain-text user message from `MessageEvent.message_list`.
-fn extract_user_text(msg_list: &[Message], bot_id: &str) -> String {
-    let msg_prop = MessageProp::from_messages(msg_list, Some(bot_id));
-    let mut text = msg_prop.content.unwrap_or_default();
-    if let Some(ref_cnt) = msg_prop.ref_content.as_deref() {
-        if !ref_cnt.is_empty() {
-            if !text.is_empty() {
-                text.push_str("\n\n");
+fn sender_display_name(sender_name: &str, sender_card: &str) -> String {
+    let card = sender_card.trim();
+    if card.is_empty() {
+        sender_name.to_string()
+    } else {
+        card.to_string()
+    }
+}
+
+fn strip_leading_bot_mention(text: &str, bot_id: &str, bot_name: &str) -> String {
+    let mut remaining = text.trim_start();
+    loop {
+        let mut stripped = false;
+
+        for pattern in [bot_id, bot_name] {
+            let pattern = pattern.trim();
+            if pattern.is_empty() {
+                continue;
             }
-            text.push_str("[引用内容]\n");
-            text.push_str(ref_cnt);
+
+            for prefix in [format!("@{pattern}"), format!("＠{pattern}")] {
+                if let Some(rest) = remaining.strip_prefix(&prefix) {
+                    remaining = rest.trim_start_matches(|c: char| {
+                        matches!(
+                            c,
+                            ' ' | '\t'
+                                | '\n'
+                                | '\r'
+                                | ','
+                                | '，'
+                                | '。'
+                                | ':'
+                                | '：'
+                                | '!'
+                                | '！'
+                                | '?'
+                                | '？'
+                        )
+                    });
+                    stripped = true;
+                    break;
+                }
+            }
+
+            if stripped {
+                break;
+            }
+        }
+
+        if !stripped {
+            break;
         }
     }
-    if text.trim().is_empty() {
-        text = "(无文本内容，可能是仅@或回复)".to_string();
+
+    remaining.trim().to_string()
+}
+
+fn strip_leading_textual_mention<'a>(text: &'a str, patterns: &[String]) -> Option<&'a str> {
+    let mut remaining = text.trim_start();
+
+    for pattern in patterns {
+        let pattern = pattern.trim();
+        if pattern.is_empty() {
+            continue;
+        }
+
+        for prefix in [format!("@{pattern}"), format!("＠{pattern}")] {
+            if let Some(rest) = remaining.strip_prefix(&prefix) {
+                remaining = rest.trim_start_matches(|c: char| {
+                    matches!(
+                        c,
+                        ' ' | '\t'
+                            | '\n'
+                            | '\r'
+                            | ','
+                            | '，'
+                            | '。'
+                            | ':'
+                            | '：'
+                            | '!'
+                            | '！'
+                            | '?'
+                            | '？'
+                    )
+                });
+                return Some(remaining);
+            }
+        }
     }
-    text
+
+    None
+}
+
+fn sender_mention_patterns(
+    sender_id: &str,
+    sender_nickname: &str,
+    sender_card: &str,
+) -> Vec<String> {
+    let mut patterns = Vec::new();
+
+    for candidate in [sender_id, sender_nickname, sender_card] {
+        let candidate = candidate.trim();
+        if candidate.is_empty() {
+            continue;
+        }
+        if !patterns.iter().any(|item| item == candidate) {
+            patterns.push(candidate.to_string());
+        }
+    }
+
+    patterns
+}
+
+fn assistant_reply_batches(
+    content: &str,
+    is_group: bool,
+    sender_id: &str,
+    sender_nickname: &str,
+    sender_card: &str,
+) -> Vec<Vec<Message>> {
+    if !is_group {
+        return plain_text_batches(content);
+    }
+
+    let patterns = sender_mention_patterns(sender_id, sender_nickname, sender_card);
+    if let Some(rest) = strip_leading_textual_mention(content, &patterns) {
+        let trimmed_rest = rest.trim();
+        let mut batch = vec![Message::At(AtTargetMessage {
+            target: Some(sender_id.to_string()),
+        })];
+
+        if !trimmed_rest.is_empty() {
+            batch.push(Message::PlainText(PlainTextMessage {
+                text: format!(" {trimmed_rest}"),
+            }));
+        }
+
+        return vec![batch];
+    }
+
+    plain_text_batches(content)
+}
+
+/// Build a structured user message for the LLM so sender identity and bot mentions stay explicit.
+fn build_user_message(
+    event: &zihuan_bot_adapter::models::MessageEvent,
+    bot_id: &str,
+    bot_name: &str,
+) -> String {
+    let msg_prop =
+        MessageProp::from_messages_with_bot_name(&event.message_list, Some(bot_id), Some(bot_name));
+    let sender_name = sender_display_name(&event.sender.nickname, &event.sender.card);
+    let mut lines = Vec::new();
+    lines.push("[消息元信息]".to_string());
+    lines.push(format!("message_type: {}", event.message_type.as_str()));
+    lines.push(format!("sender_id: {}", event.sender.user_id));
+    lines.push(format!("sender_name: {}", sender_name));
+    lines.push(format!("bot_id: {}", bot_id));
+    lines.push(format!("bot_name: {}", bot_name));
+    lines.push(format!("is_at_bot: {}", msg_prop.is_at_me));
+
+    if !msg_prop.at_target_list.is_empty() {
+        lines.push(format!(
+            "at_targets: {}",
+            msg_prop.at_target_list.join(", ")
+        ));
+    }
+
+    lines.push(String::new());
+    lines.push("[用户消息]".to_string());
+    let mut user_text = msg_prop.content.unwrap_or_default();
+    if msg_prop.is_at_me {
+        user_text = strip_leading_bot_mention(&user_text, bot_id, bot_name);
+    }
+    if user_text.trim().is_empty() {
+        user_text = "(无文本内容，可能是仅@或回复)".to_string();
+    }
+    lines.push(user_text);
+
+    if let Some(ref_cnt) = msg_prop.ref_content.as_deref() {
+        if !ref_cnt.is_empty() {
+            lines.push(String::new());
+            lines.push("[引用内容]".to_string());
+            lines.push(ref_cnt.to_string());
+        }
+    }
+
+    lines.join("\n")
 }
 
 fn split_text_for_qq(content: &str) -> Vec<String> {
-    let trimmed = content.trim();
-    if trimmed.is_empty() {
-        return Vec::new();
-    }
-
-    let chars: Vec<char> = trimmed.chars().collect();
-    let mut start = 0;
-    let mut chunks = Vec::new();
-    while start < chars.len() {
-        let end = (start + MAX_REPLY_CHARS).min(chars.len());
-        chunks.push(chars[start..end].iter().collect());
-        start = end;
-    }
-    chunks
+    split_text_by_semantic_boundaries(content, MAX_REPLY_CHARS)
 }
 
 fn plain_text_batches(content: &str) -> Vec<Vec<Message>> {
@@ -137,6 +344,192 @@ fn plain_text_batches(content: &str) -> Vec<Vec<Message>> {
         .into_iter()
         .map(|chunk| vec![Message::PlainText(PlainTextMessage { text: chunk })])
         .collect()
+}
+
+fn split_text_by_semantic_boundaries(content: &str, max_chars: usize) -> Vec<String> {
+    let normalized = content.replace("\r\n", "\n");
+    let trimmed = normalized.trim();
+    if trimmed.is_empty() || max_chars == 0 {
+        return Vec::new();
+    }
+
+    let mut chunks = Vec::new();
+    let paragraphs: Vec<&str> = trimmed
+        .split("\n\n")
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect();
+
+    let mut current = String::new();
+    for paragraph in paragraphs {
+        for unit in split_overlong_text_unit(paragraph, max_chars) {
+            append_chunk_with_separator(&mut chunks, &mut current, &unit, "\n\n", max_chars);
+        }
+    }
+
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+
+    if chunks.is_empty() {
+        split_text_hard(trimmed, max_chars)
+    } else {
+        chunks
+    }
+}
+
+fn split_overlong_text_unit(content: &str, max_chars: usize) -> Vec<String> {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    if trimmed.chars().count() <= max_chars {
+        return vec![trimmed.to_string()];
+    }
+
+    let lines: Vec<&str> = trimmed
+        .split('\n')
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    if lines.len() > 1 {
+        return pack_text_units(lines, "\n", max_chars);
+    }
+
+    let sentences = split_into_sentence_like_units(trimmed);
+    if sentences.len() > 1 {
+        return pack_text_units(
+            sentences.iter().map(String::as_str).collect(),
+            "",
+            max_chars,
+        );
+    }
+
+    split_text_hard(trimmed, max_chars)
+}
+
+fn split_into_sentence_like_units(content: &str) -> Vec<String> {
+    let mut units = Vec::new();
+    let mut current = String::new();
+
+    for ch in content.chars() {
+        current.push(ch);
+        if is_sentence_boundary(ch) {
+            let segment = current.trim();
+            if !segment.is_empty() {
+                units.push(segment.to_string());
+            }
+            current.clear();
+        }
+    }
+
+    let tail = current.trim();
+    if !tail.is_empty() {
+        units.push(tail.to_string());
+    }
+
+    units
+}
+
+fn is_sentence_boundary(ch: char) -> bool {
+    matches!(
+        ch,
+        '。' | '！' | '？' | '；' | '!' | '?' | ';' | '\u{2026}' | '.'
+    )
+}
+
+fn pack_text_units(units: Vec<&str>, separator: &str, max_chars: usize) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut current = String::new();
+
+    for unit in units {
+        for sub_unit in split_overlong_sub_unit(unit, max_chars) {
+            append_chunk_with_separator(&mut chunks, &mut current, &sub_unit, separator, max_chars);
+        }
+    }
+
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+
+    chunks
+}
+
+fn split_overlong_sub_unit(content: &str, max_chars: usize) -> Vec<String> {
+    if content.chars().count() <= max_chars {
+        return vec![content.to_string()];
+    }
+    split_text_hard(content, max_chars)
+}
+
+fn append_chunk_with_separator(
+    chunks: &mut Vec<String>,
+    current: &mut String,
+    unit: &str,
+    separator: &str,
+    max_chars: usize,
+) {
+    if unit.is_empty() {
+        return;
+    }
+
+    let candidate = if current.is_empty() {
+        unit.to_string()
+    } else {
+        format!("{current}{separator}{unit}")
+    };
+
+    if candidate.chars().count() <= max_chars {
+        *current = candidate;
+    } else {
+        if !current.is_empty() {
+            chunks.push(std::mem::take(current));
+        }
+        *current = unit.to_string();
+    }
+}
+
+fn split_text_hard(content: &str, max_chars: usize) -> Vec<String> {
+    let chars: Vec<char> = content.chars().collect();
+    let mut start = 0;
+    let mut chunks = Vec::new();
+
+    while start < chars.len() {
+        let end = (start + max_chars).min(chars.len());
+        let chunk: String = chars[start..end].iter().collect();
+        let trimmed = chunk.trim();
+        if !trimmed.is_empty() {
+            chunks.push(trimmed.to_string());
+        }
+        start = end;
+    }
+
+    chunks
+}
+
+fn build_forward_message(content: &str, bot_id: &str, bot_name: &str) -> Result<ForwardMessage> {
+    let nodes: Vec<ForwardNodeMessage> =
+        split_text_by_semantic_boundaries(content, MAX_FORWARD_NODE_CHARS)
+            .into_iter()
+            .filter(|chunk| !chunk.trim().is_empty())
+            .map(|chunk| ForwardNodeMessage {
+                user_id: Some(bot_id.to_string()),
+                nickname: Some(bot_name.to_string()),
+                id: None,
+                content: vec![Message::PlainText(PlainTextMessage { text: chunk })],
+            })
+            .collect();
+
+    if nodes.is_empty() {
+        return Err(Error::ValidationError(
+            "forward content must not be blank".to_string(),
+        ));
+    }
+
+    Ok(ForwardMessage {
+        id: None,
+        content: nodes,
+    })
 }
 
 type SharedPendingReplyState = Arc<Mutex<PendingReplyState>>;
@@ -172,7 +565,9 @@ impl PendingReplyState {
     }
 }
 
-fn lock_pending_state(state: &SharedPendingReplyState) -> Result<std::sync::MutexGuard<'_, PendingReplyState>> {
+fn lock_pending_state(
+    state: &SharedPendingReplyState,
+) -> Result<std::sync::MutexGuard<'_, PendingReplyState>> {
     state
         .lock()
         .map_err(|_| Error::ValidationError("pending reply state lock poisoned".to_string()))
@@ -276,7 +671,8 @@ impl BrainTool for TavilyBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "web_search",
-            description: "使用 Tavily 搜索引擎在互联网上搜索信息，返回相关网页的标题、链接和内容摘要",
+            description:
+                "使用 Tavily 搜索引擎在互联网上搜索信息，返回相关网页的标题、链接和内容摘要",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -442,7 +838,8 @@ impl BrainTool for ReplyCombineTextBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "reply_combine_text",
-            description: "向本轮待发送的 QQ 消息列表追加一次组合发送的消息段，可混合 at 和 plain_text。",
+            description:
+                "向本轮待发送的 QQ 消息列表追加一次组合发送的消息段，可混合 at 和 plain_text。",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -476,6 +873,56 @@ impl BrainTool for ReplyCombineTextBrainTool {
             Ok(serde_json::json!({
                 "ok": true,
                 "appended_batches": 1
+            }))
+        })();
+
+        match result {
+            Ok(value) => value.to_string(),
+            Err(e) => serde_json::json!({"ok": false, "error": e.to_string()}).to_string(),
+        }
+    }
+}
+
+struct ReplyForwardTextBrainTool {
+    pending_reply_state: SharedPendingReplyState,
+    bot_id: String,
+    bot_name: String,
+}
+
+impl BrainTool for ReplyForwardTextBrainTool {
+    fn spec(&self) -> Arc<dyn FunctionTool> {
+        Arc::new(StaticFunctionToolSpec {
+            name: "reply_forward_text",
+            description:
+                "向本轮待发送的 QQ 消息列表追加一条转发消息。适合长总结、长文档解读、分点说明等较长正文，系统会按自然语义拆成多个转发节点。",
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "content": { "type": "string", "description": "要放进转发消息中的长文本正文" }
+                },
+                "required": ["content"]
+            }),
+        })
+    }
+
+    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
+        let result = (|| -> Result<Value> {
+            let content = arguments
+                .get("content")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| Error::ValidationError("content is required".to_string()))?;
+            let forward = build_forward_message(content, &self.bot_id, &self.bot_name)?;
+            let node_count = forward.content.len();
+
+            {
+                let mut state = lock_pending_state(&self.pending_reply_state)?;
+                state.append_batch(vec![Message::Forward(forward)])?;
+            }
+
+            Ok(serde_json::json!({
+                "ok": true,
+                "appended_batches": 1,
+                "forward_nodes": node_count
             }))
         })();
 
@@ -574,11 +1021,6 @@ impl QqMessageAgentNode {
                 Some(bot_name),
             );
             if !msg_prop.is_at_me {
-                info!(
-                    "{LOG_PREFIX} Skipping group message without @ mention: sender={} target={}",
-                    sender_id,
-                    target_id
-                );
                 return Ok(());
             }
         }
@@ -593,16 +1035,7 @@ impl QqMessageAgentNode {
         }
 
         let result = self.handle_claimed(
-            event,
-            adapter,
-            time,
-            bot_name,
-            cache,
-            session,
-            llm,
-            tavily,
-            &sender_id,
-            &target_id,
+            event, adapter, time, bot_name, cache, session, llm, tavily, &sender_id, &target_id,
             is_group,
         );
 
@@ -626,16 +1059,33 @@ impl QqMessageAgentNode {
         is_group: bool,
     ) -> Result<()> {
         let bot_id = get_bot_id(adapter);
-        let user_text = extract_user_text(&event.message_list, &bot_id);
-        let user_msg = OpenAIMessage::user(user_text);
+        let user_msg = OpenAIMessage::user(build_user_message(event, &bot_id, bot_name));
 
-        let mut history = load_history(cache, sender_id);
+        let history_key = conversation_history_key(&bot_id, sender_id, is_group, event.group_id);
+        let legacy_history_key = sender_id.to_string();
+        let mut history = load_history(cache, &history_key, &legacy_history_key);
 
         let system_prompt = if is_group {
-            build_group_system_prompt(bot_name, time, sender_id)
+            let group_name = event.group_name.as_deref().unwrap_or("未知");
+            build_group_system_prompt(
+                bot_name,
+                &bot_id,
+                time,
+                sender_id,
+                &sender_display_name(&event.sender.nickname, &event.sender.card),
+                group_name,
+                target_id,
+            )
         } else {
-            build_private_system_prompt(bot_name, time, sender_id)
+            build_private_system_prompt(
+                bot_name,
+                &bot_id,
+                time,
+                sender_id,
+                &sender_display_name(&event.sender.nickname, &event.sender.card),
+            )
         };
+        info!("{LOG_PREFIX} build System prompt:\n=======\n{system_prompt}\n=======\n");
         let system_msg = OpenAIMessage::system(system_prompt);
 
         let mut conversation: Vec<OpenAIMessage> = Vec::with_capacity(history.len() + 2);
@@ -667,6 +1117,11 @@ impl QqMessageAgentNode {
                 pending_reply_state: pending_reply_state.clone(),
                 is_group,
             })
+            .with_tool(ReplyForwardTextBrainTool {
+                pending_reply_state: pending_reply_state.clone(),
+                bot_id: bot_id.clone(),
+                bot_name: bot_name.to_string(),
+            })
             .with_tool(NoReplyBrainTool {
                 pending_reply_state: pending_reply_state.clone(),
             })
@@ -680,6 +1135,10 @@ impl QqMessageAgentNode {
             .map(str::trim)
             .filter(|content| !content.is_empty())
             .map(ToOwned::to_owned);
+        let final_assistant_text = match stop_reason {
+            BrainStopReason::TransportError(_) => None,
+            _ => final_assistant_text,
+        };
 
         let pending_snapshot = {
             let state = lock_pending_state(&pending_reply_state)?;
@@ -690,8 +1149,36 @@ impl QqMessageAgentNode {
             info!("{LOG_PREFIX} no_reply was selected, skipping QQ send");
         } else {
             let mut batches = pending_snapshot.batches;
+            let has_forward_reply = batches
+                .iter()
+                .flatten()
+                .any(|message| matches!(message, Message::Forward(_)));
             if let Some(content) = final_assistant_text {
-                batches.extend(plain_text_batches(&content));
+                let sender_card = event.sender.card.as_str();
+                batches.extend(assistant_reply_batches(
+                    &content,
+                    is_group,
+                    sender_id,
+                    &event.sender.nickname,
+                    sender_card,
+                ));
+            } else if has_forward_reply {
+                let reminder = if is_group {
+                    format!(
+                        "@{} 我刚刚发了转发消息，你可以点开看看详细内容。",
+                        sender_id
+                    )
+                } else {
+                    "我刚刚发了转发消息，你可以点开看看详细内容。".to_string()
+                };
+                let sender_card = event.sender.card.as_str();
+                batches.extend(assistant_reply_batches(
+                    &reminder,
+                    is_group,
+                    sender_id,
+                    &event.sender.nickname,
+                    sender_card,
+                ));
             }
 
             if !batches.is_empty() {
@@ -704,19 +1191,9 @@ impl QqMessageAgentNode {
                 match stop_reason {
                     BrainStopReason::TransportError(ref err) => {
                         warn!("{LOG_PREFIX} Brain transport error without reply: {err}");
-                        if is_group {
-                            send_group_text(adapter, target_id, FALLBACK_REPLY);
-                        } else {
-                            send_friend_text(adapter, target_id, FALLBACK_REPLY);
-                        }
                     }
                     BrainStopReason::MaxIterationsReached => {
                         warn!("{LOG_PREFIX} Brain exceeded max tool iterations without reply");
-                        if is_group {
-                            send_group_text(adapter, target_id, FALLBACK_REPLY);
-                        } else {
-                            send_friend_text(adapter, target_id, FALLBACK_REPLY);
-                        }
                     }
                     BrainStopReason::Done => {
                         warn!("{LOG_PREFIX} Brain finished without any sendable reply content");
@@ -727,7 +1204,7 @@ impl QqMessageAgentNode {
 
         history.push(user_msg);
         history.extend(brain_output);
-        save_history(cache, sender_id, history);
+        save_history(cache, &history_key, history);
 
         Ok(())
     }
@@ -759,7 +1236,10 @@ impl Node for QqMessageAgentNode {
 
     node_output![];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let event = match inputs.get("message_event") {
@@ -800,48 +1280,5 @@ impl Node for QqMessageAgentNode {
         )?;
 
         Ok(HashMap::new())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{build_combine_text_batch, plain_text_batches, PendingReplyState};
-    use zihuan_bot_adapter::models::message::Message;
-    use zihuan_core::error::Result;
-
-    #[test]
-    fn plain_text_batches_split_long_text() {
-        let input = "a".repeat(251);
-        let batches = plain_text_batches(&input);
-        assert_eq!(batches.len(), 2);
-    }
-
-    #[test]
-    fn combine_text_batch_keeps_segment_order() -> Result<()> {
-        let batch = build_combine_text_batch(
-            &serde_json::json!({
-                "content_list": [
-                    { "message_type": "at", "target": "42" },
-                    { "message_type": "plain_text", "content": "你好" }
-                ]
-            }),
-            true,
-        )?;
-
-        assert!(matches!(
-            batch.as_slice(),
-            [Message::At(_), Message::PlainText(text)] if text.text == "你好"
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn no_reply_clears_pending_batches() -> Result<()> {
-        let mut state = PendingReplyState::default();
-        state.append_batches(plain_text_batches("你好"))?;
-        state.mark_no_reply();
-        assert!(state.suppress_send);
-        assert!(state.batches.is_empty());
-        Ok(())
     }
 }

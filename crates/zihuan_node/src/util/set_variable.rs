@@ -1,6 +1,6 @@
-use zihuan_core::error::{Error, Result};
 use crate::{DataType, DataValue, Node, Port, RuntimeVariableStore};
 use std::collections::HashMap;
+use zihuan_core::error::{Error, Result};
 
 pub const SET_VARIABLE_NAME_PORT: &str = "variable_name";
 pub const SET_VARIABLE_TYPE_PORT: &str = "variable_type";
@@ -127,7 +127,9 @@ impl Node for SetVariableNode {
 
 #[cfg(test)]
 mod tests {
-    use super::{SetVariableNode, SET_VARIABLE_NAME_PORT, SET_VARIABLE_TYPE_PORT, SET_VARIABLE_VALUE_PORT};
+    use super::{
+        SetVariableNode, SET_VARIABLE_NAME_PORT, SET_VARIABLE_TYPE_PORT, SET_VARIABLE_VALUE_PORT,
+    };
     use crate::{DataType, DataValue, Node, RuntimeVariableStore};
     use std::collections::HashMap;
     use std::sync::{Arc, RwLock};
@@ -157,6 +159,9 @@ mod tests {
 
         let value = store.read().unwrap().get("answer").cloned();
         assert!(matches!(value, Some(DataValue::String(value)) if value == "42"));
-        assert_eq!(node.input_ports().last().map(|port| port.data_type.clone()), Some(DataType::String));
+        assert_eq!(
+            node.input_ports().last().map(|port| port.data_type.clone()),
+            Some(DataType::String)
+        );
     }
 }

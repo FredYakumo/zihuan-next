@@ -1,6 +1,6 @@
-use zihuan_core::error::Result;
 use crate::{node_output, DataType, DataValue, Node, Port};
 use std::collections::{HashMap, HashSet};
+use zihuan_core::error::Result;
 
 fn extract_variables(template: &str) -> Vec<String> {
     let mut vars = vec![];

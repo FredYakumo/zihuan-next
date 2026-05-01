@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use zihuan_core::error::{Error, Result};
 use crate::function_graph::{
     embedded_function_config_from_value, function_inputs_ports, function_outputs_ports,
     hidden_function_config_port, sync_function_subgraph_signature, EmbeddedFunctionConfig,
@@ -11,6 +10,7 @@ use crate::function_graph::{
 use crate::graph_io::refresh_port_types;
 use crate::registry::{build_node_graph_from_definition, json_to_data_value, NODE_REGISTRY};
 use crate::{DataValue, Node, Port};
+use zihuan_core::error::{Error, Result};
 
 pub struct FunctionNode {
     id: String,
@@ -240,14 +240,14 @@ mod tests {
     use std::sync::{Arc, Once};
 
     use super::FunctionNode;
-    use zihuan_llm_types::llm_base::LLMBase;
-    use zihuan_llm_types::{InferenceParam, OpenAIMessage};
     use crate::function_graph::{
         default_embedded_function_config, sync_function_subgraph_signature, FunctionPortDef,
         FUNCTION_CONFIG_PORT, FUNCTION_INPUTS_NODE_ID, FUNCTION_OUTPUTS_NODE_ID,
     };
     use crate::graph_io::EdgeDefinition;
     use crate::{DataType, DataValue, Node};
+    use zihuan_llm_types::llm_base::LLMBase;
+    use zihuan_llm_types::{InferenceParam, OpenAIMessage};
 
     fn ensure_registry_initialized() {
         static INIT: Once = Once::new();

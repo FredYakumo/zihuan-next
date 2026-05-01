@@ -1,9 +1,9 @@
-use zihuan_core::error::{Error, Result};
 use crate::message_mysql_history_common::{
     format_history_messages, group_history_query, message_history_record_from_row, run_mysql_query,
 };
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
+use zihuan_core::error::{Error, Result};
 
 pub struct MessageMySQLGetGroupHistoryNode {
     id: String,

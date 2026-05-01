@@ -1,6 +1,6 @@
-use zihuan_core::error::Result;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
+use zihuan_core::error::Result;
 
 pub struct ConcatVecNode {
     id: String,
@@ -34,7 +34,9 @@ impl Node for ConcatVecNode {
         port! { name = "vec2", ty = Vec(Any), desc = "后半部分列表，将拼接到 vec1 后面" },
     ];
 
-    node_output![port! { name = "vec", ty = Vec(Any), desc = "拼接后的列表，元素类型与输入列表一致" },];
+    node_output![
+        port! { name = "vec", ty = Vec(Any), desc = "拼接后的列表，元素类型与输入列表一致" },
+    ];
 
     fn execute(
         &mut self,
@@ -85,9 +87,9 @@ impl Node for ConcatVecNode {
 #[cfg(test)]
 mod tests {
     use super::ConcatVecNode;
-    use zihuan_core::error::Result;
     use crate::{DataType, DataValue, Node};
     use std::collections::HashMap;
+    use zihuan_core::error::Result;
 
     #[test]
     fn concatenates_vectors_with_same_inner_type() -> Result<()> {

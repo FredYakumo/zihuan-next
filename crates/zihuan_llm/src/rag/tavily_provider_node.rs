@@ -1,9 +1,9 @@
-use zihuan_core::error::{Error, Result};
-use zihuan_node::data_value::TavilyRef;
-use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
+use zihuan_core::error::{Error, Result};
+use zihuan_node::data_value::TavilyRef;
+use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
 
 pub struct TavilyProviderNode {
     id: String,
@@ -37,9 +37,7 @@ impl Node for TavilyProviderNode {
         port! { name = "timeout_secs", ty = Integer, desc = "可选：请求超时秒数，默认 30 秒", optional },
     ];
 
-    node_output![
-        port! { name = "tavily_ref", ty = DataType::TavilyRef, desc = "Tavily 搜索引用" },
-    ];
+    node_output![port! { name = "tavily_ref", ty = DataType::TavilyRef, desc = "Tavily 搜索引用" },];
 
     fn execute(
         &mut self,
@@ -72,15 +70,9 @@ impl Node for TavilyProviderNode {
             }
         };
 
-        let tavily_ref = Arc::new(TavilyRef::new(
-            api_token,
-            Duration::from_secs(timeout_secs),
-        ));
+        let tavily_ref = Arc::new(TavilyRef::new(api_token, Duration::from_secs(timeout_secs)));
 
-        let outputs = HashMap::from([(
-            "tavily_ref".to_string(),
-            DataValue::TavilyRef(tavily_ref),
-        )]);
+        let outputs = HashMap::from([("tavily_ref".to_string(), DataValue::TavilyRef(tavily_ref))]);
 
         self.validate_outputs(&outputs)?;
         Ok(outputs)
@@ -90,10 +82,10 @@ impl Node for TavilyProviderNode {
 #[cfg(test)]
 mod tests {
     use super::TavilyProviderNode;
-    use zihuan_core::error::Result;
-    use zihuan_node::{DataValue, Node};
     use std::collections::HashMap;
     use std::time::Duration;
+    use zihuan_core::error::Result;
+    use zihuan_node::{DataValue, Node};
 
     #[test]
     fn outputs_tavily_ref_with_default_timeout() -> Result<()> {

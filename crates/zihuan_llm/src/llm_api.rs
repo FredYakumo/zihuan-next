@@ -1,10 +1,10 @@
-use zihuan_llm_types::tooling::{ToolCalls, ToolCallsFuncSpec};
-use zihuan_llm_types::{role_to_str, str_to_role, InferenceParam, MessageRole, OpenAIMessage};
-use zihuan_llm_types::llm_base::LLMBase;
 use log::{debug, error};
 use reqwest::blocking::Client;
 use serde_json::{json, Value};
 use std::time::Duration;
+use zihuan_llm_types::llm_base::LLMBase;
+use zihuan_llm_types::tooling::{ToolCalls, ToolCallsFuncSpec};
+use zihuan_llm_types::{role_to_str, str_to_role, InferenceParam, MessageRole, OpenAIMessage};
 
 #[derive(Debug, Clone)]
 pub struct LLMAPI {
@@ -40,6 +40,7 @@ impl LLMAPI {
         OpenAIMessage {
             role: MessageRole::System,
             content: Some(content.to_string()),
+            reasoning_content: None,
             tool_calls: Vec::new(),
             tool_call_id: None,
         }
@@ -50,6 +51,7 @@ impl LLMAPI {
         OpenAIMessage {
             role: MessageRole::User,
             content: Some(content.to_string()),
+            reasoning_content: None,
             tool_calls: Vec::new(),
             tool_call_id: None,
         }
@@ -102,6 +104,10 @@ impl LLMAPI {
             .get("content")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+        let reasoning_content = msg
+            .get("reasoning_content")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
         let tool_calls = msg
             .get("tool_calls")
             .map(|tc| Self::parse_tool_calls(tc))
@@ -114,6 +120,7 @@ impl LLMAPI {
         Some(OpenAIMessage {
             role,
             content,
+            reasoning_content,
             tool_calls,
             tool_call_id,
         })
@@ -142,6 +149,10 @@ impl LLMBase for LLMAPI {
                     "role": role_str,
                     "content": msg.content,
                 });
+
+                if let Some(reasoning_content) = &msg.reasoning_content {
+                    msg_obj["reasoning_content"] = json!(reasoning_content);
+                }
 
                 // Add tool_calls if present
                 if !msg.tool_calls.is_empty() {
@@ -220,6 +231,7 @@ impl LLMBase for LLMAPI {
                                     content: Some(
                                         "Error: Invalid response structure from API".to_string(),
                                     ),
+                                    reasoning_content: None,
                                     tool_calls: Vec::new(),
                                     tool_call_id: None,
                                 }
@@ -233,6 +245,7 @@ impl LLMBase for LLMAPI {
                             OpenAIMessage {
                                 role: MessageRole::Assistant,
                                 content: Some(format!("Error: Failed to parse response - {}", e)),
+                                reasoning_content: None,
                                 tool_calls: Vec::new(),
                                 tool_call_id: None,
                             }
@@ -246,6 +259,7 @@ impl LLMBase for LLMAPI {
                     OpenAIMessage {
                         role: MessageRole::Assistant,
                         content: Some(format!("Error: API request failed with status {}", status)),
+                        reasoning_content: None,
                         tool_calls: Vec::new(),
                         tool_call_id: None,
                     }
@@ -256,6 +270,7 @@ impl LLMBase for LLMAPI {
                 OpenAIMessage {
                     role: MessageRole::Assistant,
                     content: Some(format!("Error: Failed to send request - {}", e)),
+                    reasoning_content: None,
                     tool_calls: Vec::new(),
                     tool_call_id: None,
                 }
@@ -267,13 +282,13 @@ impl LLMBase for LLMAPI {
 #[cfg(test)]
 mod tests {
     use super::LLMAPI;
-    use std::time::Duration;
     use log::{debug, error, warn};
-    use zihuan_llm_types::llm_base::LLMBase;
-    use zihuan_llm_types::{InferenceParam, MessageRole, OpenAIMessage};
     use serde_yaml::Value;
     use std::fs;
     use std::path::Path;
+    use std::time::Duration;
+    use zihuan_llm_types::llm_base::LLMBase;
+    use zihuan_llm_types::{InferenceParam, MessageRole, OpenAIMessage};
 
     /// Load LLM configuration from config.yaml file
     fn load_llm_config(config_path: &str) -> Option<(String, String, String)> {

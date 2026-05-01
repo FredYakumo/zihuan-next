@@ -118,9 +118,11 @@ pub fn scope_task<T>(task_id: impl Into<String>, f: impl FnOnce() -> T) -> T {
 }
 
 fn current_task_id() -> Option<String> {
-    CURRENT_TASK_ID.with(|cell| cell.borrow().clone()).or_else(|| {
-        zihuan_node::data_value::EXECUTION_TASK_ID
-            .try_with(Clone::clone)
-            .ok()
-    })
+    CURRENT_TASK_ID
+        .with(|cell| cell.borrow().clone())
+        .or_else(|| {
+            zihuan_node::data_value::EXECUTION_TASK_ID
+                .try_with(Clone::clone)
+                .ok()
+        })
 }

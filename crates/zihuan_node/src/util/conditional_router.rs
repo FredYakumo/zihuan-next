@@ -1,6 +1,6 @@
-use zihuan_core::error::Result;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
+use zihuan_core::error::Result;
 
 /// Routes one of two inputs to the output based on a boolean condition.
 pub struct ConditionalRouterNode {
@@ -87,10 +87,10 @@ impl Node for ConditionalRouterNode {
 #[cfg(test)]
 mod tests {
     use super::ConditionalRouterNode;
-    use zihuan_core::error::Result;
-    use zihuan_llm_types::{MessageRole, OpenAIMessage};
     use crate::{DataType, DataValue, Node};
     use std::collections::HashMap;
+    use zihuan_core::error::Result;
+    use zihuan_llm_types::{MessageRole, OpenAIMessage};
 
     fn assistant_message(content: &str) -> OpenAIMessage {
         OpenAIMessage {

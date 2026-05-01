@@ -1,7 +1,7 @@
 use log::{error, info};
 use serde_json::{json, Value};
-use std::future::Future;
 use std::backtrace::Backtrace;
+use std::future::Future;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex, RwLock,
@@ -44,9 +44,9 @@ impl ExecutionResult {
     }
 }
 
-use zihuan_core::error::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use zihuan_core::error::Result;
 
 type OutputPool = HashMap<String, HashMap<String, DataValue>>;
 type InputSourceMap = HashMap<String, HashMap<String, (String, String)>>;
@@ -756,9 +756,9 @@ impl NodeGraph {
                     node_id
                 ))
             })?;
-                let outputs = node
-                    .execute(inputs)
-                    .map_err(|e| Self::wrap_node_error(node_id, node.as_ref(), "execute", e))?;
+            let outputs = node
+                .execute(inputs)
+                .map_err(|e| Self::wrap_node_error(node_id, node.as_ref(), "execute", e))?;
             for (key, value) in outputs {
                 if base_data_pool.contains_key(&key) {
                     return Err(zihuan_core::error::Error::ValidationError(format!(
@@ -1085,8 +1085,7 @@ impl NodeGraph {
                     .map(|m| m.contains_key(&port.name))
                     .unwrap_or(false);
                 if !has_edge && !has_inline_value {
-                    let msg = if let Some(hp_name) =
-                        self.port_binding_hp_name(node_id, &port.name)
+                    let msg = if let Some(hp_name) = self.port_binding_hp_name(node_id, &port.name)
                     {
                         format!(
                             "Hyperparameter '{}' is bound to required port '{}' on node '{}' but has no value set",
@@ -1153,9 +1152,8 @@ impl NodeGraph {
                             node_id
                         ))
                     })?;
-                    node.execute(inputs).map_err(|e| {
-                        Self::wrap_node_error(&node_id, node.as_ref(), "execute", e)
-                    })?
+                    node.execute(inputs)
+                        .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?
                 };
 
                 if let Some(cb) = &self.execution_callback {
@@ -1227,9 +1225,8 @@ impl NodeGraph {
                         node_id
                     ))
                 })?;
-                node.execute(inputs).map_err(|e| {
-                    Self::wrap_node_error(node_id, node.as_ref(), "execute", e)
-                })?
+                node.execute(inputs)
+                    .map_err(|e| Self::wrap_node_error(node_id, node.as_ref(), "execute", e))?
             };
             self.insert_outputs(&mut base_data_pool, node_id, outputs);
         }
@@ -1333,8 +1330,7 @@ impl NodeGraph {
                     .map(|m| m.contains_key(&port.name))
                     .unwrap_or(false);
                 if !has_edge && !has_inline_value {
-                    let msg = if let Some(hp_name) =
-                        self.port_binding_hp_name(node_id, &port.name)
+                    let msg = if let Some(hp_name) = self.port_binding_hp_name(node_id, &port.name)
                     {
                         format!(
                             "Hyperparameter '{}' is bound to required port '{}' on node '{}' but has no value set",
@@ -1401,9 +1397,8 @@ impl NodeGraph {
                             node_id
                         ))
                     })?;
-                    node.execute(inputs.clone()).map_err(|e| {
-                        Self::wrap_node_error(&node_id, node.as_ref(), "execute", e)
-                    })?
+                    node.execute(inputs.clone())
+                        .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?
                 };
 
                 if let Some(cb) = &self.execution_callback {
@@ -1843,9 +1838,8 @@ impl NodeGraph {
                         ordered_id
                     ))
                 })?;
-                node.execute(inputs).map_err(|e| {
-                    Self::wrap_node_error(ordered_id, node.as_ref(), "execute", e)
-                })?
+                node.execute(inputs)
+                    .map_err(|e| Self::wrap_node_error(ordered_id, node.as_ref(), "execute", e))?
             };
 
             if let Some(cb) = &self.execution_callback {
@@ -2244,7 +2238,6 @@ mod tests {
     use super::{
         DataType, DataValue, EdgeDefinition, ExecutionResult, Node, NodeGraph, NodeType, Port,
     };
-    use zihuan_core::error::Result;
     use crate::graph_io::{NodeDefinition, NodeGraphDefinition};
     use crate::registry::NODE_REGISTRY;
     use crate::util::{BooleanBranchNode, SwitchNode};
@@ -2252,6 +2245,7 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
+    use zihuan_core::error::Result;
 
     struct StaticOutputNode {
         id: String,
@@ -2996,11 +2990,10 @@ mod tests {
         };
 
         let mut graph = crate::registry::build_node_graph_from_definition(&definition)?;
-        graph
-            .runtime_variable_store()
-            .write()
-            .unwrap()
-            .insert("greeting".to_string(), DataValue::String("changed".to_string()));
+        graph.runtime_variable_store().write().unwrap().insert(
+            "greeting".to_string(),
+            DataValue::String("changed".to_string()),
+        );
 
         let _ = graph.execute_and_capture_results();
 

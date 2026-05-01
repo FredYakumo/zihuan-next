@@ -1,9 +1,7 @@
-use crate::send_qq_message_batches::{
-    execute_fixed_target_batch_send, TARGET_TYPE_FRIEND,
-};
+use crate::send_qq_message_batches::{execute_fixed_target_batch_send, TARGET_TYPE_FRIEND};
+use std::collections::HashMap;
 use zihuan_core::error::Result;
 use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
-use std::collections::HashMap;
 
 const LOG_PREFIX: &str = "[SendFriendMessageBatchesNode]";
 
@@ -62,10 +60,10 @@ impl Node for SendFriendMessageBatchesNode {
 mod tests {
     use super::SendFriendMessageBatchesNode;
     use crate::send_qq_message_batches::create_mock_bot_adapter;
-    use zihuan_core::error::Result;
-    use zihuan_node::{DataType, DataValue, Node};
     use serde_json::json;
     use std::collections::HashMap;
+    use zihuan_core::error::Result;
+    use zihuan_node::{DataType, DataValue, Node};
 
     #[test]
     fn execute_outputs_message_ids() -> Result<()> {

@@ -1,6 +1,6 @@
-use zihuan_core::error::Result;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
+use zihuan_core::error::Result;
 
 pub struct PushBackVecNode {
     id: String,
@@ -83,9 +83,9 @@ impl Node for PushBackVecNode {
 #[cfg(test)]
 mod tests {
     use super::PushBackVecNode;
-    use zihuan_core::error::Result;
     use crate::{DataType, DataValue, Node};
     use std::collections::HashMap;
+    use zihuan_core::error::Result;
 
     #[test]
     fn appends_element_to_vector_with_same_inner_type() -> Result<()> {

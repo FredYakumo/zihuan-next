@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use zihuan_node::graph_io::NodeGraphDefinition;
 
-
 pub struct AppState {
     pub sessions: RwLock<HashMap<String, GraphSession>>,
     pub tasks: Mutex<TaskManager>,
@@ -24,7 +23,6 @@ impl AppState {
         }
     }
 }
-
 
 pub struct GraphSession {
     pub id: String,
@@ -228,7 +226,10 @@ impl TaskManager {
     fn task_log_path(task_id: &str) -> std::io::Result<String> {
         let dir = Path::new("logs").join("tasks");
         fs::create_dir_all(&dir)?;
-        Ok(dir.join(format!("{task_id}.jsonl")).to_string_lossy().to_string())
+        Ok(dir
+            .join(format!("{task_id}.jsonl"))
+            .to_string_lossy()
+            .to_string())
     }
 }
 
@@ -245,8 +246,8 @@ pub struct GraphTabInfo {
 #[cfg(test)]
 mod tests {
     use super::{TaskLogEntry, TaskManager, TaskStatus};
-    use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
 
     #[test]
     fn clears_only_non_running_tasks() {

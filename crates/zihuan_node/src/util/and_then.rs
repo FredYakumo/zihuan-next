@@ -1,6 +1,6 @@
-use zihuan_core::error::Result;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
+use zihuan_core::error::Result;
 
 /// Waits for two inputs, then forwards the second one unchanged.
 pub struct AndThenNode {
@@ -43,10 +43,9 @@ impl Node for AndThenNode {
     ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
-        let output = inputs
-            .get("second")
-            .cloned()
-            .ok_or_else(|| zihuan_core::error::Error::ValidationError("second 输入不存在".to_string()))?;
+        let output = inputs.get("second").cloned().ok_or_else(|| {
+            zihuan_core::error::Error::ValidationError("second 输入不存在".to_string())
+        })?;
 
         let outputs = HashMap::from([("output".to_string(), output)]);
         self.validate_outputs(&outputs)?;
@@ -57,10 +56,10 @@ impl Node for AndThenNode {
 #[cfg(test)]
 mod tests {
     use super::AndThenNode;
-    use zihuan_core::error::Result;
-    use zihuan_llm_types::OpenAIMessage;
     use crate::{DataType, DataValue, Node};
     use std::collections::HashMap;
+    use zihuan_core::error::Result;
+    use zihuan_llm_types::OpenAIMessage;
 
     #[test]
     fn forwards_second_input_as_output() -> Result<()> {

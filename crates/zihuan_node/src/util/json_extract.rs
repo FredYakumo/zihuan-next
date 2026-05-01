@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use zihuan_core::error::{Error, Result};
 use crate::{node_input, DataType, DataValue, Node, Port};
+use zihuan_core::error::{Error, Result};
 
 const FIELDS_CONFIG_PORT: &str = "fields_config";
 

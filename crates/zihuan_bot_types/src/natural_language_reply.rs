@@ -1,6 +1,6 @@
 use crate::message::{AtTargetMessage, Message, PlainTextMessage};
-use zihuan_core::error::{Error, Result};
 use serde::Deserialize;
+use zihuan_core::error::{Error, Result};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "message_type", rename_all = "snake_case")]
@@ -270,8 +270,9 @@ mod tests {
 
     #[test]
     fn rejects_empty_combine_text_content_list() {
-        let err = json_to_qq_message_vec(r#"[[{"message_type":"combine_text","content_list":[]}]]"#)
-            .expect_err("empty content_list should be rejected");
+        let err =
+            json_to_qq_message_vec(r#"[[{"message_type":"combine_text","content_list":[]}]]"#)
+                .expect_err("empty content_list should be rejected");
         assert!(err.to_string().contains("content_list"));
     }
 

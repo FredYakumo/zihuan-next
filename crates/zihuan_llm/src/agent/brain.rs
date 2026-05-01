@@ -121,7 +121,10 @@ pub struct Brain {
 
 impl Brain {
     pub fn new(llm: Arc<dyn LLMBase>) -> Self {
-        Self { llm, tools: Vec::new() }
+        Self {
+            llm,
+            tools: Vec::new(),
+        }
     }
 
     /// Register a tool, consuming and returning `self` for builder-style chaining.
@@ -140,15 +143,18 @@ impl Brain {
     /// `new_messages` contains all assistant and tool-result messages produced
     /// during this run. The caller's original `messages` are not included.
     pub fn run(&self, messages: Vec<OpenAIMessage>) -> (Vec<OpenAIMessage>, BrainStopReason) {
-        let tool_specs: Vec<Arc<dyn FunctionTool>> =
-            self.tools.iter().map(|t| t.spec()).collect();
+        let tool_specs: Vec<Arc<dyn FunctionTool>> = self.tools.iter().map(|t| t.spec()).collect();
         let mut conversation = sanitize_messages_for_inference(messages);
         let mut output: Vec<OpenAIMessage> = Vec::new();
 
         for iteration in 0..MAX_TOOL_ITERATIONS {
             let response = self.llm.inference(&InferenceParam {
                 messages: &conversation,
-                tools: if tool_specs.is_empty() { None } else { Some(&tool_specs) },
+                tools: if tool_specs.is_empty() {
+                    None
+                } else {
+                    Some(&tool_specs)
+                },
             });
 
             // Transport errors → abort immediately.
@@ -187,7 +193,10 @@ impl Brain {
                             .to_string()
                     });
 
-                info!("[Brain] tool {}({}) result: {result}", tc.function.name, tc.id);
+                info!(
+                    "[Brain] tool {}({}) result: {result}",
+                    tc.function.name, tc.id
+                );
                 let msg = OpenAIMessage::tool_result(tc.id.clone(), result);
                 conversation.push(msg.clone());
                 output.push(msg);

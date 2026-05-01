@@ -4,12 +4,12 @@ use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 
 use super::event;
 use super::models::{MessageEvent, MessageType, Profile, RawMessageEvent};
-use zihuan_core::error::Result;
-use zihuan_core::url_utils::extract_host;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::{mpsc, oneshot};
+use zihuan_core::error::Result;
+use zihuan_core::url_utils::extract_host;
 
 /// Trait for brain agents that handle event processing
 pub trait BrainAgentTrait: Send + Sync {

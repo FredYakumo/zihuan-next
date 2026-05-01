@@ -85,8 +85,12 @@ pub fn send_group_progress_notification(
         return;
     }
     let messages = vec![
-        Message::At(AtTargetMessage { target: Some(mention_target_id.to_string()) }),
-        Message::PlainText(PlainTextMessage { text: content.to_string() }),
+        Message::At(AtTargetMessage {
+            target: Some(mention_target_id.to_string()),
+        }),
+        Message::PlainText(PlainTextMessage {
+            text: content.to_string(),
+        }),
     ];
     let params = serde_json::json!({
         "group_id": group_id,

@@ -1,11 +1,11 @@
-use zihuan_bot_types::message::Message;
-use zihuan_core::error::Result;
 use crate::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 use chrono::Local;
 use log::{debug, error, info, warn};
 use sqlx;
 use std::collections::HashMap;
 use tokio::task::block_in_place;
+use zihuan_bot_types::message::Message;
+use zihuan_core::error::Result;
 
 /// Returns true for errors that indicate a dropped/stale connection rather than
 /// a SQL-level problem (constraint violation, syntax error, etc.).
@@ -81,7 +81,9 @@ impl Node for QQMessageListMySQLPersistenceNode {
                 _ => None,
             })
             .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("qq_message_list is required".to_string())
+                zihuan_core::error::Error::InvalidNodeInput(
+                    "qq_message_list is required".to_string(),
+                )
             })?;
 
         // ── Extract metadata strings ─────────────────────────────────────────
@@ -116,19 +118,15 @@ impl Node for QQMessageListMySQLPersistenceNode {
             })?;
 
         // Optional: treat absent or empty string as NULL.
-        let group_id: Option<String> = inputs
-            .get("group_id")
-            .and_then(|v| match v {
-                DataValue::String(s) if !s.is_empty() => Some(s.clone()),
-                _ => None,
-            });
+        let group_id: Option<String> = inputs.get("group_id").and_then(|v| match v {
+            DataValue::String(s) if !s.is_empty() => Some(s.clone()),
+            _ => None,
+        });
 
-        let group_name: Option<String> = inputs
-            .get("group_name")
-            .and_then(|v| match v {
-                DataValue::String(s) if !s.is_empty() => Some(s.clone()),
-                _ => None,
-            });
+        let group_name: Option<String> = inputs.get("group_name").and_then(|v| match v {
+            DataValue::String(s) if !s.is_empty() => Some(s.clone()),
+            _ => None,
+        });
 
         // ── MySQL pool ───────────────────────────────────────────────────────
         let mysql_config = inputs

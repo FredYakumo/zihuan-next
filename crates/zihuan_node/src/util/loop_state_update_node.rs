@@ -1,8 +1,8 @@
-use zihuan_core::error::{Error, Result};
 use crate::data_value::LoopControl;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 use std::sync::Arc;
+use zihuan_core::error::{Error, Result};
 
 /// Writes new state into the shared LoopControl so that the next iteration of
 /// the enclosing LoopNode emits the updated value as `output`.

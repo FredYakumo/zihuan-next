@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use serde_json::Value;
-use zihuan_node::graph_io::{NodeGraphDefinition, PortBindingKind};
+use zihuan_llm::brain_tool::BrainToolDefinition;
 use zihuan_node::function_graph::{
     embedded_function_config_from_node, sync_function_node_definition, FUNCTION_CONFIG_PORT,
 };
-use zihuan_llm::brain_tool::BrainToolDefinition;
+use zihuan_node::graph_io::{NodeGraphDefinition, PortBindingKind};
 
 /// Apply hyperparameter values to a graph definition by expanding all PORT_BINDING entries
 /// that reference hyperparameters.  This matches the logic previously in
@@ -33,9 +33,7 @@ pub fn apply_hyperparameter_bindings(
         }
 
         if let Some(tools_value) = node.inline_values.get("tools_config").cloned() {
-            if let Ok(mut tools) =
-                serde_json::from_value::<Vec<BrainToolDefinition>>(tools_value)
-            {
+            if let Ok(mut tools) = serde_json::from_value::<Vec<BrainToolDefinition>>(tools_value) {
                 for tool in &mut tools {
                     apply_hyperparameter_bindings(&mut tool.subgraph, values);
                 }

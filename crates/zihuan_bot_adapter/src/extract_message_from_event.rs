@@ -1,11 +1,11 @@
 use crate::adapter::BotAdapter;
 use crate::models::message::MessageProp;
 use crate::models::MessageEvent;
+use std::collections::HashMap;
+use tokio::task::block_in_place;
 use zihuan_core::error::Result;
 use zihuan_llm_types::{OpenAIMessage, SystemMessage};
 use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
-use std::collections::HashMap;
-use tokio::task::block_in_place;
 
 /// Node that converts a MessageEvent to an LLM prompt message list
 ///

@@ -62,6 +62,7 @@ impl Node for StringToOpenAIMessageNode {
             DataValue::OpenAIMessage(OpenAIMessage {
                 role,
                 content: Some(content),
+                reasoning_content: None,
                 tool_calls: Vec::new(),
                 tool_call_id: None,
             }),

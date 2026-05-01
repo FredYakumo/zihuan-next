@@ -1,11 +1,11 @@
-use zihuan_core::error::Result;
-use zihuan_llm_types::OpenAIMessage;
 use crate::data_value::OpenAIMessageSessionCacheRef;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::info;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::task::block_in_place;
+use zihuan_core::error::Result;
+use zihuan_llm_types::OpenAIMessage;
 
 pub struct OpenAIMessageSessionCacheNode {
     id: String,
@@ -112,13 +112,13 @@ impl Node for OpenAIMessageSessionCacheNode {
 #[cfg(test)]
 mod tests {
     use super::OpenAIMessageSessionCacheNode;
-    use zihuan_core::error::Result;
-    use zihuan_llm_types::{MessageRole, OpenAIMessage};
     use crate::data_value::OpenAIMessageSessionCacheRef;
     use crate::util::OpenAIMessageSessionCacheProviderNode;
     use crate::{DataType, DataValue, Node};
     use std::collections::HashMap;
     use std::sync::Arc;
+    use zihuan_core::error::Result;
+    use zihuan_llm_types::{MessageRole, OpenAIMessage};
 
     fn message(role: MessageRole, content: &str) -> OpenAIMessage {
         OpenAIMessage {
