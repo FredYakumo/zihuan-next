@@ -46,6 +46,9 @@ export function setupNodeWidgets(
     case "brain":
       setupBrainWidgets(lNode, nodeDef, getSessionId, onRefresh, onEnterSubgraph);
       break;
+    case "qq_message_agent":
+      setupBrainWidgets(lNode, nodeDef, getSessionId, onRefresh, onEnterSubgraph);
+      break;
     case "string_data":
       setupStringDataWidgets(lNode, nodeDef, getSessionId, onRefresh, onMutated);
       break;
@@ -149,7 +152,8 @@ function setupBrainWidgets(
   ) => void
 ): void {
   const tools = (nodeDef.inline_values?.["tools_config"] as BrainToolDefinition[] | undefined) ?? [];
-  lNode.addWidget("button", `管理工具 (${tools.length})`, null, () => {
+  const labelPrefix = nodeDef.node_type === "qq_message_agent" ? "管理 Agent 工具" : "管理工具";
+  lNode.addWidget("button", `${labelPrefix} (${tools.length})`, null, () => {
     const sid = getSessionId();
     if (!sid) { alert("请先打开一个图。"); return; }
     openBrainToolsEditor(nodeDef, sid, onRefresh, (toolIndex, toolDef) => {

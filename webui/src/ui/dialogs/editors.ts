@@ -415,6 +415,8 @@ export function openBrainToolsEditor(
   onEditToolSubgraph: (toolIndex: number, tool: BrainToolDefinition) => void,
 ): void {
   const { dialog, close } = openOverlay();
+  const isQqMessageAgent = nodeDef.node_type === "qq_message_agent";
+  const ownerLabel = isQqMessageAgent ? "QQ Message Agent" : "Brain";
 
   const rawTools = (nodeDef.inline_values?.["tools_config"] as BrainToolDefinition[] | undefined) ?? [];
   const rawSharedInputs = (nodeDef.inline_values?.["shared_inputs"] as FunctionPortDef[] | undefined) ?? [];
@@ -423,7 +425,7 @@ export function openBrainToolsEditor(
   const sharedInputs: FunctionPortDef[] = JSON.parse(JSON.stringify(rawSharedInputs));
 
   const render = () => {
-    dialog.innerHTML = `<h3>管理 Brain 工具</h3>
+    dialog.innerHTML = `<h3>管理 ${ownerLabel} 工具</h3>
       <div class="zh-section-label">共享输入端口 (shared_inputs)</div>
     `;
 
@@ -451,7 +453,7 @@ export function openBrainToolsEditor(
         name: `tool_${tools.length + 1}`,
         description: "",
         parameters: [],
-        outputs: [],
+        outputs: isQqMessageAgent ? [{ name: "result", data_type: "String" }] : [],
         subgraph: { nodes: [], edges: [], hyperparameter_groups: [], hyperparameters: [], variables: [] } as any,
       });
       close();
@@ -476,9 +478,15 @@ export function openBrainToolsEditor(
     saveBtn.className = "primary";
     saveBtn.addEventListener("click", async () => {
       try {
+        const toolsToSave = isQqMessageAgent
+          ? tools.map((tool) => ({
+              ...tool,
+              outputs: [{ name: "result", data_type: "String" as DataTypeMetaData }],
+            }))
+          : tools;
         await graphs.updateNode(sessionId, nodeDef.id, {
           inline_values: {
-            tools_config: tools as unknown as unknown[],
+            tools_config: toolsToSave as unknown as unknown[],
             shared_inputs: getSharedInputs() as unknown as unknown[],
           } as Record<string, unknown>,
         });
@@ -621,10 +629,18 @@ export function openBrainToolsEditor(
     card.appendChild(outLabel);
 
     const outContainer = document.createElement("div");
-    const getOutputs = buildPortListEditor(outContainer, tool.outputs);
-    outContainer.addEventListener("input", () => {
+    const fixedStringOutput = [{ name: "result", data_type: "String" as DataTypeMetaData }];
+    const getOutputs = isQqMessageAgent
+      ? (() => fixedStringOutput.map((output) => ({ ...output })))
+      : buildPortListEditor(outContainer, tool.outputs);
+    if (isQqMessageAgent) {
+      outContainer.innerHTML = `<div class="zh-hint">该节点的工具子图返回值固定为单个 <code>String</code> 输出：<code>result</code></div>`;
       tools[idx].outputs = getOutputs();
-    });
+    } else {
+      outContainer.addEventListener("input", () => {
+        tools[idx].outputs = getOutputs();
+      });
+    }
     card.appendChild(outContainer);
 
     const editSubBtn = document.createElement("button");

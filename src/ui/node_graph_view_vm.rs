@@ -214,7 +214,8 @@ fn build_node_vm(
         .input_ports
         .iter()
         .filter(|p| {
-            !(node.node_type == "brain" && (p.name == "tools_config" || p.name == "shared_inputs"))
+            !((node.node_type == "brain" || node.node_type == "qq_message_agent")
+                && (p.name == "tools_config" || p.name == "shared_inputs"))
                 && !is_hidden_function_port(&node.node_type, &p.name)
         })
         .map(|p| build_input_port_vm(node, p, graph, inline_inputs))

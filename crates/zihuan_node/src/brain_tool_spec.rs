@@ -7,6 +7,8 @@ use crate::DataType;
 pub const BRAIN_TOOLS_CONFIG_PORT: &str = "tools_config";
 pub const BRAIN_SHARED_INPUTS_PORT: &str = "shared_inputs";
 pub const BRAIN_TOOL_FIXED_CONTENT_INPUT: &str = "content";
+pub const QQ_AGENT_TOOL_OWNER_TYPE: &str = "qq_message_agent";
+pub const QQ_AGENT_TOOL_OUTPUT_NAME: &str = "result";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ToolParamDef {
@@ -75,4 +77,30 @@ pub fn brain_tool_input_signature(
     });
     signature.extend(tool.input_signature());
     signature
+}
+
+pub fn tool_subgraph_owner_uses_brain_outputs(node_type: &str) -> bool {
+    node_type == "brain"
+}
+
+pub fn tool_subgraph_owner_types() -> [&'static str; 2] {
+    ["brain", QQ_AGENT_TOOL_OWNER_TYPE]
+}
+
+pub fn is_tool_subgraph_owner(node_type: &str) -> bool {
+    tool_subgraph_owner_types().contains(&node_type)
+}
+
+pub fn normalized_tool_outputs_for_owner(
+    node_type: &str,
+    tool: &BrainToolDefinition,
+) -> Vec<FunctionPortDef> {
+    if tool_subgraph_owner_uses_brain_outputs(node_type) {
+        tool.outputs.clone()
+    } else {
+        vec![FunctionPortDef {
+            name: QQ_AGENT_TOOL_OUTPUT_NAME.to_string(),
+            data_type: crate::DataType::String,
+        }]
+    }
 }
