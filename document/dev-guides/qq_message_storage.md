@@ -21,6 +21,7 @@ pub struct MessageRecord {
     pub group_name: Option<String>,
     pub content: String,
     pub at_target_list: Option<String>,
+    pub media_json: Option<String>,
 }
 ```
 
@@ -32,6 +33,7 @@ This means:
 - `group_id` / `group_name`: group information for group messages, empty for private messages
 - `content`: aggregated text content derived from the original `Vec<QQMessage>`
 - `at_target_list`: mentioned targets, currently stored as a string
+- `media_json`: serialized media metadata (currently image segment cache/object-storage info)
 
 So in the current implementation, `QQMessage` is not stored as the original JSON array. It is first normalized into a searchable record and then written to Redis and MySQL.
 
@@ -102,9 +104,10 @@ INSERT INTO message_record
     group_id,
     group_name,
     content,
-    at_target_list
+    at_target_list,
+    media_json
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ```
 
 The main query patterns are:
@@ -146,7 +149,8 @@ CREATE TABLE message_record (
     group_id VARCHAR(64) NULL,
     group_name VARCHAR(128) NULL,
     content VARCHAR(2048) NOT NULL,
-    at_target_list VARCHAR(512) NULL
+    at_target_list VARCHAR(512) NULL,
+    media_json VARCHAR(4096) NULL
 );
 ```
 

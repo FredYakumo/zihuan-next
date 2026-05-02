@@ -36,9 +36,9 @@ Decide which crate the new node belongs to, then place it in one file per node:
 
 | Node category | Crate | Directory |
 |---|---|---|
-| General-purpose utility or transform | `crates/zihuan_node` | `crates/zihuan_node/src/util/` |
-| Bot / QQ messaging | `crates/zihuan_bot_adapter` | `crates/zihuan_bot_adapter/src/` |
-| LLM / AI | `crates/zihuan_llm` | `crates/zihuan_llm/src/` |
+| General-purpose utility or transform | `packages/zihuan_node` | `packages/zihuan_node/src/util/` |
+| Bot / QQ messaging | `packages/zihuan_bot_adapter` | `packages/zihuan_bot_adapter/src/` |
+| LLM / AI | `packages/zihuan_llm` | `packages/zihuan_llm/src/` |
 
 Do not create a new directory unless the feature genuinely introduces a new area of responsibility.
 
@@ -79,8 +79,8 @@ After adding the file, update the parent `mod.rs` so the node can be referenced 
 
 Register in the appropriate registry — this makes the node available to graph loading, the UI palette, and metadata queries.
 
-- **Nodes in `crates/zihuan_node`** → `crates/zihuan_node/src/registry.rs` inside `init_node_registry()`.
-- **Nodes in `crates/zihuan_bot_adapter` or `crates/zihuan_llm`** → `src/init_registry.rs`.
+- **Nodes in `packages/zihuan_node`** → `packages/zihuan_node/src/registry.rs` inside `init_node_registry()`.
+- **Nodes in `packages/zihuan_bot_adapter` or `packages/zihuan_llm`** → `src/init_registry.rs`.
 
 When registering:
 
@@ -132,9 +132,9 @@ Use this checklist before considering a node finished:
 - Ports are declared clearly and use stable naming
 - Inline config handling is implemented when needed
 - The node is exported from the parent `mod.rs`
-- The node is registered in the correct registry (`crates/zihuan_node/src/registry.rs` or `src/init_registry.rs`)
-- Unit tests cover the main behavior
-- Error cases are tested when they are part of the contract
+- The node is registered in the correct registry (`packages/zihuan_node/src/registry.rs` or `src/init_registry.rs`)
+- The main behavior has been validated with the smallest appropriate check
+- Add automated tests only when explicitly requested or clearly warranted by complexity
 - Any EventProducer implementation stores and checks the stop flag
 
 ---

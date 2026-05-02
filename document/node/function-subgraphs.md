@@ -64,7 +64,7 @@ Important rules:
 - They must not be deletable or copyable from the editor.
 - Hidden config ports such as `signature` are not rendered on the canvas.
 
-Subgraphs are kept consistent by `sync_function_subgraph_signature()` in `crates/zihuan_node/src/function_graph.rs`.
+Subgraphs are kept consistent by `sync_function_subgraph_signature()` in `packages/zihuan_node/src/function_graph.rs`.
 
 ---
 

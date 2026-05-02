@@ -1,6 +1,6 @@
 # Node Graph JSON Specification
 
-This document describes the JSON format used to save and load node graphs. The GUI reads and writes this format; the runtime rebuilds an executable `NodeGraph` from it via `build_node_graph_from_definition()` in `crates/zihuan_node/src/registry.rs`.
+This document describes the JSON format used to save and load node graphs. The GUI reads and writes this format; the runtime rebuilds an executable `NodeGraph` from it via `build_node_graph_from_definition()` in `packages/zihuan_node/src/registry.rs`.
 
 ---
 

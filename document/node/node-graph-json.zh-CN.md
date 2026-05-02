@@ -3,7 +3,7 @@
 > 🌐 [English](node-graph-json.md) | 简体中文
 
 
-本文档描述用于保存和加载节点图的 JSON 格式。GUI 读写此格式；运行时通过 `crates/zihuan_node/src/registry.rs` 中的 `build_node_graph_from_definition()` 从中重建可执行的 `NodeGraph`。
+本文档描述用于保存和加载节点图的 JSON 格式。GUI 读写此格式；运行时通过 `packages/zihuan_node/src/registry.rs` 中的 `build_node_graph_from_definition()` 从中重建可执行的 `NodeGraph`。
 
 ---
 

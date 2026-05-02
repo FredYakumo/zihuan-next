@@ -38,9 +38,9 @@
 
 | 节点类别 | Crate | 目录 |
 |---|---|---|
-| 通用工具或变换节点 | `crates/zihuan_node` | `crates/zihuan_node/src/util/` |
-| Bot / QQ 消息节点 | `crates/zihuan_bot_adapter` | `crates/zihuan_bot_adapter/src/` |
-| LLM / AI 节点 | `crates/zihuan_llm` | `crates/zihuan_llm/src/` |
+| 通用工具或变换节点 | `packages/zihuan_node` | `packages/zihuan_node/src/util/` |
+| Bot / QQ 消息节点 | `packages/zihuan_bot_adapter` | `packages/zihuan_bot_adapter/src/` |
+| LLM / AI 节点 | `packages/zihuan_llm` | `packages/zihuan_llm/src/` |
 
 除非功能确实引入了新的责任领域，否则不要创建新目录。
 
@@ -81,8 +81,8 @@ pub fn new(id: String, name: String) -> Self
 
 在合适的注册表中注册——这使节点可用于图加载、UI 面板和元数据查询。
 
-- **`crates/zihuan_node` 中的节点** → `crates/zihuan_node/src/registry.rs` 的 `init_node_registry()` 中。
-- **`crates/zihuan_bot_adapter` 或 `crates/zihuan_llm` 中的节点** → `src/init_registry.rs`。
+- **`packages/zihuan_node` 中的节点** → `packages/zihuan_node/src/registry.rs` 的 `init_node_registry()` 中。
+- **`packages/zihuan_bot_adapter` 或 `packages/zihuan_llm` 中的节点** → `src/init_registry.rs`。
 
 注册时：
 
@@ -134,7 +134,7 @@ pub fn new(id: String, name: String) -> Self
 - 端口声明清晰且使用稳定命名
 - 需要时实现了内联配置处理
 - 节点从父 `mod.rs` 导出
-- 节点在正确的注册表（`crates/zihuan_node/src/registry.rs` 或 `src/init_registry.rs`）中注册
+- 节点在正确的注册表（`packages/zihuan_node/src/registry.rs` 或 `src/init_registry.rs`）中注册
 - 单元测试覆盖主要行为
 - 当错误情况是契约的一部分时，已测试错误情况
 - 所有 EventProducer 实现都存储并检查停止标志

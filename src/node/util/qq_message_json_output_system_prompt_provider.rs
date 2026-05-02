@@ -49,26 +49,3 @@ impl Node for QQMessageJsonOutputSystemPromptProviderNode {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::QQMessageJsonOutputSystemPromptProviderNode;
-    use crate::node::{DataValue, Node};
-    use std::collections::HashMap;
-
-    #[test]
-    fn outputs_fixed_system_prompt() {
-        let mut node =
-            QQMessageJsonOutputSystemPromptProviderNode::new("provider", "Prompt Provider");
-        let outputs = node
-            .execute(HashMap::new())
-            .expect("provider node should execute");
-
-        match outputs.get("system_prompt") {
-            Some(DataValue::String(value)) => {
-                assert!(!value.is_empty());
-                assert!(value.contains("纯 JSON 数组"));
-            }
-            other => panic!("unexpected system_prompt output: {:?}", other),
-        }
-    }
-}

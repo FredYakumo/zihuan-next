@@ -25,7 +25,7 @@ Use this document in two ways:
 
 ## The Node Trait
 
-Defined in `crates/zihuan_node/src/lib.rs`. Every node type implements this trait:
+Defined in `packages/zihuan_node/src/lib.rs`. Every node type implements this trait:
 
 ```rust
 pub trait Node: Send + Sync {
@@ -160,7 +160,7 @@ Port::new("port_name", DataType::String).with_description("help text")
 
 ### DataType
 
-Defined in `crates/zihuan_node/src/data_value.rs`:
+Defined in `packages/zihuan_node/src/data_value.rs`:
 
 ```rust
 pub enum DataType {
@@ -288,8 +288,8 @@ Use `on_graph_start()` for one-time initialization that should happen after the 
 
 All node types must be registered in the appropriate registry:
 
-- Nodes in `crates/zihuan_node` → `crates/zihuan_node/src/registry.rs` (`init_node_registry()`)
-- Nodes in `crates/zihuan_bot_adapter` or `crates/zihuan_llm` → `src/init_registry.rs`
+- Nodes in `packages/zihuan_node` → `packages/zihuan_node/src/registry.rs` (`init_node_registry()`)
+- Nodes in `packages/zihuan_bot_adapter` or `packages/zihuan_llm` → `src/init_registry.rs`
 
 The combined registry (`src/init_registry.rs`) calls `zihuan_node::registry::init_node_registry()` first, then registers bot-adapter and LLM nodes.
 
@@ -442,9 +442,9 @@ This is the recommended implementation path for a new node.
 
 Put the node in the correct crate and module:
 
-- General-purpose utility/transform node → `crates/zihuan_node/src/util/`
-- Bot / QQ messaging node → `crates/zihuan_bot_adapter/src/`
-- LLM / AI node → `crates/zihuan_llm/src/`
+- General-purpose utility/transform node → `packages/zihuan_node/src/util/`
+- Bot / QQ messaging node → `packages/zihuan_bot_adapter/src/`
+- LLM / AI node → `packages/zihuan_llm/src/`
 
 ```rust
 use std::collections::HashMap;
@@ -605,7 +605,7 @@ pub use uppercase::UppercaseNode;
 
 Register it in the appropriate registry:
 
-- For a node in `crates/zihuan_node` → `crates/zihuan_node/src/registry.rs`:
+- For a node in `packages/zihuan_node` → `packages/zihuan_node/src/registry.rs`:
 
 ```rust
 register_node!(
@@ -617,7 +617,7 @@ register_node!(
 );
 ```
 
-- For a node in `crates/zihuan_bot_adapter` or `crates/zihuan_llm` → `src/init_registry.rs`:
+- For a node in `packages/zihuan_bot_adapter` or `packages/zihuan_llm` → `src/init_registry.rs`:
 
 ```rust
 register_node!(
@@ -629,60 +629,9 @@ register_node!(
 );
 ```
 
-### 6. Test the node
+### 6. Validate the node
 
-Unit test in the node file:
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_uppercase_basic() {
-        let mut node = UppercaseNode::new("test".into(), "Test".into());
-
-        let mut inputs = HashMap::new();
-        inputs.insert("text".to_string(), DataValue::String("hello world".into()));
-
-        let outputs = node.execute(inputs).unwrap();
-        assert_eq!(
-            outputs.get("result"),
-            Some(&DataValue::String("HELLO WORLD".into()))
-        );
-    }
-}
-```
-
-Integration test with `NodeGraph`:
-
-```rust
-#[test]
-fn test_uppercase_in_graph() {
-    use zihuan_node::{NodeGraph, graph_io::NodeGraphDefinition};
-    use zihuan_node::registry::{build_node_graph_from_definition, init_node_registry};
-
-    init_node_registry().unwrap();
-
-    let json = r#"{
-      "nodes": [{
-        "id": "n1", "name": "Upper", "node_type": "uppercase",
-        "input_ports":  [{"name": "text",   "data_type": "String", "required": true}],
-        "output_ports": [{"name": "result", "data_type": "String", "required": true}],
-        "inline_values": {"text": "hello"}
-      }],
-      "edges": []
-    }"#;
-
-    let def: NodeGraphDefinition = serde_json::from_str(json).unwrap();
-    let result = build_node_graph_from_definition(&def).unwrap()
-        .execute_and_capture_results()
-        .unwrap();
-
-    let outputs = result.node_results.get("n1").unwrap();
-    assert_eq!(outputs.get("result"), Some(&DataValue::String("HELLO".into())));
-}
-```
+Run the smallest manual or end-to-end validation that proves the node contract still holds. Add automated tests only when the user explicitly asks for them or the behavior is complex enough to warrant dedicated coverage.
 
 ### 7. Final checklist
 
@@ -692,8 +641,8 @@ fn test_uppercase_in_graph() {
 - `type_id` is unique and stable
 - EventProducers check the stop flag
 - Node is exported from parent `mod.rs`
-- Node is registered in the appropriate registry (`crates/zihuan_node/src/registry.rs` or `src/init_registry.rs`)
-- Happy-path and failure-path tests are present
+- Node is registered in the appropriate registry (`packages/zihuan_node/src/registry.rs` or `src/init_registry.rs`)
+- Manual or end-to-end validation has been performed
 
 ---
 
