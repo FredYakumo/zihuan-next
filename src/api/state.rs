@@ -242,4 +242,3 @@ pub struct GraphTabInfo {
     pub node_count: usize,
     pub edge_count: usize,
 }
-

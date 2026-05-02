@@ -148,4 +148,3 @@ fn append_item(messages: &mut Vec<Message>, item: QQMessageJsonItem) -> Result<(
 
     Ok(())
 }
-

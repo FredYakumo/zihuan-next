@@ -351,6 +351,7 @@ fn build_function_inputs_node_definition(signature: &[FunctionPortDef]) -> NodeD
         port_bindings: HashMap::new(),
         has_error: false,
         has_cycle: false,
+        disabled: false,
     }
 }
 
@@ -382,5 +383,6 @@ fn build_function_outputs_node_definition(signature: &[FunctionPortDef]) -> Node
         port_bindings: HashMap::new(),
         has_error: false,
         has_cycle: false,
+        disabled: false,
     }
 }

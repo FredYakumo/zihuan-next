@@ -79,4 +79,3 @@ impl Node for BooleanBranchNode {
         Ok(outputs)
     }
 }
-

@@ -61,6 +61,7 @@ pub mod message_mysql_get_group_history;
 pub mod message_mysql_get_user_history;
 pub mod message_mysql_history_common;
 pub mod message_mysql_persistence;
+pub mod object_storage;
 pub mod qq_message_list_mysql_persistence;
 pub mod registry;
 pub mod util;
@@ -337,6 +338,14 @@ impl NodeGraph {
             .map(|b| b.name.clone())
     }
 
+    fn is_node_disabled(&self, node_id: &str) -> bool {
+        self.definition
+            .as_ref()
+            .and_then(|def| def.nodes.iter().find(|n| n.id == node_id))
+            .map(|n| n.disabled)
+            .unwrap_or(false)
+    }
+
     fn node_type_label(node: &dyn Node) -> &'static str {
         match node.node_type() {
             NodeType::Simple => "simple",
@@ -576,6 +585,9 @@ impl NodeGraph {
         }
 
         for (node_id, node) in &self.nodes {
+            if self.is_node_disabled(node_id) {
+                continue;
+            }
             for port in node.input_ports() {
                 if let Some(producer) = output_producers.get(&port.name) {
                     if producer != node_id {
@@ -653,7 +665,7 @@ impl NodeGraph {
             .nodes
             .iter()
             .filter_map(|(id, node)| {
-                if node.node_type() == NodeType::EventProducer {
+                if node.node_type() == NodeType::EventProducer && !self.is_node_disabled(id) {
                     Some(id.clone())
                 } else {
                     None
@@ -664,6 +676,9 @@ impl NodeGraph {
         if event_producer_set.is_empty() {
             let mut data_pool: HashMap<String, DataValue> = HashMap::new();
             for node_id in ordered {
+                if self.is_node_disabled(&node_id) {
+                    continue;
+                }
                 let Some(inputs) = ({
                     let node = self.nodes.get(&node_id).ok_or_else(|| {
                         zihuan_core::error::Error::ValidationError(format!(
@@ -731,6 +746,9 @@ impl NodeGraph {
             if reachable_from_event.contains(node_id) {
                 continue;
             }
+            if self.is_node_disabled(node_id) {
+                continue;
+            }
 
             let Some(inputs) = ({
                 let node = self.nodes.get(node_id).ok_or_else(|| {
@@ -773,10 +791,11 @@ impl NodeGraph {
         let mut event_producer_roots: Vec<String> = event_producer_set
             .iter()
             .filter(|event_id| {
-                !dependencies
-                    .get(*event_id)
-                    .map(|deps| deps.iter().any(|dep| event_producer_set.contains(dep)))
-                    .unwrap_or(false)
+                !self.is_node_disabled(event_id)
+                    && !dependencies
+                        .get(*event_id)
+                        .map(|deps| deps.iter().any(|dep| event_producer_set.contains(dep)))
+                        .unwrap_or(false)
             })
             .cloned()
             .collect();
@@ -865,6 +884,9 @@ impl NodeGraph {
         }
 
         for (node_id, node) in &self.nodes {
+            if self.is_node_disabled(node_id) {
+                continue;
+            }
             for port in node.input_ports() {
                 if let Some(producer) = output_producers.get(&port.name) {
                     if producer != node_id {
@@ -942,7 +964,7 @@ impl NodeGraph {
             .nodes
             .iter()
             .filter_map(|(id, node)| {
-                if node.node_type() == NodeType::EventProducer {
+                if node.node_type() == NodeType::EventProducer && !self.is_node_disabled(id) {
                     Some(id.clone())
                 } else {
                     None
@@ -953,6 +975,9 @@ impl NodeGraph {
         if event_producer_set.is_empty() {
             let mut data_pool: HashMap<String, DataValue> = HashMap::new();
             for node_id in ordered {
+                if self.is_node_disabled(&node_id) {
+                    continue;
+                }
                 let Some(inputs) = ({
                     let node = self.nodes.get(&node_id).ok_or_else(|| {
                         zihuan_core::error::Error::ValidationError(format!(
@@ -1066,6 +1091,9 @@ impl NodeGraph {
         }
 
         for node_id in &connected_nodes {
+            if self.is_node_disabled(node_id) {
+                continue;
+            }
             let node = self.nodes.get(node_id).ok_or_else(|| {
                 zihuan_core::error::Error::ValidationError(format!(
                     "Node '{}' not found during execution",
@@ -1106,7 +1134,7 @@ impl NodeGraph {
             .nodes
             .iter()
             .filter_map(|(id, node)| {
-                if node.node_type() == NodeType::EventProducer {
+                if node.node_type() == NodeType::EventProducer && !self.is_node_disabled(id) {
                     Some(id.clone())
                 } else {
                     None
@@ -1118,6 +1146,9 @@ impl NodeGraph {
             let mut data_pool: OutputPool = HashMap::new();
             for node_id in ordered {
                 if !connected_nodes.contains(&node_id) {
+                    continue;
+                }
+                if self.is_node_disabled(&node_id) {
                     continue;
                 }
                 let inputs = {
@@ -1197,6 +1228,9 @@ impl NodeGraph {
             if reachable_from_event.contains(node_id) {
                 continue;
             }
+            if self.is_node_disabled(node_id) {
+                continue;
+            }
 
             let inputs = {
                 let node = self.nodes.get(node_id).ok_or_else(|| {
@@ -1235,6 +1269,7 @@ impl NodeGraph {
             .iter()
             .filter(|event_id| {
                 connected_nodes.contains(*event_id)
+                    && !self.is_node_disabled(event_id)
                     && !dependencies
                         .get(*event_id)
                         .map(|deps| deps.iter().any(|dep| event_producer_set.contains(dep)))
@@ -1311,6 +1346,9 @@ impl NodeGraph {
         }
 
         for node_id in &connected_nodes {
+            if self.is_node_disabled(node_id) {
+                continue;
+            }
             let node = self.nodes.get(node_id).ok_or_else(|| {
                 zihuan_core::error::Error::ValidationError(format!(
                     "Node '{}' not found during execution",
@@ -1351,7 +1389,7 @@ impl NodeGraph {
             .nodes
             .iter()
             .filter_map(|(id, node)| {
-                if node.node_type() == NodeType::EventProducer {
+                if node.node_type() == NodeType::EventProducer && !self.is_node_disabled(id) {
                     Some(id.clone())
                 } else {
                     None
@@ -1363,6 +1401,9 @@ impl NodeGraph {
             let mut data_pool: OutputPool = HashMap::new();
             for node_id in ordered {
                 if !connected_nodes.contains(&node_id) {
+                    continue;
+                }
+                if self.is_node_disabled(&node_id) {
                     continue;
                 }
                 let inputs = {
@@ -1791,6 +1832,9 @@ impl NodeGraph {
             {
                 continue;
             }
+            if self.is_node_disabled(ordered_id) {
+                continue;
+            }
 
             if event_producer_set.contains(ordered_id) {
                 let ran = self.run_event_producer_with_edges(
@@ -1874,6 +1918,9 @@ impl NodeGraph {
                 continue;
             }
             if skipped.contains(ordered_id) || !reachable.contains(ordered_id) {
+                continue;
+            }
+            if self.is_node_disabled(ordered_id) {
                 continue;
             }
 
@@ -2232,4 +2279,3 @@ impl Default for NodeGraph {
         Self::new()
     }
 }
-

@@ -72,4 +72,3 @@ impl Node for StringToOpenAIMessageNode {
         Ok(outputs)
     }
 }
-

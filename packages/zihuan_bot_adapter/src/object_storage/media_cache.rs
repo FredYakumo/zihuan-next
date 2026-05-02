@@ -1,4 +1,3 @@
-use super::ObjectStorageConfig;
 use crate::adapter::SharedBotAdapter;
 use crate::models::MessageEvent;
 use base64::Engine;
@@ -10,6 +9,7 @@ use std::path::Path;
 use std::sync::atomic::Ordering;
 use zihuan_bot_types::message::{ImageMessage, Message};
 use zihuan_core::error::Result;
+use zihuan_node::object_storage::S3Ref;
 
 const LOG_PREFIX: &str = "[media_cache]";
 
@@ -53,7 +53,14 @@ pub async fn enrich_event_images(adapter: &SharedBotAdapter, event: &mut Message
             continue;
         }
 
-        match cache_one_image(adapter, &object_storage, event.message_id, segment_index, image).await
+        match cache_one_image(
+            adapter,
+            &object_storage,
+            event.message_id,
+            segment_index,
+            image,
+        )
+        .await
         {
             Ok(Some(object_url)) => {
                 info!(
@@ -89,7 +96,7 @@ pub async fn enrich_event_images(adapter: &SharedBotAdapter, event: &mut Message
 
 async fn cache_one_image(
     adapter: &SharedBotAdapter,
-    object_storage: &ObjectStorageConfig,
+    object_storage: &S3Ref,
     message_id: i64,
     segment_index: usize,
     image: &mut ImageMessage,
@@ -141,13 +148,17 @@ async fn run_retry_loop(adapter: SharedBotAdapter) {
 
         let Some(object_storage) = object_storage else {
             let guard = adapter.lock().await;
-            guard.image_retry_task_running.store(false, Ordering::SeqCst);
+            guard
+                .image_retry_task_running
+                .store(false, Ordering::SeqCst);
             return;
         };
 
         let Some(mut pending) = pending else {
             let guard = adapter.lock().await;
-            guard.image_retry_task_running.store(false, Ordering::SeqCst);
+            guard
+                .image_retry_task_running
+                .store(false, Ordering::SeqCst);
             return;
         };
 
@@ -220,9 +231,7 @@ async fn resolve_image_payload(
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(base64_payload.as_bytes())
                 .map_err(|e| {
-                    zihuan_core::error::Error::ValidationError(format!(
-                        "invalid image base64: {e}"
-                    ))
+                    zihuan_core::error::Error::ValidationError(format!("invalid image base64: {e}"))
                 })?;
             let file_name = detail
                 .file_name
@@ -265,7 +274,11 @@ async fn read_local_file(
     let bytes = tokio::fs::read(file_path).await?;
     let file_name = preferred_name
         .map(ToOwned::to_owned)
-        .or_else(|| file_path.file_name().map(|name| name.to_string_lossy().to_string()))
+        .or_else(|| {
+            file_path
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+        })
         .unwrap_or_else(|| "image.bin".to_string());
 
     Ok(Some(ResolvedImagePayload {
@@ -394,4 +407,3 @@ fn infer_content_type(file_name: &str, header_content_type: Option<&str>) -> Str
         _ => "image/png".to_string(),
     }
 }
-

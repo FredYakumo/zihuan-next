@@ -170,6 +170,7 @@ pub async fn add_node(req: &mut Request, res: &mut Response, depot: &mut Depot) 
         port_bindings: Default::default(),
         has_error: false,
         has_cycle: false,
+        disabled: false,
     };
 
     let mut sessions = state.sessions.write().unwrap();
@@ -197,6 +198,7 @@ pub struct UpdateNodeRequest {
     pub height: Option<f32>,
     pub inline_values: Option<serde_json::Value>,
     pub port_bindings: Option<serde_json::Value>,
+    pub disabled: Option<bool>,
 }
 
 #[handler]
@@ -267,6 +269,11 @@ pub async fn update_node(req: &mut Request, res: &mut Response, depot: &mut Depo
                 width: 200.0,
                 height: h,
             });
+        }
+    }
+    if let Some(d) = body.disabled {
+        if node.id != "__function_inputs__" && node.id != "__function_outputs__" {
+            node.disabled = d;
         }
     }
     if let Some(iv) = body.inline_values {

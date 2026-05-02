@@ -1,18 +1,19 @@
 use futures_util::{SinkExt, StreamExt};
 use log::{debug, error, info, warn};
+use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 
 use super::event;
 use super::models::{MessageEvent, MessageType, Profile, RawMessageEvent};
-use super::object_storage::{enrich_event_images, ObjectStorageConfig, PendingImageUpload};
-use std::collections::HashMap;
-use std::sync::Arc;
+use super::object_storage::{enrich_event_images, PendingImageUpload};
 use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::{mpsc, oneshot};
 use zihuan_core::error::Result;
 use zihuan_core::url_utils::extract_host;
+use zihuan_node::object_storage::S3Ref;
 
 /// Trait for brain agents that handle event processing
 pub trait BrainAgentTrait: Send + Sync {
@@ -39,7 +40,7 @@ pub struct BotAdapterConfig {
     pub token: String,
     pub qq_id: String,
     pub brain_agent: Option<AgentBox>,
-    pub object_storage: Option<ObjectStorageConfig>,
+    pub object_storage: Option<Arc<S3Ref>>,
 }
 
 impl BotAdapterConfig {
@@ -49,12 +50,17 @@ impl BotAdapterConfig {
             token: token.into(),
             qq_id: qq_id.into(),
             brain_agent: None,
-            object_storage: ObjectStorageConfig::from_env(),
+            object_storage: None,
         }
     }
 
     pub fn with_brain_agent(mut self, agent: Option<AgentBox>) -> Self {
         self.brain_agent = agent;
+        self
+    }
+
+    pub fn with_object_storage(mut self, object_storage: Option<Arc<S3Ref>>) -> Self {
+        self.object_storage = object_storage;
         self
     }
 }
@@ -73,7 +79,7 @@ pub struct BotAdapter {
     pub action_tx: Option<mpsc::UnboundedSender<String>>,
     /// Echo → oneshot channel map for correlating action responses.
     pub pending_actions: PendingActions,
-    pub object_storage: Option<ObjectStorageConfig>,
+    pub object_storage: Option<Arc<S3Ref>>,
     pub pending_image_uploads: Arc<TokioMutex<VecDeque<PendingImageUpload>>>,
     pub image_retry_task_running: Arc<AtomicBool>,
 }

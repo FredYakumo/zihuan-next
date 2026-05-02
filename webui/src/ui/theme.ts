@@ -36,6 +36,8 @@ export interface LiteGraphColors {
   linkTypeColors: LinkTypeColors;
   boundaryNodeHeader: string;
   boundaryNodeBg: string;
+  disabledNodeHeader: string;
+  disabledNodeBg: string;
 }
 
 export interface ThemeConfig {
@@ -129,6 +131,8 @@ const DEFAULT_DARK: ThemeConfig = {
     linkLabelText: "#ffffff",
     boundaryNodeHeader: "#2a4a45",
     boundaryNodeBg: "#0f1f1c",
+    disabledNodeHeader: "#7f1d1d",
+    disabledNodeBg: "#3f0f0f",
     linkTypeColors: {
       primitive: "#60a5fa",
       complex: "#fbbf24",
@@ -210,6 +214,8 @@ const DEFAULT_LIGHT: ThemeConfig = {
     linkLabelText: "#ffffff",
     boundaryNodeHeader: "#0d9d92",
     boundaryNodeBg: "#c5eee9",
+    disabledNodeHeader: "#fca5a5",
+    disabledNodeBg: "#fee2e2",
     linkTypeColors: {
       primitive: "#2563eb",
       complex: "#d97706",
@@ -446,6 +452,14 @@ export function getBoundaryNodeColors(): { header: string; bg: string } {
   return {
     header: colors.boundaryNodeHeader,
     bg: colors.boundaryNodeBg,
+  };
+}
+
+export function getDisabledNodeColors(): { header: string; bg: string } {
+  const colors = getLiteGraphColors();
+  return {
+    header: colors.disabledNodeHeader,
+    bg: colors.disabledNodeBg,
   };
 }
 

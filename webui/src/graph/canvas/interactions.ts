@@ -216,6 +216,18 @@ export class CanvasInteractions {
       return id !== "__function_inputs__" && id !== "__function_outputs__";
     });
     makeItem("删除", hasDeletable, () => { this.deleteSelectedNodes().catch(console.error); });
+    const hasToggleable = selectedNodes.some((node: any) => {
+      const id: string | undefined = node.zihuanId;
+      return id !== undefined && id !== "__function_inputs__" && id !== "__function_outputs__";
+    });
+    const allDisabled = hasToggleable && selectedNodes.every((node: any) => {
+      const id: string | undefined = node.zihuanId;
+      if (!id || id === "__function_inputs__" || id === "__function_outputs__") return true;
+      return !!this.canvas.state.graph?.nodes.find((item) => item.id === id)?.disabled;
+    });
+    makeItem(allDisabled ? "启用节点" : "禁用节点", hasToggleable, () => {
+      this.toggleSelectedNodesDisabled().catch(console.error);
+    });
     makeItem("提取为函数子图", hasSelection && this.canvas.state.graph !== null, () => {
       this.convertSelectionToFunction().catch(console.error);
     });
@@ -268,6 +280,31 @@ export class CanvasInteractions {
       if (id === "__function_inputs__" || id === "__function_outputs__") continue;
       this.canvas.lGraph.remove(node);
     }
+  }
+
+  async toggleSelectedNodesDisabled(): Promise<void> {
+    const sid = this.canvas.state.sessionId;
+    const graph = this.canvas.state.graph;
+    if (!sid || !graph) return;
+
+    const selectedNodes: any[] = Object.values((this.canvas.lCanvas as any).selected_nodes ?? {});
+    const targets: { id: string; nextDisabled: boolean }[] = [];
+    for (const node of selectedNodes) {
+      const id = node.zihuanId as string | undefined;
+      if (!id) continue;
+      if (id === "__function_inputs__" || id === "__function_outputs__") continue;
+      const def = graph.nodes.find((item) => item.id === id);
+      if (!def) continue;
+      targets.push({ id, nextDisabled: !def.disabled });
+    }
+    if (targets.length === 0) return;
+
+    await Promise.all(
+      targets.map((target) => graphs.updateNode(sid, target.id, { disabled: target.nextDisabled })),
+    );
+    await this.canvas.reloadCurrentSession();
+    this.canvas.state.dirty = true;
+    this.canvas.onGraphDirty?.();
   }
 
   async showHPPicker(lNode: any, portName: string, event: MouseEvent): Promise<void> {

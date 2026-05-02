@@ -50,4 +50,3 @@ impl Node for QQMessageJsonOutputSystemPromptProviderNode {
         Ok(outputs)
     }
 }
-

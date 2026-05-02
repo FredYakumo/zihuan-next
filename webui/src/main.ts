@@ -213,6 +213,7 @@ async function main() {
     onSaveAs,
     onUndo,
     onRedo,
+    onToggleDisabled: () => canvas.toggleSelectedNodesDisabled(),
   });
 
   startAutoSaveLoop(() => saveManager.autoSaveDirtyTabs(), 30_000);

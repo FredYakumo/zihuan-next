@@ -39,6 +39,7 @@ export function applyLiteGraphTheme(canvas: CanvasFacade): void {
   const complexTypes = ["Json", "MessageEvent", "OpenAIMessage", "QQMessage", "FunctionTools", "LLModel"];
   const refs = [
     "BotAdapterRef",
+    "S3Ref",
     "RedisRef",
     "MySqlRef",
     "TavilyRef",

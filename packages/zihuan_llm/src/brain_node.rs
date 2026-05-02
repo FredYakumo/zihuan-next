@@ -282,4 +282,3 @@ impl Node for BrainNode {
         Ok(outputs)
     }
 }
-

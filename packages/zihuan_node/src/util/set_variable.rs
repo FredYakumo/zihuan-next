@@ -124,4 +124,3 @@ impl Node for SetVariableNode {
         Ok(HashMap::new())
     }
 }
-

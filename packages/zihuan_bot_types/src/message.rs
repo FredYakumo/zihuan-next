@@ -210,7 +210,10 @@ pub struct ImageMessage {
     pub thumb: Option<String>,
     #[serde(default)]
     pub summary: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_option_i32_from_string_or_number")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_option_i32_from_string_or_number"
+    )]
     pub sub_type: Option<i32>,
     #[serde(skip)]
     pub object_key: Option<String>,
@@ -345,10 +348,7 @@ pub fn collect_media_records(messages: &[Message]) -> Vec<MessageMediaRecord> {
                 r#type: "image".to_string(),
                 name: image.name.clone(),
                 file: image.file.clone(),
-                path: image
-                    .local_path
-                    .clone()
-                    .or_else(|| image.path.clone()),
+                path: image.local_path.clone().or_else(|| image.path.clone()),
                 url: image.url.clone(),
                 thumb: image.thumb.clone(),
                 summary: image.summary.clone(),

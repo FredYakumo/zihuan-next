@@ -29,8 +29,15 @@ export interface BrainToolDefinition {
 }
 
 export interface QQMessageItem {
-  type: "text" | "at" | "reply";
-  data: { text?: string; target?: string; id?: number };
+  type: "text" | "at" | "reply" | "image";
+  data: {
+    text?: string;
+    target?: string;
+    id?: number;
+    url?: string;
+    name?: string;
+    summary?: string;
+  };
 }
 
 export type ConnectPortChoice =

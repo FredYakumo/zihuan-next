@@ -54,4 +54,3 @@ impl Node for SwitchNode {
         Ok(outputs)
     }
 }
-

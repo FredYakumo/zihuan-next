@@ -845,4 +845,3 @@ impl MessageStore {
         store.get(message_id).cloned()
     }
 }
-

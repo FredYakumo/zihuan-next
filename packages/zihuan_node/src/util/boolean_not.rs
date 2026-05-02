@@ -55,4 +55,3 @@ impl Node for BooleanNotNode {
         Ok(outputs)
     }
 }
-

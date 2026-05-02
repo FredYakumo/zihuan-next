@@ -1,4 +1,4 @@
-import { graphs } from "../../api/client";
+import { graphs, fileIO } from "../../api/client";
 import type { NodeDefinition, Port } from "../../api/types";
 import { openOverlay } from "./base";
 import { buildPortListEditor, escapeHtml, extractTemplateVars } from "./shared";
@@ -673,9 +673,7 @@ export function openQQMessageListEditor(
   const messages: QQMessageItem[] = JSON.parse(JSON.stringify(rawMessages));
 
   const render = () => {
-    dialog.innerHTML = `<h3>编辑 QQ 消息列表</h3>
-      <div class="zh-hint">支持三种消息类型：text(文本)、at(@某人)、reply(回复)</div>
-    `;
+    dialog.innerHTML = `<h3>编辑 QQ 消息列表</h3>`;
 
     const listLabel = document.createElement("div");
     listLabel.className = "zh-section-label";
@@ -739,22 +737,26 @@ export function openQQMessageListEditor(
     headerRow.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:8px;";
 
     const typeSelect = document.createElement("select");
-    ["text", "at", "reply"].forEach((t) => {
+    (["text", "at", "reply", "image"] as const).forEach((t) => {
       const opt = document.createElement("option");
       opt.value = t;
-      opt.textContent = t === "text" ? "文本" : t === "at" ? "@提及" : "回复";
+      opt.textContent =
+        t === "text" ? "文本" : t === "at" ? "@提及" : t === "reply" ? "回复" : "图像";
       if (t === msg.type) opt.selected = true;
       typeSelect.appendChild(opt);
     });
+    typeSelect.style.flex = "1";
     typeSelect.style.minWidth = "100px";
     typeSelect.addEventListener("change", () => {
-      const newType = typeSelect.value as "text" | "at" | "reply";
+      const newType = typeSelect.value as "text" | "at" | "reply" | "image";
       if (newType === "text") {
         messages[idx] = { type: "text", data: { text: "" } };
       } else if (newType === "at") {
         messages[idx] = { type: "at", data: { target: "" } };
-      } else {
+      } else if (newType === "reply") {
         messages[idx] = { type: "reply", data: { id: 0 } };
+      } else {
+        messages[idx] = { type: "image", data: { url: "" } };
       }
       close();
       openQQMessageListEditor(
@@ -767,7 +769,7 @@ export function openQQMessageListEditor(
     const deleteBtn = document.createElement("button");
     deleteBtn.textContent = "✕ 删除";
     deleteBtn.className = "danger";
-    deleteBtn.style.padding = "4px 8px";
+    deleteBtn.style.cssText = "padding:4px 8px;white-space:nowrap;flex-shrink:0;";
     deleteBtn.addEventListener("click", () => {
       messages.splice(idx, 1);
       close();
@@ -819,9 +821,129 @@ export function openQQMessageListEditor(
       });
       card.appendChild(label);
       card.appendChild(input);
+    } else if (msg.type === "image") {
+      buildImageMessageInputs(card, msg, idx);
     }
 
     return card;
+  };
+
+  const buildImageMessageInputs = (
+    card: HTMLElement,
+    msg: QQMessageItem,
+    idx: number,
+  ): void => {
+    const previewWrap = document.createElement("div");
+    previewWrap.style.cssText = "margin-bottom:8px;";
+    const renderPreview = () => {
+      previewWrap.innerHTML = "";
+      const url = msg.data.url ?? "";
+      if (!url) return;
+      const img = document.createElement("img");
+      img.src = url;
+      img.alt = msg.data.name ?? "image";
+      img.style.cssText =
+        "max-width:200px;max-height:200px;border-radius:4px;display:block;";
+      img.addEventListener("error", () => {
+        img.style.opacity = "0.4";
+        img.title = "图像加载失败";
+      });
+      previewWrap.appendChild(img);
+    };
+    renderPreview();
+    card.appendChild(previewWrap);
+
+    const dropZone = document.createElement("div");
+    dropZone.textContent = "拖拽图像到此处或点击上传";
+    dropZone.style.cssText =
+      "border:1px dashed #888;border-radius:4px;padding:16px;text-align:center;cursor:pointer;color:#aaa;margin-bottom:8px;user-select:none;";
+
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = "image/*";
+    fileInput.style.display = "none";
+
+    const status = document.createElement("div");
+    status.style.cssText = "font-size:12px;color:#888;margin-bottom:8px;min-height:16px;";
+
+    const urlLabel = document.createElement("label");
+    urlLabel.textContent = "图像 URL";
+    const urlInput = document.createElement("input");
+    urlInput.type = "text";
+    urlInput.value = msg.data.url ?? "";
+    urlInput.placeholder = "https://… 或上传后自动填入";
+    urlInput.addEventListener("input", () => {
+      messages[idx].data.url = urlInput.value;
+      msg.data.url = urlInput.value;
+      renderPreview();
+    });
+
+    const summaryLabel = document.createElement("label");
+    summaryLabel.textContent = "摘要 (可选)";
+    const summaryInput = document.createElement("input");
+    summaryInput.type = "text";
+    summaryInput.value = msg.data.summary ?? "";
+    summaryInput.placeholder = "图像描述文字";
+    summaryInput.addEventListener("input", () => {
+      messages[idx].data.summary = summaryInput.value;
+    });
+
+    const handleFile = async (file: File) => {
+      if (!file.type.startsWith("image/")) {
+        status.textContent = `不支持的文件类型: ${file.type || "未知"}`;
+        status.style.color = "#e57373";
+        return;
+      }
+      status.textContent = `上传中… (${file.name})`;
+      status.style.color = "#888";
+      try {
+        const result = await fileIO.uploadImage(file);
+        messages[idx].data.url = result.url;
+        messages[idx].data.name = result.name;
+        msg.data.url = result.url;
+        msg.data.name = result.name;
+        urlInput.value = result.url;
+        renderPreview();
+        status.textContent = `已上传: ${result.name}`;
+        status.style.color = "#81c784";
+      } catch (e) {
+        status.textContent = "上传失败: " + (e as Error).message;
+        status.style.color = "#e57373";
+      }
+    };
+
+    dropZone.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files?.[0];
+      if (file) {
+        handleFile(file);
+        fileInput.value = "";
+      }
+    });
+    dropZone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dropZone.style.borderColor = "#4fc3f7";
+      dropZone.style.color = "#4fc3f7";
+    });
+    dropZone.addEventListener("dragleave", () => {
+      dropZone.style.borderColor = "#888";
+      dropZone.style.color = "#aaa";
+    });
+    dropZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropZone.style.borderColor = "#888";
+      dropZone.style.color = "#aaa";
+      const file = e.dataTransfer?.files?.[0];
+      if (file) handleFile(file);
+    });
+
+    card.appendChild(dropZone);
+    card.appendChild(fileInput);
+    card.appendChild(status);
+    card.appendChild(urlLabel);
+    card.appendChild(urlInput);
+    card.appendChild(summaryLabel);
+    card.appendChild(summaryInput);
   };
 
   render();

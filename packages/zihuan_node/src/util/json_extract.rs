@@ -188,4 +188,3 @@ impl Node for JsonExtractNode {
         Ok(outputs)
     }
 }
-

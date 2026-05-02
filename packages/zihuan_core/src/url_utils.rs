@@ -5,4 +5,3 @@ pub fn extract_host(url: &str) -> Option<&str> {
         .and_then(|s| s.split('/').next())
         .and_then(|s| s.split(':').next())
 }
-

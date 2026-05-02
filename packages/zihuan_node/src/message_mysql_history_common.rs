@@ -151,4 +151,3 @@ fn format_gap(duration: Duration) -> String {
     let hours = total_hours - days * 24;
     format!("{days}天{hours}小时")
 }
-

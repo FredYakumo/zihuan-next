@@ -8,3 +8,4 @@ Cargo.lock
 **/node_modules/
 webui/dist/
 webui/package-lock.json
+uploaded_images/

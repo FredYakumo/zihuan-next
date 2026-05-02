@@ -1513,8 +1513,9 @@ impl Node for QqMessageAgentNode {
                 if value.is_null() {
                     self.set_shared_inputs(Vec::new())?;
                 } else {
-                    let shared_inputs = brain_shared_inputs_from_value(value)
-                        .ok_or_else(|| Error::ValidationError("Invalid shared_inputs".to_string()))?;
+                    let shared_inputs = brain_shared_inputs_from_value(value).ok_or_else(|| {
+                        Error::ValidationError("Invalid shared_inputs".to_string())
+                    })?;
                     self.set_shared_inputs(shared_inputs)?;
                 }
             }

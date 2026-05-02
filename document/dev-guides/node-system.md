@@ -139,6 +139,7 @@ Each `port! { ... }` field:
 | `ty = OpenAIMessage` | `DataType::OpenAIMessage` |
 | `ty = LLModel` | `DataType::LLModel` |
 | `ty = BotAdapterRef` | `DataType::BotAdapterRef` |
+| `ty = S3Ref` | `DataType::S3Ref` |
 | `ty = RedisRef` | `DataType::RedisRef` |
 | `ty = MySqlRef` | `DataType::MySqlRef` |
 | `ty = Vec(OpenAIMessage)` | `DataType::Vec(Box::new(DataType::OpenAIMessage))` |
@@ -181,6 +182,7 @@ pub enum DataType {
     FunctionTools,
 
     BotAdapterRef,
+    S3Ref,
     RedisRef,
     MySqlRef,
     OpenAIMessageSessionCacheRef,
@@ -207,6 +209,7 @@ pub enum DataType {
 | `DataType::QQMessage` | `DataValue::QQMessage(QQMessage)` | QQ message |
 | `DataType::FunctionTools` | `DataValue::FunctionTools(...)` | LLM tool definitions |
 | `DataType::BotAdapterRef` | `DataValue::BotAdapterRef(SharedBotAdapter)` | Shared bot connection |
+| `DataType::S3Ref` | `DataValue::S3Ref(Arc<S3Ref>)` | Object storage config + upload client |
 | `DataType::RedisRef` | `DataValue::RedisRef(RedisConfig)` | Redis config |
 | `DataType::MySqlRef` | `DataValue::MySqlRef(MySqlConfig)` | MySQL config + pool |
 | `DataType::OpenAIMessageSessionCacheRef` | `DataValue::OpenAIMessageSessionCacheRef(...)` | Message cache |
@@ -712,6 +715,7 @@ Run the smallest manual or end-to-end validation that proves the node contract s
 |---------|-------------|
 | `redis` | Creates a `RedisRef` |
 | `mysql` | Creates a `MySqlRef` |
+| `rustfs` | Creates a `S3Ref` |
 
 ### Message Store (消息存储)
 
