@@ -53,11 +53,10 @@ impl Node for OpenAIMessageContentAsJsonNode {
         };
 
         let content = message
-            .content
-            .as_ref()
+            .content_text_owned()
             .ok_or_else(|| Error::ValidationError("OpenAIMessage content is None".to_string()))?;
 
-        let outputs = match serde_json::from_str(content) {
+        let outputs = match serde_json::from_str(&content) {
             Ok(json) => {
                 info!(
                     "[{}] OpenAIMessage content parsed as JSON successfully",
@@ -70,7 +69,7 @@ impl Node for OpenAIMessageContentAsJsonNode {
                 // whitespace (e.g. `[[...]]\n\n[[...]]`) instead of one unified array.
                 // Attempt to collect all top-level values; if every one is a JSON array,
                 // flat-map their elements into a single array so downstream parsing still works.
-                let streamed: Vec<Value> = serde_json::Deserializer::from_str(content)
+                let streamed: Vec<Value> = serde_json::Deserializer::from_str(&content)
                     .into_iter::<Value>()
                     .filter_map(|r| r.ok())
                     .collect();
@@ -130,7 +129,7 @@ impl Node for OpenAIMessageContentAsJsonNode {
                     "[{}] Failed to parse OpenAIMessage content as JSON: {}. Raw content: {:?}",
                     self.id, err, content
                 );
-                HashMap::from([("failed".to_string(), DataValue::String(content.clone()))])
+                HashMap::from([("failed".to_string(), DataValue::String(content))])
             }
         };
         self.validate_outputs(&outputs)?;
