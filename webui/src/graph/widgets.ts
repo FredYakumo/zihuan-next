@@ -13,6 +13,7 @@ import {
   type EmbeddedFunctionConfig,
 } from "../ui/dialogs/index";
 import { getInlineWidgetTopY } from "./inline_layout";
+import { setupQQMessagePreviewWidgets } from "./preview_qq_messages";
 
 type WidgetMutationCallback = (pending?: Promise<unknown>) => void;
 
@@ -54,6 +55,9 @@ export function setupNodeWidgets(
       break;
     case "qq_message_list_data":
       setupQQMessageListWidgets(lNode, nodeDef, getSessionId, onRefresh);
+      break;
+    case "qq_message_preview":
+      setupQQMessagePreviewWidgets(lNode, nodeDef);
       break;
     default:
       setupSimpleInlineWidgets(lNode, nodeDef, getSessionId, onRefresh, onMutated);

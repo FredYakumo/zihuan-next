@@ -335,7 +335,7 @@ fn build_user_message(
     }
     lines.push(user_text);
 
-    if let Some(ref_cnt) = msg_prop.ref_content.as_deref() {
+    if let Some(ref ref_cnt) = msg_prop.ref_content {
         if !ref_cnt.is_empty() {
             lines.push(String::new());
             lines.push("[引用内容]".to_string());

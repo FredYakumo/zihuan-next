@@ -158,7 +158,7 @@ impl Brain {
             });
 
             // Transport errors → abort immediately.
-            if let Some(content) = response.content.as_deref() {
+            if let Some(ref content) = response.content {
                 if is_transport_error(content) {
                     warn!("[Brain] Transport error on iteration {iteration}: {content}");
                     let msg = content.to_string();

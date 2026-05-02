@@ -215,13 +215,13 @@ pub struct ImageMessage {
         deserialize_with = "deserialize_option_i32_from_string_or_number"
     )]
     pub sub_type: Option<i32>,
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object_key: Option<String>,
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object_url: Option<String>,
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_path: Option<String>,
-    #[serde(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_status: Option<String>,
 }
 
@@ -240,15 +240,15 @@ impl ImageMessage {
 impl fmt::Display for ImageMessage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[Image")?;
-        if let Some(name) = self.name.as_deref() {
+        if let Some(ref name) = self.name {
             write!(f, ": name={name}")?;
         }
-        if let Some(object_key) = self.object_key.as_deref() {
+        if let Some(ref object_key) = self.object_key {
             write!(f, ", object_key={object_key}")?;
         } else if let Some(locator) = self.source_locator() {
             write!(f, ", source={locator}")?;
         }
-        if let Some(status) = self.cache_status.as_deref() {
+        if let Some(ref status) = self.cache_status {
             write!(f, ", cache_status={status}")?;
         }
         write!(f, "]")
@@ -275,7 +275,7 @@ pub struct ForwardMessage {
 
 impl fmt::Display for ForwardMessage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(id) = self.id.as_deref() {
+        if let Some(ref id) = self.id {
             write!(f, "[Forward of message ID {}]", id)
         } else {
             write!(f, "[Forward with {} node(s)]", self.content.len())

@@ -1,4 +1,5 @@
 use chrono::Local;
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -73,10 +74,44 @@ fn run_graph_blocking(
     definition: zihuan_node::graph_io::NodeGraphDefinition,
     stop_flag: Arc<AtomicBool>,
     task_id: String,
+    broadcast_tx: WsBroadcast,
+    graph_session_id: String,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let preview_node_ids: HashSet<String> = definition
+        .nodes
+        .iter()
+        .filter(|n| n.node_type == "qq_message_preview")
+        .map(|n| n.id.clone())
+        .collect();
+
     let mut graph = zihuan_node::registry::build_node_graph_from_definition(&definition)
         .map_err(|e| format!("Build graph failed: {e}"))?;
     graph.set_execution_task_id(Some(task_id.clone()));
+
+    if !preview_node_ids.is_empty() {
+        let tx = broadcast_tx.clone();
+        let task = task_id.clone();
+        let session = graph_session_id.clone();
+        let ids = Arc::new(preview_node_ids);
+        graph.set_execution_callback(move |node_id, inputs, _outputs| {
+            if !ids.contains(node_id) {
+                return;
+            }
+            let Some(value) = inputs.get("messages") else {
+                return;
+            };
+            let Ok(json) = serde_json::to_value(value) else {
+                return;
+            };
+            let _ = tx.send(ServerMessage::NodePreviewQQMessages {
+                task_id: task.clone(),
+                graph_session_id: session.clone(),
+                node_id: node_id.to_string(),
+                messages: json,
+            });
+        });
+    }
+
     // Link the external stop flag to the graph's internal stop flag
     let graph_flag = graph.get_stop_flag();
     let flag_clone = Arc::clone(&stop_flag);
@@ -225,7 +260,7 @@ fn start_graph_task(
     let _ = broadcast_tx.send(ServerMessage::TaskStarted {
         task_id: task_id.clone(),
         graph_name,
-        graph_session_id,
+        graph_session_id: graph_session_id.clone(),
     });
 
     let state_clone = Arc::clone(&state);
@@ -234,8 +269,16 @@ fn start_graph_task(
     let stop_flag_check = Arc::clone(&stop_flag);
     tokio::spawn(async move {
         let task_id_for_exec = task_id_clone.clone();
+        let broadcast_tx_for_exec = broadcast_tx.clone();
+        let session_for_exec = graph_session_id;
         let result = tokio::task::spawn_blocking(move || {
-            run_graph_blocking(graph_def, stop_flag, task_id_for_exec)
+            run_graph_blocking(
+                graph_def,
+                stop_flag,
+                task_id_for_exec,
+                broadcast_tx_for_exec,
+                session_for_exec,
+            )
         })
         .await;
 

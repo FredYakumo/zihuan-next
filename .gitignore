@@ -10,5 +10,5 @@ webui/dist/
 webui/package-lock.json
 uploaded_images/
 pnpm
-.lsmcp
-.claude
+.lsmcp/
+.claude/

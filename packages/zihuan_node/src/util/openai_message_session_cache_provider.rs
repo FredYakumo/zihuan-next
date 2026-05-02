@@ -62,7 +62,7 @@ impl OpenAIMessageSessionCacheProviderNode {
         );
 
         if let Some(redis_config) = redis_ref {
-            if let Some(url) = redis_config.url.as_deref() {
+            if let Some(ref url) = redis_config.url {
                 let url = url.to_string();
                 let cache_ref = self.cache_ref.clone();
                 let tracker_registry_key = self.redis_tracker_registry_key();
