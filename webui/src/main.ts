@@ -5,6 +5,7 @@ import { ws } from "./api/ws";
 import type { NodeTypeInfo, TaskEntry } from "./api/types";
 import { registerNodeTypes } from "./graph/registry";
 import { ZihuanCanvas } from "./graph/canvas";
+import { installPreviewWsHandler } from "./graph/preview_qq_messages";
 import {
   buildCanvasPanelButtons,
   buildDOM,
@@ -31,6 +32,7 @@ async function main() {
   const { toolbar, canvasContainer, canvasEl, backArrow } = buildDOM();
 
   ws.connect();
+  installPreviewWsHandler(ws);
 
   let nodeTypes: NodeTypeInfo[] = [];
   try {

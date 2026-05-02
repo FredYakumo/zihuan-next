@@ -29,14 +29,18 @@ export interface BrainToolDefinition {
 }
 
 export interface QQMessageItem {
-  type: "text" | "at" | "reply" | "image";
+  type: "text" | "at" | "reply" | "image" | "forward";
   data: {
     text?: string;
     target?: string;
     id?: number;
     url?: string;
+    path?: string;
+    file?: string;
+    object_url?: string;
     name?: string;
     summary?: string;
+    content?: QQMessageItem[];
   };
 }
 

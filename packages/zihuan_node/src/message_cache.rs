@@ -93,7 +93,7 @@ impl MessageCacheNode {
         );
 
         if let Some(redis_config) = redis_ref {
-            if let Some(url) = redis_config.url.as_deref() {
+            if let Some(ref url) = redis_config.url {
                 let url = url.to_string();
                 let redis_cm = self.redis_cm.clone();
                 let cached_url = self.cached_redis_url.clone();

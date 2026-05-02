@@ -10,6 +10,7 @@ pub fn init_node_registry() -> Result<()> {
 
     use zihuan_bot_adapter::extract_group_id_from_event::ExtractGroupIdFromEventNode;
     use zihuan_bot_adapter::extract_message_from_event::ExtractMessageFromEventNode;
+    use zihuan_bot_adapter::extract_qq_message_list_from_event::ExtractQQMessageListFromEventNode;
     use zihuan_bot_adapter::{
         BotAdapterNode, ExtractSenderIdFromEventNode, MessageEventTypeFilterNode,
         SendFriendMessageBatchesNode, SendFriendMessageNode, SendGroupMessageBatchesNode,
@@ -126,6 +127,14 @@ pub fn init_node_registry() -> Result<()> {
         "Bot适配器",
         "从消息事件中提取 OpenAIMessage 列表",
         ExtractMessageFromEventNode
+    );
+
+    register_node!(
+        "extract_qq_message_list_from_event",
+        "事件提取 QQMessage 列表",
+        "Bot适配器",
+        "从消息事件中提取原始 QQ 消息列表 (Vec<QQMessage>)",
+        ExtractQQMessageListFromEventNode
     );
 
     register_node!(

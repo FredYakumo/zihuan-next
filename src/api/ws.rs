@@ -35,6 +35,12 @@ pub enum ServerMessage {
         graph_id: String,
         issues: Vec<serde_json::Value>,
     },
+    NodePreviewQQMessages {
+        task_id: String,
+        graph_session_id: String,
+        node_id: String,
+        messages: serde_json::Value,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

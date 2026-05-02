@@ -21,7 +21,7 @@ pub struct S3Ref {
 
 impl S3Ref {
     pub fn object_url_for_key(&self, key: &str) -> Result<String> {
-        let base = if let Some(public_base_url) = self.public_base_url.as_deref() {
+        let base = if let Some(ref public_base_url) = self.public_base_url {
             public_base_url.trim_end_matches('/').to_string()
         } else if self.path_style {
             format!(

@@ -89,7 +89,7 @@ impl Node for ExtractMessageFromEventNode {
 
             // Build user message from incoming MessageEvent
             let mut user_text = msg_prop.content.clone().unwrap_or_default();
-            if let Some(ref_cnt) = msg_prop.ref_content.as_deref() {
+            if let Some(ref ref_cnt) = msg_prop.ref_content {
                 if !ref_cnt.is_empty() {
                     if !user_text.is_empty() {
                         user_text.push_str("\n\n");

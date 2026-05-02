@@ -155,10 +155,10 @@ fn forward_nodes_to_json(nodes: &[ForwardNodeMessage]) -> serde_json::Value {
             .map(|node| {
                 let mut data = serde_json::Map::new();
 
-                if let Some(id) = node.id.as_deref() {
+                if let Some(ref id) = node.id {
                     data.insert("id".to_string(), serde_json::Value::String(id.to_string()));
                 }
-                if let Some(user_id) = node.user_id.as_deref() {
+                if let Some(ref user_id) = node.user_id {
                     data.insert(
                         "user_id".to_string(),
                         serde_json::Value::String(user_id.to_string()),
@@ -168,7 +168,7 @@ fn forward_nodes_to_json(nodes: &[ForwardNodeMessage]) -> serde_json::Value {
                         serde_json::Value::String(user_id.to_string()),
                     );
                 }
-                if let Some(nickname) = node.nickname.as_deref() {
+                if let Some(ref nickname) = node.nickname {
                     data.insert(
                         "nickname".to_string(),
                         serde_json::Value::String(nickname.to_string()),

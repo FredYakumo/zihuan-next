@@ -163,12 +163,21 @@ export interface TaskLogEntry {
 }
 
 // WebSocket message types
+import type { QQMessageItem } from "../ui/dialogs/types";
+
 export type ServerMessage =
   | { type: "TaskStarted"; task_id: string; graph_name: string; graph_session_id: string }
   | { type: "TaskFinished"; task_id: string; success: boolean; error?: string }
   | { type: "TaskStopped"; task_id: string }
   | { type: "LogMessage"; level: string; message: string; timestamp: string }
-  | { type: "GraphValidationResult"; graph_id: string; issues: ValidationIssue[] };
+  | { type: "GraphValidationResult"; graph_id: string; issues: ValidationIssue[] }
+  | {
+      type: "NodePreviewQQMessages";
+      task_id: string;
+      graph_session_id: string;
+      node_id: string;
+      messages: QQMessageItem[];
+    };
 
 export type ClientMessage =
   | { type: "Subscribe"; graph_id: string }

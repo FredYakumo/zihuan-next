@@ -206,13 +206,13 @@ async fn resolve_image_payload(
     adapter: &SharedBotAdapter,
     image: &ImageMessage,
 ) -> Result<Option<ResolvedImagePayload>> {
-    if let Some(path) = image.path.as_deref() {
+    if let Some(ref path) = image.path {
         if let Some(payload) = read_local_file(path, image.name.as_deref()).await? {
             return Ok(Some(payload));
         }
     }
 
-    if let Some(file) = image.file.as_deref() {
+    if let Some(ref file) = image.file {
         if let Some(stripped) = file.strip_prefix("file://") {
             if let Some(payload) = read_local_file(stripped, image.name.as_deref()).await? {
                 return Ok(Some(payload));
@@ -220,14 +220,14 @@ async fn resolve_image_payload(
         }
     }
 
-    if let Some(url) = image.url.as_deref() {
+    if let Some(ref url) = image.url {
         if let Some(payload) = download_remote_file(url, image.name.as_deref()).await? {
             return Ok(Some(payload));
         }
     }
 
     if let Some(detail) = fetch_napcat_image_detail(adapter, image).await? {
-        if let Some(base64_payload) = detail.base64.as_deref() {
+        if let Some(ref base64_payload) = detail.base64 {
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(base64_payload.as_bytes())
                 .map_err(|e| {
@@ -246,13 +246,13 @@ async fn resolve_image_payload(
             }));
         }
 
-        if let Some(path) = detail.file.as_deref() {
+        if let Some(ref path) = detail.file {
             if let Some(payload) = read_local_file(path, detail.file_name.as_deref()).await? {
                 return Ok(Some(payload));
             }
         }
 
-        if let Some(url) = detail.url.as_deref() {
+        if let Some(ref url) = detail.url {
             if let Some(payload) = download_remote_file(url, detail.file_name.as_deref()).await? {
                 return Ok(Some(payload));
             }

@@ -367,7 +367,8 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         MessageContentNode, MessageListDataNode, OpenAIMessageContentAsJsonNode,
         OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode,
         OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheProviderNode,
-        OpenAIMessageSessionCacheSetNode, PreviewMessageListNode, PreviewStringNode,
+        OpenAIMessageSessionCacheSetNode, PreviewMessageListNode, PreviewQQMessageListNode,
+        PreviewStringNode,
         PushBackVecNode, QQMessageJsonOutputSystemPromptProviderNode, QQMessageListDataNode,
         SessionStateClearNode, SessionStateGetNode, SessionStateProviderNode,
         SessionStateReleaseNode, SessionStateTryClaimNode, SetVariableNode, StackNode,
@@ -584,6 +585,13 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         "工具",
         "在节点卡片内预览 OpenAIMessage 列表",
         PreviewMessageListNode
+    );
+    register_node!(
+        "qq_message_preview",
+        "Preview QQ Messages",
+        "工具",
+        "在节点卡片内实时预览 QQMessage 列表（含图片）",
+        PreviewQQMessageListNode
     );
     register_node!(
         "message_list_data",

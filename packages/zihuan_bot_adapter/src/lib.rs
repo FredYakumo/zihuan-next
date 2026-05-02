@@ -3,6 +3,7 @@ pub mod bot_adapter;
 pub mod event;
 pub mod extract_group_id_from_event;
 pub mod extract_message_from_event;
+pub mod extract_qq_message_list_from_event;
 pub mod extract_sender_id_from_event;
 pub mod message_event_type_filter;
 pub mod message_helpers;
@@ -17,6 +18,7 @@ pub mod send_qq_message_batches;
 pub mod ws_action;
 
 pub use bot_adapter::BotAdapterNode;
+pub use extract_qq_message_list_from_event::ExtractQQMessageListFromEventNode;
 pub use extract_sender_id_from_event::ExtractSenderIdFromEventNode;
 pub use message_event_type_filter::MessageEventTypeFilterNode;
 pub use message_sender::MessageSenderNode;
