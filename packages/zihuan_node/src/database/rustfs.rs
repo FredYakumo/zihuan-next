@@ -2,6 +2,7 @@ use crate::object_storage::S3Ref;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 use std::sync::Arc;
+use zihuan_core::runtime::block_async;
 use zihuan_core::error::{Error, Result};
 
 pub struct RustfsNode {
@@ -82,6 +83,9 @@ impl Node for RustfsNode {
             public_base_url,
             path_style,
         });
+
+        let s3_ref_for_init = Arc::clone(&s3_ref);
+        block_async(async move { s3_ref_for_init.ensure_bucket_exists().await })?;
 
         let outputs = HashMap::from([("s3_ref".to_string(), DataValue::S3Ref(s3_ref))]);
         self.validate_outputs(&outputs)?;
