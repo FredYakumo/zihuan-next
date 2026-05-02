@@ -6,6 +6,14 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::agent::brain::{Brain, BrainStopReason, BrainTool};
+use crate::brain_tool::{
+    brain_shared_inputs_from_value, BrainToolDefinition, BRAIN_SHARED_INPUTS_PORT,
+    BRAIN_TOOLS_CONFIG_PORT,
+};
+use crate::tool_subgraph::{
+    shared_inputs_ports, validate_shared_inputs, validate_tool_definitions, ToolResultMode,
+    ToolSubgraphRunner,
+};
 use zihuan_bot_adapter::adapter::shared_from_handle;
 use zihuan_bot_adapter::message_helpers::{
     get_bot_id, send_friend_batches, send_friend_progress_notification, send_friend_text,
@@ -23,7 +31,8 @@ use zihuan_llm_types::OpenAIMessage;
 use zihuan_node::data_value::{
     OpenAIMessageSessionCacheRef, SessionClaim, SessionStateRef, TavilyRef, SESSION_CLAIM_CONTEXT,
 };
-use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
+use zihuan_node::function_graph::FunctionPortDef;
+use zihuan_node::{node_output, DataType, DataValue, Node, Port};
 
 const LOG_PREFIX: &str = "[QqMessageAgentNode]";
 const BUSY_REPLY: &str = "我还在思考中，你别急";
@@ -45,7 +54,7 @@ fn build_private_system_prompt(
          如果你要在群里或消息结构里 @ 某个人，不要把 @xxx 直接写进最终自然语言；必须调用 `reply_at` 或 `reply_combine_text` 来发送真正的 @ 消息段。\n\
          你可以选择调用相关工具来获取信息，并通过 reply_* 工具把特定 QQ 消息加入待发送列表。\n\
          最终请直接输出你想发送给对方的自然语言，不要输出 JSON、代码块或额外格式说明。\n\
-         如果你调用了 reply_* 工具，这些工具加入的消息会先发送，你最后一条 assistant 自然语言回复会作为最后一条普通文本消息追加发送。\n\
+         如果你调用了 reply_* 工具，这些工具加入的消息会先发送。只有当你还需要补充一条新的普通文本时，才在最后一条 assistant 自然语言回复里输出它；如果 reply_* 已经完整表达了你要发送的内容，最终 assistant 自然语言回复请留空。\n\
          如果你决定这轮不回复，请调用 no_reply；调用后本轮不会发送任何 QQ 消息，但你仍然需要正常完成这一轮 assistant 收尾。\n\
          `reply_plain_text` 用于追加纯文本消息；`reply_at` 用于追加单独的 @ 消息；`reply_combine_text` 用于在同一次发送里组合 at 和文本片段。\n\
          当你需要输出较长总结、长文档解读、分点说明或超过一两屏的正文时，优先调用 `reply_forward_text`；它会把长正文整理成转发消息，适合给对方点开查看详情。\n\
@@ -71,7 +80,7 @@ fn build_group_system_prompt(
          如果你要 @ 某个人，不要把 @xxx 直接写进最终自然语言；必须调用 `reply_at` 或 `reply_combine_text` 来发送真正的 @ 消息段。当前这位发送者的 QQ 号是`{sender_id}`。\n\
          你可以选择调用相关工具来获取信息，并通过 reply_* 工具把特定 QQ 消息加入待发送列表。\n\
          最终请直接输出你想发送到群里的自然语言，不要输出 JSON、代码块或额外格式说明。\n\
-         如果你调用了 reply_* 工具，这些工具加入的消息会先发送，你最后一条 assistant 自然语言回复会作为最后一条普通文本消息追加发送。\n\
+         如果你调用了 reply_* 工具，这些工具加入的消息会先发送。只有当你还需要补充一条新的普通文本时，才在最后一条 assistant 自然语言回复里输出它；如果 reply_* 已经完整表达了你要发送的内容，最终 assistant 自然语言回复请留空。\n\
          如果你决定这轮不回复，请调用 no_reply；调用后本轮不会发送任何 QQ 消息，但你仍然需要正常完成这一轮 assistant 收尾。\n\
          `reply_plain_text` 用于追加纯文本消息；`reply_at` 用于追加单独的 @ 消息；`reply_combine_text` 用于在同一次发送里组合 at 和文本片段。\n\
          当你需要输出较长总结、长文档解读、分点说明或超过一两屏的正文时，优先调用 `reply_forward_text`；它会把长正文整理成转发消息，适合给群友点开查看详情。\n\
@@ -507,6 +516,67 @@ fn split_text_hard(content: &str, max_chars: usize) -> Vec<String> {
     }
 
     chunks
+}
+
+fn normalize_reply_signature(content: &str) -> Option<String> {
+    let normalized = content.split_whitespace().collect::<Vec<_>>().join(" ");
+    let trimmed = normalized.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn final_assistant_signature(
+    content: &str,
+    is_group: bool,
+    sender_id: &str,
+    sender_nickname: &str,
+    sender_card: &str,
+) -> Option<String> {
+    let normalized_source = if is_group {
+        let patterns = sender_mention_patterns(sender_id, sender_nickname, sender_card);
+        strip_leading_textual_mention(content, &patterns).unwrap_or(content)
+    } else {
+        content
+    };
+
+    normalize_reply_signature(normalized_source)
+}
+
+fn batch_reply_signature(batch: &[Message], sender_id: &str) -> Option<String> {
+    let mut combined = String::new();
+
+    for message in batch {
+        match message {
+            Message::PlainText(text) => combined.push_str(&text.text),
+            Message::At(at) if at.target.as_deref() == Some(sender_id) => {}
+            Message::At(_) | Message::Reply(_) | Message::Forward(_) => return None,
+        }
+    }
+
+    normalize_reply_signature(&combined)
+}
+
+fn is_duplicate_of_pending_batches(
+    content: &str,
+    batches: &[Vec<Message>],
+    is_group: bool,
+    sender_id: &str,
+    sender_nickname: &str,
+    sender_card: &str,
+) -> bool {
+    let Some(final_signature) =
+        final_assistant_signature(content, is_group, sender_id, sender_nickname, sender_card)
+    else {
+        return false;
+    };
+
+    batches
+        .iter()
+        .filter_map(|batch| batch_reply_signature(batch, sender_id))
+        .any(|signature| signature == final_signature)
 }
 
 fn build_forward_message(content: &str, bot_id: &str, bot_name: &str) -> Result<ForwardMessage> {
@@ -1051,9 +1121,25 @@ impl BrainTool for NoReplyBrainTool {
     }
 }
 
+struct EditableQqAgentTool {
+    runner: ToolSubgraphRunner,
+}
+
+impl BrainTool for EditableQqAgentTool {
+    fn spec(&self) -> Arc<dyn FunctionTool> {
+        self.runner.spec()
+    }
+
+    fn execute(&self, call_content: &str, arguments: &Value) -> String {
+        self.runner.execute_to_string(call_content, arguments)
+    }
+}
+
 pub struct QqMessageAgentNode {
     id: String,
     name: String,
+    shared_inputs: Vec<FunctionPortDef>,
+    tool_definitions: Vec<BrainToolDefinition>,
 }
 
 impl QqMessageAgentNode {
@@ -1061,11 +1147,48 @@ impl QqMessageAgentNode {
         Self {
             id: id.into(),
             name: name.into(),
+            shared_inputs: Vec::new(),
+            tool_definitions: Vec::new(),
         }
     }
 
     fn wrap_err(&self, msg: impl Into<String>) -> Error {
         Error::ValidationError(format!("[NODE_ERROR:{}] {}", self.id, msg.into()))
+    }
+
+    fn set_shared_inputs(&mut self, shared_inputs: Vec<FunctionPortDef>) -> Result<()> {
+        self.shared_inputs = validate_shared_inputs(&shared_inputs, "QQ Message Agent")?;
+        self.tool_definitions = validate_tool_definitions(
+            &self.tool_definitions,
+            &self.shared_inputs,
+            ToolResultMode::SingleString,
+            "QQ Message Agent",
+        )?;
+        Ok(())
+    }
+
+    fn set_tool_definitions(&mut self, tool_definitions: Vec<BrainToolDefinition>) -> Result<()> {
+        self.tool_definitions = validate_tool_definitions(
+            &tool_definitions,
+            &self.shared_inputs,
+            ToolResultMode::SingleString,
+            "QQ Message Agent",
+        )?;
+        Ok(())
+    }
+
+    fn parse_shared_inputs_input(
+        &self,
+        inputs: &HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
+        let mut values = HashMap::new();
+        for port in &self.shared_inputs {
+            let value = inputs
+                .get(&port.name)
+                .ok_or_else(|| self.wrap_err(format!("缺少必填共享输入 {}", port.name)))?;
+            values.insert(port.name.clone(), value.clone());
+        }
+        Ok(values)
     }
 
     fn handle(
@@ -1079,6 +1202,7 @@ impl QqMessageAgentNode {
         llm: &Arc<dyn zihuan_llm_types::llm_base::LLMBase>,
         tavily: &Arc<TavilyRef>,
         max_message_length: usize,
+        shared_runtime_values: HashMap<String, DataValue>,
     ) -> Result<()> {
         let is_group = event.message_type == MessageType::Group;
         let sender_id = event.sender.user_id.to_string();
@@ -1132,6 +1256,7 @@ impl QqMessageAgentNode {
             &target_id,
             is_group,
             max_message_length,
+            shared_runtime_values,
         );
 
         release_session(session, &sender_id, claim_token);
@@ -1153,6 +1278,7 @@ impl QqMessageAgentNode {
         target_id: &str,
         is_group: bool,
         max_message_length: usize,
+        shared_runtime_values: HashMap<String, DataValue>,
     ) -> Result<()> {
         let bot_id = get_bot_id(adapter);
         let user_msg = OpenAIMessage::user(build_user_message(event, &bot_id, bot_name));
@@ -1190,7 +1316,7 @@ impl QqMessageAgentNode {
         conversation.push(user_msg.clone());
 
         let pending_reply_state = Arc::new(Mutex::new(PendingReplyState::default()));
-        let (brain_output, stop_reason) = Brain::new(llm.clone())
+        let mut brain = Brain::new(llm.clone())
             .with_tool(TavilyBrainTool {
                 tavily_ref: tavily.clone(),
                 adapter: adapter.clone(),
@@ -1220,8 +1346,19 @@ impl QqMessageAgentNode {
             })
             .with_tool(NoReplyBrainTool {
                 pending_reply_state: pending_reply_state.clone(),
-            })
-            .run(conversation);
+            });
+        for tool_def in &self.tool_definitions {
+            brain.add_tool(EditableQqAgentTool {
+                runner: ToolSubgraphRunner {
+                    node_id: self.id.clone(),
+                    shared_inputs: self.shared_inputs.clone(),
+                    definition: tool_def.clone(),
+                    shared_runtime_values: shared_runtime_values.clone(),
+                    result_mode: ToolResultMode::SingleString,
+                },
+            });
+        }
+        let (brain_output, stop_reason) = brain.run(conversation);
 
         let last_assistant = brain_output.iter().rev().find(|m| {
             matches!(m.role, zihuan_llm_types::MessageRole::Assistant) && m.tool_calls.is_empty()
@@ -1245,15 +1382,10 @@ impl QqMessageAgentNode {
             info!("{LOG_PREFIX} no_reply was selected, skipping QQ send");
         } else {
             let mut batches = pending_snapshot.batches;
-            let mut has_forward_reply = batches
-                .iter()
-                .flatten()
-                .any(|message| matches!(message, Message::Forward(_)));
             let final_assistant_text = final_assistant_text.and_then(|content| {
                 if content.chars().count() > max_message_length {
                     match build_forward_message_via_llm(llm, &content, &bot_id, bot_name) {
                         Ok(forward) => {
-                            has_forward_reply = true;
                             batches.push(vec![Message::Forward(forward)]);
                             None
                         }
@@ -1271,30 +1403,26 @@ impl QqMessageAgentNode {
 
             if let Some(content) = final_assistant_text {
                 let sender_card = event.sender.card.as_str();
-                batches.extend(assistant_reply_batches(
+                if is_duplicate_of_pending_batches(
                     &content,
+                    &batches,
                     is_group,
                     sender_id,
                     &event.sender.nickname,
                     sender_card,
-                ));
-            } else if has_forward_reply {
-                let reminder = if is_group {
-                    format!(
-                        "@{} 我刚刚发了转发消息，你可以点开看看详细内容。",
-                        sender_id
-                    )
+                ) {
+                    info!(
+                        "{LOG_PREFIX} Skipping duplicate final assistant text for sender={sender_id}"
+                    );
                 } else {
-                    "我刚刚发了转发消息，你可以点开看看详细内容。".to_string()
-                };
-                let sender_card = event.sender.card.as_str();
-                batches.extend(assistant_reply_batches(
-                    &reminder,
-                    is_group,
-                    sender_id,
-                    &event.sender.nickname,
-                    sender_card,
-                ));
+                    batches.extend(assistant_reply_batches(
+                        &content,
+                        is_group,
+                        sender_id,
+                        &event.sender.nickname,
+                        sender_card,
+                    ));
+                }
             }
 
             if !batches.is_empty() {
@@ -1339,25 +1467,104 @@ impl Node for QqMessageAgentNode {
         Some("使用Brain智能体响应消息事件，智能体会结合自身状态对消息事件进行判断并做出响应。")
     }
 
-    node_input![
-        port! { name = "message_event",  ty = MessageEvent,                    desc = "来自 bot_adapter 的消息事件" },
-        port! { name = "qq_bot_adapter", ty = BotAdapterRef,                   desc = "Bot 适配器引用，用于发送消息" },
-        port! { name = "time",           ty = String,                          desc = "当前时间字符串，注入 system prompt" },
-        port! { name = "bot_name",       ty = String,                          desc = "机器人角色名称，注入 system prompt" },
-        port! { name = "cache_ref",      ty = OpenAIMessageSessionCacheRef,    desc = "OpenAIMessage 会话历史缓存引用" },
-        port! { name = "session_ref",    ty = SessionStateRef,                 desc = "运行时会话占用引用，防止并发推理" },
-        port! { name = "llm_model",      ty = LLModel,                         desc = "LLM 模型引用" },
-        port! { name = "tavily_ref",     ty = TavilyRef,                       desc = "Tavily 搜索引用" },
-        port! { name = "max_message_length", ty = Integer,                     desc = "可选：最终回复超过该字数时强制转为 forward，默认 500", optional },
-    ];
+    fn input_ports(&self) -> Vec<Port> {
+        let mut ports = vec![
+            Port::new("message_event", DataType::MessageEvent)
+                .with_description("来自 bot_adapter 的消息事件"),
+            Port::new("qq_bot_adapter", DataType::BotAdapterRef)
+                .with_description("Bot 适配器引用，用于发送消息"),
+            Port::new("time", DataType::String)
+                .with_description("当前时间字符串，注入 system prompt"),
+            Port::new("bot_name", DataType::String)
+                .with_description("机器人角色名称，注入 system prompt"),
+            Port::new("cache_ref", DataType::OpenAIMessageSessionCacheRef)
+                .with_description("OpenAIMessage 会话历史缓存引用"),
+            Port::new("session_ref", DataType::SessionStateRef)
+                .with_description("运行时会话占用引用，防止并发推理"),
+            Port::new("llm_model", DataType::LLModel).with_description("LLM 模型引用"),
+            Port::new("tavily_ref", DataType::TavilyRef).with_description("Tavily 搜索引用"),
+            Port::new("max_message_length", DataType::Integer)
+                .with_description("可选：最终回复超过该字数时强制转为 forward，默认 500")
+                .optional(),
+            Port::new(BRAIN_TOOLS_CONFIG_PORT, DataType::Json)
+                .with_description("Tools 配置，由工具编辑器维护")
+                .optional()
+                .hidden(),
+            Port::new(BRAIN_SHARED_INPUTS_PORT, DataType::Json)
+                .with_description("QQ Agent 共享输入签名，由工具编辑器维护")
+                .optional()
+                .hidden(),
+        ];
+        ports.extend(shared_inputs_ports(&self.shared_inputs, "QQ Message Agent"));
+        ports
+    }
 
     node_output![];
+
+    fn has_dynamic_input_ports(&self) -> bool {
+        true
+    }
+
+    fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
+        match inline_values.get(BRAIN_SHARED_INPUTS_PORT) {
+            Some(DataValue::Json(value)) => {
+                if value.is_null() {
+                    self.set_shared_inputs(Vec::new())?;
+                } else {
+                    let shared_inputs = brain_shared_inputs_from_value(value)
+                        .ok_or_else(|| Error::ValidationError("Invalid shared_inputs".to_string()))?;
+                    self.set_shared_inputs(shared_inputs)?;
+                }
+            }
+            Some(other) => {
+                return Err(Error::ValidationError(format!(
+                    "shared_inputs expects Json, got {}",
+                    other.data_type()
+                )));
+            }
+            None => {
+                self.set_shared_inputs(Vec::new())?;
+            }
+        }
+
+        match inline_values.get(BRAIN_TOOLS_CONFIG_PORT) {
+            Some(DataValue::Json(value)) => {
+                if value.is_null() {
+                    self.tool_definitions.clear();
+                    return Ok(());
+                }
+                let parsed = serde_json::from_value::<Vec<BrainToolDefinition>>(value.clone())
+                    .map_err(|e| Error::ValidationError(format!("Invalid tools_config: {e}")))?;
+                self.set_tool_definitions(parsed)
+            }
+            Some(other) => Err(Error::ValidationError(format!(
+                "tools_config expects Json, got {}",
+                other.data_type()
+            ))),
+            None => {
+                self.tool_definitions.clear();
+                Ok(())
+            }
+        }
+    }
 
     fn execute(
         &mut self,
         inputs: HashMap<String, DataValue>,
     ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
+
+        if let Some(DataValue::Json(value)) = inputs.get(BRAIN_SHARED_INPUTS_PORT) {
+            let shared_inputs = brain_shared_inputs_from_value(value)
+                .ok_or_else(|| Error::ValidationError("Invalid shared_inputs".to_string()))?;
+            self.set_shared_inputs(shared_inputs)?;
+        }
+
+        if let Some(DataValue::Json(value)) = inputs.get(BRAIN_TOOLS_CONFIG_PORT) {
+            let parsed = serde_json::from_value::<Vec<BrainToolDefinition>>(value.clone())
+                .map_err(|e| Error::ValidationError(format!("Invalid tools_config: {e}")))?;
+            self.set_tool_definitions(parsed)?;
+        }
 
         let event = match inputs.get("message_event") {
             Some(DataValue::MessageEvent(e)) => e.clone(),
@@ -1397,6 +1604,7 @@ impl Node for QqMessageAgentNode {
             None => DEFAULT_MAX_MESSAGE_LENGTH,
             _ => return Err(self.wrap_err("max_message_length must be an integer when provided")),
         };
+        let shared_runtime_values = self.parse_shared_inputs_input(&inputs)?;
 
         self.handle(
             &event,
@@ -1408,6 +1616,7 @@ impl Node for QqMessageAgentNode {
             &llm,
             &tavily,
             max_message_length,
+            shared_runtime_values,
         )?;
 
         Ok(HashMap::new())

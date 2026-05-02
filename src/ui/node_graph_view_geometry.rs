@@ -29,7 +29,7 @@ fn is_list_data_node(node: &NodeDefinition) -> bool {
 }
 
 fn is_brain_node(node: &NodeDefinition) -> bool {
-    node.node_type == "brain"
+    matches!(node.node_type.as_str(), "brain" | "qq_message_agent")
 }
 
 fn is_visible_input_port(node_type: &str, port_name: &str) -> bool {
@@ -41,6 +41,8 @@ fn is_visible_input_port(node_type: &str, port_name: &str) -> bool {
         (node_type, port_name),
         ("brain", "tools_config")
             | ("brain", "shared_inputs")
+            | ("qq_message_agent", "tools_config")
+            | ("qq_message_agent", "shared_inputs")
             | ("message_event_type_filter", "filter_type")
             | ("send_qq_message_batches", "target_type")
             | ("string_to_openai_message", "role")
@@ -1323,6 +1325,5 @@ mod tests {
         assert_eq!(center_y, 60.0 + GRID_SIZE * NODE_HEADER_ROWS + GRID_SIZE / 2.0);
     }
 }
-
 
 

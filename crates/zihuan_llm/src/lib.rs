@@ -9,6 +9,7 @@ pub mod model;
 pub mod natural_language_reply;
 pub mod prompt;
 pub mod rag;
+pub mod tool_subgraph;
 pub mod tooling;
 pub mod util;
 

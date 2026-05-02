@@ -5,8 +5,9 @@ use std::fs;
 use std::path::Path;
 
 use crate::brain_tool_spec::{
-    brain_shared_inputs_from_value, brain_tool_input_signature, BrainToolDefinition,
-    BRAIN_SHARED_INPUTS_PORT, BRAIN_TOOLS_CONFIG_PORT,
+    brain_shared_inputs_from_value, brain_tool_input_signature, is_tool_subgraph_owner,
+    normalized_tool_outputs_for_owner, BrainToolDefinition, BRAIN_SHARED_INPUTS_PORT,
+    BRAIN_TOOLS_CONFIG_PORT,
 };
 use crate::data_value::DataType;
 use crate::function_graph::{
@@ -745,7 +746,7 @@ fn refresh_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
             continue;
         }
 
-        if node.node_type != "brain" {
+        if !is_tool_subgraph_owner(&node.node_type) {
             continue;
         }
 
@@ -766,7 +767,8 @@ fn refresh_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
             tool.ensure_defaults(index + 1);
             refresh_port_types_internal(&mut tool.subgraph);
             let input_signature = brain_tool_input_signature(&shared_inputs, tool);
-            sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &tool.outputs);
+            let outputs = normalized_tool_outputs_for_owner(&node.node_type, tool);
+            sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &outputs);
         }
 
         if let Ok(value) = serde_json::to_value(&tools) {
@@ -794,7 +796,7 @@ fn validate_embedded_subgraphs(graph: &NodeGraphDefinition) -> Vec<ValidationIss
             }
         }
 
-        if node.node_type != "brain" {
+        if !is_tool_subgraph_owner(&node.node_type) {
             continue;
         }
 
@@ -803,8 +805,8 @@ fn validate_embedded_subgraphs(graph: &NodeGraphDefinition) -> Vec<ValidationIss
                 Ok(tools) => {
                     for tool in tools {
                         let prefix = format!(
-                            "Brain 节点 \"{}\" 的 Tool \"{}\" 子图",
-                            node.name, tool.name
+                            "{} 节点 \"{}\" 的 Tool \"{}\" 子图",
+                            node.node_type, node.name, tool.name
                         );
                         issues.extend(
                             validate_graph_definition(&tool.subgraph)
@@ -814,8 +816,8 @@ fn validate_embedded_subgraphs(graph: &NodeGraphDefinition) -> Vec<ValidationIss
                     }
                 }
                 Err(error) => issues.push(ValidationIssue::error(format!(
-                    "Brain 节点 \"{}\" 的 tools_config 无法解析: {}",
-                    node.name, error
+                    "{} 节点 \"{}\" 的 tools_config 无法解析: {}",
+                    node.node_type, node.name, error
                 ))),
             }
         }
@@ -835,7 +837,7 @@ fn auto_fix_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
             continue;
         }
 
-        if node.node_type != "brain" {
+        if !is_tool_subgraph_owner(&node.node_type) {
             continue;
         }
 
@@ -856,7 +858,8 @@ fn auto_fix_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
             tool.ensure_defaults(index + 1);
             auto_fix_graph_definition(&mut tool.subgraph);
             let input_signature = brain_tool_input_signature(&shared_inputs, tool);
-            sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &tool.outputs);
+            let outputs = normalized_tool_outputs_for_owner(&node.node_type, tool);
+            sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &outputs);
         }
 
         if let Ok(value) = serde_json::to_value(&tools) {
