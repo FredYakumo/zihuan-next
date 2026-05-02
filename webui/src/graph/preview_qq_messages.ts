@@ -11,10 +11,21 @@ import type { ZihuanWS } from "../api/ws";
 const PADDING_X = 8;
 const PADDING_TOP = 30;
 const LINE_HEIGHT = 16;
-const BLOCK_GAP = 8;
+const BLOCK_GAP = 6;
 const MAX_HEIGHT = 600;
 const MAX_IMAGE_DIM = 200;
 const PLACEHOLDER_HEIGHT = 60;
+
+const BUBBLE_PAD_X = 10;
+const BUBBLE_PAD_Y = 6;
+const BUBBLE_RADIUS = 10;
+const BUBBLE_BG_TEXT = "#3a3a3a";
+const BUBBLE_BG_AT = "#1f3a55";
+const BUBBLE_BG_REPLY = "#3a2a48";
+const BUBBLE_BG_FORWARD = "#4a3820";
+const BUBBLE_BG_ERROR = "#4a2828";
+const BUBBLE_BG_IMAGE = "#2c2c2c";
+const BUBBLE_BORDER = "rgba(255,255,255,0.06)";
 
 // keyed by nodeDef.id (node ids are unique within the running webui)
 const previewStore: Map<string, QQMessageItem[]> = new Map();
@@ -81,7 +92,51 @@ function wrapText(
   return lines.length > 0 ? lines : [""];
 }
 
-function drawPlaceholderBox(
+function roundRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
+  const radius = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  if (typeof (ctx as any).roundRect === "function") {
+    (ctx as any).roundRect(x, y, w, h, radius);
+    return;
+  }
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + w - radius, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+  ctx.lineTo(x + w, y + h - radius);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+  ctx.lineTo(x + radius, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+}
+
+function fillBubble(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  bg: string,
+): void {
+  ctx.save();
+  ctx.fillStyle = bg;
+  roundRectPath(ctx, x, y, w, h, BUBBLE_RADIUS);
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = BUBBLE_BORDER;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawPlaceholderBubble(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
@@ -89,12 +144,8 @@ function drawPlaceholderBox(
   h: number,
   label: string,
 ): void {
+  fillBubble(ctx, x, y, w, h, BUBBLE_BG_IMAGE);
   ctx.save();
-  ctx.fillStyle = "#2a2a2a";
-  ctx.strokeStyle = "#555";
-  ctx.lineWidth = 1;
-  ctx.fillRect(x, y, w, h);
-  ctx.strokeRect(x, y, w, h);
   ctx.fillStyle = "#999";
   ctx.font = "12px sans-serif";
   ctx.textAlign = "center";
@@ -103,7 +154,7 @@ function drawPlaceholderBox(
   ctx.restore();
 }
 
-function drawTextBlock(
+function drawTextBubble(
   ctx: CanvasRenderingContext2D,
   prefix: string,
   body: string,
@@ -111,29 +162,41 @@ function drawTextBlock(
   y: number,
   maxWidth: number,
   prefixColor: string,
+  bubbleBg: string,
 ): number {
   ctx.font = "12px sans-serif";
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
 
-  let cursorY = y;
-  if (prefix) {
-    ctx.fillStyle = prefixColor;
-    ctx.fillText(prefix, x, cursorY);
+  const contentMaxWidth = Math.max(20, maxWidth - BUBBLE_PAD_X * 2);
+  const lines: { text: string; color: string }[] = [];
+  if (prefix) lines.push({ text: prefix, color: prefixColor });
+  if (body) {
+    const wrapped = wrapText(ctx, body, contentMaxWidth);
+    for (const line of wrapped) lines.push({ text: line, color: "#e8e8e8" });
+  }
+  if (lines.length === 0) return 0;
+
+  let widest = 0;
+  for (const line of lines) {
+    const w = ctx.measureText(line.text).width;
+    if (w > widest) widest = w;
+  }
+  const bubbleW = Math.min(maxWidth, Math.ceil(widest) + BUBBLE_PAD_X * 2);
+  const bubbleH = lines.length * LINE_HEIGHT + BUBBLE_PAD_Y * 2;
+
+  fillBubble(ctx, x, y, bubbleW, bubbleH, bubbleBg);
+
+  let cursorY = y + BUBBLE_PAD_Y;
+  for (const line of lines) {
+    ctx.fillStyle = line.color;
+    ctx.fillText(line.text, x + BUBBLE_PAD_X, cursorY);
     cursorY += LINE_HEIGHT;
   }
-  if (body) {
-    ctx.fillStyle = "#e0e0e0";
-    const lines = wrapText(ctx, body, maxWidth);
-    for (const line of lines) {
-      ctx.fillText(line, x, cursorY);
-      cursorY += LINE_HEIGHT;
-    }
-  }
-  return cursorY - y;
+  return bubbleH;
 }
 
-function drawImageBlock(
+function drawImageBubble(
   ctx: CanvasRenderingContext2D,
   msg: QQMessageItem,
   x: number,
@@ -144,28 +207,36 @@ function drawImageBlock(
   const url = pickImageUrl(msg);
   const boxW = Math.min(maxWidth, MAX_IMAGE_DIM);
   if (!url) {
-    drawPlaceholderBox(ctx, x, y, boxW, PLACEHOLDER_HEIGHT, "（无图片源）");
+    drawPlaceholderBubble(ctx, x, y, boxW, PLACEHOLDER_HEIGHT, "（无图片源）");
     return PLACEHOLDER_HEIGHT;
   }
   const entry = getOrCreateImage(url, lNode);
   if (entry.failed) {
-    drawPlaceholderBox(ctx, x, y, boxW, PLACEHOLDER_HEIGHT, "图像加载失败");
+    drawPlaceholderBubble(ctx, x, y, boxW, PLACEHOLDER_HEIGHT, "图像加载失败");
     return PLACEHOLDER_HEIGHT;
   }
   const img = entry.img;
   if (!img.complete || img.naturalWidth === 0) {
-    drawPlaceholderBox(ctx, x, y, boxW, PLACEHOLDER_HEIGHT, "加载中…");
+    drawPlaceholderBubble(ctx, x, y, boxW, PLACEHOLDER_HEIGHT, "加载中…");
     return PLACEHOLDER_HEIGHT;
   }
   const scale = Math.min(boxW / img.naturalWidth, MAX_IMAGE_DIM / img.naturalHeight, 1);
   const drawW = Math.max(1, Math.round(img.naturalWidth * scale));
   const drawH = Math.max(1, Math.round(img.naturalHeight * scale));
+
+  fillBubble(ctx, x, y, drawW, drawH, BUBBLE_BG_IMAGE);
+
+  ctx.save();
+  roundRectPath(ctx, x, y, drawW, drawH, BUBBLE_RADIUS);
+  ctx.clip();
   try {
     ctx.drawImage(img, x, y, drawW, drawH);
   } catch {
-    drawPlaceholderBox(ctx, x, y, boxW, PLACEHOLDER_HEIGHT, "图像加载失败");
+    ctx.restore();
+    drawPlaceholderBubble(ctx, x, y, boxW, PLACEHOLDER_HEIGHT, "图像加载失败");
     return PLACEHOLDER_HEIGHT;
   }
+  ctx.restore();
   return drawH;
 }
 
@@ -203,7 +274,7 @@ function drawPreview(
     let blockHeight = 0;
     switch (msg.type) {
       case "text":
-        blockHeight = drawTextBlock(
+        blockHeight = drawTextBubble(
           ctx,
           "",
           msg.data.text ?? "",
@@ -211,55 +282,60 @@ function drawPreview(
           y,
           maxWidth,
           "#aaa",
+          BUBBLE_BG_TEXT,
         );
         break;
       case "at":
-        blockHeight = drawTextBlock(
+        blockHeight = drawTextBubble(
           ctx,
           `@${msg.data.target ?? "?"}`,
           "",
           x,
           y,
           maxWidth,
-          "#4fc3f7",
+          "#79c8ff",
+          BUBBLE_BG_AT,
         );
         break;
       case "reply":
-        blockHeight = drawTextBlock(
+        blockHeight = drawTextBubble(
           ctx,
           `[Reply id=${msg.data.id ?? "?"}]`,
           "",
           x,
           y,
           maxWidth,
-          "#ce93d8",
+          "#dba8e0",
+          BUBBLE_BG_REPLY,
         );
         break;
       case "forward": {
         const count = msg.data.content?.length ?? 0;
-        blockHeight = drawTextBlock(
+        blockHeight = drawTextBubble(
           ctx,
           `[Forward (${count})]`,
           "",
           x,
           y,
           maxWidth,
-          "#ffb74d",
+          "#ffc97a",
+          BUBBLE_BG_FORWARD,
         );
         break;
       }
       case "image":
-        blockHeight = drawImageBlock(ctx, msg, x, y, maxWidth, lNode);
+        blockHeight = drawImageBubble(ctx, msg, x, y, maxWidth, lNode);
         break;
       default:
-        blockHeight = drawTextBlock(
+        blockHeight = drawTextBubble(
           ctx,
           `[未知类型: ${(msg as any).type}]`,
           "",
           x,
           y,
           maxWidth,
-          "#e57373",
+          "#ef9a9a",
+          BUBBLE_BG_ERROR,
         );
         break;
     }
