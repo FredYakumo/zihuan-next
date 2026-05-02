@@ -52,4 +52,3 @@ impl Node for CurrentTimeNode {
         Ok(outputs)
     }
 }
-

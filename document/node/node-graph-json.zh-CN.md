@@ -250,6 +250,7 @@ let has_errors = issues.iter().any(|i| i.severity == "error") || !cycles.is_empt
 | `"QQMessage"` | QQ 平台消息段 |
 | `"FunctionTools"` | LLM 函数调用工具定义 |
 | `"BotAdapterRef"` | 共享机器人 WebSocket 连接 |
+| `"S3Ref"` | 对象存储配置 + 上传客户端 |
 | `"RedisRef"` | Redis 配置 + 连接管理器 |
 | `"MySqlRef"` | MySQL 配置 + 连接池 |
 | `"OpenAIMessageSessionCacheRef"` | 每发送者消息历史缓存 |

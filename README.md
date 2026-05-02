@@ -74,11 +74,13 @@ cargo build --release
 ### Run
 
 ```bash
-docker compose -f docker/docker-compose.yaml up -d   # Redis (+ optional MySQL)
+docker compose -f docker/docker-compose.yaml up -d   # Redis + RustFS (+ optional MySQL)
 
 ./target/release/zihuan_next                         # http://127.0.0.1:8080
 ./target/release/zihuan_next --host 0.0.0.0 --port 9000
 ```
+
+The bundled compose file also starts RustFS object storage on `127.0.0.1:9000` with the console on `127.0.0.1:9001`. Override the default credentials by exporting `RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY` before `docker compose up`.
 
 Configuration values (API keys, etc.) are managed as **hyperparameters** inside the node graph — open the Hyperparameters panel in the editor to set them.
 

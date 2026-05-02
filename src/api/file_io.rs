@@ -1,10 +1,15 @@
 use std::sync::Arc;
 
+use chrono::{Datelike, Utc};
 use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
+use zihuan_bot_adapter::object_storage::ObjectStorageConfig;
 
 use super::state::AppState;
+
+const IMAGE_UPLOAD_MAX_BYTES: usize = 16 * 1024 * 1024;
+const LOCAL_IMAGE_UPLOAD_DIR: &str = "uploaded_images";
 
 // ─── Workflows directory helpers ──────────────────────────────────────────────
 
@@ -381,5 +386,161 @@ pub async fn download_graph(req: &mut Request, res: &mut Response, depot: &mut D
             res.status_code(StatusCode::NOT_FOUND);
             res.render(Json(serde_json::json!({"error": "Graph not found"})));
         }
+    }
+}
+
+#[derive(Serialize)]
+pub struct UploadImageResponse {
+    pub url: String,
+    pub key: String,
+    pub name: String,
+}
+
+#[handler]
+pub async fn upload_image(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let content_type = req
+        .headers()
+        .get(salvo::http::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.to_string())
+        .unwrap_or_default();
+    let mime = content_type
+        .split(';')
+        .next()
+        .map(|part| part.trim().to_ascii_lowercase())
+        .unwrap_or_default();
+
+    if !mime.starts_with("image/") {
+        res.status_code(StatusCode::UNSUPPORTED_MEDIA_TYPE);
+        res.render(Json(serde_json::json!({
+            "error": format!("expected image/* Content-Type, got '{}'", content_type)
+        })));
+        return;
+    }
+
+    let file_name_query = req.query::<String>("name");
+    let raw_file_name = file_name_query
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| {
+            let ext = mime.split('/').nth(1).unwrap_or("bin");
+            format!("image.{ext}")
+        });
+    let safe_file_name = sanitize_upload_file_name(&raw_file_name);
+
+    let bytes = match req.payload_with_max_size(IMAGE_UPLOAD_MAX_BYTES).await {
+        Ok(b) => b.clone(),
+        Err(e) => {
+            res.status_code(StatusCode::PAYLOAD_TOO_LARGE);
+            res.render(Json(serde_json::json!({"error": e.to_string()})));
+            return;
+        }
+    };
+
+    if bytes.is_empty() {
+        res.status_code(StatusCode::BAD_REQUEST);
+        res.render(Json(serde_json::json!({"error": "empty request body"})));
+        return;
+    }
+
+    let now = Utc::now();
+    let rel_dir = format!("{}/{:02}", now.format("%Y"), now.month());
+    let file_name = format!("{}_{}", uuid::Uuid::new_v4(), safe_file_name);
+
+    if let Some(storage) = ObjectStorageConfig::from_env() {
+        let key = format!("manual-uploads/{}/{}", rel_dir, file_name);
+        match storage.put_object(&key, &mime, &bytes).await {
+            Ok(url) => {
+                res.render(Json(UploadImageResponse {
+                    url,
+                    key,
+                    name: safe_file_name,
+                }));
+            }
+            Err(e) => {
+                res.status_code(StatusCode::BAD_GATEWAY);
+                res.render(Json(serde_json::json!({"error": e.to_string()})));
+            }
+        }
+        return;
+    }
+
+    let local_dir = std::path::Path::new(LOCAL_IMAGE_UPLOAD_DIR).join(&rel_dir);
+    if let Err(e) = std::fs::create_dir_all(&local_dir) {
+        res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+        res.render(Json(serde_json::json!({
+            "error": format!("create upload dir failed: {e}")
+        })));
+        return;
+    }
+    let local_path = local_dir.join(&file_name);
+    if let Err(e) = std::fs::write(&local_path, &bytes) {
+        res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
+        res.render(Json(serde_json::json!({
+            "error": format!("write upload failed: {e}")
+        })));
+        return;
+    }
+    let key = format!("{}/{}", rel_dir, file_name);
+    let url = format!("/api/uploaded-images/{}", key);
+    res.render(Json(UploadImageResponse {
+        url,
+        key,
+        name: safe_file_name,
+    }));
+}
+
+#[handler]
+pub async fn serve_uploaded_image(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let rel_path = req.param::<String>("rest").unwrap_or_default();
+    if rel_path.is_empty()
+        || rel_path.contains("..")
+        || rel_path.starts_with('/')
+        || rel_path.starts_with('\\')
+    {
+        res.status_code(StatusCode::BAD_REQUEST);
+        return;
+    }
+    let path = std::path::Path::new(LOCAL_IMAGE_UPLOAD_DIR).join(&rel_path);
+    match std::fs::read(&path) {
+        Ok(bytes) => {
+            let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+            let mime = match ext.to_ascii_lowercase().as_str() {
+                "jpg" | "jpeg" => "image/jpeg",
+                "png" => "image/png",
+                "webp" => "image/webp",
+                "gif" => "image/gif",
+                "bmp" => "image/bmp",
+                _ => "application/octet-stream",
+            };
+            res.headers_mut()
+                .insert(salvo::http::header::CONTENT_TYPE, mime.parse().unwrap());
+            res.write_body(bytes).ok();
+        }
+        Err(_) => {
+            res.status_code(StatusCode::NOT_FOUND);
+        }
+    }
+}
+
+fn sanitize_upload_file_name(name: &str) -> String {
+    let trimmed = name.trim();
+    let base = std::path::Path::new(trimmed)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(trimmed);
+    let cleaned: String = base
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if cleaned.is_empty() {
+        "image.bin".to_string()
+    } else {
+        cleaned
     }
 }

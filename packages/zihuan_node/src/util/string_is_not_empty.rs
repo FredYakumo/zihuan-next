@@ -71,4 +71,3 @@ impl Node for StringIsNotEmptyNode {
         Ok(outputs)
     }
 }
-

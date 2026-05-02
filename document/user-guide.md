@@ -77,7 +77,7 @@ Before running, ensure optional dependencies are ready if you need them:
 1.  **Redis**: For message caching (recommended for performance).
 2.  **MySQL**: For long-term message persistence.
     ```bash
-    # Start Redis and MySQL using Docker (easiest method)
+    # Start Redis and RustFS using Docker (MySQL optional)
     docker compose -f docker/docker-compose.yaml up -d
     
     # Initialize database schema (if using MySQL)

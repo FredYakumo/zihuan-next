@@ -353,7 +353,7 @@ fn infer_any_data_value(json: &Value) -> Option<DataValue> {
 /// Called by the main binary's `init_registry::init_node_registry` and also by
 /// in-crate tests that need the registry populated.
 pub fn init_node_registry() -> zihuan_core::error::Result<()> {
-    use crate::database::{MySqlNode, RedisNode};
+    use crate::database::{MySqlNode, RedisNode, RustfsNode};
     use crate::message_cache::MessageCacheNode;
     use crate::message_mysql_get_group_history::MessageMySQLGetGroupHistoryNode;
     use crate::message_mysql_get_user_history::MessageMySQLGetUserHistoryNode;
@@ -642,6 +642,13 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         MySqlNode
     );
     register_node!(
+        "rustfs",
+        "RustFS对象存储",
+        "数据库",
+        "构建RustFS对象存储配置，输出S3Ref引用",
+        RustfsNode
+    );
+    register_node!(
         "message_mysql_persistence",
         "消息MySQL持久化",
         "消息存储",
@@ -750,4 +757,3 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
 
     Ok(())
 }
-

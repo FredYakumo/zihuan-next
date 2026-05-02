@@ -247,6 +247,7 @@ Serialized as a JSON object with key `"Vec"`:
 | `"QQMessage"` | QQ platform message segment |
 | `"FunctionTools"` | LLM function-calling tool definitions |
 | `"BotAdapterRef"` | Shared bot WebSocket connection |
+| `"S3Ref"` | Object storage configuration + upload client |
 | `"RedisRef"` | Redis configuration + connection manager |
 | `"MySqlRef"` | MySQL configuration + connection pool |
 | `"OpenAIMessageSessionCacheRef"` | Per-sender message history cache |

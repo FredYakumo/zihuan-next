@@ -2,7 +2,7 @@ import { LiteGraph } from "litegraph.js";
 import { graphs } from "../../api/client";
 import { logger } from "../../api/logger";
 import type { EdgeDefinition, NodeDefinition, NodeGraphDefinition } from "../../api/types";
-import { getBoundaryNodeColors, getPortColor } from "../../ui/theme";
+import { getBoundaryNodeColors, getDisabledNodeColors, getPortColor } from "../../ui/theme";
 import { setupNodeWidgets } from "../widgets";
 import type { BrainToolDefinition, EmbeddedFunctionConfig } from "../../ui/dialogs/types";
 import type { CanvasFacade } from "./types";
@@ -330,6 +330,13 @@ export class CanvasGraphOps {
       node.bgcolor = boundaryColors.bg;
       node.block_delete = true;
     }
+
+    if (nodeDef.disabled) {
+      const disabledColors = getDisabledNodeColors();
+      node.color = disabledColors.header;
+      node.bgcolor = disabledColors.bg;
+    }
+    node._zihuanDisabled = !!nodeDef.disabled;
 
     if (nodeDef.node_type === "function") {
       const funcCfg = nodeDef.inline_values?.function_config as EmbeddedFunctionConfig | undefined;

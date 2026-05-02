@@ -12,6 +12,7 @@ use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::block_in_place;
 use zihuan_core::error::Result;
+use zihuan_node::object_storage::S3Ref;
 use zihuan_node::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 
 pub struct BotAdapterNode {
@@ -61,6 +62,7 @@ impl Node for BotAdapterNode {
         port! { name = "qq_id", ty = String, desc = "QQ ID to login" },
         port! { name = "bot_server_url", ty = String, desc = "Bot服务器WebSocket地址" },
         port! { name = "bot_server_token", ty = Password, desc = "Bot服务器连接令牌", optional },
+        port! { name = "s3_ref", ty = S3Ref, desc = "对象存储引用，用于缓存图片" },
     ];
 
     node_output![
@@ -113,8 +115,19 @@ impl Node for BotAdapterNode {
             })
             .unwrap_or_else(|| std::env::var("BOT_SERVER_TOKEN").unwrap_or_default());
 
-        let adapter_config =
-            BotAdapterConfig::new(bot_server_url, bot_server_token, qq_id).with_brain_agent(None);
+        let s3_ref: Arc<S3Ref> = inputs
+            .get("s3_ref")
+            .and_then(|value| match value {
+                DataValue::S3Ref(s3_ref) => Some(s3_ref.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                zihuan_core::error::Error::ValidationError("s3_ref is required".to_string())
+            })?;
+
+        let adapter_config = BotAdapterConfig::new(bot_server_url, bot_server_token, qq_id)
+            .with_brain_agent(None)
+            .with_object_storage(Some(s3_ref));
 
         let (event_tx, event_rx) = mpsc::unbounded_channel::<MessageEvent>();
         let (adapter_tx, adapter_rx) = oneshot::channel();

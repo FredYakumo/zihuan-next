@@ -80,6 +80,7 @@ export const graphs = {
       height?: number;
       inline_values?: Record<string, unknown>;
       port_bindings?: Record<string, { kind: string; name: string }>;
+      disabled?: boolean;
     }
   ): Promise<{ ok: boolean }> {
     return request("PUT", `/graphs/${graphId}/nodes/${nodeId}`, updates);
@@ -176,6 +177,25 @@ export const fileIO = {
       throw new Error((err as { error: string }).error ?? res.statusText);
     }
     return res.json() as Promise<{ session_id: string }>;
+  },
+  async uploadImage(
+    file: File,
+  ): Promise<{ url: string; key: string; name: string }> {
+    if (!file.type.startsWith("image/")) {
+      throw new Error(`不支持的文件类型: ${file.type || "未知"}`);
+    }
+    const bytes = await file.arrayBuffer();
+    const url = `${BASE}/file/upload-image?name=${encodeURIComponent(file.name)}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": file.type },
+      body: bytes,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error((err as { error: string }).error ?? res.statusText);
+    }
+    return res.json() as Promise<{ url: string; key: string; name: string }>;
   },
 };
 

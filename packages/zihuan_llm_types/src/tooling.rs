@@ -33,4 +33,3 @@ pub struct ToolCalls {
     pub type_name: String,
     pub function: ToolCallsFuncSpec,
 }
-

@@ -293,4 +293,3 @@ impl Node for MySqlNode {
         Ok(outputs)
     }
 }
-

@@ -83,4 +83,3 @@ impl Node for ConcatVecNode {
         Ok(outputs)
     }
 }
-

@@ -75,11 +75,13 @@ cargo build --release
 ### 运行
 
 ```bash
-docker compose -f docker/docker-compose.yaml up -d   # Redis（+ 可选 MySQL）
+docker compose -f docker/docker-compose.yaml up -d   # Redis + RustFS（+ 可选 MySQL）
 
 ./target/release/zihuan_next                         # http://127.0.0.1:8080
 ./target/release/zihuan_next --host 0.0.0.0 --port 9000
 ```
+
+compose 文件现在也会启动 RustFS 对象存储：API 在 `127.0.0.1:9000`，控制台在 `127.0.0.1:9001`。如果你不想使用默认凭证，可在执行 `docker compose up` 前先导出 `RUSTFS_ACCESS_KEY` 和 `RUSTFS_SECRET_KEY`。
 
 配置值（API 密钥等）通过节点图内的**超参数**管理——在编辑器的超参数面板中填写即可。
 

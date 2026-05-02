@@ -86,4 +86,3 @@ impl Node for JsonToQQMessageVecNode {
         }
     }
 }
-

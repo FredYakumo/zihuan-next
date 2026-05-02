@@ -151,6 +151,10 @@ export class ZihuanCanvas implements CanvasFacade {
     await this.graphOps.redo();
   }
 
+  async toggleSelectedNodesDisabled(): Promise<void> {
+    await this.interactions.toggleSelectedNodesDisabled();
+  }
+
   async enterSubgraph(
     parentNodeDef: NodeDefinition,
     mode: "function" | "brain-tool",

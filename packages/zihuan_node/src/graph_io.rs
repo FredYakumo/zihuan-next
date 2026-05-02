@@ -135,6 +135,8 @@ pub struct NodeDefinition {
     pub has_error: bool,
     #[serde(default)]
     pub has_cycle: bool,
+    #[serde(default)]
+    pub disabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1315,6 +1317,7 @@ fn node_to_definition(id: &str, node: &dyn Node) -> NodeDefinition {
         port_bindings: HashMap::new(),
         has_error: false,
         has_cycle: false,
+        disabled: false,
     }
 }
 
@@ -1327,4 +1330,3 @@ impl NodeGraphDefinition {
         serde_json::to_value(self).unwrap_or(serde_json::Value::Null)
     }
 }
-

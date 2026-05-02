@@ -68,6 +68,7 @@ export const DATA_TYPES: readonly string[] = [
 
   // Reference handles
   "BotAdapterRef",
+  "S3Ref",
   "RedisRef",
   "MySqlRef",
   "TavilyRef",

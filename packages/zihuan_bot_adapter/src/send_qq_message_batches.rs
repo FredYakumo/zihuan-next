@@ -615,4 +615,3 @@ impl Node for SendQQMessageBatchesNode {
         Ok(outputs)
     }
 }
-

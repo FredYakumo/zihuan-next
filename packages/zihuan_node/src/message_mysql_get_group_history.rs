@@ -110,4 +110,3 @@ impl Node for MessageMySQLGetGroupHistoryNode {
         Ok(outputs)
     }
 }
-

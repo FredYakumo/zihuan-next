@@ -5,6 +5,7 @@ export interface GlobalShortcutHandlers {
   onSaveAs: () => void | Promise<void>;
   onUndo: () => void | Promise<void>;
   onRedo: () => void | Promise<void>;
+  onToggleDisabled: () => void | Promise<void>;
 }
 
 export function registerGlobalShortcuts(handlers: GlobalShortcutHandlers): void {
@@ -35,6 +36,9 @@ export function registerGlobalShortcuts(handlers: GlobalShortcutHandlers): void 
     } else if ((e.key === "y" && !e.shiftKey && !inInput) || (e.key === "z" && e.shiftKey && !inInput)) {
       e.preventDefault();
       invoke(handlers.onRedo);
+    } else if (e.key === "b" && !e.shiftKey && !inInput) {
+      e.preventDefault();
+      invoke(handlers.onToggleDisabled);
     }
   }, true); // capture phase — fires before canvas-level handlers (LiteGraph uses capture:true on canvas)
 }

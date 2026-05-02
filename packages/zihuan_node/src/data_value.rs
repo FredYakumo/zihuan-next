@@ -1,3 +1,4 @@
+use crate::object_storage::S3Ref;
 use redis::{aio::ConnectionManager, AsyncCommands};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
@@ -651,6 +652,7 @@ pub enum DataType {
     QQMessage,
     FunctionTools,
     BotAdapterRef,
+    S3Ref,
     RedisRef,
     MySqlRef,
     TavilyRef,
@@ -688,6 +690,7 @@ impl fmt::Display for DataType {
             DataType::QQMessage => write!(f, "QQMessage"),
             DataType::FunctionTools => write!(f, "FunctionTools"),
             DataType::BotAdapterRef => write!(f, "BotAdapterRef"),
+            DataType::S3Ref => write!(f, "S3Ref"),
             DataType::RedisRef => write!(f, "RedisRef"),
             DataType::MySqlRef => write!(f, "MySqlRef"),
             DataType::TavilyRef => write!(f, "TavilyRef"),
@@ -729,6 +732,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "QQMessage" => Ok(DataType::QQMessage),
                     "FunctionTools" => Ok(DataType::FunctionTools),
                     "BotAdapterRef" => Ok(DataType::BotAdapterRef),
+                    "S3Ref" => Ok(DataType::S3Ref),
                     "RedisRef" => Ok(DataType::RedisRef),
                     "MySqlRef" => Ok(DataType::MySqlRef),
                     "TavilyRef" => Ok(DataType::TavilyRef),
@@ -754,6 +758,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                             "QQMessage",
                             "FunctionTools",
                             "BotAdapterRef",
+                            "S3Ref",
                             "RedisRef",
                             "MySqlRef",
                             "TavilyRef",
@@ -817,6 +822,7 @@ pub enum DataValue {
     QQMessage(zihuan_bot_types::message::Message),
     FunctionTools(Vec<Arc<dyn FunctionTool>>),
     BotAdapterRef(zihuan_bot_types::BotAdapterHandle),
+    S3Ref(Arc<S3Ref>),
     RedisRef(Arc<RedisConfig>),
     MySqlRef(Arc<MySqlConfig>),
     TavilyRef(Arc<TavilyRef>),
@@ -842,6 +848,7 @@ impl DataValue {
             DataValue::MessageEvent(_) => DataType::MessageEvent,
             DataValue::FunctionTools(_) => DataType::FunctionTools,
             DataValue::BotAdapterRef(_) => DataType::BotAdapterRef,
+            DataValue::S3Ref(_) => DataType::S3Ref,
             DataValue::RedisRef(_) => DataType::RedisRef,
             DataValue::MySqlRef(_) => DataType::MySqlRef,
             DataValue::TavilyRef(_) => DataType::TavilyRef,
@@ -860,6 +867,7 @@ impl DataValue {
             DataValue::Float(value) => value.to_string(),
             DataValue::Boolean(value) => value.to_string(),
             DataValue::BotAdapterRef(_) => "BotAdapterRef".to_string(),
+            DataValue::S3Ref(_) => "S3Ref".to_string(),
             DataValue::TavilyRef(_) => "TavilyRef".to_string(),
             DataValue::LoopControlRef(_) => "LoopControlRef".to_string(),
             other => {
@@ -914,6 +922,14 @@ impl DataValue {
                 "model_name": m.get_model_name(),
             }),
             DataValue::BotAdapterRef(_) => Value::String("BotAdapterRef".to_string()),
+            DataValue::S3Ref(config) => serde_json::json!({
+                "type": "S3Ref",
+                "endpoint": config.endpoint,
+                "bucket": config.bucket,
+                "region": config.region,
+                "public_base_url": config.public_base_url,
+                "path_style": config.path_style,
+            }),
             DataValue::RedisRef(config) => serde_json::json!({
                 "type": "RedisRef",
                 "url": config.url,
@@ -958,6 +974,7 @@ impl fmt::Debug for DataValue {
             DataValue::MessageEvent(value) => f.debug_tuple("MessageEvent").field(value).finish(),
             DataValue::FunctionTools(value) => f.debug_tuple("FunctionTools").field(value).finish(),
             DataValue::BotAdapterRef(_) => f.debug_tuple("BotAdapterRef").finish(),
+            DataValue::S3Ref(config) => f.debug_tuple("S3Ref").field(config).finish(),
             DataValue::RedisRef(config) => f.debug_tuple("RedisRef").field(config).finish(),
             DataValue::MySqlRef(config) => f.debug_tuple("MySqlRef").field(config).finish(),
             DataValue::TavilyRef(tavily_ref) => {
@@ -985,4 +1002,3 @@ impl Serialize for DataValue {
         self.to_json().serialize(serializer)
     }
 }
-

@@ -137,4 +137,3 @@ impl Node for SessionStateTryClaimNode {
         Ok(outputs)
     }
 }
-

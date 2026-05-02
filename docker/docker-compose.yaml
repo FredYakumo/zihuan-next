@@ -10,3 +10,27 @@ services:
     command:
       - redis-server
       - /etc/redis/redis.conf
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: rustfs_local
+    restart: unless-stopped
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - rustfs_data:/data
+      - rustfs_logs:/logs
+    command:
+      - --console-enable
+      - --access-key
+      - ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      - --secret-key
+      - ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      - /data
+
+volumes:
+  rustfs_data:
+    name: rustfs_data
+  rustfs_logs:
+    name: rustfs_logs

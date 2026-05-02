@@ -92,6 +92,8 @@ pub fn build_router(
         // File I/O (not graph-scoped)
         .push(Router::with_path("file/open").post(file_io::open_file))
         .push(Router::with_path("file/upload").post(file_io::upload_graph))
+        .push(Router::with_path("file/upload-image").post(file_io::upload_image))
+        .push(Router::with_path("uploaded-images/<**rest>").get(file_io::serve_uploaded_image))
         // Frontend log forwarding
         .push(Router::with_path("log").post(log::frontend_log))
         // Workflows directory
@@ -205,4 +207,3 @@ fn normalize_host(host: &str) -> Option<String> {
 fn is_trusted_loopback_host(host: &str) -> bool {
     matches!(host, "localhost" | "127.0.0.1" | "[::1]")
 }
-

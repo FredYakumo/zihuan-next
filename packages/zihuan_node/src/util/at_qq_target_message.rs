@@ -59,4 +59,3 @@ impl Node for AtQQTargetMessageNode {
         Ok(outputs)
     }
 }
-

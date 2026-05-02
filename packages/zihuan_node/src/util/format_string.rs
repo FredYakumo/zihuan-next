@@ -157,4 +157,3 @@ impl Node for FormatStringNode {
         Ok(outputs)
     }
 }
-

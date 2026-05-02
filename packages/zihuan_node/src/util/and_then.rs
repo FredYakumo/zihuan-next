@@ -52,4 +52,3 @@ impl Node for AndThenNode {
         Ok(outputs)
     }
 }
-
