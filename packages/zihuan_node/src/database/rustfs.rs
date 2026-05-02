@@ -1,5 +1,7 @@
 use crate::object_storage::S3Ref;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
+use log::info;
+use reqwest::Url;
 use std::collections::HashMap;
 use std::sync::Arc;
 use zihuan_core::runtime::block_async;
@@ -84,6 +86,8 @@ impl Node for RustfsNode {
             path_style,
         });
 
+        ensure_endpoint_bypasses_proxy(&s3_ref.endpoint);
+
         let s3_ref_for_init = Arc::clone(&s3_ref);
         block_async(async move { s3_ref_for_init.ensure_bucket_exists().await })?;
 
@@ -123,4 +127,41 @@ fn read_required_password(inputs: &HashMap<String, DataValue>, key: &str) -> Res
     }
 
     Ok(value)
+}
+
+fn ensure_endpoint_bypasses_proxy(endpoint: &str) {
+    let Ok(url) = Url::parse(endpoint) else {
+        return;
+    };
+    let Some(host) = url.host_str() else {
+        return;
+    };
+
+    let changed_upper = append_no_proxy_var("NO_PROXY", host);
+    let changed_lower = append_no_proxy_var("no_proxy", host);
+    if changed_upper || changed_lower {
+        info!(
+            "[RustfsNode] Added {} to NO_PROXY/no_proxy for direct object storage access",
+            host
+        );
+    }
+}
+
+fn append_no_proxy_var(var_name: &str, host: &str) -> bool {
+    let current = std::env::var(var_name).unwrap_or_default();
+    let already_present = current
+        .split(',')
+        .map(str::trim)
+        .any(|entry| entry.eq_ignore_ascii_case(host));
+    if already_present {
+        return false;
+    }
+
+    let updated = if current.trim().is_empty() {
+        host.to_string()
+    } else {
+        format!("{current},{host}")
+    };
+    std::env::set_var(var_name, updated);
+    true
 }
