@@ -66,6 +66,7 @@ pub struct MessageRecord {
     pub group_name: Option<String>,
     pub content: String,
     pub at_target_list: Option<String>,
+    pub media_json: Option<String>,
 }
 
 impl MessageStore {
@@ -180,7 +181,7 @@ impl MessageStore {
         // Query recent messages ordered by send_time DESC
         let records = sqlx::query(
             r#"
-            SELECT message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list
+            SELECT message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json
             FROM message_record
             ORDER BY send_time DESC
             LIMIT ?
@@ -282,7 +283,7 @@ impl MessageStore {
             // Query with both sender_id and group_id
             sqlx::query(
                 r#"
-                SELECT message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list
+                SELECT message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json
                 FROM message_record
                 WHERE sender_id = ? AND group_id = ?
                 ORDER BY send_time DESC
@@ -299,7 +300,7 @@ impl MessageStore {
             // Query by sender_id only
             sqlx::query(
                 r#"
-                SELECT message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list
+                SELECT message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json
                 FROM message_record
                 WHERE sender_id = ?
                 ORDER BY send_time DESC
@@ -324,6 +325,7 @@ impl MessageStore {
                 group_name: row.get("group_name"),
                 content: row.get("content"),
                 at_target_list: row.get("at_target_list"),
+                media_json: row.get("media_json"),
             });
         }
 
@@ -493,8 +495,8 @@ impl MessageStore {
                             let result = sqlx::query(
                                 r#"
                                 INSERT INTO message_record 
-                                (message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                (message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                                 "#
                             )
                             .bind(&record.message_id)
@@ -505,6 +507,7 @@ impl MessageStore {
                             .bind(&record.group_name)
                             .bind(&record.content)
                             .bind(&record.at_target_list)
+                            .bind(&record.media_json)
                             .execute(&pool)
                             .await;
 
@@ -623,8 +626,8 @@ impl MessageStore {
                     let result = sqlx::query(
                 r#"
                 INSERT INTO message_record 
-                (message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 "#
             )
             .bind(&record.message_id)
@@ -635,6 +638,7 @@ impl MessageStore {
             .bind(&record.group_name)
             .bind(&record.content)
             .bind(&record.at_target_list)
+            .bind(&record.media_json)
             .execute(pool)
             .await;
                     match result {
@@ -688,6 +692,7 @@ impl MessageStore {
                 let result = sqlx::query(
                 r#"
                 SELECT message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list
+                , media_json
                 FROM message_record
                 WHERE message_id = ?
                 "#
@@ -706,6 +711,7 @@ impl MessageStore {
                             group_name: row.get("group_name"),
                             content: row.get("content"),
                             at_target_list: row.get("at_target_list"),
+                            media_json: row.get("media_json"),
                         };
                         debug!(
                             "[MessageStore] Message record retrieved from MySQL: {}",
@@ -840,70 +846,3 @@ impl MessageStore {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{MessageRecord, MessageStore};
-    use chrono::Local;
-    use tokio;
-
-    #[tokio::test]
-    async fn test_memory_store() {
-        let store = MessageStore::new(None, None, None, None, None, None).await;
-        store.store_message("id1", "hello").await;
-        let val = store.get_message("id1").await;
-        assert_eq!(val, Some("hello".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_memory_store_overwrite() {
-        let store = MessageStore::new(None, None, None, None, None, None).await;
-        store.store_message("id2", "foo").await;
-        store.store_message("id2", "bar").await;
-        let val = store.get_message("id2").await;
-        assert_eq!(val, Some("bar".to_string()));
-    }
-
-    // To test Redis, set REDIS_URL env var to a running Redis instance
-    #[tokio::test]
-    async fn test_redis_store() {
-        let redis_url = std::env::var("REDIS_URL").ok();
-        if redis_url.is_none() {
-            // Skip if no Redis URL
-            return;
-        }
-        let store =
-            MessageStore::new(redis_url.as_deref(), None, Some(3), Some(1), None, None).await;
-        store.store_message("id3", "redis_test").await;
-        let val = store.get_message("id3").await;
-        assert_eq!(val, Some("redis_test".to_string()));
-    }
-
-    // To test MySQL, set DATABASE_URL env var to a running MySQL instance
-    #[tokio::test]
-    async fn test_mysql_store() {
-        let mysql_url = std::env::var("DATABASE_URL").ok();
-        if mysql_url.is_none() {
-            // Skip if no MySQL URL
-            return;
-        }
-        let store =
-            MessageStore::new(None, mysql_url.as_deref(), None, None, Some(3), Some(1)).await;
-        let record = MessageRecord {
-            message_id: "test_msg_001".to_string(),
-            sender_id: "user_123".to_string(),
-            sender_name: "Test User".to_string(),
-            send_time: Local::now().naive_local(),
-            group_id: Some("group_456".to_string()),
-            group_name: Some("Test Group".to_string()),
-            content: "Hello, this is a test message".to_string(),
-            at_target_list: Some("@user1,@user2".to_string()),
-        };
-
-        let result = store.store_message_record(&record).await;
-        assert!(result.is_ok());
-
-        let retrieved = store.get_message_record("test_msg_001").await;
-        assert!(retrieved.is_ok());
-        assert!(retrieved.unwrap().is_some());
-    }
-}

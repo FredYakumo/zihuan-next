@@ -150,9 +150,9 @@ They also:
 
 ---
 
-## Brain Engine (`crates/zihuan_llm/src/agent/brain.rs`)
+## Brain Engine (`packages/zihuan_llm/src/agent/brain.rs`)
 
-The `Brain` struct is the shared runtime engine that powers both `BrainNode` and higher-level agent nodes such as `QqMessageAgentNode`. It lives in `crates/zihuan_llm/src/agent/brain.rs` and is the single canonical implementation of the LLM ↔ tool call loop.
+The `Brain` struct is the shared runtime engine that powers both `BrainNode` and higher-level agent nodes such as `QqMessageAgentNode`. It lives in `packages/zihuan_llm/src/agent/brain.rs` and is the single canonical implementation of the LLM ↔ tool call loop.
 
 ### Architecture
 

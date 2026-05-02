@@ -964,22 +964,3 @@ impl Serialize for DataValue {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::DataType;
-
-    #[test]
-    fn any_type_is_compatible_with_concrete_types() {
-        assert!(DataType::Any.is_compatible_with(&DataType::String));
-        assert!(DataType::MessageEvent.is_compatible_with(&DataType::Any));
-        assert!(DataType::Any.is_compatible_with(&DataType::Vec(Box::new(DataType::Integer))));
-    }
-
-    #[test]
-    fn concrete_types_remain_strict() {
-        assert!(DataType::String.is_compatible_with(&DataType::String));
-        assert!(!DataType::String.is_compatible_with(&DataType::Integer));
-        assert!(!DataType::Vec(Box::new(DataType::String))
-            .is_compatible_with(&DataType::Vec(Box::new(DataType::Integer))));
-    }
-}

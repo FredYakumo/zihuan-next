@@ -146,11 +146,11 @@ After this, call `refresh_active_tab_ui()` to re-render.
 
 | Node | Dynamic direction | Config key | Source |
 |------|------------------|------------|---------|
-| `FormatStringNode` | inputs | `template` (String) | `crates/zihuan_node/src/util/format_string.rs` |
-| `JsonExtractNode` | outputs | `fields_config` (Json) | `crates/zihuan_node/src/util/json_extract.rs` |
-| `FunctionNode` | inputs + outputs | `function_config` (Json) | `crates/zihuan_node/src/util/function.rs` |
-| `FunctionInputsNode` | outputs | `signature` (Json) | `crates/zihuan_node/src/util/function_inputs.rs` |
-| `FunctionOutputsNode` | inputs | `signature` (Json) | `crates/zihuan_node/src/util/function_outputs.rs` |
+| `FormatStringNode` | inputs | `template` (String) | `packages/zihuan_node/src/util/format_string.rs` |
+| `JsonExtractNode` | outputs | `fields_config` (Json) | `packages/zihuan_node/src/util/json_extract.rs` |
+| `FunctionNode` | inputs + outputs | `function_config` (Json) | `packages/zihuan_node/src/util/function.rs` |
+| `FunctionInputsNode` | outputs | `signature` (Json) | `packages/zihuan_node/src/util/function_inputs.rs` |
+| `FunctionOutputsNode` | inputs | `signature` (Json) | `packages/zihuan_node/src/util/function_outputs.rs` |
 
 ---
 
@@ -168,37 +168,6 @@ See [function-subgraphs.md](./function-subgraphs.md) for the full Brain/tool-sub
 
 ---
 
-## Testing dynamic port nodes
+## Validating dynamic port nodes
 
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_ports_rebuild_on_config_change() {
-        let mut node = MyDynamicNode::new("t".into(), "T".into());
-
-        // Before config: no dynamic ports
-        assert_eq!(node.output_ports().len(), 0);
-
-        // After config: ports match definitions
-        let mut inline = HashMap::new();
-        inline.insert(
-            "fields_config".to_string(),
-            DataValue::Json(serde_json::json!([
-                {"name": "title", "data_type": "String"},
-                {"name": "count", "data_type": "Integer"},
-            ])),
-        );
-        node.apply_inline_config(&inline).unwrap();
-
-        let ports = node.output_ports();
-        assert_eq!(ports.len(), 2);
-        assert_eq!(ports[0].name, "title");
-        assert_eq!(ports[0].data_type, DataType::String);
-        assert_eq!(ports[1].name, "count");
-        assert_eq!(ports[1].data_type, DataType::Integer);
-    }
-}
-```
+Prefer a focused manual validation pass that proves ports rebuild correctly after config changes. Add automated coverage only when the user explicitly asks for it.

@@ -1,5 +1,5 @@
 [workspace]
-members = ["node_macros", "crates/zihuan_core", "crates/zihuan_bot_types", "crates/zihuan_llm_types", "crates/zihuan_node", "crates/zihuan_llm", "crates/zihuan_bot_adapter"]
+members = ["node_macros", "packages/zihuan_core", "packages/zihuan_bot_types", "packages/zihuan_llm_types", "packages/zihuan_node", "packages/zihuan_llm", "packages/zihuan_bot_adapter"]
 
 [package]
 name = "zihuan_next"
@@ -31,9 +31,9 @@ salvo = { version = "0.75", features = ["websocket", "serve-static", "cors", "af
 rust-embed = { version = "8", features = ["debug-embed"] }
 uuid = { version = "1", features = ["v4"] }
 node_macros = { path = "node_macros" }
-zihuan_core = { path = "crates/zihuan_core" }
-zihuan_bot_types = { path = "crates/zihuan_bot_types" }
-zihuan_llm_types = { path = "crates/zihuan_llm_types" }
-zihuan_node = { path = "crates/zihuan_node" }
-zihuan_llm = { path = "crates/zihuan_llm" }
-zihuan_bot_adapter = { path = "crates/zihuan_bot_adapter" }
+zihuan_core = { path = "packages/zihuan_core" }
+zihuan_bot_types = { path = "packages/zihuan_bot_types" }
+zihuan_llm_types = { path = "packages/zihuan_llm_types" }
+zihuan_node = { path = "packages/zihuan_node" }
+zihuan_llm = { path = "packages/zihuan_llm" }
+zihuan_bot_adapter = { path = "packages/zihuan_bot_adapter" }

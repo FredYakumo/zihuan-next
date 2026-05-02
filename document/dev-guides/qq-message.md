@@ -10,11 +10,13 @@ Code entry point:
 
 `QQMessage` corresponds to `crate::bot_adapter::models::message::Message` in Rust code. It represents a single QQ message segment, not a full message event.
 
-The current implementation supports only three segment types:
+The current implementation supports these segment types:
 
 - `text`
 - `at`
 - `reply`
+- `image`
+- `forward`
 
 A complete incoming message is usually represented as `Vec<QQMessage>`, for example:
 
@@ -305,11 +307,9 @@ At the current state of the code, `QQMessage` only covers:
 
 It does not yet cover other common QQ segment types such as:
 
-- images
 - emoji
 - files
 - voice
-- forward / merged-forward messages
 
 If upstream input starts including those types, you should first define:
 
@@ -329,7 +329,7 @@ If upstream input starts including those types, you should first define:
 
 ## Programmatic Sending Helpers
 
-When code outside the node-graph needs to send QQ messages (for example inside an LLM node that drives the bot directly), use the helpers in `crates/zihuan_bot_adapter/src/message_helpers.rs` rather than duplicating `ws_send_action` calls.
+When code outside the node-graph needs to send QQ messages (for example inside an LLM node that drives the bot directly), use the helpers in `packages/zihuan_bot_adapter/src/message_helpers.rs` rather than duplicating `ws_send_action` calls.
 
 ```rust
 use zihuan_bot_adapter::message_helpers::{

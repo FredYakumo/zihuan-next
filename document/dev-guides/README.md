@@ -6,22 +6,22 @@ The node graph describes **data flow** between processing steps. Complexity (alg
 
 ---
 
-## Crate Structure
+## Package Structure
 
-| Crate | Contents |
+| Package | Contents |
 |---|---|
-| `crates/zihuan_core` | Error types, config loading, URL utilities |
-| `crates/zihuan_bot_types` | `MessageEvent`, QQ message models, bot handle |
-| `crates/zihuan_llm_types` | `OpenAIMessage`, `LLMBase` trait, `FunctionTool` trait |
-| `crates/zihuan_node` | `Node` trait, `DataType`/`DataValue`, DAG execution engine, general-purpose utility nodes, base registry |
-| `crates/zihuan_bot_adapter` | `BotAdapterNode`, QQ message send/receive nodes |
-| `crates/zihuan_llm` | `LLMApiNode`, `LLMInferNode`, `BrainNode`, RAG nodes |
+| `packages/zihuan_core` | Error types, config loading, URL utilities |
+| `packages/zihuan_bot_types` | `MessageEvent`, QQ message models, bot handle |
+| `packages/zihuan_llm_types` | `OpenAIMessage`, `LLMBase` trait, `FunctionTool` trait |
+| `packages/zihuan_node` | `Node` trait, `DataType`/`DataValue`, DAG execution engine, general-purpose utility nodes, base registry |
+| `packages/zihuan_bot_adapter` | `BotAdapterNode`, QQ message send/receive nodes |
+| `packages/zihuan_llm` | `LLMApiNode`, `LLMInferNode`, `BrainNode`, RAG nodes |
 | `node_macros` | `node_input!`, `node_output!`, `port!` procedural macros |
 | `src/` | Main binary: Slint UI, combined node registry (`init_registry.rs`) |
 
 ### Node registration
 
-- Nodes in `zihuan_node` → `crates/zihuan_node/src/registry.rs` (`init_node_registry()`)
+- Nodes in `zihuan_node` → `packages/zihuan_node/src/registry.rs` (`init_node_registry()`)
 - Nodes in `zihuan_bot_adapter` or `zihuan_llm` → `src/init_registry.rs`
 
 ---

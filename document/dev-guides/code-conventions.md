@@ -60,34 +60,34 @@ Categories use Chinese strings by convention (to match the existing UI palette g
 Each node struct lives in its own file in the appropriate crate:
 
 ```
-crates/zihuan_node/src/util/   ← general-purpose utility and transform nodes
+packages/zihuan_node/src/util/   ← general-purpose utility and transform nodes
 ├── mod.rs                          ← re-exports all util nodes
 ├── format_string.rs                ← FormatStringNode
 ├── json_extract.rs                 ← JsonExtractNode
 ├── conditional.rs                  ← ConditionalNode
 └── ...
 
-crates/zihuan_bot_adapter/src/ ← bot / QQ messaging nodes
-crates/zihuan_llm/src/         ← LLM / AI nodes
+packages/zihuan_bot_adapter/src/ ← bot / QQ messaging nodes
+packages/zihuan_llm/src/         ← LLM / AI nodes
 ```
 
 After creating a new file, add it to the parent `mod.rs` and register it in the appropriate registry.
 
-- Nodes in `crates/zihuan_node` → `crates/zihuan_node/src/registry.rs → init_node_registry()`
-- Nodes in `crates/zihuan_bot_adapter` or `crates/zihuan_llm` → `src/init_registry.rs`
+- Nodes in `packages/zihuan_node` → `packages/zihuan_node/src/registry.rs → init_node_registry()`
+- Nodes in `packages/zihuan_bot_adapter` or `packages/zihuan_llm` → `src/init_registry.rs`
 
 ### Module structure
 
-The engine is split into focused crates. High-level responsibilities:
+The engine is split into focused packages. High-level responsibilities:
 
 | Crate | Role |
 |---|---|
-| `crates/zihuan_core` | Error types, config, URL utilities |
-| `crates/zihuan_bot_types` | Bot event and message types |
-| `crates/zihuan_llm_types` | LLM model types and traits |
-| `crates/zihuan_node` | Node trait, graph engine, utility nodes, base registry |
-| `crates/zihuan_bot_adapter` | Bot platform adapter nodes |
-| `crates/zihuan_llm` | LLM inference and AI nodes |
+| `packages/zihuan_core` | Error types, config, URL utilities |
+| `packages/zihuan_bot_types` | Bot event and message types |
+| `packages/zihuan_llm_types` | LLM model types and traits |
+| `packages/zihuan_node` | Node trait, graph engine, utility nodes, base registry |
+| `packages/zihuan_bot_adapter` | Bot platform adapter nodes |
+| `packages/zihuan_llm` | LLM inference and AI nodes |
 | `node_macros` | `node_input!`, `node_output!`, `port!` macros |
 | `src/` | Main binary: Slint UI, combined registry (`init_registry.rs`) |
 
@@ -99,7 +99,7 @@ For per-file details, browse the crate source directly.
 
 ### Error handling
 
-The `Error` enum and `Result` alias are defined in `crates/zihuan_core/src/error.rs` and re-exported by each crate:
+The `Error` enum and `Result` alias are defined in `packages/zihuan_core/src/error.rs` and re-exported by each package:
 
 ```rust
 use zihuan_core::error::{Error, Result};
@@ -162,15 +162,15 @@ Located in `src/ui/node_graph_view_geometry.rs`. Returns `Option<(f32, f32)>` �
 
 ### `refresh_port_types(graph)`
 
-Located in `crates/zihuan_node/src/graph_io.rs`. Re-synchronizes port types in a `NodeGraphDefinition` against the live registry. Called when loading a graph to fix stale type strings from old files.
+Located in `packages/zihuan_node/src/graph_io.rs`. Re-synchronizes port types in a `NodeGraphDefinition` against the live registry. Called when loading a graph to fix stale type strings from old files.
 
 ### `build_node_graph_from_definition(def)`
 
-Located in `crates/zihuan_node/src/registry.rs`. Creates an executable `NodeGraph` from a `NodeGraphDefinition`. Instantiates all nodes, applies inline configs, resolves edges.
+Located in `packages/zihuan_node/src/registry.rs`. Creates an executable `NodeGraph` from a `NodeGraphDefinition`. Instantiates all nodes, applies inline configs, resolves edges.
 
 ### `validate_graph_definition(def)`
 
-Located in `crates/zihuan_node/src/graph_io.rs`. Returns a list of `ValidationIssue` structs without executing the graph. Used by the UI's validate button and before execution.
+Located in `packages/zihuan_node/src/graph_io.rs`. Returns a list of `ValidationIssue` structs without executing the graph. Used by the UI's validate button and before execution.
 
 ---
 
@@ -237,43 +237,10 @@ All node constructors must accept `(id: String, name: String)`. This is enforced
 
 ## Testing conventions
 
-### Unit tests
+### Tests
 
-Place unit tests in the same file as the code under test:
+Do not add unit tests by default. Only add targeted tests when the user explicitly asks for them or the change is complex enough to justify dedicated coverage.
 
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_something() {
-        // ...
-    }
-}
-```
-
-### Integration tests requiring live services
-
-Tests that need Redis, MySQL, or a live LLM API are marked `#[ignore]`:
-
-```rust
-#[test]
-#[ignore]  // requires REDIS_URL env var
-fn test_redis_store() { ... }
-```
-
-Run them explicitly: `cargo test -- --ignored`
-
-### Test naming
-
-Tests follow the pattern `test_<what>_<condition>`:
-
-```rust
-test_format_string_basic()
-test_format_string_missing_variable()
-test_json_extract_nested_path()
-```
 
 ---
 
