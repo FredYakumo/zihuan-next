@@ -158,7 +158,7 @@ impl Brain {
             });
 
             // Transport errors → abort immediately.
-            if let Some(ref content) = response.content {
+            if let Some(content) = response.content_text() {
                 if is_transport_error(content) {
                     warn!("[Brain] Transport error on iteration {iteration}: {content}");
                     let msg = content.to_string();
@@ -177,7 +177,7 @@ impl Brain {
                 iteration + 1,
                 response.tool_calls.len()
             );
-            let tool_call_content = response.content.clone().unwrap_or_default();
+            let tool_call_content = response.content_text_owned().unwrap_or_default();
             conversation.push(response.clone());
             output.push(response.clone());
 

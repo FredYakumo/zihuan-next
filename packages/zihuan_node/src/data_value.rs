@@ -12,6 +12,7 @@ use std::time::Duration;
 use tokio::sync::Mutex as TokioMutex;
 use zihuan_bot_types::event_model::MessageEvent;
 use zihuan_llm_types::tooling::FunctionTool;
+use zihuan_llm_types::ContentPart;
 
 tokio::task_local! {
     pub static SESSION_CLAIM_CONTEXT: Arc<SessionClaimContext>;
@@ -650,6 +651,7 @@ pub enum DataType {
     MessageEvent,
     OpenAIMessage,
     QQMessage,
+    ContentPart,
     FunctionTools,
     BotAdapterRef,
     S3Ref,
@@ -688,6 +690,7 @@ impl fmt::Display for DataType {
             DataType::MessageEvent => write!(f, "MessageEvent"),
             DataType::OpenAIMessage => write!(f, "OpenAIMessage"),
             DataType::QQMessage => write!(f, "QQMessage"),
+            DataType::ContentPart => write!(f, "ContentPart"),
             DataType::FunctionTools => write!(f, "FunctionTools"),
             DataType::BotAdapterRef => write!(f, "BotAdapterRef"),
             DataType::S3Ref => write!(f, "S3Ref"),
@@ -730,6 +733,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "OpenAIMessage" => Ok(DataType::OpenAIMessage),
                     "Message" => Ok(DataType::OpenAIMessage),
                     "QQMessage" => Ok(DataType::QQMessage),
+                    "ContentPart" => Ok(DataType::ContentPart),
                     "FunctionTools" => Ok(DataType::FunctionTools),
                     "BotAdapterRef" => Ok(DataType::BotAdapterRef),
                     "S3Ref" => Ok(DataType::S3Ref),
@@ -756,6 +760,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                             "OpenAIMessage",
                             "Message",
                             "QQMessage",
+                            "ContentPart",
                             "FunctionTools",
                             "BotAdapterRef",
                             "S3Ref",
@@ -820,6 +825,7 @@ pub enum DataValue {
     MessageEvent(MessageEvent),
     OpenAIMessage(zihuan_llm_types::OpenAIMessage),
     QQMessage(zihuan_bot_types::message::Message),
+    ContentPart(ContentPart),
     FunctionTools(Vec<Arc<dyn FunctionTool>>),
     BotAdapterRef(zihuan_bot_types::BotAdapterHandle),
     S3Ref(Arc<S3Ref>),
@@ -845,6 +851,7 @@ impl DataValue {
             DataValue::Vec(ty, _) => DataType::Vec(ty.clone()),
             DataValue::OpenAIMessage(_) => DataType::OpenAIMessage,
             DataValue::QQMessage(_) => DataType::QQMessage,
+            DataValue::ContentPart(_) => DataType::ContentPart,
             DataValue::MessageEvent(_) => DataType::MessageEvent,
             DataValue::FunctionTools(_) => DataType::FunctionTools,
             DataValue::BotAdapterRef(_) => DataType::BotAdapterRef,
@@ -889,14 +896,9 @@ impl DataValue {
             DataValue::Vec(_, items) => {
                 Value::Array(items.iter().map(|item| item.to_json()).collect())
             }
-            DataValue::OpenAIMessage(m) => {
-                serde_json::json!({
-                    "role": zihuan_llm_types::role_to_str(&m.role),
-                    "content": m.content,
-                    "tool_calls": m.tool_calls,
-                })
-            }
+            DataValue::OpenAIMessage(m) => serde_json::to_value(m).unwrap_or(Value::Null),
             DataValue::QQMessage(m) => serde_json::to_value(m).unwrap_or(Value::Null),
+            DataValue::ContentPart(part) => serde_json::to_value(part).unwrap_or(Value::Null),
             DataValue::MessageEvent(event) => {
                 serde_json::json!({
                     "message_id": event.message_id,
@@ -971,6 +973,7 @@ impl fmt::Debug for DataValue {
             DataValue::Vec(ty, value) => f.debug_tuple("Vec").field(ty).field(value).finish(),
             DataValue::OpenAIMessage(value) => f.debug_tuple("OpenAIMessage").field(value).finish(),
             DataValue::QQMessage(value) => f.debug_tuple("QQMessage").field(value).finish(),
+            DataValue::ContentPart(value) => f.debug_tuple("ContentPart").field(value).finish(),
             DataValue::MessageEvent(value) => f.debug_tuple("MessageEvent").field(value).finish(),
             DataValue::FunctionTools(value) => f.debug_tuple("FunctionTools").field(value).finish(),
             DataValue::BotAdapterRef(_) => f.debug_tuple("BotAdapterRef").finish(),

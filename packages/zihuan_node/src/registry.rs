@@ -303,9 +303,11 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
                 .map(|v| parse_role(v))
                 .unwrap_or(zihuan_llm_types::MessageRole::User);
             let content = match map.get("content") {
-                Some(Value::String(s)) => Some(s.clone()),
                 Some(Value::Null) | None => None,
-                Some(other) => Some(other.to_string()),
+                Some(other) => serde_json::from_value::<zihuan_llm_types::MessageContent>(
+                    other.clone(),
+                )
+                .ok(),
             };
             Some(DataValue::OpenAIMessage(zihuan_llm_types::OpenAIMessage {
                 role,
@@ -360,8 +362,9 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
     use crate::message_mysql_persistence::MessageMySQLPersistenceNode;
     use crate::qq_message_list_mysql_persistence::QQMessageListMySQLPersistenceNode;
     use crate::util::{
-        AndThenNode, ArrayGetNode, AtQQTargetMessageNode, BooleanBranchNode, BooleanNotNode,
-        ConcatVecNode, ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode,
+        AndThenNode, ArrayGetNode, AtQQTargetMessageNode, BinaryToImageContentPartNode,
+        BooleanBranchNode, BooleanNotNode, BuildMultimodalUserMessageNode, ConcatVecNode,
+        ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode,
         FunctionInputsNode, FunctionNode, FunctionOutputsNode, JoinStringNode, JsonExtractNode,
         JsonParserNode, JsonToQQMessageVecNode, LoopBreakNode, LoopNode, LoopStateUpdateNode,
         MessageContentNode, MessageListDataNode, OpenAIMessageContentAsJsonNode,
@@ -372,8 +375,8 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         PushBackVecNode, QQMessageJsonOutputSystemPromptProviderNode, QQMessageListDataNode,
         SessionStateClearNode, SessionStateGetNode, SessionStateProviderNode,
         SessionStateReleaseNode, SessionStateTryClaimNode, SetVariableNode, StackNode,
-        StringDataNode, StringIsNotEmptyNode, StringToOpenAIMessageNode, StringToPlainTextNode,
-        SwitchNode, ToolResultNode,
+        StringDataNode, StringIsNotEmptyNode, StringToImageContentPartNode,
+        StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode,
     };
 
     register_node!(
@@ -761,6 +764,27 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         "消息",
         "输出固定的 system prompt，要求 LLM 只返回 QQ 消息二维 JSON 数组",
         QQMessageJsonOutputSystemPromptProviderNode
+    );
+    register_node!(
+        "string_to_image_content_part",
+        "字符串转图片/视频 ContentPart",
+        "消息",
+        "将字符串 URL（或 data: URL）封装为 LLM 多模态 ContentPart，用于装配多模态 OpenAIMessage",
+        StringToImageContentPartNode
+    );
+    register_node!(
+        "binary_to_image_content_part",
+        "二进制转图片/视频 ContentPart",
+        "消息",
+        "将二进制字节 + MIME 编码为 base64 data URL，并封装为 LLM 多模态 ContentPart",
+        BinaryToImageContentPartNode
+    );
+    register_node!(
+        "build_multimodal_user_message",
+        "构建多模态 OpenAIMessage",
+        "消息",
+        "将可选文本和若干 ContentPart 拼接为多模态 OpenAIMessage，下游 LLM 推理节点直接消费",
+        BuildMultimodalUserMessageNode
     );
 
     Ok(())

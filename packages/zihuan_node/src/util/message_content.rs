@@ -45,7 +45,7 @@ impl Node for MessageContentNode {
         let content = inputs
             .get("message")
             .and_then(|v| match v {
-                DataValue::OpenAIMessage(m) => m.content.clone(),
+                DataValue::OpenAIMessage(m) => m.content_text_owned(),
                 _ => None,
             })
             .ok_or(zihuan_core::error::Error::ValidationError(

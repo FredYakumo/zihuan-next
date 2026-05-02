@@ -638,7 +638,7 @@ fn split_text_with_llm_for_forward(
         tools: None,
     };
     let response = llm.inference(&param);
-    let response_text = response.content.unwrap_or_default();
+    let response_text = response.content_text_owned().unwrap_or_default();
     if response_text.starts_with("Error:") {
         return Err(Error::StringError(format!(
             "forward splitting LLM request failed: {response_text}"
@@ -1366,7 +1366,7 @@ impl QqMessageAgentNode {
             matches!(m.role, zihuan_llm_types::MessageRole::Assistant) && m.tool_calls.is_empty()
         });
         let final_assistant_text = last_assistant
-            .and_then(|m| m.content.as_deref())
+            .and_then(|m| m.content_text())
             .map(str::trim)
             .filter(|content| !content.is_empty())
             .map(ToOwned::to_owned);

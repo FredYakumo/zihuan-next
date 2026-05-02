@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use zihuan_core::error::{Error, Result};
-use zihuan_llm_types::{str_to_role, OpenAIMessage};
+use zihuan_llm_types::{str_to_role, MessageContent, OpenAIMessage};
 
 /// Converts a plain string into an `OpenAIMessage` with the selected role.
 pub struct StringToOpenAIMessageNode {
@@ -61,7 +61,7 @@ impl Node for StringToOpenAIMessageNode {
             "message".to_string(),
             DataValue::OpenAIMessage(OpenAIMessage {
                 role,
-                content: Some(content),
+                content: Some(MessageContent::Text(content)),
                 reasoning_content: None,
                 tool_calls: Vec::new(),
                 tool_call_id: None,

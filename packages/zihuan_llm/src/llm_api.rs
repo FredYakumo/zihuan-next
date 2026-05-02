@@ -4,7 +4,9 @@ use serde_json::{json, Value};
 use std::time::Duration;
 use zihuan_llm_types::llm_base::LLMBase;
 use zihuan_llm_types::tooling::{ToolCalls, ToolCallsFuncSpec};
-use zihuan_llm_types::{role_to_str, str_to_role, InferenceParam, MessageRole, OpenAIMessage};
+use zihuan_llm_types::{
+    role_to_str, str_to_role, InferenceParam, MessageContent, OpenAIMessage,
+};
 
 #[derive(Debug, Clone)]
 pub struct LLMAPI {
@@ -37,24 +39,12 @@ impl LLMAPI {
 
     /// Create a system message
     pub fn system_message(content: &str) -> OpenAIMessage {
-        OpenAIMessage {
-            role: MessageRole::System,
-            content: Some(content.to_string()),
-            reasoning_content: None,
-            tool_calls: Vec::new(),
-            tool_call_id: None,
-        }
+        OpenAIMessage::system(content)
     }
 
     /// Create a user message
     pub fn user_message(content: &str) -> OpenAIMessage {
-        OpenAIMessage {
-            role: MessageRole::User,
-            content: Some(content.to_string()),
-            reasoning_content: None,
-            tool_calls: Vec::new(),
-            tool_call_id: None,
-        }
+        OpenAIMessage::user(content)
     }
 
     /// Parse tool calls from JSON array
@@ -103,7 +93,7 @@ impl LLMAPI {
         let content = msg
             .get("content")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+            .map(|s| MessageContent::Text(s.to_string()));
         let reasoning_content = msg
             .get("reasoning_content")
             .and_then(|v| v.as_str())
@@ -145,9 +135,15 @@ impl LLMBase for LLMAPI {
             .map(|msg| {
                 let role_str = role_to_str(&msg.role);
 
+                let content_value = msg
+                    .content
+                    .as_ref()
+                    .map(|c| serde_json::to_value(c).unwrap_or(Value::Null))
+                    .unwrap_or(Value::Null);
+
                 let mut msg_obj = json!({
                     "role": role_str,
-                    "content": msg.content,
+                    "content": content_value,
                 });
 
                 if let Some(reasoning_content) = &msg.reasoning_content {
@@ -226,15 +222,9 @@ impl LLMBase for LLMAPI {
                                 msg
                             } else {
                                 error!("Invalid API response structure: missing required fields");
-                                OpenAIMessage {
-                                    role: MessageRole::Assistant,
-                                    content: Some(
-                                        "Error: Invalid response structure from API".to_string(),
-                                    ),
-                                    reasoning_content: None,
-                                    tool_calls: Vec::new(),
-                                    tool_call_id: None,
-                                }
+                                OpenAIMessage::assistant_text(
+                                    "Error: Invalid response structure from API",
+                                )
                             }
                         }
                         Err(e) => {
@@ -242,13 +232,10 @@ impl LLMBase for LLMAPI {
                                 "Failed to parse API response: {}, original response: {:?}",
                                 e, &response_text
                             );
-                            OpenAIMessage {
-                                role: MessageRole::Assistant,
-                                content: Some(format!("Error: Failed to parse response - {}", e)),
-                                reasoning_content: None,
-                                tool_calls: Vec::new(),
-                                tool_call_id: None,
-                            }
+                            OpenAIMessage::assistant_text(format!(
+                                "Error: Failed to parse response - {}",
+                                e
+                            ))
                         }
                     }
                 } else {
@@ -256,24 +243,15 @@ impl LLMBase for LLMAPI {
                         "API request failed with status {}: {}",
                         status, response_text
                     );
-                    OpenAIMessage {
-                        role: MessageRole::Assistant,
-                        content: Some(format!("Error: API request failed with status {}", status)),
-                        reasoning_content: None,
-                        tool_calls: Vec::new(),
-                        tool_call_id: None,
-                    }
+                    OpenAIMessage::assistant_text(format!(
+                        "Error: API request failed with status {}",
+                        status
+                    ))
                 }
             }
             Err(e) => {
                 error!("Failed to send API request: {}", e);
-                OpenAIMessage {
-                    role: MessageRole::Assistant,
-                    content: Some(format!("Error: Failed to send request - {}", e)),
-                    reasoning_content: None,
-                    tool_calls: Vec::new(),
-                    tool_call_id: None,
-                }
+                OpenAIMessage::assistant_text(format!("Error: Failed to send request - {}", e))
             }
         }
     }
