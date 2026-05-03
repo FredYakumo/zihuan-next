@@ -180,6 +180,23 @@ fn release_session(session: &Arc<SessionStateRef>, sender_id: &str, claim_token:
     info!("{LOG_PREFIX} Released session for {sender_id}: released={released}");
 }
 
+fn persist_event_to_weaviate_if_configured(
+    event: &zihuan_bot_adapter::models::MessageEvent,
+    weaviate_ref: Option<&Arc<WeaviateRef>>,
+    embedding_model: Option<&Arc<dyn EmbeddingBase>>,
+) {
+    let (Some(weaviate_ref), Some(embedding_model)) = (weaviate_ref, embedding_model) else {
+        return;
+    };
+
+    if let Err(err) = weaviate_ref.upsert_message_event(event, embedding_model.as_ref()) {
+        warn!(
+            "{LOG_PREFIX} Failed to persist message {} into Weaviate: {}",
+            event.message_id, err
+        );
+    }
+}
+
 fn sender_display_name(sender_name: &str, sender_card: &str) -> String {
     let card = sender_card.trim();
     if card.is_empty() {
@@ -1982,6 +1999,7 @@ impl QqMessageAgentNode {
                 Some(bot_name),
             );
             if !msg_prop.is_at_me {
+                persist_event_to_weaviate_if_configured(event, weaviate_ref, embedding_model);
                 return Ok(());
             }
         }
@@ -1992,6 +2010,7 @@ impl QqMessageAgentNode {
             if !is_group {
                 send_friend_text(adapter, &target_id, BUSY_REPLY);
             }
+            persist_event_to_weaviate_if_configured(event, weaviate_ref, embedding_model);
             return Ok(());
         }
 
@@ -2016,6 +2035,7 @@ impl QqMessageAgentNode {
         );
 
         release_session(session, &sender_id, claim_token);
+        persist_event_to_weaviate_if_configured(event, weaviate_ref, embedding_model);
         result
     }
 

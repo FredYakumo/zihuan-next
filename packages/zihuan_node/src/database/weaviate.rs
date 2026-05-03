@@ -1,4 +1,6 @@
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
+use chrono::Local;
+use log::info;
 use reqwest::blocking::{Client, RequestBuilder};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -6,7 +8,11 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
+use uuid::Uuid;
+use zihuan_bot_types::event_model::MessageEvent;
+use zihuan_bot_types::message::{collect_media_records, Message};
 use zihuan_core::error::{Error, Result};
+use zihuan_llm_types::embedding_base::EmbeddingBase;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 
@@ -168,6 +174,110 @@ impl WeaviateRef {
         }
 
         self.post_json("/v1/objects", payload)
+    }
+
+    pub fn upsert_message_event(
+        &self,
+        event: &MessageEvent,
+        embedding_model: &dyn EmbeddingBase,
+    ) -> Result<Value> {
+        let sender_name = if event.sender.card.trim().is_empty() {
+            event.sender.nickname.as_str()
+        } else {
+            event.sender.card.as_str()
+        };
+
+        let group_id = event.group_id.map(|value| value.to_string());
+
+        self.upsert_qq_message_list(
+            &event.message_list,
+            &event.message_id.to_string(),
+            &event.sender.user_id.to_string(),
+            sender_name,
+            group_id.as_deref(),
+            event.group_name.as_deref(),
+            embedding_model,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn upsert_qq_message_list(
+        &self,
+        messages: &[Message],
+        message_id: &str,
+        sender_id: &str,
+        sender_name: &str,
+        group_id: Option<&str>,
+        group_name: Option<&str>,
+        embedding_model: &dyn EmbeddingBase,
+    ) -> Result<Value> {
+        let message_id = required_non_empty_string(message_id, "message_id")?;
+        let sender_id = required_non_empty_string(sender_id, "sender_id")?;
+        let sender_name = required_non_empty_string(sender_name, "sender_name")?;
+        let group_id = normalize_optional_string(group_id);
+        let group_name = normalize_optional_string(group_name);
+
+        let content = messages
+            .iter()
+            .map(|message| message.to_string())
+            .collect::<Vec<_>>()
+            .join("");
+        if content.trim().is_empty() {
+            return Err(Error::ValidationError(
+                "qq_message_list content must not be empty".to_string(),
+            ));
+        }
+
+        let at_targets: Vec<String> = messages
+            .iter()
+            .filter_map(|message| {
+                if let Message::At(at) = message {
+                    Some(at.target_id())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let at_target_list = if at_targets.is_empty() {
+            None
+        } else {
+            Some(at_targets.join(","))
+        };
+
+        let media_json = {
+            let records = collect_media_records(messages);
+            if records.is_empty() {
+                None
+            } else {
+                Some(serde_json::to_string(&records)?)
+            }
+        };
+
+        let properties = json!({
+            "message_id": message_id,
+            "sender_id": sender_id,
+            "sender_name": sender_name,
+            "send_time": Local::now().to_rfc3339(),
+            "group_id": group_id,
+            "group_name": group_name,
+            "content": content,
+            "at_target_list": at_target_list,
+            "media_json": media_json,
+        });
+        let vector = embedding_model.inference(
+            properties
+                .get("content")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
+        )?;
+        let object_id = deterministic_message_object_id(&self.class_name, &message_id);
+
+        info!(
+            "[WeaviateRef] Upserting message {} into class {}",
+            message_id, self.class_name
+        );
+
+        self.upsert_object(&self.class_name, properties, Some(vector), Some(&object_id))
     }
 
     pub fn batch_upsert_objects(&self, objects: &[WeaviateObjectInput]) -> Result<Value> {
@@ -450,6 +560,28 @@ fn normalize_class_name(raw: String) -> Result<String> {
     }
 
     Ok(trimmed)
+}
+
+fn required_non_empty_string(value: &str, field_name: &str) -> Result<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(Error::ValidationError(format!(
+            "{field_name} must not be empty"
+        )));
+    }
+    Ok(trimmed.to_string())
+}
+
+fn normalize_optional_string(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn deterministic_message_object_id(class_name: &str, message_id: &str) -> String {
+    let _ = (class_name, message_id);
+    Uuid::new_v4().to_string()
 }
 
 fn message_vector_collection_config(class_name: String) -> WeaviateCollectionConfig {
