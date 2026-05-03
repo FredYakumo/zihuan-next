@@ -272,7 +272,7 @@ function bindDrawNodeWidgets(canvas: CanvasFacade) {
               ctx.font = `${(LiteGraph as any).NODE_TEXT_SIZE ?? 14}px Arial`;
               ctx.fillText(widget.label || widget.name, boxLeftX + boxWidth * 0.5, inlineRowCenterY);
             }
-          } else if ((widget.type === "text" || widget.type === "number") && showText) {
+          } else if ((widget.type === "text" || widget.type === "number" || widget.type === "combo") && showText) {
             const rowOutput = inlineInputIdx >= 0 ? (node.outputs as any[])?.[inlineInputIdx] : undefined;
             const inputAtRow = inlineInputIdx >= 0 ? (node.inputs as any[])?.[inlineInputIdx] : undefined;
             const isSameNamePassthrough = rowOutput && rowOutput.name === inputAtRow?.name;
@@ -295,9 +295,19 @@ function bindDrawNodeWidgets(canvas: CanvasFacade) {
             const valueLeftX = labelTextX + inputLabelWidth + 6;
 
             if (valueRightX > valueLeftX + 10) {
-              const value = widget.type === "number"
-                ? Number(widget.value).toFixed(widget.options?.precision ?? 3)
-                : String(widget.value ?? "");
+              let value: string;
+              if (widget.type === "number") {
+                value = Number(widget.value).toFixed(widget.options?.precision ?? 3);
+              } else if (widget.type === "combo") {
+                let comboValue = widget.value;
+                const values = widget.options?.values;
+                if (values && values.constructor !== Array) {
+                  comboValue = values[widget.value] ?? widget.value;
+                }
+                value = String(comboValue ?? "");
+              } else {
+                value = String(widget.value ?? "");
+              }
               const fontSize = (LiteGraph as any).NODE_SUBTEXT_SIZE ?? 12;
               ctx.font = `${fontSize}px Arial`;
               const truncatedValue = truncateText(ctx, value, Math.max(0, valueRightX - valueLeftX));
@@ -305,6 +315,11 @@ function bindDrawNodeWidgets(canvas: CanvasFacade) {
               ctx.textBaseline = "middle";
               ctx.fillStyle = widget.disabled ? c.widgetDisabled : c.widgetText;
               ctx.fillText(truncatedValue, valueLeftX, inlineRowCenterY);
+              if (widget.type === "combo" && !widget.disabled) {
+                ctx.fillStyle = widget.disabled ? c.widgetDisabled : c.widgetText;
+                ctx.textAlign = "right";
+                ctx.fillText("▾", valueRightX, inlineRowCenterY);
+              }
             }
           }
         } else {

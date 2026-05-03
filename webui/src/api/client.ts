@@ -197,6 +197,9 @@ export const fileIO = {
     }
     return res.json() as Promise<{ url: string; key: string; name: string }>;
   },
+  listTextEmbeddingModels(): Promise<{ models: string[] }> {
+    return request("GET", "/models/text-embedding");
+  },
 };
 
 // Tasks

@@ -1,7 +1,7 @@
 // Node widget setup — adds inline value widgets and special editor buttons to LiteGraph nodes
 
 import type { NodeDefinition } from "../api/types";
-import { graphs } from "../api/client";
+import { fileIO, graphs } from "../api/client";
 import { portTypeString } from "./registry";
 import {
   openFormatStringEditor,
@@ -17,6 +17,8 @@ import { getInlineWidgetTopY } from "./inline_layout";
 import { setupQQMessagePreviewWidgets } from "./preview_qq_messages";
 
 type WidgetMutationCallback = (pending?: Promise<unknown>) => void;
+
+let cachedTextEmbeddingModels: string[] | null = null;
 
 /** Called for every node added to the canvas after the node is created. */
 export function setupNodeWidgets(
@@ -241,7 +243,16 @@ function setupSimpleInlineWidgets(
     const dt = portTypeString(port.data_type);
 
     let addedWidget: any | null = null;
-    if (dt === "Boolean") {
+    if (nodeDef.node_type === "load_local_text_embedder" && key === "model_name") {
+      addedWidget = setupLocalTextEmbeddingModelWidget(
+        lNode,
+        nodeDef,
+        key,
+        String(existingValue ?? ""),
+        getSessionId,
+        onMutated,
+      );
+    } else if (dt === "Boolean") {
       addedWidget = lNode.addWidget("toggle", key, existingValue ?? false, async (val: boolean) => {
         const sid = getSessionId();
         if (!sid) return;
@@ -322,4 +333,52 @@ function setupSimpleInlineWidgets(
       if (lNode.size[0] < INLINE_MIN_W) lNode.size[0] = INLINE_MIN_W;
     }
   }
+}
+
+function setupLocalTextEmbeddingModelWidget(
+  lNode: any,
+  nodeDef: NodeDefinition,
+  key: string,
+  initialValue: string,
+  getSessionId: () => string | null,
+  onMutated?: WidgetMutationCallback,
+): any {
+  const widget = lNode.addWidget("combo", key, initialValue, async (selected: string) => {
+      if (selected == null) return;
+      const sid = getSessionId();
+      if (!sid) return;
+      widget.value = selected;
+      widget._zihuanTouched = true;
+      const pending = graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: selected } });
+      onMutated?.(pending);
+      await pending;
+  }, { values: [] as string[] });
+  widget.value = initialValue;
+  loadTextEmbeddingModelOptions(widget, lNode);
+  return widget;
+}
+
+async function getTextEmbeddingModels(forceRefresh = false): Promise<string[]> {
+  if (forceRefresh) cachedTextEmbeddingModels = null;
+  if (cachedTextEmbeddingModels) return cachedTextEmbeddingModels;
+  const response = await fileIO.listTextEmbeddingModels();
+  cachedTextEmbeddingModels = response.models;
+  return cachedTextEmbeddingModels;
+}
+
+function loadTextEmbeddingModelOptions(widget: any, lNode: any): void {
+  getTextEmbeddingModels()
+    .then((models) => {
+      widget.options = widget.options ?? {};
+      widget.options.values = models;
+      if (!widget.value && models.length > 0) {
+        widget.value = models[0];
+      }
+      lNode?.setDirtyCanvas?.(true, true);
+    })
+    .catch((error) => {
+      console.error("failed to load local text embedding models", error);
+      widget.options = widget.options ?? {};
+      widget.options.values = [];
+    });
 }
