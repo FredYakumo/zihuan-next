@@ -638,12 +638,29 @@
       "inline_values": {
         "redis_host": "127.0.0.1",
         "redis_password": "",
-        "redis_port": 0,
+        "redis_port": 6379,
         "redis_db": 0,
         "reconnect_max_attempts": 0,
         "reconnect_interval_secs": 0
       },
-      "port_bindings": {},
+      "port_bindings": {
+        "redis_host": {
+          "kind": "hyperparameter",
+          "name": "REDIS_HOST"
+        },
+        "redis_port": {
+          "kind": "hyperparameter",
+          "name": "REDIS_PORT"
+        },
+        "redis_db": {
+          "kind": "hyperparameter",
+          "name": "REDIS_DB"
+        },
+        "redis_password": {
+          "kind": "hyperparameter",
+          "name": "REDIS_PASSWORD"
+        }
+      },
       "has_error": false,
       "has_cycle": false,
       "disabled": false
@@ -1720,6 +1737,34 @@
       "group": "default",
       "required": true,
       "description": null
+    },
+    {
+      "name": "REDIS_HOST",
+      "data_type": "String",
+      "group": "default",
+      "required": true,
+      "description": "Redis 主机地址"
+    },
+    {
+      "name": "REDIS_PORT",
+      "data_type": "Integer",
+      "group": "default",
+      "required": true,
+      "description": "Redis 端口"
+    },
+    {
+      "name": "REDIS_DB",
+      "data_type": "Integer",
+      "group": "default",
+      "required": false,
+      "description": "Redis 数据库编号"
+    },
+    {
+      "name": "REDIS_PASSWORD",
+      "data_type": "Password",
+      "group": "default",
+      "required": false,
+      "description": "Redis 密码"
     },
     {
       "name": "BOT_SERVER_URL",

@@ -64,12 +64,13 @@ impl OpenAIMessageSessionCacheProviderNode {
         if let Some(redis_config) = redis_ref {
             if let Some(ref url) = redis_config.url {
                 let url = url.to_string();
-                let cache_ref = self.cache_ref.clone();
                 let tracker_registry_key = self.redis_tracker_registry_key();
+                let redis_cm = redis_config.redis_cm.clone();
+                let cached_url = redis_config.cached_redis_url.clone();
 
                 let cleanup = async move {
-                    let mut cm_guard = cache_ref.redis_cm.lock().await;
-                    let mut url_guard = cache_ref.cached_redis_url.lock().await;
+                    let mut cm_guard = redis_cm.lock().await;
+                    let mut url_guard = cached_url.lock().await;
 
                     if url_guard.as_deref() != Some(url.as_str()) {
                         *cm_guard = None;

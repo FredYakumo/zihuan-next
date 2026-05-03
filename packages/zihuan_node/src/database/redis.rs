@@ -1,7 +1,11 @@
 use crate::data_value::RedisConfig;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
+use log::info;
+use redis::aio::ConnectionManager;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::Mutex as TokioMutex;
+use tokio::task::block_in_place;
 use zihuan_core::config::pct_encode;
 use zihuan_core::error::Result;
 
@@ -9,6 +13,8 @@ use zihuan_core::error::Result;
 pub struct RedisNode {
     id: String,
     name: String,
+    redis_cm: Arc<TokioMutex<Option<ConnectionManager>>>,
+    cached_redis_url: Arc<TokioMutex<Option<String>>>,
 }
 
 impl RedisNode {
@@ -16,6 +22,8 @@ impl RedisNode {
         Self {
             id: id.into(),
             name: name.into(),
+            redis_cm: Arc::new(TokioMutex::new(None)),
+            cached_redis_url: Arc::new(TokioMutex::new(None)),
         }
     }
 }
@@ -104,10 +112,43 @@ impl Node for RedisNode {
         });
 
         let config = RedisConfig {
-            url,
+            url: url.clone(),
             reconnect_max_attempts: max_attempts,
             reconnect_interval_secs: interval_secs,
+            redis_cm: self.redis_cm.clone(),
+            cached_redis_url: self.cached_redis_url.clone(),
         };
+
+        if let Some(ref url) = url {
+            let url = url.clone();
+            let redis_cm = self.redis_cm.clone();
+            let cached_redis_url = self.cached_redis_url.clone();
+
+            let connect = async move {
+                let mut cm_guard = redis_cm.lock().await;
+                let mut url_guard = cached_redis_url.lock().await;
+
+                if url_guard.as_deref() != Some(url.as_str()) {
+                    *cm_guard = None;
+                    *url_guard = Some(url.clone());
+                }
+
+                if cm_guard.is_none() {
+                    let client = redis::Client::open(url.as_str())?;
+                    let cm = ConnectionManager::new(client).await?;
+                    info!("[RedisNode] Connected to Redis at {}", url);
+                    *cm_guard = Some(cm);
+                }
+
+                Ok::<(), redis::RedisError>(())
+            };
+
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                block_in_place(|| handle.block_on(connect))?;
+            } else {
+                tokio::runtime::Runtime::new()?.block_on(connect)?;
+            }
+        }
 
         let mut outputs = HashMap::new();
         outputs.insert(

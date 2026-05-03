@@ -1,6 +1,7 @@
 use crate::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 use log::{debug, info, warn};
-use redis::{aio::ConnectionManager, AsyncCommands};
+use redis::aio::ConnectionManager;
+use redis::AsyncCommands;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
@@ -19,18 +20,13 @@ use zihuan_core::error::Result;
 ///   `message_cache:{bucket_name}:{logical_key}`
 /// If omitted, bucket_name defaults to `default`.
 ///
-/// The Redis ConnectionManager is lazily initialised on the first call that provides a
-/// `redis_ref` and is reused across subsequent calls for efficiency.  If the URL changes
-/// between calls the manager is recreated automatically.
+/// The Redis ConnectionManager is created and owned by `RedisNode`; this node reuses the
+/// shared manager exposed through `redis_ref` instead of opening its own connections.
 pub struct MessageCacheNode {
     id: String,
     name: String,
     /// In-process fallback cache: cache-key → serialised JSON value.
     memory_cache: Arc<TokioMutex<HashMap<String, String>>>,
-    /// Lazily-initialised Redis ConnectionManager (handles auto-reconnection internally).
-    redis_cm: Arc<TokioMutex<Option<ConnectionManager>>>,
-    /// URL fingerprint — used to detect when the manager must be recreated.
-    cached_redis_url: Arc<TokioMutex<Option<String>>>,
     /// Guard to ensure run-start cleanup happens once per graph execution.
     run_initialized: bool,
 }
@@ -41,8 +37,6 @@ impl MessageCacheNode {
             id: id.into(),
             name: name.into(),
             memory_cache: Arc::new(TokioMutex::new(HashMap::new())),
-            redis_cm: Arc::new(TokioMutex::new(None)),
-            cached_redis_url: Arc::new(TokioMutex::new(None)),
             run_initialized: false,
         }
     }
@@ -95,8 +89,8 @@ impl MessageCacheNode {
         if let Some(redis_config) = redis_ref {
             if let Some(ref url) = redis_config.url {
                 let url = url.to_string();
-                let redis_cm = self.redis_cm.clone();
-                let cached_url = self.cached_redis_url.clone();
+                let redis_cm = redis_config.redis_cm.clone();
+                let cached_url = redis_config.cached_redis_url.clone();
                 let tracker_registry_key = self.redis_tracker_registry_key();
 
                 let cleanup = async move {
@@ -305,8 +299,8 @@ impl Node for MessageCacheNode {
         if let Some(ref redis_config) = redis_ref {
             if let Some(ref url) = redis_config.url {
                 let url = url.clone();
-                let redis_cm = self.redis_cm.clone();
-                let cached_url = self.cached_redis_url.clone();
+                let redis_cm = redis_config.redis_cm.clone();
+                let cached_url = redis_config.cached_redis_url.clone();
                 let tracker_key = self.redis_bucket_tracker_key(&bucket_name);
                 let tracker_registry_key = self.redis_tracker_registry_key();
                 let key = cache_key.clone();
