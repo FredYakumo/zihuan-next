@@ -6,7 +6,8 @@ use serde::Deserialize;
 use uuid::Uuid;
 use zihuan_node::function_graph::embedded_function_config_from_value;
 use zihuan_node::graph_io::{
-    GraphMetadata, GraphPosition, GraphSize, NodeDefinition, NodeGraphDefinition, PortBinding,
+    refresh_node_dynamic_ports, GraphMetadata, GraphPosition, GraphSize, NodeDefinition,
+    NodeGraphDefinition, PortBinding,
 };
 
 use super::state::{AppState, GraphSession, GraphTabInfo};
@@ -307,6 +308,10 @@ pub async fn update_node(req: &mut Request, res: &mut Response, depot: &mut Depo
                 node.inline_values.insert(k, v);
             }
         }
+        // Inline-config-driven dynamic ports (e.g. `qq_message_agent` shared_inputs,
+        // `format_string` template variables) need to be re-derived right after
+        // `inline_values` change so the next graph fetch reflects the new port set.
+        refresh_node_dynamic_ports(node);
     }
     if let Some(pb) = body.port_bindings {
         if let Ok(bindings) =

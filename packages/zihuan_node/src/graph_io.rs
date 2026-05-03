@@ -305,47 +305,56 @@ fn refresh_port_types_internal(graph: &mut NodeGraphDefinition) {
 }
 
 fn rebuild_dynamic_ports_from_inline_values(graph: &mut NodeGraphDefinition) {
+    for node in &mut graph.nodes {
+        refresh_node_dynamic_ports(node);
+    }
+}
+
+/// Refresh a single node's dynamic input/output ports from its current `inline_values`.
+///
+/// Call this after mutating `node.inline_values` so that nodes whose port list depends on
+/// inline configuration (e.g. `format_string`, `qq_message_agent` shared_inputs) reflect
+/// the new port set immediately, instead of waiting for a full graph reload/migration.
+pub fn refresh_node_dynamic_ports(node: &mut NodeDefinition) {
     use crate::registry::{json_to_data_value, NODE_REGISTRY};
 
-    for node in &mut graph.nodes {
-        if !node.dynamic_input_ports && !node.dynamic_output_ports {
-            continue;
-        }
+    if !node.dynamic_input_ports && !node.dynamic_output_ports {
+        return;
+    }
 
-        let Ok(mut runtime_node) =
-            NODE_REGISTRY.create_node(&node.node_type, node.id.clone(), node.name.clone())
-        else {
-            continue;
-        };
+    let Ok(mut runtime_node) =
+        NODE_REGISTRY.create_node(&node.node_type, node.id.clone(), node.name.clone())
+    else {
+        return;
+    };
 
-        let input_types: HashMap<String, DataType> = runtime_node
-            .input_ports()
-            .into_iter()
-            .map(|port| (port.name, port.data_type))
-            .collect();
+    let input_types: HashMap<String, DataType> = runtime_node
+        .input_ports()
+        .into_iter()
+        .map(|port| (port.name, port.data_type))
+        .collect();
 
-        let inline_values: HashMap<String, DataValue> = node
-            .inline_values
-            .iter()
-            .filter_map(|(port_name, json_val)| {
-                input_types
-                    .get(port_name)
-                    .and_then(|data_type| json_to_data_value(json_val, data_type))
-                    .map(|value| (port_name.clone(), value))
-            })
-            .collect();
+    let inline_values: HashMap<String, DataValue> = node
+        .inline_values
+        .iter()
+        .filter_map(|(port_name, json_val)| {
+            input_types
+                .get(port_name)
+                .and_then(|data_type| json_to_data_value(json_val, data_type))
+                .map(|value| (port_name.clone(), value))
+        })
+        .collect();
 
-        if runtime_node.apply_inline_config(&inline_values).is_err() {
-            node.has_error = true;
-            continue;
-        }
+    if runtime_node.apply_inline_config(&inline_values).is_err() {
+        node.has_error = true;
+        return;
+    }
 
-        if node.dynamic_input_ports {
-            node.input_ports = runtime_node.input_ports();
-        }
-        if node.dynamic_output_ports {
-            node.output_ports = runtime_node.output_ports();
-        }
+    if node.dynamic_input_ports {
+        node.input_ports = runtime_node.input_ports();
+    }
+    if node.dynamic_output_ports {
+        node.output_ports = runtime_node.output_ports();
     }
 }
 
@@ -768,7 +777,7 @@ fn refresh_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
         for (index, tool) in tools.iter_mut().enumerate() {
             tool.ensure_defaults(index + 1);
             refresh_port_types_internal(&mut tool.subgraph);
-            let input_signature = brain_tool_input_signature(&shared_inputs, tool);
+            let input_signature = brain_tool_input_signature(&node.node_type, &shared_inputs, tool);
             let outputs = normalized_tool_outputs_for_owner(&node.node_type, tool);
             sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &outputs);
         }
@@ -859,7 +868,7 @@ fn auto_fix_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
         for (index, tool) in tools.iter_mut().enumerate() {
             tool.ensure_defaults(index + 1);
             auto_fix_graph_definition(&mut tool.subgraph);
-            let input_signature = brain_tool_input_signature(&shared_inputs, tool);
+            let input_signature = brain_tool_input_signature(&node.node_type, &shared_inputs, tool);
             let outputs = normalized_tool_outputs_for_owner(&node.node_type, tool);
             sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &outputs);
         }

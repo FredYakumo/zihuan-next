@@ -1,6 +1,7 @@
 import { graphs } from "../../api/client";
 import type { NodeDefinition, NodeGraphDefinition } from "../../api/types";
-import type { BrainToolDefinition, EmbeddedFunctionConfig } from "../../ui/dialogs/types";
+import { ensureToolSubgraphSignature } from "../../ui/dialogs/tool_subgraph_utils";
+import type { BrainToolDefinition, EmbeddedFunctionConfig, FunctionPortDef } from "../../ui/dialogs/types";
 import type { CanvasFacade } from "./types";
 import { hasVisibleSubgraphContent, isNodeGraphDefinitionLike } from "./type_utils";
 
@@ -24,13 +25,15 @@ export class CanvasSubgraphController {
       subgraphDef = functionConfig.subgraph;
       label = functionConfig.name || parentNodeDef.name;
     } else if (mode === "brain-tool" && toolDef != null) {
-      subgraphDef = toolDef.subgraph;
+      const sharedInputs = (parentNodeDef.inline_values?.shared_inputs as FunctionPortDef[] | undefined) ?? [];
+      subgraphDef = ensureToolSubgraphSignature(parentNodeDef.node_type, sharedInputs, toolDef).subgraph;
       label = `${parentNodeDef.name} / ${toolDef.name}`;
     } else {
       return;
     }
 
     const shouldRejectEmptySubgraph = !isNodeGraphDefinitionLike(subgraphDef) || (
+      mode !== "brain-tool" &&
       subgraphDef.nodes.length === 0 &&
       (parentNodeDef.input_ports.length > 0 || parentNodeDef.output_ports.length > 0)
     );
@@ -74,11 +77,15 @@ export class CanvasSubgraphController {
         const parentGraph = await graphs.get(parentSessionId);
         const nodeIdx = parentGraph.nodes.findIndex((node) => node.id === parentNodeDef.id);
         if (nodeIdx >= 0) {
+          const sharedInputs = (parentGraph.nodes[nodeIdx].inline_values?.shared_inputs as FunctionPortDef[] | undefined) ?? [];
           const tools: BrainToolDefinition[] = JSON.parse(
             JSON.stringify(parentGraph.nodes[nodeIdx].inline_values?.tools_config ?? []),
           );
           if (tools[toolIndex]) {
-            tools[toolIndex] = { ...tools[toolIndex], subgraph: modifiedGraph };
+            tools[toolIndex] = ensureToolSubgraphSignature(parentGraph.nodes[nodeIdx].node_type, sharedInputs, {
+              ...tools[toolIndex],
+              subgraph: modifiedGraph,
+            });
           }
           parentGraph.nodes[nodeIdx] = {
             ...parentGraph.nodes[nodeIdx],

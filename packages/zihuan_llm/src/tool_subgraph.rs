@@ -4,7 +4,9 @@ use std::sync::Arc;
 use serde_json::{json, Map, Value};
 
 use crate::brain_tool::{
-    brain_tool_input_signature, BrainToolDefinition, ToolParamDef, BRAIN_TOOL_FIXED_CONTENT_INPUT,
+    brain_tool_input_signature, fixed_tool_runtime_inputs, BrainToolDefinition, ToolParamDef,
+    BRAIN_TOOL_FIXED_CONTENT_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
+    QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use zihuan_core::error::{Error, Result};
 use zihuan_llm_types::tooling::FunctionTool;
@@ -30,6 +32,7 @@ pub enum ToolResultMode {
 #[derive(Debug, Clone)]
 pub struct ToolSubgraphRunner {
     pub node_id: String,
+    pub owner_node_type: String,
     pub shared_inputs: Vec<FunctionPortDef>,
     pub definition: BrainToolDefinition,
     pub shared_runtime_values: HashMap<String, DataValue>,
@@ -186,6 +189,7 @@ pub fn validate_tool_definitions(
     tool_definitions: &[BrainToolDefinition],
     shared_inputs: &[FunctionPortDef],
     result_mode: ToolResultMode,
+    owner_node_type: &str,
     owner_label: &str,
 ) -> Result<Vec<BrainToolDefinition>> {
     let mut seen_ids = HashSet::new();
@@ -224,6 +228,10 @@ pub fn validate_tool_definitions(
         }
 
         let mut seen_param_names = HashSet::new();
+        let fixed_input_names = fixed_tool_runtime_inputs(owner_node_type)
+            .into_iter()
+            .map(|port| port.name)
+            .collect::<HashSet<_>>();
         for param in &tool.parameters {
             let param_name = param.name.trim();
             if param_name.is_empty() {
@@ -238,9 +246,9 @@ pub fn validate_tool_definitions(
                     tool_name, param_name
                 )));
             }
-            if param_name == BRAIN_TOOL_FIXED_CONTENT_INPUT {
+            if fixed_input_names.contains(param_name) {
                 return Err(Error::ValidationError(format!(
-                    "Tool '{}' parameter '{}' is reserved for tool-call content",
+                    "Tool '{}' parameter '{}' is reserved for {owner_label} tool runtime input",
                     tool_name, param_name
                 )));
             }
@@ -253,7 +261,7 @@ pub fn validate_tool_definitions(
         }
 
         normalize_outputs_for_mode(&mut tool, result_mode)?;
-        let input_signature = brain_tool_input_signature(shared_inputs, &tool);
+        let input_signature = brain_tool_input_signature(owner_node_type, shared_inputs, &tool);
         sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &tool.outputs);
         normalized.push(tool);
     }
@@ -308,10 +316,19 @@ impl ToolSubgraphRunner {
         };
 
         let mut runtime_values = self.shared_runtime_values.clone();
-        runtime_values.insert(
-            BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(),
-            DataValue::String(tool_call_content),
-        );
+        if self.owner_node_type == QQ_AGENT_TOOL_OWNER_TYPE {
+            if !runtime_values.contains_key(QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT) {
+                return Err(self.wrap_error(format!(
+                    "Tool '{}' 缺少固定输入 '{}'",
+                    tool.name, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT
+                )));
+            }
+        } else {
+            runtime_values.insert(
+                BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(),
+                DataValue::String(tool_call_content),
+            );
+        }
         for (key, value) in tool_runtime_values {
             if runtime_values.contains_key(&key) {
                 return Err(self.wrap_error(format!(
@@ -337,7 +354,7 @@ impl ToolSubgraphRunner {
             runtime_values.insert(key, parsed_value);
         }
 
-        let input_signature = brain_tool_input_signature(&self.shared_inputs, tool);
+        let input_signature = brain_tool_input_signature(&self.owner_node_type, &self.shared_inputs, tool);
         let mut subgraph = tool.subgraph.clone();
         sync_function_subgraph_signature(&mut subgraph, &input_signature, &tool.outputs);
         refresh_port_types(&mut subgraph);

@@ -8,7 +8,7 @@ use serde_json::Value;
 use crate::agent::brain::{Brain, BrainStopReason, BrainTool};
 use crate::brain_tool::{
     brain_shared_inputs_from_value, BrainToolDefinition, BRAIN_SHARED_INPUTS_PORT,
-    BRAIN_TOOLS_CONFIG_PORT,
+    BRAIN_TOOLS_CONFIG_PORT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use crate::tool_subgraph::{
     shared_inputs_ports, validate_shared_inputs, validate_tool_definitions, ToolResultMode,
@@ -1164,6 +1164,7 @@ impl QqMessageAgentNode {
             &self.tool_definitions,
             &self.shared_inputs,
             ToolResultMode::SingleString,
+            QQ_AGENT_TOOL_OWNER_TYPE,
             "QQ Message Agent",
         )?;
         Ok(())
@@ -1174,6 +1175,7 @@ impl QqMessageAgentNode {
             &tool_definitions,
             &self.shared_inputs,
             ToolResultMode::SingleString,
+            QQ_AGENT_TOOL_OWNER_TYPE,
             "QQ Message Agent",
         )?;
         Ok(())
@@ -1353,6 +1355,7 @@ impl QqMessageAgentNode {
             brain.add_tool(EditableQqAgentTool {
                 runner: ToolSubgraphRunner {
                     node_id: self.id.clone(),
+                    owner_node_type: QQ_AGENT_TOOL_OWNER_TYPE.to_string(),
                     shared_inputs: self.shared_inputs.clone(),
                     definition: tool_def.clone(),
                     shared_runtime_values: shared_runtime_values.clone(),
@@ -1607,7 +1610,11 @@ impl Node for QqMessageAgentNode {
             None => DEFAULT_MAX_MESSAGE_LENGTH,
             _ => return Err(self.wrap_err("max_message_length must be an integer when provided")),
         };
-        let shared_runtime_values = self.parse_shared_inputs_input(&inputs)?;
+        let mut shared_runtime_values = self.parse_shared_inputs_input(&inputs)?;
+        shared_runtime_values.insert(
+            QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
+            DataValue::MessageEvent(event.clone()),
+        );
 
         self.handle(
             &event,

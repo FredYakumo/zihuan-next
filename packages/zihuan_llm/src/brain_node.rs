@@ -60,6 +60,7 @@ impl BrainNode {
             &self.tool_definitions,
             &self.shared_inputs,
             ToolResultMode::JsonObject,
+            "brain",
             "Brain",
         )?;
         Ok(())
@@ -70,6 +71,7 @@ impl BrainNode {
             &tool_definitions,
             &self.shared_inputs,
             ToolResultMode::JsonObject,
+            "brain",
             "Brain",
         )?;
         Ok(())
@@ -245,6 +247,7 @@ impl Node for BrainNode {
             brain.add_tool(SubgraphBrainTool {
                 runner: ToolSubgraphRunner {
                     node_id: self.id.clone(),
+                    owner_node_type: "brain".to_string(),
                     shared_inputs: self.shared_inputs.clone(),
                     definition: tool_def.clone(),
                     shared_runtime_values: shared_runtime_values.clone(),
