@@ -76,8 +76,9 @@ Before running, ensure optional dependencies are ready if you need them:
 
 1.  **Redis**: For message caching (recommended for performance).
 2.  **MySQL**: For long-term message persistence.
+3.  **Weaviate**: For vector storage and retrieval.
     ```bash
-    # Start Redis and RustFS using Docker (MySQL optional)
+    # Start Redis, RustFS, and Weaviate using Docker (MySQL optional)
     docker compose -f docker/docker-compose.yaml up -d
     
     # Initialize database schema (if using MySQL)

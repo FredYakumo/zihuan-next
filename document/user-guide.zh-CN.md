@@ -75,8 +75,9 @@
 
 1. **Redis**：用于消息缓存（推荐，可提升性能）。
 2. **MySQL**：用于长期消息持久化。
+3. **Weaviate**：用于向量存储 / 检索。
     ```bash
-    # 使用 Docker 启动 Redis 和 RustFS（MySQL 可选）
+    # 使用 Docker 启动 Redis、RustFS 和 Weaviate（MySQL 可选）
     docker compose -f docker/docker-compose.yaml up -d
     
     # 初始化数据库 schema（如使用 MySQL）

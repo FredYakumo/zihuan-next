@@ -19,13 +19,15 @@ pub fn init_node_registry() -> Result<()> {
     use zihuan_llm::agent::qq_message_agent_node::QqMessageAgentNode;
     use zihuan_llm::brain_node::BrainNode;
     use zihuan_llm::context_compact_node::ContextCompactNode;
-    use zihuan_llm::embedding_api_node::EmbeddingApiNode;
+    use zihuan_llm::linalg::batch_text_embedding_node::BatchTextEmbeddingNode;
+    use zihuan_llm::linalg::embedding_api_node::LoadTextEmbedderNode;
+    use zihuan_llm::linalg::text_embedding_node::TextEmbeddingNode;
+    use zihuan_llm::linalg::top_k_similarity_node::TopKSimilarityNode;
+    use zihuan_llm::linalg::vector_cosine_similarity_node::VectorCosineSimilarityNode;
     use zihuan_llm::llm_api_node::LLMApiNode;
     use zihuan_llm::llm_infer_node::LLMInferNode;
     use zihuan_llm::rag::tavily_provider_node::TavilyProviderNode;
     use zihuan_llm::rag::tavily_search_node::TavilySearchNode;
-    use zihuan_llm::text_embedding_node::TextEmbeddingNode;
-    use zihuan_llm::vector_cosine_similarity_node::VectorCosineSimilarityNode;
 
     // LLM nodes
     register_node!(
@@ -61,11 +63,11 @@ pub fn init_node_registry() -> Result<()> {
     );
 
     register_node!(
-        "embedding_api",
-        "Embedding API配置",
+        "load_text_embedder",
+        "加载文本Embedder",
         "AI",
-        "配置 embedding API 连接，输出 EmbeddingModel 引用",
-        EmbeddingApiNode
+        "加载文本 embedding 模型配置，输出 EmbeddingModel 引用",
+        LoadTextEmbedderNode
     );
 
     register_node!(
@@ -77,11 +79,27 @@ pub fn init_node_registry() -> Result<()> {
     );
 
     register_node!(
+        "batch_text_embedding",
+        "批量文本向量化",
+        "AI",
+        "使用 EmbeddingModel 批量将文本编码为向量",
+        BatchTextEmbeddingNode
+    );
+
+    register_node!(
         "vector_cosine_similarity",
         "向量余弦相似度",
         "AI",
         "使用 general-wheel-cpp 计算两个向量的余弦相似度",
         VectorCosineSimilarityNode
+    );
+
+    register_node!(
+        "top_k_similarity",
+        "Top-K相似检索",
+        "AI",
+        "对 Vec<Vector> 与查询向量执行 top-k 相似度检索",
+        TopKSimilarityNode
     );
 
     register_node!(
