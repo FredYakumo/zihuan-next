@@ -62,11 +62,15 @@
         "height": 146.0
       },
       "inline_values": {
-        "bot_server_token": "",
         "qq_id": "",
-        "bot_server_url": ""
+        "bot_server_url": "",
+        "bot_server_token": ""
       },
       "port_bindings": {
+        "bot_server_token": {
+          "kind": "hyperparameter",
+          "name": "BOT_SERVER_TOKEN"
+        },
         "bot_server_url": {
           "kind": "hyperparameter",
           "name": "BOT_SERVER_URL"
@@ -74,10 +78,6 @@
         "qq_id": {
           "kind": "hyperparameter",
           "name": "BOT_ID"
-        },
-        "bot_server_token": {
-          "kind": "hyperparameter",
-          "name": "BOT_SERVER_TOKEN"
         }
       },
       "has_error": false,
@@ -174,28 +174,20 @@
         "height": 401.06308
       },
       "inline_values": {
-        "mysql_port": "3306",
-        "mysql_host": "127.0.0.1",
         "mysql_database": "zihuan_aibot",
+        "mysql_port": "3306",
         "mysql_password": "",
+        "reconnect_max_attempts": 0,
+        "acquire_timeout_secs": 0,
         "reconnect_interval_secs": 0,
         "mysql_user": "",
-        "max_connections": 0,
-        "acquire_timeout_secs": 0,
-        "reconnect_max_attempts": 0
+        "mysql_host": "127.0.0.1",
+        "max_connections": 0
       },
       "port_bindings": {
         "mysql_password": {
           "kind": "hyperparameter",
           "name": "MYSQL_PASSWORD"
-        },
-        "mysql_user": {
-          "kind": "hyperparameter",
-          "name": "MYSQL_USER"
-        },
-        "mysql_database": {
-          "kind": "hyperparameter",
-          "name": "MYSQL_DB"
         },
         "mysql_host": {
           "kind": "hyperparameter",
@@ -204,6 +196,14 @@
         "mysql_port": {
           "kind": "hyperparameter",
           "name": "MYSQL_PORT"
+        },
+        "mysql_user": {
+          "kind": "hyperparameter",
+          "name": "MYSQL_USER"
+        },
+        "mysql_database": {
+          "kind": "hyperparameter",
+          "name": "MYSQL_DB"
         }
       },
       "has_error": false,
@@ -395,23 +395,23 @@
         "height": 190.0
       },
       "inline_values": {
-        "api_key": "",
-        "timeout_secs": "600",
         "api_endpoint": "",
-        "model_name": ""
+        "model_name": "",
+        "api_key": "",
+        "timeout_secs": "600"
       },
       "port_bindings": {
         "model_name": {
           "kind": "hyperparameter",
           "name": "LLM_MODEL_NAME"
         },
-        "api_endpoint": {
-          "kind": "hyperparameter",
-          "name": "LLM_API_ENDPOINT"
-        },
         "api_key": {
           "kind": "hyperparameter",
           "name": "LLM_API_KEY"
+        },
+        "api_endpoint": {
+          "kind": "hyperparameter",
+          "name": "LLM_API_ENDPOINT"
         }
       },
       "has_error": false,
@@ -569,8 +569,8 @@
         "height": 103.0
       },
       "inline_values": {
-        "timeout_secs": 0,
-        "api_token": ""
+        "api_token": "",
+        "timeout_secs": 0
       },
       "port_bindings": {
         "api_token": {
@@ -652,13 +652,13 @@
       },
       "inline_values": {},
       "port_bindings": {
-        "redis_db": {
-          "kind": "hyperparameter",
-          "name": "REDIS_DB"
-        },
         "redis_password": {
           "kind": "hyperparameter",
           "name": "REDIS_PASSWORD"
+        },
+        "redis_db": {
+          "kind": "hyperparameter",
+          "name": "REDIS_DB"
         },
         "redis_host": {
           "kind": "hyperparameter",
@@ -1506,13 +1506,13 @@
       },
       "inline_values": {},
       "port_bindings": {
-        "secret_key": {
-          "kind": "hyperparameter",
-          "name": "RUSTFS_SECRET_KEY"
-        },
         "path_style": {
           "kind": "hyperparameter",
           "name": "RUSTFS_PATH_STYLE"
+        },
+        "bucket": {
+          "kind": "hyperparameter",
+          "name": "RUSTFS_BUCKET"
         },
         "endpoint": {
           "kind": "hyperparameter",
@@ -1522,10 +1522,6 @@
           "kind": "hyperparameter",
           "name": "RUSTFS_REGION"
         },
-        "bucket": {
-          "kind": "hyperparameter",
-          "name": "RUSTFS_BUCKET"
-        },
         "public_base_url": {
           "kind": "hyperparameter",
           "name": "RUSTFS_PUBLIC_BASE_URL"
@@ -1533,6 +1529,10 @@
         "access_key": {
           "kind": "hyperparameter",
           "name": "RUSTFS_ACCESS_KEY"
+        },
+        "secret_key": {
+          "kind": "hyperparameter",
+          "name": "RUSTFS_SECRET_KEY"
         }
       },
       "has_error": false,
@@ -1602,6 +1602,10 @@
       },
       "inline_values": {},
       "port_bindings": {
+        "api_endpoint": {
+          "kind": "hyperparameter",
+          "name": "MULTIMODAL_LLM_API_ENDPOINT"
+        },
         "model_name": {
           "kind": "hyperparameter",
           "name": "MULTIMODAL_LLM_MODEL_NAME"
@@ -1609,10 +1613,6 @@
         "api_key": {
           "kind": "hyperparameter",
           "name": "MULTIMODAL_LLM_API_KEY"
-        },
-        "api_endpoint": {
-          "kind": "hyperparameter",
-          "name": "MULTIMODAL_LLM_API_ENDPOINT"
         }
       },
       "has_error": false,
@@ -1828,6 +1828,12 @@
       "from_port": "weaviate_ref",
       "to_node_id": "af5bf69d-328d-41d1-99f6-4d917c75803b",
       "to_port": "weaviate_ref"
+    },
+    {
+      "from_node_id": "node_11",
+      "from_port": "mysql_ref",
+      "to_node_id": "af5bf69d-328d-41d1-99f6-4d917c75803b",
+      "to_port": "mysql_ref"
     }
   ],
   "hyperparameter_groups": [

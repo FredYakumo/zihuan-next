@@ -3,6 +3,11 @@ name = "zihuan_llm"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+candle-cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
+candle-metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]
+
 [dependencies]
 general_wheel_cpp = { path = "../general_wheel_cpp" }
 zihuan_core = { path = "../zihuan_core" }

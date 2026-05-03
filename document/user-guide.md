@@ -66,6 +66,24 @@ If you are a developer or want the latest changes:
     *   Windows: `zihuan_next.exe`
     *   Linux/macOS: `zihuan_next`
 
+#### Optional GPU builds for local Candle embedding
+
+If you plan to use the local text embedding loader with GPU acceleration, compile the binary with one of these features:
+
+```bash
+# CUDA (Linux/Windows with CUDA toolkit installed)
+cargo build --release --features candle-cuda
+
+# Metal (macOS)
+cargo build --release --features candle-metal
+```
+
+Behavior notes:
+
+- The runtime prefers `CUDA -> Metal -> CPU`.
+- If GPU startup or inference fails, the embedding runtime falls back to CPU automatically.
+- `candle-cuda` requires a working CUDA toolchain. If `nvcc` is unavailable, Cargo will fail during build.
+
 ---
 
 ## Configuration

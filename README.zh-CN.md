@@ -72,6 +72,29 @@ cd webui && pnpm install && cd ..
 cargo build --release
 ```
 
+### 可选：为本地 Candle embedding 模型启用 GPU 加速
+
+本地文本向量模型加载节点支持在编译时启用 GPU 后端。只要二进制带上对应 feature，且运行环境可用，就会自动优先使用 GPU；如果 GPU 初始化或推理失败，会自动回退到 CPU。
+
+- `candle-cuda`：适用于已安装 CUDA 工具链和驱动的 Linux / Windows。
+- `candle-metal`：适用于 macOS 的 Metal。
+- 不启用 feature：仅使用 CPU。
+
+示例：
+
+```bash
+# CUDA 构建
+cargo build --release --features candle-cuda
+
+# Metal 构建（macOS）
+cargo build --release --features candle-metal
+```
+
+说明：
+
+- `candle-cuda` 需要可用的 CUDA toolchain；如果系统里没有 `nvcc`，Cargo 会在依赖编译阶段失败。
+- 运行时设备选择顺序是 `CUDA -> Metal -> CPU`，并带自动 fallback。
+
 ### 运行
 
 ```bash
@@ -106,6 +129,12 @@ Alembic 使用的 MySQL 连接从 `config.yaml` 中的 `MYSQL_*` 字段拼接而
 ```bash
 cargo build
 cargo build --release
+
+# 启用 GPU 的本地 embedding 构建
+cargo build --features candle-cuda
+cargo build --release --features candle-cuda
+cargo build --features candle-metal
+cargo build --release --features candle-metal
 
 # 仅构建前端
 cd webui && pnpm run build

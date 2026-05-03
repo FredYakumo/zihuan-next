@@ -1,7 +1,8 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use candle_core::{DType, Device, IndexOp, Tensor};
+use candle_core::{safetensors, DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::qwen3::{Config, Model};
 use tokenizers::{PaddingParams, PaddingStrategy, Tokenizer, TruncationParams};
@@ -16,6 +17,7 @@ pub struct LocalCandleEmbeddingModel {
     config: Config,
     tokenizer: Tokenizer,
     max_length: usize,
+    preferred_device: Device,
 }
 
 impl LocalCandleEmbeddingModel {
@@ -57,31 +59,35 @@ impl LocalCandleEmbeddingModel {
             config: config.clone(),
             tokenizer,
             max_length: config.max_position_embeddings,
+            preferred_device: select_preferred_device(&model_name),
         })
     }
 
-    fn load_runtime_model(&self) -> Result<Model> {
-        let device = Device::Cpu;
-        let vb = unsafe {
-            VarBuilder::from_mmaped_safetensors(
-                &[self.model_dir.join("model.safetensors")],
-                DType::BF16,
-                &device,
-            )
-        }
-        .map_err(|err| {
+    fn load_runtime_model(&self, device: &Device) -> Result<Model> {
+        let dtype = device.bf16_default_to_f32();
+        let tensors = safetensors::load(self.model_dir.join("model.safetensors"), device)
+            .map_err(|err| {
+                Error::StringError(format!(
+                    "failed to load local embedding weights '{}' for model '{}': {}",
+                    self.model_dir.join("model.safetensors").display(),
+                    self.model_name,
+                    err
+                ))
+            })?;
+        let tensors: HashMap<String, Tensor> = tensors
+            .into_iter()
+            .map(|(name, tensor)| (format!("model.{name}"), tensor))
+            .collect();
+        let vb = VarBuilder::from_tensors(tensors, dtype, device);
+        Model::new(&self.config, vb).map_err(|err| {
             Error::StringError(format!(
-                "failed to map local embedding weights '{}' for model '{}': {}",
-                self.model_dir.join("model.safetensors").display(),
-                self.model_name,
-                err
+                "failed to load Candle Qwen3 model for '{}': {}",
+                self.model_name, err
             ))
-        })?;
-        Model::new(&self.config, vb)
-            .map_err(|err| Error::StringError(format!("failed to load Candle Qwen3 model: {err}")))
+        })
     }
 
-    fn encode_batch(&self, texts: &[String]) -> Result<(Tensor, Vec<usize>)> {
+    fn encode_batch(&self, texts: &[String], device: &Device) -> Result<(Tensor, Vec<usize>)> {
         let mut tokenizer = self.tokenizer.clone();
         tokenizer.with_padding(Some(PaddingParams {
             strategy: PaddingStrategy::BatchLongest,
@@ -129,7 +135,7 @@ impl LocalCandleEmbeddingModel {
         }
 
         let tokens = token_rows.concat();
-        let input_ids = Tensor::from_vec(tokens, (texts.len(), max_len), &Device::Cpu)
+        let input_ids = Tensor::from_vec(tokens, (texts.len(), max_len), device)
             .map_err(|err| Error::StringError(format!("failed to build token tensor: {err}")))?;
 
         Ok((input_ids, lengths))
@@ -144,9 +150,9 @@ impl LocalCandleEmbeddingModel {
         }
     }
 
-    fn infer_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
-        let (input_ids, lengths) = self.encode_batch(texts)?;
-        let mut model = self.load_runtime_model()?;
+    fn infer_batch_on_device(&self, texts: &[String], device: &Device) -> Result<Vec<Vec<f32>>> {
+        let (input_ids, lengths) = self.encode_batch(texts, device)?;
+        let mut model = self.load_runtime_model(device)?;
         let hidden_states = model
             .forward(&input_ids, 0)
             .map_err(|err| Error::StringError(format!("Candle embedding forward failed: {err}")))?;
@@ -168,6 +174,22 @@ impl LocalCandleEmbeddingModel {
 
         Ok(embeddings)
     }
+
+    fn infer_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
+        match self.infer_batch_on_device(texts, &self.preferred_device) {
+            Ok(embeddings) => Ok(embeddings),
+            Err(err) if !self.preferred_device.is_cpu() => {
+                log::warn!(
+                    "Local embedding model '{}' failed on preferred device {}; falling back to CPU: {}",
+                    self.model_name,
+                    describe_device(&self.preferred_device),
+                    err
+                );
+                self.infer_batch_on_device(texts, &Device::Cpu)
+            }
+            Err(err) => Err(err),
+        }
+    }
 }
 
 impl std::fmt::Debug for LocalCandleEmbeddingModel {
@@ -176,6 +198,7 @@ impl std::fmt::Debug for LocalCandleEmbeddingModel {
             .field("model_name", &self.model_name)
             .field("model_dir", &self.model_dir)
             .field("max_length", &self.max_length)
+            .field("preferred_device", &describe_device(&self.preferred_device))
             .finish()
     }
 }
@@ -291,4 +314,62 @@ fn display_path(path: &Path) -> String {
         .unwrap_or_else(|_| path.to_path_buf())
         .display()
         .to_string()
+}
+
+fn select_preferred_device(model_name: &str) -> Device {
+    #[cfg(feature = "candle-cuda")]
+    {
+        match Device::new_cuda(0) {
+            Ok(device) => {
+                log::info!(
+                    "Local embedding model '{}' will use CUDA device 0",
+                    model_name
+                );
+                return device;
+            }
+            Err(err) => {
+                log::warn!(
+                    "CUDA was enabled for local embedding model '{}' but unavailable at runtime: {}",
+                    model_name,
+                    err
+                );
+            }
+        }
+    }
+
+    #[cfg(all(feature = "candle-metal", target_os = "macos"))]
+    {
+        match Device::new_metal(0) {
+            Ok(device) => {
+                log::info!(
+                    "Local embedding model '{}' will use Metal device 0",
+                    model_name
+                );
+                return device;
+            }
+            Err(err) => {
+                log::warn!(
+                    "Metal was enabled for local embedding model '{}' but unavailable at runtime: {}",
+                    model_name,
+                    err
+                );
+            }
+        }
+    }
+
+    log::info!(
+        "Local embedding model '{}' will use CPU fallback",
+        model_name
+    );
+    Device::Cpu
+}
+
+fn describe_device(device: &Device) -> &'static str {
+    if device.is_cuda() {
+        "cuda"
+    } else if device.is_metal() {
+        "metal"
+    } else {
+        "cpu"
+    }
 }

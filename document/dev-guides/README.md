@@ -26,6 +26,34 @@ The node graph describes **data flow** between processing steps. Complexity (alg
 
 ---
 
+## Build Profiles And Features
+
+Most development builds can use the default CPU-only configuration:
+
+```bash
+cargo check
+cargo build
+```
+
+For local Candle embedding GPU acceleration, the root crate forwards these optional features to `packages/zihuan_llm`:
+
+```bash
+# CUDA build (requires CUDA toolkit / nvcc)
+cargo build --features candle-cuda
+
+# Metal build (macOS)
+cargo build --features candle-metal
+```
+
+Runtime behavior for the local text embedding loader:
+
+- Prefer `CUDA` when the binary was compiled with `candle-cuda` and device initialization succeeds.
+- Otherwise prefer `Metal` when compiled with `candle-metal` and available.
+- Otherwise fall back to `CPU`.
+- If GPU inference fails at runtime, embedding execution falls back to CPU automatically.
+
+---
+
 ## Where to start
 
 | Goal | Read first |

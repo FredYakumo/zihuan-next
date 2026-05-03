@@ -71,6 +71,29 @@ cd webui && pnpm install && cd ..
 cargo build --release
 ```
 
+### Optional: Enable GPU acceleration for local Candle embedding models
+
+The local text embedding loader can automatically use GPU acceleration when the binary is compiled with the matching feature and a supported runtime is available. If GPU initialization or inference fails, it falls back to CPU automatically.
+
+- `candle-cuda`: Linux/Windows builds with CUDA toolkit and driver available.
+- `candle-metal`: macOS builds with Metal available.
+- No feature: CPU-only build.
+
+Examples:
+
+```bash
+# CUDA build
+cargo build --release --features candle-cuda
+
+# Metal build (macOS)
+cargo build --release --features candle-metal
+```
+
+Notes:
+
+- `candle-cuda` requires a working CUDA toolchain; if `nvcc` is missing, Cargo will fail during dependency build.
+- The runtime chooses `CUDA -> Metal -> CPU` based on compiled features and availability.
+
 ### Run
 
 ```bash
@@ -105,6 +128,12 @@ The MySQL connection used by Alembic is built from the `MYSQL_*` fields in `conf
 ```bash
 cargo build
 cargo build --release
+
+# GPU-enabled local embedding builds
+cargo build --features candle-cuda
+cargo build --release --features candle-cuda
+cargo build --features candle-metal
+cargo build --release --features candle-metal
 
 # Frontend only
 cd webui && pnpm run build

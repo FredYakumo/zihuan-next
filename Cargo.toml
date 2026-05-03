@@ -8,6 +8,11 @@ edition = "2021"
 description = "A bot for daily helper and coding helper, support for adapter qq bot, web, edge devices"
 authors = ["FredYakumo"]
 
+[features]
+default = []
+candle-cuda = ["zihuan_llm/candle-cuda"]
+candle-metal = ["zihuan_llm/candle-metal"]
+
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = { version = "0.21", features = ["native-tls"] }

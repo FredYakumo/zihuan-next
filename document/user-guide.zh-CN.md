@@ -65,6 +65,24 @@
     - Windows：`zihuan_next.exe`
     - Linux/macOS：`zihuan_next`
 
+#### 可选：为本地 Candle embedding 启用 GPU 构建
+
+如果你准备使用本地文本向量模型加载节点，并希望优先使用 GPU，可在编译时启用对应 feature：
+
+```bash
+# CUDA（Linux / Windows，且已安装 CUDA toolchain）
+cargo build --release --features candle-cuda
+
+# Metal（macOS）
+cargo build --release --features candle-metal
+```
+
+行为说明：
+
+- 运行时设备优先级为 `CUDA -> Metal -> CPU`。
+- 如果 GPU 初始化或推理失败，本地 embedding 会自动回退到 CPU。
+- `candle-cuda` 需要可用的 CUDA toolchain；如果缺少 `nvcc`，Cargo 会在构建阶段失败。
+
 ---
 
 ## 配置
