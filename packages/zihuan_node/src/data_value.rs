@@ -23,11 +23,43 @@ tokio::task_local! {
 }
 
 /// Redis connection configuration, passed between nodes as a reference
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RedisConfig {
     pub url: Option<String>,
     pub reconnect_max_attempts: Option<u32>,
     pub reconnect_interval_secs: Option<u64>,
+    /// Shared Redis connection pool maintained by the RedisNode.
+    pub redis_cm: Arc<TokioMutex<Option<ConnectionManager>>>,
+    /// Tracks the URL used to build the current pool.
+    pub cached_redis_url: Arc<TokioMutex<Option<String>>>,
+}
+
+impl RedisConfig {
+    pub fn new(
+        url: Option<String>,
+        reconnect_max_attempts: Option<u32>,
+        reconnect_interval_secs: Option<u64>,
+    ) -> Self {
+        Self {
+            url,
+            reconnect_max_attempts,
+            reconnect_interval_secs,
+            redis_cm: Arc::new(TokioMutex::new(None)),
+            cached_redis_url: Arc::new(TokioMutex::new(None)),
+        }
+    }
+}
+
+impl fmt::Debug for RedisConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RedisConfig")
+            .field("url", &self.url)
+            .field("reconnect_max_attempts", &self.reconnect_max_attempts)
+            .field("reconnect_interval_secs", &self.reconnect_interval_secs)
+            .field("redis_cm", &"<TokioMutex<Option<ConnectionManager>>>")
+            .field("cached_redis_url", &"<TokioMutex<Option<String>>>")
+            .finish()
+    }
 }
 
 /// MySQL connection configuration, passed between nodes as a reference.
