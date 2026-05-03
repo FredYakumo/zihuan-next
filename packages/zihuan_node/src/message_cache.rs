@@ -1,5 +1,6 @@
+use crate::message_restore::cache_message_snapshot;
 use crate::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
-use log::{debug, info, warn};
+use log::{debug, warn};
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use std::collections::HashMap;
@@ -39,10 +40,6 @@ impl MessageCacheNode {
             memory_cache: Arc::new(TokioMutex::new(HashMap::new())),
             run_initialized: false,
         }
-    }
-
-    fn redis_tracker_registry_key(&self) -> String {
-        format!("message_cache:{}:tracker_sets", self.id)
     }
 
     fn redis_bucket_tracker_key(&self, bucket_name: &str) -> String {
@@ -85,88 +82,6 @@ impl MessageCacheNode {
             "[MessageCacheNode] Cleared in-memory cache for new graph run (node={})",
             self.id
         );
-
-        if let Some(redis_config) = redis_ref {
-            if let Some(ref url) = redis_config.url {
-                let url = url.to_string();
-                let redis_cm = redis_config.redis_cm.clone();
-                let cached_url = redis_config.cached_redis_url.clone();
-                let tracker_registry_key = self.redis_tracker_registry_key();
-
-                let cleanup = async move {
-                    let mut cm_guard = redis_cm.lock().await;
-                    let mut url_guard = cached_url.lock().await;
-
-                    if url_guard.as_deref() != Some(url.as_str()) {
-                        *cm_guard = None;
-                        *url_guard = Some(url.clone());
-                    }
-
-                    if cm_guard.is_none() {
-                        let client = redis::Client::open(url.as_str())?;
-                        match ConnectionManager::new(client).await {
-                            Ok(cm) => {
-                                info!("[MessageCacheNode] Connected to Redis at {}", url);
-                                *cm_guard = Some(cm);
-                            }
-                            Err(e) => return Err(e),
-                        }
-                    }
-
-                    let cm = cm_guard.as_mut().unwrap();
-                    let tracker_keys: Vec<String> = cm.smembers(&tracker_registry_key).await?;
-                    let mut previous_keys: Vec<String> = Vec::new();
-
-                    for tracker_key in &tracker_keys {
-                        let mut bucket_keys: Vec<String> = cm.smembers(tracker_key).await?;
-                        previous_keys.append(&mut bucket_keys);
-                    }
-
-                    let removed = previous_keys.len();
-                    if !previous_keys.is_empty() {
-                        let _: () = cm.del(previous_keys).await?;
-                    }
-
-                    if !tracker_keys.is_empty() {
-                        let _: () = cm.del(tracker_keys).await?;
-                    }
-
-                    let _: () = cm.del(&tracker_registry_key).await?;
-
-                    Ok::<usize, redis::RedisError>(removed)
-                };
-
-                let cleanup_result = if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                    block_in_place(|| handle.block_on(cleanup))
-                } else {
-                    tokio::runtime::Runtime::new()?.block_on(cleanup)
-                };
-
-                match cleanup_result {
-                    Ok(removed) => {
-                        if removed > 0 {
-                            info!(
-                                "[MessageCacheNode] Cleared {} Redis cache entr{} from previous graph run (node={})",
-                                removed,
-                                if removed == 1 { "y" } else { "ies" },
-                                self.id
-                            );
-                        } else {
-                            debug!(
-                                "[MessageCacheNode] No prior Redis cache entries to clear for node {}",
-                                self.id
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        warn!(
-                            "[MessageCacheNode] Failed to clear previous Redis cache for node {}: {}",
-                            self.id, e
-                        );
-                    }
-                }
-            }
-        }
 
         self.run_initialized = true;
         Ok(())
@@ -240,6 +155,7 @@ impl Node for MessageCacheNode {
             .unwrap_or_else(|| Self::normalize_bucket_name(None));
 
         self.initialize_run(redis_ref.as_ref())?;
+        cache_message_snapshot(&message_event);
 
         // ── Build cache key ──────────────────────────────────────────────────────────
         let sender_id = message_event.sender.user_id.to_string();
@@ -302,7 +218,6 @@ impl Node for MessageCacheNode {
                 let redis_cm = redis_config.redis_cm.clone();
                 let cached_url = redis_config.cached_redis_url.clone();
                 let tracker_key = self.redis_bucket_tracker_key(&bucket_name);
-                let tracker_registry_key = self.redis_tracker_registry_key();
                 let key = cache_key.clone();
                 let value = cache_value.clone();
 
@@ -335,8 +250,7 @@ impl Node for MessageCacheNode {
                     }
 
                     cm.sadd::<_, _, ()>(&tracker_key, &key).await?;
-                    cm.sadd::<_, _, ()>(&tracker_registry_key, &tracker_key)
-                        .await
+                    Ok::<(), redis::RedisError>(())
                 };
 
                 let result = if let Ok(handle) = tokio::runtime::Handle::try_current() {

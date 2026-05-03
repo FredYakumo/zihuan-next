@@ -176,16 +176,12 @@ pub struct ReplyMessage {
     #[serde(deserialize_with = "deserialize_i64_from_string_or_number")]
     pub id: i64,
     #[serde(skip)]
-    pub message_source: Option<Box<Message>>,
+    pub message_source: Option<Vec<Message>>,
 }
 
 impl fmt::Display for ReplyMessage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(ref source) = self.message_source {
-            write!(f, "[Reply of message ID {}: {}]", self.id, source)
-        } else {
-            write!(f, "[Reply of message ID {}]", self.id)
-        }
+        write!(f, "[Reply of message ID {}]", self.id)
     }
 }
 
@@ -407,8 +403,15 @@ impl MessageProp {
             }
 
             if let Message::Reply(reply) = m {
-                if let Some(ref src) = reply.message_source {
-                    ref_parts.push(src.to_string());
+                if let Some(ref source_messages) = reply.message_source {
+                    let rendered = source_messages
+                        .iter()
+                        .map(|message| message.to_string())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    if !rendered.trim().is_empty() {
+                        ref_parts.push(rendered);
+                    }
                 }
             }
         }

@@ -213,41 +213,84 @@ impl ExtractMessageFromEventNode {
             .map(|value| ContentPart::image_url_string(value.to_string()))
     }
 
+    fn append_messages_as_parts(
+        messages: &[Message],
+        parts: &mut Vec<ContentPart>,
+        text_buffer: &mut String,
+        has_media: &mut bool,
+        include_reply_source_block: bool,
+    ) {
+        for message in messages {
+            match message {
+                Message::PlainText(plain) => {
+                    Self::append_text_segment(text_buffer, &plain.text);
+                }
+                Message::Image(image) => {
+                    if let Some(part) = Self::image_part(image) {
+                        Self::flush_text_part(parts, text_buffer);
+                        parts.push(part);
+                        *has_media = true;
+                    } else {
+                        Self::append_text_segment(text_buffer, &image.to_string());
+                    }
+                }
+                Message::Reply(reply) => {
+                    Self::append_text_segment(text_buffer, &reply.to_string());
+
+                    if include_reply_source_block {
+                        if let Some(source_messages) = reply.message_source.as_deref() {
+                            if !text_buffer.is_empty() {
+                                text_buffer.push_str("\n\n");
+                            }
+                            text_buffer.push_str("[引用内容]\n");
+                            Self::append_messages_as_parts(
+                                source_messages,
+                                parts,
+                                text_buffer,
+                                has_media,
+                                false,
+                            );
+                        }
+                    }
+                }
+                other => {
+                    Self::append_text_segment(text_buffer, &other.to_string());
+                }
+            }
+        }
+    }
+
     fn build_user_message(messages: &[Message], msg_prop: &MessageProp) -> OpenAIMessage {
         let mut parts = Vec::new();
         let mut text_buffer = String::new();
         let mut has_media = false;
 
-        for message in messages {
-            match message {
-                Message::PlainText(plain) => {
-                    Self::append_text_segment(&mut text_buffer, &plain.text);
-                }
-                Message::Image(image) => {
-                    if let Some(part) = Self::image_part(image) {
-                        Self::flush_text_part(&mut parts, &mut text_buffer);
-                        parts.push(part);
-                        has_media = true;
-                    } else {
-                        Self::append_text_segment(&mut text_buffer, &image.to_string());
-                    }
-                }
-                other => {
-                    Self::append_text_segment(&mut text_buffer, &other.to_string());
-                }
-            }
-        }
+        Self::append_messages_as_parts(
+            messages,
+            &mut parts,
+            &mut text_buffer,
+            &mut has_media,
+            true,
+        );
 
         if let Some(ref_cnt) = msg_prop
             .ref_content
             .as_deref()
             .filter(|value| !value.is_empty())
         {
-            if !text_buffer.is_empty() {
-                text_buffer.push_str("\n\n");
+            if text_buffer.contains("[引用内容]") {
+                if !text_buffer.is_empty() {
+                    text_buffer.push_str("\n\n");
+                }
+                text_buffer.push_str("[引用内容补充摘要]\n");
+                text_buffer.push_str(ref_cnt);
+            } else {
+                if !text_buffer.is_empty() {
+                    text_buffer.push_str("\n\n");
+                }
+                text_buffer.push_str("[引用内容]\n");
+                text_buffer.push_str(ref_cnt);
             }
-            text_buffer.push_str("[引用内容]\n");
-            text_buffer.push_str(ref_cnt);
         }
 
         Self::flush_text_part(&mut parts, &mut text_buffer);

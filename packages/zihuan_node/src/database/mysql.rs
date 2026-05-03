@@ -1,4 +1,5 @@
 use crate::data_value::MySqlConfig;
+use crate::message_restore::register_mysql_ref;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::{debug, info, warn};
 use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
@@ -276,19 +277,17 @@ impl Node for MySqlNode {
             size.saturating_sub(idle as u32)
         );
 
-        let config = MySqlConfig {
+        let config = Arc::new(MySqlConfig {
             url,
             reconnect_max_attempts: max_attempts,
             reconnect_interval_secs: interval_secs,
             pool: Some(pool),
             runtime_handle: self.runtime_handle.clone(),
-        };
+        });
+        register_mysql_ref(config.clone());
 
         let mut outputs = HashMap::new();
-        outputs.insert(
-            "mysql_ref".to_string(),
-            DataValue::MySqlRef(Arc::new(config)),
-        );
+        outputs.insert("mysql_ref".to_string(), DataValue::MySqlRef(config));
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
