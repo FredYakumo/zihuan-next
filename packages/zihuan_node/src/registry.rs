@@ -370,6 +370,7 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
     use crate::message_mysql_get_user_history::MessageMySQLGetUserHistoryNode;
     use crate::message_mysql_persistence::MessageMySQLPersistenceNode;
     use crate::qq_message_list_mysql_persistence::QQMessageListMySQLPersistenceNode;
+    use crate::qq_message_list_weaviate_persistence::QQMessageListWeaviatePersistenceNode;
     use crate::util::{
         AndThenNode, ArrayGetNode, AtQQTargetMessageNode, BinaryToImageContentPartNode,
         BooleanBranchNode, BooleanNotNode, BuildMultimodalUserMessageNode, ConcatVecNode,
@@ -695,6 +696,13 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         "消息存储",
         "将Vec<QQMessage>及调用方提供的元数据持久化到MySQL数据库",
         QQMessageListMySQLPersistenceNode
+    );
+    register_node!(
+        "qq_message_list_weaviate_persistence",
+        "QQMessage列表向量持久化",
+        "消息存储",
+        "将Vec<QQMessage>及调用方提供的元数据向量化后持久化到Weaviate数据库",
+        QQMessageListWeaviatePersistenceNode
     );
     register_node!(
         "message_mysql_get_user_history",
