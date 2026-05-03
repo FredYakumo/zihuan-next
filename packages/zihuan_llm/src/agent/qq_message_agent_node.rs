@@ -8,7 +8,8 @@ use serde_json::Value;
 use crate::agent::brain::{Brain, BrainStopReason, BrainTool};
 use crate::brain_tool::{
     brain_shared_inputs_from_value, BrainToolDefinition, BRAIN_SHARED_INPUTS_PORT,
-    BRAIN_TOOLS_CONFIG_PORT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
+    BRAIN_TOOLS_CONFIG_PORT, QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
+    QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use crate::tool_subgraph::{
     shared_inputs_ports, validate_shared_inputs, validate_tool_definitions, ToolResultMode,
@@ -815,6 +816,52 @@ fn build_combine_text_batch(arguments: &Value, is_group: bool) -> Result<Vec<Mes
     Ok(messages)
 }
 
+fn send_editable_tool_progress_notification(
+    shared_runtime_values: &HashMap<String, DataValue>,
+    call_content: &str,
+) {
+    if call_content.trim().is_empty() {
+        return;
+    }
+
+    let event = match shared_runtime_values.get(QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT) {
+        Some(DataValue::MessageEvent(event)) => event,
+        _ => {
+            warn!(
+                "{LOG_PREFIX} editable tool progress notification skipped: missing message_event"
+            );
+            return;
+        }
+    };
+    let adapter = match shared_runtime_values.get(QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT) {
+        Some(DataValue::BotAdapterRef(handle)) => shared_from_handle(handle),
+        _ => {
+            warn!(
+                "{LOG_PREFIX} editable tool progress notification skipped: missing qq_bot_adapter"
+            );
+            return;
+        }
+    };
+
+    if event.message_type == MessageType::Group {
+        if let Some(group_id) = event.group_id {
+            let sender_id = event.sender.user_id.to_string();
+            send_group_progress_notification(
+                &adapter,
+                &group_id.to_string(),
+                &sender_id,
+                call_content,
+            );
+        } else {
+            warn!(
+                "{LOG_PREFIX} editable tool progress notification skipped: group message missing group_id"
+            );
+        }
+    } else {
+        send_friend_progress_notification(&adapter, &event.sender.user_id.to_string(), call_content);
+    }
+}
+
 struct TavilyBrainTool {
     tavily_ref: Arc<TavilyRef>,
     adapter: zihuan_bot_adapter::adapter::SharedBotAdapter,
@@ -841,6 +888,10 @@ impl BrainTool for TavilyBrainTool {
     }
 
     fn execute(&self, call_content: &str, arguments: &Value) -> String {
+        info!(
+            "{LOG_PREFIX} executing tool 'web_search' call_content='{}' arguments={arguments}",
+            call_content
+        );
         if self.is_group {
             if let Some(mid) = &self.mention_target_id {
                 send_group_progress_notification(&self.adapter, &self.target_id, mid, call_content);
@@ -860,17 +911,21 @@ impl BrainTool for TavilyBrainTool {
             .unwrap_or(3);
 
         if query.trim().is_empty() {
-            return serde_json::json!({"results": []}).to_string();
+            let result = serde_json::json!({"results": []}).to_string();
+            info!("{LOG_PREFIX} tool 'web_search' result: {result}");
+            return result;
         }
 
         let results = self.tavily_ref.search(&query, search_count);
-        match results {
+        let result = match results {
             Ok(items) => serde_json::json!({ "results": items }).to_string(),
             Err(e) => {
                 warn!("{LOG_PREFIX} Tavily search failed: {e}");
                 serde_json::json!({"results": [], "error": e.to_string()}).to_string()
             }
-        }
+        };
+        info!("{LOG_PREFIX} tool 'web_search' result: {result}");
+        result
     }
 }
 
@@ -894,6 +949,7 @@ impl BrainTool for ReplyPlainTextBrainTool {
     }
 
     fn execute(&self, _call_content: &str, arguments: &Value) -> String {
+        info!("{LOG_PREFIX} executing tool 'reply_plain_text' arguments={arguments}");
         let result = (|| -> Result<Value> {
             let content = arguments
                 .get("content")
@@ -917,10 +973,12 @@ impl BrainTool for ReplyPlainTextBrainTool {
             }))
         })();
 
-        match result {
+        let result_str = match result {
             Ok(value) => value.to_string(),
             Err(e) => serde_json::json!({"ok": false, "error": e.to_string()}).to_string(),
-        }
+        };
+        info!("{LOG_PREFIX} tool 'reply_plain_text' result: {result_str}");
+        result_str
     }
 }
 
@@ -945,6 +1003,7 @@ impl BrainTool for ReplyAtBrainTool {
     }
 
     fn execute(&self, _call_content: &str, arguments: &Value) -> String {
+        info!("{LOG_PREFIX} executing tool 'reply_at' arguments={arguments}");
         let result = (|| -> Result<Value> {
             if !self.is_group {
                 return Err(Error::ValidationError(
@@ -978,10 +1037,12 @@ impl BrainTool for ReplyAtBrainTool {
             }))
         })();
 
-        match result {
+        let result_str = match result {
             Ok(value) => value.to_string(),
             Err(e) => serde_json::json!({"ok": false, "error": e.to_string()}).to_string(),
-        }
+        };
+        info!("{LOG_PREFIX} tool 'reply_at' result: {result_str}");
+        result_str
     }
 }
 
@@ -1019,6 +1080,7 @@ impl BrainTool for ReplyCombineTextBrainTool {
     }
 
     fn execute(&self, _call_content: &str, arguments: &Value) -> String {
+        info!("{LOG_PREFIX} executing tool 'reply_combine_text' arguments={arguments}");
         let result = (|| -> Result<Value> {
             let batch = build_combine_text_batch(arguments, self.is_group)?;
             {
@@ -1032,10 +1094,12 @@ impl BrainTool for ReplyCombineTextBrainTool {
             }))
         })();
 
-        match result {
+        let result_str = match result {
             Ok(value) => value.to_string(),
             Err(e) => serde_json::json!({"ok": false, "error": e.to_string()}).to_string(),
-        }
+        };
+        info!("{LOG_PREFIX} tool 'reply_combine_text' result: {result_str}");
+        result_str
     }
 }
 
@@ -1062,6 +1126,7 @@ impl BrainTool for ReplyForwardTextBrainTool {
     }
 
     fn execute(&self, _call_content: &str, arguments: &Value) -> String {
+        info!("{LOG_PREFIX} executing tool 'reply_forward_text' arguments={arguments}");
         let result = (|| -> Result<Value> {
             let content = arguments
                 .get("content")
@@ -1082,10 +1147,12 @@ impl BrainTool for ReplyForwardTextBrainTool {
             }))
         })();
 
-        match result {
+        let result_str = match result {
             Ok(value) => value.to_string(),
             Err(e) => serde_json::json!({"ok": false, "error": e.to_string()}).to_string(),
-        }
+        };
+        info!("{LOG_PREFIX} tool 'reply_forward_text' result: {result_str}");
+        result_str
     }
 }
 
@@ -1107,6 +1174,7 @@ impl BrainTool for NoReplyBrainTool {
     }
 
     fn execute(&self, _call_content: &str, _arguments: &Value) -> String {
+        info!("{LOG_PREFIX} executing tool 'no_reply'");
         let result = (|| -> Result<Value> {
             let mut state = lock_pending_state(&self.pending_reply_state)?;
             state.mark_no_reply();
@@ -1116,10 +1184,12 @@ impl BrainTool for NoReplyBrainTool {
             }))
         })();
 
-        match result {
+        let result_str = match result {
             Ok(value) => value.to_string(),
             Err(e) => serde_json::json!({"ok": false, "error": e.to_string()}).to_string(),
-        }
+        };
+        info!("{LOG_PREFIX} tool 'no_reply' result: {result_str}");
+        result_str
     }
 }
 
@@ -1133,7 +1203,17 @@ impl BrainTool for EditableQqAgentTool {
     }
 
     fn execute(&self, call_content: &str, arguments: &Value) -> String {
-        self.runner.execute_to_string(call_content, arguments)
+        info!(
+            "{LOG_PREFIX} executing editable tool '{}' call_content='{}' arguments={arguments}",
+            self.runner.definition.name, call_content
+        );
+        send_editable_tool_progress_notification(&self.runner.shared_runtime_values, call_content);
+        let result = self.runner.execute_to_string(call_content, arguments);
+        info!(
+            "{LOG_PREFIX} editable tool '{}' result: {result}",
+            self.runner.definition.name
+        );
+        result
     }
 }
 
@@ -1614,6 +1694,16 @@ impl Node for QqMessageAgentNode {
         shared_runtime_values.insert(
             QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
             DataValue::MessageEvent(event.clone()),
+        );
+        shared_runtime_values.insert(
+            QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT.to_string(),
+            DataValue::BotAdapterRef(inputs.get("qq_bot_adapter").and_then(|value| {
+                if let DataValue::BotAdapterRef(handle) = value {
+                    Some(handle.clone())
+                } else {
+                    None
+                }
+            }).ok_or_else(|| self.wrap_err("qq_bot_adapter is required"))?),
         );
 
         self.handle(

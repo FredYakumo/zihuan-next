@@ -44,6 +44,13 @@ export interface QQMessageItem {
   };
 }
 
+export interface OpenAIMessageItem {
+  role: "system" | "user" | "assistant" | "tool";
+  content?: string | null;
+  reasoning_content?: string | null;
+  tool_call_id?: string | null;
+}
+
 export type ConnectPortChoice =
   | { kind: "existing"; targetNodeId: string; targetPortName: string }
   | { kind: "new_node" };

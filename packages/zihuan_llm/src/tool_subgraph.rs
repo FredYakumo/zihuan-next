@@ -1,12 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use log::{info, warn};
 use serde_json::{json, Map, Value};
 
 use crate::brain_tool::{
     brain_tool_input_signature, fixed_tool_runtime_inputs, BrainToolDefinition, ToolParamDef,
-    BRAIN_TOOL_FIXED_CONTENT_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
-    QQ_AGENT_TOOL_OWNER_TYPE,
+    BRAIN_TOOL_FIXED_CONTENT_INPUT, QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
+    QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use zihuan_core::error::{Error, Result};
 use zihuan_llm_types::tooling::FunctionTool;
@@ -295,6 +296,10 @@ impl ToolSubgraphRunner {
 
     pub fn run_subgraph(&self, tool_call_content: String, arguments: Value) -> Result<String> {
         let tool = &self.definition;
+        info!(
+            "[ToolSubgraph:{}] executing tool '{}' with content='{}' arguments={}",
+            self.node_id, tool.name, tool_call_content, arguments
+        );
         for node in &tool.subgraph.nodes {
             if NODE_REGISTRY.is_event_producer(&node.node_type) {
                 return Err(self.wrap_error(format!(
@@ -317,11 +322,16 @@ impl ToolSubgraphRunner {
 
         let mut runtime_values = self.shared_runtime_values.clone();
         if self.owner_node_type == QQ_AGENT_TOOL_OWNER_TYPE {
-            if !runtime_values.contains_key(QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT) {
-                return Err(self.wrap_error(format!(
-                    "Tool '{}' 缺少固定输入 '{}'",
-                    tool.name, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT
-                )));
+            for fixed_name in [
+                QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
+                QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
+            ] {
+                if !runtime_values.contains_key(fixed_name) {
+                    return Err(self.wrap_error(format!(
+                        "Tool '{}' 缺少固定输入 '{}'",
+                        tool.name, fixed_name
+                    )));
+                }
             }
         } else {
             runtime_values.insert(
@@ -395,7 +405,11 @@ impl ToolSubgraphRunner {
             |e| self.wrap_error(format!("Tool '{}' 注入子图运行时输入失败: {e}", tool.name)),
         )?;
         let execution_result = graph.execute_and_capture_results();
-        if let Some(error_message) = execution_result.error_message {
+        if let Some(ref error_message) = execution_result.error_message {
+            warn!(
+                "[ToolSubgraph:{}] tool '{}' execution failed: {error_message}",
+                self.node_id, tool.name
+            );
             return Err(self.wrap_error(format!(
                 "Tool '{}' 子图执行失败: {error_message}",
                 tool.name
@@ -433,7 +447,12 @@ impl ToolSubgraphRunner {
                     }
                     result_payload.insert(port.name.clone(), value.to_json());
                 }
-                Ok(Value::Object(result_payload).to_string())
+                let result = Value::Object(result_payload).to_string();
+                info!(
+                    "[ToolSubgraph:{}] tool '{}' succeeded with result: {result}",
+                    self.node_id, tool.name
+                );
+                Ok(result)
             }
             ToolResultMode::SingleString => {
                 let output = tool.outputs.first().ok_or_else(|| {
@@ -446,7 +465,13 @@ impl ToolSubgraphRunner {
                     ))
                 })?;
                 match value {
-                    DataValue::String(text) => Ok(text.clone()),
+                    DataValue::String(text) => {
+                        info!(
+                            "[ToolSubgraph:{}] tool '{}' succeeded with result: {text}",
+                            self.node_id, tool.name
+                        );
+                        Ok(text.clone())
+                    }
                     other => Err(self.wrap_error(format!(
                         "Tool '{}' 输出 '{}' 类型不匹配：声明为 String，实际为 {}",
                         tool.name,

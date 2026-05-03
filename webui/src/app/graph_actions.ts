@@ -103,7 +103,9 @@ export class GraphActions {
   }
 
   async validate(): Promise<void> {
-    const sid = this.options.canvas.sessionId;
+    const sid = this.options.canvas.isInSubgraph
+      ? this.options.canvas.rootSessionId
+      : this.options.canvas.sessionId;
     if (!sid) {
       showErrorDialog("请先打开一个节点图");
       return;
@@ -111,6 +113,9 @@ export class GraphActions {
     try {
       await this.options.canvas.syncInlineWidgetValues();
       await this.options.canvas.flushPendingWidgetMutations();
+      if (this.options.canvas.isInSubgraph) {
+        await this.options.canvas.flushSubgraphToRoot();
+      }
       const result = await graphs.validate(sid);
       if (result.has_errors) {
         const msgs = result.issues.map((issue) => `[${issue.severity}] ${issue.message}`).join("\n");
@@ -122,7 +127,9 @@ export class GraphActions {
   }
 
   async execute(): Promise<void> {
-    const sid = this.options.canvas.sessionId;
+    const sid = this.options.canvas.isInSubgraph
+      ? this.options.canvas.rootSessionId
+      : this.options.canvas.sessionId;
     if (!sid) {
       showErrorDialog("请先打开一个节点图");
       return;
@@ -130,6 +137,9 @@ export class GraphActions {
     try {
       await this.options.canvas.syncInlineWidgetValues();
       await this.options.canvas.flushPendingWidgetMutations();
+      if (this.options.canvas.isInSubgraph) {
+        await this.options.canvas.flushSubgraphToRoot();
+      }
       await graphs.execute(sid);
     } catch (e) {
       const summary = this.summarizeErrorMessage(e, "执行失败");

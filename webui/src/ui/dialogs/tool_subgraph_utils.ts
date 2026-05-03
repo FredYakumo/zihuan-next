@@ -7,6 +7,7 @@ const FUNCTION_INPUTS_NODE_TYPE = "function_inputs";
 const FUNCTION_OUTPUTS_NODE_TYPE = "function_outputs";
 const BRAIN_TOOL_FIXED_CONTENT_INPUT = "content";
 const QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT = "message_event";
+const QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT = "qq_bot_adapter";
 const QQ_AGENT_TOOL_OWNER_TYPE = "qq_message_agent";
 const QQ_AGENT_TOOL_OUTPUT_NAME = "result";
 
@@ -62,9 +63,12 @@ export function getToolInputSignature(
 ): FunctionPortDef[] {
   return [
     ...sharedInputs.map(clonePortDef),
-    ownerNodeType === QQ_AGENT_TOOL_OWNER_TYPE
-      ? { name: QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, data_type: "MessageEvent" }
-      : { name: BRAIN_TOOL_FIXED_CONTENT_INPUT, data_type: "String" },
+    ...(ownerNodeType === QQ_AGENT_TOOL_OWNER_TYPE
+      ? [
+          { name: QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, data_type: "MessageEvent" as DataTypeMetaData },
+          { name: QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, data_type: "BotAdapterRef" as DataTypeMetaData },
+        ]
+      : [{ name: BRAIN_TOOL_FIXED_CONTENT_INPUT, data_type: "String" as DataTypeMetaData }]),
     ...tool.parameters.map((param) => ({
       name: param.name,
       data_type: cloneDataType(param.data_type),

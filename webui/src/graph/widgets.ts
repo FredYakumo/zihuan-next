@@ -8,6 +8,7 @@ import {
   openJsonExtractEditor,
   openFunctionSignatureEditor,
   openBrainToolsEditor,
+  openOpenAIMessageListEditor,
   openQQMessageListEditor,
   type BrainToolDefinition,
   type EmbeddedFunctionConfig,
@@ -52,6 +53,9 @@ export function setupNodeWidgets(
       break;
     case "string_data":
       setupStringDataWidgets(lNode, nodeDef, getSessionId, onRefresh, onMutated);
+      break;
+    case "message_list_data":
+      setupOpenAIMessageListWidgets(lNode, nodeDef, getSessionId, onRefresh);
       break;
     case "qq_message_list_data":
       setupQQMessageListWidgets(lNode, nodeDef, getSessionId, onRefresh);
@@ -185,6 +189,23 @@ function setupStringDataWidgets(
     try {
       await pending;
     } catch (e) { console.error("widget update failed", e); }
+  });
+}
+
+// ─── QQMessage List Data ──────────────────────────────────────────────────────
+
+function setupOpenAIMessageListWidgets(
+  lNode: any,
+  nodeDef: NodeDefinition,
+  getSessionId: () => string | null,
+  onRefresh: () => void
+): void {
+  const messages = (nodeDef.inline_values?.["messages"] as Array<{ role?: string; content?: string | null }> | undefined) ?? [];
+  const preview = messages.length > 0 ? `编辑 OpenAI 消息 (${messages.length})` : "编辑 OpenAI 消息";
+  lNode.addWidget("button", preview, null, () => {
+    const sid = getSessionId();
+    if (!sid) { alert("请先打开一个图。"); return; }
+    openOpenAIMessageListEditor(nodeDef, sid, onRefresh);
   });
 }
 

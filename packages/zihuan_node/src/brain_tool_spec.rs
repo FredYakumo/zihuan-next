@@ -8,6 +8,7 @@ pub const BRAIN_TOOLS_CONFIG_PORT: &str = "tools_config";
 pub const BRAIN_SHARED_INPUTS_PORT: &str = "shared_inputs";
 pub const BRAIN_TOOL_FIXED_CONTENT_INPUT: &str = "content";
 pub const QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT: &str = "message_event";
+pub const QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT: &str = "qq_bot_adapter";
 pub const QQ_AGENT_TOOL_OWNER_TYPE: &str = "qq_message_agent";
 pub const QQ_AGENT_TOOL_OUTPUT_NAME: &str = "result";
 
@@ -69,10 +70,16 @@ pub fn brain_shared_inputs_from_value(value: &serde_json::Value) -> Option<Vec<F
 
 pub fn fixed_tool_runtime_inputs(owner_node_type: &str) -> Vec<FunctionPortDef> {
     match owner_node_type {
-        QQ_AGENT_TOOL_OWNER_TYPE => vec![FunctionPortDef {
-            name: QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
-            data_type: DataType::MessageEvent,
-        }],
+        QQ_AGENT_TOOL_OWNER_TYPE => vec![
+            FunctionPortDef {
+                name: QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
+                data_type: DataType::MessageEvent,
+            },
+            FunctionPortDef {
+                name: QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT.to_string(),
+                data_type: DataType::BotAdapterRef,
+            },
+        ],
         _ => vec![FunctionPortDef {
             name: BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(),
             data_type: DataType::String,

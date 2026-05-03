@@ -368,6 +368,7 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         FunctionInputsNode, FunctionNode, FunctionOutputsNode, JoinStringNode, JsonExtractNode,
         JsonParserNode, JsonToQQMessageVecNode, LoopBreakNode, LoopNode, LoopStateUpdateNode,
         MessageContentNode, MessageListDataNode, OpenAIMessageContentAsJsonNode,
+        OpenAIMessageToStringNode,
         OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode,
         OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheProviderNode,
         OpenAIMessageSessionCacheSetNode, PreviewMessageListNode, PreviewQQMessageListNode,
@@ -546,6 +547,13 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         "消息",
         "将 OpenAIMessage 的 content 字符串解析为 JSON",
         OpenAIMessageContentAsJsonNode
+    );
+    register_node!(
+        "openai_message_to_string",
+        "OpenAIMessage转字符串",
+        "消息",
+        "将 OpenAIMessage 的 reasoning_content（如有）与 content 拼接为字符串",
+        OpenAIMessageToStringNode
     );
     register_node!(
         "as_system_openai_message",
