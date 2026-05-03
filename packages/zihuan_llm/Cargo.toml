@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+general_wheel_cpp = { path = "../general_wheel_cpp" }
 zihuan_core = { path = "../zihuan_core" }
 zihuan_bot_types = { path = "../zihuan_bot_types" }
 zihuan_llm_types = { path = "../zihuan_llm_types" }
@@ -16,4 +17,3 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12.25", features = ["blocking", "json"] }
 tokio = { version = "1", features = ["full"] }
-

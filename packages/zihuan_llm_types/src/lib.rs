@@ -1,3 +1,4 @@
+pub mod embedding_base;
 pub mod llm_base;
 pub mod model;
 pub mod tooling;

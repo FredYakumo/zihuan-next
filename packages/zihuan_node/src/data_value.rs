@@ -694,6 +694,7 @@ pub enum DataType {
     OpenAIMessageSessionCacheRef,
     Password,
     LLModel,
+    EmbeddingModel,
     LoopControlRef,
     Custom(String),
 }
@@ -733,6 +734,7 @@ impl fmt::Display for DataType {
             DataType::OpenAIMessageSessionCacheRef => write!(f, "OpenAIMessageSessionCacheRef"),
             DataType::Password => write!(f, "Password"),
             DataType::LLModel => write!(f, "LLModel"),
+            DataType::EmbeddingModel => write!(f, "EmbeddingModel"),
             DataType::LoopControlRef => write!(f, "LoopControlRef"),
             DataType::Custom(name) => write!(f, "Custom({})", name),
         }
@@ -776,6 +778,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "OpenAIMessageSessionCacheRef" => Ok(DataType::OpenAIMessageSessionCacheRef),
                     "Password" => Ok(DataType::Password),
                     "LLModel" => Ok(DataType::LLModel),
+                    "EmbeddingModel" => Ok(DataType::EmbeddingModel),
                     "LoopControlRef" => Ok(DataType::LoopControlRef),
                     other => Err(de::Error::unknown_variant(
                         other,
@@ -803,6 +806,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                             "OpenAIMessageSessionCacheRef",
                             "Password",
                             "LLModel",
+                            "EmbeddingModel",
                             "LoopControlRef",
                             "Custom",
                         ],
@@ -868,6 +872,7 @@ pub enum DataValue {
     OpenAIMessageSessionCacheRef(Arc<OpenAIMessageSessionCacheRef>),
     Password(String),
     LLModel(Arc<dyn zihuan_llm_types::llm_base::LLMBase>),
+    EmbeddingModel(Arc<dyn zihuan_llm_types::embedding_base::EmbeddingBase>),
     LoopControlRef(Arc<LoopControl>),
 }
 
@@ -895,6 +900,7 @@ impl DataValue {
             DataValue::OpenAIMessageSessionCacheRef(_) => DataType::OpenAIMessageSessionCacheRef,
             DataValue::Password(_) => DataType::Password,
             DataValue::LLModel(_) => DataType::LLModel,
+            DataValue::EmbeddingModel(_) => DataType::EmbeddingModel,
             DataValue::LoopControlRef(_) => DataType::LoopControlRef,
         }
     }
@@ -909,6 +915,7 @@ impl DataValue {
             DataValue::S3Ref(_) => "S3Ref".to_string(),
             DataValue::TavilyRef(_) => "TavilyRef".to_string(),
             DataValue::LoopControlRef(_) => "LoopControlRef".to_string(),
+            DataValue::EmbeddingModel(_) => "EmbeddingModel".to_string(),
             other => {
                 serde_json::to_string(&other.to_json()).unwrap_or_else(|_| format!("{other:?}"))
             }
@@ -953,6 +960,10 @@ impl DataValue {
             DataValue::Password(value) => Value::String(value.clone()),
             DataValue::LLModel(m) => serde_json::json!({
                 "type": "LLModel",
+                "model_name": m.get_model_name(),
+            }),
+            DataValue::EmbeddingModel(m) => serde_json::json!({
+                "type": "EmbeddingModel",
                 "model_name": m.get_model_name(),
             }),
             DataValue::BotAdapterRef(_) => Value::String("BotAdapterRef".to_string()),
@@ -1024,6 +1035,10 @@ impl fmt::Debug for DataValue {
                 .finish(),
             DataValue::Password(value) => f.debug_tuple("Password").field(value).finish(),
             DataValue::LLModel(m) => f.debug_tuple("LLModel").field(&m.get_model_name()).finish(),
+            DataValue::EmbeddingModel(m) => f
+                .debug_tuple("EmbeddingModel")
+                .field(&m.get_model_name())
+                .finish(),
             DataValue::LoopControlRef(_) => f.debug_tuple("LoopControlRef").finish(),
         }
     }

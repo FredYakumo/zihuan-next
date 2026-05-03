@@ -19,10 +19,13 @@ pub fn init_node_registry() -> Result<()> {
     use zihuan_llm::agent::qq_message_agent_node::QqMessageAgentNode;
     use zihuan_llm::brain_node::BrainNode;
     use zihuan_llm::context_compact_node::ContextCompactNode;
+    use zihuan_llm::embedding_api_node::EmbeddingApiNode;
     use zihuan_llm::llm_api_node::LLMApiNode;
     use zihuan_llm::llm_infer_node::LLMInferNode;
     use zihuan_llm::rag::tavily_provider_node::TavilyProviderNode;
     use zihuan_llm::rag::tavily_search_node::TavilySearchNode;
+    use zihuan_llm::text_embedding_node::TextEmbeddingNode;
+    use zihuan_llm::vector_cosine_similarity_node::VectorCosineSimilarityNode;
 
     // LLM nodes
     register_node!(
@@ -55,6 +58,30 @@ pub fn init_node_registry() -> Result<()> {
         "AI",
         "压缩 OpenAIMessage 历史，仅保留摘要对和最近 2 条非 tool 消息",
         ContextCompactNode
+    );
+
+    register_node!(
+        "embedding_api",
+        "Embedding API配置",
+        "AI",
+        "配置 embedding API 连接，输出 EmbeddingModel 引用",
+        EmbeddingApiNode
+    );
+
+    register_node!(
+        "text_embedding",
+        "文本向量化",
+        "AI",
+        "使用 EmbeddingModel 将文本编码为向量",
+        TextEmbeddingNode
+    );
+
+    register_node!(
+        "vector_cosine_similarity",
+        "向量余弦相似度",
+        "AI",
+        "使用 general-wheel-cpp 计算两个向量的余弦相似度",
+        VectorCosineSimilarityNode
     );
 
     register_node!(
