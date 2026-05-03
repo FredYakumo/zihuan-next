@@ -1,0 +1,2 @@
+models/text_embedding/**/*.safetensors filter=lfs diff=lfs merge=lfs -text
+models/text_embedding/**/*.gguf filter=lfs diff=lfs merge=lfs -text

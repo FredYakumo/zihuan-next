@@ -62,18 +62,18 @@
         "height": 146.0
       },
       "inline_values": {
-        "qq_id": "2496875785",
+        "bot_server_url": "ws://localhost:3001",
         "bot_server_token": "",
-        "bot_server_url": "ws://localhost:3001"
+        "qq_id": "2496875785"
       },
       "port_bindings": {
-        "bot_server_token": {
-          "kind": "hyperparameter",
-          "name": "BOT_SERVER_TOKEN"
-        },
         "bot_server_url": {
           "kind": "hyperparameter",
           "name": "BOT_SERVER_URL"
+        },
+        "bot_server_token": {
+          "kind": "hyperparameter",
+          "name": "BOT_SERVER_TOKEN"
         },
         "qq_id": {
           "kind": "hyperparameter",
@@ -174,14 +174,14 @@
         "height": 401.06308
       },
       "inline_values": {
-        "mysql_port": "3306",
-        "mysql_host": "127.0.0.1",
-        "mysql_password": "",
-        "reconnect_max_attempts": 0,
-        "reconnect_interval_secs": 0,
-        "mysql_database": "zihuan_aibot",
         "acquire_timeout_secs": 0,
+        "mysql_port": "3306",
+        "reconnect_interval_secs": 0,
+        "mysql_password": "",
+        "mysql_database": "zihuan_aibot",
         "max_connections": 0,
+        "mysql_host": "127.0.0.1",
+        "reconnect_max_attempts": 0,
         "mysql_user": ""
       },
       "port_bindings": {
@@ -189,13 +189,13 @@
           "kind": "hyperparameter",
           "name": "MYSQL_PASSWORD"
         },
-        "mysql_user": {
-          "kind": "hyperparameter",
-          "name": "MYSQL_USER"
-        },
         "mysql_database": {
           "kind": "hyperparameter",
           "name": "MYSQL_DB"
+        },
+        "mysql_user": {
+          "kind": "hyperparameter",
+          "name": "MYSQL_USER"
         }
       },
       "has_error": false,
@@ -358,6 +358,13 @@
           "description": "超时秒数 (可选，默认120秒)",
           "required": false,
           "hidden": false
+        },
+        {
+          "name": "retry_count",
+          "data_type": "Integer",
+          "description": "重试次数 (可选，默认2次，仅用于临时失败)",
+          "required": false,
+          "hidden": false
         }
       ],
       "output_ports": [
@@ -381,8 +388,8 @@
       },
       "inline_values": {
         "model_name": "",
-        "timeout_secs": "600",
         "api_key": "",
+        "timeout_secs": "600",
         "api_endpoint": ""
       },
       "port_bindings": {
@@ -554,8 +561,8 @@
         "height": 103.0
       },
       "inline_values": {
-        "api_token": "",
-        "timeout_secs": 0
+        "timeout_secs": 0,
+        "api_token": ""
       },
       "port_bindings": {
         "api_token": {
@@ -636,22 +643,14 @@
         "height": 182.30934
       },
       "inline_values": {
-        "redis_host": "127.0.0.1",
-        "redis_password": "",
-        "redis_port": 6379,
-        "redis_db": 0,
         "reconnect_max_attempts": 0,
-        "reconnect_interval_secs": 0
+        "redis_password": "",
+        "redis_db": 0,
+        "redis_port": 6379,
+        "reconnect_interval_secs": 0,
+        "redis_host": "127.0.0.1"
       },
       "port_bindings": {
-        "redis_host": {
-          "kind": "hyperparameter",
-          "name": "REDIS_HOST"
-        },
-        "redis_port": {
-          "kind": "hyperparameter",
-          "name": "REDIS_PORT"
-        },
         "redis_db": {
           "kind": "hyperparameter",
           "name": "REDIS_DB"
@@ -659,6 +658,14 @@
         "redis_password": {
           "kind": "hyperparameter",
           "name": "REDIS_PASSWORD"
+        },
+        "redis_host": {
+          "kind": "hyperparameter",
+          "name": "REDIS_HOST"
+        },
+        "redis_port": {
+          "kind": "hyperparameter",
+          "name": "REDIS_PORT"
         }
       },
       "has_error": false,
@@ -721,6 +728,27 @@
           "hidden": false
         },
         {
+          "name": "mysql_ref",
+          "data_type": "MySqlRef",
+          "description": "可选：MySQL 引用，用于最近消息历史查询工具",
+          "required": false,
+          "hidden": false
+        },
+        {
+          "name": "weaviate_ref",
+          "data_type": "WeaviateRef",
+          "description": "Weaviate 向量数据库引用，用于语义相似消息检索",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "embedding_model",
+          "data_type": "EmbeddingModel",
+          "description": "embedding 模型引用，用于语义检索和最终回复近重复判断",
+          "required": true,
+          "hidden": false
+        },
+        {
           "name": "tavily_ref",
           "data_type": "TavilyRef",
           "description": "Tavily 搜索引用",
@@ -731,6 +759,13 @@
           "name": "max_message_length",
           "data_type": "Integer",
           "description": "可选：最终回复超过该字数时强制转为 forward，默认 500",
+          "required": false,
+          "hidden": false
+        },
+        {
+          "name": "compact_context_length",
+          "data_type": "Integer",
+          "description": "可选：历史估算 token 超过该阈值时压缩旧历史，仅保留摘要对和最近 2 条非 tool 消息",
           "required": false,
           "hidden": false
         },
@@ -764,16 +799,10 @@
         "y": 280.0
       },
       "size": {
-        "width": 265.54913,
-        "height": 295.2409
+        "width": 271.0,
+        "height": 373.3333
       },
       "inline_values": {
-        "shared_inputs": [
-          {
-            "data_type": "LLModel",
-            "name": "img_understand_model"
-          }
-        ],
         "bot_name": "",
         "tools_config": [
           {
@@ -912,21 +941,21 @@
                       "description": "函数输入 'img_understand_model'",
                       "hidden": false,
                       "name": "img_understand_model",
-                      "required": false
+                      "required": true
                     },
                     {
                       "data_type": "MessageEvent",
                       "description": "函数输入 'message_event'",
                       "hidden": false,
                       "name": "message_event",
-                      "required": false
+                      "required": true
                     },
                     {
                       "data_type": "BotAdapterRef",
                       "description": "函数输入 'qq_bot_adapter'",
                       "hidden": false,
                       "name": "qq_bot_adapter",
-                      "required": false
+                      "required": true
                     }
                   ],
                   "port_bindings": {},
@@ -968,7 +997,7 @@
                       "description": "函数输出 'result'",
                       "hidden": false,
                       "name": "result",
-                      "required": false
+                      "required": true
                     }
                   ],
                   "name": "函数输出",
@@ -1381,6 +1410,12 @@
               "variables": []
             }
           }
+        ],
+        "shared_inputs": [
+          {
+            "data_type": "LLModel",
+            "name": "img_understand_model"
+          }
         ]
       },
       "port_bindings": {
@@ -1470,33 +1505,33 @@
       },
       "inline_values": {},
       "port_bindings": {
-        "path_style": {
-          "kind": "hyperparameter",
-          "name": "RUSTFS_PATH_STYLE"
-        },
-        "access_key": {
-          "kind": "hyperparameter",
-          "name": "RUSTFS_ACCESS_KEY"
-        },
         "bucket": {
           "kind": "hyperparameter",
           "name": "RUSTFS_BUCKET"
         },
-        "secret_key": {
+        "endpoint": {
           "kind": "hyperparameter",
-          "name": "RUSTFS_SECRET_KEY"
+          "name": "RUSTFS_ENDPOINT"
         },
-        "public_base_url": {
+        "path_style": {
           "kind": "hyperparameter",
-          "name": "RUSTFS_PUBLIC_BASE_URL"
+          "name": "RUSTFS_PATH_STYLE"
         },
         "region": {
           "kind": "hyperparameter",
           "name": "RUSTFS_REGION"
         },
-        "endpoint": {
+        "public_base_url": {
           "kind": "hyperparameter",
-          "name": "RUSTFS_ENDPOINT"
+          "name": "RUSTFS_PUBLIC_BASE_URL"
+        },
+        "secret_key": {
+          "kind": "hyperparameter",
+          "name": "RUSTFS_SECRET_KEY"
+        },
+        "access_key": {
+          "kind": "hyperparameter",
+          "name": "RUSTFS_ACCESS_KEY"
         }
       },
       "has_error": false,
@@ -1536,6 +1571,13 @@
           "description": "超时秒数 (可选，默认120秒)",
           "required": false,
           "hidden": false
+        },
+        {
+          "name": "retry_count",
+          "data_type": "Integer",
+          "description": "重试次数 (可选，默认2次，仅用于临时失败)",
+          "required": false,
+          "hidden": false
         }
       ],
       "output_ports": [
@@ -1572,6 +1614,45 @@
           "name": "MULTIMODAL_LLM_API_ENDPOINT"
         }
       },
+      "has_error": false,
+      "has_cycle": false,
+      "disabled": false
+    },
+    {
+      "id": "94e04af5-34ed-46e8-a79f-12caf6887450",
+      "name": "load local text embedder",
+      "description": null,
+      "node_type": "load_local_text_embedder",
+      "input_ports": [
+        {
+          "name": "model_name",
+          "data_type": "String",
+          "description": "models/text_embedding 下的模型目录名，例如 Qwen3-Embedding-0.6B",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "embedding_model",
+          "data_type": "EmbeddingModel",
+          "description": "Embedding 模型引用",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 1730.0,
+        "y": 1010.0
+      },
+      "size": {
+        "width": 468.17,
+        "height": 171.02933
+      },
+      "inline_values": {},
+      "port_bindings": {},
       "has_error": false,
       "has_cycle": false,
       "disabled": false

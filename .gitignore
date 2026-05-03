@@ -12,3 +12,4 @@ uploaded_images/
 pnpm
 .lsmcp/
 .claude/
+.tmpbin/

@@ -21,6 +21,7 @@ pub fn init_node_registry() -> Result<()> {
     use zihuan_llm::context_compact_node::ContextCompactNode;
     use zihuan_llm::linalg::batch_text_embedding_node::BatchTextEmbeddingNode;
     use zihuan_llm::linalg::embedding_api_node::LoadTextEmbedderNode;
+    use zihuan_llm::linalg::local_candle_embedding_node::LoadLocalTextEmbedderNode;
     use zihuan_llm::linalg::text_embedding_node::TextEmbeddingNode;
     use zihuan_llm::linalg::top_k_similarity_node::TopKSimilarityNode;
     use zihuan_llm::linalg::vector_cosine_similarity_node::VectorCosineSimilarityNode;
@@ -64,10 +65,18 @@ pub fn init_node_registry() -> Result<()> {
 
     register_node!(
         "load_text_embedder",
-        "加载文本Embedder",
+        "加载文本Embedder(API)",
         "AI",
-        "加载文本 embedding 模型配置，输出 EmbeddingModel 引用",
+        "加载远程文本 embedding API 配置，输出 EmbeddingModel 引用",
         LoadTextEmbedderNode
+    );
+
+    register_node!(
+        "load_local_text_embedder",
+        "加载文本Embedder(本地)",
+        "AI",
+        "从 models/text_embedding 目录加载本地 Candle embedding 模型，输出 EmbeddingModel 引用",
+        LoadLocalTextEmbedderNode
     );
 
     register_node!(
