@@ -1,4 +1,4 @@
-use crate::{node_input, node_output, DataType, DataValue, Node, Port};
+use crate::{node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 use zihuan_core::error::Result;
 
@@ -29,9 +29,14 @@ impl Node for MessageListDataNode {
         Some("OpenAIMessage 列表数据源，支持内联 UI 编辑")
     }
 
-    node_input![
-        port! { name = "messages", ty = Vec(OpenAIMessage), desc = "Vec<OpenAIMessage> provided by UI inline editor", optional },
-    ];
+    fn input_ports(&self) -> Vec<Port> {
+        vec![
+            Port::new("messages", DataType::Vec(Box::new(DataType::OpenAIMessage)))
+                .with_description("Vec<OpenAIMessage> provided by UI inline editor")
+                .optional()
+                .hidden(),
+        ]
+    }
 
     node_output![
         port! { name = "messages", ty = Vec(OpenAIMessage), desc = "Output Vec<OpenAIMessage> from UI data source" },

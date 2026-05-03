@@ -20,6 +20,39 @@ import { portTypeString } from "../registry";
 export class CanvasGraphOps {
   constructor(private readonly canvas: CanvasFacade) {}
 
+  private defaultInlineWidgetValue(typeName: string): unknown {
+    switch (typeName) {
+      case "Boolean":
+        return false;
+      case "Integer":
+      case "Float":
+        return 0;
+      case "String":
+      case "Password":
+        return "";
+      default:
+        return undefined;
+    }
+  }
+
+  private async commitActiveInlineEditor(): Promise<void> {
+    const active = document.activeElement;
+    if (!active) return;
+
+    const isEditableElement = active instanceof HTMLInputElement
+      || active instanceof HTMLTextAreaElement
+      || (active as HTMLElement).isContentEditable === true;
+    if (!isEditableElement) return;
+
+    // LiteGraph commits widget edits on blur/change. When the user types an inline
+    // value and immediately runs/validates, that callback may not have fired yet.
+    // Force a blur and wait one microtask so the widget state is flushed first.
+    (active as HTMLElement).blur();
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 0);
+    });
+  }
+
   async loadSession(sessionId: string): Promise<void> {
     const def = await graphs.get(sessionId);
     this.canvas.state = { sessionId, graph: def, dirty: false };
@@ -73,6 +106,8 @@ export class CanvasGraphOps {
     const graph = this.canvas.state.graph;
     if (!sid || !graph) return;
 
+    await this.commitActiveInlineEditor();
+
     let changed = false;
     const updatedGraph: NodeGraphDefinition = {
       ...graph,
@@ -91,9 +126,13 @@ export class CanvasGraphOps {
           );
           if (!widget) continue;
           const hadInlineValue = Object.prototype.hasOwnProperty.call(nodeDef.inline_values ?? {}, portName);
-          if (!hadInlineValue && !widget._zihuanTouched) continue;
+          const portDef = nodeDef.input_ports.find((port) => port.name === portName);
+          const portType = portDef ? portTypeString(portDef.data_type) : "";
 
           const widgetValue = widget.value ?? "";
+          const defaultValue = this.defaultInlineWidgetValue(portType);
+          const differsFromDefault = defaultValue !== undefined && widgetValue !== defaultValue;
+          if (!hadInlineValue && !widget._zihuanTouched && !differsFromDefault) continue;
           const existingValue = nodeDef.inline_values?.[portName];
           if (existingValue === widgetValue) continue;
 

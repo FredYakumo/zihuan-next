@@ -1,9 +1,14 @@
 use crate::models::message::MessageProp;
+use base64::Engine;
+use log::warn;
 use std::collections::HashMap;
+use std::path::Path;
 use tokio::task::block_in_place;
 use zihuan_core::error::Result;
-use zihuan_llm_types::OpenAIMessage;
+use zihuan_llm_types::{ContentPart, OpenAIMessage};
 use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
+
+use crate::models::message::{ImageMessage, Message};
 
 /// Node that converts a MessageEvent to an LLM prompt message list
 ///
@@ -19,10 +24,255 @@ pub struct ExtractMessageFromEventNode {
 }
 
 impl ExtractMessageFromEventNode {
+    const LOG_PREFIX: &str = "[ExtractMessageFromEventNode]";
+
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
             name: name.into(),
+        }
+    }
+
+    fn append_text_segment(buffer: &mut String, segment: &str) {
+        let segment = segment.trim();
+        if segment.is_empty() {
+            return;
+        }
+
+        if !buffer.is_empty() {
+            buffer.push(' ');
+        }
+        buffer.push_str(segment);
+    }
+
+    fn flush_text_part(parts: &mut Vec<ContentPart>, buffer: &mut String) {
+        let text = buffer.trim();
+        if !text.is_empty() {
+            parts.push(ContentPart::text(text.to_string()));
+        }
+        buffer.clear();
+    }
+
+    fn infer_content_type(file_name: &str) -> &'static str {
+        match Path::new(file_name)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("jpg") | Some("jpeg") => "image/jpeg",
+            Some("gif") => "image/gif",
+            Some("webp") => "image/webp",
+            Some("bmp") => "image/bmp",
+            Some("svg") => "image/svg+xml",
+            _ => "image/png",
+        }
+    }
+
+    fn image_name(image: &ImageMessage) -> &str {
+        image
+            .name
+            .as_deref()
+            .or_else(|| {
+                image
+                    .local_path
+                    .as_deref()
+                    .and_then(|path| Path::new(path).file_name())
+                    .and_then(|name| name.to_str())
+            })
+            .or_else(|| {
+                image
+                    .path
+                    .as_deref()
+                    .and_then(|path| Path::new(path).file_name())
+                    .and_then(|name| name.to_str())
+            })
+            .unwrap_or("image.png")
+    }
+
+    fn image_part_from_bytes(image: &ImageMessage, bytes: Vec<u8>) -> ContentPart {
+        let base64_payload = base64::engine::general_purpose::STANDARD.encode(bytes);
+        ContentPart::image_data_url(
+            Self::infer_content_type(Self::image_name(image)),
+            base64_payload,
+        )
+    }
+
+    fn image_part_from_local_file(path: &str, image: &ImageMessage) -> Option<ContentPart> {
+        let file_path = Path::new(path);
+        if !file_path.exists() {
+            return None;
+        }
+
+        match std::fs::read(file_path) {
+            Ok(bytes) => Some(Self::image_part_from_bytes(image, bytes)),
+            Err(error) => {
+                warn!(
+                    "{} failed to read image file for multimodal input path={}: {}",
+                    Self::LOG_PREFIX,
+                    path,
+                    error
+                );
+                None
+            }
+        }
+    }
+
+    async fn download_remote_bytes(url: &str) -> Option<Vec<u8>> {
+        let response = match reqwest::Client::new().get(url).send().await {
+            Ok(response) => response,
+            Err(error) => {
+                warn!(
+                    "{} failed to download remote image for multimodal input url={}: {}",
+                    Self::LOG_PREFIX,
+                    url,
+                    error
+                );
+                return None;
+            }
+        };
+
+        if !response.status().is_success() {
+            warn!(
+                "{} remote image returned non-success status for multimodal input url={} status={}",
+                Self::LOG_PREFIX,
+                url,
+                response.status()
+            );
+            return None;
+        }
+
+        match response.bytes().await {
+            Ok(bytes) => Some(bytes.to_vec()),
+            Err(error) => {
+                warn!(
+                    "{} failed to read remote image body for multimodal input url={}: {}",
+                    Self::LOG_PREFIX,
+                    url,
+                    error
+                );
+                None
+            }
+        }
+    }
+
+    fn image_part_from_remote_url(url: &str, image: &ImageMessage) -> Option<ContentPart> {
+        let bytes = if tokio::runtime::Handle::try_current().is_ok() {
+            block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(Self::download_remote_bytes(url))
+            })
+        } else {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .ok()
+                .and_then(|runtime| runtime.block_on(Self::download_remote_bytes(url)))
+        }?;
+
+        Some(Self::image_part_from_bytes(image, bytes))
+    }
+
+    fn image_part(image: &ImageMessage) -> Option<ContentPart> {
+        for local_path in [
+            image.local_path.as_deref(),
+            image.path.as_deref(),
+            image
+                .file
+                .as_deref()
+                .and_then(|value| value.strip_prefix("file://")),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if let Some(part) = Self::image_part_from_local_file(local_path, image) {
+                return Some(part);
+            }
+        }
+
+        for direct_url in [image.object_url.as_deref(), image.url.as_deref()]
+            .into_iter()
+            .flatten()
+        {
+            if direct_url.starts_with("data:") {
+                return Some(ContentPart::image_url_string(direct_url.to_string()));
+            }
+
+            if let Some(part) = Self::image_part_from_remote_url(direct_url, image) {
+                return Some(part);
+            }
+
+            if direct_url.starts_with("https://") {
+                return Some(ContentPart::image_url_string(direct_url.to_string()));
+            }
+        }
+
+        image
+            .file
+            .as_deref()
+            .filter(|value| value.starts_with("data:") || value.starts_with("https://"))
+            .map(|value| ContentPart::image_url_string(value.to_string()))
+    }
+
+    fn build_user_message(messages: &[Message], msg_prop: &MessageProp) -> OpenAIMessage {
+        let mut parts = Vec::new();
+        let mut text_buffer = String::new();
+        let mut has_media = false;
+
+        for message in messages {
+            match message {
+                Message::PlainText(plain) => {
+                    Self::append_text_segment(&mut text_buffer, &plain.text);
+                }
+                Message::Image(image) => {
+                    if let Some(part) = Self::image_part(image) {
+                        Self::flush_text_part(&mut parts, &mut text_buffer);
+                        parts.push(part);
+                        has_media = true;
+                    } else {
+                        Self::append_text_segment(&mut text_buffer, &image.to_string());
+                    }
+                }
+                other => {
+                    Self::append_text_segment(&mut text_buffer, &other.to_string());
+                }
+            }
+        }
+
+        if let Some(ref_cnt) = msg_prop
+            .ref_content
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
+            if !text_buffer.is_empty() {
+                text_buffer.push_str("\n\n");
+            }
+            text_buffer.push_str("[引用内容]\n");
+            text_buffer.push_str(ref_cnt);
+        }
+
+        Self::flush_text_part(&mut parts, &mut text_buffer);
+
+        if has_media {
+            if parts.is_empty() {
+                OpenAIMessage::user("(无可用文本内容)")
+            } else {
+                OpenAIMessage::user_with_parts(parts)
+            }
+        } else {
+            let user_text = msg_prop
+                .content
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .map(str::to_string)
+                .or_else(|| {
+                    parts.into_iter().find_map(|part| match part {
+                        ContentPart::Text { text } if !text.trim().is_empty() => Some(text),
+                        _ => None,
+                    })
+                })
+                .unwrap_or_else(|| "(无文本内容，可能是仅@或回复)".to_string());
+
+            OpenAIMessage::user(user_text)
         }
     }
 }
@@ -87,22 +337,7 @@ impl Node for ExtractMessageFromEventNode {
 
             let msg_prop = MessageProp::from_messages(&event.message_list, Some(&bot_id));
 
-            // Build user message from incoming MessageEvent
-            let mut user_text = msg_prop.content.clone().unwrap_or_default();
-            if let Some(ref ref_cnt) = msg_prop.ref_content {
-                if !ref_cnt.is_empty() {
-                    if !user_text.is_empty() {
-                        user_text.push_str("\n\n");
-                    }
-                    user_text.push_str("[引用内容]\n");
-                    user_text.push_str(ref_cnt);
-                }
-            }
-            if user_text.trim().is_empty() {
-                user_text = "(无文本内容，可能是仅@或回复)".to_string();
-            }
-
-            let user_msg = OpenAIMessage::user(user_text);
+            let user_msg = Self::build_user_message(&event.message_list, &msg_prop);
 
             let messages = vec![user_msg];
             outputs.insert(

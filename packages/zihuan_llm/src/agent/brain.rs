@@ -172,30 +172,40 @@ impl Brain {
                 return (output, BrainStopReason::Done);
             }
 
+            let tool_call_content = response.content_text_owned().unwrap_or_default();
+            if !tool_call_content.is_empty() {
+                info!("[Brain] iteration {} assistant content: {tool_call_content}", iteration + 1);
+            }
             info!(
                 "[Brain] iteration {} processing {} tool call(s)",
                 iteration + 1,
                 response.tool_calls.len()
             );
-            let tool_call_content = response.content_text_owned().unwrap_or_default();
             conversation.push(response.clone());
             output.push(response.clone());
 
             for tc in &response.tool_calls {
+                info!(
+                    "[Brain] tool call id={} name={} arguments={}",
+                    tc.id, tc.function.name, tc.function.arguments
+                );
                 let result = self
                     .tools
                     .iter()
                     .find(|t| t.spec().name() == tc.function.name)
                     .map(|t| t.execute(&tool_call_content, &tc.function.arguments))
                     .unwrap_or_else(|| {
-                        warn!("[Brain] Tool '{}' not found", tc.function.name);
+                        warn!(
+                            "[Brain] Tool '{}' not found for call id={} arguments={}",
+                            tc.function.name, tc.id, tc.function.arguments
+                        );
                         serde_json::json!({"error": format!("Tool '{}' not found", tc.function.name)})
                             .to_string()
                     });
 
                 info!(
-                    "[Brain] tool {}({}) result: {result}",
-                    tc.function.name, tc.id
+                    "[Brain] tool call id={} name={} result: {result}",
+                    tc.id, tc.function.name
                 );
                 let msg = OpenAIMessage::tool_result(tc.id.clone(), result);
                 conversation.push(msg.clone());

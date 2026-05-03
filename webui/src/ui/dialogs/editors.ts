@@ -9,6 +9,7 @@ import type {
   BrainToolDefinition,
   EmbeddedFunctionConfig,
   FunctionPortDef,
+  OpenAIMessageItem,
   QQMessageItem,
   ToolParamDef,
 } from "./types";
@@ -953,6 +954,167 @@ export function openQQMessageListEditor(
     card.appendChild(urlInput);
     card.appendChild(summaryLabel);
     card.appendChild(summaryInput);
+  };
+
+  render();
+}
+
+export function openOpenAIMessageListEditor(
+  nodeDef: NodeDefinition,
+  sessionId: string,
+  onSaved: () => void,
+): void {
+  const { dialog, close } = openOverlay();
+
+  const rawMessages = (nodeDef.inline_values?.["messages"] as OpenAIMessageItem[] | undefined) ?? [];
+  const messages: OpenAIMessageItem[] = JSON.parse(JSON.stringify(rawMessages));
+
+  const render = () => {
+    dialog.innerHTML = `<h3>编辑 OpenAI 消息列表</h3>`;
+
+    const listLabel = document.createElement("div");
+    listLabel.className = "zh-section-label";
+    listLabel.textContent = `消息列表 (${messages.length})`;
+    dialog.appendChild(listLabel);
+
+    const hint = document.createElement("div");
+    hint.className = "zh-hint";
+    hint.innerHTML = "支持编辑 <code>role</code>、<code>content</code>，以及 tool 消息的 <code>tool_call_id</code>。";
+    dialog.appendChild(hint);
+
+    const listContainer = document.createElement("div");
+    messages.forEach((msg, idx) => {
+      listContainer.appendChild(buildMessageCard(msg, idx));
+    });
+    dialog.appendChild(listContainer);
+
+    const addBtn = document.createElement("button");
+    addBtn.textContent = "+ 添加消息";
+    addBtn.style.marginBottom = "12px";
+    addBtn.addEventListener("click", () => {
+      messages.push({ role: "user", content: "" });
+      close();
+      openOpenAIMessageListEditor(
+        { ...nodeDef, inline_values: { ...nodeDef.inline_values, messages } },
+        sessionId,
+        onSaved,
+      );
+    });
+    dialog.appendChild(addBtn);
+
+    const btns = document.createElement("div");
+    btns.className = "zh-buttons";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.textContent = "取消";
+    cancelBtn.addEventListener("click", close);
+
+    const saveBtn = document.createElement("button");
+    saveBtn.textContent = "保存";
+    saveBtn.className = "primary";
+    saveBtn.addEventListener("click", async () => {
+      try {
+        await graphs.updateNode(sessionId, nodeDef.id, {
+          inline_values: {
+            messages: messages as unknown as unknown[],
+          } as Record<string, unknown>,
+        });
+        close();
+        onSaved();
+      } catch (e) {
+        alert("保存失败: " + (e as Error).message);
+      }
+    });
+
+    btns.appendChild(cancelBtn);
+    btns.appendChild(saveBtn);
+    dialog.appendChild(btns);
+  };
+
+  const buildMessageCard = (msg: OpenAIMessageItem, idx: number): HTMLElement => {
+    const card = document.createElement("div");
+    card.className = "zh-tool-card";
+
+    const headerRow = document.createElement("div");
+    headerRow.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:8px;";
+
+    const roleSelect = document.createElement("select");
+    (["system", "user", "assistant", "tool"] as const).forEach((role) => {
+      const opt = document.createElement("option");
+      opt.value = role;
+      opt.textContent =
+        role === "system" ? "system" : role === "user" ? "user" : role === "assistant" ? "assistant" : "tool";
+      if ((msg.role ?? "user") === role) opt.selected = true;
+      roleSelect.appendChild(opt);
+    });
+    roleSelect.style.flex = "1";
+    roleSelect.style.minWidth = "120px";
+    roleSelect.addEventListener("change", () => {
+      messages[idx].role = roleSelect.value as OpenAIMessageItem["role"];
+      if (messages[idx].role !== "tool") {
+        delete messages[idx].tool_call_id;
+      }
+    });
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.textContent = "✕ 删除";
+    deleteBtn.className = "danger";
+    deleteBtn.style.cssText = "padding:4px 8px;white-space:nowrap;flex-shrink:0;";
+    deleteBtn.addEventListener("click", () => {
+      messages.splice(idx, 1);
+      close();
+      openOpenAIMessageListEditor(
+        { ...nodeDef, inline_values: { ...nodeDef.inline_values, messages } },
+        sessionId,
+        onSaved,
+      );
+    });
+
+    headerRow.appendChild(roleSelect);
+    headerRow.appendChild(deleteBtn);
+    card.appendChild(headerRow);
+
+    const contentLabel = document.createElement("label");
+    contentLabel.textContent = "内容";
+    const contentInput = document.createElement("textarea");
+    contentInput.value = msg.content ?? "";
+    contentInput.placeholder = "输入消息内容";
+    contentInput.style.minHeight = "96px";
+    contentInput.addEventListener("input", () => {
+      messages[idx].content = contentInput.value;
+    });
+    card.appendChild(contentLabel);
+    card.appendChild(contentInput);
+
+    const reasoningLabel = document.createElement("label");
+    reasoningLabel.textContent = "推理内容（可选）";
+    const reasoningInput = document.createElement("textarea");
+    reasoningInput.value = msg.reasoning_content ?? "";
+    reasoningInput.placeholder = "可选：reasoning_content";
+    reasoningInput.style.minHeight = "72px";
+    reasoningInput.addEventListener("input", () => {
+      const value = reasoningInput.value.trim();
+      messages[idx].reasoning_content = value ? value : null;
+    });
+    card.appendChild(reasoningLabel);
+    card.appendChild(reasoningInput);
+
+    if ((msg.role ?? "user") === "tool") {
+      const toolCallIdLabel = document.createElement("label");
+      toolCallIdLabel.textContent = "tool_call_id";
+      const toolCallIdInput = document.createElement("input");
+      toolCallIdInput.type = "text";
+      toolCallIdInput.value = msg.tool_call_id ?? "";
+      toolCallIdInput.placeholder = "输入 tool_call_id";
+      toolCallIdInput.addEventListener("input", () => {
+        const value = toolCallIdInput.value.trim();
+        messages[idx].tool_call_id = value ? value : null;
+      });
+      card.appendChild(toolCallIdLabel);
+      card.appendChild(toolCallIdInput);
+    }
+
+    return card;
   };
 
   render();
