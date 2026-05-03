@@ -11,8 +11,10 @@ use super::models::{MessageEvent, MessageType, Profile, RawMessageEvent};
 use super::object_storage::{enrich_event_images, PendingImageUpload};
 use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::{mpsc, oneshot};
+use zihuan_bot_types::message::Message;
 use zihuan_core::error::Result;
 use zihuan_core::url_utils::extract_host;
+use zihuan_node::message_restore::restore_message_snapshot;
 use zihuan_node::object_storage::S3Ref;
 
 /// Trait for brain agents that handle event processing
@@ -298,11 +300,50 @@ impl BotAdapter {
         };
 
         enrich_event_images(&adapter, &mut event).await;
+        hydrate_reply_sources(&mut event);
 
         // Dispatch to the unified message handler
         let adapter_clone = adapter.clone();
         tokio::spawn(async move {
             event::process_message(adapter_clone, event).await;
         });
+    }
+}
+
+fn hydrate_reply_sources(event: &mut MessageEvent) {
+    for message in &mut event.message_list {
+        let Message::Reply(reply) = message else {
+            continue;
+        };
+
+        match restore_message_snapshot(reply.id) {
+            Ok(Some(snapshot)) => {
+                let image_count = snapshot
+                    .messages
+                    .iter()
+                    .filter(|message| matches!(message, Message::Image(_)))
+                    .count();
+                info!(
+                    "[adapter] hydrated reply source for message_id={} via {} (segments={}, images={})",
+                    reply.id,
+                    snapshot.source.as_str(),
+                    snapshot.messages.len(),
+                    image_count
+                );
+                reply.message_source = Some(snapshot.messages);
+            }
+            Ok(None) => {
+                debug!(
+                    "[adapter] reply source miss for message_id={} (no cache/mysql snapshot)",
+                    reply.id
+                );
+            }
+            Err(error) => {
+                debug!(
+                    "[adapter] failed to hydrate reply source for message_id={}: {}",
+                    reply.id, error
+                );
+            }
+        }
     }
 }

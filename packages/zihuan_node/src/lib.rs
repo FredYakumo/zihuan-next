@@ -61,6 +61,7 @@ pub mod message_mysql_get_group_history;
 pub mod message_mysql_get_user_history;
 pub mod message_mysql_history_common;
 pub mod message_mysql_persistence;
+pub mod message_restore;
 pub mod object_storage;
 pub mod qq_message_list_mysql_persistence;
 pub mod registry;
