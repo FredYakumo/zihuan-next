@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod agent_text_similarity;
 pub mod brain_node;
 pub mod brain_tool;
 pub mod context_compact_node;

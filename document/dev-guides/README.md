@@ -35,6 +35,7 @@ The node graph describes **data flow** between processing steps. Complexity (alg
 | Build a node with config-driven ports | [../node/dynamic-port-nodes.md](../node/dynamic-port-nodes.md) |
 | Understand embedded function subgraphs | [../node/function-subgraphs.md](../node/function-subgraphs.md) |
 | Understand the Brain agentic runtime and tool subgraphs | [../llm/brain.md](../llm/brain.md) |
+| Understand QQ Agent similarity gating and linalg usage | [../llm/qq-agent-similarity.md](../llm/qq-agent-similarity.md) |
 | Understand the JSON graph file format | [../node/node-graph-json.md](../node/node-graph-json.md) |
 | Understand how the UI talks to nodes | [ui-architecture.md](./ui-architecture.md) |
 | Look up naming and coding conventions | [code-conventions.md](./code-conventions.md) |
@@ -62,5 +63,6 @@ The node graph describes **data flow** between processing steps. Complexity (alg
 | [../node/dynamic-port-nodes.md](../node/dynamic-port-nodes.md) | Dynamic-port nodes: implementation pattern, UI coordination, JSON markers |
 | [../node/function-subgraphs.md](../node/function-subgraphs.md) | Embedded function graphs, boundary nodes, and subgraph UI navigation |
 | [../llm/brain.md](../llm/brain.md) | Brain agentic loop, tool contracts, embedded tool subgraphs, and Brain-specific JSON behavior |
+| [../llm/qq-agent-similarity.md](../llm/qq-agent-similarity.md) | QQ Agent final-reply similarity gating, embedding hookup, and `general_wheel_cpp` linalg usage |
 | [../node/node-graph-json.md](../node/node-graph-json.md) | Complete node graph JSON specification with all field and data type descriptions |
 | [../node/node-lifecycle.md](../node/node-lifecycle.md) | Node lifecycle detail: on_graph_start, execute, on_start/update/cleanup |

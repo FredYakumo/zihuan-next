@@ -1,3 +1,4 @@
+use crate::database::weaviate::WeaviateRef;
 use crate::object_storage::S3Ref;
 use redis::{aio::ConnectionManager, AsyncCommands};
 use reqwest::blocking::Client;
@@ -690,6 +691,7 @@ pub enum DataType {
     S3Ref,
     RedisRef,
     MySqlRef,
+    WeaviateRef,
     TavilyRef,
     SessionStateRef,
     OpenAIMessageSessionCacheRef,
@@ -732,6 +734,7 @@ impl fmt::Display for DataType {
             DataType::S3Ref => write!(f, "S3Ref"),
             DataType::RedisRef => write!(f, "RedisRef"),
             DataType::MySqlRef => write!(f, "MySqlRef"),
+            DataType::WeaviateRef => write!(f, "WeaviateRef"),
             DataType::TavilyRef => write!(f, "TavilyRef"),
             DataType::SessionStateRef => write!(f, "SessionStateRef"),
             DataType::OpenAIMessageSessionCacheRef => write!(f, "OpenAIMessageSessionCacheRef"),
@@ -777,6 +780,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "S3Ref" => Ok(DataType::S3Ref),
                     "RedisRef" => Ok(DataType::RedisRef),
                     "MySqlRef" => Ok(DataType::MySqlRef),
+                    "WeaviateRef" => Ok(DataType::WeaviateRef),
                     "TavilyRef" => Ok(DataType::TavilyRef),
                     "SessionStateRef" => Ok(DataType::SessionStateRef),
                     "OpenAIMessageSessionCacheRef" => Ok(DataType::OpenAIMessageSessionCacheRef),
@@ -806,6 +810,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                             "S3Ref",
                             "RedisRef",
                             "MySqlRef",
+                            "WeaviateRef",
                             "TavilyRef",
                             "SessionStateRef",
                             "OpenAIMessageSessionCacheRef",
@@ -873,6 +878,7 @@ pub enum DataValue {
     S3Ref(Arc<S3Ref>),
     RedisRef(Arc<RedisConfig>),
     MySqlRef(Arc<MySqlConfig>),
+    WeaviateRef(Arc<WeaviateRef>),
     TavilyRef(Arc<TavilyRef>),
     SessionStateRef(Arc<SessionStateRef>),
     OpenAIMessageSessionCacheRef(Arc<OpenAIMessageSessionCacheRef>),
@@ -902,6 +908,7 @@ impl DataValue {
             DataValue::S3Ref(_) => DataType::S3Ref,
             DataValue::RedisRef(_) => DataType::RedisRef,
             DataValue::MySqlRef(_) => DataType::MySqlRef,
+            DataValue::WeaviateRef(_) => DataType::WeaviateRef,
             DataValue::TavilyRef(_) => DataType::TavilyRef,
             DataValue::SessionStateRef(_) => DataType::SessionStateRef,
             DataValue::OpenAIMessageSessionCacheRef(_) => DataType::OpenAIMessageSessionCacheRef,
@@ -921,6 +928,7 @@ impl DataValue {
             DataValue::Vector(_) => "Vector".to_string(),
             DataValue::BotAdapterRef(_) => "BotAdapterRef".to_string(),
             DataValue::S3Ref(_) => "S3Ref".to_string(),
+            DataValue::WeaviateRef(_) => "WeaviateRef".to_string(),
             DataValue::TavilyRef(_) => "TavilyRef".to_string(),
             DataValue::LoopControlRef(_) => "LoopControlRef".to_string(),
             DataValue::EmbeddingModel(_) => "EmbeddingModel".to_string(),
@@ -1001,6 +1009,11 @@ impl DataValue {
                 "reconnect_max_attempts": config.reconnect_max_attempts,
                 "reconnect_interval_secs": config.reconnect_interval_secs,
             }),
+            DataValue::WeaviateRef(weaviate_ref) => serde_json::json!({
+                "type": "WeaviateRef",
+                "base_url": weaviate_ref.base_url,
+                "timeout_secs": weaviate_ref.timeout.as_secs(),
+            }),
             DataValue::TavilyRef(tavily_ref) => serde_json::json!({
                 "type": "TavilyRef",
                 "timeout_secs": tavily_ref.timeout.as_secs(),
@@ -1038,6 +1051,9 @@ impl fmt::Debug for DataValue {
             DataValue::S3Ref(config) => f.debug_tuple("S3Ref").field(config).finish(),
             DataValue::RedisRef(config) => f.debug_tuple("RedisRef").field(config).finish(),
             DataValue::MySqlRef(config) => f.debug_tuple("MySqlRef").field(config).finish(),
+            DataValue::WeaviateRef(weaviate_ref) => {
+                f.debug_tuple("WeaviateRef").field(weaviate_ref).finish()
+            }
             DataValue::TavilyRef(tavily_ref) => {
                 f.debug_tuple("TavilyRef").field(tavily_ref).finish()
             }
