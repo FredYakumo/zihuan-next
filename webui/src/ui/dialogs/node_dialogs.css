@@ -38,17 +38,18 @@
 
 /* ── Add Node Dialog (.zh-an-*) ── */
 .zh-an-dialog {
-  min-width: 900px; max-width: 1200px; max-height: 86vh;
+  width: min(1200px, calc(100vw - 32px)); max-width: 1200px;
+  height: min(86vh, 760px); min-height: 520px;
   display: flex; flex-direction: row; gap: 0; padding: 0; overflow: hidden;
 }
 .zh-an-left {
   width: 420px; flex-shrink: 0; padding: 20px;
-  display: flex; flex-direction: column;
+  display: flex; flex-direction: column; min-height: 0;
 }
 .zh-an-right {
   flex: 1; border-left: 1px solid var(--border); padding: 20px;
   overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
-  min-width: 0; background: var(--node-hover);
+  min-width: 0; min-height: 0; background: var(--node-hover);
 }
 .zh-an-search {
   width: 100%; box-sizing: border-box; padding: 7px 10px;
@@ -105,3 +106,24 @@
 .zh-an-detail-port-name { font-size: 13px; color: var(--text); font-weight: 600; font-family: monospace; }
 .zh-an-detail-port-desc { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
 .zh-an-footer { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; }
+
+@media (max-width: 900px) {
+  .zh-an-dialog {
+    width: calc(100vw - 16px);
+    height: min(92vh, 960px);
+    min-height: 0;
+    flex-direction: column;
+  }
+
+  .zh-an-left {
+    width: auto;
+    padding: 16px;
+  }
+
+  .zh-an-right {
+    border-left: none;
+    border-top: 1px solid var(--border);
+    min-height: 180px;
+    padding: 16px;
+  }
+}

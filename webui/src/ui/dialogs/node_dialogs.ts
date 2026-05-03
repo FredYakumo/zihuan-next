@@ -71,6 +71,7 @@ export function showAddNodeDialog(nodeTypes: NodeTypeInfo[]): Promise<string | n
 
   const visibleTypes = nodeTypes.filter((n) => n.category !== "内部");
   const cats = ["全部", ...Array.from(new Set(visibleTypes.map((n) => n.category)))];
+  const supportsHoverPreview = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
 
   return new Promise((resolve) => {
     const overlay = document.createElement("div");
@@ -108,7 +109,9 @@ export function showAddNodeDialog(nodeTypes: NodeTypeInfo[]): Promise<string | n
 
     const placeholder = document.createElement("div");
     placeholder.className = "zh-an-detail-placeholder";
-    placeholder.textContent = "悬浮在节点上以查看说明";
+    placeholder.textContent = supportsHoverPreview
+      ? "悬浮在节点上以查看说明"
+      : "点击节点即可添加";
     rightPane.appendChild(placeholder);
 
     dialog.appendChild(rightPane);
@@ -132,7 +135,20 @@ export function showAddNodeDialog(nodeTypes: NodeTypeInfo[]): Promise<string | n
       }
     });
 
+    let activeCategory = "全部";
+    let searchText = "";
+    let currentDetailTypeId: string | null = null;
+
+    const updateActiveItem = () => {
+      const items = listEl.querySelectorAll<HTMLElement>(".zh-an-item");
+      for (const item of items) {
+        item.classList.toggle("active", item.dataset.typeId === currentDetailTypeId);
+      }
+    };
+
     function renderDetail(nt: NodeTypeInfo): void {
+      if (currentDetailTypeId === nt.type_id) return;
+      currentDetailTypeId = nt.type_id;
       rightPane.innerHTML = "";
 
       const nameEl = document.createElement("div");
@@ -200,10 +216,8 @@ export function showAddNodeDialog(nodeTypes: NodeTypeInfo[]): Promise<string | n
 
       makePorts(nt.input_ports, "输入端口");
       makePorts(nt.output_ports, "输出端口");
+      updateActiveItem();
     }
-
-    let activeCategory = "全部";
-    let searchText = "";
 
     function applyFilter() {
       const q = searchText.toLowerCase();
@@ -233,6 +247,7 @@ export function showAddNodeDialog(nodeTypes: NodeTypeInfo[]): Promise<string | n
       for (const nt of filtered) {
         const item = document.createElement("div");
         item.className = "zh-an-item";
+        item.dataset.typeId = nt.type_id;
 
         const top = document.createElement("div");
         top.className = "zh-an-item-top";
@@ -256,7 +271,10 @@ export function showAddNodeDialog(nodeTypes: NodeTypeInfo[]): Promise<string | n
           item.appendChild(desc);
         }
 
-        item.addEventListener("mouseenter", () => renderDetail(nt));
+        if (supportsHoverPreview) {
+          item.addEventListener("mouseenter", () => renderDetail(nt));
+        }
+        item.addEventListener("focus", () => renderDetail(nt));
         item.addEventListener("click", () => {
           document.body.removeChild(overlay);
           resolve(nt.type_id);
@@ -264,6 +282,7 @@ export function showAddNodeDialog(nodeTypes: NodeTypeInfo[]): Promise<string | n
 
         listEl.appendChild(item);
       }
+      updateActiveItem();
     }
 
     function renderTabs() {
