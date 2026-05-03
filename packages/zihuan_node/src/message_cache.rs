@@ -1,6 +1,6 @@
 use crate::message_restore::cache_message_snapshot;
 use crate::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
-use log::{debug, warn};
+use log::{debug, info, warn};
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use std::collections::HashMap;
@@ -61,7 +61,7 @@ impl MessageCacheNode {
 
     fn initialize_run(
         &mut self,
-        redis_ref: Option<&Arc<crate::data_value::RedisConfig>>,
+        _redis_ref: Option<&Arc<crate::data_value::RedisConfig>>,
     ) -> Result<()> {
         if self.run_initialized {
             return Ok(());

@@ -1,7 +1,6 @@
 use crate::data_value::{OpenAIMessageSessionCacheRef, RedisConfig};
 use crate::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
-use log::{debug, info, warn};
-use redis::{aio::ConnectionManager, AsyncCommands};
+use log::debug;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::task::block_in_place;
@@ -26,10 +25,6 @@ impl OpenAIMessageSessionCacheProviderNode {
         }
     }
 
-    fn redis_tracker_registry_key(&self) -> String {
-        format!("openai_message_session:{}:tracker_sets", self.id)
-    }
-
     fn normalize_bucket_name(bucket_name: Option<&str>) -> String {
         let bucket_name = bucket_name.unwrap_or("default").trim();
         if bucket_name.is_empty() {
@@ -39,7 +34,7 @@ impl OpenAIMessageSessionCacheProviderNode {
         }
     }
 
-    fn initialize_run(&mut self, redis_ref: Option<&Arc<RedisConfig>>) -> Result<()> {
+    fn initialize_run(&mut self, _redis_ref: Option<&Arc<RedisConfig>>) -> Result<()> {
         if self.run_initialized {
             return Ok(());
         }
@@ -60,91 +55,6 @@ impl OpenAIMessageSessionCacheProviderNode {
             "[OpenAIMessageSessionCacheProviderNode] Cleared in-memory cache for new graph run (node={})",
             self.id
         );
-
-        if let Some(redis_config) = redis_ref {
-            if let Some(ref url) = redis_config.url {
-                let url = url.to_string();
-                let tracker_registry_key = self.redis_tracker_registry_key();
-                let redis_cm = redis_config.redis_cm.clone();
-                let cached_url = redis_config.cached_redis_url.clone();
-
-                let cleanup = async move {
-                    let mut cm_guard = redis_cm.lock().await;
-                    let mut url_guard = cached_url.lock().await;
-
-                    if url_guard.as_deref() != Some(url.as_str()) {
-                        *cm_guard = None;
-                        *url_guard = Some(url.clone());
-                    }
-
-                    if cm_guard.is_none() {
-                        let client = redis::Client::open(url.as_str())?;
-                        match ConnectionManager::new(client).await {
-                            Ok(cm) => {
-                                info!(
-                                    "[OpenAIMessageSessionCacheProviderNode] Connected to Redis at {}",
-                                    url
-                                );
-                                *cm_guard = Some(cm);
-                            }
-                            Err(e) => return Err(e.into()),
-                        }
-                    }
-
-                    let cm = cm_guard.as_mut().unwrap();
-                    let tracker_keys: Vec<String> = cm.smembers(&tracker_registry_key).await?;
-                    let mut previous_keys: Vec<String> = Vec::new();
-
-                    for tracker_key in &tracker_keys {
-                        let mut sender_keys: Vec<String> = cm.smembers(tracker_key).await?;
-                        previous_keys.append(&mut sender_keys);
-                    }
-
-                    let removed = previous_keys.len();
-                    if !previous_keys.is_empty() {
-                        let _: () = cm.del(previous_keys).await?;
-                    }
-
-                    if !tracker_keys.is_empty() {
-                        let _: () = cm.del(tracker_keys).await?;
-                    }
-
-                    let _: () = cm.del(&tracker_registry_key).await?;
-
-                    Ok::<usize, redis::RedisError>(removed)
-                };
-
-                let cleanup_result = if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                    block_in_place(|| handle.block_on(cleanup))
-                } else {
-                    tokio::runtime::Runtime::new()?.block_on(cleanup)
-                };
-
-                match cleanup_result {
-                    Ok(removed) => {
-                        if removed > 0 {
-                            info!(
-                                "[OpenAIMessageSessionCacheProviderNode] Cleared {} Redis cache entr{} from previous graph run (node={})",
-                                removed,
-                                if removed == 1 { "y" } else { "ies" },
-                                self.id
-                            );
-                        } else {
-                            debug!(
-                                "[OpenAIMessageSessionCacheProviderNode] No prior Redis cache entries to clear for node {}",
-                                self.id
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        warn!(
-                            "[OpenAIMessageSessionCacheProviderNode] Failed to clear previous Redis cache for node {}: {}",
-                            self.id, e
-                        );
-                    }
-                }
-            }
-        }
 
         self.run_initialized = true;
         Ok(())
