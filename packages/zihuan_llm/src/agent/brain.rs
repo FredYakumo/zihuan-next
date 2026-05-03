@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use log::{info, warn};
@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use zihuan_llm_types::llm_base::LLMBase;
 use zihuan_llm_types::tooling::FunctionTool;
-use zihuan_llm_types::{InferenceParam, MessageRole, OpenAIMessage};
+use zihuan_llm_types::{ContentPart, InferenceParam, MessageContent, MessageRole, OpenAIMessage};
 
 pub const MAX_TOOL_ITERATIONS: usize = 25;
 
@@ -146,11 +146,17 @@ impl Brain {
         let tool_specs: Vec<Arc<dyn FunctionTool>> = self.tools.iter().map(|t| t.spec()).collect();
         let mut conversation = sanitize_messages_for_inference(messages);
         let mut output: Vec<OpenAIMessage> = Vec::new();
-
         for iteration in 0..MAX_TOOL_ITERATIONS {
+            let is_last_iteration = iteration == MAX_TOOL_ITERATIONS - 1;
+
+            if is_last_iteration {
+                let counts = count_tool_calls(&conversation);
+                append_tool_summary_to_system(&mut conversation, &counts);
+            }
+
             let response = self.llm.inference(&InferenceParam {
                 messages: &conversation,
-                tools: if tool_specs.is_empty() {
+                tools: if is_last_iteration || tool_specs.is_empty() {
                     None
                 } else {
                     Some(&tool_specs)
@@ -170,6 +176,12 @@ impl Brain {
             if response.tool_calls.is_empty() {
                 output.push(response);
                 return (output, BrainStopReason::Done);
+            }
+
+            // On the last iteration, refuse to execute further tool calls.
+            if is_last_iteration {
+                output.push(response);
+                return (output, BrainStopReason::MaxIterationsReached);
             }
 
             let tool_call_content = response.content_text_owned().unwrap_or_default();
@@ -219,6 +231,60 @@ impl Brain {
         warn!("[Brain] Tool loop exceeded max iterations ({MAX_TOOL_ITERATIONS})");
         (output, BrainStopReason::MaxIterationsReached)
     }
+}
+
+/// Count tool calls already present in `messages` by tool name.
+fn count_tool_calls(messages: &[OpenAIMessage]) -> HashMap<String, usize> {
+    let mut counts = HashMap::new();
+    for msg in messages {
+        for tc in &msg.tool_calls {
+            *counts.entry(tc.function.name.clone()).or_insert(0) += 1;
+        }
+    }
+    counts
+}
+
+/// Append a tool-call summary to the first system message in `messages`,
+/// or push a new system message if none exists.
+fn append_tool_summary_to_system(
+    messages: &mut Vec<OpenAIMessage>,
+    counts: &HashMap<String, usize>,
+) {
+    if counts.is_empty() {
+        return;
+    }
+
+    let mut items: Vec<_> = counts.iter().collect();
+    items.sort_by(|a, b| a.0.cmp(b.0));
+    let lines: Vec<String> = items
+        .iter()
+        .map(|(name, count)| format!("  - {name}: {count} 次"))
+        .collect();
+    let summary = format!(
+        "工具调用次数已达上限。目前已调用的工具及次数如下：\n{}\n\n请基于已获取的信息直接作答，不再调用任何工具。",
+        lines.join("\n")
+    );
+
+    for msg in messages.iter_mut() {
+        if matches!(msg.role, MessageRole::System) {
+            if let Some(ref mut content) = msg.content {
+                match content {
+                    MessageContent::Text(text) => {
+                        text.push('\n');
+                        text.push('\n');
+                        text.push_str(&summary);
+                        return;
+                    }
+                    MessageContent::Parts(parts) => {
+                        parts.push(ContentPart::text(summary));
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    messages.push(OpenAIMessage::system(summary));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

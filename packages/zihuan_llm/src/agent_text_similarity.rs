@@ -45,7 +45,7 @@ pub fn find_best_match(
     embedding_model: Option<&Arc<dyn EmbeddingBase>>,
     config: HybridSimilarityConfig,
 ) -> Result<Option<SimilarityMatch>> {
-    let normalized_query = normalize_similarity_text(query);
+    let normalized_query = normalize_text(query);
     if normalized_query.is_empty() || candidates.is_empty() {
         return Ok(None);
     }
@@ -53,7 +53,7 @@ pub fn find_best_match(
     let prepared: Vec<_> = candidates
         .iter()
         .filter_map(|candidate| {
-            let normalized = normalize_similarity_text(&candidate.text);
+            let normalized = normalize_text(&candidate.text);
             if normalized.is_empty() {
                 None
             } else {
@@ -65,11 +65,8 @@ pub fn find_best_match(
         return Ok(None);
     }
 
-    let corpus_tokens: Vec<Vec<String>> = prepared
-        .iter()
-        .map(|(_, text)| tokenize_for_bm25(text))
-        .collect();
-    let query_tokens = tokenize_for_bm25(&normalized_query);
+    let query_tokens = tokenize(&normalized_query);
+    let corpus_tokens: Vec<Vec<String>> = prepared.iter().map(|(_, text)| tokenize(text)).collect();
     let bm25_scores = bm25_scores(&query_tokens, &corpus_tokens);
     let max_bm25 = bm25_scores.iter().copied().fold(0.0_f64, f64::max);
 
@@ -121,7 +118,7 @@ pub fn find_best_match(
             hybrid_score,
         };
 
-        let should_replace = best
+        let replace = best
             .as_ref()
             .map(|prev| {
                 current.hybrid_score > prev.hybrid_score
@@ -129,7 +126,7 @@ pub fn find_best_match(
                         && current.bm25_score > prev.bm25_score)
             })
             .unwrap_or(true);
-        if should_replace {
+        if replace {
             best = Some(current);
         }
     }
@@ -137,19 +134,35 @@ pub fn find_best_match(
     Ok(best)
 }
 
-pub fn normalize_similarity_text(text: &str) -> String {
+pub fn normalize_text(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-fn tokenize_for_bm25(text: &str) -> Vec<String> {
-    let normalized = normalize_similarity_text(text).to_lowercase();
+pub fn token_overlap_ratio(left: &str, right: &str) -> f64 {
+    let left_tokens = tokenize(left);
+    let right_tokens = tokenize(right);
+    if left_tokens.is_empty() || right_tokens.is_empty() {
+        return 0.0;
+    }
+    let left_set: HashSet<&str> = left_tokens.iter().map(String::as_str).collect();
+    let right_set: HashSet<&str> = right_tokens.iter().map(String::as_str).collect();
+    let shared = left_set.intersection(&right_set).count();
+    let union = left_set.union(&right_set).count();
+    if union == 0 {
+        0.0
+    } else {
+        shared as f64 / union as f64
+    }
+}
+
+fn tokenize(text: &str) -> Vec<String> {
+    let normalized = normalize_text(text).to_lowercase();
     if normalized.is_empty() {
         return Vec::new();
     }
 
     let mut tokens = Vec::new();
     let mut current = String::new();
-
     for ch in normalized.chars() {
         if ch.is_ascii_alphanumeric() {
             current.push(ch);
@@ -168,7 +181,6 @@ fn tokenize_for_bm25(text: &str) -> Vec<String> {
     if !current.is_empty() {
         tokens.push(current);
     }
-
     tokens
 }
 
