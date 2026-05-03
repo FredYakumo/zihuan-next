@@ -90,6 +90,7 @@ pub fn data_type_to_json_schema_type(data_type: &DataType) -> &'static str {
         | DataType::SessionStateRef
         | DataType::OpenAIMessageSessionCacheRef
         | DataType::LLModel
+        | DataType::EmbeddingModel
         | DataType::LoopControlRef
         | DataType::ContentPart
         | DataType::Custom(_)

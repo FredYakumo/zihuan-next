@@ -1,10 +1,28 @@
-use log::{debug, error};
+use log::{debug, error, warn};
 use reqwest::blocking::Client;
+use reqwest::StatusCode;
 use serde_json::{json, Value};
+use std::error::Error as _;
+use std::fmt::Write as _;
+use std::thread;
 use std::time::Duration;
 use zihuan_llm_types::llm_base::LLMBase;
 use zihuan_llm_types::tooling::{ToolCalls, ToolCallsFuncSpec};
 use zihuan_llm_types::{role_to_str, str_to_role, InferenceParam, MessageContent, OpenAIMessage};
+
+const DEFAULT_RETRY_COUNT: u32 = 2;
+const RETRY_DELAY_MS: u64 = 1_000;
+
+enum RequestError {
+    Retryable(String),
+    NonRetryable(String),
+}
+
+#[derive(Debug, Clone)]
+struct RequestContext {
+    message_count: usize,
+    tool_count: usize,
+}
 
 #[derive(Debug, Clone)]
 pub struct LLMAPI {
@@ -12,6 +30,7 @@ pub struct LLMAPI {
     api_endpoint: String,
     api_key: Option<String>,
     pub timeout: Duration,
+    retry_count: u32,
 }
 
 impl LLMAPI {
@@ -26,12 +45,19 @@ impl LLMAPI {
             api_endpoint,
             api_key,
             timeout,
+            retry_count: DEFAULT_RETRY_COUNT,
         }
     }
 
     /// Set custom timeout for requests
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    /// Set max retry count for retryable request failures
+    pub fn with_retry_count(mut self, retry_count: u32) -> Self {
+        self.retry_count = retry_count;
         self
     }
 
@@ -113,6 +139,148 @@ impl LLMAPI {
             tool_call_id,
         })
     }
+
+    fn should_retry_status(status: StatusCode) -> bool {
+        status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
+    }
+
+    fn endpoint_label(&self) -> &str {
+        &self.api_endpoint
+    }
+
+    fn format_request_context(
+        &self,
+        request_context: &RequestContext,
+        attempt: Option<(u32, u32)>,
+    ) -> String {
+        let mut context = format!(
+            "model={} endpoint={} timeout_secs={} messages={} tools={}",
+            self.model_name,
+            self.endpoint_label(),
+            self.timeout.as_secs(),
+            request_context.message_count,
+            request_context.tool_count
+        );
+
+        if let Some((current, total)) = attempt {
+            let _ = write!(context, " attempt={}/{}", current, total);
+        }
+
+        context
+    }
+
+    fn describe_reqwest_error(error: &reqwest::Error) -> String {
+        let mut tags = Vec::new();
+
+        if error.is_timeout() {
+            tags.push("timeout");
+        }
+        if error.is_connect() {
+            tags.push("connect");
+        }
+        if error.is_request() {
+            tags.push("request");
+        }
+        if error.is_body() {
+            tags.push("body");
+        }
+        if error.is_decode() {
+            tags.push("decode");
+        }
+
+        let mut description = if tags.is_empty() {
+            "kind=unknown".to_string()
+        } else {
+            format!("kind={}", tags.join("|"))
+        };
+
+        if let Some(url) = error.url() {
+            let _ = write!(description, " url={}", url);
+        }
+
+        let mut source = error.source();
+        while let Some(cause) = source {
+            let _ = write!(description, " cause={}", cause);
+            source = cause.source();
+        }
+
+        description
+    }
+
+    fn shorten_text(text: &str, limit: usize) -> String {
+        if text.chars().count() <= limit {
+            return text.to_string();
+        }
+
+        let truncated: String = text.chars().take(limit).collect();
+        format!("{}...(truncated)", truncated)
+    }
+
+    fn send_request(
+        &self,
+        client: &Client,
+        request_body: &Value,
+        request_context: &RequestContext,
+        attempt: u32,
+        max_attempts: u32,
+    ) -> Result<OpenAIMessage, RequestError> {
+        let mut request = client.post(&self.api_endpoint).json(request_body);
+
+        if let Some(ref api_key) = self.api_key {
+            let auth_header = if api_key.starts_with("Bearer ") {
+                api_key.to_string()
+            } else {
+                format!("Bearer {}", api_key)
+            };
+            request = request.header("Authorization", auth_header);
+        }
+
+        let response = request.send().map_err(|e| {
+            let err_detail = format!(
+                "{} detail={} message={}",
+                self.format_request_context(request_context, Some((attempt, max_attempts))),
+                Self::describe_reqwest_error(&e),
+                e
+            );
+            RequestError::Retryable(err_detail)
+        })?;
+        let status = response.status();
+        let response_text = response
+            .text()
+            .unwrap_or_else(|_| "Failed to read response".to_string());
+
+        if !status.is_success() {
+            let err_msg = format!(
+                "{} status={} body={}",
+                self.format_request_context(request_context, Some((attempt, max_attempts))),
+                status,
+                Self::shorten_text(&response_text, 800)
+            );
+            return if Self::should_retry_status(status) {
+                Err(RequestError::Retryable(err_msg))
+            } else {
+                Err(RequestError::NonRetryable(err_msg))
+            };
+        }
+
+        let api_resp = serde_json::from_str::<Value>(&response_text).map_err(|e| {
+            RequestError::NonRetryable(format!(
+                "{} parse_error={} body={}",
+                self.format_request_context(request_context, Some((attempt, max_attempts))),
+                e,
+                Self::shorten_text(&response_text, 800)
+            ))
+        })?;
+
+        Self::parse_api_message(&api_resp).ok_or_else(|| {
+            RequestError::NonRetryable(format!(
+                "{} invalid_response choices_present={} body={}",
+                self.format_request_context(request_context, Some((attempt, max_attempts))),
+                api_resp.get("choices").is_some(),
+                Self::shorten_text(&response_text, 800)
+            ))
+        })
+    }
 }
 
 impl LLMBase for LLMAPI {
@@ -167,7 +335,6 @@ impl LLMBase for LLMAPI {
                     msg_obj["tool_calls"] = json!(tool_calls);
                 }
 
-                // Add tool_call_id for tool result messages
                 if let Some(ref id) = msg.tool_call_id {
                     msg_obj["tool_call_id"] = json!(id);
                 }
@@ -192,65 +359,67 @@ impl LLMBase for LLMAPI {
             request_body["tool_choice"] = json!("auto");
         }
 
-        let mut request = client.post(&self.api_endpoint).json(&request_body);
+        let request_context = RequestContext {
+            message_count: param.messages.len(),
+            tool_count: param.tools.as_ref().map(|tools| tools.len()).unwrap_or(0),
+        };
+        let max_attempts = self.retry_count.saturating_add(1);
+        let mut last_error = None;
 
-        // Add authorization header if API key is provided
-        if let Some(ref api_key) = self.api_key {
-            // Check if api_key already contains "Bearer " prefix
-            let auth_header = if api_key.starts_with("Bearer ") {
-                api_key.to_string()
-            } else {
-                format!("Bearer {}", api_key)
-            };
-            request = request.header("Authorization", auth_header);
-        }
+        for attempt in 1..=max_attempts {
+            debug!(
+                "Sending LLM API request: {}",
+                self.format_request_context(&request_context, Some((attempt, max_attempts)))
+            );
 
-        // Make the request and handle response
-        match request.send() {
-            Ok(response) => {
-                let status = response.status();
-                let response_text = response
-                    .text()
-                    .unwrap_or_else(|_| "Failed to read response".to_string());
-                if status.is_success() {
-                    match serde_json::from_str::<Value>(&response_text) {
-                        Ok(api_resp) => {
-                            if let Some(msg) = Self::parse_api_message(&api_resp) {
-                                debug!("Successfully parsed API response");
-                                msg
-                            } else {
-                                error!("Invalid API response structure: missing required fields");
-                                OpenAIMessage::assistant_text(
-                                    "Error: Invalid response structure from API",
-                                )
-                            }
-                        }
-                        Err(e) => {
-                            error!(
-                                "Failed to parse API response: {}, original response: {:?}",
-                                e, &response_text
-                            );
-                            OpenAIMessage::assistant_text(format!(
-                                "Error: Failed to parse response - {}",
-                                e
-                            ))
-                        }
-                    }
-                } else {
-                    error!(
-                        "API request failed with status {}: {}",
-                        status, response_text
+            match self.send_request(
+                &client,
+                &request_body,
+                &request_context,
+                attempt,
+                max_attempts,
+            ) {
+                Ok(msg) => {
+                    debug!(
+                        "Successfully parsed API response: {}",
+                        self.format_request_context(
+                            &request_context,
+                            Some((attempt, max_attempts))
+                        )
                     );
-                    OpenAIMessage::assistant_text(format!(
-                        "Error: API request failed with status {}",
-                        status
-                    ))
+                    return msg;
+                }
+                Err(RequestError::Retryable(err_msg)) => {
+                    last_error = Some(err_msg.clone());
+
+                    if attempt < max_attempts {
+                        warn!(
+                            "LLM API request failed on attempt {}/{} and will retry: {}",
+                            attempt, max_attempts, err_msg
+                        );
+                        thread::sleep(Duration::from_millis(RETRY_DELAY_MS));
+                    } else {
+                        error!(
+                            "LLM API request failed on attempt {}/{}: {}",
+                            attempt, max_attempts, err_msg
+                        );
+                        break;
+                    }
+                }
+                Err(RequestError::NonRetryable(err_msg)) => {
+                    error!(
+                        "LLM API request failed on attempt {}/{} without retry: {}",
+                        attempt, max_attempts, err_msg
+                    );
+                    last_error = Some(err_msg);
+                    break;
                 }
             }
-            Err(e) => {
-                error!("Failed to send API request: {}", e);
-                OpenAIMessage::assistant_text(format!("Error: Failed to send request - {}", e))
-            }
         }
+
+        OpenAIMessage::assistant_text(format!(
+            "Error: {}",
+            last_error.unwrap_or_else(|| "LLM API request failed".to_string())
+        ))
     }
 }

@@ -15,6 +15,8 @@ pub struct LLMApiNode {
     name: String,
 }
 
+const DEFAULT_RETRY_COUNT: u32 = 2;
+
 impl LLMApiNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
@@ -42,6 +44,7 @@ impl Node for LLMApiNode {
         port! { name = "api_endpoint",  ty = String,  desc = "API端点URL，例如: https://api.openai.com/v1/chat/completions" },
         port! { name = "api_key",       ty = Password, desc = "API密钥 (可选，某些本地模型不需要)", optional },
         port! { name = "timeout_secs",  ty = Integer,  desc = "超时秒数 (可选，默认120秒)", optional },
+        port! { name = "retry_count",   ty = Integer,  desc = "重试次数 (可选，默认2次，仅用于临时失败)", optional },
     ];
 
     node_output![
@@ -95,12 +98,26 @@ impl Node for LLMApiNode {
             })
             .unwrap_or(120);
 
-        let llm: Arc<dyn zihuan_llm_types::llm_base::LLMBase> = Arc::new(LLMAPI::new(
-            model_name,
-            api_endpoint,
-            api_key,
-            Duration::from_secs(timeout_secs),
-        ));
+        let retry_count = inputs
+            .get("retry_count")
+            .and_then(|v| {
+                if let DataValue::Integer(i) = v {
+                    Some((*i).max(0) as u32)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(DEFAULT_RETRY_COUNT);
+
+        let llm: Arc<dyn zihuan_llm_types::llm_base::LLMBase> = Arc::new(
+            LLMAPI::new(
+                model_name,
+                api_endpoint,
+                api_key,
+                Duration::from_secs(timeout_secs),
+            )
+            .with_retry_count(retry_count),
+        );
 
         let mut outputs = HashMap::new();
         outputs.insert("llm_model".to_string(), DataValue::LLModel(llm));

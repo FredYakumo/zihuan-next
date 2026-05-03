@@ -1,5 +1,5 @@
 [workspace]
-members = ["node_macros", "packages/zihuan_core", "packages/zihuan_bot_types", "packages/zihuan_llm_types", "packages/zihuan_node", "packages/zihuan_llm", "packages/zihuan_bot_adapter"]
+members = ["node_macros", "packages/general_wheel_cpp", "packages/zihuan_core", "packages/zihuan_bot_types", "packages/zihuan_llm_types", "packages/zihuan_node", "packages/zihuan_llm", "packages/zihuan_bot_adapter"]
 
 [package]
 name = "zihuan_next"
