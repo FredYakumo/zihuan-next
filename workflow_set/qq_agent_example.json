@@ -62,22 +62,22 @@
         "height": 146.0
       },
       "inline_values": {
+        "bot_server_token": "",
         "qq_id": "",
-        "bot_server_url": "",
-        "bot_server_token": ""
+        "bot_server_url": ""
       },
       "port_bindings": {
         "bot_server_url": {
           "kind": "hyperparameter",
           "name": "BOT_SERVER_URL"
         },
-        "bot_server_token": {
-          "kind": "hyperparameter",
-          "name": "BOT_SERVER_TOKEN"
-        },
         "qq_id": {
           "kind": "hyperparameter",
           "name": "BOT_ID"
+        },
+        "bot_server_token": {
+          "kind": "hyperparameter",
+          "name": "BOT_SERVER_TOKEN"
         }
       },
       "has_error": false,
@@ -174,28 +174,36 @@
         "height": 401.06308
       },
       "inline_values": {
+        "mysql_port": "3306",
+        "mysql_host": "127.0.0.1",
+        "mysql_database": "zihuan_aibot",
         "mysql_password": "",
         "reconnect_interval_secs": 0,
-        "acquire_timeout_secs": 0,
-        "mysql_database": "zihuan_aibot",
         "mysql_user": "",
-        "reconnect_max_attempts": 0,
         "max_connections": 0,
-        "mysql_host": "127.0.0.1",
-        "mysql_port": "3306"
+        "acquire_timeout_secs": 0,
+        "reconnect_max_attempts": 0
       },
       "port_bindings": {
         "mysql_password": {
           "kind": "hyperparameter",
           "name": "MYSQL_PASSWORD"
         },
+        "mysql_user": {
+          "kind": "hyperparameter",
+          "name": "MYSQL_USER"
+        },
         "mysql_database": {
           "kind": "hyperparameter",
           "name": "MYSQL_DB"
         },
-        "mysql_user": {
+        "mysql_host": {
           "kind": "hyperparameter",
-          "name": "MYSQL_USER"
+          "name": "MYSQL_HOST"
+        },
+        "mysql_port": {
+          "kind": "hyperparameter",
+          "name": "MYSQL_PORT"
         }
       },
       "has_error": false,
@@ -317,8 +325,8 @@
         "height": 121.83149
       },
       "inline_values": {
-        "bucket_name": "message_id_cache",
-        "ttl_secs": "600"
+        "ttl_secs": "600",
+        "bucket_name": "message_id_cache"
       },
       "port_bindings": {},
       "has_error": false,
@@ -387,19 +395,19 @@
         "height": 190.0
       },
       "inline_values": {
-        "timeout_secs": "600",
         "api_key": "",
-        "model_name": "",
-        "api_endpoint": ""
+        "timeout_secs": "600",
+        "api_endpoint": "",
+        "model_name": ""
       },
       "port_bindings": {
-        "api_endpoint": {
-          "kind": "hyperparameter",
-          "name": "LLM_API_ENDPOINT"
-        },
         "model_name": {
           "kind": "hyperparameter",
           "name": "LLM_MODEL_NAME"
+        },
+        "api_endpoint": {
+          "kind": "hyperparameter",
+          "name": "LLM_API_ENDPOINT"
         },
         "api_key": {
           "kind": "hyperparameter",
@@ -561,8 +569,8 @@
         "height": 103.0
       },
       "inline_values": {
-        "api_token": "",
-        "timeout_secs": 0
+        "timeout_secs": 0,
+        "api_token": ""
       },
       "port_bindings": {
         "api_token": {
@@ -642,24 +650,23 @@
         "width": 278.8,
         "height": 182.30934
       },
-      "inline_values": {
-      },
+      "inline_values": {},
       "port_bindings": {
-        "redis_password": {
-          "kind": "hyperparameter",
-          "name": "REDIS_PASSWORD"
-        },
-        "redis_port": {
-          "kind": "hyperparameter",
-          "name": "REDIS_PORT"
-        },
         "redis_db": {
           "kind": "hyperparameter",
           "name": "REDIS_DB"
         },
+        "redis_password": {
+          "kind": "hyperparameter",
+          "name": "REDIS_PASSWORD"
+        },
         "redis_host": {
           "kind": "hyperparameter",
           "name": "REDIS_HOST"
+        },
+        "redis_port": {
+          "kind": "hyperparameter",
+          "name": "REDIS_PORT"
         }
       },
       "has_error": false,
@@ -1499,25 +1506,13 @@
       },
       "inline_values": {},
       "port_bindings": {
-        "public_base_url": {
+        "secret_key": {
           "kind": "hyperparameter",
-          "name": "RUSTFS_PUBLIC_BASE_URL"
+          "name": "RUSTFS_SECRET_KEY"
         },
         "path_style": {
           "kind": "hyperparameter",
           "name": "RUSTFS_PATH_STYLE"
-        },
-        "bucket": {
-          "kind": "hyperparameter",
-          "name": "RUSTFS_BUCKET"
-        },
-        "access_key": {
-          "kind": "hyperparameter",
-          "name": "RUSTFS_ACCESS_KEY"
-        },
-        "secret_key": {
-          "kind": "hyperparameter",
-          "name": "RUSTFS_SECRET_KEY"
         },
         "endpoint": {
           "kind": "hyperparameter",
@@ -1526,6 +1521,18 @@
         "region": {
           "kind": "hyperparameter",
           "name": "RUSTFS_REGION"
+        },
+        "bucket": {
+          "kind": "hyperparameter",
+          "name": "RUSTFS_BUCKET"
+        },
+        "public_base_url": {
+          "kind": "hyperparameter",
+          "name": "RUSTFS_PUBLIC_BASE_URL"
+        },
+        "access_key": {
+          "kind": "hyperparameter",
+          "name": "RUSTFS_ACCESS_KEY"
         }
       },
       "has_error": false,
@@ -1707,25 +1714,23 @@
         "width": 546.99396,
         "height": 252.94667
       },
-      "inline_values": {
-
-      },
+      "inline_values": {},
       "port_bindings": {
-        "api_key": {
-          "kind": "hyperparameter",
-          "name": "WEAVIATE_API_KEY"
-        },
-        "timeout_secs": {
-          "kind": "hyperparameter",
-          "name": "WEAVIATE_TIMEOUT_SECS"
-        },
         "base_url": {
           "kind": "hyperparameter",
           "name": "WEAVIATE_BASE_URL"
         },
+        "api_key": {
+          "kind": "hyperparameter",
+          "name": "WEAVIATE_API_KEY"
+        },
         "class_name": {
           "kind": "hyperparameter",
           "name": "WEAVIATE_CLASS_NAME"
+        },
+        "timeout_secs": {
+          "kind": "hyperparameter",
+          "name": "WEAVIATE_TIMEOUT_SECS"
         }
       },
       "has_error": false,
@@ -2037,6 +2042,20 @@
       "data_type": "String",
       "group": "default",
       "required": false,
+      "description": null
+    },
+    {
+      "name": "MYSQL_HOST",
+      "data_type": "String",
+      "group": "default",
+      "required": true,
+      "description": null
+    },
+    {
+      "name": "MYSQL_PORT",
+      "data_type": "Integer",
+      "group": "default",
+      "required": true,
       "description": null
     }
   ],

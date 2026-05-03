@@ -280,6 +280,10 @@ pub async fn update_node(req: &mut Request, res: &mut Response, depot: &mut Depo
     if let Some(iv) = body.inline_values {
         if let serde_json::Value::Object(map) = iv {
             for (k, mut v) in map {
+                if v.is_null() {
+                    node.inline_values.remove(&k);
+                    continue;
+                }
                 if node.node_type == "function" && k == "function_config" {
                     let existing_value = node.inline_values.get(&k);
                     let existing_cfg = existing_value.and_then(embedded_function_config_from_value);
@@ -318,7 +322,8 @@ pub async fn update_node(req: &mut Request, res: &mut Response, depot: &mut Depo
             serde_json::from_value::<std::collections::HashMap<String, PortBinding>>(pb)
         {
             for (k, v) in bindings {
-                node.port_bindings.insert(k, v);
+                node.port_bindings.insert(k.clone(), v);
+                node.inline_values.remove(&k);
             }
         }
     }

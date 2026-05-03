@@ -256,6 +256,7 @@ function setupSimpleInlineWidgets(
       addedWidget = lNode.addWidget("toggle", key, existingValue ?? false, async (val: boolean) => {
         const sid = getSessionId();
         if (!sid) return;
+        if (nodeDef.port_bindings?.[key]) return;
         addedWidget!._zihuanTouched = true;
         const pending = graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: val } });
         onMutated?.(pending);
@@ -267,6 +268,7 @@ function setupSimpleInlineWidgets(
       addedWidget = lNode.addWidget("number", key, existingValue ?? 0, async (val: number) => {
         const sid = getSessionId();
         if (!sid) return;
+        if (nodeDef.port_bindings?.[key]) return;
         addedWidget!._zihuanTouched = true;
         const pending = graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: Math.trunc(val) } });
         onMutated?.(pending);
@@ -278,6 +280,7 @@ function setupSimpleInlineWidgets(
       addedWidget = lNode.addWidget("number", key, existingValue ?? 0, async (val: number) => {
         const sid = getSessionId();
         if (!sid) return;
+        if (nodeDef.port_bindings?.[key]) return;
         addedWidget!._zihuanTouched = true;
         const pending = graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: val } });
         onMutated?.(pending);
@@ -289,6 +292,7 @@ function setupSimpleInlineWidgets(
       addedWidget = lNode.addWidget("text", key, String(existingValue ?? ""), async (val: string) => {
         const sid = getSessionId();
         if (!sid) return;
+        if (nodeDef.port_bindings?.[key]) return;
         addedWidget!._zihuanTouched = true;
         const pending = graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: val } });
         onMutated?.(pending);
@@ -347,6 +351,7 @@ function setupLocalTextEmbeddingModelWidget(
       if (selected == null) return;
       const sid = getSessionId();
       if (!sid) return;
+      if (nodeDef.port_bindings?.[key]) return;
       widget.value = selected;
       widget._zihuanTouched = true;
       const pending = graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: selected } });

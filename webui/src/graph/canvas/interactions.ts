@@ -315,6 +315,7 @@ export class CanvasInteractions {
     this.showBindingPicker(event, hyperparameters.map((item) => item.name), async (name) => {
       await graphs.updateNode(sid, lNode.zihuanId as string, {
         port_bindings: { [portName]: { kind: "hyperparameter", name } },
+        inline_values: { [portName]: null },
       });
       await this.canvas.reloadCurrentSession();
     });
@@ -327,6 +328,7 @@ export class CanvasInteractions {
     this.showBindingPicker(event, variables.map((item) => item.name), async (name) => {
       await graphs.updateNode(sid, lNode.zihuanId as string, {
         port_bindings: { [portName]: { kind: "variable", name } },
+        inline_values: { [portName]: null },
       });
       await this.canvas.reloadCurrentSession();
     });

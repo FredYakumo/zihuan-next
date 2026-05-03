@@ -683,6 +683,10 @@ fn auto_fix_graph_definition_local(graph: &mut NodeGraphDefinition) {
                     node.inline_values
                         .retain(|k, _| all_canonical_names.contains(&k.as_str()));
                 }
+
+                // Remove inline_values for ports that have port_bindings
+                node.inline_values
+                    .retain(|k, _| !node.port_bindings.contains_key(k.as_str()));
             }
         }
     }

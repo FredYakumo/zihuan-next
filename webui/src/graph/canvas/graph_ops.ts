@@ -118,7 +118,7 @@ export class CanvasGraphOps {
         let nextInlineValues: Record<string, unknown> | null = null;
         for (const input of lNode.inputs as Array<{ name?: string; widget?: { name?: string } | string; link?: unknown }>) {
           const portName = input?.name;
-          if (!portName || input.link != null || !input.widget) continue;
+          if (!portName || input.link != null || !input.widget || nodeDef.port_bindings?.[portName]) continue;
           const widgetName = typeof input.widget === "object" ? input.widget.name : input.widget;
           if (!widgetName) continue;
           const widget = (lNode.widgets as Array<{ name?: string; value?: unknown; _zihuanTouched?: boolean }>).find(
@@ -282,8 +282,9 @@ export class CanvasGraphOps {
           : typeStr;
         const col = getPortColor(resolvedType);
         const hasInlineValue = nodeDef.inline_values != null && nodeDef.inline_values[port.name] != null;
+        const hasPortBinding = nodeDef.port_bindings != null && nodeDef.port_bindings[port.name] != null;
         node.inputs[i].color_on = col;
-        node.inputs[i].color_off = (!hasInlineValue && port.required) ? "#e74c3c" : col;
+        node.inputs[i].color_off = (!hasInlineValue && !hasPortBinding && port.required) ? "#e74c3c" : col;
       }
     }
 

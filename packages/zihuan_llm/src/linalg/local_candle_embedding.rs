@@ -21,10 +21,35 @@ pub struct LocalCandleEmbeddingModel {
 impl LocalCandleEmbeddingModel {
     pub fn load(model_name: &str) -> Result<Self> {
         let model_dir = resolve_model_dir(model_name)?;
-        let config: Config =
-            serde_json::from_str(&fs::read_to_string(model_dir.join("config.json"))?)?;
-        let tokenizer = Tokenizer::from_file(model_dir.join("tokenizer.json"))
-            .map_err(|err| Error::StringError(format!("failed to load tokenizer: {err}")))?;
+        let config_path = model_dir.join("config.json");
+        let tokenizer_path = model_dir.join("tokenizer.json");
+
+        let config_text = fs::read_to_string(&config_path).map_err(|err| {
+            Error::StringError(format!(
+                "failed to read local embedding config '{}' for model '{}': {}",
+                config_path.display(),
+                model_name,
+                err
+            ))
+        })?;
+        let config: Config = serde_json::from_str(&config_text).map_err(|err| {
+            Error::StringError(format!(
+                "failed to parse local embedding config '{}' for model '{}': {}",
+                config_path.display(),
+                model_name,
+                err
+            ))
+        })?;
+        let tokenizer = Tokenizer::from_file(&tokenizer_path).map_err(|err| {
+            Error::StringError(format!(
+                "failed to load local embedding tokenizer '{}' for model '{}' (model_dir='{}', cwd='{}'): {}",
+                tokenizer_path.display(),
+                model_name,
+                model_dir.display(),
+                current_dir_display(),
+                err
+            ))
+        })?;
 
         Ok(Self {
             model_name: model_name.to_string(),
@@ -44,7 +69,14 @@ impl LocalCandleEmbeddingModel {
                 &device,
             )
         }
-        .map_err(|err| Error::StringError(format!("failed to map model weights: {err}")))?;
+        .map_err(|err| {
+            Error::StringError(format!(
+                "failed to map local embedding weights '{}' for model '{}': {}",
+                self.model_dir.join("model.safetensors").display(),
+                self.model_name,
+                err
+            ))
+        })?;
         Model::new(&self.config, vb)
             .map_err(|err| Error::StringError(format!("failed to load Candle Qwen3 model: {err}")))
     }
@@ -190,7 +222,8 @@ pub fn resolve_model_dir(model_name: &str) -> Result<PathBuf> {
         )));
     }
 
-    let model_dir = Path::new(LOCAL_MODEL_ROOT).join(trimmed);
+    let model_root = Path::new(LOCAL_MODEL_ROOT);
+    let model_dir = model_root.join(trimmed);
     if !model_dir.is_dir() {
         let available = available_local_models()?;
         let available_hint = if available.is_empty() {
@@ -199,8 +232,12 @@ pub fn resolve_model_dir(model_name: &str) -> Result<PathBuf> {
             format!("available models: {}", available.join(", "))
         };
         return Err(Error::ValidationError(format!(
-            "local embedding model '{}' was not found under {} ({available_hint})",
-            trimmed, LOCAL_MODEL_ROOT
+            "local embedding model '{}' was not found.\nexpected_dir='{}'\nmodel_root='{}'\ncwd='{}'\n{}",
+            trimmed,
+            display_path(&model_dir),
+            display_path(model_root),
+            current_dir_display(),
+            available_hint
         )));
     }
 
@@ -208,9 +245,11 @@ pub fn resolve_model_dir(model_name: &str) -> Result<PathBuf> {
         let path = model_dir.join(required);
         if !path.is_file() {
             return Err(Error::ValidationError(format!(
-                "local embedding model '{}' is missing required file {}",
+                "local embedding model '{}' is missing required file '{}'\nmodel_dir='{}'\ncwd='{}'",
                 trimmed,
-                path.display()
+                path.display(),
+                display_path(&model_dir),
+                current_dir_display()
             )));
         }
     }
@@ -239,4 +278,17 @@ fn available_local_models() -> Result<Vec<String>> {
         .collect::<Vec<_>>();
     names.sort();
     Ok(names)
+}
+
+fn current_dir_display() -> String {
+    std::env::current_dir()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|_| "<unknown>".to_string())
+}
+
+fn display_path(path: &Path) -> String {
+    path.canonicalize()
+        .unwrap_or_else(|_| path.to_path_buf())
+        .display()
+        .to_string()
 }
