@@ -76,7 +76,7 @@ pub fn data_type_to_json_schema_type(data_type: &DataType) -> &'static str {
         DataType::Float => "number",
         DataType::Boolean => "boolean",
         DataType::Binary => "string",
-        DataType::Vec(_) => "array",
+        DataType::Vec(_) | DataType::Vector => "array",
         DataType::Json
         | DataType::MessageEvent
         | DataType::OpenAIMessage

@@ -680,6 +680,7 @@ pub enum DataType {
     Json,
     Binary,
     Vec(Box<DataType>),
+    Vector,
     MessageEvent,
     OpenAIMessage,
     QQMessage,
@@ -703,6 +704,7 @@ impl DataType {
     pub fn is_compatible_with(&self, other: &DataType) -> bool {
         match (self, other) {
             (DataType::Any, _) | (_, DataType::Any) => true,
+            (DataType::Vector, DataType::Vector) => true,
             (DataType::Vec(left), DataType::Vec(right)) => left.is_compatible_with(right),
             _ => self == other,
         }
@@ -720,6 +722,7 @@ impl fmt::Display for DataType {
             DataType::Json => write!(f, "Json"),
             DataType::Binary => write!(f, "Binary"),
             DataType::Vec(inner) => write!(f, "Vec<{}>", inner),
+            DataType::Vector => write!(f, "Vector"),
             DataType::MessageEvent => write!(f, "MessageEvent"),
             DataType::OpenAIMessage => write!(f, "OpenAIMessage"),
             DataType::QQMessage => write!(f, "QQMessage"),
@@ -763,6 +766,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "Boolean" => Ok(DataType::Boolean),
                     "Json" => Ok(DataType::Json),
                     "Binary" => Ok(DataType::Binary),
+                    "Vector" => Ok(DataType::Vector),
                     "MessageEvent" => Ok(DataType::MessageEvent),
                     "OpenAIMessage" => Ok(DataType::OpenAIMessage),
                     "Message" => Ok(DataType::OpenAIMessage),
@@ -790,6 +794,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                             "Boolean",
                             "Json",
                             "Binary",
+                            "Vector",
                             "Vec",
                             "MessageEvent",
                             "OpenAIMessage",
@@ -858,6 +863,7 @@ pub enum DataValue {
     Json(Value),
     Binary(Vec<u8>),
     Vec(Box<DataType>, std::vec::Vec<DataValue>),
+    Vector(Vec<f32>),
     MessageEvent(MessageEvent),
     OpenAIMessage(zihuan_llm_types::OpenAIMessage),
     QQMessage(zihuan_bot_types::message::Message),
@@ -886,6 +892,7 @@ impl DataValue {
             DataValue::Json(_) => DataType::Json,
             DataValue::Binary(_) => DataType::Binary,
             DataValue::Vec(ty, _) => DataType::Vec(ty.clone()),
+            DataValue::Vector(_) => DataType::Vector,
             DataValue::OpenAIMessage(_) => DataType::OpenAIMessage,
             DataValue::QQMessage(_) => DataType::QQMessage,
             DataValue::ContentPart(_) => DataType::ContentPart,
@@ -911,6 +918,7 @@ impl DataValue {
             DataValue::Integer(value) => value.to_string(),
             DataValue::Float(value) => value.to_string(),
             DataValue::Boolean(value) => value.to_string(),
+            DataValue::Vector(_) => "Vector".to_string(),
             DataValue::BotAdapterRef(_) => "BotAdapterRef".to_string(),
             DataValue::S3Ref(_) => "S3Ref".to_string(),
             DataValue::TavilyRef(_) => "TavilyRef".to_string(),
@@ -932,6 +940,12 @@ impl DataValue {
             DataValue::Binary(bytes) => {
                 Value::Array(bytes.iter().map(|b| Value::Number((*b).into())).collect())
             }
+            DataValue::Vector(values) => Value::Array(
+                values
+                    .iter()
+                    .map(|value| serde_json::json!(value))
+                    .collect(),
+            ),
             DataValue::Vec(_, items) => {
                 Value::Array(items.iter().map(|item| item.to_json()).collect())
             }
@@ -1014,6 +1028,7 @@ impl fmt::Debug for DataValue {
             DataValue::Json(value) => f.debug_tuple("Json").field(value).finish(),
             DataValue::Binary(value) => f.debug_tuple("Binary").field(value).finish(),
             DataValue::Vec(ty, value) => f.debug_tuple("Vec").field(ty).field(value).finish(),
+            DataValue::Vector(value) => f.debug_tuple("Vector").field(value).finish(),
             DataValue::OpenAIMessage(value) => f.debug_tuple("OpenAIMessage").field(value).finish(),
             DataValue::QQMessage(value) => f.debug_tuple("QQMessage").field(value).finish(),
             DataValue::ContentPart(value) => f.debug_tuple("ContentPart").field(value).finish(),

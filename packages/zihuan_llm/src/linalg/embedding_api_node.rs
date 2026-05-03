@@ -2,19 +2,19 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::embedding_api::EmbeddingAPI;
+use super::embedding_api::EmbeddingAPI;
 use zihuan_core::error::{Error, Result};
 use zihuan_llm_types::embedding_base::EmbeddingBase;
 use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
 
 const DEFAULT_RETRY_COUNT: u32 = 2;
 
-pub struct EmbeddingApiNode {
+pub struct LoadTextEmbedderNode {
     id: String,
     name: String,
 }
 
-impl EmbeddingApiNode {
+impl LoadTextEmbedderNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -23,7 +23,7 @@ impl EmbeddingApiNode {
     }
 }
 
-impl Node for EmbeddingApiNode {
+impl Node for LoadTextEmbedderNode {
     fn id(&self) -> &str {
         &self.id
     }
@@ -33,7 +33,7 @@ impl Node for EmbeddingApiNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("配置 embedding API 连接，输出 EmbeddingModel 引用供下游文本向量节点使用")
+        Some("加载文本 embedding 模型配置，输出 EmbeddingModel 引用供下游文本向量化节点使用")
     }
 
     node_input![

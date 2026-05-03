@@ -286,6 +286,16 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
 
         (v, DataType::Json) => Some(DataValue::Json(v.clone())),
 
+        (Value::Array(items), DataType::Vector) => items
+            .iter()
+            .map(|item| match item {
+                Value::Number(value) => value.as_f64().map(|v| v as f32),
+                Value::String(value) => value.parse::<f32>().ok(),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>()
+            .map(DataValue::Vector),
+
         // Single OpenAIMessage from a JSON object: {"role": "user", "content": "..."}
         (Value::Object(map), DataType::OpenAIMessage) => {
             fn parse_role(v: &Value) -> zihuan_llm_types::MessageRole {

@@ -32,8 +32,8 @@ impl Node for VectorCosineSimilarityNode {
     }
 
     node_input![
-        port! { name = "left", ty = Vec(Float), desc = "左侧向量" },
-        port! { name = "right", ty = Vec(Float), desc = "右侧向量" },
+        port! { name = "left", ty = Vector, desc = "左侧向量" },
+        port! { name = "right", ty = Vector, desc = "右侧向量" },
     ];
 
     node_output![
@@ -62,24 +62,10 @@ impl Node for VectorCosineSimilarityNode {
 }
 
 fn parse_float_vector(value: Option<&DataValue>) -> Result<Vec<f32>> {
-    let values = match value {
-        Some(DataValue::Vec(_, values)) => values,
-        _ => {
-            return Err(Error::ValidationError(
-                "vector input must be Vec<Float>".to_string(),
-            ))
-        }
-    };
-
-    values
-        .iter()
-        .map(|value| match value {
-            DataValue::Float(raw) => Ok(*raw as f32),
-            DataValue::Integer(raw) => Ok(*raw as f32),
-            other => Err(Error::ValidationError(format!(
-                "vector input must contain Float values, got {}",
-                other.data_type()
-            ))),
-        })
-        .collect()
+    match value {
+        Some(DataValue::Vector(values)) => Ok(values.clone()),
+        _ => Err(Error::ValidationError(
+            "vector input must be Vector".to_string(),
+        )),
+    }
 }

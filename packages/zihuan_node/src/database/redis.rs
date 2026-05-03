@@ -34,10 +34,7 @@ impl RedisNode {
         ["message_cache:*", "openai_message_session:*"]
     }
 
-    fn initialize_run(
-        &mut self,
-        redis_ref: Option<&Arc<RedisConfig>>,
-    ) -> Result<()> {
+    fn initialize_run(&mut self, redis_ref: Option<&Arc<RedisConfig>>) -> Result<()> {
         if self.run_initialized {
             return Ok(());
         }
@@ -210,10 +207,7 @@ impl Node for RedisNode {
         self.initialize_run(Some(&config))?;
 
         let mut outputs = HashMap::new();
-        outputs.insert(
-            "redis_ref".to_string(),
-            DataValue::RedisRef(config),
-        );
+        outputs.insert("redis_ref".to_string(), DataValue::RedisRef(config));
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
