@@ -27,7 +27,7 @@ impl Node for TextEmbeddingNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("使用 EmbeddingModel 将文本编码为向量，输出 Vec<Float>")
+        Some("使用 EmbeddingModel 将文本编码为向量，输出 Vector")
     }
 
     node_input![
@@ -36,7 +36,7 @@ impl Node for TextEmbeddingNode {
     ];
 
     node_output![
-        port! { name = "embedding", ty = Vec(Float), desc = "文本向量" },
+        port! { name = "embedding", ty = Vector, desc = "文本向量" },
         port! { name = "dimension", ty = Integer, desc = "向量维度" },
     ];
 
@@ -64,15 +64,9 @@ impl Node for TextEmbeddingNode {
             }
         };
 
-        let embedding = embedding_model.embed_text(&text)?;
+        let embedding = embedding_model.inference(&text)?;
         let dimension = embedding.len() as i64;
-        let vector = DataValue::Vec(
-            Box::new(DataType::Float),
-            embedding
-                .into_iter()
-                .map(|value| DataValue::Float(value as f64))
-                .collect(),
-        );
+        let vector = DataValue::Vector(embedding);
 
         let outputs = HashMap::from([
             ("embedding".to_string(), vector),

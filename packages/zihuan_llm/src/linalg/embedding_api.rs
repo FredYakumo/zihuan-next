@@ -127,7 +127,7 @@ impl EmbeddingBase for EmbeddingAPI {
         &self.model_name
     }
 
-    fn embed_text(&self, text: &str) -> Result<Vec<f32>> {
+    fn inference(&self, text: &str) -> Result<Vec<f32>> {
         let text = text.trim();
         if text.is_empty() {
             return Err(Error::ValidationError(
@@ -141,7 +141,7 @@ impl EmbeddingBase for EmbeddingAPI {
         })
     }
 
-    fn embed_texts(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
+    fn batch_inference(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
         if texts.is_empty() {
             return Err(Error::ValidationError(
                 "texts must not be empty when requesting embeddings".to_string(),
