@@ -13,6 +13,7 @@ const DEFAULT_TIMEOUT_SECS: u64 = 30;
 #[derive(Clone)]
 pub struct WeaviateRef {
     pub base_url: String,
+    pub class_name: String,
     pub api_key: Option<String>,
     pub timeout: Duration,
     client: Client,
@@ -54,14 +55,17 @@ pub struct WeaviateObjectInput {
 impl WeaviateRef {
     pub fn new(
         base_url: impl Into<String>,
+        class_name: impl Into<String>,
         api_key: Option<String>,
         timeout: Duration,
     ) -> Result<Self> {
         let base_url = normalize_base_url(base_url.into())?;
+        let class_name = normalize_class_name(class_name.into())?;
         let client = Client::builder().timeout(timeout).build()?;
 
         Ok(Self {
             base_url,
+            class_name,
             api_key: api_key.filter(|value| !value.trim().is_empty()),
             timeout,
             client,
@@ -95,6 +99,10 @@ impl WeaviateRef {
 
     pub fn schema(&self) -> Result<Value> {
         self.get_json("/v1/schema")
+    }
+
+    pub fn execute_graphql_query(&self, query: &str) -> Result<Value> {
+        self.post_json("/v1/graphql", json!({ "query": query }))
     }
 
     pub fn list_collections(&self) -> Result<Vec<String>> {
@@ -219,7 +227,7 @@ impl WeaviateRef {
             "{{ Get {{ {class_name}(nearVector: {{ vector: [{vector_body}] }}, limit: {limit}) {{ {fields} }} }} }}"
         );
 
-        self.post_json("/v1/graphql", json!({ "query": graphql }))
+        self.execute_graphql_query(&graphql)
     }
 
     fn url(&self, path: &str) -> String {
@@ -291,6 +299,7 @@ impl fmt::Debug for WeaviateRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WeaviateRef")
             .field("base_url", &self.base_url)
+            .field("class_name", &self.class_name)
             .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
             .field("timeout", &self.timeout)
             .finish()
@@ -326,6 +335,7 @@ impl Node for WeaviateNode {
 
     node_input![
         port! { name = "base_url", ty = String, desc = "Weaviate HTTP 地址，例如 http://127.0.0.1:8080" },
+        port! { name = "class_name", ty = String, desc = "Weaviate collection 名称，例如 MessageRecordVector" },
         port! { name = "api_key", ty = Password, desc = "可选：Weaviate API Key", optional },
         port! { name = "timeout_secs", ty = Integer, desc = "可选：请求超时秒数，默认 30 秒", optional },
     ];
@@ -348,6 +358,19 @@ impl Node for WeaviateNode {
         if base_url.is_empty() {
             return Err(Error::ValidationError(
                 "base_url must not be empty".to_string(),
+            ));
+        }
+
+        let class_name = inputs
+            .get("class_name")
+            .and_then(|value| match value {
+                DataValue::String(value) => Some(value.trim().to_string()),
+                _ => None,
+            })
+            .ok_or_else(|| Error::ValidationError("class_name is required".to_string()))?;
+        if class_name.is_empty() {
+            return Err(Error::ValidationError(
+                "class_name must not be empty".to_string(),
             ));
         }
 
@@ -375,6 +398,7 @@ impl Node for WeaviateNode {
 
         let weaviate_ref = Arc::new(WeaviateRef::new(
             base_url,
+            class_name.clone(),
             api_key,
             Duration::from_secs(timeout_secs),
         )?);
@@ -384,6 +408,8 @@ impl Node for WeaviateNode {
                 "Weaviate is reachable but not ready yet".to_string(),
             ));
         }
+
+        weaviate_ref.ensure_collection(&message_vector_collection_config(class_name))?;
 
         let outputs = HashMap::from([(
             "weaviate_ref".to_string(),
@@ -413,4 +439,50 @@ fn normalize_base_url(raw: String) -> Result<String> {
     }
 
     Ok(trimmed)
+}
+
+fn normalize_class_name(raw: String) -> Result<String> {
+    let trimmed = raw.trim().to_string();
+    if trimmed.is_empty() {
+        return Err(Error::ValidationError(
+            "Weaviate class_name must not be empty".to_string(),
+        ));
+    }
+
+    Ok(trimmed)
+}
+
+fn message_vector_collection_config(class_name: String) -> WeaviateCollectionConfig {
+    WeaviateCollectionConfig {
+        class_name,
+        description: Some("QQ message vector storage".to_string()),
+        properties: vec![
+            text_property("message_id", "QQ 平台消息 ID"),
+            text_property("sender_id", "发送者 ID"),
+            text_property("sender_name", "发送者名称"),
+            date_property("send_time", "消息发送时间"),
+            text_property("group_id", "群 ID，可为空"),
+            text_property("group_name", "群名称，可为空"),
+            text_property("content", "聚合后的消息文本"),
+            text_property("at_target_list", "@ 提及目标列表"),
+            text_property("media_json", "消息媒体元数据 JSON"),
+        ],
+        vectorizer: Some("none".to_string()),
+    }
+}
+
+fn text_property(name: &str, description: &str) -> WeaviatePropertyConfig {
+    WeaviatePropertyConfig {
+        name: name.to_string(),
+        data_type: vec!["text".to_string()],
+        description: Some(description.to_string()),
+    }
+}
+
+fn date_property(name: &str, description: &str) -> WeaviatePropertyConfig {
+    WeaviatePropertyConfig {
+        name: name.to_string(),
+        data_type: vec!["date".to_string()],
+        description: Some(description.to_string()),
+    }
 }

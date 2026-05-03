@@ -1012,6 +1012,7 @@ impl DataValue {
             DataValue::WeaviateRef(weaviate_ref) => serde_json::json!({
                 "type": "WeaviateRef",
                 "base_url": weaviate_ref.base_url,
+                "class_name": weaviate_ref.class_name,
                 "timeout_secs": weaviate_ref.timeout.as_secs(),
             }),
             DataValue::TavilyRef(tavily_ref) => serde_json::json!({

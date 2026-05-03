@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -35,9 +36,13 @@ use zihuan_llm_types::tooling::FunctionTool;
 use zihuan_llm_types::InferenceParam;
 use zihuan_llm_types::OpenAIMessage;
 use zihuan_node::data_value::{
-    OpenAIMessageSessionCacheRef, SessionClaim, SessionStateRef, TavilyRef, SESSION_CLAIM_CONTEXT,
+    MySqlConfig, OpenAIMessageSessionCacheRef, SessionClaim, SessionStateRef, TavilyRef,
+    SESSION_CLAIM_CONTEXT,
 };
+use zihuan_node::database::weaviate::WeaviateRef;
 use zihuan_node::function_graph::FunctionPortDef;
+use zihuan_node::message_mysql_get_group_history::MessageMySQLGetGroupHistoryNode;
+use zihuan_node::message_mysql_get_user_history::MessageMySQLGetUserHistoryNode;
 use zihuan_node::{node_output, DataType, DataValue, Node, Port};
 
 mod build_metadata {
@@ -56,6 +61,10 @@ const DUPLICATE_OVERLAP_THRESHOLD: f64 = 0.78;
 const AGENT_PUBLIC_NAME: &str = "紫幻zihuan-next";
 const AGENT_GITHUB_REPOSITORY: &str = "https://github.com/FredYakumo/zihuan-next";
 const AGENT_GIT_COMMIT_ID: &str = build_metadata::ZIHUAN_GIT_COMMIT_ID;
+const DEFAULT_HISTORY_TOOL_LIMIT: i64 = 10;
+const MAX_HISTORY_TOOL_LIMIT: i64 = 50;
+const DEFAULT_SEMANTIC_SEARCH_LIMIT: i64 = 5;
+const MAX_SEMANTIC_SEARCH_LIMIT: i64 = 20;
 
 fn build_common_system_rules(identity_example: &str) -> String {
     format!(
@@ -898,6 +907,205 @@ fn lock_pending_state(
         .map_err(|_| Error::ValidationError("pending reply state lock poisoned".to_string()))
 }
 
+fn send_tool_progress_notification(
+    adapter: &zihuan_bot_adapter::adapter::SharedBotAdapter,
+    target_id: &str,
+    mention_target_id: Option<&str>,
+    is_group: bool,
+    call_content: &str,
+) {
+    if is_group {
+        if let Some(mid) = mention_target_id {
+            send_group_progress_notification(adapter, target_id, mid, call_content);
+        }
+    } else {
+        send_friend_progress_notification(adapter, target_id, call_content);
+    }
+}
+
+fn sanitize_positive_limit(value: Option<i64>, default_limit: i64, max_limit: i64) -> usize {
+    let limit = value.unwrap_or(default_limit);
+    limit.clamp(1, max_limit) as usize
+}
+
+fn optional_string_argument(arguments: &Value, key: &str) -> Option<String> {
+    arguments
+        .get(key)
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn graphql_string_literal(value: &str) -> Result<String> {
+    serde_json::to_string(value)
+        .map_err(|e| Error::ValidationError(format!("failed to encode GraphQL string: {e}")))
+}
+
+fn build_text_equal_filter(path: &str, value: &str) -> Result<String> {
+    Ok(format!(
+        "{{path:[{}], operator: Equal, valueText: {}}}",
+        graphql_string_literal(path)?,
+        graphql_string_literal(value)?,
+    ))
+}
+
+fn combine_where_filters(filters: Vec<String>) -> Option<String> {
+    match filters.len() {
+        0 => None,
+        1 => filters.into_iter().next(),
+        _ => Some(format!(
+            "{{operator: And, operands: [{}]}}",
+            filters.join(", ")
+        )),
+    }
+}
+
+fn build_get_query_arguments(
+    limit: usize,
+    near_vector: Option<&[f32]>,
+    where_filter: Option<&str>,
+    sort: Option<&str>,
+) -> String {
+    let mut args = Vec::new();
+    if let Some(vector) = near_vector {
+        let vector_body = vector
+            .iter()
+            .map(|value| {
+                let mut rendered = value.to_string();
+                if !rendered.contains('.') && !rendered.contains('e') && !rendered.contains('E') {
+                    rendered.push_str(".0");
+                }
+                rendered
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        args.push(format!("nearVector: {{ vector: [{vector_body}] }}"));
+    }
+    if let Some(where_filter) = where_filter {
+        args.push(format!("where: {where_filter}"));
+    }
+    if let Some(sort) = sort {
+        args.push(format!("sort: [{sort}]"));
+    }
+    args.push(format!("limit: {limit}"));
+    format!("({})", args.join(", "))
+}
+
+fn run_weaviate_get_query(
+    weaviate_ref: &WeaviateRef,
+    limit: usize,
+    near_vector: Option<&[f32]>,
+    where_filter: Option<&str>,
+    sort: Option<&str>,
+    include_distance: bool,
+) -> Result<Vec<Value>> {
+    let arguments = build_get_query_arguments(limit, near_vector, where_filter, sort);
+    let mut fields = vec![
+        "message_id",
+        "sender_id",
+        "sender_name",
+        "send_time",
+        "group_id",
+        "group_name",
+        "content",
+        "at_target_list",
+        "media_json",
+    ]
+    .join(" ");
+    if include_distance {
+        fields.push_str(" _additional { id distance }");
+    }
+
+    let query = format!(
+        "{{ Get {{ {}{} {{ {} }} }} }}",
+        weaviate_ref.class_name, arguments, fields
+    );
+    let response = weaviate_ref.execute_graphql_query(&query)?;
+    Ok(response
+        .get("data")
+        .and_then(|value| value.get("Get"))
+        .and_then(|value| value.get(&weaviate_ref.class_name))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default())
+}
+
+fn extract_string_field(value: &Value, key: &str) -> Option<String> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+}
+
+fn extract_distance(value: &Value) -> Option<f64> {
+    value
+        .get("_additional")
+        .and_then(|extra| extra.get("distance"))
+        .and_then(Value::as_f64)
+}
+
+fn format_message_lookup_results(items: &[Value]) -> Value {
+    Value::Array(
+        items
+            .iter()
+            .map(|item| {
+                serde_json::json!({
+                    "message_id": extract_string_field(item, "message_id"),
+                    "sender_id": extract_string_field(item, "sender_id"),
+                    "sender_name": extract_string_field(item, "sender_name"),
+                    "send_time": extract_string_field(item, "send_time"),
+                    "group_id": extract_string_field(item, "group_id"),
+                    "group_name": extract_string_field(item, "group_name"),
+                    "content": extract_string_field(item, "content"),
+                    "distance": extract_distance(item),
+                })
+            })
+            .collect(),
+    )
+}
+
+fn extract_string_list_output(
+    outputs: &HashMap<String, DataValue>,
+    key: &str,
+) -> Result<Vec<String>> {
+    let value = outputs
+        .get(key)
+        .ok_or_else(|| Error::ValidationError(format!("missing output: {key}")))?;
+    match value {
+        DataValue::Vec(inner, items) if **inner == DataType::String => {
+            let mut result = Vec::with_capacity(items.len());
+            for item in items {
+                match item {
+                    DataValue::String(value) => result.push(value.clone()),
+                    other => {
+                        return Err(Error::ValidationError(format!(
+                            "expected String item in {key}, got {}",
+                            other.data_type()
+                        )))
+                    }
+                }
+            }
+            Ok(result)
+        }
+        other => Err(Error::ValidationError(format!(
+            "{key} must be Vec<String>, got {}",
+            other.data_type()
+        ))),
+    }
+}
+
+fn semantic_result_order(left: &Value, right: &Value) -> Ordering {
+    let left_distance = extract_distance(left).unwrap_or(f64::INFINITY);
+    let right_distance = extract_distance(right).unwrap_or(f64::INFINITY);
+    match left_distance.total_cmp(&right_distance) {
+        Ordering::Equal => {
+            extract_string_field(right, "send_time").cmp(&extract_string_field(left, "send_time"))
+        }
+        other => other,
+    }
+}
+
 #[derive(Debug)]
 struct StaticFunctionToolSpec {
     name: &'static str,
@@ -1098,6 +1306,259 @@ impl BrainTool for TavilyBrainTool {
         };
         info!("{LOG_PREFIX} tool 'web_search' result: {result}");
         result
+    }
+}
+
+struct GetRecentGroupMessagesBrainTool {
+    mysql_ref: Option<Arc<MySqlConfig>>,
+    adapter: zihuan_bot_adapter::adapter::SharedBotAdapter,
+    target_id: String,
+    mention_target_id: Option<String>,
+    is_group: bool,
+}
+
+impl BrainTool for GetRecentGroupMessagesBrainTool {
+    fn spec(&self) -> Arc<dyn FunctionTool> {
+        Arc::new(StaticFunctionToolSpec {
+            name: "get_recent_group_messages",
+            description: "查看当前群里最近的 n 条消息，仅群聊可用",
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "limit": { "type": "integer", "description": "要查看的消息数量，默认 10，最大 50" }
+                },
+                "additionalProperties": false
+            }),
+        })
+    }
+
+    fn execute(&self, call_content: &str, arguments: &Value) -> String {
+        info!(
+            "{LOG_PREFIX} executing tool 'get_recent_group_messages' call_content='{}' arguments={arguments}",
+            call_content
+        );
+        send_tool_progress_notification(
+            &self.adapter,
+            &self.target_id,
+            self.mention_target_id.as_deref(),
+            self.is_group,
+            call_content,
+        );
+
+        let result = (|| -> Result<Value> {
+            if !self.is_group {
+                return Err(Error::ValidationError(
+                    "get_recent_group_messages can only be used in group chat".to_string(),
+                ));
+            }
+            let mysql_ref = self.mysql_ref.as_ref().ok_or_else(|| {
+                Error::ValidationError("mysql_ref is required for message lookup".to_string())
+            })?;
+            let limit = sanitize_positive_limit(
+                arguments.get("limit").and_then(Value::as_i64),
+                DEFAULT_HISTORY_TOOL_LIMIT,
+                MAX_HISTORY_TOOL_LIMIT,
+            );
+            let mut node = MessageMySQLGetGroupHistoryNode::new("__tool__", "__tool__");
+            let outputs = node.execute(HashMap::from([
+                (
+                    "mysql_ref".to_string(),
+                    DataValue::MySqlRef(mysql_ref.clone()),
+                ),
+                (
+                    "group_id".to_string(),
+                    DataValue::String(self.target_id.clone()),
+                ),
+                ("limit".to_string(), DataValue::Integer(limit as i64)),
+            ]))?;
+            let items = extract_string_list_output(&outputs, "messages")?;
+            Ok(serde_json::json!({
+                "ok": true,
+                "messages": items,
+            }))
+        })();
+
+        let result_str = match result {
+            Ok(value) => value.to_string(),
+            Err(e) => serde_json::json!({"ok": false, "error": e.to_string()}).to_string(),
+        };
+        info!("{LOG_PREFIX} tool 'get_recent_group_messages' result: {result_str}");
+        result_str
+    }
+}
+
+struct GetRecentUserMessagesBrainTool {
+    mysql_ref: Option<Arc<MySqlConfig>>,
+    adapter: zihuan_bot_adapter::adapter::SharedBotAdapter,
+    target_id: String,
+    mention_target_id: Option<String>,
+    is_group: bool,
+}
+
+impl BrainTool for GetRecentUserMessagesBrainTool {
+    fn spec(&self) -> Arc<dyn FunctionTool> {
+        Arc::new(StaticFunctionToolSpec {
+            name: "get_recent_user_messages",
+            description: "查看某人最近的 n 条消息，可选用 group_id 限定是否在某个群内",
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "sender_id": { "type": "string", "description": "要查询的 QQ 号" },
+                    "group_id": { "type": "string", "description": "可选：仅查看该群内的消息" },
+                    "limit": { "type": "integer", "description": "要查看的消息数量，默认 10，最大 50" }
+                },
+                "required": ["sender_id"]
+            }),
+        })
+    }
+
+    fn execute(&self, call_content: &str, arguments: &Value) -> String {
+        info!(
+            "{LOG_PREFIX} executing tool 'get_recent_user_messages' call_content='{}' arguments={arguments}",
+            call_content
+        );
+        send_tool_progress_notification(
+            &self.adapter,
+            &self.target_id,
+            self.mention_target_id.as_deref(),
+            self.is_group,
+            call_content,
+        );
+
+        let result = (|| -> Result<Value> {
+            let mysql_ref = self.mysql_ref.as_ref().ok_or_else(|| {
+                Error::ValidationError("mysql_ref is required for message lookup".to_string())
+            })?;
+            let sender_id = optional_string_argument(arguments, "sender_id")
+                .ok_or_else(|| Error::ValidationError("sender_id is required".to_string()))?;
+            let group_id = optional_string_argument(arguments, "group_id");
+            let limit = sanitize_positive_limit(
+                arguments.get("limit").and_then(Value::as_i64),
+                DEFAULT_HISTORY_TOOL_LIMIT,
+                MAX_HISTORY_TOOL_LIMIT,
+            );
+            let mut node = MessageMySQLGetUserHistoryNode::new("__tool__", "__tool__");
+            let mut payload = HashMap::from([
+                (
+                    "mysql_ref".to_string(),
+                    DataValue::MySqlRef(mysql_ref.clone()),
+                ),
+                (
+                    "sender_id".to_string(),
+                    DataValue::String(sender_id.clone()),
+                ),
+                ("limit".to_string(), DataValue::Integer(limit as i64)),
+            ]);
+            if let Some(group_id) = group_id {
+                payload.insert("group_id".to_string(), DataValue::String(group_id));
+            }
+            let outputs = node.execute(payload)?;
+            let items = extract_string_list_output(&outputs, "messages")?;
+            Ok(serde_json::json!({
+                "ok": true,
+                "messages": items,
+            }))
+        })();
+
+        let result_str = match result {
+            Ok(value) => value.to_string(),
+            Err(e) => serde_json::json!({"ok": false, "error": e.to_string()}).to_string(),
+        };
+        info!("{LOG_PREFIX} tool 'get_recent_user_messages' result: {result_str}");
+        result_str
+    }
+}
+
+struct SearchSimilarMessagesBrainTool {
+    weaviate_ref: Option<Arc<WeaviateRef>>,
+    embedding_model: Option<Arc<dyn EmbeddingBase>>,
+    adapter: zihuan_bot_adapter::adapter::SharedBotAdapter,
+    target_id: String,
+    mention_target_id: Option<String>,
+    is_group: bool,
+}
+
+impl BrainTool for SearchSimilarMessagesBrainTool {
+    fn spec(&self) -> Arc<dyn FunctionTool> {
+        Arc::new(StaticFunctionToolSpec {
+            name: "search_similar_messages",
+            description: "用语义相似搜索相关消息，可选用 sender_id、group_id 过滤；结果按相关度优先、发送时间次序返回",
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "要搜索的语义查询文本" },
+                    "limit": { "type": "integer", "description": "返回消息数量，默认 5，最大 20" },
+                    "sender_id": { "type": "string", "description": "可选：仅在该发送者消息中搜索" },
+                    "group_id": { "type": "string", "description": "可选：仅在该群消息中搜索" }
+                },
+                "required": ["query"]
+            }),
+        })
+    }
+
+    fn execute(&self, call_content: &str, arguments: &Value) -> String {
+        info!(
+            "{LOG_PREFIX} executing tool 'search_similar_messages' call_content='{}' arguments={arguments}",
+            call_content
+        );
+        send_tool_progress_notification(
+            &self.adapter,
+            &self.target_id,
+            self.mention_target_id.as_deref(),
+            self.is_group,
+            call_content,
+        );
+
+        let result = (|| -> Result<Value> {
+            let weaviate_ref = self.weaviate_ref.as_ref().ok_or_else(|| {
+                Error::ValidationError("weaviate_ref is required for semantic search".to_string())
+            })?;
+            let embedding_model = self.embedding_model.as_ref().ok_or_else(|| {
+                Error::ValidationError(
+                    "embedding_model is required for semantic search".to_string(),
+                )
+            })?;
+            let query = optional_string_argument(arguments, "query")
+                .ok_or_else(|| Error::ValidationError("query is required".to_string()))?;
+            let sender_id = optional_string_argument(arguments, "sender_id");
+            let group_id = optional_string_argument(arguments, "group_id");
+            let limit = sanitize_positive_limit(
+                arguments.get("limit").and_then(Value::as_i64),
+                DEFAULT_SEMANTIC_SEARCH_LIMIT,
+                MAX_SEMANTIC_SEARCH_LIMIT,
+            );
+
+            let vector = embedding_model.inference(&query)?;
+            let mut filters = Vec::new();
+            if let Some(sender_id) = sender_id.as_deref() {
+                filters.push(build_text_equal_filter("sender_id", sender_id)?);
+            }
+            if let Some(group_id) = group_id.as_deref() {
+                filters.push(build_text_equal_filter("group_id", group_id)?);
+            }
+            let where_filter = combine_where_filters(filters);
+            let mut items = run_weaviate_get_query(
+                weaviate_ref,
+                limit,
+                Some(&vector),
+                where_filter.as_deref(),
+                None,
+                true,
+            )?;
+            items.sort_by(semantic_result_order);
+
+            Ok(serde_json::json!({
+                "ok": true,
+                "messages": format_message_lookup_results(&items),
+            }))
+        })();
+
+        let result_str = match result {
+            Ok(value) => value.to_string(),
+            Err(e) => serde_json::json!({"ok": false, "error": e.to_string()}).to_string(),
+        };
+        info!("{LOG_PREFIX} tool 'search_similar_messages' result: {result_str}");
+        result_str
     }
 }
 
@@ -1487,6 +1948,8 @@ impl QqMessageAgentNode {
         cache: &Arc<OpenAIMessageSessionCacheRef>,
         session: &Arc<SessionStateRef>,
         llm: &Arc<dyn zihuan_llm_types::llm_base::LLMBase>,
+        mysql_ref: Option<&Arc<MySqlConfig>>,
+        weaviate_ref: Option<&Arc<WeaviateRef>>,
         embedding_model: Option<&Arc<dyn EmbeddingBase>>,
         tavily: &Arc<TavilyRef>,
         max_message_length: usize,
@@ -1540,6 +2003,8 @@ impl QqMessageAgentNode {
             cache,
             session,
             llm,
+            mysql_ref,
+            weaviate_ref,
             embedding_model,
             tavily,
             &sender_id,
@@ -1564,6 +2029,8 @@ impl QqMessageAgentNode {
         cache: &Arc<OpenAIMessageSessionCacheRef>,
         _session: &Arc<SessionStateRef>,
         llm: &Arc<dyn zihuan_llm_types::llm_base::LLMBase>,
+        mysql_ref: Option<&Arc<MySqlConfig>>,
+        weaviate_ref: Option<&Arc<WeaviateRef>>,
         embedding_model: Option<&Arc<dyn EmbeddingBase>>,
         tavily: &Arc<TavilyRef>,
         sender_id: &str,
@@ -1649,6 +2116,40 @@ impl QqMessageAgentNode {
             })
             .with_tool(GetAgentPublicInfoBrainTool {
                 message: current_message,
+            })
+            .with_tool(GetRecentGroupMessagesBrainTool {
+                mysql_ref: mysql_ref.cloned(),
+                adapter: adapter.clone(),
+                target_id: target_id.to_string(),
+                mention_target_id: if is_group {
+                    Some(sender_id.to_string())
+                } else {
+                    None
+                },
+                is_group,
+            })
+            .with_tool(GetRecentUserMessagesBrainTool {
+                mysql_ref: mysql_ref.cloned(),
+                adapter: adapter.clone(),
+                target_id: target_id.to_string(),
+                mention_target_id: if is_group {
+                    Some(sender_id.to_string())
+                } else {
+                    None
+                },
+                is_group,
+            })
+            .with_tool(SearchSimilarMessagesBrainTool {
+                weaviate_ref: weaviate_ref.cloned(),
+                embedding_model: embedding_model.cloned(),
+                adapter: adapter.clone(),
+                target_id: target_id.to_string(),
+                mention_target_id: if is_group {
+                    Some(sender_id.to_string())
+                } else {
+                    None
+                },
+                is_group,
             })
             .with_tool(ReplyPlainTextBrainTool {
                 pending_reply_state: pending_reply_state.clone(),
@@ -1818,9 +2319,13 @@ impl Node for QqMessageAgentNode {
             Port::new("session_ref", DataType::SessionStateRef)
                 .with_description("运行时会话占用引用，防止并发推理"),
             Port::new("llm_model", DataType::LLModel).with_description("LLM 模型引用"),
-            Port::new("embedding_model", DataType::EmbeddingModel)
-                .with_description("可选：embedding 模型引用，用于最终回复近重复判断")
+            Port::new("mysql_ref", DataType::MySqlRef)
+                .with_description("可选：MySQL 引用，用于最近消息历史查询工具")
                 .optional(),
+            Port::new("weaviate_ref", DataType::WeaviateRef)
+                .with_description("Weaviate 向量数据库引用，用于语义相似消息检索"),
+            Port::new("embedding_model", DataType::EmbeddingModel)
+                .with_description("embedding 模型引用，用于语义检索和最终回复近重复判断"),
             Port::new("tavily_ref", DataType::TavilyRef).with_description("Tavily 搜索引用"),
             Port::new("max_message_length", DataType::Integer)
                 .with_description("可选：最终回复超过该字数时强制转为 forward，默认 500")
@@ -1937,14 +2442,22 @@ impl Node for QqMessageAgentNode {
             Some(DataValue::LLModel(m)) => m.clone(),
             _ => return Err(self.wrap_err("llm_model is required")),
         };
-        let embedding_model = match inputs.get("embedding_model") {
-            Some(DataValue::EmbeddingModel(m)) => Some(m.clone()),
+        let mysql_ref = match inputs.get("mysql_ref") {
+            Some(DataValue::MySqlRef(r)) => Some(r.clone()),
             Some(_) => {
-                return Err(
-                    self.wrap_err("embedding_model must be an embedding model when provided")
-                )
+                return Err(self.wrap_err("mysql_ref must be a MySQL reference when provided"))
             }
             None => None,
+        };
+        let weaviate_ref = match inputs.get("weaviate_ref") {
+            Some(DataValue::WeaviateRef(r)) => r.clone(),
+            Some(_) => return Err(self.wrap_err("weaviate_ref must be a Weaviate reference")),
+            None => return Err(self.wrap_err("weaviate_ref is required")),
+        };
+        let embedding_model = match inputs.get("embedding_model") {
+            Some(DataValue::EmbeddingModel(m)) => m.clone(),
+            Some(_) => return Err(self.wrap_err("embedding_model must be an embedding model")),
+            None => return Err(self.wrap_err("embedding_model is required")),
         };
         let tavily = match inputs.get("tavily_ref") {
             Some(DataValue::TavilyRef(t)) => t.clone(),
@@ -1993,7 +2506,9 @@ impl Node for QqMessageAgentNode {
             &cache,
             &session,
             &llm,
-            embedding_model.as_ref(),
+            mysql_ref.as_ref(),
+            Some(&weaviate_ref),
+            Some(&embedding_model),
             &tavily,
             max_message_length,
             compact_context_length,
