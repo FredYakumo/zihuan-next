@@ -53,7 +53,11 @@ impl Node for StringToImageContentPartNode {
 
         let media_type = match inputs.get("media_type") {
             Some(DataValue::String(s)) => s.trim().to_ascii_lowercase(),
-            Some(_) => return Err(Error::ValidationError("media_type must be a string".to_string())),
+            Some(_) => {
+                return Err(Error::ValidationError(
+                    "media_type must be a string".to_string(),
+                ))
+            }
             None => "image".to_string(),
         };
 

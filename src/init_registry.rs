@@ -18,6 +18,7 @@ pub fn init_node_registry() -> Result<()> {
     };
     use zihuan_llm::agent::qq_message_agent_node::QqMessageAgentNode;
     use zihuan_llm::brain_node::BrainNode;
+    use zihuan_llm::context_compact_node::ContextCompactNode;
     use zihuan_llm::llm_api_node::LLMApiNode;
     use zihuan_llm::llm_infer_node::LLMInferNode;
     use zihuan_llm::rag::tavily_provider_node::TavilyProviderNode;
@@ -46,6 +47,14 @@ pub fn init_node_registry() -> Result<()> {
         "AI",
         "使用 LLM + system prompt + user message 触发带可编辑 Tools 的函数调用推理",
         BrainNode
+    );
+
+    register_node!(
+        "context_compact",
+        "上下文压缩",
+        "AI",
+        "压缩 OpenAIMessage 历史，仅保留摘要对和最近 2 条非 tool 消息",
+        ContextCompactNode
     );
 
     register_node!(

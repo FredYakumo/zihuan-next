@@ -304,10 +304,9 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
                 .unwrap_or(zihuan_llm_types::MessageRole::User);
             let content = match map.get("content") {
                 Some(Value::Null) | None => None,
-                Some(other) => serde_json::from_value::<zihuan_llm_types::MessageContent>(
-                    other.clone(),
-                )
-                .ok(),
+                Some(other) => {
+                    serde_json::from_value::<zihuan_llm_types::MessageContent>(other.clone()).ok()
+                }
             };
             Some(DataValue::OpenAIMessage(zihuan_llm_types::OpenAIMessage {
                 role,
@@ -368,16 +367,15 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         FunctionInputsNode, FunctionNode, FunctionOutputsNode, JoinStringNode, JsonExtractNode,
         JsonParserNode, JsonToQQMessageVecNode, LoopBreakNode, LoopNode, LoopStateUpdateNode,
         MessageContentNode, MessageListDataNode, OpenAIMessageContentAsJsonNode,
-        OpenAIMessageToStringNode,
         OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode,
         OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheProviderNode,
-        OpenAIMessageSessionCacheSetNode, PreviewMessageListNode, PreviewQQMessageListNode,
-        PreviewStringNode,
-        PushBackVecNode, QQMessageJsonOutputSystemPromptProviderNode, QQMessageListDataNode,
-        SessionStateClearNode, SessionStateGetNode, SessionStateProviderNode,
-        SessionStateReleaseNode, SessionStateTryClaimNode, SetVariableNode, StackNode,
-        StringDataNode, StringIsNotEmptyNode, StringToImageContentPartNode,
-        StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode, ToolResultNode,
+        OpenAIMessageSessionCacheSetNode, OpenAIMessageToStringNode, PreviewMessageListNode,
+        PreviewQQMessageListNode, PreviewStringNode, PushBackVecNode,
+        QQMessageJsonOutputSystemPromptProviderNode, QQMessageListDataNode, SessionStateClearNode,
+        SessionStateGetNode, SessionStateProviderNode, SessionStateReleaseNode,
+        SessionStateTryClaimNode, SetVariableNode, StackNode, StringDataNode, StringIsNotEmptyNode,
+        StringToImageContentPartNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode,
+        ToolResultNode,
     };
 
     register_node!(

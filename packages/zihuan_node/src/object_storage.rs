@@ -54,9 +54,7 @@ impl S3Ref {
             .body(ByteStream::from(body.to_vec()))
             .send()
             .await
-            .map_err(|e| {
-                Error::ValidationError(format!("object storage PUT failed: {}", e))
-            })?;
+            .map_err(|e| Error::ValidationError(format!("object storage PUT failed: {}", e)))?;
 
         self.object_url_for_key(key)
     }
@@ -84,7 +82,13 @@ impl S3Ref {
                 {
                     return Ok(());
                 }
-                if client.head_bucket().bucket(&self.bucket).send().await.is_ok() {
+                if client
+                    .head_bucket()
+                    .bucket(&self.bucket)
+                    .send()
+                    .await
+                    .is_ok()
+                {
                     return Ok(());
                 }
                 Err(Error::ValidationError(format!(
