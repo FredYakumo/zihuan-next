@@ -7,6 +7,7 @@ use crate::DataType;
 pub const BRAIN_TOOLS_CONFIG_PORT: &str = "tools_config";
 pub const BRAIN_SHARED_INPUTS_PORT: &str = "shared_inputs";
 pub const BRAIN_TOOL_FIXED_CONTENT_INPUT: &str = "content";
+pub const QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT: &str = "message_event";
 pub const QQ_AGENT_TOOL_OWNER_TYPE: &str = "qq_message_agent";
 pub const QQ_AGENT_TOOL_OUTPUT_NAME: &str = "result";
 
@@ -66,15 +67,26 @@ pub fn brain_shared_inputs_from_value(value: &serde_json::Value) -> Option<Vec<F
     serde_json::from_value::<Vec<FunctionPortDef>>(value.clone()).ok()
 }
 
+pub fn fixed_tool_runtime_inputs(owner_node_type: &str) -> Vec<FunctionPortDef> {
+    match owner_node_type {
+        QQ_AGENT_TOOL_OWNER_TYPE => vec![FunctionPortDef {
+            name: QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
+            data_type: DataType::MessageEvent,
+        }],
+        _ => vec![FunctionPortDef {
+            name: BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(),
+            data_type: DataType::String,
+        }],
+    }
+}
+
 pub fn brain_tool_input_signature(
+    owner_node_type: &str,
     shared_inputs: &[FunctionPortDef],
     tool: &BrainToolDefinition,
 ) -> Vec<FunctionPortDef> {
     let mut signature = shared_inputs.to_vec();
-    signature.push(FunctionPortDef {
-        name: BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(),
-        data_type: DataType::String,
-    });
+    signature.extend(fixed_tool_runtime_inputs(owner_node_type));
     signature.extend(tool.input_signature());
     signature
 }

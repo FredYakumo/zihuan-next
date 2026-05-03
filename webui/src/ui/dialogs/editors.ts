@@ -3,6 +3,7 @@ import type { NodeDefinition, Port } from "../../api/types";
 import { openOverlay } from "./base";
 import { buildPortListEditor, escapeHtml, extractTemplateVars } from "./shared";
 import { cloneDataTypeMetaData, dataTypeSelect, parseDisplayDataType } from "./data_types";
+import { ensureToolSubgraphSignature } from "./tool_subgraph_utils";
 import type { DataTypeMetaData } from "../../api/types";
 import type {
   BrainToolDefinition,
@@ -423,6 +424,7 @@ export function openBrainToolsEditor(
 
   const tools: BrainToolDefinition[] = JSON.parse(JSON.stringify(rawTools));
   const sharedInputs: FunctionPortDef[] = JSON.parse(JSON.stringify(rawSharedInputs));
+  let readSharedInputs = (): FunctionPortDef[] => JSON.parse(JSON.stringify(sharedInputs));
 
   const render = () => {
     dialog.innerHTML = `<h3>管理 ${ownerLabel} 工具</h3>
@@ -431,6 +433,7 @@ export function openBrainToolsEditor(
 
     const sharedContainer = document.createElement("div");
     const getSharedInputs = buildPortListEditor(sharedContainer, sharedInputs);
+    readSharedInputs = getSharedInputs;
     dialog.appendChild(sharedContainer);
 
     const toolsLabel = document.createElement("div");
@@ -448,17 +451,24 @@ export function openBrainToolsEditor(
     addToolBtn.textContent = "+ 添加工具";
     addToolBtn.style.marginBottom = "12px";
     addToolBtn.addEventListener("click", () => {
-      tools.push({
+      tools.push(ensureToolSubgraphSignature(nodeDef.node_type, readSharedInputs(), {
         id: `tool_${Date.now()}`,
         name: `tool_${tools.length + 1}`,
         description: "",
         parameters: [],
         outputs: isQqMessageAgent ? [{ name: "result", data_type: "String" }] : [],
-        subgraph: { nodes: [], edges: [], hyperparameter_groups: [], hyperparameters: [], variables: [] } as any,
-      });
+        subgraph: {
+          nodes: [],
+          edges: [],
+          hyperparameter_groups: [],
+          hyperparameters: [],
+          variables: [],
+          metadata: { name: null, description: null, version: null },
+        } as any,
+      }));
       close();
       openBrainToolsEditor(
-        { ...nodeDef, inline_values: { ...nodeDef.inline_values, tools_config: tools, shared_inputs: getSharedInputs() } },
+        { ...nodeDef, inline_values: { ...nodeDef.inline_values, tools_config: tools, shared_inputs: readSharedInputs() } },
         sessionId,
         onSaved,
         onEditToolSubgraph,
@@ -478,16 +488,14 @@ export function openBrainToolsEditor(
     saveBtn.className = "primary";
     saveBtn.addEventListener("click", async () => {
       try {
-        const toolsToSave = isQqMessageAgent
-          ? tools.map((tool) => ({
-              ...tool,
-              outputs: [{ name: "result", data_type: "String" as DataTypeMetaData }],
-            }))
-          : tools;
+        const sharedInputsToSave = readSharedInputs();
+        const toolsToSave = tools.map((tool) =>
+          ensureToolSubgraphSignature(nodeDef.node_type, sharedInputsToSave, tool)
+        );
         await graphs.updateNode(sessionId, nodeDef.id, {
           inline_values: {
             tools_config: toolsToSave as unknown as unknown[],
-            shared_inputs: getSharedInputs() as unknown as unknown[],
+            shared_inputs: sharedInputsToSave as unknown as unknown[],
           } as Record<string, unknown>,
         });
         close();
@@ -651,6 +659,7 @@ export function openBrainToolsEditor(
       tools[idx].description = descInput.value.trim();
       syncParams();
       tools[idx].outputs = getOutputs();
+      tools[idx] = ensureToolSubgraphSignature(nodeDef.node_type, readSharedInputs(), tools[idx]);
       close();
       onEditToolSubgraph(idx, tools[idx]);
     });
