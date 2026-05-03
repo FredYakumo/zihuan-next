@@ -4,9 +4,7 @@ use serde_json::{json, Value};
 use std::time::Duration;
 use zihuan_llm_types::llm_base::LLMBase;
 use zihuan_llm_types::tooling::{ToolCalls, ToolCallsFuncSpec};
-use zihuan_llm_types::{
-    role_to_str, str_to_role, InferenceParam, MessageContent, OpenAIMessage,
-};
+use zihuan_llm_types::{role_to_str, str_to_role, InferenceParam, MessageContent, OpenAIMessage};
 
 #[derive(Debug, Clone)]
 pub struct LLMAPI {

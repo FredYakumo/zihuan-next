@@ -174,7 +174,10 @@ impl Brain {
 
             let tool_call_content = response.content_text_owned().unwrap_or_default();
             if !tool_call_content.is_empty() {
-                info!("[Brain] iteration {} assistant content: {tool_call_content}", iteration + 1);
+                info!(
+                    "[Brain] iteration {} assistant content: {tool_call_content}",
+                    iteration + 1
+                );
             }
             info!(
                 "[Brain] iteration {} processing {} tool call(s)",

@@ -11,6 +11,7 @@ use crate::brain_tool::{
     BRAIN_TOOLS_CONFIG_PORT, QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
     QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
 };
+use crate::context_compaction::compact_context_messages;
 use crate::tool_subgraph::{
     shared_inputs_ports, validate_shared_inputs, validate_tool_definitions, ToolResultMode,
     ToolSubgraphRunner,
@@ -40,6 +41,7 @@ const BUSY_REPLY: &str = "我还在思考中，你别急";
 const MAX_REPLY_CHARS: usize = 250;
 const MAX_FORWARD_NODE_CHARS: usize = 800;
 const DEFAULT_MAX_MESSAGE_LENGTH: usize = 500;
+const DEFAULT_COMPACT_CONTEXT_LENGTH: usize = 0;
 
 /// System prompt template (shared, private variant).
 fn build_private_system_prompt(
@@ -858,7 +860,11 @@ fn send_editable_tool_progress_notification(
             );
         }
     } else {
-        send_friend_progress_notification(&adapter, &event.sender.user_id.to_string(), call_content);
+        send_friend_progress_notification(
+            &adapter,
+            &event.sender.user_id.to_string(),
+            call_content,
+        );
     }
 }
 
@@ -1286,6 +1292,7 @@ impl QqMessageAgentNode {
         llm: &Arc<dyn zihuan_llm_types::llm_base::LLMBase>,
         tavily: &Arc<TavilyRef>,
         max_message_length: usize,
+        compact_context_length: usize,
         shared_runtime_values: HashMap<String, DataValue>,
     ) -> Result<()> {
         let is_group = event.message_type == MessageType::Group;
@@ -1340,6 +1347,7 @@ impl QqMessageAgentNode {
             &target_id,
             is_group,
             max_message_length,
+            compact_context_length,
             shared_runtime_values,
         );
 
@@ -1362,6 +1370,7 @@ impl QqMessageAgentNode {
         target_id: &str,
         is_group: bool,
         max_message_length: usize,
+        compact_context_length: usize,
         shared_runtime_values: HashMap<String, DataValue>,
     ) -> Result<()> {
         let bot_id = get_bot_id(adapter);
@@ -1369,7 +1378,30 @@ impl QqMessageAgentNode {
 
         let history_key = conversation_history_key(&bot_id, sender_id, is_group, event.group_id);
         let legacy_history_key = sender_id.to_string();
-        let mut history = load_history(cache, &history_key, &legacy_history_key);
+        let mut history = crate::agent::brain::sanitize_messages_for_inference(load_history(
+            cache,
+            &history_key,
+            &legacy_history_key,
+        ));
+        let compact_result = compact_context_messages(
+            llm,
+            history.clone(),
+            compact_context_length,
+            std::slice::from_ref(&user_msg),
+            false,
+        );
+        if compact_result.did_compact {
+            info!(
+                "{LOG_PREFIX} Compacted history for {}: tokens {} -> {}, removed_tool_related_messages={}, kept_tail_messages={}",
+                history_key,
+                compact_result.estimated_tokens_before,
+                compact_result.estimated_tokens_after,
+                compact_result.removed_tool_related_messages,
+                compact_result.kept_tail_messages
+            );
+            history = compact_result.messages;
+            save_history(cache, &history_key, history.clone());
+        }
 
         let system_prompt = if is_group {
             let group_name = event.group_name.as_deref().unwrap_or("未知");
@@ -1571,6 +1603,9 @@ impl Node for QqMessageAgentNode {
             Port::new("max_message_length", DataType::Integer)
                 .with_description("可选：最终回复超过该字数时强制转为 forward，默认 500")
                 .optional(),
+            Port::new("compact_context_length", DataType::Integer)
+                .with_description("可选：历史估算 token 超过该阈值时压缩旧历史，仅保留摘要对和最近 2 条非 tool 消息")
+                .optional(),
             Port::new(BRAIN_TOOLS_CONFIG_PORT, DataType::Json)
                 .with_description("Tools 配置，由工具编辑器维护")
                 .optional()
@@ -1690,6 +1725,14 @@ impl Node for QqMessageAgentNode {
             None => DEFAULT_MAX_MESSAGE_LENGTH,
             _ => return Err(self.wrap_err("max_message_length must be an integer when provided")),
         };
+        let compact_context_length = match inputs.get("compact_context_length") {
+            Some(DataValue::Integer(value)) if *value > 0 => *value as usize,
+            Some(DataValue::Integer(_)) => DEFAULT_COMPACT_CONTEXT_LENGTH,
+            None => DEFAULT_COMPACT_CONTEXT_LENGTH,
+            _ => {
+                return Err(self.wrap_err("compact_context_length must be an integer when provided"))
+            }
+        };
         let mut shared_runtime_values = self.parse_shared_inputs_input(&inputs)?;
         shared_runtime_values.insert(
             QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
@@ -1697,13 +1740,18 @@ impl Node for QqMessageAgentNode {
         );
         shared_runtime_values.insert(
             QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT.to_string(),
-            DataValue::BotAdapterRef(inputs.get("qq_bot_adapter").and_then(|value| {
-                if let DataValue::BotAdapterRef(handle) = value {
-                    Some(handle.clone())
-                } else {
-                    None
-                }
-            }).ok_or_else(|| self.wrap_err("qq_bot_adapter is required"))?),
+            DataValue::BotAdapterRef(
+                inputs
+                    .get("qq_bot_adapter")
+                    .and_then(|value| {
+                        if let DataValue::BotAdapterRef(handle) = value {
+                            Some(handle.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .ok_or_else(|| self.wrap_err("qq_bot_adapter is required"))?,
+            ),
         );
 
         self.handle(
@@ -1716,6 +1764,7 @@ impl Node for QqMessageAgentNode {
             &llm,
             &tavily,
             max_message_length,
+            compact_context_length,
             shared_runtime_values,
         )?;
 

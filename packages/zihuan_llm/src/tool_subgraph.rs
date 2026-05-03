@@ -364,7 +364,8 @@ impl ToolSubgraphRunner {
             runtime_values.insert(key, parsed_value);
         }
 
-        let input_signature = brain_tool_input_signature(&self.owner_node_type, &self.shared_inputs, tool);
+        let input_signature =
+            brain_tool_input_signature(&self.owner_node_type, &self.shared_inputs, tool);
         let mut subgraph = tool.subgraph.clone();
         sync_function_subgraph_signature(&mut subgraph, &input_signature, &tool.outputs);
         refresh_port_types(&mut subgraph);
