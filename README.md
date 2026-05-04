@@ -105,9 +105,8 @@ Example — downloading **Qwen3-Embedding-0.6B** with the HuggingFace CLI:
 pip install huggingface_hub
 
 # Download the model into the expected directory
-huggingface-cli download Qwen/Qwen3-Embedding-0.6B \
-  --local-dir models/text_embedding/Qwen3-Embedding-0.6B \
-  --local-dir-use-symlinks False
+hf download Qwen/Qwen3-Embedding-0.6B \
+  --local-dir models/text_embedding/Qwen3-Embedding-0.6B
 ```
 
 Alternative using `git lfs`:

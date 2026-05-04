@@ -106,9 +106,8 @@ cargo build --release --features candle-metal
 pip install huggingface_hub
 
 # 下载模型到指定目录
-huggingface-cli download Qwen/Qwen3-Embedding-0.6B \
-  --local-dir models/text_embedding/Qwen3-Embedding-0.6B \
-  --local-dir-use-symlinks False
+hf download Qwen/Qwen3-Embedding-0.6B \
+  --local-dir models/text_embedding/Qwen3-Embedding-0.6B
 ```
 
 也可以使用 `git lfs`：
