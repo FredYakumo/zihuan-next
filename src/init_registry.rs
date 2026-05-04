@@ -21,10 +21,10 @@ pub fn init_node_registry() -> Result<()> {
     use zihuan_llm::context_compact_node::ContextCompactNode;
     use zihuan_llm::linalg::batch_text_embedding_node::BatchTextEmbeddingNode;
     use zihuan_llm::linalg::embedding_api_node::LoadTextEmbedderNode;
-    use zihuan_llm::linalg::local_candle_embedding_node::LoadLocalTextEmbedderNode;
     use zihuan_llm::linalg::text_embedding_node::TextEmbeddingNode;
     use zihuan_llm::linalg::top_k_similarity_node::TopKSimilarityNode;
     use zihuan_llm::linalg::vector_cosine_similarity_node::VectorCosineSimilarityNode;
+    use zihuan_llm::nn::local_candle_embedding_node::LoadLocalTextEmbedderNode;
     use zihuan_llm::llm_api_node::LLMApiNode;
     use zihuan_llm::llm_infer_node::LLMInferNode;
     use zihuan_llm::rag::tavily_provider_node::TavilyProviderNode;

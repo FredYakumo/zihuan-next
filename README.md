@@ -90,9 +90,20 @@ cargo build --release --features candle-cuda
 cargo build --release --features candle-metal
 ```
 
+Windows (recommended, auto-resolves `cl.exe` for `nvcc`):
+
+```powershell
+# Equivalent to cargo build --release --features candle-cuda
+powershell -ExecutionPolicy Bypass -File .\scripts\cargo-cuda.ps1 build --release
+
+# Build directly (equivalent to cargo build --features candle-cuda)
+powershell -ExecutionPolicy Bypass -File .\scripts\cargo-cuda.ps1
+```
+
 Notes:
 
 - `candle-cuda` requires a working CUDA toolchain; if `nvcc` is missing, Cargo will fail during dependency build.
+- On Windows, if you see `nvcc fatal : Cannot find compiler 'cl.exe' in PATH`, use `scripts/cargo-cuda.ps1` so `NVCC_CCBIN` is set automatically.
 - The runtime chooses `CUDA -> Metal -> CPU` based on compiled features and availability.
 
 ### Download a local text embedding model
@@ -159,6 +170,10 @@ cargo build --features candle-cuda
 cargo build --release --features candle-cuda
 cargo build --features candle-metal
 cargo build --release --features candle-metal
+
+# Windows recommended: auto-detect cl.exe and set NVCC_CCBIN
+powershell -ExecutionPolicy Bypass -File .\scripts\cargo-cuda.ps1 build
+powershell -ExecutionPolicy Bypass -File .\scripts\cargo-cuda.ps1 build --release
 
 # Frontend only
 cd webui && pnpm run build

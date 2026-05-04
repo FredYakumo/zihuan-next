@@ -91,9 +91,20 @@ cargo build --release --features candle-cuda
 cargo build --release --features candle-metal
 ```
 
+Windows（推荐，自动处理 `nvcc` 的 `cl.exe` 探测）：
+
+```powershell
+# 等价于 cargo build --release --features candle-cuda
+powershell -ExecutionPolicy Bypass -File .\scripts\cargo-cuda.ps1 build --release
+
+# 直接构建（等价于 cargo build --features candle-cuda）
+powershell -ExecutionPolicy Bypass -File .\scripts\cargo-cuda.ps1
+```
+
 说明：
 
 - `candle-cuda` 需要可用的 CUDA toolchain；如果系统里没有 `nvcc`，Cargo 会在依赖编译阶段失败。
+- Windows 上如果遇到 `nvcc fatal : Cannot find compiler 'cl.exe' in PATH`，请使用上面的 `scripts/cargo-cuda.ps1` 启动命令。脚本会自动定位 Visual Studio C++ 工具链并设置 `NVCC_CCBIN`。
 - 运行时设备选择顺序是 `CUDA -> Metal -> CPU`，并带自动 fallback。
 
 ### 下载本地文本向量模型
@@ -160,6 +171,10 @@ cargo build --features candle-cuda
 cargo build --release --features candle-cuda
 cargo build --features candle-metal
 cargo build --release --features candle-metal
+
+# Windows 推荐：自动定位 cl.exe 并注入 NVCC_CCBIN
+powershell -ExecutionPolicy Bypass -File .\scripts\cargo-cuda.ps1 build
+powershell -ExecutionPolicy Bypass -File .\scripts\cargo-cuda.ps1 build --release
 
 # 仅构建前端
 cd webui && pnpm run build

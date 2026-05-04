@@ -5,6 +5,7 @@ pub mod brain_tool;
 pub mod context_compact_node;
 pub mod context_compaction;
 pub mod linalg;
+pub mod nn;
 pub mod llm_api;
 pub mod llm_api_node;
 pub mod llm_base;

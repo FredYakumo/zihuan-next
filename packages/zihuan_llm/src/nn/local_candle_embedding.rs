@@ -53,13 +53,20 @@ impl LocalCandleEmbeddingModel {
             ))
         })?;
 
+        let preferred_device = select_preferred_device(model_name);
+        log::info!(
+            "Local embedding model '{}' loaded with device type: {}",
+            model_name,
+            describe_device(&preferred_device)
+        );
+
         Ok(Self {
             model_name: model_name.to_string(),
             model_dir,
             config: config.clone(),
             tokenizer,
             max_length: config.max_position_embeddings,
-            preferred_device: select_preferred_device(&model_name),
+            preferred_device,
         })
     }
 

@@ -26,7 +26,7 @@ struct Args {
     #[arg(long, default_value = "127.0.0.1", env = "ZIHUAN_HOST")]
     host: String,
 
-    #[arg(long, default_value_t = 9950, env = "ZIHUAN_PORT")]
+    #[arg(long, default_value_t = 9951, env = "ZIHUAN_PORT")]
     port: u16,
 }
 
