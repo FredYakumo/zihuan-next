@@ -4,6 +4,7 @@ use sqlx::{
     mysql::{MySqlPool, MySqlRow},
     Row,
 };
+use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -12,33 +13,45 @@ use zihuan_core::error::Result;
 
 const HISTORY_TIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 const GAP_THRESHOLD_MINUTES: i64 = 3;
+const HISTORY_CHUNK_FETCH_MULTIPLIER: u32 = 8;
 
 const USER_HISTORY_SQL: &str = r#"
-    SELECT sender_id, sender_name, send_time, content
+    SELECT id, message_id, sender_id, sender_name, send_time, content
     FROM message_record
     WHERE sender_id = ?
-    ORDER BY send_time DESC
+    ORDER BY send_time DESC, id DESC
     LIMIT ?
     "#;
 
 const USER_HISTORY_WITH_GROUP_SQL: &str = r#"
-    SELECT sender_id, sender_name, send_time, content
+    SELECT id, message_id, sender_id, sender_name, send_time, content
     FROM message_record
     WHERE sender_id = ? AND group_id = ?
-    ORDER BY send_time DESC
+    ORDER BY send_time DESC, id DESC
     LIMIT ?
     "#;
 
 const GROUP_HISTORY_SQL: &str = r#"
-    SELECT sender_id, sender_name, send_time, content
+    SELECT id, message_id, sender_id, sender_name, send_time, content
     FROM message_record
     WHERE group_id = ?
-    ORDER BY send_time DESC
+    ORDER BY send_time DESC, id DESC
     LIMIT ?
     "#;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MessageHistoryChunkRow {
+    pub id: i64,
+    pub message_id: String,
+    pub sender_id: String,
+    pub sender_name: String,
+    pub send_time: NaiveDateTime,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MessageHistoryRecord {
+    pub message_id: String,
     pub sender_id: String,
     pub sender_name: String,
     pub send_time: NaiveDateTime,
@@ -57,13 +70,76 @@ pub(crate) fn group_history_query() -> &'static str {
     GROUP_HISTORY_SQL
 }
 
-pub(crate) fn message_history_record_from_row(row: MySqlRow) -> MessageHistoryRecord {
-    MessageHistoryRecord {
+pub(crate) fn history_query_row_limit(message_limit: u32) -> i64 {
+    i64::from(message_limit.saturating_mul(HISTORY_CHUNK_FETCH_MULTIPLIER))
+}
+
+pub(crate) fn message_history_chunk_row_from_row(row: MySqlRow) -> MessageHistoryChunkRow {
+    MessageHistoryChunkRow {
+        id: row.get("id"),
+        message_id: row.get("message_id"),
         sender_id: row.get("sender_id"),
         sender_name: row.get("sender_name"),
         send_time: row.get("send_time"),
         content: row.get("content"),
     }
+}
+
+pub(crate) fn aggregate_history_rows(
+    rows: Vec<MessageHistoryChunkRow>,
+    message_limit: usize,
+) -> Vec<MessageHistoryRecord> {
+    if rows.is_empty() || message_limit == 0 {
+        return Vec::new();
+    }
+
+    let mut aggregated = Vec::new();
+    let mut current: Option<MessageHistoryRecord> = None;
+    let mut chunk_buffer = VecDeque::new();
+
+    for row in rows {
+        match current.as_mut() {
+            Some(current_record) if current_record.message_id == row.message_id => {
+                chunk_buffer.push_front(row.content);
+            }
+            Some(_) => {
+                if let Some(mut finished) = current.take() {
+                    finished.content = chunk_buffer.into_iter().collect::<String>();
+                    aggregated.push(finished);
+                    if aggregated.len() == message_limit {
+                        return aggregated;
+                    }
+                }
+
+                chunk_buffer = VecDeque::from([row.content]);
+                current = Some(MessageHistoryRecord {
+                    message_id: row.message_id,
+                    sender_id: row.sender_id,
+                    sender_name: row.sender_name,
+                    send_time: row.send_time,
+                    content: String::new(),
+                });
+            }
+            None => {
+                chunk_buffer.push_front(row.content);
+                current = Some(MessageHistoryRecord {
+                    message_id: row.message_id,
+                    sender_id: row.sender_id,
+                    sender_name: row.sender_name,
+                    send_time: row.send_time,
+                    content: String::new(),
+                });
+            }
+        }
+    }
+
+    if let Some(mut finished) = current {
+        finished.content = chunk_buffer.into_iter().collect::<String>();
+        aggregated.push(finished);
+    }
+
+    aggregated.truncate(message_limit);
+    aggregated
 }
 
 pub(crate) fn run_mysql_query<T, F>(mysql_config: &Arc<MySqlConfig>, query_fn: F) -> Result<T>

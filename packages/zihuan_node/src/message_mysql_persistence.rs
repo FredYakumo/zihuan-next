@@ -1,3 +1,8 @@
+use crate::message_mysql_chunking::{
+    split_content_chunks, truncate_field_if_needed, truncate_optional_field_if_needed,
+    AT_TARGET_LIST_MAX_CHARS, CONTENT_MAX_CHARS, GROUP_ID_MAX_CHARS, GROUP_NAME_MAX_CHARS,
+    MEDIA_JSON_MAX_CHARS, MESSAGE_ID_MAX_CHARS, SENDER_ID_MAX_CHARS, SENDER_NAME_MAX_CHARS,
+};
 use crate::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 use chrono::Local;
 use log::{debug, error, info, warn};
@@ -121,17 +126,44 @@ impl Node for MessageMySQLPersistenceNode {
         };
 
         // Build record fields from MessageEvent
-        let message_id = message_event.message_id.to_string();
-        let sender_id = message_event.sender.user_id.to_string();
+        let raw_message_id = message_event.message_id.to_string();
+        let message_id = truncate_field_if_needed(
+            "message_id",
+            raw_message_id.clone(),
+            MESSAGE_ID_MAX_CHARS,
+            &raw_message_id,
+        );
+        let sender_id = truncate_field_if_needed(
+            "sender_id",
+            message_event.sender.user_id.to_string(),
+            SENDER_ID_MAX_CHARS,
+            &message_id,
+        );
         let sender_name = if message_event.sender.card.is_empty() {
             message_event.sender.nickname.clone()
         } else {
             message_event.sender.card.clone()
         };
+        let sender_name = truncate_field_if_needed(
+            "sender_name",
+            sender_name,
+            SENDER_NAME_MAX_CHARS,
+            &message_id,
+        );
         let send_time = Local::now().naive_local();
-        let group_id = message_event.group_id.map(|id| id.to_string());
-        let group_name = message_event.group_name.clone();
-        let content: String = message_event
+        let group_id = truncate_optional_field_if_needed(
+            "group_id",
+            message_event.group_id.map(|id| id.to_string()),
+            GROUP_ID_MAX_CHARS,
+            &message_id,
+        );
+        let group_name = truncate_optional_field_if_needed(
+            "group_name",
+            message_event.group_name.clone(),
+            GROUP_NAME_MAX_CHARS,
+            &message_id,
+        );
+        let content = message_event
             .message_list
             .iter()
             .map(|m| m.to_string())
@@ -148,11 +180,17 @@ impl Node for MessageMySQLPersistenceNode {
                 }
             })
             .collect();
-        let at_target_list: Option<String> = if at_targets.is_empty() {
+        let at_target_list = if at_targets.is_empty() {
             None
         } else {
             Some(at_targets.join(","))
         };
+        let at_target_list = truncate_optional_field_if_needed(
+            "at_target_list",
+            at_target_list,
+            AT_TARGET_LIST_MAX_CHARS,
+            &message_id,
+        );
         let media_json = {
             let records = collect_media_records(&message_event.message_list);
             if records.is_empty() {
@@ -161,13 +199,20 @@ impl Node for MessageMySQLPersistenceNode {
                 Some(serde_json::to_string(&records)?)
             }
         };
+        let media_json = truncate_optional_field_if_needed(
+            "media_json",
+            media_json,
+            MEDIA_JSON_MAX_CHARS,
+            &message_id,
+        );
+        let content_chunks = split_content_chunks(&content, CONTENT_MAX_CHARS);
 
         // Keep a copy for use in log calls after the async block consumes the originals.
         let message_id_log = message_id.clone();
 
         info!(
-            "[MessageMySQLPersistenceNode] Inserting message {} (sender={}, group={:?}) into MySQL",
-            message_id_log, sender_id, group_id,
+            "[MessageMySQLPersistenceNode] Inserting message {} (sender={}, group={:?}, chunks={}) into MySQL",
+            message_id_log, sender_id, group_id, content_chunks.len(),
         );
 
         // Retry once on connection-level errors (PoolTimedOut, Io, etc.).
@@ -177,24 +222,39 @@ impl Node for MessageMySQLPersistenceNode {
         for attempt in 1u32..=2 {
             // Borrow (not move) all locals so the loop body can run twice.
             let run = async {
-                sqlx::query(
-                    r#"
-                    INSERT INTO message_record
-                    (message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    "#,
-                )
-                .bind(&message_id)
-                .bind(&sender_id)
-                .bind(&sender_name)
-                .bind(send_time)
-                .bind(&group_id)
-                .bind(&group_name)
-                .bind(&content)
-                .bind(&at_target_list)
-                .bind(&media_json)
-                .execute(&pool)
-                .await
+                for (chunk_index, content_chunk) in content_chunks.iter().enumerate() {
+                    let chunk_at_target_list = if chunk_index == 0 {
+                        at_target_list.as_ref()
+                    } else {
+                        None
+                    };
+                    let chunk_media_json = if chunk_index == 0 {
+                        media_json.as_ref()
+                    } else {
+                        None
+                    };
+
+                    sqlx::query(
+                        r#"
+                        INSERT INTO message_record
+                        (message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        "#,
+                    )
+                    .bind(&message_id)
+                    .bind(&sender_id)
+                    .bind(&sender_name)
+                    .bind(send_time)
+                    .bind(&group_id)
+                    .bind(&group_name)
+                    .bind(content_chunk)
+                    .bind(chunk_at_target_list)
+                    .bind(chunk_media_json)
+                    .execute(&pool)
+                    .await?;
+                }
+
+                Ok::<(), sqlx::Error>(())
             };
 
             let result = if let Some(handle) = mysql_config.runtime_handle.clone() {

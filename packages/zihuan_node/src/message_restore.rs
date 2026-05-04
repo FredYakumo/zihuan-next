@@ -17,8 +17,7 @@ const LOOKUP_SQL: &str = r#"
     SELECT content, media_json
     FROM message_record
     WHERE message_id = ?
-    ORDER BY send_time DESC, id DESC
-    LIMIT 1
+    ORDER BY id ASC
     "#;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,21 +75,29 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
     };
 
     let lookup_id = message_id_str.clone();
-    let row = run_mysql_query(&mysql_config, move |pool| {
+    let rows = run_mysql_query(&mysql_config, move |pool| {
         Box::pin(async move {
             sqlx::query(LOOKUP_SQL)
                 .bind(&lookup_id)
-                .fetch_optional(pool)
+                .fetch_all(pool)
                 .await
         })
     })?;
 
-    let Some(row) = row else {
+    if rows.is_empty() {
         return Ok(None);
-    };
+    }
 
-    let content: String = row.get("content");
-    let media_json: Option<String> = row.get("media_json");
+    let mut content = String::new();
+    let mut media_json = None;
+    for row in rows {
+        let chunk_content: String = row.get("content");
+        let chunk_media_json: Option<String> = row.get("media_json");
+        content.push_str(&chunk_content);
+        if media_json.is_none() {
+            media_json = chunk_media_json;
+        }
+    }
     let messages = rebuild_message_list(&content, media_json.as_deref());
 
     if messages.is_empty() {

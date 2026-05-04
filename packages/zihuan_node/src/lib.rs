@@ -57,6 +57,7 @@ pub mod database;
 pub mod function_graph;
 pub mod graph_io;
 pub mod message_cache;
+pub mod message_mysql_chunking;
 pub mod message_mysql_get_group_history;
 pub mod message_mysql_get_user_history;
 pub mod message_mysql_history_common;

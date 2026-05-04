@@ -1,5 +1,6 @@
 use crate::message_mysql_history_common::{
-    format_history_messages, message_history_record_from_row, run_mysql_query, user_history_query,
+    aggregate_history_rows, format_history_messages, history_query_row_limit,
+    message_history_chunk_row_from_row, run_mysql_query, user_history_query,
 };
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
@@ -110,13 +111,13 @@ impl Node for MessageMySQLGetUserHistoryNode {
                     sqlx::query(user_history_query(Some(group_id.as_str())))
                         .bind(&query_sender_id)
                         .bind(&group_id)
-                        .bind(i64::from(limit))
+                        .bind(history_query_row_limit(limit))
                         .fetch_all(pool)
                         .await
                 } else {
                     sqlx::query(user_history_query(None))
                         .bind(&query_sender_id)
-                        .bind(i64::from(limit))
+                        .bind(history_query_row_limit(limit))
                         .fetch_all(pool)
                         .await
                 }
@@ -124,9 +125,12 @@ impl Node for MessageMySQLGetUserHistoryNode {
         })?;
 
         let messages = format_history_messages(
-            rows.into_iter()
-                .map(message_history_record_from_row)
-                .collect(),
+            aggregate_history_rows(
+                rows.into_iter()
+                    .map(message_history_chunk_row_from_row)
+                    .collect(),
+                limit as usize,
+            ),
         );
 
         let mut outputs = HashMap::new();

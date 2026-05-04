@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::local_candle_embedding::LocalCandleEmbeddingModel;
+use super::queued_embedding_model::QueuedEmbeddingModel;
 use zihuan_core::error::{Error, Result};
 use zihuan_llm_types::embedding_base::EmbeddingBase;
 use zihuan_node::{node_input, node_output, DataType, DataValue, Node, Port};
@@ -56,7 +56,7 @@ impl Node for LoadLocalTextEmbedderNode {
             }
         };
 
-        let model: Arc<dyn EmbeddingBase> = Arc::new(LocalCandleEmbeddingModel::load(&model_name)?);
+        let model: Arc<dyn EmbeddingBase> = Arc::new(QueuedEmbeddingModel::new(model_name)?);
 
         let outputs = HashMap::from([(
             "embedding_model".to_string(),

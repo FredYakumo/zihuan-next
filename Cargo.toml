@@ -1,6 +1,9 @@
 [workspace]
 members = ["node_macros", "packages/general_wheel_cpp", "packages/zihuan_core", "packages/zihuan_bot_types", "packages/zihuan_llm_types", "packages/zihuan_node", "packages/zihuan_llm", "packages/zihuan_bot_adapter"]
 
+[patch.crates-io]
+candle-transformers = { path = "third_party/candle-transformers" }
+
 [package]
 name = "zihuan_next"
 version = "0.1.0"

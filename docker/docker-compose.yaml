@@ -41,6 +41,8 @@ services:
       PERSISTENCE_DATA_PATH: /var/lib/weaviate
       DEFAULT_VECTORIZER_MODULE: none
       CLUSTER_HOSTNAME: node1
+      DISK_USE_WARNING_PERCENTAGE: '80'
+      DISK_USE_READONLY_PERCENTAGE: '95'
     volumes:
       - weaviate_data:/var/lib/weaviate
 
