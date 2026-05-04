@@ -3,7 +3,6 @@ use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::info;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::task::block_in_place;
 use zihuan_core::error::Result;
 use zihuan_llm_types::OpenAIMessage;
 
@@ -93,13 +92,7 @@ impl Node for OpenAIMessageSessionCacheNode {
             sender_id
         );
 
-        let append_messages = async move { cache_ref.append_messages(&sender_id, messages).await };
-
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            block_in_place(|| handle.block_on(append_messages))
-        } else {
-            tokio::runtime::Runtime::new()?.block_on(append_messages)
-        }?;
+        cache_ref.append_messages_blocking(&sender_id, messages)?;
 
         let mut outputs = HashMap::new();
         outputs.insert("success".to_string(), DataValue::Boolean(true));

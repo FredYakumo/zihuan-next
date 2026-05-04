@@ -2,7 +2,6 @@ use crate::data_value::OpenAIMessageSessionCacheRef;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::task::block_in_place;
 use zihuan_core::error::Result;
 
 pub struct OpenAIMessageSessionCacheGetNode {
@@ -89,13 +88,7 @@ impl Node for OpenAIMessageSessionCacheGetNode {
             .transpose()?
             .unwrap_or_default();
 
-        let read_messages = async move { cache_ref.get_messages(&sender_id).await };
-
-        let cached_messages = if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            block_in_place(|| handle.block_on(read_messages))
-        } else {
-            tokio::runtime::Runtime::new()?.block_on(read_messages)
-        }?;
+        let cached_messages = cache_ref.get_messages_blocking(&sender_id)?;
 
         let messages = if cached_messages.is_empty() {
             fallback_messages

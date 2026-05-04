@@ -1,9 +1,10 @@
 use crate::data_value::RedisConfig;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
-use log::info;
-use redis::aio::ConnectionManager;
+use log::{info, warn};
+use redis::aio::Connection;
 use redis::AsyncCommands;
 use std::collections::HashMap;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::task::block_in_place;
@@ -14,7 +15,7 @@ use zihuan_core::error::Result;
 pub struct RedisNode {
     id: String,
     name: String,
-    redis_cm: Arc<TokioMutex<Option<ConnectionManager>>>,
+    redis_cm: Arc<TokioMutex<Option<Connection>>>,
     cached_redis_url: Arc<TokioMutex<Option<String>>>,
     run_initialized: bool,
 }
@@ -34,6 +35,80 @@ impl RedisNode {
         ["message_cache:*", "openai_message_session:*"]
     }
 
+    fn run_cleanup_once(
+        redis_cm: Arc<TokioMutex<Option<Connection>>>,
+        cached_redis_url: Arc<TokioMutex<Option<String>>>,
+        url: String,
+        force_reconnect: bool,
+    ) -> Result<usize> {
+        let cleanup = async move {
+            let mut cm_guard = redis_cm.lock().await;
+            let mut url_guard = cached_redis_url.lock().await;
+
+            if force_reconnect {
+                *cm_guard = None;
+            }
+
+            if url_guard.as_deref() != Some(url.as_str()) {
+                *cm_guard = None;
+                *url_guard = Some(url.clone());
+            }
+
+            if cm_guard.is_none() {
+                let client = redis::Client::open(url.as_str())?;
+                let cm = client.get_tokio_connection().await?;
+                info!("[RedisNode] Connected to Redis at {}", url);
+                *cm_guard = Some(cm);
+            }
+
+            if let Some(cm) = cm_guard.as_mut() {
+                if let Err(err) = redis::cmd("PING").query_async::<_, String>(cm).await {
+                    warn!(
+                        "[RedisNode] Existing Redis connection became unavailable, reconnecting: {}",
+                        err
+                    );
+                    *cm_guard = None;
+                }
+            }
+
+            if cm_guard.is_none() {
+                let client = redis::Client::open(url.as_str())?;
+                let cm = client.get_tokio_connection().await?;
+                info!("[RedisNode] Reconnected to Redis at {}", url);
+                *cm_guard = Some(cm);
+            }
+
+            let cm = cm_guard.as_mut().expect("cm must be initialized");
+            let mut removed = 0usize;
+
+            for pattern in Self::cleanup_patterns() {
+                let keys: Vec<String> = cm.keys(pattern).await?;
+                if !keys.is_empty() {
+                    removed += keys.len();
+                    let _: () = cm.del(keys).await?;
+                }
+            }
+
+            Ok::<usize, redis::RedisError>(removed)
+        };
+
+        let execute = || {
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                block_in_place(|| handle.block_on(cleanup))
+            } else {
+                tokio::runtime::Runtime::new()?.block_on(cleanup)
+            }
+        };
+
+        match catch_unwind(AssertUnwindSafe(execute)) {
+            Ok(Ok(v)) => Ok(v),
+            Ok(Err(e)) => Err(e.into()),
+            Err(_) => Err(zihuan_core::error::Error::StringError(
+                "Redis connection task terminated unexpectedly".to_string(),
+            )),
+        }
+    }
+
     fn initialize_run(&mut self, redis_ref: Option<&Arc<RedisConfig>>) -> Result<()> {
         if self.run_initialized {
             return Ok(());
@@ -49,45 +124,26 @@ impl RedisNode {
             return Ok(());
         };
 
-        let redis_cm = self.redis_cm.clone();
-        let cached_redis_url = self.cached_redis_url.clone();
-        let url_for_task = url.clone();
-
-        let cleanup = async move {
-            let mut cm_guard = redis_cm.lock().await;
-            let mut url_guard = cached_redis_url.lock().await;
-
-            if url_guard.as_deref() != Some(url_for_task.as_str()) {
-                *cm_guard = None;
-                *url_guard = Some(url_for_task.clone());
+        let removed = match Self::run_cleanup_once(
+            self.redis_cm.clone(),
+            self.cached_redis_url.clone(),
+            url.clone(),
+            false,
+        ) {
+            Ok(removed) => removed,
+            Err(err) => {
+                warn!(
+                    "[RedisNode] Existing Redis connection became unhealthy: {}. Reconnecting once.",
+                    err
+                );
+                Self::run_cleanup_once(
+                    self.redis_cm.clone(),
+                    self.cached_redis_url.clone(),
+                    url,
+                    true,
+                )?
             }
-
-            if cm_guard.is_none() {
-                let client = redis::Client::open(url_for_task.as_str())?;
-                let cm = ConnectionManager::new(client).await?;
-                info!("[RedisNode] Connected to Redis at {}", url_for_task);
-                *cm_guard = Some(cm);
-            }
-
-            let cm = cm_guard.as_mut().unwrap();
-            let mut removed = 0usize;
-
-            for pattern in Self::cleanup_patterns() {
-                let keys: Vec<String> = cm.keys(pattern).await?;
-                if !keys.is_empty() {
-                    removed += keys.len();
-                    let _: () = cm.del(keys).await?;
-                }
-            }
-
-            Ok::<usize, redis::RedisError>(removed)
         };
-
-        let removed = if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            block_in_place(|| handle.block_on(cleanup))
-        } else {
-            tokio::runtime::Runtime::new()?.block_on(cleanup)
-        }?;
 
         if removed > 0 {
             info!(
@@ -141,7 +197,6 @@ impl Node for RedisNode {
         &mut self,
         inputs: HashMap<String, DataValue>,
     ) -> Result<HashMap<String, DataValue>> {
-        // Extract required parameters
         let host = inputs
             .get("redis_host")
             .and_then(|v| match v {
@@ -175,7 +230,6 @@ impl Node for RedisNode {
             _ => None,
         });
 
-        // Build URL from components
         let url = if let Some(pw) = password {
             if !pw.is_empty() {
                 let enc = pct_encode(&pw);

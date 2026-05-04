@@ -1,9 +1,9 @@
 use crate::message_restore::cache_message_snapshot;
 use crate::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 use log::{debug, info, warn};
-use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use std::collections::HashMap;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::task::block_in_place;
@@ -21,8 +21,8 @@ use zihuan_core::error::Result;
 ///   `message_cache:{bucket_name}:{logical_key}`
 /// If omitted, bucket_name defaults to `default`.
 ///
-/// The Redis ConnectionManager is created and owned by `RedisNode`; this node reuses the
-/// shared manager exposed through `redis_ref` instead of opening its own connections.
+/// The Redis connection is created and owned by `RedisNode`; this node reuses the
+/// shared connection exposed through `redis_ref` instead of opening its own long-lived connections.
 pub struct MessageCacheNode {
     id: String,
     name: String,
@@ -233,7 +233,7 @@ impl Node for MessageCacheNode {
 
                     if cm_guard.is_none() {
                         let client = redis::Client::open(url.as_str())?;
-                        match ConnectionManager::new(client).await {
+                        match client.get_tokio_connection().await {
                             Ok(cm) => {
                                 info!("[MessageCacheNode] Connected to Redis at {}", url);
                                 *cm_guard = Some(cm);
@@ -242,25 +242,48 @@ impl Node for MessageCacheNode {
                         }
                     }
 
-                    let cm = cm_guard.as_mut().unwrap();
-                    if let Some(ttl) = ttl_secs {
-                        cm.set_ex::<_, _, ()>(&key, value, ttl).await?;
-                    } else {
-                        cm.set::<_, _, ()>(&key, value).await?;
+                    let first_attempt = {
+                        let cm = cm_guard.as_mut().unwrap();
+                        if let Some(ttl) = ttl_secs {
+                            cm.set_ex::<_, _, ()>(&key, value.clone(), ttl).await
+                        } else {
+                            cm.set::<_, _, ()>(&key, value.clone()).await
+                        }
+                    };
+
+                    if let Err(err) = first_attempt {
+                        warn!(
+                            "[MessageCacheNode] Redis write failed, reconnecting and retrying once: {}",
+                            err
+                        );
+                        *cm_guard = None;
+                        let client = redis::Client::open(url.as_str())?;
+                        let cm = client.get_tokio_connection().await?;
+                        *cm_guard = Some(cm);
+
+                        let cm = cm_guard.as_mut().unwrap();
+                        if let Some(ttl) = ttl_secs {
+                            cm.set_ex::<_, _, ()>(&key, value.clone(), ttl).await?;
+                        } else {
+                            cm.set::<_, _, ()>(&key, value.clone()).await?;
+                        }
                     }
 
+                    let cm = cm_guard.as_mut().unwrap();
                     cm.sadd::<_, _, ()>(&tracker_key, &key).await?;
+
                     Ok::<(), redis::RedisError>(())
                 };
 
                 let result = if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                    block_in_place(|| handle.block_on(run))
+                    catch_unwind(AssertUnwindSafe(|| block_in_place(|| handle.block_on(run))))
                 } else {
-                    tokio::runtime::Runtime::new()?.block_on(run)
+                    let runtime = tokio::runtime::Runtime::new()?;
+                    catch_unwind(AssertUnwindSafe(|| runtime.block_on(run)))
                 };
 
                 match result {
-                    Ok(_) => {
+                    Ok(Ok(_)) => {
                         info!(
                             "[MessageCacheNode] Cached message {} in Redis \
                              (bucket={}, key={}, ttl={:?}s)",
@@ -268,11 +291,18 @@ impl Node for MessageCacheNode {
                         );
                         success = true;
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         warn!(
                             "[MessageCacheNode] Redis cache failed for message {} \
                              (bucket={}, key={}): {} — falling back to memory",
                             message_id, bucket_name, cache_key, e
+                        );
+                    }
+                    Err(_) => {
+                        warn!(
+                            "[MessageCacheNode] Redis connection driver terminated unexpectedly \
+                             (bucket={}, key={}) — falling back to memory",
+                            bucket_name, cache_key
                         );
                     }
                 }

@@ -1,16 +1,18 @@
 use crate::database::weaviate::WeaviateRef;
 use crate::object_storage::S3Ref;
-use redis::{aio::ConnectionManager, AsyncCommands};
+use redis::{aio::Connection, AsyncCommands};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::mysql::MySqlPool;
 use std::collections::HashMap;
 use std::fmt;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::Mutex as TokioMutex;
+use tokio::task::block_in_place;
 use zihuan_bot_types::event_model::MessageEvent;
 use zihuan_llm_types::tooling::FunctionTool;
 use zihuan_llm_types::ContentPart;
@@ -30,7 +32,7 @@ pub struct RedisConfig {
     pub reconnect_max_attempts: Option<u32>,
     pub reconnect_interval_secs: Option<u64>,
     /// Shared Redis connection pool maintained by the RedisNode.
-    pub redis_cm: Arc<TokioMutex<Option<ConnectionManager>>>,
+    pub redis_cm: Arc<TokioMutex<Option<Connection>>>,
     /// Tracks the URL used to build the current pool.
     pub cached_redis_url: Arc<TokioMutex<Option<String>>>,
 }
@@ -57,7 +59,7 @@ impl fmt::Debug for RedisConfig {
             .field("url", &self.url)
             .field("reconnect_max_attempts", &self.reconnect_max_attempts)
             .field("reconnect_interval_secs", &self.reconnect_interval_secs)
-            .field("redis_cm", &"<TokioMutex<Option<ConnectionManager>>>")
+            .field("redis_cm", &"<TokioMutex<Option<Connection>>>")
             .field("cached_redis_url", &"<TokioMutex<Option<String>>>")
             .finish()
     }
@@ -333,7 +335,7 @@ impl fmt::Debug for SessionStateRef {
 pub struct OpenAIMessageSessionCacheRef {
     pub node_id: String,
     pub memory_cache: Arc<TokioMutex<HashMap<String, Vec<zihuan_llm_types::OpenAIMessage>>>>,
-    pub redis_cm: Arc<TokioMutex<Option<ConnectionManager>>>,
+    pub redis_cm: Arc<TokioMutex<Option<Connection>>>,
     pub cached_redis_url: Arc<TokioMutex<Option<String>>>,
     pub sender_bucket_map: Arc<TokioMutex<HashMap<String, String>>>,
     pub default_bucket_name: Arc<TokioMutex<String>>,
@@ -376,6 +378,77 @@ impl OpenAIMessageSessionCacheRef {
         *self.default_bucket_name.lock().await = bucket_name;
     }
 
+    pub fn get_messages_blocking(
+        &self,
+        sender_id: &str,
+    ) -> zihuan_core::error::Result<Vec<zihuan_llm_types::OpenAIMessage>> {
+        let sender_id = sender_id.to_string();
+        let fut = self.get_messages(&sender_id);
+        let run = || {
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                block_in_place(|| handle.block_on(fut))
+            } else {
+                tokio::runtime::Runtime::new()?.block_on(fut)
+            }
+        };
+
+        match catch_unwind(AssertUnwindSafe(run)) {
+            Ok(result) => result,
+            Err(_) => Err(zihuan_core::error::Error::StringError(
+                "Redis connection driver unexpectedly terminated while reading session cache"
+                    .to_string(),
+            )),
+        }
+    }
+
+    pub fn set_messages_blocking(
+        &self,
+        sender_id: &str,
+        messages: Vec<zihuan_llm_types::OpenAIMessage>,
+    ) -> zihuan_core::error::Result<()> {
+        let sender_id = sender_id.to_string();
+        let fut = self.set_messages(&sender_id, messages);
+        let run = || {
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                block_in_place(|| handle.block_on(fut))
+            } else {
+                tokio::runtime::Runtime::new()?.block_on(fut)
+            }
+        };
+
+        match catch_unwind(AssertUnwindSafe(run)) {
+            Ok(result) => result,
+            Err(_) => Err(zihuan_core::error::Error::StringError(
+                "Redis connection driver unexpectedly terminated while writing session cache"
+                    .to_string(),
+            )),
+        }
+    }
+
+    pub fn append_messages_blocking(
+        &self,
+        sender_id: &str,
+        incoming_messages: Vec<zihuan_llm_types::OpenAIMessage>,
+    ) -> zihuan_core::error::Result<()> {
+        let sender_id = sender_id.to_string();
+        let fut = self.append_messages(&sender_id, incoming_messages);
+        let run = || {
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                block_in_place(|| handle.block_on(fut))
+            } else {
+                tokio::runtime::Runtime::new()?.block_on(fut)
+            }
+        };
+
+        match catch_unwind(AssertUnwindSafe(run)) {
+            Ok(result) => result,
+            Err(_) => Err(zihuan_core::error::Error::StringError(
+                "Redis connection driver unexpectedly terminated while appending session cache"
+                    .to_string(),
+            )),
+        }
+    }
+
     pub async fn get_messages(
         &self,
         sender_id: &str,
@@ -406,7 +479,7 @@ impl OpenAIMessageSessionCacheRef {
 
             if cm_guard.is_none() {
                 let client = redis::Client::open(url.as_str())?;
-                match ConnectionManager::new(client).await {
+                match client.get_tokio_connection().await {
                     Ok(cm) => {
                         *cm_guard = Some(cm);
                     }
@@ -455,7 +528,7 @@ impl OpenAIMessageSessionCacheRef {
 
             if cm_guard.is_none() {
                 let client = redis::Client::open(url.as_str())?;
-                match ConnectionManager::new(client).await {
+                match client.get_tokio_connection().await {
                     Ok(cm) => {
                         *cm_guard = Some(cm);
                     }
@@ -511,7 +584,7 @@ impl OpenAIMessageSessionCacheRef {
 
             if cm_guard.is_none() {
                 let client = redis::Client::open(url.as_str())?;
-                match ConnectionManager::new(client).await {
+                match client.get_tokio_connection().await {
                     Ok(cm) => {
                         *cm_guard = Some(cm);
                     }
@@ -571,7 +644,7 @@ impl OpenAIMessageSessionCacheRef {
 
             if cm_guard.is_none() {
                 let client = redis::Client::open(url.as_str())?;
-                match ConnectionManager::new(client).await {
+                match client.get_tokio_connection().await {
                     Ok(cm) => {
                         *cm_guard = Some(cm);
                     }
@@ -615,7 +688,7 @@ impl fmt::Debug for OpenAIMessageSessionCacheRef {
         f.debug_struct("OpenAIMessageSessionCacheRef")
             .field("node_id", &self.node_id)
             .field("memory_cache", &"<TokioMutex<HashMap<...>>>")
-            .field("redis_cm", &"<TokioMutex<Option<ConnectionManager>>>")
+            .field("redis_cm", &"<TokioMutex<Option<Connection>>>")
             .field("cached_redis_url", &"<TokioMutex<Option<String>>>")
             .field("sender_bucket_map", &"<TokioMutex<HashMap<...>>>")
             .field("default_bucket_name", &"<TokioMutex<String>>")
