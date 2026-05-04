@@ -63,6 +63,7 @@ Requirements: **Rust** (stable), **Node.js 18+** and **pnpm**.
 # 1. Clone
 git clone https://github.com/FredYakumo/zihuan-next.git
 cd zihuan-next
+git submodule update --init --recursive
 
 # 2. Install frontend dependencies (first time only)
 cd webui && pnpm install && cd ..

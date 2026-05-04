@@ -11,6 +11,7 @@ This guide explains how to get the application running on your system.
   - [Installation](#installation)
     - [Option A: Use Pre-built Binaries](#option-a-use-pre-built-binaries)
     - [Option B: Build from Source](#option-b-build-from-source)
+      - [Optional GPU builds for local Candle embedding](#optional-gpu-builds-for-local-candle-embedding)
   - [Configuration](#configuration)
     - [Prerequisites](#prerequisites)
     - [Hyperparameters](#hyperparameters)
@@ -56,7 +57,8 @@ If you are a developer or want the latest changes:
 2.  **Clone the repository:**
     ```bash
     git clone <repository-url>
-    cd zihuan-next_aibot-800b
+    cd zihuan-next
+    git submodule update --init --recursive
     ```
 3.  **Build the release binary:**
     ```bash

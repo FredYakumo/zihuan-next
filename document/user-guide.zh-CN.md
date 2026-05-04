@@ -13,6 +13,7 @@
   - [安装](#安装)
     - [方式 A：使用预构建二进制](#方式-a使用预构建二进制)
     - [方式 B：从源码构建](#方式-b从源码构建)
+      - [可选：为本地 Candle embedding 启用 GPU 构建](#可选为本地-candle-embedding-启用-gpu-构建)
   - [配置](#配置)
     - [前置依赖](#前置依赖)
     - [超参数](#超参数)
@@ -56,6 +57,7 @@
     ```bash
     git clone <repository-url>
     cd zihuan-next
+    git submodule update --init --recursive
     ```
 3. **构建发布二进制：**
     ```bash
