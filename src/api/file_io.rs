@@ -419,7 +419,7 @@ pub async fn download_graph(req: &mut Request, res: &mut Response, depot: &mut D
             .unwrap();
             res.add_header("Content-Type", "application/json", true)
                 .unwrap();
-            res.write_body(json.into_bytes());
+            res.write_body(json.into_bytes()).ok();
         }
         None => {
             res.status_code(StatusCode::NOT_FOUND);

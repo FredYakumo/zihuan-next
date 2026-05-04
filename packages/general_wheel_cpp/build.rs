@@ -38,5 +38,6 @@ fn main() {
         build.define("LINALG_USE_NEON", None);
     }
 
+    build.static_crt(true);
     build.compile("general_wheel_cpp");
 }
