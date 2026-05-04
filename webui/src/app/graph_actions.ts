@@ -18,6 +18,7 @@ export interface GraphActionsOptions {
   tabs: TabManager;
   getNodeTypes: () => NodeTypeInfo[];
   getCurrentTaskId: () => string | null;
+  persistWorkspace: () => Promise<void>;
 }
 
 export class GraphActions {
@@ -46,6 +47,7 @@ export class GraphActions {
         await this.options.tabs.openTab(result.session_id, name, false, false);
         this.options.tabs.updateTab(result.session_id, { fileHandle: handle });
         await this.options.canvas.loadExternalSession(result.session_id);
+        await this.options.persistWorkspace();
         return;
       } catch (e) {
         if ((e as Error).name === "AbortError") return;
@@ -63,6 +65,7 @@ export class GraphActions {
         const name = file.name.replace(/\.json$/i, "");
         await this.options.tabs.openTab(result.session_id, name, false, false);
         await this.options.canvas.loadExternalSession(result.session_id);
+        await this.options.persistWorkspace();
       } catch (e) {
         showErrorDialog(`打开文件失败: ${(e as Error).message}`);
       }
@@ -83,6 +86,7 @@ export class GraphActions {
       const name = tabNameFrom("workflow_set/" + selected);
       await this.options.tabs.openTab(openResult.session_id, name, false, true);
       await this.options.canvas.loadExternalSession(openResult.session_id);
+      await this.options.persistWorkspace();
     } catch (e) {
       showErrorDialog(`打开 workflow 失败: ${(e as Error).message}`);
     }
@@ -97,6 +101,7 @@ export class GraphActions {
       const name = tabNameFrom("workflow_set/" + selected);
       await this.options.tabs.openTab(openResult.session_id, name, false, true);
       await this.options.canvas.loadExternalSession(openResult.session_id);
+      await this.options.persistWorkspace();
     } catch (e) {
       showErrorDialog(`打开 workflow 失败: ${(e as Error).message}`);
     }

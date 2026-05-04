@@ -7,6 +7,7 @@ import { tabNameFrom } from "./workspace";
 export interface SaveManagerOptions {
   canvas: ZihuanCanvas;
   tabs: TabManager;
+  persistWorkspace: () => Promise<void>;
 }
 
 export class SaveManager {
@@ -36,6 +37,7 @@ export class SaveManager {
           dirty: false,
           isWorkflowSet: true,
         });
+        await this.options.persistWorkspace();
       } catch (e) {
         showErrorDialog(`保存失败: ${(e as Error).message}`);
       }
@@ -103,6 +105,7 @@ export class SaveManager {
         isWorkflowSet: true,
         dirty: false,
       });
+      await this.options.persistWorkspace();
     } catch (e) {
       showErrorDialog(`保存失败: ${(e as Error).message}`);
     }

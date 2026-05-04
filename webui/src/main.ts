@@ -59,12 +59,17 @@ async function main() {
     onCreateTab: () => { createNewTab().catch(console.error); },
   });
 
-  const saveManager = new SaveManager({ canvas, tabs });
+  const saveManager = new SaveManager({
+    canvas,
+    tabs,
+    persistWorkspace: () => workspace.persistWorkspaceState(),
+  });
   const graphActions = new GraphActions({
     canvas,
     tabs,
     getNodeTypes: () => nodeTypes,
     getCurrentTaskId: () => currentTaskId,
+    persistWorkspace: () => workspace.persistWorkspaceState(),
   });
   const workspace = new WorkspaceController({
     canvas,
