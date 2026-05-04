@@ -95,6 +95,31 @@ cargo build --release --features candle-metal
 - `candle-cuda` 需要可用的 CUDA toolchain；如果系统里没有 `nvcc`，Cargo 会在依赖编译阶段失败。
 - 运行时设备选择顺序是 `CUDA -> Metal -> CPU`，并带自动 fallback。
 
+### 下载本地文本向量模型
+
+本地 embedding 节点从 `models/text_embedding/<模型名>/` 加载模型。本仓库不包含模型权重文件，需要单独下载。
+
+示例——使用 HuggingFace CLI 下载 **Qwen3-Embedding-0.6B**：
+
+```bash
+# 安装 huggingface_hub（仅需一次）
+pip install huggingface_hub
+
+# 下载模型到指定目录
+huggingface-cli download Qwen/Qwen3-Embedding-0.6B \
+  --local-dir models/text_embedding/Qwen3-Embedding-0.6B \
+  --local-dir-use-symlinks False
+```
+
+也可以使用 `git lfs`：
+
+```bash
+git lfs clone https://huggingface.co/Qwen/Qwen3-Embedding-0.6B \
+  models/text_embedding/Qwen3-Embedding-0.6B
+```
+
+`models/text_embedding/` 下的目录名必须与节点图中配置的 `model_name` 一致（例如 `Qwen3-Embedding-0.6B`）。
+
 ### 运行
 
 ```bash

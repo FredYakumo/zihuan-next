@@ -94,6 +94,31 @@ Notes:
 - `candle-cuda` requires a working CUDA toolchain; if `nvcc` is missing, Cargo will fail during dependency build.
 - The runtime chooses `CUDA -> Metal -> CPU` based on compiled features and availability.
 
+### Download a local text embedding model
+
+Local embedding nodes load models from `models/text_embedding/<model_name>/`. The repository does not include model weights; you must download them separately.
+
+Example — downloading **Qwen3-Embedding-0.6B** with the HuggingFace CLI:
+
+```bash
+# Install huggingface_hub (once)
+pip install huggingface_hub
+
+# Download the model into the expected directory
+huggingface-cli download Qwen/Qwen3-Embedding-0.6B \
+  --local-dir models/text_embedding/Qwen3-Embedding-0.6B \
+  --local-dir-use-symlinks False
+```
+
+Alternative using `git lfs`:
+
+```bash
+git lfs clone https://huggingface.co/Qwen/Qwen3-Embedding-0.6B \
+  models/text_embedding/Qwen3-Embedding-0.6B
+```
+
+The directory name under `models/text_embedding/` must match the `model_name` value you configure in the node graph (e.g. `Qwen3-Embedding-0.6B`).
+
 ### Run
 
 ```bash
