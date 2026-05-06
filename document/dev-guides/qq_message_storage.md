@@ -1,11 +1,13 @@
 # QQMessage Storage
 
-This document explains how QQ messages are stored in Redis and MySQL in this project, and what the current MySQL schema looks like.
+This document explains how QQ messages are stored in Redis and MySQL in this project, what the current `message_record` schema looks like, and how reply / forward reconstruction works.
 
 Relevant implementation:
 
-- `src/util/message_store.rs`
+- `storage_handler/src/message_store.rs`
 - `database/models/message_record.py`
+- `zihuan_llm/src/agent/qq_chat_agent.rs`
+- `zihuan_graph_engine/src/message_restore.rs`
 
 ## Stored Object
 
@@ -22,6 +24,7 @@ pub struct MessageRecord {
     pub content: String,
     pub at_target_list: Option<String>,
     pub media_json: Option<String>,
+    pub raw_message_json: Option<String>,
 }
 ```
 
@@ -31,11 +34,15 @@ This means:
 - `sender_id` / `sender_name`: sender information
 - `send_time`: message timestamp
 - `group_id` / `group_name`: group information for group messages, empty for private messages
-- `content`: aggregated text content derived from the original `Vec<QQMessage>`
+- `content`: recursively rendered text content derived from the hydrated `Vec<QQMessage>`
 - `at_target_list`: mentioned targets, currently stored as a string
-- `media_json`: serialized media metadata (currently image segment cache/object-storage info)
+- `media_json`: serialized direct media metadata, mainly for legacy compatibility
+- `raw_message_json`: serialized hydrated `Vec<QQMessage>` tree for lossless reconstruction
 
-So in the current implementation, `QQMessage` is not stored as the original JSON array. It is first normalized into a searchable record and then written to Redis and MySQL.
+In the current implementation:
+
+- Redis still stores only normalized text
+- MySQL stores normalized fields and, for new messages, the hydrated raw message tree
 
 ## Overall Flow
 
@@ -80,7 +87,7 @@ after a successful connection.
 
 This means the selected Redis database is cleared on startup, and recent messages are later repopulated from MySQL if needed.
 
-### Loading Messages Back into Redis from MySQL
+### Loading Messages Back Into Redis From MySQL
 
 `load_messages_from_mysql(limit)` does the following:
 
@@ -92,7 +99,7 @@ In practice, Redis is used here as a hot cache rather than the source of truth.
 
 ## How MySQL Stores Messages
 
-MySQL stores the full `MessageRecord`. The insert SQL is fixed as:
+MySQL stores the full `MessageRecord`. The insert SQL is:
 
 ```sql
 INSERT INTO message_record
@@ -105,9 +112,10 @@ INSERT INTO message_record
     group_name,
     content,
     at_target_list,
-    media_json
+    media_json,
+    raw_message_json
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ```
 
 The main query patterns are:
@@ -135,6 +143,8 @@ class MessageRecord(Base):
     group_name = Column(String(128), nullable=True)
     content = Column(String(2048), nullable=False)
     at_target_list = Column(String(512), nullable=True)
+    media_json = Column(String(4096), nullable=True)
+    raw_message_json = Column(String(65535), nullable=True)
 ```
 
 Based on that model, the corresponding MySQL table can be written as:
@@ -150,7 +160,8 @@ CREATE TABLE message_record (
     group_name VARCHAR(128) NULL,
     content VARCHAR(2048) NOT NULL,
     at_target_list VARCHAR(512) NULL,
-    media_json VARCHAR(4096) NULL
+    media_json VARCHAR(4096) NULL,
+    raw_message_json TEXT NULL
 );
 ```
 
@@ -160,7 +171,24 @@ Important details:
 - `message_id` is not the primary key; the primary key is the auto-increment `id`
 - duplicate inserts for the same message are not automatically deduplicated by the current code
 
-## Fallback and Reconnection
+## What Gets Persisted For Reply / Forward Messages
+
+For new messages handled by the QQ chat agent:
+
+- `content` is generated from recursive readable rendering, not only `to_string()`
+- hydrated forward contents contribute their expanded text into `content`
+- nested forwards remain visible in `content`
+- `raw_message_json` stores the full hydrated `Vec<Message>` tree
+
+This is the key difference from the older behavior where a forwarded message might be flattened into only:
+
+```text
+[Forward of message ID 123456]
+```
+
+and later become impossible to reconstruct accurately.
+
+## Fallback And Reconnection
 
 ### When Redis Is Unavailable
 
@@ -202,14 +230,46 @@ The read order is:
 3. MySQL fallback in-memory record buffer
 4. Redis fallback in-memory cache
 
+## Restore Strategy For Referenced Messages
+
+`zihuan_graph_engine::message_restore::restore_message_snapshot()` now restores messages in this order:
+
+1. runtime in-memory snapshot cache
+2. MySQL `raw_message_json`
+3. legacy fallback reconstruction from `content + media_json`
+
+This matters for reply hydration:
+
+- when a user replies to a previously stored forward message, the adapter can reconstruct the full nested message tree from `raw_message_json`
+- nested forwards therefore survive persistence for new rows
+- older rows without `raw_message_json` still fall back to legacy best-effort reconstruction
+
 ## Current Boundaries
 
 There are several important boundaries in the current implementation:
 
 - Redis stores only `content`, not the full `QQMessage` JSON
-- MySQL also does not store the original `Vec<QQMessage>` structure; it stores normalized record fields
+- MySQL now stores normalized fields plus `raw_message_json` for new messages
 - `at_target_list` is currently stored as a plain string, not as a JSON column or relation table
 - startup runs `FLUSHDB`, so Redis is not treated as long-term storage
 - `message_record` currently has no declared index or unique constraint in the ORM model
 
-If the project later needs full reconstruction of the original QQ message segments, it will need to store the raw `Vec<QQMessage>` JSON in addition to the current normalized fields.
+Current remaining limits:
+
+- Redis alone is still insufficient for full message reconstruction
+- old MySQL rows that predate `raw_message_json` can only be restored approximately from normalized text and media metadata
+- `media_json` is not a full recursive forward tree; it is mainly a legacy compatibility layer for direct media reconstruction
+
+## Practical Consequences
+
+For new incoming messages:
+
+- referenced messages can be restored with their hydrated reply / forward structure
+- nested forwards can survive both runtime caching and MySQL persistence
+- QQ-agent inference can expand reply and forward messages from the restored tree before calling the brain / LLM
+
+For old rows written before `raw_message_json` existed:
+
+- a reply to an old forward message may still degrade to placeholder-style reconstruction
+- image restoration may still work partially through `media_json`
+- deep nested forward structure cannot be guaranteed
