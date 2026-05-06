@@ -271,12 +271,16 @@ impl BotAdapter {
             match msg_result {
                 Ok(WsMessage::Text(text)) => {
                     let adapter_clone = adapter.clone();
-                    BotAdapter::process_event(adapter_clone, text).await;
+                    tokio::spawn(async move {
+                        BotAdapter::process_event(adapter_clone, text).await;
+                    });
                 }
                 Ok(WsMessage::Binary(data)) => {
                     if let Ok(text) = String::from_utf8(data) {
                         let adapter_clone = adapter.clone();
-                        BotAdapter::process_event(adapter_clone, text).await;
+                        tokio::spawn(async move {
+                            BotAdapter::process_event(adapter_clone, text).await;
+                        });
                     } else {
                         warn!("Received binary message that is not valid UTF-8");
                     }
@@ -374,50 +378,165 @@ impl BotAdapter {
 
 #[derive(Debug, serde::Deserialize)]
 struct NapCatForwardResponse {
-    data: Option<NapCatForwardData>,
+    data: Option<serde_json::Value>,
 }
 
-#[derive(Debug, serde::Deserialize)]
-struct NapCatForwardData {
-    #[serde(default)]
-    messages: Vec<NapCatForwardNode>,
+fn json_value_to_string(value: Option<&serde_json::Value>) -> Option<String> {
+    match value? {
+        serde_json::Value::String(text) => Some(text.clone()),
+        serde_json::Value::Number(number) => Some(number.to_string()),
+        _ => None,
+    }
 }
 
-#[derive(Debug, serde::Deserialize)]
-struct NapCatForwardNode {
-    #[serde(default)]
-    data: NapCatForwardNodeData,
+fn decode_cq_text(text: &str) -> String {
+    text.replace("&#44;", ",")
+        .replace("&#91;", "[")
+        .replace("&#93;", "]")
+        .replace("&amp;", "&")
 }
 
-#[derive(Debug, serde::Deserialize, Default)]
-struct NapCatForwardNodeData {
-    #[serde(default, alias = "user_id", alias = "sender_id")]
-    user_id: Option<serde_json::Value>,
-    #[serde(default, alias = "name")]
-    nickname: Option<String>,
-    #[serde(default)]
-    id: Option<serde_json::Value>,
-    #[serde(default, alias = "message")]
-    content: Vec<Message>,
+fn parse_cq_params(body: &str) -> std::collections::HashMap<String, String> {
+    body.split(',')
+        .filter_map(|part| {
+            let (key, value) = part.split_once('=')?;
+            Some((key.trim().to_string(), decode_cq_text(value.trim())))
+        })
+        .collect()
 }
 
-impl NapCatForwardNodeData {
-    fn value_to_string(value: Option<serde_json::Value>) -> Option<String> {
-        match value? {
-            serde_json::Value::String(text) => Some(text),
-            serde_json::Value::Number(number) => Some(number.to_string()),
-            _ => None,
-        }
+fn push_plain_text_segment(messages: &mut Vec<Message>, text: &str) {
+    let decoded = decode_cq_text(text);
+    if decoded.is_empty() {
+        return;
     }
 
-    fn into_forward_node(self) -> ForwardNodeMessage {
-        ForwardNodeMessage {
-            user_id: Self::value_to_string(self.user_id),
-            nickname: self.nickname,
-            id: Self::value_to_string(self.id),
-            content: self.content,
+    messages.push(Message::PlainText(
+        zihuan_core::ims_bot_adapter::models::message::PlainTextMessage { text: decoded },
+    ));
+}
+
+fn parse_cq_string_to_messages(content: &str) -> Vec<Message> {
+    let mut messages = Vec::new();
+    let mut cursor = 0usize;
+
+    while let Some(relative_start) = content[cursor..].find("[CQ:") {
+        let start = cursor + relative_start;
+        push_plain_text_segment(&mut messages, &content[cursor..start]);
+
+        let segment_rest = &content[start + 4..];
+        let Some(relative_end) = segment_rest.find(']') else {
+            push_plain_text_segment(&mut messages, &content[start..]);
+            return messages;
+        };
+
+        let body = &segment_rest[..relative_end];
+        let mut parts = body.splitn(2, ',');
+        let segment_type = parts.next().unwrap_or_default().trim();
+        let params = parts.next().map(parse_cq_params).unwrap_or_default();
+
+        match segment_type {
+            "image" => {
+                messages.push(Message::Image(
+                    zihuan_core::ims_bot_adapter::models::message::ImageMessage {
+                        file: params.get("file").cloned(),
+                        path: None,
+                        url: params.get("url").cloned(),
+                        name: params.get("file").cloned(),
+                        thumb: None,
+                        summary: None,
+                        sub_type: None,
+                        object_key: None,
+                        object_url: None,
+                        local_path: None,
+                        cache_status: None,
+                    },
+                ));
+            }
+            "at" => {
+                messages.push(Message::At(
+                    zihuan_core::ims_bot_adapter::models::message::AtTargetMessage {
+                        target: params.get("qq").cloned(),
+                    },
+                ));
+            }
+            "reply" => {
+                if let Some(id) = params.get("id").and_then(|value| value.parse::<i64>().ok()) {
+                    messages.push(Message::Reply(
+                        zihuan_core::ims_bot_adapter::models::message::ReplyMessage {
+                            id,
+                            message_source: None,
+                        },
+                    ));
+                }
+            }
+            "forward" => {
+                messages.push(Message::Forward(
+                    zihuan_core::ims_bot_adapter::models::message::ForwardMessage {
+                        id: params.get("id").cloned(),
+                        content: Vec::new(),
+                    },
+                ));
+            }
+            _ => {
+                push_plain_text_segment(&mut messages, &content[start..start + 5 + relative_end]);
+            }
         }
+
+        cursor = start + 4 + relative_end + 1;
     }
+
+    push_plain_text_segment(&mut messages, &content[cursor..]);
+    messages
+}
+
+fn parse_forward_content_value(value: Option<&serde_json::Value>) -> Vec<Message> {
+    match value {
+        Some(serde_json::Value::Array(items)) => items
+            .iter()
+            .filter_map(|item| serde_json::from_value::<Message>(item.clone()).ok())
+            .collect(),
+        Some(serde_json::Value::Object(_)) => serde_json::from_value::<Message>(value.cloned().unwrap())
+            .map(|message| vec![message])
+            .unwrap_or_default(),
+        Some(serde_json::Value::String(text)) => parse_cq_string_to_messages(text),
+        _ => Vec::new(),
+    }
+}
+
+fn parse_forward_node_value(value: &serde_json::Value) -> Option<ForwardNodeMessage> {
+    let node = value.get("data").unwrap_or(value);
+    let sender = node.get("sender").and_then(|value| value.as_object());
+
+    let user_id = json_value_to_string(
+        node.get("user_id")
+            .or_else(|| node.get("uin"))
+            .or_else(|| sender.and_then(|sender| sender.get("user_id"))),
+    );
+    let nickname = node
+        .get("nickname")
+        .and_then(|value| value.as_str())
+        .map(ToString::to_string)
+        .or_else(|| {
+            node.get("name")
+                .and_then(|value| value.as_str())
+                .map(ToString::to_string)
+        })
+        .or_else(|| {
+            sender
+                .and_then(|sender| sender.get("nickname"))
+                .and_then(|value| value.as_str())
+                .map(ToString::to_string)
+        });
+    let id = json_value_to_string(node.get("id"));
+    let content = parse_forward_content_value(node.get("content").or_else(|| node.get("message")));
+
+    Some(ForwardNodeMessage {
+        user_id,
+        nickname,
+        id,
+        content,
+    })
 }
 
 #[async_recursion]
@@ -508,15 +627,30 @@ async fn fetch_forward_content(
     )
     .await?;
     let payload: NapCatForwardResponse = serde_json::from_value(response)?;
-    let nodes = payload
+    let raw_messages = payload
         .data
-        .map(|data| {
-            data.messages
-                .into_iter()
-                .map(|node| node.data.into_forward_node())
-                .collect()
-        })
+        .and_then(|data| data.get("messages").cloned())
+        .and_then(|messages| messages.as_array().cloned())
         .unwrap_or_default();
+    let nodes = raw_messages
+        .iter()
+        .filter_map(parse_forward_node_value)
+        .collect::<Vec<_>>();
+
+    let empty_nodes = nodes.iter().filter(|node| node.content.is_empty()).count();
+    info!(
+        "[adapter] parsed forward payload for forward_id={} into {} node(s), {} empty",
+        forward_id,
+        nodes.len(),
+        empty_nodes
+    );
+    if !raw_messages.is_empty() && empty_nodes == nodes.len() {
+        warn!(
+            "[adapter] forward payload for forward_id={} parsed into all-empty nodes; raw_messages={}",
+            forward_id,
+            serde_json::Value::Array(raw_messages).to_string()
+        );
+    }
 
     Ok(nodes)
 }

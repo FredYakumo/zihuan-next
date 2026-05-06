@@ -838,11 +838,110 @@ fn append_messages_as_parts(
                     }
                 }
             }
+            Message::Forward(forward) => {
+                if forward.content.is_empty() {
+                    append_text_segment(text_buffer, &forward.to_string());
+                } else {
+                    if !text_buffer.is_empty() {
+                        text_buffer.push_str("\n\n");
+                    }
+                    text_buffer.push_str("[转发内容]\n");
+                    for (index, node) in forward.content.iter().enumerate() {
+                        if index > 0 && !text_buffer.ends_with('\n') {
+                            text_buffer.push('\n');
+                        }
+                        let sender = node
+                            .nickname
+                            .as_deref()
+                            .or(node.user_id.as_deref())
+                            .unwrap_or("unknown");
+                        text_buffer.push_str(sender);
+                        text_buffer.push_str(": ");
+                        append_messages_as_parts(
+                            &node.content,
+                            parts,
+                            text_buffer,
+                            has_media,
+                            false,
+                        );
+                        if !text_buffer.ends_with('\n') {
+                            text_buffer.push('\n');
+                        }
+                    }
+                }
+            }
             other => {
                 append_text_segment(text_buffer, &other.to_string());
             }
         }
     }
+}
+
+fn push_inference_text(messages: &mut Vec<Message>, text: impl Into<String>) {
+    let text = text.into();
+    if text.trim().is_empty() {
+        return;
+    }
+
+    messages.push(Message::PlainText(PlainTextMessage { text }));
+}
+
+fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message> {
+    let mut expanded = Vec::new();
+
+    for message in messages {
+        match message {
+            Message::Reply(reply) => {
+                push_inference_text(&mut expanded, format!("[引用消息 {} 开始]", reply.id));
+                if let Some(source_messages) = reply.message_source.as_deref() {
+                    expanded.extend(expand_messages_for_inference(source_messages));
+                } else {
+                    expanded.push(message.clone());
+                }
+                push_inference_text(&mut expanded, format!("[引用消息 {} 结束]", reply.id));
+            }
+            Message::Forward(forward) => {
+                if forward.content.is_empty() {
+                    expanded.push(message.clone());
+                    continue;
+                }
+
+                if let Some(forward_id) = forward.id.as_deref() {
+                    push_inference_text(&mut expanded, format!("[转发消息 {forward_id} 开始]"));
+                } else {
+                    push_inference_text(&mut expanded, "[转发消息开始]");
+                }
+
+                for (index, node) in forward.content.iter().enumerate() {
+                    let sender = node
+                        .nickname
+                        .as_deref()
+                        .or(node.user_id.as_deref())
+                        .unwrap_or("unknown");
+                    push_inference_text(
+                        &mut expanded,
+                        format!("[转发节点 {} 发送者: {}]", index + 1, sender),
+                    );
+                    expanded.extend(expand_messages_for_inference(&node.content));
+                }
+
+                if let Some(forward_id) = forward.id.as_deref() {
+                    push_inference_text(&mut expanded, format!("[转发消息 {forward_id} 结束]"));
+                } else {
+                    push_inference_text(&mut expanded, "[转发消息结束]");
+                }
+            }
+            _ => expanded.push(message.clone()),
+        }
+    }
+
+    expanded
+}
+
+fn expand_event_for_inference(event: &ims_bot_adapter::models::MessageEvent) -> ims_bot_adapter::models::MessageEvent {
+    let mut expanded_event = event.clone();
+    expanded_event.message_list = expand_messages_for_inference(&event.message_list);
+    expanded_event
 }
 
 /// Build a structured user message for the LLM so sender identity and bot mentions stay explicit.
@@ -3202,11 +3301,17 @@ impl QqChatAgent {
         shared_runtime_values: HashMap<String, DataValue>,
     ) -> Result<()> {
         let bot_id = get_bot_id(adapter);
-        let user_msg =
-            build_user_message(event, &bot_id, bot_name, llm.supports_multimodal_input());
-        let current_message = extract_user_message_text(event, &bot_id, bot_name);
+        let inference_event = expand_event_for_inference(event);
+        let user_msg = build_user_message(
+            &inference_event,
+            &bot_id,
+            bot_name,
+            llm.supports_multimodal_input(),
+        );
+        let current_message = extract_user_message_text(&inference_event, &bot_id, bot_name);
 
-        let history_key = conversation_history_key(&bot_id, sender_id, is_group, event.group_id);
+        let history_key =
+            conversation_history_key(&bot_id, sender_id, is_group, inference_event.group_id);
         let legacy_history_key = sender_id.to_string();
         let mut history = crate::agent::brain::sanitize_messages_for_inference(load_history(
             cache,
@@ -3234,13 +3339,13 @@ impl QqChatAgent {
         }
 
         let system_prompt = if is_group {
-            let group_name = event.group_name.as_deref().unwrap_or("未知");
+            let group_name = inference_event.group_name.as_deref().unwrap_or("未知");
             build_group_system_prompt(
                 bot_name,
                 &bot_id,
                 time,
                 sender_id,
-                &sender_display_name(&event.sender.nickname, &event.sender.card),
+                &sender_display_name(&inference_event.sender.nickname, &inference_event.sender.card),
                 group_name,
                 target_id,
             )
@@ -3250,12 +3355,18 @@ impl QqChatAgent {
                 &bot_id,
                 time,
                 sender_id,
-                &sender_display_name(&event.sender.nickname, &event.sender.card),
+                &sender_display_name(&inference_event.sender.nickname, &inference_event.sender.card),
             )
         };
         info!("{LOG_PREFIX} build System prompt:\n=======\n{system_prompt}\n=======\n");
         let system_msg = OpenAIMessage::system(system_prompt);
         let priming_msg = build_output_contract_priming_message();
+
+        let mut shared_runtime_values = shared_runtime_values;
+        shared_runtime_values.insert(
+            QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
+            DataValue::MessageEvent(inference_event.clone()),
+        );
 
         let mut conversation: Vec<OpenAIMessage> = Vec::with_capacity(history.len() + 3);
         conversation.push(system_msg);
@@ -3431,8 +3542,8 @@ impl QqChatAgent {
                     &content,
                     is_group,
                     sender_id,
-                    &event.sender.nickname,
-                    event.sender.card.as_str(),
+                    &inference_event.sender.nickname,
+                    inference_event.sender.card.as_str(),
                 ) {
                     info!(
                         "{LOG_PREFIX} Skipping duplicate final assistant text for sender={sender_id}"
@@ -3443,8 +3554,8 @@ impl QqChatAgent {
                     embedding_model,
                     is_group,
                     sender_id,
-                    &event.sender.nickname,
-                    event.sender.card.as_str(),
+                    &inference_event.sender.nickname,
+                    inference_event.sender.card.as_str(),
                 )? {
                     info!(
                         "{LOG_PREFIX} Skipping similar final assistant text for sender={sender_id}"
@@ -3470,8 +3581,8 @@ impl QqChatAgent {
                         &content,
                         is_group,
                         sender_id,
-                        &event.sender.nickname,
-                        event.sender.card.as_str(),
+                        &inference_event.sender.nickname,
+                        inference_event.sender.card.as_str(),
                     ));
                 }
             }
