@@ -426,6 +426,106 @@ export const system = {
   },
 };
 
+// Data Explorer
+export interface MysqlRecord {
+  message_id: string;
+  sender_id: string;
+  sender_name: string;
+  send_time: string;
+  group_id: string | null;
+  group_name: string | null;
+  content: string;
+  at_target_list: string | null;
+  media_json: string | null;
+}
+
+export interface MysqlExploreResponse {
+  records: MysqlRecord[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface RedisKeyEntry {
+  key: string;
+  key_type: string;
+  ttl: number;
+  value_preview: string | null;
+}
+
+export interface RedisExploreResponse {
+  keys: RedisKeyEntry[];
+  total: number;
+  page: number;
+  page_size: number;
+  scan_cursor: number;
+}
+
+export interface RustfsObject {
+  key: string;
+  size: number;
+  last_modified: string | null;
+  url: string;
+}
+
+export interface RustfsExploreResponse {
+  objects: RustfsObject[];
+  prefixes: string[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+function buildQueryString(params: Record<string, unknown>): string {
+  const qs = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value != null && value !== "") {
+      qs.set(key, String(value));
+    }
+  }
+  return qs.toString();
+}
+
+export const explorer = {
+  queryMysql(params: {
+    connection_id: string;
+    message_id?: string;
+    sender_id?: string;
+    sender_name?: string;
+    group_id?: string;
+    content?: string;
+    send_time_start?: string;
+    send_time_end?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<MysqlExploreResponse> {
+    const qs = buildQueryString(params as Record<string, unknown>);
+    return request("GET", `/explorer/mysql?${qs}`);
+  },
+
+  queryRedis(params: {
+    connection_id: string;
+    pattern?: string;
+    scan_cursor?: number;
+    page?: number;
+    page_size?: number;
+  }): Promise<RedisExploreResponse> {
+    const qs = buildQueryString(params as Record<string, unknown>);
+    return request("GET", `/explorer/redis?${qs}`);
+  },
+
+  queryRustfs(params: {
+    connection_id: string;
+    prefix?: string;
+    search?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<RustfsExploreResponse> {
+    const qs = buildQueryString(params as Record<string, unknown>);
+    return request("GET", `/explorer/rustfs?${qs}`);
+  },
+};
+
 export const chat = {
   async stream(
     payload: {

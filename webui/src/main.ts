@@ -9,6 +9,7 @@ import Llm from "./admin/view/Llm.vue";
 import Agents from "./admin/view/Agents.vue";
 import Graphs from "./admin/view/Graphs.vue";
 import Tasks from "./admin/view/Tasks.vue";
+import DataExplorer from "./admin/view/DataExplorer.vue";
 import Settings from "./admin/view/Settings.vue";
 import "./admin/admin.css";
 import "./ui/theme.css";
@@ -34,6 +35,7 @@ async function main() {
       { path: "/agents", component: Agents },
       { path: "/graphs", component: Graphs },
       { path: "/tasks", component: Tasks },
+      { path: "/data-explorer", component: DataExplorer },
       { path: "/settings", component: Settings },
     ],
   });

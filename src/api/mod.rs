@@ -1,6 +1,7 @@
 pub mod config;
 pub mod chat;
 pub mod execution;
+pub mod explorer;
 pub mod file_io;
 pub mod graph;
 pub mod graph_exec_helpers;
@@ -159,7 +160,14 @@ pub fn build_router(
                 .push(Router::with_path("<name>").get(themes::get_theme)),
         )
         // Settings
-        .push(Router::with_path("settings/storage-info").get(settings::get_storage_info));
+        .push(Router::with_path("settings/storage-info").get(settings::get_storage_info))
+        // Data Explorer
+        .push(
+            Router::with_path("explorer")
+                .push(Router::with_path("mysql").get(explorer::query_mysql))
+                .push(Router::with_path("redis").get(explorer::query_redis))
+                .push(Router::with_path("rustfs").get(explorer::query_rustfs)),
+        );
 
     // Inject state into depot for all API handlers (REST + WebSocket)
     let mut router = Router::new();

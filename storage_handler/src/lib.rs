@@ -3,7 +3,7 @@ mod message_store;
 pub mod mysql;
 pub mod object_storage;
 pub mod redis;
-mod resource_resolver;
+pub mod resource_resolver;
 pub mod rustfs;
 pub mod weaviate;
 pub mod weaviate_image_collection;

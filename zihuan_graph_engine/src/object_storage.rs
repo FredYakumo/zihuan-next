@@ -59,6 +59,28 @@ impl S3Ref {
         self.object_url_for_key(key)
     }
 
+    pub async fn list_objects(
+        &self,
+        prefix: Option<&str>,
+        delimiter: Option<&str>,
+        max_keys: Option<i32>,
+    ) -> Result<aws_sdk_s3::operation::list_objects_v2::ListObjectsV2Output> {
+        let client = self.s3_client().await?;
+        let mut request = client.list_objects_v2().bucket(&self.bucket);
+        if let Some(p) = prefix {
+            request = request.prefix(p);
+        }
+        if let Some(d) = delimiter {
+            request = request.delimiter(d);
+        }
+        if let Some(mk) = max_keys {
+            request = request.max_keys(mk);
+        }
+        request.send().await.map_err(|e| {
+            Error::ValidationError(format!("S3 list_objects failed: {}", e))
+        })
+    }
+
     pub async fn ensure_bucket_exists(&self) -> Result<()> {
         let client = self.s3_client().await?;
         let region = self.normalized_region();
