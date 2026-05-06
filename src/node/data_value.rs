@@ -1,4 +1,4 @@
-use zihuan_bot_types::event_model::MessageEvent;
+use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
 use zihuan_llm::tooling::FunctionTool;
 use reqwest::blocking::Client;
 use redis::{aio::ConnectionManager, AsyncCommands};
@@ -826,9 +826,9 @@ pub enum DataValue {
     Vec(Box<DataType>, std::vec::Vec<DataValue>),
     MessageEvent(MessageEvent),
     OpenAIMessage(zihuan_llm::OpenAIMessage),
-    QQMessage(crate::bot_adapter::models::message::Message),
+    QQMessage(zihuan_core::ims_bot_adapter::models::message::Message),
     FunctionTools(Vec<Arc<dyn FunctionTool>>),
-    BotAdapterRef(zihuan_bot_types::BotAdapterHandle),
+    BotAdapterRef(zihuan_core::ims_bot_adapter::BotAdapterHandle),
     RedisRef(Arc<RedisConfig>),
     MySqlRef(Arc<MySqlConfig>),
     TavilyRef(Arc<TavilyRef>),

@@ -1,115 +1,78 @@
 # Logging
 
-This document explains the logging system used by `zihuan-next`.
+This document describes the current logging pipeline.
 
 ## Overview
 
-The project uses the `log` crate for log calls and a custom composite logger for output routing.
+The project uses the `log` crate for log calls and `src/log_forwarder.rs` as the global logger wrapper in the main web application.
 
-- Rust code emits logs with `error!`, `warn!`, `info!`, `debug!`, and `trace!`.
-- `src/main.rs` initializes logging before node registry setup, graph loading, or UI startup.
-- The base backend is `LogUtil`, which writes logs to the console and to files under `./logs/`.
-- In GUI mode, the logger also mirrors log lines into an in-memory buffer so Slint can display them.
+The logger fans out to:
 
-## Initialization Flow
+- console output
+- files under `./logs/`
+- WebSocket broadcast messages
+- per-task log storage when execution is scoped to a task
 
-Logging is initialized at process startup in [`src/main.rs`](/c:/Users/fredyakumo/zihuan-next/src/main.rs#L27).
+## Main Web App Initialization
 
-1. `BASE_LOG` is created with `LogUtil::new_with_path("zihuan_next", "logs")`.
-2. `CompositeLogger::init(&BASE_LOG)` installs the global logger.
-3. The maximum log level is derived from `RUST_LOG`.
-4. All later `log` macros flow through the same logger.
+`src/main.rs` does this first:
 
-This order matters because startup failures, graph loading errors, and runtime warnings all depend on logging already being available.
+1. creates `BASE_LOG` with `LogUtil::new_with_path("zihuan_next", "logs")`
+2. calls `log_forwarder::init(&BASE_LOG)`
+3. later attaches app state and WebSocket broadcast with:
+   - `log_forwarder::set_app_state(...)`
+   - `log_forwarder::set_broadcast(...)`
 
-## Logger Structure
+This ordering matters because startup failures and auto-start agent logs should already be visible.
 
-The GUI-aware logger lives in [`src/ui/log_overlay.rs`](/c:/Users/fredyakumo/zihuan-next/src/ui/log_overlay.rs).
+## What `log_forwarder` Adds
 
-`CompositeLogger` has two responsibilities:
+`src/log_forwarder.rs` wraps `LogUtil` and extends it with two runtime behaviors:
 
-- Delegate every record to `LogUtil` so standard console and file logging still works.
-- Capture enabled log records into in-memory queues for the GUI.
+### WebSocket forwarding
 
-The in-memory side is split into two buffers:
+Every record is converted into `ServerMessage::LogMessage` and broadcast to connected clients on `/api/ws`.
 
-- `LOG_RING_BUFFER`: short-lived queue for newly arrived entries waiting to be shown in the overlay.
-- `LOG_HISTORY`: longer history used by the log history dialog.
+### Task-scoped log capture
 
-Current limits:
+When code runs inside `log_forwarder::scope_task(task_id, || { ... })`, log lines are also appended to that task's stored log list in `AppState`.
 
-- Overlay buffer: `MAX_ENTRIES = 5`
-- History buffer: `MAX_HISTORY = 1000`
+This is how graph execution logs become visible in the task UI and task log APIs.
 
-Each stored entry contains:
+## Task Logging Flow
 
-- `level: log::Level`
-- `message: String`
+During graph execution:
 
-## GUI Log Display
+1. the API creates a task entry
+2. execution runs under `scope_task(task_id, ...)`
+3. every `log::*` call inside that scope is appended to the task log list
+4. the same record is still written to console/files and broadcast over WebSocket
 
-In GUI mode, the Slint view polls for new log entries from [`src/ui/node_graph_view.rs`](/c:/Users/fredyakumo/zihuan-next/src/ui/node_graph_view.rs#L299).
+This means one log call can feed all observer channels at once.
 
-- A timer polls `drain_new_entries()` every 100 ms.
-- New entries are converted into `LogEntryVm` values and pushed into the overlay model.
-- The overlay fades out after a short idle period.
-- The full history dialog reads from `get_history()`.
+## Log Levels
 
-This means GUI logging is pull-based on the UI thread, while log production can happen from runtime code on other threads.
+The max log level is derived from `RUST_LOG`. If unset, it falls back to `info`.
 
-## Headless Behavior
+Examples:
 
-In headless mode there is no Slint consumer, but the same global logger is still used.
-
-- Logs continue to go to `stdout`.
-- Logs continue to be written to `./logs/`.
-- The GUI-only in-memory buffers may still receive records, but they are not surfaced unless the UI is running.
-
-## Log Level Control
-
-The active max log level comes from the `RUST_LOG` environment variable in [`src/ui/log_overlay.rs`](/c:/Users/fredyakumo/zihuan-next/src/ui/log_overlay.rs#L77).
-
-Supported values:
-
-- `error`
-- `warn`
-- `info`
-- `debug`
-- `trace`
-- `off`
-
-Any other value currently falls back to `info`.
-
-## Usage Conventions
-
-Use the `log` macros directly in Rust code:
-
-```rust
-log::error!("Node {} failed: {}", node_id, err);
-log::warn!("Configuration missing, using fallback");
-log::info!("Graph loaded from {}", path.display());
-log::debug!("Executing node {} with {} inputs", id, inputs.len());
+```bash
+RUST_LOG=debug ./target/release/zihuan_next
+RUST_LOG=trace cargo run
 ```
 
-Follow the existing module prefix style when a subsystem benefits from easy filtering in mixed logs. Existing examples include:
+## CLI Note
 
-- `[MessageStore]`
-- `[MySqlNode]`
-- `[MessageCacheNode]`
-- `[OpenAIMessageSessionCacheNode]`
+`zihuan_graph_cli` does not initialize the web app's `log_forwarder` pipeline. The WebSocket/task fan-out behavior belongs to the main server runtime.
 
-Prefer logs for:
+## Usage Guidance
 
-- startup and shutdown milestones
-- external service connection state
+Use logging for:
+
+- startup/shutdown milestones
+- connection and service lifecycle state
 - fallback activation
-- recoverable runtime anomalies
-- high-value execution checkpoints
+- important execution checkpoints
+- recoverable anomalies
 
-Avoid using logs as a substitute for returning structured errors.
-
-## Practical Notes
-
-- If you add a new subsystem with frequent logs, keep messages concise because GUI overlay space is limited.
-- If you need the log history dialog to retain more records, update `MAX_HISTORY` deliberately and consider UI cost.
-- If you change initialization code, preserve the guarantee that logging is ready before other startup work begins.
+Do not use logs as a replacement for returning structured errors to callers.

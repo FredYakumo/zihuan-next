@@ -7,9 +7,14 @@ const FUNCTION_INPUTS_NODE_TYPE = "function_inputs";
 const FUNCTION_OUTPUTS_NODE_TYPE = "function_outputs";
 const BRAIN_TOOL_FIXED_CONTENT_INPUT = "content";
 const QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT = "message_event";
-const QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT = "qq_bot_adapter";
-const QQ_AGENT_TOOL_OWNER_TYPE = "qq_message_agent";
+const QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT = "qq_ims_bot_adapter";
+const QQ_AGENT_TOOL_OWNER_TYPE = "qq_chat_agent";
+const QQ_AGENT_TOOL_OWNER_TYPE_LEGACY = "qq_message_agent";
 const QQ_AGENT_TOOL_OUTPUT_NAME = "result";
+
+function isQqAgentOwnerType(ownerNodeType: string): boolean {
+  return ownerNodeType === QQ_AGENT_TOOL_OWNER_TYPE || ownerNodeType === QQ_AGENT_TOOL_OWNER_TYPE_LEGACY;
+}
 
 function cloneDataType(dataType: DataTypeMetaData): DataTypeMetaData {
   return JSON.parse(JSON.stringify(dataType)) as DataTypeMetaData;
@@ -50,7 +55,7 @@ function defaultGraphMetadata() {
 }
 
 function getToolOutputs(ownerNodeType: string, tool: BrainToolDefinition): FunctionPortDef[] {
-  if (ownerNodeType === QQ_AGENT_TOOL_OWNER_TYPE) {
+  if (isQqAgentOwnerType(ownerNodeType)) {
     return [{ name: QQ_AGENT_TOOL_OUTPUT_NAME, data_type: "String" }];
   }
   return tool.outputs.map(clonePortDef);
@@ -63,7 +68,7 @@ export function getToolInputSignature(
 ): FunctionPortDef[] {
   return [
     ...sharedInputs.map(clonePortDef),
-    ...(ownerNodeType === QQ_AGENT_TOOL_OWNER_TYPE
+    ...(isQqAgentOwnerType(ownerNodeType)
       ? [
           { name: QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, data_type: "MessageEvent" as DataTypeMetaData },
           { name: QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, data_type: "BotAdapterRef" as DataTypeMetaData },

@@ -51,7 +51,7 @@ impl Log for LogForwarder {
         if let Some(tx) = BROADCAST.get() {
             let level = record.level().to_string();
             let message = format!("{}", record.args());
-            let timestamp = Local::now().format("%H:%M:%S%.3f").to_string();
+            let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
             if let Some(task_id) = current_task_id() {
                 if let Some(state) = APP_STATE.get() {
                     let _ = state.tasks.lock().unwrap().append_task_log(
@@ -121,8 +121,9 @@ fn current_task_id() -> Option<String> {
     CURRENT_TASK_ID
         .with(|cell| cell.borrow().clone())
         .or_else(|| {
-            zihuan_node::data_value::EXECUTION_TASK_ID
+            zihuan_graph_engine::data_value::EXECUTION_TASK_ID
                 .try_with(Clone::clone)
                 .ok()
         })
 }
+

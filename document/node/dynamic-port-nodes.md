@@ -146,11 +146,11 @@ After this, call `refresh_active_tab_ui()` to re-render.
 
 | Node | Dynamic direction | Config key | Source |
 |------|------------------|------------|---------|
-| `FormatStringNode` | inputs | `template` (String) | `packages/zihuan_node/src/util/format_string.rs` |
-| `JsonExtractNode` | outputs | `fields_config` (Json) | `packages/zihuan_node/src/util/json_extract.rs` |
-| `FunctionNode` | inputs + outputs | `function_config` (Json) | `packages/zihuan_node/src/util/function.rs` |
-| `FunctionInputsNode` | outputs | `signature` (Json) | `packages/zihuan_node/src/util/function_inputs.rs` |
-| `FunctionOutputsNode` | inputs | `signature` (Json) | `packages/zihuan_node/src/util/function_outputs.rs` |
+| `FormatStringNode` | inputs | `template` (String) | `zihuan_graph_engine/src/util/format_string.rs` |
+| `JsonExtractNode` | outputs | `fields_config` (Json) | `zihuan_graph_engine/src/util/json_extract.rs` |
+| `FunctionNode` | inputs + outputs | `function_config` (Json) | `zihuan_graph_engine/src/util/function.rs` |
+| `FunctionInputsNode` | outputs | `signature` (Json) | `zihuan_graph_engine/src/util/function_inputs.rs` |
+| `FunctionOutputsNode` | inputs | `signature` (Json) | `zihuan_graph_engine/src/util/function_outputs.rs` |
 
 ---
 

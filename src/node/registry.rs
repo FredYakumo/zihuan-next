@@ -316,7 +316,7 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
 
         // Single QQ Message from a JSON object: {"type": "text", "data": {"text": "..."}}
         (_, DataType::QQMessage) => {
-            serde_json::from_value::<crate::bot_adapter::models::message::Message>(json.clone())
+            serde_json::from_value::<zihuan_core::ims_bot_adapter::models::message::Message>(json.clone())
                 .ok()
                 .map(DataValue::QQMessage)
         }

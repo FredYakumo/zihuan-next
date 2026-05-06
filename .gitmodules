@@ -1,3 +1,3 @@
-[submodule "packages/general_wheel_cpp/native/general-wheel-cpp"]
-	path = packages/general_wheel_cpp/native/general-wheel-cpp
+[submodule "general_wheel_cpp/native/general-wheel-cpp"]
+	path = general_wheel_cpp/native/general-wheel-cpp
 	url = https://github.com/FredYakumo/general-wheel-cpp.git

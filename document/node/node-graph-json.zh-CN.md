@@ -3,19 +3,16 @@
 > 🌐 [English](node-graph-json.md) | 简体中文
 
 
-本文档描述用于保存和加载节点图的 JSON 格式。GUI 读写此格式；运行时通过 `packages/zihuan_node/src/registry.rs` 中的 `build_node_graph_from_definition()` 从中重建可执行的 `NodeGraph`。
+本文档描述用于保存和加载节点图的 JSON 格式。浏览器编辑器读写此格式；运行时通过 `zihuan_graph_engine/src/registry.rs` 中的 `build_node_graph_from_definition()` 从中重建可执行的 `NodeGraph`。
 
 ---
 
 ## 运行前验证图
 
-运行内置验证器检查图 JSON 文件的安全性：
+当前可通过以下方式验证图：
 
-```bash
-cargo run -- --graph-json my_graph.json --validate
-# 或使用发布版本：
-./zihuan_next --graph-json my_graph.json --validate
-```
+- Web 编辑器 / Web API
+- `zihuan_graph_engine::graph_io` 中的 Rust 验证辅助函数
 
 **检查内容：**
 
@@ -29,8 +26,6 @@ cargo run -- --graph-json my_graph.json --validate
 | JSON 中存在但已从注册表移除的端口 | warning |
 | `inline_values` 键无匹配端口 | warning |
 | `function` / `brain` 节点中的子图 | 递归检查 |
-
-**退出码：** `0` = 通过或仅有警告 · `1` = 一个或多个错误 · `2` = 文件加载失败
 
 **Rust API**（编程使用）：
 
@@ -216,7 +211,7 @@ let has_errors = issues.iter().any(|i| i.severity == "error") || !cycles.is_empt
 
 ## 数据类型
 
-`data_type` 字段是一个字符串或 JSON 对象，对应 `src/node/data_value.rs` 中的 `DataType` Rust 枚举。
+`data_type` 字段是一个字符串或 JSON 对象，对应 `zihuan_graph_engine/src/data_value.rs` 中的 `DataType` Rust 枚举。
 
 ### 基本类型
 
@@ -281,7 +276,7 @@ let has_errors = issues.iter().any(|i| i.severity == "error") || !cycles.is_empt
       "id": "node_1",
       "name": "QQ Bot Adapter",
       "description": "从 QQ 服务器接收消息",
-      "node_type": "bot_adapter",
+      "node_type": "ims_bot_adapter",
       "input_ports": [
         { "name": "qq_id",            "data_type": "String", "required": true  },
         { "name": "bot_server_url",   "data_type": "String", "required": true  },
@@ -331,7 +326,7 @@ let has_errors = issues.iter().any(|i| i.severity == "error") || !cycles.is_empt
 数据流：
 
 ```
-[bot_adapter] --message_event--> [extract_message_from_event] --message--> [preview_string]
+[ims_bot_adapter] --message_event--> [extract_message_from_event] --message--> [preview_string]
 ```
 
 ---

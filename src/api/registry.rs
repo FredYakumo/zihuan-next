@@ -1,11 +1,8 @@
 use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::Serialize;
-use std::sync::Arc;
 
-use zihuan_node::registry::NODE_REGISTRY;
-
-use super::state::AppState;
+use zihuan_graph_engine::registry::NODE_REGISTRY;
 
 #[derive(Serialize)]
 pub struct PortInfo {
@@ -14,6 +11,16 @@ pub struct PortInfo {
     pub description: Option<String>,
     pub required: bool,
     pub hidden: bool,
+}
+
+#[derive(Serialize)]
+pub struct NodeConfigFieldInfo {
+    pub key: String,
+    pub data_type: String,
+    pub description: Option<String>,
+    pub required: bool,
+    pub widget: String,
+    pub connection_kind: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -27,6 +34,7 @@ pub struct NodeTypeInfo {
     pub has_dynamic_input_ports: bool,
     pub has_dynamic_output_ports: bool,
     pub is_event_producer: bool,
+    pub config_fields: Vec<NodeConfigFieldInfo>,
 }
 
 #[derive(Serialize)]
@@ -49,8 +57,9 @@ pub async fn get_registry(_req: &mut Request, res: &mut Response, _depot: &mut D
             let (has_dyn_in, has_dyn_out) = NODE_REGISTRY
                 .get_node_dynamic_port_flags(&meta.type_id)
                 .unwrap_or((false, false));
-
-            let is_ep = NODE_REGISTRY.is_event_producer(&meta.type_id);
+            let config_fields = NODE_REGISTRY
+                .get_node_config_fields(&meta.type_id)
+                .unwrap_or_default();
 
             NodeTypeInfo {
                 type_id: meta.type_id.clone(),
@@ -79,7 +88,21 @@ pub async fn get_registry(_req: &mut Request, res: &mut Response, _depot: &mut D
                     .collect(),
                 has_dynamic_input_ports: has_dyn_in,
                 has_dynamic_output_ports: has_dyn_out,
-                is_event_producer: is_ep,
+                is_event_producer: false,
+                config_fields: config_fields
+                    .iter()
+                    .map(|field| NodeConfigFieldInfo {
+                        key: field.key.clone(),
+                        data_type: format!("{:?}", field.data_type),
+                        description: field.description.clone(),
+                        required: field.required,
+                        widget: serde_json::to_value(&field.widget)
+                            .ok()
+                            .and_then(|value| value.as_str().map(str::to_string))
+                            .unwrap_or_else(|| "connection_select".to_string()),
+                        connection_kind: field.connection_kind.clone(),
+                    })
+                    .collect(),
             }
         })
         .collect();
@@ -106,3 +129,4 @@ pub async fn get_categories(_req: &mut Request, res: &mut Response, _depot: &mut
     let cats = NODE_REGISTRY.get_categories();
     res.render(Json(cats));
 }
+

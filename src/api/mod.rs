@@ -1,3 +1,4 @@
+pub mod config;
 pub mod execution;
 pub mod file_io;
 pub mod graph;
@@ -37,6 +38,41 @@ pub fn build_router(
             Router::with_path("registry")
                 .push(Router::with_path("types").get(registry::get_registry))
                 .push(Router::with_path("categories").get(registry::get_categories)),
+        )
+        .push(
+            Router::with_path("system")
+                .push(
+                    Router::with_path("connections")
+                        .get(config::connections::list_connections)
+                        .post(config::connections::create_connection)
+                        .push(
+                            Router::with_path("<id>")
+                                .put(config::connections::update_connection)
+                                .delete(config::connections::delete_connection),
+                        ),
+                )
+                .push(
+                    Router::with_path("llm-refs")
+                        .get(config::llm_refs::list_llm_refs)
+                        .post(config::llm_refs::create_llm_ref)
+                        .push(
+                            Router::with_path("<id>")
+                                .put(config::llm_refs::update_llm_ref)
+                                .delete(config::llm_refs::delete_llm_ref),
+                        ),
+                )
+                .push(
+                    Router::with_path("agents")
+                        .get(config::agents::list_agents)
+                        .post(config::agents::create_agent)
+                        .push(
+                            Router::with_path("<id>")
+                                .put(config::agents::update_agent)
+                                .delete(config::agents::delete_agent)
+                                .push(Router::with_path("start").post(config::agents::start_agent))
+                                .push(Router::with_path("stop").post(config::agents::stop_agent)),
+                        ),
+                ),
         )
         // Graph management
         .push(

@@ -14,9 +14,11 @@ import type {
   GraphMetadata,
 } from "./types";
 
+export type { GraphTabInfo, TaskEntry, TaskLogEntry } from "./types";
+
 const BASE = "/api";
 
-async function request<T>(
+export async function request<T>(
   method: string,
   path: string,
   body?: unknown
@@ -213,8 +215,16 @@ export const tasks = {
   rerun(taskId: string): Promise<{ task_id: string }> {
     return request("POST", `/tasks/${taskId}/rerun`, {});
   },
-  logs(taskId: string): Promise<{ entries: TaskLogEntry[] }> {
-    return request("GET", `/tasks/${taskId}/logs`);
+  logs(
+    taskId: string,
+    params?: { date?: string; limit?: number; offset?: number }
+  ): Promise<{ entries: TaskLogEntry[]; total: number; offset: number; limit?: number }> {
+    const qs = new URLSearchParams();
+    if (params?.date) qs.set("date", params.date);
+    if (params?.limit != null) qs.set("limit", String(params.limit));
+    if (params?.offset != null) qs.set("offset", String(params.offset));
+    const suffix = qs.size > 0 ? `?${qs.toString()}` : "";
+    return request("GET", `/tasks/${taskId}/logs${suffix}`);
   },
   clearFinished(): Promise<{ ok: boolean; cleared: number }> {
     return request("DELETE", "/tasks");
@@ -231,5 +241,144 @@ export const workflows = {
   },
   save(graphId: string, name: string): Promise<{ ok: boolean; path: string }> {
     return request("POST", "/workflow_set/save", { graph_id: graphId, name });
+  },
+  open(file: string): Promise<{ session_id: string; migrated: boolean }> {
+    return request("POST", "/file/open", { path: file });
+  },
+};
+
+export interface ConnectionConfig {
+  id: string;
+  name: string;
+  enabled: boolean;
+  updated_at: string;
+  kind: Record<string, unknown> & { type: string };
+}
+
+export interface LlmServiceConfig {
+  model_name: string;
+  api_endpoint: string;
+  api_key?: string | null;
+  supports_multimodal_input: boolean;
+  timeout_secs: number;
+  retry_count: number;
+}
+
+export interface LlmConfig {
+  id: string;
+  name: string;
+  enabled: boolean;
+  updated_at: string;
+  llm: LlmServiceConfig;
+}
+
+export interface AgentToolConfig {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  tool_type: Record<string, unknown> & { type: string };
+}
+
+export interface AgentRuntimeInfo {
+  agent_id: string;
+  status: "stopped" | "starting" | "running" | "error";
+  started_at: string | null;
+  last_error: string | null;
+}
+
+export interface AgentConfig {
+  id: string;
+  name: string;
+  enabled: boolean;
+  auto_start: boolean;
+  is_default: boolean;
+  updated_at: string;
+  agent_type: Record<string, unknown> & { type: string };
+  tools: AgentToolConfig[];
+}
+
+export interface AgentWithRuntime extends AgentConfig {
+  runtime: AgentRuntimeInfo;
+}
+
+export const system = {
+  connections: {
+    list(): Promise<ConnectionConfig[]> {
+      return request("GET", "/system/connections");
+    },
+    create(payload: {
+      name: string;
+      enabled: boolean;
+      kind: Record<string, unknown>;
+    }): Promise<ConnectionConfig> {
+      return request("POST", "/system/connections", payload);
+    },
+    update(id: string, payload: {
+      name: string;
+      enabled: boolean;
+      kind: Record<string, unknown>;
+    }): Promise<ConnectionConfig> {
+      return request("PUT", `/system/connections/${id}`, payload);
+    },
+    delete(id: string): Promise<{ ok: boolean }> {
+      return request("DELETE", `/system/connections/${id}`);
+    },
+  },
+  llm: {
+    list(): Promise<LlmConfig[]> {
+      return request("GET", "/system/llm-refs");
+    },
+    create(payload: {
+      name: string;
+      enabled: boolean;
+      llm: LlmServiceConfig;
+    }): Promise<LlmConfig> {
+      return request("POST", "/system/llm-refs", payload);
+    },
+    update(id: string, payload: {
+      name: string;
+      enabled: boolean;
+      llm: LlmServiceConfig;
+    }): Promise<LlmConfig> {
+      return request("PUT", `/system/llm-refs/${id}`, payload);
+    },
+    delete(id: string): Promise<{ ok: boolean }> {
+      return request("DELETE", `/system/llm-refs/${id}`);
+    },
+  },
+  agents: {
+    list(): Promise<AgentWithRuntime[]> {
+      return request("GET", "/system/agents");
+    },
+    create(payload: {
+      name: string;
+      enabled: boolean;
+      auto_start: boolean;
+      is_default: boolean;
+      agent_type: Record<string, unknown>;
+      tools: AgentToolConfig[];
+    }): Promise<AgentConfig> {
+      return request("POST", "/system/agents", payload);
+    },
+    update(id: string, payload: {
+      name: string;
+      enabled: boolean;
+      auto_start: boolean;
+      is_default: boolean;
+      agent_type: Record<string, unknown>;
+      tools: AgentToolConfig[];
+    }): Promise<AgentConfig> {
+      return request("PUT", `/system/agents/${id}`, payload);
+    },
+    delete(id: string): Promise<{ ok: boolean }> {
+      return request("DELETE", `/system/agents/${id}`);
+    },
+    start(id: string): Promise<{ ok: boolean; runtime: AgentRuntimeInfo }> {
+      return request("POST", `/system/agents/${id}/start`);
+    },
+    stop(id: string): Promise<{ ok: boolean; runtime: AgentRuntimeInfo }> {
+      return request("POST", `/system/agents/${id}/stop`);
+    },
   },
 };

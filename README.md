@@ -1,199 +1,197 @@
 # zihuan-next
 > 🌐 English | [简体中文](README.zh-CN.md)
 
-**An AI agent runner engine that enable to describe simple or event-driven agentic workflows using a node graph — get an AI Agent running in just a few steps, you can easily and precisely define dataflow, and with clear visibility into how data flows through the pipeline.**
+**A Rust-based node-graph workflow platform for AI agents, synchronous graph execution, and service-hosted runtimes such as QQ chat agents and HTTP stream agents.**
 
-Ships with a collection of ready-to-use AI Agent templates.
-
-<img width="1248" height="880" alt="image" src="https://github.com/user-attachments/assets/3b781e53-1fcf-4b77-91ba-2d63299181c4" />
+The graph focuses on **typed data flow**. Long-lived agent behavior is hosted by services, while reusable workflow logic stays in nodes and subgraphs.
 
 ## Overview
 
-zihuan-next uses a **node graph** to describe how data moves through a workflow. You can think of it as a simple flowchart made of typed processing blocks: data comes in, passes through a few steps, and produces an output.
+`zihuan-next` is now a multi-crate Rust workspace with two primary ways to use it:
 
-> **The graph describes what data flows where. Complexity lives inside individual nodes.**
+- `zihuan_next`: the main web application. It serves the admin UI and graph editor, exposes REST/WebSocket APIs, manages system configuration, runs graphs as tasks, and hosts long-lived agents.
+- `zihuan_graph_cli`: a CLI runner for executing a graph JSON file or a workflow-set graph directly from the terminal.
 
-A workflow might look like:
+At the architecture level:
 
-`receive message → extract text → call model → format reply → send message`
+- `zihuan_graph_engine` executes graphs **synchronously** in DAG order.
+- `zihuan_service` hosts long-lived agents such as QQ chat agents and HTTP stream agents.
+- `zihuan_llm` provides LLM, Brain/tool, embedding, and retrieval-related nodes and agent helpers.
+- `storage_handler` provides connection-backed nodes for MySQL, Redis, RustFS, Weaviate, and related persistence utilities.
+- `webui/` contains the browser UI: Vue 3 admin pages at `/` and the LiteGraph-based editor at `/editor`.
 
-Each node has clear **inputs** and **outputs** with declared data types. The graph focuses on the **big picture**: what data enters, how it is transformed, and where it goes. Agentic behavior (LLM loops, tool calling, retrieval) is encapsulated inside dedicated nodes — not visible as graph topology. When a problem becomes too complex to express cleanly on the canvas, create a new node or function subgraph rather than making the main graph more complicated.
+## Current Capabilities
 
----
+- Visual node-graph editor in the browser
+- Synchronous DAG execution with typed ports
+- Function subgraphs and Brain tool subgraphs
+- Service-hosted agents with start/stop/auto-start lifecycle
+- System-managed connections, LLM refs, and agent definitions
+- Task execution, task logs, and WebSocket log streaming
+- Local and remote embedding support
+- QQ message storage and vector persistence helpers
 
-The editor runs in your browser. The backend is a single Rust binary ([Salvo](https://salvo.rs)) that serves the web UI and exposes a REST + WebSocket API. The frontend is a TypeScript SPA built with [Vite](https://vitejs.dev) and [Litegraph.js](https://github.com/Comfy-Org/litegraph.js).
+## Workspace Layout
 
-### Key Capabilities
+| Package | Responsibility |
+|---|---|
+| `zihuan_core` | Shared error types, system config, adapter models, LLM model types |
+| `zihuan_graph_engine` | Graph runtime, node registry, graph JSON loading, base nodes |
+| `zihuan_llm` | LLM nodes, Brain/tool runtime, embeddings, RAG helpers, agent config models |
+| `storage_handler` | Connection configs plus Redis/MySQL/RustFS/Weaviate nodes and helpers |
+| `ims_bot_adapter` | QQ/IMS adapter client and adapter-facing nodes |
+| `zihuan_service` | Long-lived agent runtime and scheduling support |
+| `zihuan_graph_cli` | Terminal graph executor |
+| `webui/` | Vue 3 admin UI and `/editor` graph editor |
+| `src/` | Main Salvo server binary and HTTP/WebSocket API |
 
-1. **Node Graphs for Data Flow** — Describe how data moves between steps; internal algorithms stay inside nodes.
-2. **Strongly Typed Ports** — Every port has a declared type, giving each connection a clear contract.
-3. **Single Binary** — Only One binary application.
-4. **Function Subgraphs and Agent Tools** — A `function` node can package a private subgraph as one reusable step and expose it as a callable tool for LLM-driven nodes.
-5. **Extensibility** — Add new nodes when a workflow needs new behavior; the graph stays simple.
+## Quick Start
 
-## Screenshots
+### Requirements
 
-<img width="1248" height="880" alt="image" src="https://github.com/user-attachments/assets/01fae35b-3284-4081-b7f6-f5be5881dc1f" />
-<img width="1248" height="880" alt="image" src="https://github.com/user-attachments/assets/d407db1c-2d5c-472e-8689-0ab636dbd7b8" />
-<img width="1248" height="880" alt="image" src="https://github.com/user-attachments/assets/40e9d5dc-7383-4f7f-aded-52640edeed8e" />
-<img width="1248" height="880" alt="QQ_1774525136280" src="https://github.com/user-attachments/assets/7cc1f27d-9556-4bd7-8741-05904c536490" />
-<img width="1248" height="880" alt="6e9a6276770f6a190161b14577ebeb7f" src="https://github.com/user-attachments/assets/6d56ffd6-846f-4ced-9d98-0f57bb8f7d31" />
-<img width="2382" height="1647" alt="c5872ca13db7d67512a625e9dae1a601" src="https://github.com/user-attachments/assets/2409f7a6-94a9-46a1-aca8-d21c0fa4347c" />
-<img width=600 src="https://github.com/user-attachments/assets/0d25ce93-0f97-4d8c-8375-63b99f6dcd14" />
-<img width="1080" src="https://github.com/user-attachments/assets/60b3b145-7ce7-4a76-9742-b975578a9556" />
-<img width="1080" src="https://github.com/user-attachments/assets/137e4808-5ce3-4714-a0e3-6f5ddaf9f9cb" />
-<img width="1440" src="https://github.com/user-attachments/assets/994472eb-2d37-4160-811d-c5b4856e3239" />
-<img width=600 src="https://github.com/user-attachments/assets/12c27199-2b1e-41ab-8215-0baced40dff9" />
-<img width=600 src="https://github.com/user-attachments/assets/b30bcef5-cb81-4173-8aa9-cefa5da9e690" />
-<img width=600 src="https://github.com/user-attachments/assets/91da8e34-6feb-4c7b-be45-efd8bf599d1f" />
+- Rust stable
+- Node.js 18+
+- `pnpm`
 
----
+Optional, depending on what you use:
 
-## Getting Started
+- Redis
+- RustFS
+- Weaviate
+- MySQL
 
-### Option A: Download pre-built binary
-
-Download the latest release from the [Releases page](https://github.com/FredYakumo/zihuan-next/releases/latest)., extract the archive, and run the executable directly — no build tools required.
-
-### Option B: Build from source
-
-Requirements: **Rust** (stable), **Node.js 18+** and **pnpm**.
+### Build the web application
 
 ```bash
-# 1. Clone
 git clone https://github.com/FredYakumo/zihuan-next.git
 cd zihuan-next
 git submodule update --init --recursive
 
-# 2. Install frontend dependencies (first time only)
-cd webui && pnpm install && cd ..
+cd webui
+pnpm install
+cd ..
 
-# 3. Build — pnpm build runs automatically via build.rs
 cargo build --release
 ```
 
-### Optional: Enable GPU acceleration for local Candle embedding models
+`build.rs` embeds `webui/dist/` into the main binary, so the frontend build must succeed for `zihuan_next`.
 
-The local text embedding loader can automatically use GPU acceleration when the binary is compiled with the matching feature and a supported runtime is available. If GPU initialization or inference fails, it falls back to CPU automatically.
-
-- `candle-cuda`: Linux/Windows builds with CUDA toolkit and driver available.
-- `candle-metal`: macOS builds with Metal available.
-- No feature: CPU-only build.
-
-Examples:
+### Run the web application
 
 ```bash
-# CUDA build
-cargo build --release --features candle-cuda
+docker compose -f docker/docker-compose.yaml up -d
 
-# Metal build (macOS)
+./target/release/zihuan_next
+# serves http://127.0.0.1:9951 by default
+```
+
+Custom bind:
+
+```bash
+./target/release/zihuan_next --host 0.0.0.0 --port 9000
+```
+
+The bundled compose file starts:
+
+- Redis on `127.0.0.1:6379`
+- RustFS on `127.0.0.1:9000` with console on `127.0.0.1:9001`
+- Weaviate on `127.0.0.1:8080`
+
+It does **not** start MySQL.
+
+### Build and run the CLI
+
+```bash
+cargo build -p zihuan_graph_cli --release
+
+./target/release/zihuan_graph_cli --file workflow_set/qq_agent_example.json
+./target/release/zihuan_graph_cli --workflow qq_agent_example
+```
+
+The CLI initializes the same node registry extensions as the web app's graph runtime, then loads the graph and executes it once.
+
+## Configuration Model
+
+The project currently has three distinct configuration layers:
+
+### 1. System configuration
+
+Managed by the web app and stored as JSON under the user config directory:
+
+- Windows: `%APPDATA%/zihuan-next_aibot/system_config/system_config.json`
+- Linux/macOS: `$XDG_CONFIG_HOME` or `$HOME/.config/zihuan-next_aibot/system_config/system_config.json`
+
+Stored sections:
+
+- `connections`
+- `llm_refs`
+- `agents`
+
+### 2. Graph definition and graph-local values
+
+Graph structure, inline values, variables, metadata, and subgraphs are stored in graph JSON files. Workflow-set files live under `workflow_set/`.
+
+### 3. Alembic migration config
+
+`config.yaml` is only used by the Python migration toolchain for MySQL schema setup. The Rust runtime does **not** read `config.yaml`.
+
+## Optional GPU Build For Local Embeddings
+
+Root features forward to `zihuan_llm`:
+
+```bash
+cargo build --release --features candle-cuda
 cargo build --release --features candle-metal
 ```
 
-Windows (recommended, auto-resolves `cl.exe` for `nvcc`):
+Windows helper:
 
 ```powershell
-# Equivalent to cargo build --release --features candle-cuda
 powershell -ExecutionPolicy Bypass -File .\scripts\cargo-cuda.ps1 build --release
-
-# Build directly (equivalent to cargo build --features candle-cuda)
-powershell -ExecutionPolicy Bypass -File .\scripts\cargo-cuda.ps1
 ```
 
-Notes:
+The local embedding loader prefers `CUDA -> Metal -> CPU` and falls back automatically if GPU initialization fails.
 
-- `candle-cuda` requires a working CUDA toolchain; if `nvcc` is missing, Cargo will fail during dependency build.
-- On Windows, if you see `nvcc fatal : Cannot find compiler 'cl.exe' in PATH`, use `scripts/cargo-cuda.ps1` so `NVCC_CCBIN` is set automatically.
-- The runtime chooses `CUDA -> Metal -> CPU` based on compiled features and availability.
+## Local Embedding Models
 
-### Download a local text embedding model
+Local embedding nodes load from:
 
-Local embedding nodes load models from `models/text_embedding/<model_name>/`. The repository does not include model weights; you must download them separately.
+```text
+models/text_embedding/<model_name>/
+```
 
-Example — downloading **Qwen3-Embedding-0.6B** with the HuggingFace CLI:
+Example:
 
 ```bash
-# Install huggingface_hub (once)
 pip install huggingface_hub
-
-# Download the model into the expected directory
 hf download Qwen/Qwen3-Embedding-0.6B \
   --local-dir models/text_embedding/Qwen3-Embedding-0.6B
 ```
 
-Alternative using `git lfs`:
+The directory name must match the `model_name` configured in the graph or node config.
+
+## MySQL Schema Setup
+
+Only needed if you use the MySQL-backed message store.
 
 ```bash
-git lfs clone https://huggingface.co/Qwen/Qwen3-Embedding-0.6B \
-  models/text_embedding/Qwen3-Embedding-0.6B
+cp config.yaml.example config.yaml
+uv sync
+uv run alembic upgrade head
 ```
 
-The directory name under `models/text_embedding/` must match the `model_name` value you configure in the node graph (e.g. `Qwen3-Embedding-0.6B`).
-
-### Run
-
-```bash
-docker compose -f docker/docker-compose.yaml up -d   # Redis + RustFS (+ optional MySQL)
-
-./target/release/zihuan_next                         # http://127.0.0.1:8080
-./target/release/zihuan_next --host 0.0.0.0 --port 9000
-```
-
-The bundled compose file also starts RustFS object storage on `127.0.0.1:9000` with the console on `127.0.0.1:9001`. Override the default credentials by exporting `RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY` before `docker compose up`.
-
-Configuration values (API keys, etc.) are managed as **hyperparameters** inside the node graph — open the Hyperparameters panel in the editor to set them.
-
-### Initialize the MySQL schema (optional)
-
-Required only if you plan to use the MySQL message store. Skip this step if you are running with Redis-only persistence.
-
-1. Copy `config.yaml.example` to `config.yaml` and fill in the `MYSQL_*` fields with the credentials of your local MySQL instance.
-2. Install the Python toolchain ([uv](https://docs.astral.sh/uv/) recommended) and create the virtualenv.
-3. Run Alembic to create / upgrade the schema:
-
-```bash
-cp config.yaml.example config.yaml          # then edit MYSQL_* fields
-uv sync                                     # install Python deps (alembic, sqlalchemy, pymysql)
-uv run alembic upgrade head                 # apply all migrations to the configured database
-```
-
-The MySQL connection used by Alembic is built from the `MYSQL_*` fields in `config.yaml`; the Rust runtime itself does **not** read these fields and accepts a database URL through the relevant node input port at runtime.
-
-### Build commands
-
-```bash
-cargo build
-cargo build --release
-
-# GPU-enabled local embedding builds
-cargo build --features candle-cuda
-cargo build --release --features candle-cuda
-cargo build --features candle-metal
-cargo build --release --features candle-metal
-
-# Windows recommended: auto-detect cl.exe and set NVCC_CCBIN
-powershell -ExecutionPolicy Bypass -File .\scripts\cargo-cuda.ps1 build
-powershell -ExecutionPolicy Bypass -File .\scripts\cargo-cuda.ps1 build --release
-
-# Frontend only
-cd webui && pnpm run build
-
-# Tests
-cargo test
-```
-
----
+`config.yaml.example` documents the required `MYSQL_*` fields.
 
 ## Documentation
 
-- **[User Guide](document/user-guide.md)** — Configuration and running the application
-- **[Program Execution Flow](document/program-execute-flow.md)** — Backend startup and request lifecycle
-- **[UI Architecture](document/dev-guides/ui-architecture.md)** — Web frontend and API design
-- **[Node Graph JSON Specification](document/node/node-graph-json.md)** — JSON format for saving and loading node graphs
-- **[Node Lifecycle & Execution](document/node/node-lifecycle.md)** — Node execution model, scheduling, and data flow
-- **[Function Subgraphs](document/node/function-subgraphs.md)** — Embedded function subgraphs and reusable sub-pipelines
-- **[Node Development Guide](document/node/node-development.md)** — Creating custom nodes and extending the system
+- [User Guide](document/user-guide.md)
+- [Program Execution Flow](document/program-execute-flow.md)
+- [Developer Guide Index](document/dev-guides/README.md)
+- [UI Architecture](document/dev-guides/ui-architecture.md)
+- [Node Lifecycle](document/node/node-lifecycle.md)
+- [Function Subgraphs](document/node/function-subgraphs.md)
+- [Node Development Guide](document/node/node-development.md)
 
 ## License
 
-AGPL-3.0 — See [LICENSE](LICENSE).
+AGPL-3.0. See [LICENSE](LICENSE).

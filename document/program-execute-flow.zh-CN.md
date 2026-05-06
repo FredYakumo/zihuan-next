@@ -1,122 +1,120 @@
 # 程序执行流程
 
-> 🌐 [English](program-execute-flow.md) | 简体中文
+本文档描述项目**当前**的启动与运行方式，包括 Web 应用和 CLI 图执行器。
 
-本文档概述了 zihuan-next 系统在两种主要模式下的内部执行流程：GUI 模式和无界面模式。
+## 1. Web 应用启动流程
 
----
+入口：`src/main.rs`
 
-## 目录
+启动顺序：
 
-- [程序执行流程](#程序执行流程)
-  - [目录](#目录)
-  - [概述](#概述)
-  - [GUI 模式执行](#gui-模式执行)
-    - [启动流程](#启动流程)
-    - [特性](#特性)
-  - [无界面模式执行](#无界面模式执行)
-    - [启动流程](#启动流程-1)
-    - [特性](#特性-1)
-  - [执行逻辑对比](#执行逻辑对比)
-  - [参见](#参见)
+1. 通过 `src/log_forwarder.rs` 初始化全局日志
+2. 通过 `src/init_registry.rs` 初始化合并后的节点注册表
+3. 解析 `--host` 和 `--port`
+4. 创建 `AppState`
+5. 创建 WebSocket 广播通道
+6. 把日志转发器接入 app state 和 broadcast
+7. 加载系统配置各个 section
+8. 自动启动所有 `enabled && auto_start` 的 Agent
+9. 构建 Salvo Router
+10. 绑定 TCP 监听并开始提供 HTTP/WebSocket 服务
 
----
+## 2. Web 应用承载了什么
 
-## 概述
+主二进制当前统一承载这些能力：
 
-应用根据命令行参数决定启动哪种模式：
+- `/` 管理界面
+- `/editor` 图编辑器
+- `/api` REST API
+- `/api/ws` WebSocket
+- 节点图任务执行
+- Agent 生命周期管理
+- 系统配置持久化
+- 日志写文件、控制台输出和 WebSocket 推送
 
-- **无参数**：默认启动 **GUI 模式**。
-- **`--no-gui` 参数**：强制启动**无界面模式**。
+## 3. 请求与界面流转
 
-无论哪种模式，系统启动时始终执行以下初始步骤：
-1. **初始化日志**：设置控制台和文件日志（`./logs/`）。
-2. **加载配置**：读取 `config.yaml` 和环境变量。
-3. **注册节点**：将所有已知节点类型（Bot、LLM、工具节点）动态注册到内部注册表。
+### 浏览器界面
 
----
+- `/` 加载 Vue 3 管理端
+- `/editor` 加载浏览器版图编辑器
 
-## GUI 模式执行
+### API
 
-在 GUI 模式下，应用启动一个基于 Slint 的窗口系统。执行引擎响应用户操作，或在独立线程中运行以保持 UI 响应。
+主要路由分组：
 
-GUI 子系统分为根窗口契约与专用模块，分别负责画布渲染、节点渲染、共享视图模型结构体和覆盖层对话框。这样在保持运行时行为一致的同时，减少了单个 Slint 文件内的 UI 耦合。
+- `/api/system/connections`
+- `/api/system/llm-refs`
+- `/api/system/agents`
+- `/api/graphs`
+- `/api/tasks`
+- `/api/themes`
+- `/api/workflow_set`
 
-### 启动流程
+### WebSocket
 
-```mermaid
-flowchart TD
-    A[启动应用] --> B[初始化核心系统]
-    B --> C[创建 NodeGraphWindow]
-    C --> C1[加载共享 UI 视图模型]
-    C1 --> C2[组合 GraphCanvas、NodeItem 视图、对话框]
-    C2 --> D[用户交互循环]
-    D --> E{操作？}
-    E -->|拖拽节点| F[更新图模型]
-    E -->|点击"运行"| G[异步执行图]
-    E -->|保存| H[序列化为 JSON]
-    E -->|打开对话框| J[显示选择器或确认覆盖层]
-    G --> I[更新输出视图]
-    F --> D
-    H --> D
-    I --> D
-    J --> D
-```
+`/api/ws` 会广播服务端事件，例如：
 
-### 特性
-- **主线程**：被 UI 事件循环占用。
-- **图执行**：可手动触发。
-- **视觉反馈**：实时端口状态和执行日志显示在 UI 中。
-- **UI 组合**：根窗口拥有回调/属性契约，画布、节点卡片和对话框模块负责渲染界面的专属部分。
+- task started
+- task finished
+- task stopped
+- log message
+- graph validation result
+- QQ 消息预览数据
 
----
+## 4. 从 Web 应用执行节点图
 
-## 无界面模式执行
+当用户从 Web 界面执行图时：
 
-无界面模式专为自动化和生产环境设计。它不涉及任何窗口系统，完全依赖提供的 JSON 图定义。
+1. API 从 `AppState` 中取出图 session
+2. 创建 task 记录
+3. 准备运行时上下文与 runtime inline values
+4. 通过 `zihuan_graph_engine::registry::build_node_graph_from_definition` 构建图
+5. 在 `spawn_blocking` 中执行图
+6. 使用 `log_forwarder::scope_task(...)` 采集任务级日志
+7. 通过 WebSocket 推送任务生命周期和预览事件
+8. 任务以 `success`、`failed` 或 `stopped` 状态结束
 
-### 启动流程
+图运行时本身仍然是同步的；Web 层只是在外围做异步任务编排。
 
-```mermaid
-flowchart TD
-    A[启动应用] --> B[初始化核心系统]
-    B --> C{有 --graph-json？}
-    C -->|无| D[错误：需要图文件]
-    C -->|有| E[加载并解析 JSON]
-    E --> F[构建节点图]
-    F --> G[验证图结构]
-    G --> H{验证通过？}
-    H -->|否| I[退出并报错]
-    H -->|是| J[运行执行引擎]
-    J --> K{图类型？}
-    K -->|仅简单节点| L[执行一次后退出]
-    K -->|含事件生产者| M[进入事件循环]
-    M --> N[等待信号/事件]
-    N --> O{停止信号？}
-    O -->|否| N
-    O -->|是| P[清理并退出]
-```
+## 5. Agent 启动与生命周期
 
-### 特性
-- **主线程**：阻塞在 `execute()` 调用或事件循环上。
-- **生命周期**：运行直到所有 `EventProducer` 节点发出完成信号，或进程被终止（SIGINT/Ctrl+C）。
-- **输出**：日志输出到 `stdout` 和日志文件。
+进程启动时，Web 应用会从系统配置中读取 Agent 定义，并自动启动同时满足以下条件的 Agent：
 
----
+- `enabled`
+- `auto_start`
 
-## 执行逻辑对比
+也可以通过 `/api/system/agents/<id>/start` 和 `/api/system/agents/<id>/stop` 手动控制。
 
-| 特性 | GUI 模式 | 无界面模式 |
-| :--- | :--- | :--- |
-| **用途** | 设计、调试、快速测试 | 生产环境、长期运行机器人 |
-| **输入来源** | 交互式画布 | JSON 文件（`--graph-json`） |
-| **用户界面** | Slint 窗口 | 终端 / 日志 |
-| **终止方式** | 用户关闭窗口 | 进程信号 / 节点完成 |
-| **并发** | 后台线程执行 | 主线程阻塞/循环 |
+当前长期运行的 Agent 类型定义在 `zihuan_llm::system_config::AgentType` 中：
 
----
+- `qq_chat`
+- `http_stream`
 
-## 参见
+这些长期运行的服务逻辑由 `zihuan_service` 承载，而不是图执行器。
 
-- **[用户指南](./user-guide.zh-CN.md)** — 安装与使用说明。
-- **[节点生命周期](./node/node-lifecycle.zh-CN.md)** — 节点如何使用执行引擎的详细说明。
+## 6. CLI 执行流程
+
+入口：`zihuan_graph_cli/src/main.rs`
+
+CLI 执行顺序：
+
+1. 解析 `--file` 或 `--workflow`
+2. 初始化节点注册表
+3. 解析图文件路径
+4. 以带迁移兼容的方式加载图 JSON
+5. 构建 `NodeGraph`
+6. 执行一次图
+7. 成功或失败后退出
+
+CLI 不会启动 Web 服务、任务系统、管理界面或 Agent Manager。
+
+## 7. 当前执行边界
+
+最重要的架构边界是：
+
+- `zihuan_graph_engine` 负责同步 DAG 图执行
+- `zihuan_service` 负责长期运行的服务型 Agent
+- `src/api` 负责 HTTP、WebSocket、任务记录与浏览器状态协调
+
+后续文档和新开发都应以这个边界为准。

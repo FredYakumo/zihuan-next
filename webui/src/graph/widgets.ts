@@ -1,8 +1,8 @@
 // Node widget setup — adds inline value widgets and special editor buttons to LiteGraph nodes
 
 import type { NodeDefinition } from "../api/types";
-import { fileIO, graphs } from "../api/client";
-import { portTypeString } from "./registry";
+import { fileIO, graphs, system, type ConnectionConfig } from "../api/client";
+import { getNodeTypeInfo, portTypeString } from "./registry";
 import {
   openFormatStringEditor,
   openJsonExtractEditor,
@@ -50,6 +50,7 @@ export function setupNodeWidgets(
     case "brain":
       setupBrainWidgets(lNode, nodeDef, getSessionId, onRefresh, onEnterSubgraph);
       break;
+    case "qq_chat_agent":
     case "qq_message_agent":
       setupBrainWidgets(lNode, nodeDef, getSessionId, onRefresh, onEnterSubgraph);
       break;
@@ -69,6 +70,7 @@ export function setupNodeWidgets(
       setupSimpleInlineWidgets(lNode, nodeDef, getSessionId, onRefresh, onMutated);
       break;
   }
+  setupConfigFieldWidgets(lNode, nodeDef, getSessionId, onMutated);
 }
 
 // ─── Format String ────────────────────────────────────────────────────────────
@@ -162,7 +164,9 @@ function setupBrainWidgets(
   ) => void
 ): void {
   const tools = (nodeDef.inline_values?.["tools_config"] as BrainToolDefinition[] | undefined) ?? [];
-  const labelPrefix = nodeDef.node_type === "qq_message_agent" ? "管理 Agent 工具" : "管理工具";
+  const isQqChatAgent =
+    nodeDef.node_type === "qq_chat_agent" || nodeDef.node_type === "qq_message_agent";
+  const labelPrefix = isQqChatAgent ? "管理 Agent 工具" : "管理工具";
   lNode.addWidget("button", `${labelPrefix} (${tools.length})`, null, () => {
     const sid = getSessionId();
     if (!sid) { alert("请先打开一个图。"); return; }
@@ -339,6 +343,28 @@ function setupSimpleInlineWidgets(
   }
 }
 
+function setupConfigFieldWidgets(
+  lNode: any,
+  nodeDef: NodeDefinition,
+  getSessionId: () => string | null,
+  onMutated?: WidgetMutationCallback,
+): void {
+  const typeInfo = getNodeTypeInfo(nodeDef.node_type);
+  const configFields = typeInfo?.config_fields ?? [];
+  for (const field of configFields) {
+    if (field.widget !== "connection_select") continue;
+    setupConnectionSelectWidget(
+      lNode,
+      nodeDef,
+      field.key,
+      field.connection_kind ?? "",
+      String(nodeDef.inline_values?.[field.key] ?? ""),
+      getSessionId,
+      onMutated,
+    );
+  }
+}
+
 function setupLocalTextEmbeddingModelWidget(
   lNode: any,
   nodeDef: NodeDefinition,
@@ -360,6 +386,33 @@ function setupLocalTextEmbeddingModelWidget(
   }, { values: [] as string[] });
   widget.value = initialValue;
   loadTextEmbeddingModelOptions(widget, lNode);
+  return widget;
+}
+
+function setupConnectionSelectWidget(
+  lNode: any,
+  nodeDef: NodeDefinition,
+  key: string,
+  connectionKind: string,
+  initialValue: string,
+  getSessionId: () => string | null,
+  onMutated?: WidgetMutationCallback,
+): any {
+  const widget = lNode.addWidget("combo", key, initialValue, async (selected: string) => {
+    const sid = getSessionId();
+    if (!sid) return;
+    widget.value = selected ?? "";
+    widget._zihuanTouched = true;
+    widget._zihuanInlineKey = key;
+    const pending = graphs.updateNode(sid, nodeDef.id, {
+      inline_values: { [key]: selected ? selected : null },
+    });
+    onMutated?.(pending);
+    await pending;
+  }, { values: { "": "请选择连接..." } as Record<string, string> });
+  widget.value = initialValue;
+  widget._zihuanInlineKey = key;
+  loadConnectionOptions(widget, lNode, connectionKind, initialValue);
   return widget;
 }
 
@@ -385,5 +438,42 @@ function loadTextEmbeddingModelOptions(widget: any, lNode: any): void {
       console.error("failed to load local text embedding models", error);
       widget.options = widget.options ?? {};
       widget.options.values = [];
+    });
+}
+
+async function getConnections(): Promise<ConnectionConfig[]> {
+  return system.connections.list();
+}
+
+function loadConnectionOptions(
+  widget: any,
+  lNode: any,
+  connectionKind: string,
+  initialValue: string,
+): void {
+  getConnections()
+    .then((connections) => {
+      const values: Record<string, string> = { "": "请选择连接..." };
+      let hasCurrentValue = !initialValue;
+      for (const connection of connections) {
+        if (!connection.enabled) continue;
+        if (String(connection.kind.type ?? "") !== connectionKind) continue;
+        values[connection.id] = connection.name;
+        if (connection.id === initialValue) hasCurrentValue = true;
+      }
+      if (initialValue && !hasCurrentValue) {
+        values[initialValue] = `(失效) ${initialValue}`;
+      }
+      widget.options = widget.options ?? {};
+      widget.options.values = values;
+      if (!widget.value) {
+        widget.value = "";
+      }
+      lNode?.setDirtyCanvas?.(true, true);
+    })
+    .catch((error) => {
+      console.error("failed to load connection options", error);
+      widget.options = widget.options ?? {};
+      widget.options.values = { "": "加载连接失败" };
     });
 }

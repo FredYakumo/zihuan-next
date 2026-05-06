@@ -66,7 +66,7 @@ pub struct EmbeddedFunctionConfig {
 - 它们不得从编辑器中删除或复制。
 - `signature` 等隐藏配置端口不在画布上渲染。
 
-子图通过 `packages/zihuan_node/src/function_graph.rs` 中的 `sync_function_subgraph_signature()` 保持一致。
+子图通过 `zihuan_graph_engine/src/function_graph.rs` 中的 `sync_function_subgraph_signature()` 保持一致。
 
 ---
 

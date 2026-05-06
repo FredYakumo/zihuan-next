@@ -4,11 +4,11 @@ This document explains the project's `QQMessage` model in detail, including its 
 
 Code entry point:
 
-- `src/bot_adapter/models/message.rs`
+- `zihuan_core/src/ims_bot_adapter/models/message.rs`
 
 ## Role In The System
 
-`QQMessage` corresponds to `crate::bot_adapter::models::message::Message` in Rust code. It represents a single QQ message segment, not a full message event.
+`QQMessage` corresponds to `crate::ims_bot_adapter::models::message::Message` in Rust code. It represents a single QQ message segment, not a full message event.
 
 The current implementation supports these segment types:
 
@@ -266,7 +266,7 @@ This structure affects reply decisions, context assembly, and whether referenced
 
 If you add a new QQ message segment type, do not only extend the enum. At minimum, also check these places:
 
-1. `src/bot_adapter/models/message.rs`
+1. `zihuan_core/src/ims_bot_adapter/models/message.rs`
 2. `fmt::Display for Message`
 3. `MessageBase::get_type()`
 4. `MessageProp::from_messages()`
@@ -320,8 +320,8 @@ If upstream input starts including those types, you should first define:
 
 ## Related Files
 
-- `src/bot_adapter/models/message.rs`
-- `src/bot_adapter/models/event_model.rs`
+- `zihuan_core/src/ims_bot_adapter/models/message.rs`
+- `zihuan_core/src/ims_bot_adapter/models/event_model.rs`
 - `src/node/data_type.rs`
 - `src/node/data_value.rs`
 - `src/node/util/qq_message_list_data.rs`
@@ -329,10 +329,10 @@ If upstream input starts including those types, you should first define:
 
 ## Programmatic Sending Helpers
 
-When code outside the node-graph needs to send QQ messages (for example inside an LLM node that drives the bot directly), use the helpers in `packages/zihuan_bot_adapter/src/message_helpers.rs` rather than duplicating `ws_send_action` calls.
+When code outside the node-graph needs to send QQ messages (for example inside an LLM node that drives the bot directly), use the helpers in `ims_bot_adapter/src/message_helpers.rs` rather than duplicating `ws_send_action` calls.
 
 ```rust
-use zihuan_bot_adapter::message_helpers::{
+use ims_bot_adapter::message_helpers::{
     get_bot_id,
     send_friend_text,
     send_group_text,

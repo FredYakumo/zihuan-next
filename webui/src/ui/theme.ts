@@ -317,6 +317,12 @@ function getThemeSchema(theme: ThemeConfig): "light" | "dark" {
   return theme.schema ?? (theme.mode === "light" ? "light" : "dark");
 }
 
+function getThemeSchemaByName(name: string): "light" | "dark" {
+  const theme = allThemes.get(name);
+  if (theme) return getThemeSchema(theme);
+  return name.endsWith("_light") ? "light" : "dark";
+}
+
 function inferThemeClassName(name: string): string {
   if (name.endsWith("_light")) return name.slice(0, -"_light".length);
   if (name.endsWith("_dark")) return name.slice(0, -"_dark".length);
@@ -376,6 +382,10 @@ export function getCurrentThemeName(): string {
   return currentThemeName;
 }
 
+export function getStoredThemeName(): string | null {
+  return migrateOldThemeName(localStorage.getItem(STORAGE_KEY));
+}
+
 export function getThemeConfig(name: string): ThemeConfig | undefined {
   return allThemes.get(name);
 }
@@ -396,6 +406,7 @@ export function clearTheme(): void {
 
 function applyTheme(name: string): void {
   document.documentElement.dataset.theme = name;
+  document.documentElement.dataset.themeSchema = getThemeSchemaByName(name);
   for (const cb of themeListeners) cb();
 }
 
@@ -422,6 +433,7 @@ export function initTheme(): void {
   const name = stored ? getSystemResolvedThemeName(stored) : getSystemThemeName();
   currentThemeName = name;
   document.documentElement.dataset.theme = name;
+  document.documentElement.dataset.themeSchema = getThemeSchemaByName(name);
 
   if (!systemThemeMediaQuery) {
     systemThemeMediaQuery = window.matchMedia("(prefers-color-scheme: light)");

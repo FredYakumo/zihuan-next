@@ -75,7 +75,7 @@ pub async fn ws_handler(
         .await
 }
 
-async fn handle_ws_connection(ws: WebSocket, state: Arc<AppState>, broadcast_tx: WsBroadcast) {
+async fn handle_ws_connection(ws: WebSocket, _state: Arc<AppState>, broadcast_tx: WsBroadcast) {
     let (mut ws_tx, mut ws_rx) = ws.split();
     let mut broadcast_rx = broadcast_tx.subscribe();
 

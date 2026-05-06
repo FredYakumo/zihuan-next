@@ -2,6 +2,8 @@ mod api;
 mod error;
 mod init_registry;
 mod log_forwarder;
+mod service;
+mod system_config;
 mod util;
 
 use std::sync::Arc;
@@ -43,9 +45,31 @@ async fn main() {
     let args = Args::parse();
 
     let state = Arc::new(api::state::AppState::new());
-    log_forwarder::set_app_state(Arc::clone(&state));
     let broadcast = api::ws::create_broadcast();
+    log_forwarder::set_app_state(Arc::clone(&state));
     log_forwarder::set_broadcast(broadcast.clone());
+
+    // Auto-start enabled agents and register each as a task.
+    {
+        let agents = crate::system_config::load_agents().unwrap_or_else(|e| {
+            error!("Failed to load agents for auto start: {e}");
+            Vec::new()
+        });
+        let connections = crate::system_config::load_connections().unwrap_or_else(|e| {
+            error!("Failed to load connections for auto start: {e}");
+            Vec::new()
+        });
+        for agent in agents.into_iter().filter(|a| a.enabled && a.auto_start) {
+            api::config::agents::start_agent_with_task(
+                Arc::clone(&state),
+                broadcast.clone(),
+                agent,
+                connections.clone(),
+                None,
+            )
+            .await;
+        }
+    }
 
     let listen_addr = format!("{}:{}", args.host, args.port);
     let display_addr = match args.host.as_str() {

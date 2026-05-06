@@ -13,5 +13,6 @@ pnpm
 .lsmcp/
 .claude/
 .tmpbin/
-models/text_embedding/*/
+models/*/
 !models/text_embedding/Put_text_embedding_models_here.txt
+zihuan_llm/models/*/

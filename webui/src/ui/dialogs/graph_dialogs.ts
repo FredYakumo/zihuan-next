@@ -1,9 +1,36 @@
-import { graphs } from "../../api/client";
+import { graphs, system, type ConnectionConfig } from "../../api/client";
 import type { GraphMetadata, GraphVariable, HyperParameter } from "../../api/types";
 import { ensureDialogStyles, openOverlay, showErrorDialog } from "./base";
 import { dataTypeSelect } from "./data_types";
 
-export const HP_SCALAR_TYPES = ["String", "Integer", "Float", "Boolean", "Password"] as const;
+export const HP_TYPES = [
+  "String",
+  "Integer",
+  "Float",
+  "Boolean",
+  "Password",
+  "MySqlRef",
+  "WeaviateRef",
+  "RedisRef",
+  "S3Ref",
+  "BotAdapterRef",
+  "TavilyRef",
+] as const;
+
+const HP_SCALAR_TYPES = HP_TYPES;
+
+const CONNECTION_KIND_BY_HP_TYPE: Partial<Record<(typeof HP_TYPES)[number], ConnectionConfig["kind"]["type"]>> = {
+  MySqlRef: "mysql",
+  WeaviateRef: "weaviate",
+  RedisRef: "redis",
+  S3Ref: "rustfs",
+  BotAdapterRef: "ims_bot_adapter",
+  TavilyRef: "tavily",
+};
+
+function isConnectionHyperparameterType(type: string): boolean {
+  return Object.prototype.hasOwnProperty.call(CONNECTION_KIND_BY_HP_TYPE, type);
+}
 
 export async function openGraphMetadataDialog(
   sessionId: string,
@@ -120,6 +147,23 @@ export async function openHyperparametersDialog(
     alert("加载超参数失败: " + (e as Error).message);
     close();
     return;
+  }
+
+  let connections: ConnectionConfig[] = [];
+  try {
+    connections = await system.connections.list();
+  } catch (e) {
+    alert("加载连接配置失败: " + (e as Error).message);
+    close();
+    return;
+  }
+
+  const connectionsByKind = new Map<string, ConnectionConfig[]>();
+  for (const connection of connections) {
+    const kind = String(connection.kind.type ?? "");
+    const items = connectionsByKind.get(kind) ?? [];
+    items.push(connection);
+    connectionsByKind.set(kind, items);
   }
 
   type HpRow = {

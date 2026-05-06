@@ -26,6 +26,15 @@ export interface PortInfo {
   hidden: boolean;
 }
 
+export interface NodeConfigFieldInfo {
+  key: string;
+  data_type: string;
+  description: string | null;
+  required: boolean;
+  widget: string;
+  connection_kind: string | null;
+}
+
 export interface NodeTypeInfo {
   type_id: string;
   display_name: string;
@@ -36,6 +45,7 @@ export interface NodeTypeInfo {
   has_dynamic_input_ports: boolean;
   has_dynamic_output_ports: boolean;
   is_event_producer: boolean;
+  config_fields: NodeConfigFieldInfo[];
 }
 
 export interface RegistryResponse {
@@ -142,6 +152,7 @@ export interface ValidationResult {
 
 export interface TaskEntry {
   id: string;
+  task_type: "node_graph" | "agent_service";
   graph_name: string;
   graph_session_id: string;
   file_path: string | null;

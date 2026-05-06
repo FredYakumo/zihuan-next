@@ -140,6 +140,17 @@ export class CanvasGraphOps {
           nextInlineValues[portName] = widgetValue;
         }
 
+        for (const widget of lNode.widgets as Array<{ value?: unknown; _zihuanInlineKey?: string; _zihuanTouched?: boolean }>) {
+          const inlineKey = widget?._zihuanInlineKey;
+          if (!inlineKey) continue;
+          const existingValue = nodeDef.inline_values?.[inlineKey] ?? "";
+          const widgetValue = widget.value ?? "";
+          if (!widget._zihuanTouched && existingValue === widgetValue) continue;
+          if (existingValue === widgetValue) continue;
+          nextInlineValues ??= { ...(nodeDef.inline_values ?? {}) };
+          nextInlineValues[inlineKey] = widgetValue;
+        }
+
         if (!nextInlineValues) return nodeDef;
         changed = true;
         return { ...nodeDef, inline_values: nextInlineValues };

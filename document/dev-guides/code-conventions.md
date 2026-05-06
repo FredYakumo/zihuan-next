@@ -1,254 +1,155 @@
 # Code Conventions
 
-Naming rules, file organization patterns, common utilities, error handling, and logging standards used throughout zihuan-next.
+Naming, file placement, and development rules for the current `zihuan-next` codebase.
 
----
-
-## Naming conventions
+## Naming
 
 ### Rust
 
 | Item | Convention | Example |
-|------|-----------|---------|
-| Types, traits, enums | `UpperCamelCase` | `FormatStringNode`, `DataType`, `NodeGraph` |
-| Functions, methods, fields | `snake_case` | `execute()`, `input_ports()`, `node_type` |
-| Constants | `SCREAMING_SNAKE_CASE` | `GRID_SIZE`, `NODE_WIDTH_CELLS` |
-| Modules / files | `snake_case` | `format_string.rs`, `node_graph_view_vm.rs` |
-| Node struct names | `<Purpose>Node` | `FormatStringNode`, `BrainNode`, `BotAdapterNode` |
+|---|---|---|
+| types / enums / traits | `UpperCamelCase` | `NodeGraph`, `AgentConfig` |
+| functions / methods / fields | `snake_case` | `build_router`, `load_agents` |
+| modules / files | `snake_case` | `local_candle_embedding.rs` |
+| constants | `SCREAMING_SNAKE_CASE` | `SYSTEM_CONFIG_FILE` |
+| node structs | `<Purpose>Node` | `FormatStringNode`, `TavilySearchNode` |
 
-### Node type IDs (registry keys)
+### Node type IDs
 
-Node `type_id` values are `snake_case` strings matching the node's primary purpose:
+Registry `type_id` values are stable `snake_case` identifiers such as:
 
-```
-format_string       json_extract        llm_api
-conditional         brain               bot_adapter
-switch_gate         message_content     send_friend_message
-```
-
-These values appear in the `node_type` field of graph JSON files. Once published, changing them breaks existing graphs.
-
-### Port names
-
-Port names are `snake_case`, describe the data they carry, and must be unique within their direction (inputs or outputs can share a name as they are separate namespaces):
-
-```
-input:  text, template, json, enabled, messages, sender_id, llm_model
-output: result, output, message, response, assistant_message
+```text
+format_string
+function
+llm_infer
+qq_chat_agent
+mysql
+rustfs
 ```
 
-### Node categories (registry label)
+Changing a published `type_id` breaks existing graph JSON unless you also provide migration support.
 
-Categories use Chinese strings by convention (to match the existing UI palette groupings):
+### Categories
 
-| Chinese label | English meaning |
-|--------------|-----------------|
-| `工具` | Utility / control flow |
-| `AI` | LLM / AI inference |
-| `消息` | Message handling |
-| `数据` | Data sources / constants |
-| `数据库` | Database connections |
-| `消息存储` | Message storage |
-| `适配器` | Bot platform adapters |
+The node palette currently uses Chinese category labels such as:
 
----
+- `工具`
+- `AI`
+- `消息`
+- `数据`
+- `数据库`
+- `消息存储`
+- `Bot适配器`
+- `内部`
 
-## File organization
+## File Placement
 
 ### One node per file
 
-Each node struct lives in its own file in the appropriate crate:
+Keep one node implementation per file.
 
-```
-packages/zihuan_node/src/util/   ← general-purpose utility and transform nodes
-├── mod.rs                          ← re-exports all util nodes
-├── format_string.rs                ← FormatStringNode
-├── json_extract.rs                 ← JsonExtractNode
-├── conditional.rs                  ← ConditionalNode
-└── ...
+Typical locations:
 
-packages/zihuan_bot_adapter/src/ ← bot / QQ messaging nodes
-packages/zihuan_llm/src/         ← LLM / AI nodes
-```
+- `zihuan_graph_engine/src/util/` for general runtime/utility nodes
+- `zihuan_graph_engine/src/` for engine-owned feature modules
+- `zihuan_llm/src/` for AI and agent-related nodes
+- `storage_handler/src/` for storage/connection nodes
+- `ims_bot_adapter/src/` for adapter-facing nodes
 
-After creating a new file, add it to the parent `mod.rs` and register it in the appropriate registry.
+### Registration
 
-- Nodes in `packages/zihuan_node` → `packages/zihuan_node/src/registry.rs → init_node_registry()`
-- Nodes in `packages/zihuan_bot_adapter` or `packages/zihuan_llm` → `src/init_registry.rs`
+After adding a node:
 
-### Module structure
+1. Export it from the parent `mod.rs`
+2. Register it in the owning crate registry
 
-The engine is split into focused packages. High-level responsibilities:
+Current registry entry points:
 
-| Crate | Role |
+- `zihuan_graph_engine::registry::init_node_registry()`
+- `storage_handler::init_node_registry()`
+- `ims_bot_adapter::init_node_registry()`
+- `zihuan_llm::init_node_registry()`
+- combined bootstrap: `src/init_registry.rs`
+
+## High-Level Package Roles
+
+| Package | Role |
 |---|---|
-| `packages/zihuan_core` | Error types, config, URL utilities |
-| `packages/zihuan_bot_types` | Bot event and message types |
-| `packages/zihuan_llm_types` | LLM model types and traits |
-| `packages/zihuan_node` | Node trait, graph engine, utility nodes, base registry |
-| `packages/zihuan_bot_adapter` | Bot platform adapter nodes |
-| `packages/zihuan_llm` | LLM inference and AI nodes |
-| `node_macros` | `node_input!`, `node_output!`, `port!` macros |
-| `src/` | Main binary: Slint UI, combined registry (`init_registry.rs`) |
+| `zihuan_core` | Shared core types and helpers |
+| `zihuan_graph_engine` | Synchronous graph runtime |
+| `zihuan_llm` | LLM, Brain, embeddings, agent config models |
+| `storage_handler` | Connection-backed nodes and storage helpers |
+| `ims_bot_adapter` | QQ/IMS adapter integration |
+| `zihuan_service` | Long-lived agent hosting |
+| `src/api` | Web API and task orchestration |
+| `webui/` | Browser UI |
 
-For per-file details, browse the crate source directly.
+## Error Handling
 
----
-
-## Common utilities
-
-### Error handling
-
-The `Error` enum and `Result` alias are defined in `packages/zihuan_core/src/error.rs` and re-exported by each package:
+Use the shared result types from `zihuan_core`:
 
 ```rust
 use zihuan_core::error::{Error, Result};
-
-// Return an error
-return Err(Error::ValidationError("message here".into()));
-
-// Propagate with ?
-let value = some_fn()?;
 ```
 
-Common `Error` variants:
-- `Error::ValidationError(String)` — invalid input, type mismatch, missing required port
-- `Error::ExecutionError(String)` — runtime failure during node execution
-- `Error::IoError(std::io::Error)` — file I/O
+Prefer:
 
-### Logging
+- `ValidationError` for invalid graph inputs, missing bindings, or type mismatches
+- `ExecutionError` for runtime failures during work
+- regular `?` propagation for I/O and integration errors
 
-The crate uses the `log` crate with macros:
+When the graph runtime wraps node failures, it already adds node ID and stage context. Avoid duplicating noisy prefixes unless they add real value.
+
+## Logging
+
+Use `log` macros:
 
 ```rust
-log::error!("Node {} failed: {}", node_id, e);
-log::warn!("Port type mismatch, coercing: {:?}", data_type);
-log::info!("Graph loaded from {}", path.display());
-log::debug!("Executing node {} with {} inputs", id, inputs.len());
+log::info!("starting agent {}", agent_id);
+log::warn!("connection missing, using fallback");
+log::error!("graph execution failed: {}", err);
 ```
 
-The log backend is configured in `main.rs`. In GUI mode, log lines are captured and displayed in the overlay log panel. In headless mode, they go to stdout.
+The logger is initialized by the main binary and forwarded to:
 
-### `inline_port_key(node_id, port_name)`
+- console
+- `./logs/`
+- WebSocket clients
+- task log storage when a task scope is active
 
-Located in `src/ui/node_render.rs`. Generates the HashMap key used for inline port values:
+Prefer concise, searchable messages.
 
-```rust
-pub fn inline_port_key(node_id: &str, port_name: &str) -> String {
-    format!("{}::{}", node_id, port_name)
-}
-```
+## Browser UI Rules
 
-Use this whenever you need to index into `GraphTabState.inline_inputs`.
+Current UI code lives under `webui/src/`.
 
-### `snap_to_grid(value)` / `snap_to_grid_center(value)`
+Structure:
 
-Located in `src/ui/node_graph_view_geometry.rs`:
+- `admin/` for the Vue admin application
+- `graph/` for LiteGraph editor/runtime helpers
+- `api/` for browser-side API clients
+- `ui/` for shared browser UI utilities
+- `app/` for graph editor application state helpers
 
-```rust
-snap_to_grid(45.0)        // → 40.0  (nearest multiple of GRID_SIZE = 20)
-snap_to_grid_center(45.0) // → 50.0  (nearest grid center)
-```
+Do not write new docs or code as if `src/ui/` or Slint were the active frontend.
 
-Use when computing or snapping canvas positions.
+## Graph Runtime Rules
 
-### `node_dimensions(node)`
+- The graph must remain a DAG
+- New node behavior should be synchronous from the graph runtime's point of view
+- Dynamic ports should be rebuilt from config in `apply_inline_config()`
+- Reuse existing helpers before adding a new utility node
+- Complexity should live inside nodes or services, not in graph topology
 
-Located in `src/ui/node_graph_view_geometry.rs`. Returns `(width, height)` in canvas pixels for a node, respecting port count and special node types.
+## Service Boundary
 
-### `get_port_center(graph, node_id, port_name, is_input)`
+Do not reintroduce graph-owned long-lived execution models.
 
-Located in `src/ui/node_graph_view_geometry.rs`. Returns `Option<(f32, f32)>` — the canvas-space center point of a port dot. Used for edge routing.
+If behavior needs:
 
-### `refresh_port_types(graph)`
+- a listener loop
+- a hosted HTTP endpoint
+- background message consumption
+- auto-start lifecycle
 
-Located in `packages/zihuan_node/src/graph_io.rs`. Re-synchronizes port types in a `NodeGraphDefinition` against the live registry. Called when loading a graph to fix stale type strings from old files.
-
-### `build_node_graph_from_definition(def)`
-
-Located in `packages/zihuan_node/src/registry.rs`. Creates an executable `NodeGraph` from a `NodeGraphDefinition`. Instantiates all nodes, applies inline configs, resolves edges.
-
-### `validate_graph_definition(def)`
-
-Located in `packages/zihuan_node/src/graph_io.rs`. Returns a list of `ValidationIssue` structs without executing the graph. Used by the UI's validate button and before execution.
-
----
-
-## Patterns used in the codebase
-
-### Lazy static singleton
-
-```rust
-use once_cell::sync::Lazy;
-use std::sync::RwLock;
-
-pub static MY_REGISTRY: Lazy<MyStruct> = Lazy::new(MyStruct::new);
-
-pub struct MyStruct {
-    data: RwLock<HashMap<String, Value>>,
-}
-```
-
-`RwLock` allows concurrent reads and exclusive writes. This pattern is used by `NODE_REGISTRY`.
-
-### Rc<RefCell<...>> for shared UI state
-
-Callback closures in the UI layer share mutable state via `Rc<RefCell<T>>`:
-
-```rust
-let tabs: Rc<RefCell<Vec<GraphTabState>>> = Rc::new(RefCell::new(vec![]));
-let active_index: Rc<Cell<usize>> = Rc::new(Cell::new(0));
-
-// Clone the Rc for each callback
-let tabs_clone = tabs.clone();
-ui.on_some_action(move || {
-    let mut tabs = tabs_clone.borrow_mut();
-    // mutate tabs...
-});
-```
-
-Use `Rc<Cell<T>>` for `Copy` types (like `usize`), `Rc<RefCell<T>>` for non-`Copy` types.
-
-### Arc<AtomicBool> for cross-thread signaling
-
-```rust
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-
-// Create
-let stop_flag = Arc::new(AtomicBool::new(false));
-
-// Signal (from UI thread)
-stop_flag.store(true, Ordering::Relaxed);
-
-// Check (from worker thread / EventProducer)
-if stop_flag.load(Ordering::Relaxed) { break; }
-```
-
-### NodeFactory type
-
-```rust
-pub type NodeFactory = Arc<dyn Fn(String, String) -> Box<dyn Node> + Send + Sync>;
-//                                  ↑id       ↑name
-```
-
-All node constructors must accept `(id: String, name: String)`. This is enforced by the `register_node!` macro which calls `<T>::new(id, name)`.
-
----
-
-## Testing conventions
-
-### Tests
-
-Do not add unit tests by default. Only add targeted tests when the user explicitly asks for them or the change is complex enough to justify dedicated coverage.
-
-
----
-
-## Common mistakes to avoid
-
-1. **Don't hardcode node type names in compatibility validation** — use the registry instead.
-2. **Don't rely on auto-fix to rebuild dynamic ports** — dynamic ports must be restored from `inline_values` and editor logic.
-3. **Don't use `edges = []` in new graphs** — always provide explicit edges for clarity and type safety.
-4. **Don't store authoritative state in Slint** — push state from Rust to Slint, never read it back.
-5. **Don't skip `set_stop_flag` in EventProducers** — without it, the UI stop button won't work.
-6. **Don't change a `type_id` in the registry without a migration** — it breaks existing graph JSON files.
+it belongs in `zihuan_service` plus API/config plumbing, not in a new graph execution mode.

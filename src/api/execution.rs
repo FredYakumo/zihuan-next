@@ -12,7 +12,6 @@ use uuid::Uuid;
 use super::state::AppState;
 use super::state::{TaskLogEntry, TaskStatus};
 use super::ws::{ServerMessage, WsBroadcast};
-use crate::util::hyperparam_store;
 
 // ─── Execute graph ────────────────────────────────────────────────────────────
 
@@ -46,16 +45,6 @@ pub async fn execute_graph(req: &mut Request, res: &mut Response, depot: &mut De
         )
     };
 
-    // Apply hyperparameter values
-    let hp_values = if let Some(fp) = &file_path {
-        hyperparam_store::load_hyperparameter_values(std::path::Path::new(fp), &graph_def)
-    } else {
-        Default::default()
-    };
-
-    let mut graph_def = graph_def;
-    crate::api::graph_exec_helpers::apply_hyperparameter_bindings(&mut graph_def, &hp_values);
-
     let task_id = start_graph_task(
         Arc::clone(&state),
         broadcast_tx,
@@ -71,7 +60,8 @@ pub async fn execute_graph(req: &mut Request, res: &mut Response, depot: &mut De
 }
 
 fn run_graph_blocking(
-    definition: zihuan_node::graph_io::NodeGraphDefinition,
+    definition: zihuan_graph_engine::graph_io::NodeGraphDefinition,
+    runtime_inline_values: Vec<crate::api::graph_exec_helpers::RuntimeInlineValue>,
     stop_flag: Arc<AtomicBool>,
     task_id: String,
     broadcast_tx: WsBroadcast,
@@ -84,8 +74,9 @@ fn run_graph_blocking(
         .map(|n| n.id.clone())
         .collect();
 
-    let mut graph = zihuan_node::registry::build_node_graph_from_definition(&definition)
+    let mut graph = zihuan_graph_engine::registry::build_node_graph_from_definition(&definition)
         .map_err(|e| format!("Build graph failed: {e}"))?;
+    crate::api::graph_exec_helpers::inject_runtime_inline_values(&mut graph, &runtime_inline_values);
     graph.set_execution_task_id(Some(task_id.clone()));
 
     if !preview_node_ids.is_empty() {
@@ -171,7 +162,7 @@ pub async fn rerun_task(req: &mut Request, res: &mut Response, depot: &mut Depot
         )
     };
 
-    let loaded = match zihuan_node::load_graph_definition_from_json_with_migration(&file_path) {
+    let loaded = match zihuan_graph_engine::load_graph_definition_from_json_with_migration(&file_path) {
         Ok(loaded) => loaded,
         Err(e) => {
             res.status_code(StatusCode::UNPROCESSABLE_ENTITY);
@@ -183,7 +174,7 @@ pub async fn rerun_task(req: &mut Request, res: &mut Response, depot: &mut Depot
     };
 
     let mut graph = loaded.graph;
-    zihuan_node::ensure_positions(&mut graph);
+    zihuan_graph_engine::ensure_positions(&mut graph);
     let session_id = format!("rerun-{}", Uuid::new_v4());
     let task_id = start_graph_task(
         Arc::clone(&state),
@@ -204,6 +195,11 @@ pub async fn get_task_logs(req: &mut Request, res: &mut Response, depot: &mut De
     let state = depot.obtain::<Arc<AppState>>().unwrap();
     let task_id = req.param::<String>("task_id").unwrap_or_default();
 
+    // Optional query params: date (YYYY-MM-DD prefix), limit (usize), offset (usize).
+    let filter_date: Option<String> = req.query("date");
+    let limit: Option<usize> = req.query::<usize>("limit");
+    let offset: usize = req.query::<usize>("offset").unwrap_or(0);
+
     let tasks = state.tasks.lock().unwrap();
     if tasks.get(&task_id).is_none() {
         res.status_code(StatusCode::NOT_FOUND);
@@ -212,7 +208,30 @@ pub async fn get_task_logs(req: &mut Request, res: &mut Response, depot: &mut De
     }
 
     match tasks.read_task_logs(&task_id) {
-        Ok(entries) => res.render(Json(serde_json::json!({"entries": entries}))),
+        Ok(all_entries) => {
+            let filtered: Vec<_> = all_entries
+                .into_iter()
+                .filter(|e| {
+                    if let Some(date) = &filter_date {
+                        e.timestamp.starts_with(date.as_str())
+                    } else {
+                        true
+                    }
+                })
+                .collect();
+            let total = filtered.len();
+            let page: Vec<_> = filtered
+                .into_iter()
+                .skip(offset)
+                .take(limit.unwrap_or(usize::MAX))
+                .collect();
+            res.render(Json(serde_json::json!({
+                "entries": page,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+            })));
+        }
         Err(err) => {
             res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
             res.render(Json(serde_json::json!({"error": err.to_string()})));
@@ -240,7 +259,7 @@ pub async fn list_tasks(_req: &mut Request, res: &mut Response, depot: &mut Depo
 fn start_graph_task(
     state: Arc<AppState>,
     broadcast_tx: WsBroadcast,
-    graph_def: zihuan_node::graph_io::NodeGraphDefinition,
+    graph_def: zihuan_graph_engine::graph_io::NodeGraphDefinition,
     graph_name: String,
     graph_session_id: String,
     file_path: Option<String>,
@@ -251,7 +270,7 @@ fn start_graph_task(
     let task_id = state.tasks.lock().unwrap().add_task(
         graph_name.clone(),
         graph_session_id.clone(),
-        file_path,
+        file_path.clone(),
         is_workflow_set,
         user_ip,
         Arc::clone(&stop_flag),
@@ -268,12 +287,41 @@ fn start_graph_task(
     let task_id_clone = task_id.clone();
     let stop_flag_check = Arc::clone(&stop_flag);
     tokio::spawn(async move {
+        let prepared = match crate::api::graph_exec_helpers::prepare_execution_context(
+            graph_def,
+            file_path.as_deref().map(std::path::Path::new),
+        )
+        .await
+        {
+            Ok(prepared) => prepared,
+            Err(err) => {
+                let detailed = format!("Failed to prepare graph execution: {err}");
+                let summary = summarize_graph_error(&detailed);
+                append_task_error_detail(&state_clone, &task_id_clone, &detailed);
+                state_clone.tasks.lock().unwrap().finish_task(
+                    &task_id_clone,
+                    TaskStatus::Failed,
+                    Some(summary.clone()),
+                );
+                let _ = broadcast_tx_clone.send(ServerMessage::TaskFinished {
+                    task_id: task_id_clone,
+                    success: false,
+                    error: Some(summary),
+                });
+                return;
+            }
+        };
+
+        let runtime_inline_values = prepared.runtime_inline_values;
+        let prepared_graph_def = prepared.definition;
+        let background_tasks = prepared.background_tasks;
         let task_id_for_exec = task_id_clone.clone();
         let broadcast_tx_for_exec = broadcast_tx.clone();
         let session_for_exec = graph_session_id;
         let result = tokio::task::spawn_blocking(move || {
             run_graph_blocking(
-                graph_def,
+                prepared_graph_def,
+                runtime_inline_values,
                 stop_flag,
                 task_id_for_exec,
                 broadcast_tx_for_exec,
@@ -281,6 +329,10 @@ fn start_graph_task(
             )
         })
         .await;
+
+        for task in background_tasks {
+            task.abort();
+        }
 
         let (status, success, error_message, detailed_error_message) = match result {
             Ok(Ok(())) if stop_flag_check.load(Ordering::Relaxed) => {
@@ -429,9 +481,10 @@ fn append_task_error_detail(state: &AppState, task_id: &str, detailed: &str) {
     let _ = state.tasks.lock().unwrap().append_task_log(
         task_id,
         &TaskLogEntry {
-            timestamp: Local::now().format("%H:%M:%S%.3f").to_string(),
+            timestamp: Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
             level: "ERROR_DETAIL".to_string(),
             message: detailed.to_string(),
         },
     );
 }
+

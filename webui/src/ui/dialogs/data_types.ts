@@ -3,7 +3,7 @@
  * and connection-type compatibility checks.
  *
  * Keep this file in sync with the Rust `DataType` enum in
- * `packages/zihuan_node/src/data_value.rs`.
+ * `zihuan_graph_engine/src/data_value.rs`.
  */
 
 import type { DataTypeMetaData } from "../../api/types";

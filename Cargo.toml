@@ -1,5 +1,5 @@
 [workspace]
-members = ["node_macros", "packages/general_wheel_cpp", "packages/zihuan_core", "packages/zihuan_bot_types", "packages/zihuan_llm_types", "packages/zihuan_node", "packages/zihuan_llm", "packages/zihuan_bot_adapter"]
+members = ["node_macros", "general_wheel_cpp", "zihuan_core", "zihuan_graph_engine", "zihuan_llm", "ims_bot_adapter", "storage_handler", "zihuan_service", "zihuan_graph_cli"]
 
 [patch.crates-io]
 candle-transformers = { path = "third_party/candle-transformers" }
@@ -39,9 +39,10 @@ salvo = { version = "0.75", features = ["websocket", "serve-static", "cors", "af
 rust-embed = { version = "8", features = ["debug-embed"] }
 uuid = { version = "1", features = ["v4"] }
 node_macros = { path = "node_macros" }
-zihuan_core = { path = "packages/zihuan_core" }
-zihuan_bot_types = { path = "packages/zihuan_bot_types" }
-zihuan_llm_types = { path = "packages/zihuan_llm_types" }
-zihuan_node = { path = "packages/zihuan_node" }
-zihuan_llm = { path = "packages/zihuan_llm" }
-zihuan_bot_adapter = { path = "packages/zihuan_bot_adapter" }
+zihuan_core = { path = "zihuan_core" }
+zihuan_graph_engine = { path = "zihuan_graph_engine" }
+zihuan_llm = { path = "zihuan_llm" }
+ims_bot_adapter = { path = "ims_bot_adapter" }
+storage_handler = { path = "storage_handler" }
+zihuan_service = { path = "zihuan_service" }
+

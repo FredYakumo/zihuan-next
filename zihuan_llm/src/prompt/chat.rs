@@ -1,0 +1,49 @@
+use ims_bot_adapter::adapter::BotAdapter;
+use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
+use zihuan_core::llm::model::OpenAIMessage;
+use zihuan_core::llm::util::system_message::SystemMessage;
+
+/// Build system message for chat agent based on bot profile and event context
+pub fn build_chat_system_message(
+    ims_bot_adapter: &BotAdapter,
+    event: &MessageEvent,
+    persona: &str,
+) -> OpenAIMessage {
+    let bot_profile = ims_bot_adapter.get_bot_profile();
+
+    if let Some(profile) = bot_profile {
+        if event.is_group_message {
+            SystemMessage(format!(
+                "你是\"{}\"（QQ号: {}）。在群\"{}\"中，用户\"{}\"（QQ号: {}）向你发送了消息。\n\
+                你需要以{}的性格生成对话回复。",
+                profile.nickname,
+                profile.qq_id,
+                event.group_name.clone().unwrap_or_default(),
+                if !event.sender.card.is_empty() {
+                    event.sender.card.clone()
+                } else {
+                    event.sender.nickname.clone()
+                },
+                event.sender.user_id,
+                persona
+            ))
+        } else {
+            SystemMessage(format!(
+                "你是\"{}\"（QQ号: {}）。你的好友\"{}\"（QQ号: {}）向你发送了消息。\n\
+                你需要以{}的性格生成对话回复。",
+                profile.nickname,
+                profile.qq_id,
+                event.sender.nickname,
+                event.sender.user_id,
+                persona
+            ))
+        }
+    } else {
+        SystemMessage(format!(
+            "你是\"紫幻\"（QQ号: {}）。你的职责是进行自然对话。\n\
+            你需要以{}的性格生成对话回复。",
+            ims_bot_adapter.get_bot_id(),
+            persona
+        ))
+    }
+}

@@ -1,237 +1,200 @@
 # 用户指南
 
-> 🌐 [English](user-guide.md) | 简体中文
+本指南描述的是项目**当前**的使用方式：一个 Web 应用，加上一个可选的 CLI 图执行器。
 
-本指南介绍如何在你的系统上启动并运行该应用。
+## 实际要运行什么
 
----
+当前对用户可见的二进制有两个：
 
-## 目录
+- `zihuan_next`：主 Web 应用
+- `zihuan_graph_cli`：终端图执行器
 
-- [用户指南](#用户指南)
-  - [目录](#目录)
-  - [安装](#安装)
-    - [方式 A：使用预构建二进制](#方式-a使用预构建二进制)
-    - [方式 B：从源码构建](#方式-b从源码构建)
-      - [可选：为本地 Candle embedding 启用 GPU 构建](#可选为本地-candle-embedding-启用-gpu-构建)
-  - [配置](#配置)
-    - [前置依赖](#前置依赖)
-    - [超参数](#超参数)
-  - [运行应用](#运行应用)
-    - [方式 1：GUI 模式（可视化编辑器）](#方式-1gui-模式可视化编辑器)
-      - [编辑器菜单与快捷键](#编辑器菜单与快捷键)
-      - [保存行为说明](#保存行为说明)
-      - [工作流集标记](#工作流集标记)
-    - [方式 2：无界面模式（CLI / 生产环境）](#方式-2无界面模式cli--生产环境)
-    - [方式 3：验证模式（预检）](#方式-3验证模式预检)
+大多数情况下，先使用 `zihuan_next`。
 
----
+## 1. 构建项目
 
-## 安装
+依赖：
 
-### 方式 A：使用预构建二进制
+- Rust stable
+- Node.js 18+
+- `pnpm`
 
-1. 从仓库的 Releases 页面下载最新发布包。
-2. 将压缩包解压到你选择的文件夹。
-3. 确保文件夹包含可执行文件和配置文件。
-4. 启动应用：
-    - **Windows：** 双击 `zihuan_next.exe` 或在终端中运行：
-      ```powershell
-      .\zihuan_next.exe
-      ```
-    - **Linux：** 在终端中运行：
-      ```bash
-      ./zihuan_next
-      ```
-    - **macOS：** 在终端中运行：
-      ```bash
-      ./zihuan_next
-      ```
-
-### 方式 B：从源码构建
-
-如果你是开发者或需要最新功能：
-
-1. **安装 Rust：** 确保已安装 Rust 工具链（1.70+）。
-2. **克隆仓库：**
-    ```bash
-    git clone <repository-url>
-    cd zihuan-next
-    git submodule update --init --recursive
-    ```
-3. **构建发布二进制：**
-    ```bash
-    cargo build --release
-    ```
-    可执行文件位于 `./target/release/`。
-    - Windows：`zihuan_next.exe`
-    - Linux/macOS：`zihuan_next`
-
-#### 可选：为本地 Candle embedding 启用 GPU 构建
-
-如果你准备使用本地文本向量模型加载节点，并希望优先使用 GPU，可在编译时启用对应 feature：
+构建步骤：
 
 ```bash
-# CUDA（Linux / Windows，且已安装 CUDA toolchain）
-cargo build --release --features candle-cuda
+git clone <repository-url>
+cd zihuan-next
+git submodule update --init --recursive
 
-# Metal（macOS）
+cd webui
+pnpm install
+cd ..
+
+cargo build --release
+```
+
+主二进制会嵌入 `webui/dist/` 中构建好的前端资源。
+
+## 2. 启动配套服务
+
+仓库自带的 Docker Compose 会启动很多图和 Agent 常用的本地依赖：
+
+```bash
+docker compose -f docker/docker-compose.yaml up -d
+```
+
+包含的服务：
+
+- Redis
+- RustFS
+- Weaviate
+
+其中不包含 MySQL。如果你需要 MySQL 消息存储，请单独启动 MySQL。
+
+## 3. 运行 Web 应用
+
+默认启动：
+
+```bash
+./target/release/zihuan_next
+```
+
+默认监听地址：
+
+```text
+127.0.0.1:9951
+```
+
+自定义 host/port：
+
+```bash
+./target/release/zihuan_next --host 0.0.0.0 --port 9000
+```
+
+也可以用环境变量：
+
+- `ZIHUAN_HOST`
+- `ZIHUAN_PORT`
+
+## 4. 打开界面
+
+Web 应用当前提供两个浏览器入口：
+
+- `/` -> Vue 3 管理界面
+- `/editor` -> 节点图编辑器
+
+管理界面用于：
+
+- 管理连接配置
+- 管理 LLM refs
+- 管理 agents
+- 管理已保存的图 session
+- 查看任务与日志
+
+图编辑器用于构建和运行节点图。
+
+## 5. 理解当前配置模型
+
+### 系统配置
+
+系统级 JSON 配置保存在：
+
+- Windows：`%APPDATA%/zihuan-next_aibot/system_config/system_config.json`
+- Linux/macOS：`$XDG_CONFIG_HOME` 或 `$HOME/.config/zihuan-next_aibot/system_config/system_config.json`
+
+当前 section：
+
+- `connections`
+- `llm_refs`
+- `agents`
+
+### 图文件
+
+图结构、inline values、variables、metadata 和嵌入式子图都保存在图 JSON 文件里。
+
+工作流集文件默认位于：
+
+```text
+workflow_set/
+```
+
+### `config.yaml`
+
+`config.yaml` 只给 Python Alembic 迁移使用，Rust 运行时不会读取它。
+
+## 6. 配置连接与 Agent
+
+在管理界面中可以：
+
+1. 创建 Redis、MySQL、RustFS、Weaviate、Tavily、bot adapter 等连接记录。
+2. 创建可复用的 LLM ref。
+3. 创建需要长期运行的 Agent，例如 QQ Chat Agent 或 HTTP Stream Agent。
+
+如果某个 Agent 同时设置了 `enabled = true` 和 `auto_start = true`，那么 `zihuan_next` 启动时会自动拉起它。
+
+## 7. 使用节点图
+
+你可以：
+
+- 在 `/editor` 中创建和编辑图
+- 打开和保存 `workflow_set/` 工作流
+- 从 Web UI 直接执行图
+- 在任务列表里重新执行带文件路径的历史任务
+
+通过 Web 应用执行图时，会创建 task 记录，并通过 WebSocket 推送日志和运行事件。
+
+## 8. 用 CLI 执行图
+
+先构建 CLI：
+
+```bash
+cargo build -p zihuan_graph_cli --release
+```
+
+按文件路径执行：
+
+```bash
+./target/release/zihuan_graph_cli --file workflow_set/qq_agent_example.json
+```
+
+按工作流名称执行：
+
+```bash
+./target/release/zihuan_graph_cli --workflow qq_agent_example
+```
+
+CLI 会加载图、构建 `NodeGraph`、执行一次并退出。
+
+## 9. 可选：初始化 MySQL 表结构
+
+只有在使用 MySQL 消息存储时才需要：
+
+```bash
+cp config.yaml.example config.yaml
+uv sync
+uv run alembic upgrade head
+```
+
+迁移连接会根据 `config.yaml` 中的 `MYSQL_*` 字段生成。
+
+## 10. 可选：为本地 Embedding 启用 GPU 构建
+
+CUDA：
+
+```bash
+cargo build --release --features candle-cuda
+```
+
+Metal：
+
+```bash
 cargo build --release --features candle-metal
 ```
 
-Windows（推荐，自动处理 `cl.exe` 探测）：
+Windows 推荐脚本：
 
 ```powershell
-# 等价于 cargo build --release --features candle-cuda
 powershell -ExecutionPolicy Bypass -File .\scripts\cargo-cuda.ps1 build --release
 ```
 
-行为说明：
-
-- 运行时设备优先级为 `CUDA -> Metal -> CPU`。
-- 如果 GPU 初始化或推理失败，本地 embedding 会自动回退到 CPU。
-- `candle-cuda` 需要可用的 CUDA toolchain；如果缺少 `nvcc`，Cargo 会在构建阶段失败。
-- Windows 上如果报错 `nvcc fatal : Cannot find compiler 'cl.exe' in PATH`，请改用 `scripts/cargo-cuda.ps1` 启动构建（脚本会自动设置 `NVCC_CCBIN`）。
-
----
-
-## 配置
-
-### 前置依赖
-
-运行前，如果需要以下功能，请确保对应服务已就绪：
-
-1. **Redis**：用于消息缓存（推荐，可提升性能）。
-2. **MySQL**：用于长期消息持久化。
-3. **Weaviate**：用于向量存储 / 检索。
-    ```bash
-    # 使用 Docker 启动 Redis、RustFS 和 Weaviate（MySQL 可选）
-    docker compose -f docker/docker-compose.yaml up -d
-    
-    # 初始化数据库 schema（如使用 MySQL）
-    alembic upgrade head
-    ```
-
-### 超参数
-
-API 密钥、数据库连接字符串等配置值通过节点图内的**超参数**管理，不使用 `config.yaml` 文件。
-
-设置超参数值的步骤：
-1. 在编辑器中打开节点图。
-2. 点击右侧工具栏的**超参数**面板。
-3. 填写所需的值（例如 API 密钥、端点 URL）。
-
-值按 `(group, name)` 存储在本地并跨运行复用——重命名或移动图文件不会丢失已保存的值。密码等敏感值在 UI 中以掩码显示。
-
----
-
-## 运行应用
-
-### 方式 1：GUI 模式（可视化编辑器）
-
-**使用此模式可视化地创建、编辑和测试节点图。**
-
-**运行方式：**
-- **Windows：** 双击 `zihuan_next.exe`。
-- **命令行：**
-    ```bash
-    ./zihuan_next
-    ```
-
-**启动后：**
-1. 窗口打开，显示节点图编辑器。
-2. 可从面板拖拽节点、连接节点，并验证逻辑。
-3. 使用"保存图"将工作流导出为 JSON 文件（例如 `bot.json`）。
-
-#### 编辑器菜单与快捷键
-
-点击左上角 **Zihuan Next** 标题可打开菜单，所有主要操作均支持键盘快捷键：
-
-| 操作 | 菜单项 | 快捷键 |
-|---|---|---|
-| 新建节点图 | 新建 | `Ctrl+N` |
-| 从本地文件打开 | 打开... | `Ctrl+O` |
-| 保存 | 保存 | `Ctrl+S` |
-| 另存为 | 另存为 | `Ctrl+Shift+S` |
-| 保存为工作流集 | 保存为工作流集 | — |
-| 验证图结构 | 验证 | — |
-
-> **注意：** 在输入框或文本域中聚焦时，快捷键不会触发，避免与节点参数编辑冲突。
-
-#### 保存行为说明
-
-**保存（`Ctrl+S`）的逻辑取决于当前标签页的来源：**
-
-- **从服务端工作流集打开的图**（标签页标题显示 `[工作流集]`）：直接静默保存回原工作流集文件，无需弹出对话框。
-- **从本地文件打开或新建的图**：保存到服务器记录的文件路径；若没有关联路径则触发浏览器下载。
-
-**另存为（`Ctrl+Shift+S`）：** 弹出对话框，让用户选择保存目标：
-
-- **保存到工作流集**：输入文件名后保存到服务器 `workflow_set/` 目录；保存完成后当前标签页标题变为 `xxx [工作流集]`，后续按 `Ctrl+S` 将静默保存回工作流集。
-- **下载到本地**：触发浏览器下载 JSON 文件；保存后标签页不再标记为工作流集。
-
-#### 工作流集标记
-
-通过**打开工作流集**菜单（主界面右侧工具栏）或**保存为工作流集**操作打开的节点图，其标签页和浏览器标题栏会显示 `[工作流集]` 后缀，以区分服务器端托管的工作流与本地文件。
-
-### 方式 2：无界面模式（CLI / 生产环境）
-
-**使用此模式在后台运行已保存的机器人工作流。**
-
-**运行方式：**
-必须通过命令行提供图文件和 `--no-gui` 标志。
-
-**Windows (PowerShell/CMD)：**
-```powershell
-.\zihuan_next.exe --graph-json bot.json --no-gui
-```
-
-**Linux/macOS：**
-```bash
-./zihuan_next --graph-json bot.json --no-gui
-```
-
-**常用标志：**
-- `--graph-json <path>`：定义图的 JSON 文件路径。
-- `--no-gui`：禁用窗口界面。
-- `--save-graph-json <path>`：（可选）退出时保存处理/验证后的图版本。
-
-**停止机器人：**
-在终端中按 `Ctrl+C` 可优雅地关闭应用并断开连接。
-
-### 方式 3：验证模式（预检）
-
-**使用此模式在生产环境运行前验证图 JSON 文件。**
-
-验证器检查：
-- JSON 解析与 schema 正确性
-- 所有 `node_type` 值是否存在于节点注册表
-- 每个节点上是否存在必要端口
-- 无效的边引用（未知节点 ID 或端口名）
-- 循环依赖（会阻止执行）
-- `function` 和 `brain` 节点中的嵌入子图
-
-**Windows (PowerShell/CMD)：**
-```powershell
-.\zihuan_next.exe --graph-json bot.json --validate
-```
-
-**Linux/macOS：**
-```bash
-./zihuan_next --graph-json bot.json --validate
-```
-
-**示例输出：**
-```
-验证节点图: bot.json
-  ✓ 文件解析成功（5 个节点，4 条连接）
-  ⚠ 警告: 节点 "Format String" 的内联值 "old_key" 对应的端口不存在
-  ✗ 错误: 节点图存在环路依赖，涉及节点: "Node A", "Node B"
-
-结果: ✗ 1 个错误，1 个警告 — 节点图无法安全运行
-```
-
-**退出码：**
-- `0` — 无错误（图可安全运行；仍可能有警告）
-- `1` — 发现一个或多个错误（图在运行时将失败）
-- `2` — 文件无法加载或解析
+运行时本地 embedding 加载器会按 `CUDA -> Metal -> CPU` 顺序尝试。

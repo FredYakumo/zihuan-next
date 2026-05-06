@@ -1,0 +1,197 @@
+mod connection_manager;
+mod message_store;
+pub mod mysql;
+pub mod object_storage;
+pub mod redis;
+mod resource_resolver;
+pub mod rustfs;
+pub mod weaviate;
+pub mod weaviate_image_collection;
+
+use serde::{Deserialize, Serialize};
+use zihuan_core::error::Result;
+use zihuan_core::system_config::{load_section, save_section, SystemConfigSection};
+
+pub use object_storage::{
+    enrich_event_images, save_image_to_object_storage, ImageCacheAdapter, ImageObjectStorageInput,
+    ObjectStorageConfig, PendingImageUpload, SavedImageObject,
+};
+pub use connection_manager::ConnectionManager;
+pub use resource_resolver::{
+    build_mysql_ref, build_redis_ref, build_s3_ref, build_tavily_ref, build_weaviate_ref,
+    find_connection, resolve_connection_data_value,
+};
+pub use message_store::{MessageRecord, MessageStore};
+pub use mysql::MySqlNode;
+pub use redis::RedisNode;
+pub use rustfs::RustfsNode;
+pub use weaviate::WeaviateNode;
+pub use weaviate_image_collection::WeaviateImageCollectionNode;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ConnectionConfig {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub enabled: bool,
+    pub kind: ConnectionKind,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ConnectionKind {
+    Mysql(MysqlConnection),
+    Redis(RedisConnection),
+    Weaviate(WeaviateConnection),
+    Rustfs(RustfsConnection),
+    BotAdapter(serde_json::Value),
+    Tavily(TavilyConnection),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MysqlConnection {
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RedisConnection {
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WeaviateConnection {
+    pub base_url: String,
+    pub class_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RustfsConnection {
+    pub endpoint: String,
+    pub bucket: String,
+    pub region: String,
+    pub access_key: String,
+    pub secret_key: String,
+    #[serde(default)]
+    pub public_base_url: Option<String>,
+    #[serde(default)]
+    pub path_style: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TavilyConnection {
+    pub api_token: String,
+    #[serde(default = "default_tavily_timeout_secs")]
+    pub timeout_secs: u64,
+}
+
+fn default_tavily_timeout_secs() -> u64 {
+    30
+}
+
+impl ConnectionConfig {
+    pub fn is_valid(&self) -> bool {
+        match &self.kind {
+            ConnectionKind::Tavily(tavily) => !tavily.api_token.trim().is_empty(),
+            _ => true,
+        }
+    }
+}
+
+pub struct ConnectionsSection;
+
+impl SystemConfigSection for ConnectionsSection {
+    const SECTION_KEY: &'static str = "connections";
+    type Value = Vec<ConnectionConfig>;
+}
+
+pub fn load_connections() -> Result<Vec<ConnectionConfig>> {
+    load_section::<ConnectionsSection>()
+}
+
+pub fn save_connections(connections: Vec<ConnectionConfig>) -> Result<()> {
+    save_section::<ConnectionsSection>(&connections)
+}
+
+pub fn init_node_registry() -> Result<()> {
+    use zihuan_graph_engine::register_node;
+    use zihuan_graph_engine::image_weaviate_persistence::ImageWeaviatePersistenceNode;
+    use zihuan_graph_engine::message_mysql_get_group_history::MessageMySQLGetGroupHistoryNode;
+    use zihuan_graph_engine::message_mysql_get_user_history::MessageMySQLGetUserHistoryNode;
+    use zihuan_graph_engine::qq_message_list_mysql_persistence::QQMessageListMySQLPersistenceNode;
+    use zihuan_graph_engine::qq_message_list_weaviate_persistence::QQMessageListWeaviatePersistenceNode;
+
+    register_node!(
+        "redis",
+        "Redis连接",
+        "数据库",
+        "从系统连接配置中选择 Redis 并输出 RedisRef 引用",
+        RedisNode
+    );
+    register_node!(
+        "mysql",
+        "MySQL连接",
+        "数据库",
+        "从系统连接配置中选择 MySQL 并输出 MySqlRef 引用",
+        MySqlNode
+    );
+    register_node!(
+        "rustfs",
+        "RustFS对象存储",
+        "数据库",
+        "从系统连接配置中选择 RustFS 并输出 S3Ref 引用",
+        RustfsNode
+    );
+    register_node!(
+        "weaviate",
+        "Weaviate消息Collection",
+        "数据库",
+        "从系统连接配置中选择 Weaviate 并输出消息集合 WeaviateRef 引用",
+        WeaviateNode
+    );
+    register_node!(
+        "weaviate_image_collection",
+        "Weaviate图片Collection",
+        "数据库",
+        "从系统连接配置中选择 Weaviate 并输出图片集合 WeaviateRef 引用",
+        WeaviateImageCollectionNode
+    );
+    register_node!(
+        "qq_message_list_mysql_persistence",
+        "QQMessage列表MySQL持久化",
+        "消息存储",
+        "将Vec<QQMessage>及调用方提供的元数据持久化到MySQL数据库",
+        QQMessageListMySQLPersistenceNode
+    );
+    register_node!(
+        "qq_message_list_weaviate_persistence",
+        "QQMessage列表向量持久化",
+        "消息存储",
+        "将Vec<QQMessage>及调用方提供的元数据向量化后持久化到Weaviate数据库",
+        QQMessageListWeaviatePersistenceNode
+    );
+    register_node!(
+        "image_weaviate_persistence",
+        "图片向量持久化",
+        "消息存储",
+        "将对象存储路径、图片总结与向量持久化到Weaviate数据库",
+        ImageWeaviatePersistenceNode
+    );
+    register_node!(
+        "message_mysql_get_user_history",
+        "获取QQ号消息历史",
+        "消息存储",
+        "根据 sender_id 读取最近消息历史，可选限定某个群",
+        MessageMySQLGetUserHistoryNode
+    );
+    register_node!(
+        "message_mysql_get_group_history",
+        "获取QQ群聊消息历史",
+        "消息存储",
+        "根据 group_id 读取最近消息历史",
+        MessageMySQLGetGroupHistoryNode
+    );
+
+    Ok(())
+}

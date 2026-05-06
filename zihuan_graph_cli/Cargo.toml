@@ -1,0 +1,13 @@
+[package]
+name = "zihuan_graph_cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+zihuan_core = { path = "../zihuan_core" }
+zihuan_graph_engine = { path = "../zihuan_graph_engine" }
+zihuan_llm = { path = "../zihuan_llm" }
+ims_bot_adapter = { path = "../ims_bot_adapter" }
+

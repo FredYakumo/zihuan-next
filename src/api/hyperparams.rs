@@ -107,7 +107,7 @@ pub async fn get_variables(req: &mut Request, res: &mut Response, depot: &mut De
 
 #[derive(Deserialize)]
 pub struct UpdateVariablesRequest {
-    pub variables: Vec<zihuan_node::graph_io::GraphVariable>,
+    pub variables: Vec<zihuan_graph_engine::graph_io::GraphVariable>,
 }
 
 #[handler]
@@ -136,3 +136,4 @@ pub async fn update_variables(req: &mut Request, res: &mut Response, depot: &mut
         }
     }
 }
+

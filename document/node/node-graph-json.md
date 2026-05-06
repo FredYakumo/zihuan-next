@@ -1,18 +1,15 @@
 # Node Graph JSON Specification
 
-This document describes the JSON format used to save and load node graphs. The GUI reads and writes this format; the runtime rebuilds an executable `NodeGraph` from it via `build_node_graph_from_definition()` in `packages/zihuan_node/src/registry.rs`.
+This document describes the JSON format used to save and load node graphs. The browser editor reads and writes this format; the runtime rebuilds an executable `NodeGraph` from it via `build_node_graph_from_definition()` in `zihuan_graph_engine/src/registry.rs`.
 
 ---
 
 ## Validating a graph before running
 
-Run the built-in validator to check a graph JSON file for safety:
+Validation is currently available through:
 
-```bash
-cargo run -- --graph-json my_graph.json --validate
-# or with a release build:
-./zihuan_next --graph-json my_graph.json --validate
-```
+- the web editor / web API
+- the Rust validation helpers in `zihuan_graph_engine::graph_io`
 
 **What is checked:**
 
@@ -26,8 +23,6 @@ cargo run -- --graph-json my_graph.json --validate
 | Port present in JSON but removed from registry | warning |
 | `inline_values` key with no matching port | warning |
 | Subgraphs inside `function` / `brain` nodes | recursively checked |
-
-**Exit codes:** `0` = pass or warnings only · `1` = one or more errors · `2` = file load failure
 
 **Rust API** (for programmatic use):
 
@@ -213,7 +208,7 @@ Variables are graph-level run-scoped state with JSON-defined initial values:
 
 ## Data Types
 
-The `data_type` field is a string or JSON object corresponding to the `DataType` Rust enum in `src/node/data_value.rs`.
+The `data_type` field is a string or JSON object corresponding to the `DataType` Rust enum in `zihuan_graph_engine/src/data_value.rs`.
 
 ### Primitive types
 
@@ -278,7 +273,7 @@ A 3-node pipeline: **Bot Adapter → Extract Message → Preview**
       "id": "node_1",
       "name": "QQ Bot Adapter",
       "description": "Receives messages from QQ server",
-      "node_type": "bot_adapter",
+      "node_type": "ims_bot_adapter",
       "input_ports": [
         { "name": "qq_id",            "data_type": "String", "required": true  },
         { "name": "bot_server_url",   "data_type": "String", "required": true  },
@@ -328,7 +323,7 @@ A 3-node pipeline: **Bot Adapter → Extract Message → Preview**
 Data flow:
 
 ```
-[bot_adapter] --message_event--> [extract_message_from_event] --message--> [preview_string]
+[ims_bot_adapter] --message_event--> [extract_message_from_event] --message--> [preview_string]
 ```
 
 ---

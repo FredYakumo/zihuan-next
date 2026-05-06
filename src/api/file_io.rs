@@ -4,7 +4,7 @@ use chrono::{Datelike, Utc};
 use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
-use zihuan_bot_adapter::object_storage::ObjectStorageConfig;
+use storage_handler::ObjectStorageConfig;
 
 use super::state::AppState;
 
@@ -277,14 +277,14 @@ pub async fn open_file(req: &mut Request, res: &mut Response, depot: &mut Depot)
         }
     };
 
-    let result = zihuan_node::load_graph_definition_from_json_with_migration(&body.path);
+    let result = zihuan_graph_engine::load_graph_definition_from_json_with_migration(&body.path);
     match result {
         Ok(loaded) => {
-            let zihuan_node::LoadedGraphDefinition {
+            let zihuan_graph_engine::LoadedGraphDefinition {
                 mut graph,
                 migrated,
             } = loaded;
-            zihuan_node::ensure_positions(&mut graph);
+            zihuan_graph_engine::ensure_positions(&mut graph);
             let session_id = uuid::Uuid::new_v4().to_string();
             let session =
                 super::state::GraphSession::new(session_id.clone(), graph, Some(body.path));
@@ -374,7 +374,7 @@ pub async fn upload_graph(req: &mut Request, res: &mut Response, depot: &mut Dep
         }
     };
 
-    let graph: zihuan_node::graph_io::NodeGraphDefinition =
+    let graph: zihuan_graph_engine::graph_io::NodeGraphDefinition =
         match serde_json::from_slice(&body_bytes) {
             Ok(v) => v,
             Err(e) => {
@@ -385,7 +385,7 @@ pub async fn upload_graph(req: &mut Request, res: &mut Response, depot: &mut Dep
         };
 
     let mut graph = graph;
-    zihuan_node::ensure_positions(&mut graph);
+    zihuan_graph_engine::ensure_positions(&mut graph);
     let session_id = uuid::Uuid::new_v4().to_string();
     let session = super::state::GraphSession::new(session_id.clone(), graph, None);
     state
@@ -583,3 +583,4 @@ fn sanitize_upload_file_name(name: &str) -> String {
         cleaned
     }
 }
+

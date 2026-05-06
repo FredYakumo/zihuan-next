@@ -8,11 +8,14 @@ use std::sync::{Arc, Mutex, RwLock};
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use zihuan_node::graph_io::NodeGraphDefinition;
+use zihuan_graph_engine::graph_io::NodeGraphDefinition;
+
+use crate::service::AgentManager;
 
 pub struct AppState {
     pub sessions: RwLock<HashMap<String, GraphSession>>,
     pub tasks: Mutex<TaskManager>,
+    pub agent_manager: AgentManager,
 }
 
 impl AppState {
@@ -20,6 +23,7 @@ impl AppState {
         Self {
             sessions: RwLock::new(HashMap::new()),
             tasks: Mutex::new(TaskManager::new()),
+            agent_manager: AgentManager::new(),
         }
     }
 }
@@ -53,9 +57,17 @@ impl GraphSession {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskType {
+    NodeGraph,
+    AgentService,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct TaskEntry {
     pub id: String,
+    pub task_type: TaskType,
     pub graph_name: String,
     pub graph_session_id: String,
     pub file_path: Option<String>,
@@ -110,11 +122,41 @@ impl TaskManager {
         let log_path = Self::task_log_path(&id).ok();
         self.tasks.push(TaskEntry {
             id: id.clone(),
+            task_type: TaskType::NodeGraph,
             graph_name,
             graph_session_id,
             can_rerun: file_path.is_some(),
             file_path,
             is_workflow_set,
+            start_time: Local::now(),
+            is_running: true,
+            end_time: None,
+            user_ip,
+            status: TaskStatus::Running,
+            error_message: None,
+            log_path,
+            stop_flag: Some(stop_flag),
+        });
+        id
+    }
+
+    pub fn add_agent_task(
+        &mut self,
+        agent_id: String,
+        agent_name: String,
+        user_ip: Option<String>,
+        stop_flag: Arc<AtomicBool>,
+    ) -> String {
+        let id = Uuid::new_v4().to_string();
+        let log_path = Self::task_log_path(&id).ok();
+        self.tasks.push(TaskEntry {
+            id: id.clone(),
+            task_type: TaskType::AgentService,
+            graph_name: agent_name,
+            graph_session_id: agent_id,
+            can_rerun: false,
+            file_path: None,
+            is_workflow_set: false,
             start_time: Local::now(),
             is_running: true,
             end_time: None,
@@ -242,3 +284,4 @@ pub struct GraphTabInfo {
     pub node_count: usize,
     pub edge_count: usize,
 }
+

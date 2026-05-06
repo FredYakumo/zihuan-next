@@ -1,94 +1,104 @@
 # Developer Guides
 
-Documentation for developing and extending zihuan-next — a Rust + Slint node-graph workflow engine for event-driven bot pipelines.
+This index describes the project as it exists now: a browser-based management/editor frontend, a synchronous graph runtime, and a separate service runtime for long-lived agents.
 
-The node graph describes **data flow** between processing steps. Complexity (algorithms, agentic loops, control flow) is encapsulated inside individual nodes; the graph topology itself stays simple and readable. When you encounter a new complex problem, build a new node rather than adding complexity to the graph canvas.
+## Architecture Summary
 
----
+| Layer | Responsibility |
+|---|---|
+| `zihuan_graph_engine` | Synchronous DAG graph execution, graph JSON loading, base registry, reusable runtime primitives |
+| `zihuan_llm` | LLM nodes, Brain/tool runtime, embedding support, RAG helpers, agent config models |
+| `storage_handler` | Connection config models, storage-backed nodes, object storage helpers, message storage helpers |
+| `zihuan_service` | Long-lived agent runtime such as QQ chat and HTTP stream agents |
+| `src/api` | REST API, WebSocket events, task orchestration, graph session management, system config endpoints |
+| `webui/` | Vue 3 admin UI at `/` and LiteGraph-based editor at `/editor` |
 
-## Package Structure
+## Current Workspace Packages
 
 | Package | Contents |
 |---|---|
-| `packages/zihuan_core` | Error types, config loading, URL utilities |
-| `packages/zihuan_bot_types` | `MessageEvent`, QQ message models, bot handle |
-| `packages/zihuan_llm_types` | `OpenAIMessage`, `LLMBase` trait, `FunctionTool` trait |
-| `packages/zihuan_node` | `Node` trait, `DataType`/`DataValue`, DAG execution engine, general-purpose utility nodes, base registry |
-| `packages/zihuan_bot_adapter` | `BotAdapterNode`, QQ message send/receive nodes |
-| `packages/zihuan_llm` | `LLMApiNode`, `LLMInferNode`, `BrainNode`, RAG nodes |
-| `node_macros` | `node_input!`, `node_output!`, `port!` procedural macros |
-| `src/` | Main binary: Slint UI, combined node registry (`init_registry.rs`) |
+| `zihuan_core` | Shared error types, system config helpers, adapter models, LLM model types |
+| `zihuan_graph_engine` | `Node`, `NodeGraph`, graph JSON loading, utility nodes, execution runtime |
+| `zihuan_llm` | LLM nodes, Brain, embeddings, RAG, `AgentType` and LLM ref config models |
+| `storage_handler` | Connection config sections and nodes for Redis/MySQL/RustFS/Weaviate/Tavily |
+| `ims_bot_adapter` | QQ/IMS adapter client and adapter-oriented nodes |
+| `zihuan_service` | `AgentManager`, agent runtime status, scheduled task support |
+| `zihuan_graph_cli` | Command-line graph execution binary |
+| `src/` | Main Salvo server binary, API, router, log forwarding |
+| `webui/` | Browser UI code |
 
-### Node registration
+## Runtime Entry Points
 
-- Nodes in `zihuan_node` → `packages/zihuan_node/src/registry.rs` (`init_node_registry()`)
-- Nodes in `zihuan_bot_adapter` or `zihuan_llm` → `src/init_registry.rs`
+### Main web application
 
----
+`src/main.rs`:
 
-## Build Profiles And Features
+- initializes logging
+- initializes the merged node registry
+- creates `AppState`
+- restores system config
+- auto-starts enabled agents
+- serves the browser UI and HTTP/WebSocket APIs
 
-Most development builds can use the default CPU-only configuration:
+### CLI graph runner
 
-```bash
-cargo check
-cargo build
-```
+`zihuan_graph_cli/src/main.rs`:
 
-For local Candle embedding GPU acceleration, the root crate forwards these optional features to `packages/zihuan_llm`:
+- initializes the node registry
+- loads a graph file or workflow-set graph
+- builds `NodeGraph`
+- executes once and exits
 
-```bash
-# CUDA build (requires CUDA toolkit / nvcc)
-cargo build --features candle-cuda
+## Current UI Split
 
-# Metal build (macOS)
-cargo build --features candle-metal
-```
+- `/` -> Vue 3 admin UI
+- `/editor` -> LiteGraph-based graph editor
 
-Runtime behavior for the local text embedding loader:
+There is no desktop GUI runtime in the current architecture.
 
-- Prefer `CUDA` when the binary was compiled with `candle-cuda` and device initialization succeeds.
-- Otherwise prefer `Metal` when compiled with `candle-metal` and available.
-- Otherwise fall back to `CPU`.
-- If GPU inference fails at runtime, embedding execution falls back to CPU automatically.
+## System Configuration
 
----
+System config is persisted as JSON in the user config directory and currently stores:
 
-## Where to start
+- `connections`
+- `llm_refs`
+- `agents`
+
+Root helpers live in `zihuan_core::system_config`. Section-specific schemas live with their owning domains:
+
+- `storage_handler` for `connections`
+- `zihuan_llm::system_config` for `llm_refs` and `agents`
+
+## Where To Start
 
 | Goal | Read first |
-|------|-----------|
-| Understand the overall system | [node-system.md](./node-system.md) |
+|---|---|
+| Understand the graph runtime | [node-system.md](./node-system.md) |
+| Understand execution lifecycle | [../node/node-lifecycle.md](../node/node-lifecycle.md) |
 | Build a new node | [../node/node-development.md](../node/node-development.md) |
-| Build a node with config-driven ports | [../node/dynamic-port-nodes.md](../node/dynamic-port-nodes.md) |
-| Understand embedded function subgraphs | [../node/function-subgraphs.md](../node/function-subgraphs.md) |
-| Understand the Brain agentic runtime and tool subgraphs | [../llm/brain.md](../llm/brain.md) |
-| Understand the JSON graph file format | [../node/node-graph-json.md](../node/node-graph-json.md) |
-| Understand how the UI talks to nodes | [ui-architecture.md](./ui-architecture.md) |
-| Look up naming and coding conventions | [code-conventions.md](./code-conventions.md) |
+| Understand graph JSON | [../node/node-graph-json.md](../node/node-graph-json.md) |
+| Understand function/tool subgraphs | [../node/function-subgraphs.md](../node/function-subgraphs.md) |
+| Understand Brain/tool behavior | [../llm/brain.md](../llm/brain.md) |
+| Understand browser UI/API boundaries | [ui-architecture.md](./ui-architecture.md) |
+| Look up naming and file layout rules | [code-conventions.md](./code-conventions.md) |
+| Understand logging and task log forwarding | [logging.md](./logging.md) |
 
----
-
-## Guide index
-
-### dev-guides/ (this directory)
+## Guide Index
 
 | Document | Contents |
-|----------|----------|
-| [node-system.md](./node-system.md) | Node trait, DataType/DataValue, execution engine, topological sort, EventProducer lifecycle |
-| [ui-architecture.md](./ui-architecture.md) | Slint/Rust layering, VM pattern, callback boundaries, coordinate systems, special node editors |
-| [code-conventions.md](./code-conventions.md) | Naming rules, file layout, common utilities, error handling, logging |
-| [qq-message.md](./qq-message.md) | QQMessage data model, serde compatibility, and MessageProp aggregation |
-| [qq_message_storage.md](./qq_message_storage.md) | QQMessage storage path in Redis/MySQL and the current MySQL table schema |
-| [logging.md](./logging.md) | Logging initialization, backends, GUI overlay buffers, and log level control |
+|---|---|
+| [node-system.md](./node-system.md) | Current `Node` trait and synchronous runtime model |
+| [node-types.md](./node-types.md) | What `NodeType::Simple` means now |
+| [ui-architecture.md](./ui-architecture.md) | Browser UI, routes, API boundaries, and graph editor structure |
+| [code-conventions.md](./code-conventions.md) | Naming, file placement, shared utilities, and architecture rules |
+| [logging.md](./logging.md) | Global logger, WebSocket forwarding, and task-scoped logs |
+| [qq-message.md](./qq-message.md) | QQ message model details |
+| [qq_message_storage.md](./qq_message_storage.md) | Message storage schema and persistence path |
 
-### node/ (node-specific docs)
+## Architectural Rule
 
-| Document | Contents |
-|----------|----------|
-| [../node/node-development.md](../node/node-development.md) | Node implementation outline and quick checklist; detailed contracts live in `node-system.md` |
-| [../node/dynamic-port-nodes.md](../node/dynamic-port-nodes.md) | Dynamic-port nodes: implementation pattern, UI coordination, JSON markers |
-| [../node/function-subgraphs.md](../node/function-subgraphs.md) | Embedded function graphs, boundary nodes, and subgraph UI navigation |
-| [../llm/brain.md](../llm/brain.md) | Brain agentic loop, tool contracts, embedded tool subgraphs, and Brain-specific JSON behavior |
-| [../node/node-graph-json.md](../node/node-graph-json.md) | Complete node graph JSON specification with all field and data type descriptions |
-| [../node/node-lifecycle.md](../node/node-lifecycle.md) | Node lifecycle detail: on_graph_start, execute, on_start/update/cleanup |
+Keep this boundary sharp:
+
+- graph complexity belongs inside nodes and subgraphs
+- long-lived behavior belongs in `zihuan_service`
+- browser UI owns presentation, not authoritative execution state

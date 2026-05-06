@@ -4,8 +4,8 @@ use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::Deserialize;
 use uuid::Uuid;
-use zihuan_node::function_graph::embedded_function_config_from_value;
-use zihuan_node::graph_io::{
+use zihuan_graph_engine::function_graph::embedded_function_config_from_value;
+use zihuan_graph_engine::graph_io::{
     refresh_node_dynamic_ports, GraphMetadata, GraphPosition, GraphSize, NodeDefinition,
     NodeGraphDefinition, PortBinding,
 };
@@ -15,7 +15,7 @@ use super::state::{AppState, GraphSession, GraphTabInfo};
 // ─── List open graphs ─────────────────────────────────────────────────────────
 
 #[handler]
-pub async fn list_graphs(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+pub async fn list_graphs(_req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
     let sessions = state.sessions.read().unwrap();
     let tabs: Vec<GraphTabInfo> = sessions
@@ -35,7 +35,7 @@ pub async fn list_graphs(req: &mut Request, res: &mut Response, depot: &mut Depo
 // ─── Create new empty graph ───────────────────────────────────────────────────
 
 #[handler]
-pub async fn create_graph(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+pub async fn create_graph(_req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
     let session = GraphSession::new_empty();
     let tab = GraphTabInfo {
@@ -137,11 +137,11 @@ pub async fn add_node(req: &mut Request, res: &mut Response, depot: &mut Depot) 
     };
 
     // Probe ports from registry
-    let (input_ports, output_ports) = zihuan_node::registry::NODE_REGISTRY
+    let (input_ports, output_ports) = zihuan_graph_engine::registry::NODE_REGISTRY
         .get_node_ports(&body.node_type)
         .unwrap_or_default();
 
-    let (dyn_in, dyn_out) = zihuan_node::registry::NODE_REGISTRY
+    let (dyn_in, dyn_out) = zihuan_graph_engine::registry::NODE_REGISTRY
         .get_node_dynamic_port_flags(&body.node_type)
         .unwrap_or((false, false));
 
@@ -409,7 +409,7 @@ pub async fn add_edge(req: &mut Request, res: &mut Response, depot: &mut Depot) 
     session
         .graph
         .edges
-        .push(zihuan_node::graph_io::EdgeDefinition {
+        .push(zihuan_graph_engine::graph_io::EdgeDefinition {
             from_node_id: body.source_node,
             from_port: body.source_port,
             to_node_id: body.target_node,
@@ -485,8 +485,8 @@ pub async fn validate_graph(req: &mut Request, res: &mut Response, depot: &mut D
         }
     };
 
-    let issues = zihuan_node::graph_io::validate_graph_definition(&session.graph);
-    let cycle_nodes = zihuan_node::graph_io::find_cycle_node_ids(&session.graph);
+    let issues = zihuan_graph_engine::graph_io::validate_graph_definition(&session.graph);
+    let cycle_nodes = zihuan_graph_engine::graph_io::find_cycle_node_ids(&session.graph);
 
     let has_errors = issues.iter().any(|i| i.severity == "error") || !cycle_nodes.is_empty();
     let issues_json: Vec<serde_json::Value> = issues
@@ -566,3 +566,4 @@ fn session_display_name(s: &GraphSession) -> String {
         "Untitled".to_string()
     }
 }
+

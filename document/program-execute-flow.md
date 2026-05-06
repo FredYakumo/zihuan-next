@@ -1,120 +1,120 @@
 # Program Execution Flow
 
-This document outlines the internal execution flow of the zihuan-next system in its two primary modes: GUI and Headless.
+This document describes how the current application starts and runs, both for the web app and for the CLI executor.
 
----
+## 1. Web Application Startup
 
-## Table of Contents
+Entry point: `src/main.rs`
 
-- [Program Execution Flow](#program-execution-flow)
-  - [Table of Contents](#table-of-contents)
-  - [Overview](#overview)
-  - [GUI Mode Execution](#gui-mode-execution)
-    - [Startup Flow](#startup-flow)
-    - [Characteristics](#characteristics)
-  - [Headless Mode Execution](#headless-mode-execution)
-    - [Startup Flow](#startup-flow-1)
-    - [Characteristics](#characteristics-1)
-  - [Execution Logic Comparison](#execution-logic-comparison)
-  - [See Also](#see-also)
+Startup order:
 
----
+1. Initialize the global logger through `src/log_forwarder.rs`
+2. Initialize the combined node registry through `src/init_registry.rs`
+3. Parse `--host` and `--port`
+4. Create `AppState`
+5. Create the WebSocket broadcast channel
+6. Attach log forwarding to app state and broadcast
+7. Load system config sections
+8. Auto-start enabled agents marked `auto_start = true`
+9. Build the Salvo router
+10. Bind the TCP listener and serve HTTP/WebSocket traffic
 
-## Overview
+## 2. What The Web Application Hosts
 
-The application decides which mode to launch based on command-line arguments.
+The main binary hosts all of these concerns together:
 
-- **No arguments**: Defaults to **GUI Mode**.
-- **`--no-gui` argument**: Forces **Headless Mode**.
+- admin UI at `/`
+- graph editor at `/editor`
+- REST API under `/api`
+- WebSocket endpoint at `/api/ws`
+- graph execution tasks
+- agent lifecycle management
+- system config persistence
+- log forwarding to files, console, and WebSocket clients
 
-Regardless of mode, the system always performs these initial steps:
-1.  **Initialize Logging**: Sets up console and file logging (`./logs/`).
-2.  **Load Configuration**: Reads `config.yaml` and environment variables.
-3.  **Register Nodes**: Dynamically registers all known node types (Bot, LLM, Utility) into the internal registry.
+## 3. Request And UI Flow
 
----
+### Browser UI
 
-## GUI Mode Execution
+- `/` loads the Vue 3 admin application
+- `/editor` loads the browser graph editor
 
-In GUI mode, the application launches a Slint-based window system. The execution engine runs in response to user actions or in a separate thread to keep the UI responsive.
+### API
 
-The GUI subsystem is split into a root window contract plus dedicated modules for canvas rendering, node rendering, shared view-model structs, and overlay dialogs. This keeps the runtime behavior the same while reducing UI coupling inside a single Slint file.
+Important route groups:
 
-### Startup Flow
+- `/api/system/connections`
+- `/api/system/llm-refs`
+- `/api/system/agents`
+- `/api/graphs`
+- `/api/tasks`
+- `/api/themes`
+- `/api/workflow_set`
 
-```mermaid
-flowchart TD
-    A[Start Application] --> B[Initialize Core Systems]
-  B --> C[Create NodeGraphWindow]
-  C --> C1[Load shared UI view models]
-  C1 --> C2[Compose GraphCanvas, NodeItem views, dialogs]
-  C2 --> D[User Interaction Loop]
-  D --> E{Action?}
-  E -->|Drag/Drop Node| F[Update Graph Model]
-  E -->|Click 'Run'| G[Execute Graph Async]
-  E -->|Save| H[Serialize to JSON]
-  E -->|Open Dialog| J[Show selector or confirm overlay]
-  G --> I[Update Output View]
-  F --> D
-  H --> D
-  I --> D
-  J --> D
-```
+### WebSocket
 
-### Characteristics
-- **Main Thread**: Occupied by the UI event loop.
-- **Graph Execution**: Can be triggered manually.
-- **Visual Feedback**: Real-time port status and execution logs are displayed in the UI.
-- **UI Composition**: The root window owns the callback/property contract, while canvas, node card, and dialog modules render specialized parts of the interface.
+`/api/ws` broadcasts server-originated events such as:
 
----
+- task started
+- task finished
+- task stopped
+- log message
+- graph validation result
+- QQ message preview payloads
 
-## Headless Mode Execution
+## 4. Graph Execution From The Web App
 
-Headless mode is designed for automation and production. It involves no windowing system and relies entirely on the provided JSON graph definition.
+When a graph is executed from the web app:
 
-### Startup Flow
+1. The API reads the graph session from `AppState`
+2. A task entry is created
+3. Execution preparation resolves runtime context and runtime inline values
+4. The graph is built through `zihuan_graph_engine::registry::build_node_graph_from_definition`
+5. Execution runs inside `spawn_blocking`
+6. Task-scoped logs are captured through `log_forwarder::scope_task(...)`
+7. WebSocket messages are emitted for task lifecycle and preview updates
+8. The task finishes as `success`, `failed`, or `stopped`
 
-```mermaid
-flowchart TD
-    A[Start Application] --> B[Initialize Core Systems]
-    B --> C{Has --graph-json?}
-    C -->|No| D[Error: Graph file required]
-    C -->|Yes| E[Load & Parse JSON]
-    E --> F[Build Node Graph]
-    F --> G[Validate Graph Structure]
-    G --> H{Validation OK?}
-    H -->|No| I[Exit with Error]
-    H -->|Yes| J[Run Execution Engine]
-    J --> K{Graph Type?}
-    K -->|Simple Only| L[Execute Once & Exit]
-    K -->|Event Producers| M[Enter Event Loop]
-    M --> N[Wait for Signals/Events]
-    N --> O{Stop Signal?}
-    O -->|No| N
-    O -->|Yes| P[Cleanup & Exit]
-```
+The graph runtime itself is synchronous; the web layer uses background task orchestration around it.
 
-### Characteristics
-- **Main Thread**: Blocks on the `execute()` call or event loop.
-- **Lifecycle**: Runs until all `EventProducer` nodes signal completion or the process is terminated (SIGINT/Ctrl+C).
-- **Output**: Logs are directed to `stdout` and log files.
+## 5. Agent Startup And Lifecycle
 
----
+At process startup, the web app loads agent definitions from system config and automatically starts agents that are both:
 
-## Execution Logic Comparison
+- `enabled`
+- `auto_start`
 
-| Feature | GUI Mode | Headless Mode |
-| :--- | :--- | :--- |
-| **Purpose** | Design, Debug, Quick Test | Production, Long-running Bot |
-| **Input Source** | Interactive Canvas | JSON File (`--graph-json`) |
-| **User Interface** | Slint Window | Terminal / Logs |
-| **Termination** | User closes window | Process signal / Node completion |
-| **Concurrency** | Execution on background thread | Main thread blocks/loops |
+Agent start/stop can also be triggered through `/api/system/agents/<id>/start` and `/api/system/agents/<id>/stop`.
 
----
+Current long-lived agent types are defined in `zihuan_llm::system_config::AgentType`:
 
-## See Also
+- `qq_chat`
+- `http_stream`
 
-- **[User Guide](./user-guide.md)** — Installation and usage instructions.
-- **[Node Lifecycle](./node/node-lifecycle.md)** — Detailed breakdown of how nodes utilize the execution engine.
+The long-lived runtime is hosted by `zihuan_service`, not by the graph executor.
+
+## 6. CLI Execution Flow
+
+Entry point: `zihuan_graph_cli/src/main.rs`
+
+CLI order:
+
+1. Parse `--file` or `--workflow`
+2. Initialize the node registry
+3. Resolve the graph path
+4. Load graph JSON with migration support
+5. Build `NodeGraph`
+6. Execute the graph once
+7. Exit with success or failure
+
+The CLI does not start the web server, task system, admin UI, or agent manager.
+
+## 7. Execution Boundary
+
+The important architectural boundary is:
+
+- `zihuan_graph_engine` handles synchronous DAG graph execution
+- `zihuan_service` handles long-lived service runtimes
+- `src/api` coordinates HTTP, WebSocket, task records, and browser-facing state
+
+This is the model all current docs and new development should follow.

@@ -1,150 +1,127 @@
 # 节点开发指南
 
-> 🌐 [English](node-development.md) | 简体中文
+本指南描述在**当前 Simple-only 节点图运行时**下，如何向项目中添加一个新节点。
 
-本指南描述向项目添加新节点的常规工作流程。它是实现工作的实践入口：文件放在哪里、实现什么、注册什么，以及在认为节点完成之前需要验证什么。
-
-关于详细运行时契约（如 `Node` trait、端口和数据类型规则、执行顺序和 EventProducer 生命周期），请参见 [../dev-guides/node-system.md](../dev-guides/node-system.md)。
+完整运行时契约请参见 [../dev-guides/node-system.md](../dev-guides/node-system.md)。
 
 ---
 
-## 何时阅读本指南
+## 开发流程
 
-在以下情况下阅读本文档：
+### 1. 先判断它到底该不该是节点
 
-- 添加全新节点
-- 将实验性节点迁移到主注册表
-- 检查节点实现是否完整
-- 审查节点 PR 是否缺少集成步骤
+当某个能力可以在一次图执行期间**同步完成**时，适合做成节点。
 
-如果需要精确的 API 语义而非开发流程，请切换到 [../dev-guides/node-system.md](../dev-guides/node-system.md)。
+适合做节点的场景：
 
----
+- 数据变换
+- 解析
+- 一次性 HTTP / 数据库 / 对象存储操作
+- Brain/tool 子图编排
+- 持久化辅助
 
-## 开发工作流
+不适合做节点的场景：
 
-### 1. 决定节点类型
+- 长时间存活的订阅
+- bot 事件循环
+- 独立 HTTP 服务
+- 必须脱离单次图运行而持续存在的后台服务
 
-首先选择执行模型：
+这些职责应该放到 Rust 服务运行时。
 
-- 对于一次性变换和路由逻辑，使用 `Simple`
-- 对于长时间运行的事件源（如套接字、定时器或轮询循环），使用 `EventProducer`
+### 2. 每个节点一个文件
 
-如果区别不清楚，在编写代码前先阅读 [../dev-guides/node-system.md](../dev-guides/node-system.md) 和 [../dev-guides/node-types.md](../dev-guides/node-types.md)。
+典型放置位置：
 
-### 2. 创建节点文件
+| 区域 | 目录 |
+|---|---|
+| 通用工具 / 变换 | `zihuan_graph_engine/src/util/` |
+| 数据库 / 存储辅助 | `zihuan_graph_engine/src/` 下对应模块 |
+| Bot 相关同步辅助 | `ims_bot_adapter/src/` |
+| LLM / Brain / RAG | `zihuan_llm/src/` |
 
-决定新节点属于哪个 crate，然后将其放在每节点一个文件中：
-
-| 节点类别 | Crate | 目录 |
-|---|---|---|
-| 通用工具或变换节点 | `packages/zihuan_node` | `packages/zihuan_node/src/util/` |
-| Bot / QQ 消息节点 | `packages/zihuan_bot_adapter` | `packages/zihuan_bot_adapter/src/` |
-| LLM / AI 节点 | `packages/zihuan_llm` | `packages/zihuan_llm/src/` |
-
-除非功能确实引入了新的责任领域，否则不要创建新目录。
-
-节点结构体通常应暴露：
+### 3. 提供构造函数
 
 ```rust
 pub fn new(id: String, name: String) -> Self
 ```
 
-### 3. 实现 `Node` trait
+### 4. 实现 `Node` trait
 
-针对所选执行模型实现节点：
+在当前运行时中，大部分节点只需要实现：
 
-- 简单节点应专注于 `execute()`
-- EventProducer 节点应实现 `node_type()`、`on_start()`、`on_update()`、`on_cleanup()` 和 `set_stop_flag()`
-- 如果节点读取直接配置在节点卡片上的值，实现 `apply_inline_config()`
+- `id()`
+- `name()`
+- `input_ports()`
+- `output_ports()`
+- `execute()`
 
-保持实现简洁。一个节点应该清晰地做一件事，而不是吸收不相关的编排逻辑。
+可选钩子：
 
-### 4. 仔细定义端口
+- `on_graph_start()`：单次运行开始时重置状态
+- `apply_inline_config()`：读取节点卡片配置、重建动态端口
+- `set_function_runtime_values()`：供特殊 function 边界节点使用
+- `set_runtime_variable_store()`：需要图级运行时变量时使用
 
-使用 `node_input!` 和 `node_output!` 声明端口，除非节点具有必须在运行时从配置重建的动态端口。
+### 5. 仔细定义端口
 
-定义端口时检查以下几点：
+除非端口列表必须动态重建，否则优先使用 `node_input!` 和 `node_output!`。
 
-- 端口名具有描述性并使用 `snake_case`
-- 必要输入确实是必要的
-- 输出类型尽量具体，而不是过度使用 `Any`
-- 动态端口对注册表探测和 UI 编辑来说保持足够确定性
+检查点：
 
-关于动态端口行为，请参见 [dynamic-port-nodes.md](./dynamic-port-nodes.md)。
+- 端口名使用 `snake_case`
+- required / optional 设置正确
+- 类型尽量具体
+- hidden 端口只用于内部连线
 
-### 5. 从模块导出节点
+### 6. 导出节点
 
-添加文件后，更新父 `mod.rs`，使节点可以从注册表和测试中引用。
+将其加入父级 `mod.rs`。
 
-### 6. 注册节点
+### 7. 注册节点
 
-在合适的注册表中注册——这使节点可用于图加载、UI 面板和元数据查询。
+- `zihuan_graph_engine` 中的节点 → `zihuan_graph_engine/src/registry.rs`
+- `ims_bot_adapter` / `zihuan_llm` 中的节点 → `src/init_registry.rs`
 
-- **`packages/zihuan_node` 中的节点** → `packages/zihuan_node/src/registry.rs` 的 `init_node_registry()` 中。
-- **`packages/zihuan_bot_adapter` 或 `packages/zihuan_llm` 中的节点** → `src/init_registry.rs`。
+### 8. 验证行为
 
-注册时：
+做最小但有效的验证：
 
-- `type_id` 一旦发布后保持稳定
-- 使用现有的类别约定
-- 使显示名称和描述在编辑器中易于理解
+- `cargo check`
+- 加载包含该节点的图
+- 执行覆盖该节点行为的工作流
 
-### 7. 添加测试
-
-至少为节点的正常行为添加单元测试。当验证或解析是节点职责的一部分时，添加错误路径测试。
-
-在以下情况使用 `NodeGraph` 集成测试：
-
-- 节点依赖图连线行为
-- 内联值很重要
-- EventProducer 下游执行需要覆盖
-- 注册或 JSON 加载是风险的一部分
-
-### 8. 验证周边集成
-
-完成之前，验证节点不仅已实现，还已集成到系统的其余部分：
-
-- 父模块导出了它
-- 正确的注册表文件中存在注册表条目
-- 如果节点添加了值得注意的能力，文档或示例已更新
-- 节点在预期图结构中行为正确
+只有在用户明确要求，或复杂度确实值得时，再补自动化测试。
 
 ---
 
 ## 常见陷阱
 
-- 编写完实现后忘记注册节点
-- 使用模糊的端口名，使图编辑困难
-- 将可选输入标记为必要，或反之
-- 应该强制具体类型时返回松散类型的输出
-- EventProducer 节点不定期检查停止标志
-- 应用配置前动态端口节点暴露不稳定的端口列表
-- 编写在一个地方混合数据变换、传输和持久化关注点的节点
+- 应该放进服务运行时的能力却硬塞进节点
+- 动态端口没有在 `apply_inline_config()` 中重建
+- 端口命名含糊
+- 已知具体类型时却返回过于宽松的输出
+- 一个节点混合了太多不相关职责
 
 ---
 
 ## 完成检查清单
 
-在认为节点完成之前使用此检查清单：
-
-- 节点存在于其独立文件中
-- `new(id: String, name: String)` 存在
-- `Node` trait 实现与预期执行模型匹配
-- 端口声明清晰且使用稳定命名
-- 需要时实现了内联配置处理
-- 节点从父 `mod.rs` 导出
-- 节点在正确的注册表（`packages/zihuan_node/src/registry.rs` 或 `src/init_registry.rs`）中注册
-- 单元测试覆盖主要行为
-- 当错误情况是契约的一部分时，已测试错误情况
-- 所有 EventProducer 实现都存储并检查停止标志
+- 节点有独立文件
+- 存在 `new(id: String, name: String)`
+- 端口名清晰且稳定
+- `execute()` 与预期的同步行为一致
+- 可选钩子只在需要时使用
+- 节点已从模块导出
+- 节点已注册到正确的注册表
+- 行为已通过合适粒度的手工或自动验证
 
 ---
 
 ## 相关文档
 
-- 详细系统契约：[../dev-guides/node-system.md](../dev-guides/node-system.md)
-- 节点执行模型概述：[../dev-guides/node-types.md](../dev-guides/node-types.md)
-- 动态端口节点：[dynamic-port-nodes.md](./dynamic-port-nodes.md)
-- 图 JSON 格式：[node-graph-json.zh-CN.md](./node-graph-json.zh-CN.md)
-- 节点生命周期详情：[node-lifecycle.zh-CN.md](./node-lifecycle.zh-CN.md)
+- 运行时契约：[../dev-guides/node-system.md](../dev-guides/node-system.md)
+- 节点执行模型：[../dev-guides/node-types.md](../dev-guides/node-types.md)
+- 动态端口：[dynamic-port-nodes.md](./dynamic-port-nodes.md)
+- 图 JSON：[node-graph-json.zh-CN.md](./node-graph-json.zh-CN.md)
+- 生命周期：[node-lifecycle.zh-CN.md](./node-lifecycle.zh-CN.md)
