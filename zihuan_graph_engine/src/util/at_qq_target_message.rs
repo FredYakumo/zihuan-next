@@ -1,7 +1,7 @@
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
-use zihuan_core::ims_bot_adapter::models::message::{AtTargetMessage, Message};
 use zihuan_core::error::Result;
+use zihuan_core::ims_bot_adapter::models::message::{AtTargetMessage, Message};
 
 /// Converts a QQ target id string into an @ mention QQ message segment.
 pub struct AtQQTargetMessageNode {

@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use log::warn;
 use serde_json::Value;
 
-use zihuan_core::error::Result;
 use crate::graph_io::NodeGraphDefinition;
+use zihuan_core::error::Result;
 
 /// Returns the central directory that stores hyperparameter value files.
 ///
@@ -99,8 +99,9 @@ fn save_yaml_map(yaml_path: &Path, values: &HashMap<String, Value>) -> Result<()
         .filter_map(|(k, v)| json_to_yaml_value(v).map(|yv| (k.clone(), yv)))
         .collect();
 
-    let content = serde_yaml::to_string(&yaml_map)
-        .map_err(|e| zihuan_core::error::Error::StringError(format!("yaml serialize error: {e}")))?;
+    let content = serde_yaml::to_string(&yaml_map).map_err(|e| {
+        zihuan_core::error::Error::StringError(format!("yaml serialize error: {e}"))
+    })?;
     fs::write(yaml_path, content)?;
     Ok(())
 }
@@ -297,4 +298,3 @@ fn json_to_yaml_value(v: &Value) -> Option<serde_yaml::Value> {
         _ => None,
     }
 }
-

@@ -23,9 +23,13 @@ impl WeaviateImageCollectionNode {
     }
 
     fn connection_select_field() -> NodeConfigField {
-        NodeConfigField::new(CONNECTION_ID_FIELD, DataType::String, NodeConfigWidget::ConnectionSelect)
-            .with_connection_kind("weaviate")
-            .with_description("选择系统中的 Weaviate 图片集合连接配置")
+        NodeConfigField::new(
+            CONNECTION_ID_FIELD,
+            DataType::String,
+            NodeConfigWidget::ConnectionSelect,
+        )
+        .with_connection_kind("weaviate")
+        .with_description("选择系统中的 Weaviate 图片集合连接配置")
     }
 }
 
@@ -47,7 +51,8 @@ impl Node for WeaviateImageCollectionNode {
     }
 
     fn output_ports(&self) -> Vec<Port> {
-        vec![Port::new("weaviate_ref", DataType::WeaviateRef).with_description("Weaviate 数据库引用")]
+        vec![Port::new("weaviate_ref", DataType::WeaviateRef)
+            .with_description("Weaviate 数据库引用")]
     }
 
     fn config_fields(&self) -> Vec<NodeConfigField> {
@@ -55,10 +60,12 @@ impl Node for WeaviateImageCollectionNode {
     }
 
     fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
-        self.connection_id = inline_values.get(CONNECTION_ID_FIELD).and_then(|value| match value {
-            DataValue::String(value) => Some(value.clone()),
-            _ => None,
-        });
+        self.connection_id = inline_values
+            .get(CONNECTION_ID_FIELD)
+            .and_then(|value| match value {
+                DataValue::String(value) => Some(value.clone()),
+                _ => None,
+            });
         Ok(())
     }
 
@@ -73,12 +80,9 @@ impl Node for WeaviateImageCollectionNode {
             .filter(|value| !value.is_empty())
             .ok_or_else(|| Error::ValidationError("connection_id is required".to_string()))?;
         let connections = load_connections()?;
-        let weaviate_ref = resource_resolver::build_weaviate_ref(
-            Some(connection_id),
-            &connections,
-            true,
-        )?
-        .ok_or_else(|| Error::ValidationError("connection_id is required".to_string()))?;
+        let weaviate_ref =
+            resource_resolver::build_weaviate_ref(Some(connection_id), &connections, true)?
+                .ok_or_else(|| Error::ValidationError("connection_id is required".to_string()))?;
 
         Ok(HashMap::from([(
             "weaviate_ref".to_string(),

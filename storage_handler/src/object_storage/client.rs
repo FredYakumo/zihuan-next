@@ -61,12 +61,7 @@ impl ObjectStorageConfig {
         self.inner.object_url_for_key(key)
     }
 
-    pub async fn put_object(
-        &self,
-        key: &str,
-        content_type: &str,
-        body: &[u8],
-    ) -> Result<String> {
+    pub async fn put_object(&self, key: &str, content_type: &str, body: &[u8]) -> Result<String> {
         self.inner.put_object(key, content_type, body).await
     }
 }

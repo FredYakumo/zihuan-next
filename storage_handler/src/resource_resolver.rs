@@ -11,7 +11,10 @@ use zihuan_graph_engine::{DataValue, Node};
 
 use crate::{ConnectionConfig, ConnectionKind};
 
-pub fn find_connection<'a>(connections: &'a [ConnectionConfig], id: &str) -> Result<&'a ConnectionConfig> {
+pub fn find_connection<'a>(
+    connections: &'a [ConnectionConfig],
+    id: &str,
+) -> Result<&'a ConnectionConfig> {
     connections
         .iter()
         .find(|connection| connection.id == id)
@@ -86,14 +89,23 @@ pub fn build_weaviate_ref(
     };
 
     let mut node: Box<dyn Node> = if image_collection {
-        Box::new(WeaviateImageCollectionNode::new("__service__", "__service__"))
+        Box::new(WeaviateImageCollectionNode::new(
+            "__service__",
+            "__service__",
+        ))
     } else {
         Box::new(WeaviateNode::new("__service__", "__service__"))
     };
 
     let outputs = node.execute(HashMap::from([
-        ("base_url".to_string(), DataValue::String(weaviate.base_url.clone())),
-        ("class_name".to_string(), DataValue::String(weaviate.class_name.clone())),
+        (
+            "base_url".to_string(),
+            DataValue::String(weaviate.base_url.clone()),
+        ),
+        (
+            "class_name".to_string(),
+            DataValue::String(weaviate.class_name.clone()),
+        ),
     ]))?;
 
     match outputs.get("weaviate_ref") {
@@ -165,22 +177,26 @@ pub async fn resolve_connection_data_value(
     connections: &[ConnectionConfig],
 ) -> Result<Option<DataValue>> {
     match data_type {
-        zihuan_graph_engine::DataType::MySqlRef => build_mysql_ref(Some(connection_id), connections)
-            .await
-            .map(|value| value.map(DataValue::MySqlRef)),
-        zihuan_graph_engine::DataType::RedisRef => build_redis_ref(Some(connection_id), connections)
-            .map(|value| value.map(DataValue::RedisRef)),
-        zihuan_graph_engine::DataType::WeaviateRef => build_weaviate_ref(
-            Some(connection_id),
-            connections,
-            false,
-        )
-        .map(|value| value.map(DataValue::WeaviateRef)),
+        zihuan_graph_engine::DataType::MySqlRef => {
+            build_mysql_ref(Some(connection_id), connections)
+                .await
+                .map(|value| value.map(DataValue::MySqlRef))
+        }
+        zihuan_graph_engine::DataType::RedisRef => {
+            build_redis_ref(Some(connection_id), connections)
+                .map(|value| value.map(DataValue::RedisRef))
+        }
+        zihuan_graph_engine::DataType::WeaviateRef => {
+            build_weaviate_ref(Some(connection_id), connections, false)
+                .map(|value| value.map(DataValue::WeaviateRef))
+        }
         zihuan_graph_engine::DataType::S3Ref => build_s3_ref(Some(connection_id), connections)
             .await
             .map(|value| value.map(DataValue::S3Ref)),
-        zihuan_graph_engine::DataType::TavilyRef => build_tavily_ref(Some(connection_id), connections)
-            .map(|value| value.map(DataValue::TavilyRef)),
+        zihuan_graph_engine::DataType::TavilyRef => {
+            build_tavily_ref(Some(connection_id), connections)
+                .map(|value| value.map(DataValue::TavilyRef))
+        }
         _ => Ok(None),
     }
 }

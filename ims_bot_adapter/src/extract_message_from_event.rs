@@ -259,6 +259,38 @@ impl ExtractMessageFromEventNode {
                         }
                     }
                 }
+                Message::Forward(forward) => {
+                    if forward.content.is_empty() {
+                        Self::append_text_segment(text_buffer, &forward.to_string());
+                    } else {
+                        if !text_buffer.is_empty() {
+                            text_buffer.push_str("\n\n");
+                        }
+                        text_buffer.push_str("[转发内容]\n");
+                        for (index, node) in forward.content.iter().enumerate() {
+                            if index > 0 && !text_buffer.ends_with('\n') {
+                                text_buffer.push('\n');
+                            }
+                            let sender = node
+                                .nickname
+                                .as_deref()
+                                .or(node.user_id.as_deref())
+                                .unwrap_or("unknown");
+                            text_buffer.push_str(sender);
+                            text_buffer.push_str(": ");
+                            Self::append_messages_as_parts(
+                                &node.content,
+                                parts,
+                                text_buffer,
+                                has_media,
+                                false,
+                            );
+                            if !text_buffer.ends_with('\n') {
+                                text_buffer.push('\n');
+                            }
+                        }
+                    }
+                }
                 other => {
                     Self::append_text_segment(text_buffer, &other.to_string());
                 }
@@ -426,4 +458,3 @@ impl Node for ExtractMessageFromEventNode {
         Ok(outputs)
     }
 }
-

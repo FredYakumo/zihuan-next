@@ -566,4 +566,3 @@ fn session_display_name(s: &GraphSession) -> String {
         "Untitled".to_string()
     }
 }
-

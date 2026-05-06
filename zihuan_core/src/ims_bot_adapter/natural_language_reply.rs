@@ -1,5 +1,5 @@
-use crate::ims_bot_adapter::models::message::{AtTargetMessage, Message, PlainTextMessage};
 use crate::error::{Error, Result};
+use crate::ims_bot_adapter::models::message::{AtTargetMessage, Message, PlainTextMessage};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]

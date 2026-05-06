@@ -15,3 +15,4 @@ class MessageRecord(Base):
     content = Column(String(2048), nullable=False)
     at_target_list = Column(String(512), nullable=True)
     media_json = Column(String(4096), nullable=True)
+    raw_message_json = Column(String(65535), nullable=True)

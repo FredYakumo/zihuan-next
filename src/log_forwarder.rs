@@ -126,4 +126,3 @@ fn current_task_id() -> Option<String> {
                 .ok()
         })
 }
-

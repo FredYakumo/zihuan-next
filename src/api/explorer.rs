@@ -46,11 +46,12 @@ pub async fn query_mysql(req: &mut Request, res: &mut Response, _depot: &mut Dep
         Err(e) => return render_internal_error(res, e),
     };
 
-    let mysql_ref = match resource_resolver::build_mysql_ref(Some(&connection_id), &connections).await {
-        Ok(Some(r)) => r,
-        Ok(None) => return render_bad_request(res, "connection not found".into()),
-        Err(e) => return render_internal_error(res, e),
-    };
+    let mysql_ref =
+        match resource_resolver::build_mysql_ref(Some(&connection_id), &connections).await {
+            Ok(Some(r)) => r,
+            Ok(None) => return render_bad_request(res, "connection not found".into()),
+            Err(e) => return render_internal_error(res, e),
+        };
 
     let pool = match mysql_ref.pool.as_ref() {
         Some(p) => p.clone(),
@@ -213,7 +214,9 @@ pub async fn query_redis(req: &mut Request, res: &mut Response, _depot: &mut Dep
         Some(id) => id,
         None => return render_bad_request(res, "connection_id is required".into()),
     };
-    let pattern = req.query::<String>("pattern").unwrap_or_else(|| "*".to_string());
+    let pattern = req
+        .query::<String>("pattern")
+        .unwrap_or_else(|| "*".to_string());
     let scan_cursor = req.query::<u64>("scan_cursor").unwrap_or(0);
     let page = req.query::<u32>("page").unwrap_or(1).max(1);
     let page_size = req.query::<u32>("page_size").unwrap_or(20).min(100).max(1);
@@ -236,11 +239,17 @@ pub async fn query_redis(req: &mut Request, res: &mut Response, _depot: &mut Dep
             if let Some(ref url) = redis_ref.url {
                 let client = match redis::Client::open(url.as_str()) {
                     Ok(c) => c,
-                    Err(e) => return render_internal_error(res, format!("redis client open failed: {e}")),
+                    Err(e) => {
+                        return render_internal_error(res, format!("redis client open failed: {e}"))
+                    }
                 };
                 match client.get_tokio_connection().await {
-                    Ok(conn) => { *cm = Some(conn); }
-                    Err(e) => return render_internal_error(res, format!("redis connect failed: {e}")),
+                    Ok(conn) => {
+                        *cm = Some(conn);
+                    }
+                    Err(e) => {
+                        return render_internal_error(res, format!("redis connect failed: {e}"))
+                    }
                 }
             } else {
                 return render_bad_request(res, "redis connection has no url".into());
@@ -406,26 +415,26 @@ pub async fn query_rustfs(req: &mut Request, res: &mut Response, _depot: &mut De
         .contents()
         .iter()
         .filter_map(|obj| {
-                    let key = obj.key()?.to_string();
-                    let size = obj.size().unwrap_or(0);
+            let key = obj.key()?.to_string();
+            let size = obj.size().unwrap_or(0);
 
-                    if let Some(ref s) = search {
-                        if !s.is_empty() && !key.contains(s.as_str()) {
-                            return None;
-                        }
-                    }
+            if let Some(ref s) = search {
+                if !s.is_empty() && !key.contains(s.as_str()) {
+                    return None;
+                }
+            }
 
-                    let last_modified = obj.last_modified().map(|dt| dt.to_string());
-                    let url = s3_ref.object_url_for_key(&key).unwrap_or_default();
+            let last_modified = obj.last_modified().map(|dt| dt.to_string());
+            let url = s3_ref.object_url_for_key(&key).unwrap_or_default();
 
-                    Some(RustfsObjectEntry {
-                        key,
-                        size,
-                        last_modified,
-                        url,
-                    })
-                })
-                .collect();
+            Some(RustfsObjectEntry {
+                key,
+                size,
+                last_modified,
+                url,
+            })
+        })
+        .collect();
 
     let total = objects.len();
     let start = ((page - 1) * page_size) as usize;

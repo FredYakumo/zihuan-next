@@ -1,5 +1,5 @@
-pub mod config;
 pub mod chat;
+pub mod config;
 pub mod execution;
 pub mod explorer;
 pub mod file_io;
@@ -132,9 +132,7 @@ pub fn build_router(
         .push(Router::with_path("file/open").post(file_io::open_file))
         .push(Router::with_path("file/upload").post(file_io::upload_graph))
         .push(Router::with_path("file/upload-image").post(file_io::upload_image))
-        .push(
-            Router::with_path("models/text-embedding").get(file_io::list_text_embedding_models),
-        )
+        .push(Router::with_path("models/text-embedding").get(file_io::list_text_embedding_models))
         .push(Router::with_path("uploaded-images/<**rest>").get(file_io::serve_uploaded_image))
         // Frontend log forwarding
         .push(Router::with_path("log").post(log::frontend_log))

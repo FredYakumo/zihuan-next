@@ -1,3 +1,4 @@
+use async_recursion::async_recursion;
 use futures_util::{SinkExt, StreamExt};
 use log::{debug, error, info, warn};
 use std::collections::HashMap;
@@ -8,11 +9,14 @@ use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 
 use super::event;
 use super::models::{MessageEvent, MessageType, Profile, RawMessageEvent};
-use storage_handler::{enrich_event_images, ImageCacheAdapter, PendingImageUpload};
+use crate::ws_action::ws_send_action_async;
+use storage_handler::{
+    enrich_event_images, enrich_message_images, ImageCacheAdapter, PendingImageUpload,
+};
 use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::{mpsc, oneshot};
-use zihuan_core::ims_bot_adapter::models::message::Message;
 use zihuan_core::error::Result;
+use zihuan_core::ims_bot_adapter::models::message::{ForwardNodeMessage, Message};
 use zihuan_core::url_utils::extract_host;
 use zihuan_graph_engine::message_restore::restore_message_snapshot;
 use zihuan_graph_engine::object_storage::S3Ref;
@@ -167,7 +171,9 @@ impl BotAdapter {
 ///
 /// # Panics
 /// Panics if the handle did not originate from a `SharedBotAdapter`.
-pub fn shared_from_handle(handle: &zihuan_core::ims_bot_adapter::BotAdapterHandle) -> SharedBotAdapter {
+pub fn shared_from_handle(
+    handle: &zihuan_core::ims_bot_adapter::BotAdapterHandle,
+) -> SharedBotAdapter {
     handle
         .clone()
         .downcast::<TokioMutex<BotAdapter>>()
@@ -350,7 +356,13 @@ impl BotAdapter {
 
         let image_cache_handle = BotAdapterImageCacheHandle(adapter.clone());
         enrich_event_images(&image_cache_handle, &mut event).await;
-        hydrate_reply_sources(&mut event);
+        hydrate_message_segments(
+            &adapter,
+            &image_cache_handle,
+            event.message_id,
+            &mut event.message_list,
+        )
+        .await;
 
         // Dispatch to the unified message handler
         let adapter_clone = adapter.clone();
@@ -360,41 +372,151 @@ impl BotAdapter {
     }
 }
 
-fn hydrate_reply_sources(event: &mut MessageEvent) {
-    for message in &mut event.message_list {
-        let Message::Reply(reply) = message else {
-            continue;
-        };
+#[derive(Debug, serde::Deserialize)]
+struct NapCatForwardResponse {
+    data: Option<NapCatForwardData>,
+}
 
-        match restore_message_snapshot(reply.id) {
-            Ok(Some(snapshot)) => {
-                let image_count = snapshot
-                    .messages
-                    .iter()
-                    .filter(|message| matches!(message, Message::Image(_)))
-                    .count();
-                info!(
-                    "[adapter] hydrated reply source for message_id={} via {} (segments={}, images={})",
-                    reply.id,
-                    snapshot.source.as_str(),
-                    snapshot.messages.len(),
-                    image_count
-                );
-                reply.message_source = Some(snapshot.messages);
-            }
-            Ok(None) => {
-                debug!(
-                    "[adapter] reply source miss for message_id={} (no cache/mysql snapshot)",
-                    reply.id
-                );
-            }
-            Err(error) => {
-                debug!(
-                    "[adapter] failed to hydrate reply source for message_id={}: {}",
-                    reply.id, error
-                );
-            }
+#[derive(Debug, serde::Deserialize)]
+struct NapCatForwardData {
+    #[serde(default)]
+    messages: Vec<NapCatForwardNode>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct NapCatForwardNode {
+    #[serde(default)]
+    data: NapCatForwardNodeData,
+}
+
+#[derive(Debug, serde::Deserialize, Default)]
+struct NapCatForwardNodeData {
+    #[serde(default, alias = "user_id", alias = "sender_id")]
+    user_id: Option<serde_json::Value>,
+    #[serde(default, alias = "name")]
+    nickname: Option<String>,
+    #[serde(default)]
+    id: Option<serde_json::Value>,
+    #[serde(default, alias = "message")]
+    content: Vec<Message>,
+}
+
+impl NapCatForwardNodeData {
+    fn value_to_string(value: Option<serde_json::Value>) -> Option<String> {
+        match value? {
+            serde_json::Value::String(text) => Some(text),
+            serde_json::Value::Number(number) => Some(number.to_string()),
+            _ => None,
+        }
+    }
+
+    fn into_forward_node(self) -> ForwardNodeMessage {
+        ForwardNodeMessage {
+            user_id: Self::value_to_string(self.user_id),
+            nickname: self.nickname,
+            id: Self::value_to_string(self.id),
+            content: self.content,
         }
     }
 }
 
+#[async_recursion]
+async fn hydrate_message_segments(
+    adapter: &SharedBotAdapter,
+    image_cache_handle: &BotAdapterImageCacheHandle,
+    root_message_id: i64,
+    messages: &mut [Message],
+) {
+    for message in messages {
+        match message {
+            Message::Reply(reply) => match restore_message_snapshot(reply.id) {
+                Ok(Some(snapshot)) => {
+                    let image_count = snapshot
+                        .messages
+                        .iter()
+                        .filter(|message| matches!(message, Message::Image(_)))
+                        .count();
+                    info!(
+                        "[adapter] hydrated reply source for message_id={} via {} (segments={}, images={})",
+                        reply.id,
+                        snapshot.source.as_str(),
+                        snapshot.messages.len(),
+                        image_count
+                    );
+                    reply.message_source = Some(snapshot.messages);
+                }
+                Ok(None) => {
+                    debug!(
+                        "[adapter] reply source miss for message_id={} (no cache/mysql snapshot)",
+                        reply.id
+                    );
+                }
+                Err(error) => {
+                    debug!(
+                        "[adapter] failed to hydrate reply source for message_id={}: {}",
+                        reply.id, error
+                    );
+                }
+            },
+            Message::Forward(forward) => {
+                if forward.content.is_empty() {
+                    if let Some(forward_id) = forward.id.clone() {
+                        match fetch_forward_content(adapter, &forward_id).await {
+                            Ok(content) => {
+                                info!(
+                                    "[adapter] hydrated forward content for forward_id={} (nodes={})",
+                                    forward_id,
+                                    content.len()
+                                );
+                                forward.content = content;
+                            }
+                            Err(error) => {
+                                warn!(
+                                    "[adapter] failed to hydrate forward content for forward_id={}: {}",
+                                    forward_id, error
+                                );
+                            }
+                        }
+                    }
+                }
+
+                for node in &mut forward.content {
+                    hydrate_message_segments(
+                        adapter,
+                        image_cache_handle,
+                        root_message_id,
+                        &mut node.content,
+                    )
+                    .await;
+                    enrich_message_images(image_cache_handle, root_message_id, &mut node.content)
+                        .await;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+async fn fetch_forward_content(
+    adapter: &SharedBotAdapter,
+    forward_id: &str,
+) -> Result<Vec<ForwardNodeMessage>> {
+    let response = ws_send_action_async(
+        adapter,
+        "get_forward_msg",
+        serde_json::json!({ "message_id": forward_id }),
+    )
+    .await?;
+    let payload: NapCatForwardResponse = serde_json::from_value(response)?;
+    let nodes = payload
+        .data
+        .map(|data| {
+            data.messages
+                .into_iter()
+                .map(|node| node.data.into_forward_node())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(nodes)
+}

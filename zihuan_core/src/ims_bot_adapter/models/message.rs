@@ -283,6 +283,65 @@ pub struct ForwardNodeMessage {
     pub content: Vec<Message>,
 }
 
+fn append_rendered_segment(buffer: &mut String, segment: &str) {
+    let segment = segment.trim();
+    if segment.is_empty() {
+        return;
+    }
+
+    if !buffer.is_empty() {
+        let last_char = buffer.chars().last();
+        if !matches!(last_char, Some('\n') | Some(' ')) {
+            buffer.push(' ');
+        }
+    }
+
+    buffer.push_str(segment);
+}
+
+fn render_forward_node_readable(node: &ForwardNodeMessage) -> String {
+    let sender = node
+        .nickname
+        .as_deref()
+        .or(node.user_id.as_deref())
+        .unwrap_or("unknown");
+    let rendered = render_messages_readable(&node.content);
+    if rendered.trim().is_empty() {
+        format!("{sender}: (empty)")
+    } else {
+        format!("{sender}: {rendered}")
+    }
+}
+
+pub fn render_messages_readable(messages: &[Message]) -> String {
+    let mut rendered = String::new();
+
+    for message in messages {
+        match message {
+            Message::PlainText(plain) => append_rendered_segment(&mut rendered, &plain.text),
+            Message::At(at) => append_rendered_segment(&mut rendered, &at.to_string()),
+            Message::Reply(reply) => append_rendered_segment(&mut rendered, &reply.to_string()),
+            Message::Image(image) => append_rendered_segment(&mut rendered, &image.to_string()),
+            Message::Forward(forward) => {
+                if forward.content.is_empty() {
+                    append_rendered_segment(&mut rendered, &forward.to_string());
+                    continue;
+                }
+
+                let body = forward
+                    .content
+                    .iter()
+                    .map(render_forward_node_readable)
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                append_rendered_segment(&mut rendered, &format!("[Forward]\n{body}\n[/Forward]"));
+            }
+        }
+    }
+
+    rendered
+}
+
 #[derive(Clone, Debug)]
 pub struct MessageProp {
     pub content: Option<String>,
@@ -356,14 +415,11 @@ impl MessageProp {
     ) -> Self {
         use std::collections::HashSet;
 
-        let mut content_parts: Vec<String> = Vec::with_capacity(messages.len());
         let mut ref_parts: Vec<String> = Vec::new();
         let mut at_targets: Vec<String> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
 
         for m in messages {
-            content_parts.push(m.to_string());
-
             if let Message::At(at) = m {
                 if let Some(id) = &at.target {
                     if seen.insert(id.clone()) {
@@ -374,11 +430,7 @@ impl MessageProp {
 
             if let Message::Reply(reply) = m {
                 if let Some(ref source_messages) = reply.message_source {
-                    let rendered = source_messages
-                        .iter()
-                        .map(|message| message.to_string())
-                        .collect::<Vec<_>>()
-                        .join(" ");
+                    let rendered = render_messages_readable(source_messages);
                     if !rendered.trim().is_empty() {
                         ref_parts.push(rendered);
                     }
@@ -387,7 +439,7 @@ impl MessageProp {
         }
 
         let content = {
-            let s = content_parts.join(" ");
+            let s = render_messages_readable(messages);
             if s.trim().is_empty() {
                 None
             } else {

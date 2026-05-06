@@ -136,4 +136,3 @@ pub async fn update_variables(req: &mut Request, res: &mut Response, depot: &mut
         }
     }
 }
-

@@ -2,31 +2,33 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
+use crate::resource_resolver::{
+    build_embedding_model, build_llm_model, resolve_llm_service_config,
+};
 use chrono::Local;
+use ims_bot_adapter::adapter::BotAdapter;
+use ims_bot_adapter::event::EventHandler;
+use ims_bot_adapter::{build_ims_bot_adapter, parse_ims_bot_adapter_connection};
 use log::{error, info};
-use tokio::task::JoinHandle;
 use storage_handler::{
     build_mysql_ref, build_s3_ref, build_tavily_ref, build_weaviate_ref, find_connection,
     ConnectionConfig, ConnectionKind,
 };
-use ims_bot_adapter::adapter::BotAdapter;
-use ims_bot_adapter::event::EventHandler;
-use ims_bot_adapter::{build_ims_bot_adapter, parse_ims_bot_adapter_connection};
+use tokio::task::JoinHandle;
 use zihuan_core::error::{Error, Result};
+use zihuan_graph_engine::brain_tool_spec::QQ_AGENT_TOOL_OUTPUT_NAME;
+use zihuan_graph_engine::data_value::EXECUTION_TASK_ID;
+use zihuan_graph_engine::data_value::{OpenAIMessageSessionCacheRef, SessionStateRef};
+use zihuan_graph_engine::function_graph::FunctionPortDef;
+use zihuan_graph_engine::message_restore::register_mysql_ref;
+use zihuan_graph_engine::DataType;
 use zihuan_llm::agent::qq_chat_agent::{QqChatAgentService, QqChatAgentServiceConfig};
 use zihuan_llm::brain_tool::BrainToolDefinition;
 use zihuan_llm::system_config::{
     load_llm_refs, AgentConfig, AgentToolConfig, AgentToolType, NodeGraphToolConfig,
     QqChatAgentConfig,
 };
-use crate::resource_resolver::{build_embedding_model, build_llm_model, resolve_llm_service_config};
-use zihuan_graph_engine::brain_tool_spec::QQ_AGENT_TOOL_OUTPUT_NAME;
-use zihuan_graph_engine::data_value::{OpenAIMessageSessionCacheRef, SessionStateRef};
-use zihuan_graph_engine::function_graph::FunctionPortDef;
-use zihuan_graph_engine::message_restore::register_mysql_ref;
-use zihuan_graph_engine::DataType;
-use zihuan_graph_engine::data_value::EXECUTION_TASK_ID;
-use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
 
 pub async fn spawn(
     manager: &AgentManager,
@@ -59,10 +61,18 @@ pub async fn spawn(
     let object_storage = build_s3_ref(config.rustfs_connection_id.as_deref(), &connections).await?;
     let mysql_ref = build_mysql_ref(config.mysql_connection_id.as_deref(), &connections).await?;
     let weaviate_ref = tokio::task::block_in_place(|| {
-        build_weaviate_ref(config.weaviate_connection_id.as_deref(), &connections, false)
+        build_weaviate_ref(
+            config.weaviate_connection_id.as_deref(),
+            &connections,
+            false,
+        )
     })?;
     let weaviate_image_ref = tokio::task::block_in_place(|| {
-        build_weaviate_ref(config.weaviate_image_connection_id.as_deref(), &connections, true)
+        build_weaviate_ref(
+            config.weaviate_image_connection_id.as_deref(),
+            &connections,
+            true,
+        )
     })?;
     let tool_definitions = build_enabled_tool_definitions(&agent.tools)?;
 
@@ -142,7 +152,10 @@ pub async fn spawn(
                 (true, None)
             }
             Err(err) => {
-                error!("[service] QQ chat agent '{}' exited with error: {}", agent_name, err);
+                error!(
+                    "[service] QQ chat agent '{}' exited with error: {}",
+                    agent_name, err
+                );
                 let msg = err.to_string();
                 manager.update_state(
                     &agent_id,
@@ -161,7 +174,9 @@ pub async fn spawn(
     })))
 }
 
-pub fn build_enabled_tool_definitions(tools: &[AgentToolConfig]) -> Result<Vec<BrainToolDefinition>> {
+pub fn build_enabled_tool_definitions(
+    tools: &[AgentToolConfig],
+) -> Result<Vec<BrainToolDefinition>> {
     let mut definitions = Vec::new();
     for tool in tools.iter().filter(|tool| tool.enabled) {
         match &tool.tool_type {
@@ -178,19 +193,29 @@ fn build_node_graph_tool_definition(
     config: &NodeGraphToolConfig,
 ) -> Result<BrainToolDefinition> {
     let (subgraph, parameters, outputs) = match config {
-        NodeGraphToolConfig::FilePath { path, parameters, outputs } => (
+        NodeGraphToolConfig::FilePath {
+            path,
+            parameters,
+            outputs,
+        } => (
             load_graph_from_path(PathBuf::from(path))?,
             parameters.clone(),
             outputs.clone(),
         ),
-        NodeGraphToolConfig::WorkflowSet { name, parameters, outputs } => (
+        NodeGraphToolConfig::WorkflowSet {
+            name,
+            parameters,
+            outputs,
+        } => (
             load_graph_from_path(PathBuf::from("workflow_set").join(format!("{name}.json")))?,
             parameters.clone(),
             outputs.clone(),
         ),
-        NodeGraphToolConfig::InlineGraph { graph, parameters, outputs } => {
-            (graph.clone(), parameters.clone(), outputs.clone())
-        }
+        NodeGraphToolConfig::InlineGraph {
+            graph,
+            parameters,
+            outputs,
+        } => (graph.clone(), parameters.clone(), outputs.clone()),
     };
 
     let outputs = if outputs.is_empty() {
@@ -212,7 +237,9 @@ fn build_node_graph_tool_definition(
     })
 }
 
-fn load_graph_from_path(path: PathBuf) -> Result<zihuan_graph_engine::graph_io::NodeGraphDefinition> {
+fn load_graph_from_path(
+    path: PathBuf,
+) -> Result<zihuan_graph_engine::graph_io::NodeGraphDefinition> {
     if !path.exists() {
         return Err(Error::ValidationError(format!(
             "tool graph file not found: {}",
@@ -222,4 +249,3 @@ fn load_graph_from_path(path: PathBuf) -> Result<zihuan_graph_engine::graph_io::
     let loaded = zihuan_graph_engine::load_graph_definition_from_json_with_migration(&path)?;
     Ok(loaded.graph)
 }
-

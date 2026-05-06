@@ -9,9 +9,9 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
+use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
 use zihuan_core::ims_bot_adapter::models::message::{collect_media_records, Message};
-use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
@@ -295,7 +295,9 @@ impl WeaviateRef {
         let summary = required_non_empty_string(summary, "summary")?;
 
         if vector.is_empty() {
-            return Err(Error::ValidationError("vector must not be empty".to_string()));
+            return Err(Error::ValidationError(
+                "vector must not be empty".to_string(),
+            ));
         }
 
         let properties = json!({

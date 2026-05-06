@@ -12,18 +12,18 @@ use serde::{Deserialize, Serialize};
 use zihuan_core::error::Result;
 use zihuan_core::system_config::{load_section, save_section, SystemConfigSection};
 
-pub use object_storage::{
-    enrich_event_images, save_image_to_object_storage, ImageCacheAdapter, ImageObjectStorageInput,
-    ObjectStorageConfig, PendingImageUpload, SavedImageObject,
-};
 pub use connection_manager::ConnectionManager;
+pub use message_store::{MessageRecord, MessageStore};
+pub use mysql::MySqlNode;
+pub use object_storage::{
+    enrich_event_images, enrich_message_images, save_image_to_object_storage, ImageCacheAdapter,
+    ImageObjectStorageInput, ObjectStorageConfig, PendingImageUpload, SavedImageObject,
+};
+pub use redis::RedisNode;
 pub use resource_resolver::{
     build_mysql_ref, build_redis_ref, build_s3_ref, build_tavily_ref, build_weaviate_ref,
     find_connection, resolve_connection_data_value,
 };
-pub use message_store::{MessageRecord, MessageStore};
-pub use mysql::MySqlNode;
-pub use redis::RedisNode;
 pub use rustfs::RustfsNode;
 pub use weaviate::WeaviateNode;
 pub use weaviate_image_collection::WeaviateImageCollectionNode;
@@ -115,12 +115,12 @@ pub fn save_connections(connections: Vec<ConnectionConfig>) -> Result<()> {
 }
 
 pub fn init_node_registry() -> Result<()> {
-    use zihuan_graph_engine::register_node;
     use zihuan_graph_engine::image_weaviate_persistence::ImageWeaviatePersistenceNode;
     use zihuan_graph_engine::message_mysql_get_group_history::MessageMySQLGetGroupHistoryNode;
     use zihuan_graph_engine::message_mysql_get_user_history::MessageMySQLGetUserHistoryNode;
     use zihuan_graph_engine::qq_message_list_mysql_persistence::QQMessageListMySQLPersistenceNode;
     use zihuan_graph_engine::qq_message_list_weaviate_persistence::QQMessageListWeaviatePersistenceNode;
+    use zihuan_graph_engine::register_node;
 
     register_node!(
         "redis",

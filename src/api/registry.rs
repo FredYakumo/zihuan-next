@@ -129,4 +129,3 @@ pub async fn get_categories(_req: &mut Request, res: &mut Response, _depot: &mut
     let cats = NODE_REGISTRY.get_categories();
     res.render(Json(cats));
 }
-

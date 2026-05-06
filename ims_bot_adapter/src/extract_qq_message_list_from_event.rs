@@ -29,7 +29,9 @@ impl Node for ExtractQQMessageListFromEventNode {
         Some("从消息事件中提取 QQ 消息列表 (Vec<QQMessage>)")
     }
 
-    node_input![port! { name = "message_event", ty = crate::models::event_model::MessageEvent, desc = "输入的消息事件" },];
+    node_input![
+        port! { name = "message_event", ty = crate::models::event_model::MessageEvent, desc = "输入的消息事件" },
+    ];
 
     node_output![port! { name = "message_list", ty = Vec(QQMessage), desc = "QQ 消息列表" },];
 
@@ -56,4 +58,3 @@ impl Node for ExtractQQMessageListFromEventNode {
         Ok(outputs)
     }
 }
-

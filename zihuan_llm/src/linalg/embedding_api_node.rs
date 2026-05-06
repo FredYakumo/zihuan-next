@@ -112,4 +112,3 @@ impl Node for LoadTextEmbedderNode {
         Ok(outputs)
     }
 }
-

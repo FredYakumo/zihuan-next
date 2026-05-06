@@ -583,4 +583,3 @@ fn sanitize_upload_file_name(name: &str) -> String {
         cleaned
     }
 }
-

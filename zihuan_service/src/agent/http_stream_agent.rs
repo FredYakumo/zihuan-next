@@ -12,8 +12,8 @@ use zihuan_llm::system_config::{
 
 use zihuan_graph_engine::data_value::EXECUTION_TASK_ID;
 
-use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
 use super::inference::{infer_agent_response, resolve_agent_model_name};
+use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
 
 #[derive(Clone)]
 struct HttpStreamRuntimeState {
@@ -128,18 +128,18 @@ impl Handler for HttpStreamAuth {
 }
 
 #[handler]
-async fn http_stream_chat_completions(
-    req: &mut Request,
-    res: &mut Response,
-    depot: &mut Depot,
-) {
+async fn http_stream_chat_completions(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let runtime = depot
         .obtain::<Arc<HttpStreamRuntimeState>>()
         .expect("http stream runtime state missing");
     let body: ChatCompletionsRequest = match req.parse_json().await {
         Ok(body) => body,
         Err(err) => {
-            render_http_stream_error(res, StatusCode::BAD_REQUEST, format!("invalid request body: {err}"));
+            render_http_stream_error(
+                res,
+                StatusCode::BAD_REQUEST,
+                format!("invalid request body: {err}"),
+            );
             return;
         }
     };
@@ -162,7 +162,9 @@ async fn http_stream_chat_completions(
             );
             res.render(Text::Plain(body));
         }
-        Err(err) => render_http_stream_error(res, StatusCode::UNPROCESSABLE_ENTITY, err.to_string()),
+        Err(err) => {
+            render_http_stream_error(res, StatusCode::UNPROCESSABLE_ENTITY, err.to_string())
+        }
     }
 }
 
@@ -170,7 +172,12 @@ async fn execute_http_stream_completion(
     runtime: &HttpStreamRuntimeState,
     request: ChatCompletionsRequest,
 ) -> Result<HttpStreamCompletion> {
-    let ChatCompletionsRequest { model, messages, stream, agent_id } = request;
+    let ChatCompletionsRequest {
+        model,
+        messages,
+        stream,
+        agent_id,
+    } = request;
     let llm_refs = load_llm_refs()?;
     let agents = load_agents()?;
     let target_agent = resolve_http_stream_target_agent(runtime, &agents, agent_id.as_deref())?;
@@ -325,7 +332,9 @@ fn bearer_token(value: Option<&HeaderValue>) -> Option<&str> {
 }
 
 fn normalize_optional_token(value: Option<String>) -> Option<String> {
-    value.map(|token| token.trim().to_string()).filter(|token| !token.is_empty())
+    value
+        .map(|token| token.trim().to_string())
+        .filter(|token| !token.is_empty())
 }
 
 fn validate_http_stream_config(config: &HttpStreamAgentConfig) -> Result<()> {
@@ -339,10 +348,9 @@ fn validate_http_stream_config(config: &HttpStreamAgentConfig) -> Result<()> {
         .as_deref()
         .map(str::trim)
         .is_some_and(|value| !value.is_empty());
-    let has_legacy_llm = config
-        .llm
-        .as_ref()
-        .is_some_and(|llm| !llm.model_name.trim().is_empty() && !llm.api_endpoint.trim().is_empty());
+    let has_legacy_llm = config.llm.as_ref().is_some_and(|llm| {
+        !llm.model_name.trim().is_empty() && !llm.api_endpoint.trim().is_empty()
+    });
     if !has_llm_ref && !has_legacy_llm {
         return Err(Error::ValidationError(
             "http_stream must define llm_ref_id or legacy llm config".to_string(),

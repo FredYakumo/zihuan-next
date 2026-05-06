@@ -1,14 +1,15 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use async_recursion::async_recursion;
 use async_trait::async_trait;
 use base64::Engine;
 use log::{debug, info, warn};
 use reqwest::Client;
 use serde::Deserialize;
-use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
-use zihuan_core::ims_bot_adapter::models::message::{ImageMessage, Message};
 use zihuan_core::error::{Error, Result};
+use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
+use zihuan_core::ims_bot_adapter::models::message::{ForwardNodeMessage, ImageMessage, Message};
 use zihuan_graph_engine::object_storage::S3Ref;
 
 use super::{save_image_to_object_storage, ImageObjectStorageInput};
@@ -45,62 +46,97 @@ struct NapCatImageDetailData {
 }
 
 pub async fn enrich_event_images<A: ImageCacheAdapter>(adapter: &A, event: &mut MessageEvent) {
+    enrich_message_images(adapter, event.message_id, &mut event.message_list).await;
+}
+
+pub async fn enrich_message_images<A: ImageCacheAdapter>(
+    adapter: &A,
+    message_id: i64,
+    messages: &mut [Message],
+) {
     let Some(object_storage) = adapter.object_storage().await else {
         debug!("{LOG_PREFIX} Object storage is not configured; skipping image caching");
         return;
     };
 
-    for (segment_index, message) in event.message_list.iter_mut().enumerate() {
-        let Message::Image(image) = message else {
-            continue;
-        };
+    enrich_message_images_with_storage(adapter, &object_storage, message_id, messages).await;
+}
 
-        if image.object_key.is_some() {
-            continue;
-        }
+#[async_recursion]
+async fn enrich_message_images_with_storage<A: ImageCacheAdapter>(
+    adapter: &A,
+    object_storage: &S3Ref,
+    message_id: i64,
+    messages: &mut [Message],
+) {
+    for (segment_index, message) in messages.iter_mut().enumerate() {
+        match message {
+            Message::Image(image) => {
+                if image.object_key.is_some() {
+                    continue;
+                }
 
-        match cache_one_image(
-            adapter,
-            &object_storage,
-            event.message_id,
-            segment_index,
-            image,
-        )
-        .await
-        {
-            Ok(Some(object_url)) => {
-                info!(
-                    "{LOG_PREFIX} Cached image for message {} segment {} to {}",
-                    event.message_id, segment_index, object_url
-                );
-            }
-            Ok(None) => {
-                debug!(
-                    "{LOG_PREFIX} No resolvable source for message {} segment {}",
-                    event.message_id, segment_index
-                );
-            }
-            Err(error) => {
-                warn!(
-                    "{LOG_PREFIX} Failed to cache image for message {} segment {}: {}",
-                    event.message_id, segment_index, error
-                );
-                image.cache_status = Some("pending_retry".to_string());
-                let should_spawn = adapter
-                    .enqueue_pending_image(PendingImageUpload {
-                        message_id: event.message_id,
-                        segment_index,
-                        image: image.clone(),
-                    })
-                    .await;
-                if should_spawn {
-                    let adapter_clone = adapter.clone();
-                    tokio::spawn(async move {
-                        run_retry_loop(adapter_clone).await;
-                    });
+                match cache_one_image(adapter, object_storage, message_id, segment_index, image)
+                    .await
+                {
+                    Ok(Some(object_url)) => {
+                        info!(
+                            "{LOG_PREFIX} Cached image for message {} segment {} to {}",
+                            message_id, segment_index, object_url
+                        );
+                    }
+                    Ok(None) => {
+                        debug!(
+                            "{LOG_PREFIX} No resolvable source for message {} segment {}",
+                            message_id, segment_index
+                        );
+                    }
+                    Err(error) => {
+                        warn!(
+                            "{LOG_PREFIX} Failed to cache image for message {} segment {}: {}",
+                            message_id, segment_index, error
+                        );
+                        image.cache_status = Some("pending_retry".to_string());
+                        let should_spawn = adapter
+                            .enqueue_pending_image(PendingImageUpload {
+                                message_id,
+                                segment_index,
+                                image: image.clone(),
+                            })
+                            .await;
+                        if should_spawn {
+                            let adapter_clone = adapter.clone();
+                            tokio::spawn(async move {
+                                run_retry_loop(adapter_clone).await;
+                            });
+                        }
+                    }
                 }
             }
+            Message::Forward(forward) => {
+                enrich_forward_node_images(
+                    adapter,
+                    object_storage,
+                    message_id,
+                    &mut forward.content,
+                )
+                .await;
+            }
+            _ => {}
         }
+    }
+}
+
+#[async_recursion]
+async fn enrich_forward_node_images<A: ImageCacheAdapter>(
+    adapter: &A,
+    object_storage: &S3Ref,
+    message_id: i64,
+    nodes: &mut [ForwardNodeMessage],
+) {
+    for node in nodes {
+        enrich_message_images_with_storage(adapter, object_storage, message_id, &mut node.content)
+            .await;
     }
 }
 

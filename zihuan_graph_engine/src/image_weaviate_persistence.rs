@@ -66,7 +66,9 @@ impl Node for ImageWeaviatePersistenceNode {
             .ok_or_else(|| Error::InvalidNodeInput("vector is required".to_string()))?;
 
         if vector.is_empty() {
-            return Err(Error::ValidationError("vector must not be empty".to_string()));
+            return Err(Error::ValidationError(
+                "vector must not be empty".to_string(),
+            ));
         }
 
         let weaviate_ref = inputs

@@ -30,9 +30,9 @@ pub trait SystemConfigSection {
     }
 
     fn write_to_root(root: &mut Value, value: &Self::Value) -> Result<()> {
-        let object = root
-            .as_object_mut()
-            .ok_or_else(|| Error::StringError("system config root must be a JSON object".to_string()))?;
+        let object = root.as_object_mut().ok_or_else(|| {
+            Error::StringError("system config root must be a JSON object".to_string())
+        })?;
         object.insert(
             Self::SECTION_KEY.to_string(),
             serde_json::to_value(value).map_err(|err| {
@@ -65,9 +65,8 @@ pub fn load_system_config_root() -> Result<Value> {
     }
 
     let content = fs::read_to_string(&path)?;
-    let mut root: Value = serde_json::from_str(&content).map_err(|err| {
-        Error::StringError(format!("failed to parse {}: {err}", path.display()))
-    })?;
+    let mut root: Value = serde_json::from_str(&content)
+        .map_err(|err| Error::StringError(format!("failed to parse {}: {err}", path.display())))?;
     normalize_root(&mut root)?;
     Ok(root)
 }

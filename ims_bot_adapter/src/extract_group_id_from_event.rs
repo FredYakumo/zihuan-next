@@ -62,4 +62,3 @@ impl Node for ExtractGroupIdFromEventNode {
         Ok(outputs)
     }
 }
-

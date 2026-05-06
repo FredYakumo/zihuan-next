@@ -69,4 +69,3 @@ fn parse_float_vector(value: Option<&DataValue>) -> Result<Vec<f32>> {
         )),
     }
 }
-

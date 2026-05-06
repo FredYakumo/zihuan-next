@@ -104,7 +104,11 @@ pub fn tool_subgraph_owner_uses_brain_outputs(node_type: &str) -> bool {
 }
 
 pub fn tool_subgraph_owner_types() -> [&'static str; 3] {
-    ["brain", QQ_AGENT_TOOL_OWNER_TYPE, QQ_AGENT_TOOL_OWNER_TYPE_LEGACY]
+    [
+        "brain",
+        QQ_AGENT_TOOL_OWNER_TYPE,
+        QQ_AGENT_TOOL_OWNER_TYPE_LEGACY,
+    ]
 }
 
 pub fn is_tool_subgraph_owner(node_type: &str) -> bool {

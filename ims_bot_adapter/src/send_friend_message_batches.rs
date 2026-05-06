@@ -55,4 +55,3 @@ impl Node for SendFriendMessageBatchesNode {
         Ok(outputs)
     }
 }
-

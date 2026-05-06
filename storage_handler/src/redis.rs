@@ -83,9 +83,13 @@ impl RedisNode {
     }
 
     fn connection_select_field() -> NodeConfigField {
-        NodeConfigField::new(CONNECTION_ID_FIELD, DataType::String, NodeConfigWidget::ConnectionSelect)
-            .with_connection_kind("redis")
-            .with_description("选择系统中的 Redis 连接配置")
+        NodeConfigField::new(
+            CONNECTION_ID_FIELD,
+            DataType::String,
+            NodeConfigWidget::ConnectionSelect,
+        )
+        .with_connection_kind("redis")
+        .with_description("选择系统中的 Redis 连接配置")
     }
 
     fn cleanup_patterns() -> [&'static str; 2] {
@@ -261,10 +265,12 @@ impl Node for RedisNode {
     }
 
     fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
-        self.connection_id = inline_values.get(CONNECTION_ID_FIELD).and_then(|value| match value {
-            DataValue::String(value) => Some(value.clone()),
-            _ => None,
-        });
+        self.connection_id = inline_values
+            .get(CONNECTION_ID_FIELD)
+            .and_then(|value| match value {
+                DataValue::String(value) => Some(value.clone()),
+                _ => None,
+            });
         Ok(())
     }
 

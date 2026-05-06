@@ -3,10 +3,10 @@ use salvo::writing::Json;
 use serde::Deserialize;
 use uuid::Uuid;
 
+use crate::system_config;
+use ims_bot_adapter::parse_ims_bot_adapter_connection;
 use log::info;
 use storage_handler::{ConnectionConfig, ConnectionKind};
-use ims_bot_adapter::parse_ims_bot_adapter_connection;
-use crate::system_config;
 
 use super::{
     now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found,
@@ -31,8 +31,7 @@ pub struct UpdateConnectionRequest {
 fn validate_connection(kind: &ConnectionKind) -> Result<(), String> {
     match kind {
         ConnectionKind::BotAdapter(bot) => {
-            let bot = parse_ims_bot_adapter_connection(bot)
-                .map_err(|err| err.to_string())?;
+            let bot = parse_ims_bot_adapter_connection(bot).map_err(|err| err.to_string())?;
             if bot.bot_server_url.trim().is_empty() {
                 return Err("ims_bot_adapter.bot_server_url must not be empty".to_string());
             }
@@ -83,7 +82,10 @@ pub async fn create_connection(req: &mut Request, res: &mut Response, _depot: &m
 
     match system_config::save_connections(connections) {
         Ok(()) => {
-            info!("[connections] created connection '{}' (id={})", connection.name, connection.id);
+            info!(
+                "[connections] created connection '{}' (id={})",
+                connection.name, connection.id
+            );
             res.render(Json(connection));
         }
         Err(err) => render_internal_error(res, err),
@@ -119,7 +121,10 @@ pub async fn update_connection(req: &mut Request, res: &mut Response, _depot: &m
 
     match system_config::save_connections(connections) {
         Ok(()) => {
-            info!("[connections] updated connection '{}' (id={})", response.name, response.id);
+            info!(
+                "[connections] updated connection '{}' (id={})",
+                response.name, response.id
+            );
             res.render(Json(response));
         }
         Err(err) => render_internal_error(res, err),

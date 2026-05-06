@@ -50,11 +50,12 @@ pub async fn start_agent_with_task(
     let agent_name = agent.name.clone();
 
     let stop_flag = Arc::new(AtomicBool::new(false));
-    let task_id = state
-        .tasks
-        .lock()
-        .unwrap()
-        .add_agent_task(agent_id.clone(), agent_name.clone(), user_ip, Arc::clone(&stop_flag));
+    let task_id = state.tasks.lock().unwrap().add_agent_task(
+        agent_id.clone(),
+        agent_name.clone(),
+        user_ip,
+        Arc::clone(&stop_flag),
+    );
 
     let _ = broadcast_tx.send(ServerMessage::TaskStarted {
         task_id: task_id.clone(),
@@ -96,11 +97,11 @@ pub async fn start_agent_with_task(
             } else {
                 TaskStatus::Stopped
             };
-            state_finish
-                .tasks
-                .lock()
-                .unwrap()
-                .finish_task(&task_id_finish, status, error_message.clone());
+            state_finish.tasks.lock().unwrap().finish_task(
+                &task_id_finish,
+                status,
+                error_message.clone(),
+            );
             let _ = broadcast_finish.send(ServerMessage::TaskFinished {
                 task_id: task_id_finish,
                 success,
@@ -113,11 +114,11 @@ pub async fn start_agent_with_task(
         .start_agent(agent, connections, Some(on_finish), Some(task_id.clone()))
         .await
     {
-        state
-            .tasks
-            .lock()
-            .unwrap()
-            .finish_task(&task_id, TaskStatus::Failed, Some(err.to_string()));
+        state.tasks.lock().unwrap().finish_task(
+            &task_id,
+            TaskStatus::Failed,
+            Some(err.to_string()),
+        );
         let _ = broadcast_tx.send(ServerMessage::TaskFinished {
             task_id,
             success: false,
@@ -156,7 +157,9 @@ pub struct UpdateAgentRequest {
 
 #[handler]
 pub async fn list_agents(_req: &mut Request, res: &mut Response, depot: &mut Depot) {
-    let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap();
+    let state = depot
+        .obtain::<std::sync::Arc<crate::api::state::AppState>>()
+        .unwrap();
     match system_config::load_agents() {
         Ok(agents) => {
             let connections = match system_config::load_connections() {
@@ -167,7 +170,9 @@ pub async fn list_agents(_req: &mut Request, res: &mut Response, depot: &mut Dep
             let mut items = Vec::with_capacity(agents.len());
             for agent in agents {
                 let qq_chat_profile = match &agent.agent_type {
-                    AgentType::QqChat(config) => resolve_qq_chat_profile(&connections, config).await,
+                    AgentType::QqChat(config) => {
+                        resolve_qq_chat_profile(&connections, config).await
+                    }
                     AgentType::HttpStream(_) => None,
                 };
 
@@ -295,7 +300,10 @@ pub async fn update_agent(req: &mut Request, res: &mut Response, _depot: &mut De
 
     match system_config::save_agents(agents) {
         Ok(()) => {
-            info!("[agents] updated agent '{}' (id={})", response.name, response.id);
+            info!(
+                "[agents] updated agent '{}' (id={})",
+                response.name, response.id
+            );
             res.render(Json(response));
         }
         Err(err) => render_internal_error(res, err),
@@ -304,10 +312,7 @@ pub async fn update_agent(req: &mut Request, res: &mut Response, _depot: &mut De
 
 #[handler]
 pub async fn start_agent(req: &mut Request, res: &mut Response, depot: &mut Depot) {
-    let state = depot
-        .obtain::<Arc<AppState>>()
-        .unwrap()
-        .clone();
+    let state = depot.obtain::<Arc<AppState>>().unwrap().clone();
     let broadcast_tx = depot.obtain::<WsBroadcast>().unwrap().clone();
     let id = req.param::<String>("id").unwrap_or_default();
     let agents = match system_config::load_agents() {
@@ -325,7 +330,12 @@ pub async fn start_agent(req: &mut Request, res: &mut Response, depot: &mut Depo
     let user_ip = req
         .header::<String>("x-forwarded-for")
         .or_else(|| Some(req.remote_addr().to_string()));
-    info!("[agents] starting agent '{}' (id={}) from {}", agent.name, id, user_ip.as_deref().unwrap_or("unknown"));
+    info!(
+        "[agents] starting agent '{}' (id={}) from {}",
+        agent.name,
+        id,
+        user_ip.as_deref().unwrap_or("unknown")
+    );
     start_agent_with_task(state.clone(), broadcast_tx, agent, connections, user_ip).await;
     res.render(Json(serde_json::json!({
         "ok": true,
@@ -335,7 +345,9 @@ pub async fn start_agent(req: &mut Request, res: &mut Response, depot: &mut Depo
 
 #[handler]
 pub async fn stop_agent(req: &mut Request, res: &mut Response, depot: &mut Depot) {
-    let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap();
+    let state = depot
+        .obtain::<std::sync::Arc<crate::api::state::AppState>>()
+        .unwrap();
     let id = req.param::<String>("id").unwrap_or_default();
     info!("[agents] stopping agent (id={})", id);
     match state.agent_manager.stop_agent(&id).await {

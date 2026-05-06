@@ -145,7 +145,8 @@ fn run_embedding_worker(
     );
 
     while let Ok(request) = receiver.recv() {
-        let result = panic::catch_unwind(AssertUnwindSafe(|| model.batch_inference(&request.texts)));
+        let result =
+            panic::catch_unwind(AssertUnwindSafe(|| model.batch_inference(&request.texts)));
         let response = match result {
             Ok(result) => result,
             Err(_) => {

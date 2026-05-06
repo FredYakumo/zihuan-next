@@ -58,9 +58,13 @@ impl MySqlNode {
     }
 
     fn connection_select_field() -> NodeConfigField {
-        NodeConfigField::new(CONNECTION_ID_FIELD, DataType::String, NodeConfigWidget::ConnectionSelect)
-            .with_connection_kind("mysql")
-            .with_description("选择系统中的 MySQL 连接配置")
+        NodeConfigField::new(
+            CONNECTION_ID_FIELD,
+            DataType::String,
+            NodeConfigWidget::ConnectionSelect,
+        )
+        .with_connection_kind("mysql")
+        .with_description("选择系统中的 MySQL 连接配置")
     }
 
     fn ensure_runtime_handle(&mut self) -> Result<tokio::runtime::Handle> {
@@ -100,8 +104,9 @@ impl MySqlNode {
             .acquire_timeout(Duration::from_secs(acquire_timeout_secs))
             .idle_timeout(Duration::from_secs(600))
             .max_lifetime(Duration::from_secs(1800));
-        let pool = zihuan_core::runtime::block_async(pool_opts.connect(&url_str))
-            .map_err(|e| Error::StringError(format!("[MySqlNode] Failed to connect to MySQL: {e}")))?;
+        let pool = zihuan_core::runtime::block_async(pool_opts.connect(&url_str)).map_err(|e| {
+            Error::StringError(format!("[MySqlNode] Failed to connect to MySQL: {e}"))
+        })?;
 
         self.pool = Some(pool.clone());
         self.last_url = Some(url_str);
@@ -160,10 +165,12 @@ impl Node for MySqlNode {
     }
 
     fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
-        self.connection_id = inline_values.get(CONNECTION_ID_FIELD).and_then(|value| match value {
-            DataValue::String(value) => Some(value.clone()),
-            _ => None,
-        });
+        self.connection_id = inline_values
+            .get(CONNECTION_ID_FIELD)
+            .and_then(|value| match value {
+                DataValue::String(value) => Some(value.clone()),
+                _ => None,
+            });
         Ok(())
     }
 
@@ -172,7 +179,8 @@ impl Node for MySqlNode {
         _inputs: HashMap<String, DataValue>,
     ) -> Result<HashMap<String, DataValue>> {
         let url = self.selected_url()?;
-        let pool = self.get_or_create_pool(&url, DEFAULT_MAX_CONNECTIONS, DEFAULT_ACQUIRE_TIMEOUT_SECS)?;
+        let pool =
+            self.get_or_create_pool(&url, DEFAULT_MAX_CONNECTIONS, DEFAULT_ACQUIRE_TIMEOUT_SECS)?;
 
         let config = Arc::new(MySqlConfig {
             url: Some(url),

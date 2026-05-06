@@ -9,8 +9,8 @@ use log::{debug, error, info, warn};
 use sqlx;
 use std::collections::HashMap;
 use tokio::task::block_in_place;
-use zihuan_core::ims_bot_adapter::models::message::{collect_media_records, Message};
 use zihuan_core::error::Result;
+use zihuan_core::ims_bot_adapter::models::message::{collect_media_records, Message};
 
 /// Returns true for errors that indicate a dropped/stale connection rather than
 /// a SQL-level problem (constraint violation, syntax error, etc.).
@@ -117,12 +117,8 @@ impl Node for QQMessageListMySQLPersistenceNode {
             .ok_or_else(|| {
                 zihuan_core::error::Error::InvalidNodeInput("sender_id is required".to_string())
             })?;
-        let sender_id = truncate_field_if_needed(
-            "sender_id",
-            sender_id,
-            SENDER_ID_MAX_CHARS,
-            &message_id,
-        );
+        let sender_id =
+            truncate_field_if_needed("sender_id", sender_id, SENDER_ID_MAX_CHARS, &message_id);
 
         let sender_name = inputs
             .get("sender_name")

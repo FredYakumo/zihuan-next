@@ -342,16 +342,18 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
         }
 
         // Single QQ Message from a JSON object: {"type": "text", "data": {"text": "..."}}
-        (_, DataType::QQMessage) => {
-            serde_json::from_value::<zihuan_core::ims_bot_adapter::models::message::Message>(json.clone())
-                .ok()
-                .map(DataValue::QQMessage)
-        }
+        (_, DataType::QQMessage) => serde_json::from_value::<
+            zihuan_core::ims_bot_adapter::models::message::Message,
+        >(json.clone())
+        .ok()
+        .map(DataValue::QQMessage),
 
         // Single Image payload from a JSON object.
-        (_, DataType::Image) => serde_json::from_value::<crate::data_value::ImageData>(json.clone())
-            .ok()
-            .map(DataValue::Image),
+        (_, DataType::Image) => {
+            serde_json::from_value::<crate::data_value::ImageData>(json.clone())
+                .ok()
+                .map(DataValue::Image)
+        }
 
         // Generic Vec: recurse per element using the inner type.
         // Handles Vec<OpenAIMessage>, Vec<QQMessage>, and any other Vec<X>.
@@ -388,13 +390,13 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         BooleanBranchNode, BooleanNotNode, BuildMultimodalUserMessageNode, ConcatVecNode,
         ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode,
         FunctionInputsNode, FunctionNode, FunctionOutputsNode, JoinStringNode, JsonExtractNode,
-        JsonParserNode, JsonToQQMessageVecNode, MessageContentNode, MessageListDataNode, OpenAIMessageContentAsJsonNode,
-        OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode,
-        OpenAIMessageSessionCacheNode,
+        JsonParserNode, JsonToQQMessageVecNode, MessageContentNode, MessageListDataNode,
+        OpenAIMessageContentAsJsonNode, OpenAIMessageSessionCacheClearNode,
+        OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode,
         OpenAIMessageSessionCacheSetNode, OpenAIMessageToStringNode, PreviewMessageListNode,
         PreviewQQMessageListNode, PreviewStringNode, PushBackVecNode,
-        QQMessageJsonOutputSystemPromptProviderNode, QQMessageListDataNode, SessionStateClearNode,
-        QQMessageToImageNode, SessionStateGetNode, SessionStateReleaseNode,
+        QQMessageJsonOutputSystemPromptProviderNode, QQMessageListDataNode, QQMessageToImageNode,
+        SessionStateClearNode, SessionStateGetNode, SessionStateReleaseNode,
         SessionStateTryClaimNode, SetVariableNode, StackNode, StringDataNode, StringIsNotEmptyNode,
         StringToImageContentPartNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode,
         ToolResultNode,

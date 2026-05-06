@@ -145,4 +145,3 @@ fn parse_vector_list(value: Option<&DataValue>) -> Result<Vec<Vec<f32>>> {
 
     Ok(vectors)
 }
-

@@ -104,4 +104,3 @@ impl Node for SendGroupMessageNode {
         Ok(outputs)
     }
 }
-

@@ -1,7 +1,7 @@
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
-use zihuan_core::ims_bot_adapter::natural_language_reply::qq_message_json_output_system_prompt;
 use zihuan_core::error::Result;
+use zihuan_core::ims_bot_adapter::natural_language_reply::qq_message_json_output_system_prompt;
 
 pub struct QQMessageJsonOutputSystemPromptProviderNode {
     id: String,

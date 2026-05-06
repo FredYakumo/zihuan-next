@@ -76,7 +76,10 @@ fn run_graph_blocking(
 
     let mut graph = zihuan_graph_engine::registry::build_node_graph_from_definition(&definition)
         .map_err(|e| format!("Build graph failed: {e}"))?;
-    crate::api::graph_exec_helpers::inject_runtime_inline_values(&mut graph, &runtime_inline_values);
+    crate::api::graph_exec_helpers::inject_runtime_inline_values(
+        &mut graph,
+        &runtime_inline_values,
+    );
     graph.set_execution_task_id(Some(task_id.clone()));
 
     if !preview_node_ids.is_empty() {
@@ -162,16 +165,17 @@ pub async fn rerun_task(req: &mut Request, res: &mut Response, depot: &mut Depot
         )
     };
 
-    let loaded = match zihuan_graph_engine::load_graph_definition_from_json_with_migration(&file_path) {
-        Ok(loaded) => loaded,
-        Err(e) => {
-            res.status_code(StatusCode::UNPROCESSABLE_ENTITY);
-            res.render(Json(
-                serde_json::json!({"error": format!("Failed to reload graph: {e}")}),
-            ));
-            return;
-        }
-    };
+    let loaded =
+        match zihuan_graph_engine::load_graph_definition_from_json_with_migration(&file_path) {
+            Ok(loaded) => loaded,
+            Err(e) => {
+                res.status_code(StatusCode::UNPROCESSABLE_ENTITY);
+                res.render(Json(
+                    serde_json::json!({"error": format!("Failed to reload graph: {e}")}),
+                ));
+                return;
+            }
+        };
 
     let mut graph = loaded.graph;
     zihuan_graph_engine::ensure_positions(&mut graph);
@@ -487,4 +491,3 @@ fn append_task_error_detail(state: &AppState, task_id: &str, detailed: &str) {
         },
     );
 }
-

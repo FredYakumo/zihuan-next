@@ -93,14 +93,12 @@ impl Node for MessageMySQLGetGroupHistoryNode {
             })
         })?;
 
-        let messages = format_history_messages(
-            aggregate_history_rows(
-                rows.into_iter()
-                    .map(message_history_chunk_row_from_row)
-                    .collect(),
-                limit as usize,
-            ),
-        );
+        let messages = format_history_messages(aggregate_history_rows(
+            rows.into_iter()
+                .map(message_history_chunk_row_from_row)
+                .collect(),
+            limit as usize,
+        ));
 
         let mut outputs = HashMap::new();
         outputs.insert(

@@ -1,7 +1,7 @@
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
-use zihuan_core::ims_bot_adapter::models::message::{Message, PlainTextMessage};
 use zihuan_core::error::Result;
+use zihuan_core::ims_bot_adapter::models::message::{Message, PlainTextMessage};
 
 /// Converts a String input into a QQMessage PlainText variant.
 pub struct StringToPlainTextNode {

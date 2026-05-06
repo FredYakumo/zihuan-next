@@ -104,4 +104,3 @@ impl Node for SendFriendMessageNode {
         Ok(outputs)
     }
 }
-

@@ -66,7 +66,8 @@ async fn fetch_login_info_via_http(connection: &BotAdapterConnection) -> Result<
     let payload: serde_json::Value = serde_json::from_str(&body).map_err(|err| {
         Error::ValidationError(format!(
             "NapCat /get_login_info returned non-JSON HTTP {} response: {}",
-            status, summarize_body_for_error(&body, &err.to_string())
+            status,
+            summarize_body_for_error(&body, &err.to_string())
         ))
     })?;
 
@@ -126,12 +127,13 @@ async fn fetch_login_info_via_websocket(connection: &BotAdapterConnection) -> Re
         let text = match message {
             tokio_tungstenite::tungstenite::Message::Text(text) => text,
             tokio_tungstenite::tungstenite::Message::Binary(data) => {
-                String::from_utf8(data.to_vec()).map_err(|err| {
-                    Error::ValidationError(format!(
-                        "get_login_info WebSocket response is not valid UTF-8: {err}"
-                    ))
-                })?
-                .into()
+                String::from_utf8(data.to_vec())
+                    .map_err(|err| {
+                        Error::ValidationError(format!(
+                            "get_login_info WebSocket response is not valid UTF-8: {err}"
+                        ))
+                    })?
+                    .into()
             }
             tokio_tungstenite::tungstenite::Message::Close(_) => {
                 return Err(Error::ValidationError(
@@ -148,11 +150,7 @@ async fn fetch_login_info_via_websocket(connection: &BotAdapterConnection) -> Re
             ))
         })?;
 
-        if response
-            .get("echo")
-            .and_then(|value| value.as_str())
-            != Some(echo.as_str())
-        {
+        if response.get("echo").and_then(|value| value.as_str()) != Some(echo.as_str()) {
             continue;
         }
 
@@ -177,7 +175,9 @@ fn parse_login_info(payload: &serde_json::Value) -> Result<BotLoginInfo> {
         .get("data")
         .and_then(|value| value.as_object())
         .ok_or_else(|| {
-            Error::ValidationError("NapCat /get_login_info response missing data object".to_string())
+            Error::ValidationError(
+                "NapCat /get_login_info response missing data object".to_string(),
+            )
         })?;
 
     let user_id = data

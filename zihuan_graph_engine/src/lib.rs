@@ -126,9 +126,9 @@ pub use graph_io::{
     GraphPosition, LoadedGraphDefinition, NodeDefinition, NodeGraphDefinition,
 };
 #[allow(unused_imports)]
-pub use registry::build_node_graph_from_definition;
-#[allow(unused_imports)]
 pub use node_macros::{node_input, node_output};
+#[allow(unused_imports)]
+pub use registry::build_node_graph_from_definition;
 
 /// Node input/output ports
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

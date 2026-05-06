@@ -22,6 +22,7 @@ use zihuan_graph_engine::register_node;
 
 pub use extract_qq_message_list_from_event::ExtractQQMessageListFromEventNode;
 pub use extract_sender_id_from_event::ExtractSenderIdFromEventNode;
+pub use login_info::{fetch_login_info, qq_avatar_url};
 pub use message_event_type_filter::MessageEventTypeFilterNode;
 pub use message_sender::MessageSenderNode;
 pub use send_friend_message::SendFriendMessageNode;
@@ -30,11 +31,10 @@ pub use send_group_message::SendGroupMessageNode;
 pub use send_group_message_batches::SendGroupMessageBatchesNode;
 pub use send_qq_message_batches::SendQQMessageBatchesNode;
 pub use system_config::{
-    build_ims_bot_adapter, load_ims_bot_adapter_connections, save_ims_bot_adapter_connections,
-    parse_ims_bot_adapter_connection, BotAdapterConnection, BotAdapterConnectionConfig,
+    build_ims_bot_adapter, load_ims_bot_adapter_connections, parse_ims_bot_adapter_connection,
+    save_ims_bot_adapter_connections, BotAdapterConnection, BotAdapterConnectionConfig,
     BotAdapterConnectionKind, BotAdapterConnectionsSection,
 };
-pub use login_info::{fetch_login_info, qq_avatar_url};
 
 pub fn init_node_registry() -> Result<()> {
     use extract_group_id_from_event::ExtractGroupIdFromEventNode;

@@ -56,4 +56,3 @@ fn init_node_registry() -> Result<()> {
         zihuan_llm::init_node_registry,
     ])
 }
-

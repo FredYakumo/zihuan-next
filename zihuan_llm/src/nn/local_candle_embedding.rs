@@ -72,8 +72,8 @@ impl LocalCandleEmbeddingModel {
 
     fn load_runtime_model(&self, device: &Device) -> Result<Model> {
         let dtype = device.bf16_default_to_f32();
-        let tensors = safetensors::load(self.model_dir.join("model.safetensors"), device)
-            .map_err(|err| {
+        let tensors =
+            safetensors::load(self.model_dir.join("model.safetensors"), device).map_err(|err| {
                 Error::StringError(format!(
                     "failed to load local embedding weights '{}' for model '{}': {}",
                     self.model_dir.join("model.safetensors").display(),

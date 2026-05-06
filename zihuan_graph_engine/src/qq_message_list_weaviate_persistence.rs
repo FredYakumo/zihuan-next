@@ -1,8 +1,8 @@
 use crate::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 use log::error;
 use std::collections::HashMap;
-use zihuan_core::ims_bot_adapter::models::message::Message;
 use zihuan_core::error::{Error, Result};
+use zihuan_core::ims_bot_adapter::models::message::Message;
 
 pub struct QQMessageListWeaviatePersistenceNode {
     id: String,

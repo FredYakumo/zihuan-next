@@ -600,7 +600,8 @@ impl Node for SendQQMessageBatchesNode {
         let target_type = normalize_target_type(inputs.get("target_type"));
         let batches =
             qq_message_batches_from_data_value(inputs.get("message_batches"), "message_batches")?;
-        let results = send_qq_message_batches(&ims_bot_adapter_ref, target_type, &target_id, &batches);
+        let results =
+            send_qq_message_batches(&ims_bot_adapter_ref, target_type, &target_id, &batches);
 
         let mut outputs = HashMap::new();
         outputs.insert(
@@ -615,4 +616,3 @@ impl Node for SendQQMessageBatchesNode {
         Ok(outputs)
     }
 }
-

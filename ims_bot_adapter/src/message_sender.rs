@@ -61,4 +61,3 @@ impl Node for MessageSenderNode {
         Ok(outputs)
     }
 }
-

@@ -76,9 +76,10 @@ impl S3Ref {
         if let Some(mk) = max_keys {
             request = request.max_keys(mk);
         }
-        request.send().await.map_err(|e| {
-            Error::ValidationError(format!("S3 list_objects failed: {}", e))
-        })
+        request
+            .send()
+            .await
+            .map_err(|e| Error::ValidationError(format!("S3 list_objects failed: {}", e)))
     }
 
     pub async fn ensure_bucket_exists(&self) -> Result<()> {

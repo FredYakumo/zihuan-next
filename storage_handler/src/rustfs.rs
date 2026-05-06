@@ -101,9 +101,13 @@ impl RustfsNode {
     }
 
     fn connection_select_field() -> NodeConfigField {
-        NodeConfigField::new(CONNECTION_ID_FIELD, DataType::String, NodeConfigWidget::ConnectionSelect)
-            .with_connection_kind("rustfs")
-            .with_description("选择系统中的 RustFS 对象存储连接配置")
+        NodeConfigField::new(
+            CONNECTION_ID_FIELD,
+            DataType::String,
+            NodeConfigWidget::ConnectionSelect,
+        )
+        .with_connection_kind("rustfs")
+        .with_description("选择系统中的 RustFS 对象存储连接配置")
     }
 
     fn resolve_connection(&self) -> Result<crate::RustfsConnection> {
@@ -157,10 +161,12 @@ impl Node for RustfsNode {
     }
 
     fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
-        self.connection_id = inline_values.get(CONNECTION_ID_FIELD).and_then(|value| match value {
-            DataValue::String(value) => Some(value.clone()),
-            _ => None,
-        });
+        self.connection_id = inline_values
+            .get(CONNECTION_ID_FIELD)
+            .and_then(|value| match value {
+                DataValue::String(value) => Some(value.clone()),
+                _ => None,
+            });
         Ok(())
     }
 
@@ -179,6 +185,9 @@ impl Node for RustfsNode {
             rustfs.path_style,
         ))?;
 
-        Ok(HashMap::from([("s3_ref".to_string(), DataValue::S3Ref(s3_ref))]))
+        Ok(HashMap::from([(
+            "s3_ref".to_string(),
+            DataValue::S3Ref(s3_ref),
+        )]))
     }
 }

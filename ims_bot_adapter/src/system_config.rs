@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::system_config::{load_system_config_root, save_system_config_root, SystemConfigSection};
+use zihuan_core::system_config::{
+    load_system_config_root, save_system_config_root, SystemConfigSection,
+};
 use zihuan_graph_engine::object_storage::S3Ref;
 
 use crate::adapter::{BotAdapter, BotAdapterConfig, SharedBotAdapter};
@@ -54,9 +56,9 @@ impl SystemConfigSection for BotAdapterConnectionsSection {
     }
 
     fn write_to_root(root: &mut Value, value: &Self::Value) -> Result<()> {
-        let object = root
-            .as_object_mut()
-            .ok_or_else(|| Error::StringError("system config root must be a JSON object".to_string()))?;
+        let object = root.as_object_mut().ok_or_else(|| {
+            Error::StringError("system config root must be a JSON object".to_string())
+        })?;
         let existing = object
             .get(Self::SECTION_KEY)
             .and_then(Value::as_array)
@@ -88,7 +90,9 @@ pub fn load_ims_bot_adapter_connections() -> Result<Vec<BotAdapterConnectionConf
     BotAdapterConnectionsSection::read_from_root(&root)
 }
 
-pub fn save_ims_bot_adapter_connections(connections: Vec<BotAdapterConnectionConfig>) -> Result<()> {
+pub fn save_ims_bot_adapter_connections(
+    connections: Vec<BotAdapterConnectionConfig>,
+) -> Result<()> {
     let mut root = load_system_config_root()?;
     BotAdapterConnectionsSection::write_to_root(&mut root, &connections)?;
     save_system_config_root(&root)

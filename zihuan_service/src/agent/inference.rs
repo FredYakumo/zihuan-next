@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use log::warn;
-use storage_handler::{build_mysql_ref, build_tavily_ref, build_weaviate_ref, load_connections, ConnectionConfig};
+use storage_handler::{
+    build_mysql_ref, build_tavily_ref, build_weaviate_ref, load_connections, ConnectionConfig,
+};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;
@@ -220,7 +222,13 @@ fn load_qq_resources(
     });
 
     let mysql_ref = block_async(build_mysql_ref(
-        if config.mysql_connection_id.as_deref().map(str::trim).unwrap_or("").is_empty() {
+        if config
+            .mysql_connection_id
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or("")
+            .is_empty()
+        {
             None
         } else {
             config.mysql_connection_id.as_deref()

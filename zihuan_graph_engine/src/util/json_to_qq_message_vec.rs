@@ -1,8 +1,8 @@
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::{info, warn};
 use std::collections::HashMap;
-use zihuan_core::ims_bot_adapter::natural_language_reply::json_value_to_qq_message_vec as parse_json_to_qq_messages;
 use zihuan_core::error::{Error, Result};
+use zihuan_core::ims_bot_adapter::natural_language_reply::json_value_to_qq_message_vec as parse_json_to_qq_messages;
 
 pub struct JsonToQQMessageVecNode {
     id: String,

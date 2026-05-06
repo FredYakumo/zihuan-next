@@ -77,4 +77,3 @@ impl Node for TextEmbeddingNode {
         Ok(outputs)
     }
 }
-

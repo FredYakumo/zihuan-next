@@ -8,12 +8,12 @@ pub mod agents {
 
 pub mod connections {
     #[allow(unused_imports)]
-    pub use storage_handler::{
-        ConnectionConfig, ConnectionKind, MysqlConnection,
-        RedisConnection, RustfsConnection, TavilyConnection, WeaviateConnection,
-    };
-    #[allow(unused_imports)]
     pub use ims_bot_adapter::BotAdapterConnection;
+    #[allow(unused_imports)]
+    pub use storage_handler::{
+        ConnectionConfig, ConnectionKind, MysqlConnection, RedisConnection, RustfsConnection,
+        TavilyConnection, WeaviateConnection,
+    };
 }
 
 pub mod llm_refs {

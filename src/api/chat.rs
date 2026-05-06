@@ -70,7 +70,10 @@ pub async fn stream_chat(req: &mut Request, res: &mut Response, depot: &mut Depo
         return;
     }
 
-    let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap().clone();
+    let state = depot
+        .obtain::<std::sync::Arc<crate::api::state::AppState>>()
+        .unwrap()
+        .clone();
 
     match execute_chat_stream(state, body).await {
         Ok(sse_body) => {
@@ -138,7 +141,11 @@ async fn execute_chat_stream(
     let output_messages = tokio::task::spawn_blocking({
         let state = state.clone();
         let agent_id = agent_id.clone();
-        move || state.agent_manager.infer_agent_response_with_trace(&agent_id, messages)
+        move || {
+            state
+                .agent_manager
+                .infer_agent_response_with_trace(&agent_id, messages)
+        }
     })
     .await
     .map_err(|err| Error::StringError(format!("failed to join chat task: {err}")))??;
@@ -236,7 +243,9 @@ fn persist_chat_records(
             timestamp: now.clone(),
             stream_index: None,
             trace_id: trace_id.to_string(),
-            message_id: if matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty() {
+            message_id: if matches!(message.role, MessageRole::Assistant)
+                && message.tool_calls.is_empty()
+            {
                 assistant_message_id.to_string()
             } else {
                 format!("msg_{}", Uuid::new_v4().simple())

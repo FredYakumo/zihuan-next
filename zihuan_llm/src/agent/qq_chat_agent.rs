@@ -35,12 +35,14 @@ use ims_bot_adapter::models::message::{
     PlainTextMessage,
 };
 use zihuan_core::error::{Error, Result};
-use zihuan_core::runtime::block_async;
+use zihuan_core::ims_bot_adapter::models::message::{
+    collect_media_records, render_messages_readable,
+};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
-use zihuan_core::llm::{ContentPart, OpenAIMessage};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::InferenceParam;
-use zihuan_core::ims_bot_adapter::models::message::collect_media_records;
+use zihuan_core::llm::{ContentPart, OpenAIMessage};
+use zihuan_core::runtime::block_async;
 use zihuan_graph_engine::data_value::{
     MySqlConfig, OpenAIMessageSessionCacheRef, SessionClaim, SessionStateRef, TavilyRef,
     SESSION_CLAIM_CONTEXT,
@@ -295,12 +297,7 @@ fn persist_message_to_mysql(
         GROUP_NAME_MAX_CHARS,
         &message_id,
     );
-    let content: String = event
-        .message_list
-        .iter()
-        .map(|m| m.to_string())
-        .collect::<Vec<_>>()
-        .join("");
+    let content = render_messages_readable(&event.message_list);
     let at_targets: Vec<String> = event
         .message_list
         .iter()
@@ -337,6 +334,7 @@ fn persist_message_to_mysql(
         MEDIA_JSON_MAX_CHARS,
         &message_id,
     );
+    let raw_message_json = Some(serde_json::to_string(&event.message_list)?);
     let content_chunks = split_content_chunks(&content, CONTENT_MAX_CHARS);
 
     let message_id_log = message_id.clone();
@@ -362,25 +360,31 @@ fn persist_message_to_mysql(
                 } else {
                     None
                 };
+                let chunk_raw_message_json = if chunk_index == 0 {
+                    raw_message_json.as_ref()
+                } else {
+                    None
+                };
 
                 sqlx::query(
-                    r#"
-                    INSERT INTO message_record
-                    (message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    "#,
-                )
+                        r#"
+                        INSERT INTO message_record
+                        (message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json, raw_message_json)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        "#,
+                    )
                 .bind(&message_id)
                 .bind(&sender_id)
                 .bind(&sender_name)
                 .bind(send_time)
                 .bind(&group_id)
                 .bind(&group_name)
-                .bind(content_chunk)
-                .bind(chunk_at_target_list)
-                .bind(chunk_media_json)
-                .execute(&pool)
-                .await?;
+                    .bind(content_chunk)
+                    .bind(chunk_at_target_list)
+                    .bind(chunk_media_json)
+                    .bind(chunk_raw_message_json)
+                    .execute(&pool)
+                    .await?;
             }
             Ok::<(), sqlx::Error>(())
         };
@@ -749,7 +753,10 @@ fn image_part(image: &ImageMessage) -> Option<ContentPart> {
     for local_path in [
         image.local_path.as_deref(),
         image.path.as_deref(),
-        image.file.as_deref().and_then(|value| value.strip_prefix("file://")),
+        image
+            .file
+            .as_deref()
+            .and_then(|value| value.strip_prefix("file://")),
     ]
     .into_iter()
     .flatten()
@@ -1493,7 +1500,9 @@ fn send_tool_progress_notification(
     is_group: bool,
     call_content: &str,
 ) {
-    let Some(adapter) = adapter else { return; };
+    let Some(adapter) = adapter else {
+        return;
+    };
     if is_group {
         if let Some(mid) = mention_target_id {
             send_group_progress_notification(adapter, target_id, mid, call_content);
@@ -1981,15 +1990,15 @@ impl BrainTool for GetRecentGroupMessagesBrainTool {
             "properties": properties
         });
         if dashboard_mode {
-            schema.as_object_mut().unwrap().insert(
-                "required".to_string(),
-                serde_json::json!(["group_id"]),
-            );
+            schema
+                .as_object_mut()
+                .unwrap()
+                .insert("required".to_string(), serde_json::json!(["group_id"]));
         } else {
-            schema.as_object_mut().unwrap().insert(
-                "additionalProperties".to_string(),
-                serde_json::json!(false),
-            );
+            schema
+                .as_object_mut()
+                .unwrap()
+                .insert("additionalProperties".to_string(), serde_json::json!(false));
         }
         let description: &'static str = "查看指定群或当前群里最近的 n 条消息";
         Arc::new(StaticFunctionToolSpec {
@@ -2040,10 +2049,7 @@ impl BrainTool for GetRecentGroupMessagesBrainTool {
                     "mysql_ref".to_string(),
                     DataValue::MySqlRef(mysql_ref.clone()),
                 ),
-                (
-                    "group_id".to_string(),
-                    DataValue::String(group_id),
-                ),
+                ("group_id".to_string(), DataValue::String(group_id)),
                 ("limit".to_string(), DataValue::Integer(limit as i64)),
             ]))?;
             let items = extract_string_list_output(&outputs, "messages")?;
@@ -2285,9 +2291,10 @@ impl BrainTool for SearchSimilarImagesBrainTool {
                 MAX_SEMANTIC_SEARCH_LIMIT,
             );
 
-            if let (Some(weaviate_image_ref), Some(embedding_model)) =
-                (self.weaviate_image_ref.as_ref(), self.embedding_model.as_ref())
-            {
+            if let (Some(weaviate_image_ref), Some(embedding_model)) = (
+                self.weaviate_image_ref.as_ref(),
+                self.embedding_model.as_ref(),
+            ) {
                 let vector = embedding_model.inference(&query)?;
                 let mut items = run_weaviate_image_get_query(
                     weaviate_image_ref,
@@ -2313,14 +2320,15 @@ impl BrainTool for SearchSimilarImagesBrainTool {
                 .tavily_ref
                 .search(&format!("{} 图片", query), fallback_count)?;
 
-            if let (Some(weaviate_image_ref), Some(embedding_model)) =
-                (self.weaviate_image_ref.as_ref(), self.embedding_model.as_ref())
-            {
+            if let (Some(weaviate_image_ref), Some(embedding_model)) = (
+                self.weaviate_image_ref.as_ref(),
+                self.embedding_model.as_ref(),
+            ) {
                 for item in &tavily_items {
                     if let Some(link) = extract_tavily_link(item) {
-                        let vector = embedding_model
-                            .inference(item)
-                            .unwrap_or_else(|_| embedding_model.inference(&query).unwrap_or_default());
+                        let vector = embedding_model.inference(item).unwrap_or_else(|_| {
+                            embedding_model.inference(&query).unwrap_or_default()
+                        });
                         if !vector.is_empty() {
                             if let Err(err) = weaviate_image_ref.upsert_image_record(
                                 &link,
@@ -2454,7 +2462,11 @@ impl BrainTool for ReplySendImageBrainTool {
 
             if let Some(text) = optional_string_argument(arguments, "text") {
                 batch.push(Message::PlainText(PlainTextMessage {
-                    text: if text.starts_with(' ') { text } else { format!(" {text}") },
+                    text: if text.starts_with(' ') {
+                        text
+                    } else {
+                        format!(" {text}")
+                    },
                 }));
             }
 
@@ -2860,7 +2872,10 @@ pub fn build_info_brain_tools(
         tools.push(Box::new(GetFunctionListBrainTool));
     }
 
-    if is_enabled(default_tools_enabled, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES) {
+    if is_enabled(
+        default_tools_enabled,
+        DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
+    ) {
         tools.push(Box::new(GetRecentGroupMessagesBrainTool {
             mysql_ref: mysql_ref.clone(),
             adapter: None,
@@ -2969,10 +2984,7 @@ impl QqChatAgent {
                 weaviate_ref,
                 embedding_model,
             )?;
-            self.weaviate_persistence_queue = Some(WeaviatePersistenceQueue {
-                config_key,
-                sender,
-            });
+            self.weaviate_persistence_queue = Some(WeaviatePersistenceQueue { config_key, sender });
         }
 
         Ok(self
@@ -3190,12 +3202,8 @@ impl QqChatAgent {
         shared_runtime_values: HashMap<String, DataValue>,
     ) -> Result<()> {
         let bot_id = get_bot_id(adapter);
-        let user_msg = build_user_message(
-            event,
-            &bot_id,
-            bot_name,
-            llm.supports_multimodal_input(),
-        );
+        let user_msg =
+            build_user_message(event, &bot_id, bot_name, llm.supports_multimodal_input());
         let current_message = extract_user_message_text(event, &bot_id, bot_name);
 
         let history_key = conversation_history_key(&bot_id, sender_id, is_group, event.group_id);
@@ -3545,26 +3553,23 @@ impl QqChatAgentService {
         adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
         time: &str,
     ) -> Result<()> {
-        self.inner
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .handle(
-                event,
-                adapter,
-                time,
-                &self.config.bot_name,
-                &self.config.cache,
-                &self.config.session,
-                &self.config.llm,
-                self.config.mysql_ref.as_ref(),
-                self.config.weaviate_ref.as_ref(),
-                self.config.weaviate_image_ref.as_ref(),
-                self.config.embedding_model.as_ref(),
-                &self.config.tavily,
-                self.config.max_message_length,
-                self.config.compact_context_length,
-                self.config.shared_runtime_values.clone(),
-            )
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).handle(
+            event,
+            adapter,
+            time,
+            &self.config.bot_name,
+            &self.config.cache,
+            &self.config.session,
+            &self.config.llm,
+            self.config.mysql_ref.as_ref(),
+            self.config.weaviate_ref.as_ref(),
+            self.config.weaviate_image_ref.as_ref(),
+            self.config.embedding_model.as_ref(),
+            &self.config.tavily,
+            self.config.max_message_length,
+            self.config.compact_context_length,
+            self.config.shared_runtime_values.clone(),
+        )
     }
 }
 
@@ -3804,4 +3809,3 @@ impl Node for QqChatAgent {
         Ok(HashMap::new())
     }
 }
-

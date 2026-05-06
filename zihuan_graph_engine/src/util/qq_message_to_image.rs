@@ -1,8 +1,8 @@
 use crate::data_value::ImageData;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
-use zihuan_core::ims_bot_adapter::models::message::Message;
 use zihuan_core::error::{Error, Result};
+use zihuan_core::ims_bot_adapter::models::message::Message;
 
 /// Converts a QQMessage input into ImageData when the message variant is Image.
 pub struct QQMessageToImageNode {
@@ -32,7 +32,9 @@ impl Node for QQMessageToImageNode {
         Some("将 QQMessage(Image) 转换为 Image 数据类型，附带对象存储路径")
     }
 
-    node_input![port! { name = "qq_message", ty = QQMessage, desc = "输入 QQ 消息段，必须是 image 类型" },];
+    node_input![
+        port! { name = "qq_message", ty = QQMessage, desc = "输入 QQ 消息段，必须是 image 类型" },
+    ];
 
     node_output![
         port! { name = "image", ty = Image, desc = "输出 Image 数据（metadata + object_storage_path）" },

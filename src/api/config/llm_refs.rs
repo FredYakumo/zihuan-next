@@ -5,8 +5,8 @@ use uuid::Uuid;
 
 use crate::system_config;
 use log::{info, warn};
-use zihuan_service::AgentRuntimeStatus;
 use zihuan_llm::system_config::{AgentConfig, AgentType, LlmRefConfig, LlmServiceConfig};
+use zihuan_service::AgentRuntimeStatus;
 
 use super::{
     now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found,
@@ -59,7 +59,10 @@ pub async fn create_llm_ref(req: &mut Request, res: &mut Response, _depot: &mut 
 
     match system_config::save_llm_refs(llm_refs) {
         Ok(()) => {
-            info!("[llm_refs] created LLM config '{}' (id={})", llm_ref.name, llm_ref.id);
+            info!(
+                "[llm_refs] created LLM config '{}' (id={})",
+                llm_ref.name, llm_ref.id
+            );
             res.render(Json(llm_ref));
         }
         Err(err) => render_internal_error(res, err),
@@ -68,7 +71,9 @@ pub async fn create_llm_ref(req: &mut Request, res: &mut Response, _depot: &mut 
 
 #[handler]
 pub async fn update_llm_ref(req: &mut Request, res: &mut Response, depot: &mut Depot) {
-    let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap();
+    let state = depot
+        .obtain::<std::sync::Arc<crate::api::state::AppState>>()
+        .unwrap();
     let id = req.param::<String>("id").unwrap_or_default();
     let body: UpdateLlmRefRequest = match req.parse_json().await {
         Ok(body) => body,
@@ -92,7 +97,10 @@ pub async fn update_llm_ref(req: &mut Request, res: &mut Response, depot: &mut D
 
     match system_config::save_llm_refs(llm_refs) {
         Ok(()) => {
-            info!("[llm_refs] updated LLM config '{}' (id={})", response.name, response.id);
+            info!(
+                "[llm_refs] updated LLM config '{}' (id={})",
+                response.name, response.id
+            );
             hot_reload_agents_for_llm_ref(state.as_ref(), &id).await;
             res.render(Json(response));
         }

@@ -223,7 +223,8 @@ impl LLMAPI {
                         }
 
                         if let Some(function) = tool_call.get("function") {
-                            if let Some(name) = function.get("name").and_then(|value| value.as_str())
+                            if let Some(name) =
+                                function.get("name").and_then(|value| value.as_str())
                             {
                                 if !name.is_empty() {
                                     entry.function_name = Some(name.to_string());
@@ -415,7 +416,6 @@ impl LLMAPI {
         let response_text = response
             .text()
             .unwrap_or_else(|_| "Failed to read response".to_string());
-
 
         if self.stream {
             if let Some(message) = Self::parse_sse_message(&response_text) {

@@ -35,6 +35,7 @@ pub struct MessageRecord {
     pub content: String,
     pub at_target_list: Option<String>,
     pub media_json: Option<String>,
+    pub raw_message_json: Option<String>,
 }
 
 impl MessageStore {
@@ -67,7 +68,7 @@ impl MessageStore {
 
         let records = sqlx::query(
             r#"
-            SELECT message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json
+            SELECT message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json, raw_message_json
             FROM message_record
             ORDER BY send_time DESC
             LIMIT ?
@@ -89,7 +90,11 @@ impl MessageStore {
             let message_id: String = row.get("message_id");
             let content: String = row.get("content");
 
-            match self.connection_manager.set_redis_value(&message_id, &content).await {
+            match self
+                .connection_manager
+                .set_redis_value(&message_id, &content)
+                .await
+            {
                 Ok(_) => {
                     loaded_count += 1;
                     debug!(
@@ -150,7 +155,7 @@ impl MessageStore {
         let records = if let Some(gid) = group_id {
             sqlx::query(
                 r#"
-                SELECT message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json
+                SELECT message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json, raw_message_json
                 FROM message_record
                 WHERE sender_id = ? AND group_id = ?
                 ORDER BY send_time DESC
@@ -171,7 +176,7 @@ impl MessageStore {
         } else {
             sqlx::query(
                 r#"
-                SELECT message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json
+                SELECT message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json, raw_message_json
                 FROM message_record
                 WHERE sender_id = ?
                 ORDER BY send_time DESC
@@ -197,6 +202,7 @@ impl MessageStore {
                 content: row.get("content"),
                 at_target_list: row.get("at_target_list"),
                 media_json: row.get("media_json"),
+                raw_message_json: row.get("raw_message_json"),
             });
         }
 
@@ -235,8 +241,8 @@ impl MessageStore {
             let result = sqlx::query(
                 r#"
                 INSERT INTO message_record
-                (message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json, raw_message_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 "#,
             )
             .bind(&record.message_id)
@@ -248,6 +254,7 @@ impl MessageStore {
             .bind(&record.content)
             .bind(&record.at_target_list)
             .bind(&record.media_json)
+            .bind(&record.raw_message_json)
             .execute(pool)
             .await;
 
@@ -283,6 +290,7 @@ impl MessageStore {
                 r#"
                 SELECT message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list
                 , media_json
+                , raw_message_json
                 FROM message_record
                 WHERE message_id = ?
                 "#,
@@ -303,6 +311,7 @@ impl MessageStore {
                         content: row.get("content"),
                         at_target_list: row.get("at_target_list"),
                         media_json: row.get("media_json"),
+                        raw_message_json: row.get("raw_message_json"),
                     };
                     debug!(
                         "[MessageStore] Message record retrieved from MySQL: {}",

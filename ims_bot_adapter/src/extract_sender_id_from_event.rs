@@ -27,7 +27,9 @@ impl Node for ExtractSenderIdFromEventNode {
         Some("从消息事件中提取发送者的QQ号（字符串）")
     }
 
-    node_input![port! { name = "message_event", ty = crate::models::event_model::MessageEvent, desc = "输入的消息事件" },];
+    node_input![
+        port! { name = "message_event", ty = crate::models::event_model::MessageEvent, desc = "输入的消息事件" },
+    ];
 
     node_output![port! { name = "result", ty = String, desc = "发送者的QQ号字符串" },];
 
@@ -48,4 +50,3 @@ impl Node for ExtractSenderIdFromEventNode {
         Ok(outputs)
     }
 }
-

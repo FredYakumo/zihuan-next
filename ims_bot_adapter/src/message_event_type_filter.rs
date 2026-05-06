@@ -66,4 +66,3 @@ impl Node for MessageEventTypeFilterNode {
         Ok(outputs)
     }
 }
-

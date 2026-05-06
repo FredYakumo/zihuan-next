@@ -5,16 +5,18 @@ use once_cell::sync::Lazy;
 use sqlx::Row;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
-use zihuan_core::ims_bot_adapter::models::message::{ImageMessage, Message, MessageMediaRecord, PlainTextMessage};
 use zihuan_core::error::Result;
+use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
+use zihuan_core::ims_bot_adapter::models::message::{
+    ImageMessage, Message, MessageMediaRecord, PlainTextMessage,
+};
 
 static RUNTIME_MESSAGE_INDEX: Lazy<RwLock<HashMap<String, Vec<Message>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 static LATEST_MYSQL_REF: Lazy<RwLock<Option<Arc<MySqlConfig>>>> = Lazy::new(|| RwLock::new(None));
 
 const LOOKUP_SQL: &str = r#"
-    SELECT content, media_json
+    SELECT content, media_json, raw_message_json
     FROM message_record
     WHERE message_id = ?
     ORDER BY id ASC
@@ -90,15 +92,23 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
 
     let mut content = String::new();
     let mut media_json = None;
+    let mut raw_message_json = None;
     for row in rows {
         let chunk_content: String = row.get("content");
         let chunk_media_json: Option<String> = row.get("media_json");
+        let chunk_raw_message_json: Option<String> = row.get("raw_message_json");
         content.push_str(&chunk_content);
         if media_json.is_none() {
             media_json = chunk_media_json;
         }
+        if raw_message_json.is_none() {
+            raw_message_json = chunk_raw_message_json;
+        }
     }
-    let messages = rebuild_message_list(&content, media_json.as_deref());
+    let messages = raw_message_json
+        .as_deref()
+        .and_then(rebuild_message_list_from_raw_json)
+        .unwrap_or_else(|| rebuild_message_list(&content, media_json.as_deref()));
 
     if messages.is_empty() {
         debug!(
@@ -171,4 +181,22 @@ fn rebuild_message_list(content: &str, media_json: Option<&str>) -> Vec<Message>
     }
 
     messages
+}
+
+fn rebuild_message_list_from_raw_json(raw_message_json: &str) -> Option<Vec<Message>> {
+    if raw_message_json.trim().is_empty() {
+        return None;
+    }
+
+    match serde_json::from_str::<Vec<Message>>(raw_message_json) {
+        Ok(messages) if messages.is_empty() => None,
+        Ok(messages) => Some(messages),
+        Err(error) => {
+            warn!(
+                "[message_restore] failed to parse raw_message_json while rebuilding message: {}",
+                error
+            );
+            None
+        }
+    }
 }

@@ -126,7 +126,10 @@ fn image_vector_collection_config(class_name: String) -> WeaviateCollectionConfi
         class_name,
         description: Some("Image vector storage".to_string()),
         properties: vec![
-            text_property("object_storage_path", "对象存储路径（object_key/object_url）"),
+            text_property(
+                "object_storage_path",
+                "对象存储路径（object_key/object_url）",
+            ),
             text_property("summary", "图片总结说明"),
             text_property("source", "来源标记，如 qq 或 tavily"),
             text_property("message_id", "关联消息ID"),

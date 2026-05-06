@@ -1,8 +1,12 @@
-use std::collections::HashMap;
-use serde_json::Value;
-use tokio::task::JoinHandle;
 use ims_bot_adapter::adapter::BotAdapter;
 use ims_bot_adapter::{build_ims_bot_adapter, parse_ims_bot_adapter_connection};
+use serde_json::Value;
+use std::collections::HashMap;
+use storage_handler::{
+    build_mysql_ref, build_redis_ref, build_s3_ref, build_tavily_ref, build_weaviate_ref,
+    find_connection, load_connections, ConnectionConfig, ConnectionKind,
+};
+use tokio::task::JoinHandle;
 use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::data_value::DataType;
 use zihuan_graph_engine::function_graph::{
@@ -10,10 +14,6 @@ use zihuan_graph_engine::function_graph::{
 };
 use zihuan_graph_engine::graph_io::{NodeGraphDefinition, PortBindingKind};
 use zihuan_graph_engine::{DataValue, NodeGraph};
-use storage_handler::{
-    build_mysql_ref, build_redis_ref, build_s3_ref, build_tavily_ref, build_weaviate_ref,
-    find_connection, load_connections, ConnectionConfig, ConnectionKind,
-};
 
 use crate::util::hyperparam_store;
 
@@ -40,10 +40,9 @@ pub fn apply_hyperparameter_bindings(
         }
 
         if let Some(tools_value) = node.inline_values.get("tools_config").cloned() {
-            if let Ok(mut tools) =
-                serde_json::from_value::<Vec<zihuan_llm::brain_tool::BrainToolDefinition>>(
-                    tools_value,
-                )
+            if let Ok(mut tools) = serde_json::from_value::<
+                Vec<zihuan_llm::brain_tool::BrainToolDefinition>,
+            >(tools_value)
             {
                 for tool in &mut tools {
                     apply_hyperparameter_bindings(&mut tool.subgraph, values);
@@ -132,7 +131,8 @@ pub fn inject_runtime_inline_values(
     runtime_inline_values: &[RuntimeInlineValue],
 ) {
     for item in runtime_inline_values {
-        graph.inline_values
+        graph
+            .inline_values
             .entry(item.node_id.clone())
             .or_default()
             .insert(item.port_name.clone(), item.value.clone());
@@ -145,12 +145,11 @@ async fn resolve_connection_hyperparameter(
     connections: &[ConnectionConfig],
 ) -> Result<Option<(DataValue, Option<JoinHandle<()>>)>> {
     match data_type {
-        DataType::MySqlRef => build_mysql_ref(Some(connection_id), connections).await.map(|value| {
-            value.map(|value| (DataValue::MySqlRef(value), None))
-        }),
-        DataType::RedisRef => build_redis_ref(Some(connection_id), connections).map(|value| {
-            value.map(|value| (DataValue::RedisRef(value), None))
-        }),
+        DataType::MySqlRef => build_mysql_ref(Some(connection_id), connections)
+            .await
+            .map(|value| value.map(|value| (DataValue::MySqlRef(value), None))),
+        DataType::RedisRef => build_redis_ref(Some(connection_id), connections)
+            .map(|value| value.map(|value| (DataValue::RedisRef(value), None))),
         DataType::WeaviateRef => tokio::task::block_in_place(|| {
             build_weaviate_ref(Some(connection_id), connections, false)
         })
@@ -161,9 +160,8 @@ async fn resolve_connection_hyperparameter(
         DataType::BotAdapterRef => build_ims_bot_adapter_ref(connection_id, connections)
             .await
             .map(|value| value.map(|value| (value.0, Some(value.1)))),
-        DataType::TavilyRef => build_tavily_ref(Some(connection_id), connections).map(|value| {
-            value.map(|value| (DataValue::TavilyRef(value), None))
-        }),
+        DataType::TavilyRef => build_tavily_ref(Some(connection_id), connections)
+            .map(|value| value.map(|value| (DataValue::TavilyRef(value), None))),
         _ => Ok(None),
     }
 }
@@ -186,7 +184,10 @@ async fn build_ims_bot_adapter_ref(
     let adapter_for_task = adapter.clone();
     let task = tokio::spawn(async move {
         if let Err(err) = BotAdapter::start(adapter_for_task).await {
-            log::error!("[graph-exec] bot adapter hyperparameter exited with error: {}", err);
+            log::error!(
+                "[graph-exec] bot adapter hyperparameter exited with error: {}",
+                err
+            );
         }
     });
 

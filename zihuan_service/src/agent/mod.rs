@@ -142,7 +142,15 @@ impl AgentManager {
         match &agent.agent_type {
             AgentType::QqChat(config) => {
                 let on_finish_shared: OnFinishShared = Arc::new(Mutex::new(on_finish));
-                let task = qq_chat_agent::spawn(self, agent.clone(), config.clone(), connections, Arc::clone(&on_finish_shared), task_id.unwrap_or_default()).await?;
+                let task = qq_chat_agent::spawn(
+                    self,
+                    agent.clone(),
+                    config.clone(),
+                    connections,
+                    Arc::clone(&on_finish_shared),
+                    task_id.unwrap_or_default(),
+                )
+                .await?;
                 let started_at = Local::now().to_rfc3339();
                 let mut guard = self.inner.lock().unwrap();
                 let entry = guard.entry(agent.id.clone()).or_default();
@@ -158,7 +166,14 @@ impl AgentManager {
             }
             AgentType::HttpStream(config) => {
                 let on_finish_shared: OnFinishShared = Arc::new(Mutex::new(on_finish));
-                let task = http_stream_agent::spawn(self, agent.clone(), config.clone(), Arc::clone(&on_finish_shared), task_id.unwrap_or_default()).await?;
+                let task = http_stream_agent::spawn(
+                    self,
+                    agent.clone(),
+                    config.clone(),
+                    Arc::clone(&on_finish_shared),
+                    task_id.unwrap_or_default(),
+                )
+                .await?;
                 let started_at = Local::now().to_rfc3339();
                 let mut guard = self.inner.lock().unwrap();
                 let entry = guard.entry(agent.id.clone()).or_default();
@@ -217,8 +232,14 @@ impl AgentManager {
             }
         };
 
-        for agent in agents.into_iter().filter(|agent| agent.enabled && agent.auto_start) {
-            if let Err(err) = self.start_agent(agent.clone(), connections.clone(), None, None).await {
+        for agent in agents
+            .into_iter()
+            .filter(|agent| agent.enabled && agent.auto_start)
+        {
+            if let Err(err) = self
+                .start_agent(agent.clone(), connections.clone(), None, None)
+                .await
+            {
                 error!("Failed to auto start agent '{}': {}", agent.name, err);
             }
         }
