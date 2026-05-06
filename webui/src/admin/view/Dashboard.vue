@@ -27,7 +27,7 @@
             <div class="chat-agent-picker-title">选择 Agent</div>
             <div class="chat-agent-cards">
               <button
-                v-for="agent in enabledAgents"
+                v-for="agent in runningAgents"
                 :key="agent.id"
                 class="chat-agent-card"
                 :class="{ active: selectedAgentId === agent.id }"
@@ -92,7 +92,10 @@
                   {{ selectedAgentAvatarFallback }}
                 </div>
                 <div class="chat-bubble" :class="message.role">
-                  <div class="chat-bubble-content">{{ message.content || (message.streaming ? '...' : '') }}</div>
+                  <div
+                    class="chat-bubble-content markdown-body"
+                    v-html="renderMessageContent(message.content, message.streaming)"
+                  ></div>
                   <div
                     v-if="message.toolCalls.length > 0"
                     class="chat-tool-inline-list"
@@ -155,6 +158,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref } from "vue";
+import MarkdownIt from "markdown-it";
 
 import {
   chat,
@@ -198,10 +202,19 @@ const stats = reactive({
   llm: 0,
   agents: 0,
 });
+const markdown = new MarkdownIt({
+  html: false,
+  breaks: true,
+  linkify: true,
+});
 
-const enabledAgents = computed(() => agents.value.filter((agent) => agent.enabled));
-const canSend = computed(() => !!selectedAgentId.value && draftMessage.value.trim().length > 0);
+const runningAgents = computed(() => agents.value.filter((agent) => agent.runtime.status === "running"));
 const selectedAgent = computed(() => agents.value.find((agent) => agent.id === selectedAgentId.value) ?? null);
+const canSend = computed(() =>
+  !!selectedAgent.value &&
+  selectedAgent.value.runtime.status === "running" &&
+  draftMessage.value.trim().length > 0,
+);
 const selectedAgentAvatarUrl = computed(() => agentAvatarUrl(selectedAgent.value));
 const selectedAgentAvatarFallback = computed(() => {
   const name = selectedAgent.value?.name ?? "Bot";
@@ -341,6 +354,11 @@ function formatChatTime(timestamp?: string): string {
   });
 }
 
+function renderMessageContent(content: string, streaming = false): string {
+  const text = content || (streaming ? "..." : "");
+  return markdown.render(text);
+}
+
 function scrollToBottom() {
   nextTick(() => {
     if (messagesContainer.value) {
@@ -469,8 +487,8 @@ async function load() {
   stats.agents = loadedAgents.length;
   agents.value = loadedAgents;
 
-  if (!selectedAgentId.value || !loadedAgents.some((agent) => agent.id === selectedAgentId.value && agent.enabled)) {
-    selectedAgentId.value = enabledAgents.value[0]?.id ?? "";
+  if (!selectedAgentId.value || !loadedAgents.some((agent) => agent.id === selectedAgentId.value && agent.runtime.status === "running")) {
+    selectedAgentId.value = runningAgents.value[0]?.id ?? "";
   }
 
   await reloadSessions();
@@ -754,9 +772,9 @@ onMounted(() => {
   border-radius: 18px;
   padding: 12px 18px;
   line-height: 1.6;
-  white-space: pre-wrap;
   font-size: 15px;
   box-shadow: 0 2px 8px color-mix(in srgb, var(--admin-bg) 40%, transparent);
+  overflow-wrap: anywhere;
 }
 
 .chat-bubble-row.assistant .chat-bubble {
@@ -897,5 +915,62 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.chat-bubble-content :deep(*) {
+  margin: 0;
+}
+
+.chat-bubble-content :deep(* + *) {
+  margin-top: 0.75em;
+}
+
+.chat-bubble-content :deep(p),
+.chat-bubble-content :deep(li) {
+  white-space: pre-wrap;
+}
+
+.chat-bubble-content :deep(ul),
+.chat-bubble-content :deep(ol) {
+  padding-left: 1.4em;
+}
+
+.chat-bubble-content :deep(blockquote) {
+  padding-left: 12px;
+  border-left: 3px solid color-mix(in srgb, var(--admin-accent) 45%, transparent);
+  color: var(--admin-subtle);
+}
+
+.chat-bubble-content :deep(code) {
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-size: 0.92em;
+  padding: 0.15em 0.4em;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--admin-bg) 82%, black 18%);
+}
+
+.chat-bubble-content :deep(pre) {
+  overflow-x: auto;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--admin-border);
+  background: color-mix(in srgb, var(--admin-bg) 82%, black 18%);
+}
+
+.chat-bubble-content :deep(pre code) {
+  display: block;
+  padding: 0;
+  background: transparent;
+  white-space: pre;
+}
+
+.chat-bubble-content :deep(a) {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.chat-bubble-content :deep(hr) {
+  border: 0;
+  border-top: 1px solid var(--admin-border);
 }
 </style>

@@ -12,10 +12,7 @@ use uuid::Uuid;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::ToolCalls;
 use zihuan_core::llm::{MessageRole, OpenAIMessage};
-use zihuan_llm::system_config::{
-    load_agents, load_llm_refs, AgentConfig,
-};
-use zihuan_service::agent::inference::infer_agent_response_with_trace;
+use zihuan_llm::system_config::AgentConfig;
 
 const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
 const APP_DIR_NAME: &str = "zihuan-next_aibot";
@@ -55,7 +52,7 @@ pub struct ChatHistoryRecord {
 }
 
 #[handler]
-pub async fn stream_chat(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+pub async fn stream_chat(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let body: ChatStreamRequest = match req.parse_json().await {
         Ok(body) => body,
         Err(err) => {
@@ -73,7 +70,9 @@ pub async fn stream_chat(req: &mut Request, res: &mut Response, _depot: &mut Dep
         return;
     }
 
-    match execute_chat_stream(body).await {
+    let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap().clone();
+
+    match execute_chat_stream(state, body).await {
         Ok(sse_body) => {
             res.headers_mut().insert(
                 CONTENT_TYPE,
@@ -107,28 +106,21 @@ pub async fn get_chat_session_messages(req: &mut Request, res: &mut Response, _d
     }
 }
 
-async fn execute_chat_stream(body: ChatStreamRequest) -> Result<String> {
+async fn execute_chat_stream(
+    state: std::sync::Arc<crate::api::state::AppState>,
+    body: ChatStreamRequest,
+) -> Result<String> {
     let ChatStreamRequest {
         agent_id,
         session_id,
         mut messages,
         stream,
     } = body;
-
-    let agents = load_agents()?;
-    let llm_refs = load_llm_refs()?;
-
-    let agent = agents
-        .into_iter()
-        .find(|item| item.id == agent_id)
-        .ok_or_else(|| Error::ValidationError(format!("agent '{}' not found", agent_id)))?;
-
-    if !agent.enabled {
-        return Err(Error::ValidationError(format!(
-            "agent '{}' is disabled",
-            agent.name
-        )));
-    }
+    let running_agent = state
+        .agent_manager
+        .running_agent(&agent_id)
+        .ok_or_else(|| Error::ValidationError(format!("agent '{}' is not running", agent_id)))?;
+    let agent = running_agent.agent_config().clone();
 
     messages = sanitize_messages(messages);
     if messages.is_empty() {
@@ -144,9 +136,9 @@ async fn execute_chat_stream(body: ChatStreamRequest) -> Result<String> {
 
     let trace_id = Uuid::new_v4().to_string();
     let output_messages = tokio::task::spawn_blocking({
-        let agent = agent.clone();
-        let llm_refs = llm_refs;
-        move || infer_agent_response_with_trace(&agent, &llm_refs, messages)
+        let state = state.clone();
+        let agent_id = agent_id.clone();
+        move || state.agent_manager.infer_agent_response_with_trace(&agent_id, messages)
     })
     .await
     .map_err(|err| Error::StringError(format!("failed to join chat task: {err}")))??;

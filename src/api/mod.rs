@@ -7,6 +7,7 @@ pub mod graph_exec_helpers;
 pub mod hyperparams;
 pub mod log;
 pub mod registry;
+pub mod settings;
 pub mod state;
 pub mod themes;
 pub mod ws;
@@ -156,7 +157,9 @@ pub fn build_router(
             Router::with_path("themes")
                 .get(themes::list_themes)
                 .push(Router::with_path("<name>").get(themes::get_theme)),
-        );
+        )
+        // Settings
+        .push(Router::with_path("settings/storage-info").get(settings::get_storage_info));
 
     // Inject state into depot for all API handlers (REST + WebSocket)
     let mut router = Router::new();

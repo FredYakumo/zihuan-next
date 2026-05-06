@@ -91,9 +91,7 @@ async fn handle_ws_connection(ws: WebSocket, _state: Arc<AppState>, broadcast_tx
                         }
                     }
                 }
-                Err(broadcast::error::RecvError::Lagged(n)) => {
-                    warn!("WS broadcast lagged by {} messages", n);
-                }
+                Err(broadcast::error::RecvError::Lagged(_)) => {}
                 Err(broadcast::error::RecvError::Closed) => break,
             }
         }

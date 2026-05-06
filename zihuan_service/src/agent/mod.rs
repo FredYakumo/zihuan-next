@@ -8,10 +8,13 @@ use std::sync::{Arc, Mutex};
 use chrono::Local;
 use log::error;
 use serde::Serialize;
-use tokio::task::JoinHandle;
 use storage_handler::{load_connections, ConnectionConfig};
+use tokio::task::JoinHandle;
 use zihuan_core::error::Result;
+use zihuan_core::llm::OpenAIMessage;
 use zihuan_llm::system_config::{load_agents, AgentConfig, AgentType};
+
+use self::inference::LoadedInferenceAgent;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -51,6 +54,7 @@ pub(super) type OnFinishShared =
     Arc<Mutex<Option<Box<dyn FnOnce(bool, Option<String>) + Send + 'static>>>>;
 
 pub(super) struct AgentRuntimeEntry {
+    pub loaded_agent: Option<Arc<LoadedInferenceAgent>>,
     pub state: AgentRuntimeState,
     pub task: Option<JoinHandle<()>>,
     pub on_finish: OnFinishShared,
@@ -59,6 +63,7 @@ pub(super) struct AgentRuntimeEntry {
 impl Default for AgentRuntimeEntry {
     fn default() -> Self {
         Self {
+            loaded_agent: None,
             state: AgentRuntimeState::default(),
             task: None,
             on_finish: Arc::new(Mutex::new(None)),
@@ -92,6 +97,29 @@ impl AgentManager {
         }
     }
 
+    pub fn running_agent(&self, agent_id: &str) -> Option<Arc<LoadedInferenceAgent>> {
+        let guard = self.inner.lock().unwrap();
+        let entry = guard.get(agent_id)?;
+        if entry.state.status != AgentRuntimeStatus::Running {
+            return None;
+        }
+        entry.loaded_agent.clone()
+    }
+
+    pub fn infer_agent_response_with_trace(
+        &self,
+        agent_id: &str,
+        messages: Vec<OpenAIMessage>,
+    ) -> Result<Vec<OpenAIMessage>> {
+        let agent = self.running_agent(agent_id).ok_or_else(|| {
+            zihuan_core::error::Error::ValidationError(format!(
+                "agent '{}' is not running",
+                agent_id
+            ))
+        })?;
+        agent.infer_response_with_trace(messages)
+    }
+
     pub async fn start_agent(
         &self,
         agent: AgentConfig,
@@ -100,6 +128,7 @@ impl AgentManager {
         task_id: Option<String>,
     ) -> Result<()> {
         self.stop_agent(&agent.id).await?;
+        let loaded_agent = Arc::new(LoadedInferenceAgent::load(&agent, &connections)?);
 
         self.update_state(
             &agent.id,
@@ -117,6 +146,7 @@ impl AgentManager {
                 let started_at = Local::now().to_rfc3339();
                 let mut guard = self.inner.lock().unwrap();
                 let entry = guard.entry(agent.id.clone()).or_default();
+                entry.loaded_agent = Some(Arc::clone(&loaded_agent));
                 entry.state = AgentRuntimeState {
                     status: AgentRuntimeStatus::Running,
                     started_at: Some(started_at),
@@ -132,6 +162,7 @@ impl AgentManager {
                 let started_at = Local::now().to_rfc3339();
                 let mut guard = self.inner.lock().unwrap();
                 let entry = guard.entry(agent.id.clone()).or_default();
+                entry.loaded_agent = Some(Arc::clone(&loaded_agent));
                 entry.state = AgentRuntimeState {
                     status: AgentRuntimeStatus::Running,
                     started_at: Some(started_at),
@@ -198,6 +229,7 @@ impl AgentManager {
         let entry = guard.entry(agent_id.to_string()).or_default();
         entry.state = state;
         if entry.state.status != AgentRuntimeStatus::Running {
+            entry.loaded_agent = None;
             entry.task = None;
         }
     }
