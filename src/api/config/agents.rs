@@ -4,16 +4,17 @@ use std::sync::Arc;
 use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
-use storage_handler::ConnectionConfig;
+use storage_handler::{ConnectionConfig, ConnectionKind};
 use uuid::Uuid;
 
-use log::info;
+use ims_bot_adapter::{fetch_login_info, parse_ims_bot_adapter_connection, qq_avatar_url};
+use log::{info, warn};
 
 use crate::api::state::{AppState, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
 use crate::service::AgentRuntimeInfo;
 use crate::system_config;
-use zihuan_llm::system_config::{AgentConfig, AgentToolConfig, AgentType};
+use zihuan_llm::system_config::{AgentConfig, AgentToolConfig, AgentType, QqChatAgentConfig};
 
 use super::{
     now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found,
@@ -25,6 +26,15 @@ struct AgentWithRuntime {
     #[serde(flatten)]
     agent: AgentConfig,
     runtime: AgentRuntimeInfo,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    qq_chat_profile: Option<QqChatProfile>,
+}
+
+#[derive(Serialize)]
+struct QqChatProfile {
+    bot_user_id: Option<String>,
+    bot_nickname: Option<String>,
+    bot_avatar_url: Option<String>,
 }
 
 /// Register the agent as a task entry, start it, and wire up lifecycle callbacks.
@@ -149,16 +159,70 @@ pub async fn list_agents(_req: &mut Request, res: &mut Response, depot: &mut Dep
     let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap();
     match system_config::load_agents() {
         Ok(agents) => {
-            let items = agents
-                .into_iter()
-                .map(|agent| AgentWithRuntime {
+            let connections = match system_config::load_connections() {
+                Ok(connections) => connections,
+                Err(err) => return render_internal_error(res, err),
+            };
+
+            let mut items = Vec::with_capacity(agents.len());
+            for agent in agents {
+                let qq_chat_profile = match &agent.agent_type {
+                    AgentType::QqChat(config) => resolve_qq_chat_profile(&connections, config).await,
+                    AgentType::HttpStream(_) => None,
+                };
+
+                items.push(AgentWithRuntime {
                     runtime: state.agent_manager.runtime_info(&agent.id),
                     agent,
-                })
-                .collect::<Vec<_>>();
+                    qq_chat_profile,
+                });
+            }
+
             res.render(Json(items));
         }
         Err(err) => render_internal_error(res, err),
+    }
+}
+
+async fn resolve_qq_chat_profile(
+    connections: &[ConnectionConfig],
+    config: &QqChatAgentConfig,
+) -> Option<QqChatProfile> {
+    let connection = connections
+        .iter()
+        .find(|item| item.id == config.ims_bot_adapter_connection_id)?;
+    let ConnectionKind::BotAdapter(raw) = &connection.kind else {
+        return None;
+    };
+
+    let bot_connection = parse_ims_bot_adapter_connection(raw).ok()?;
+    let fallback_user_id = bot_connection
+        .qq_id
+        .as_ref()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    match fetch_login_info(&bot_connection).await {
+        Ok(info) => Some(QqChatProfile {
+            bot_user_id: Some(info.user_id.clone()),
+            bot_nickname: if info.nickname.trim().is_empty() {
+                None
+            } else {
+                Some(info.nickname)
+            },
+            bot_avatar_url: qq_avatar_url(&info.user_id),
+        }),
+        Err(err) => {
+            warn!(
+                "[agents] failed to fetch bot login info for connection '{}': {}",
+                connection.id, err
+            );
+            fallback_user_id.map(|user_id| QqChatProfile {
+                bot_user_id: Some(user_id.clone()),
+                bot_nickname: None,
+                bot_avatar_url: qq_avatar_url(&user_id),
+            })
+        }
     }
 }
 

@@ -49,6 +49,7 @@ pub fn build_llm_model(config: &LlmServiceConfig) -> Arc<dyn LLMBase> {
             config.model_name.clone(),
             config.api_endpoint.clone(),
             config.api_key.clone(),
+            config.stream,
             config.supports_multimodal_input,
             Duration::from_secs(config.timeout_secs),
         )

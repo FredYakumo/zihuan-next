@@ -1,0 +1,284 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use log::warn;
+use storage_handler::{build_mysql_ref, build_tavily_ref, build_weaviate_ref, load_connections};
+use zihuan_core::error::{Error, Result};
+use zihuan_core::llm::llm_base::LLMBase;
+use zihuan_core::llm::tooling::FunctionTool;
+use zihuan_core::llm::{MessageRole, OpenAIMessage};
+use zihuan_core::runtime::block_async;
+use zihuan_llm::agent::brain::{sanitize_messages_for_inference, Brain, BrainStopReason, BrainTool, MAX_TOOL_ITERATIONS};
+use zihuan_llm::agent::qq_chat_agent::build_info_brain_tools;
+use zihuan_llm::brain_tool::BrainToolDefinition;
+use zihuan_llm::llm_api::LLMAPI;
+use zihuan_llm::system_config::{AgentConfig, AgentType, LlmRefConfig, LlmServiceConfig};
+use zihuan_llm::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
+
+use super::qq_chat_agent::build_enabled_tool_definitions;
+use crate::resource_resolver::build_embedding_model;
+
+struct ServiceSubgraphBrainTool {
+    runner: ToolSubgraphRunner,
+}
+
+impl BrainTool for ServiceSubgraphBrainTool {
+    fn spec(&self) -> Arc<dyn FunctionTool> {
+        self.runner.spec()
+    }
+
+    fn execute(&self, call_content: &str, arguments: &serde_json::Value) -> String {
+        self.runner.execute_to_string(call_content, arguments)
+    }
+}
+
+struct DynBrainToolWrapper(Box<dyn BrainTool>);
+
+impl BrainTool for DynBrainToolWrapper {
+    fn spec(&self) -> Arc<dyn FunctionTool> {
+        self.0.spec()
+    }
+
+    fn execute(&self, call_content: &str, arguments: &serde_json::Value) -> String {
+        self.0.execute(call_content, arguments)
+    }
+}
+
+pub fn infer_agent_response(
+    agent: &AgentConfig,
+    llm_refs: &[LlmRefConfig],
+    messages: Vec<OpenAIMessage>,
+) -> Result<OpenAIMessage> {
+    let output_messages = infer_agent_response_with_trace(agent, llm_refs, messages)?;
+    output_messages
+        .into_iter()
+        .rev()
+        .find(|message| {
+            matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty()
+        })
+        .ok_or_else(|| {
+            Error::StringError(format!(
+                "agent '{}' did not produce a final assistant message",
+                agent.name
+            ))
+        })
+}
+
+pub fn infer_agent_response_with_trace(
+    agent: &AgentConfig,
+    llm_refs: &[LlmRefConfig],
+    messages: Vec<OpenAIMessage>,
+) -> Result<Vec<OpenAIMessage>> {
+    if !agent.enabled {
+        return Err(Error::ValidationError(format!(
+            "agent '{}' is disabled",
+            agent.name
+        )));
+    }
+
+    let llm_config = resolve_agent_llm_config(agent, llm_refs)?;
+    let llm = build_chat_llm_model(&llm_config);
+    let tool_definitions = build_enabled_tool_definitions(&agent.tools)?;
+
+    // Extract text of the latest user message for informational tools.
+    let last_user_text = messages
+        .iter()
+        .rev()
+        .find(|m| matches!(m.role, MessageRole::User))
+        .and_then(|m| m.content_text())
+        .map(ToOwned::to_owned)
+        .unwrap_or_default();
+
+    let mut conversation = sanitize_messages_for_inference(messages);
+    let mut default_brain_tools: Vec<Box<dyn BrainTool>> = Vec::new();
+
+    if let AgentType::QqChat(config) = &agent.agent_type {
+        let bot_name = if config.bot_name.trim().is_empty() {
+            agent.name.clone()
+        } else {
+            config.bot_name.clone()
+        };
+        conversation.insert(
+            0,
+            OpenAIMessage::system(format!(
+                "你是 {bot_name}。请保持回答简洁、友好、准确；当可调用工具时优先使用工具获取事实。"
+            )),
+        );
+
+        // Build connections lazily; missing/failed connections are non-fatal.
+        let connections = load_connections().unwrap_or_default();
+
+        let tavily_ref = build_tavily_ref(
+            if config.tavily_connection_id.trim().is_empty() {
+                None
+            } else {
+                Some(config.tavily_connection_id.as_str())
+            },
+            &connections,
+        )
+        .unwrap_or_else(|e| {
+            warn!("[inference] tavily connection unavailable: {e}");
+            None
+        });
+
+        let mysql_ref = block_async(build_mysql_ref(
+            if config.mysql_connection_id.as_deref().map(str::trim).unwrap_or("").is_empty() {
+                None
+            } else {
+                config.mysql_connection_id.as_deref()
+            },
+            &connections,
+        ))
+        .unwrap_or_else(|e| {
+            warn!("[inference] mysql connection unavailable: {e}");
+            None
+        });
+
+        let weaviate_ref = tokio::task::block_in_place(|| {
+            build_weaviate_ref(
+                if config.weaviate_connection_id.as_deref().map(str::trim).unwrap_or("").is_empty() {
+                    None
+                } else {
+                    config.weaviate_connection_id.as_deref()
+                },
+                &connections,
+                false,
+            )
+        })
+        .unwrap_or_else(|e| {
+            warn!("[inference] weaviate connection unavailable: {e}");
+            None
+        });
+
+        let weaviate_image_ref = tokio::task::block_in_place(|| {
+            build_weaviate_ref(
+                if config.weaviate_image_connection_id.as_deref().map(str::trim).unwrap_or("").is_empty() {
+                    None
+                } else {
+                    config.weaviate_image_connection_id.as_deref()
+                },
+                &connections,
+                true,
+            )
+        })
+        .unwrap_or_else(|e| {
+            warn!("[inference] weaviate image connection unavailable: {e}");
+            None
+        });
+
+        let embedding_model = config.embedding.as_ref().map(build_embedding_model);
+
+        default_brain_tools = build_info_brain_tools(
+            &config.default_tools_enabled,
+            tavily_ref,
+            mysql_ref,
+            weaviate_ref,
+            weaviate_image_ref,
+            embedding_model,
+            last_user_text,
+        );
+    }
+
+    if conversation.is_empty() {
+        return Err(Error::ValidationError(
+            "messages must not be empty after sanitization".to_string(),
+        ));
+    }
+
+    run_agent_brain(agent, llm, default_brain_tools, tool_definitions, conversation)
+}
+
+pub fn resolve_agent_model_name(agent: &AgentConfig, llm_refs: &[LlmRefConfig]) -> Result<String> {
+    Ok(resolve_agent_llm_config(agent, llm_refs)?.model_name)
+}
+
+fn resolve_agent_llm_config(
+    agent: &AgentConfig,
+    llm_refs: &[LlmRefConfig],
+) -> Result<LlmServiceConfig> {
+    let (llm_ref_id, legacy_llm) = match &agent.agent_type {
+        AgentType::HttpStream(config) => (config.llm_ref_id.as_deref(), config.llm.as_ref()),
+        AgentType::QqChat(config) => (config.llm_ref_id.as_deref(), config.llm.as_ref()),
+    };
+
+    if let Some(ref_id) = llm_ref_id.filter(|value| !value.trim().is_empty()) {
+        let llm_ref = llm_refs
+            .iter()
+            .find(|item| item.id == ref_id)
+            .ok_or_else(|| {
+                Error::ValidationError(format!(
+                    "agent '{}' references missing llm_ref '{}'",
+                    agent.name, ref_id
+                ))
+            })?;
+        if !llm_ref.enabled {
+            return Err(Error::ValidationError(format!(
+                "agent '{}' references disabled llm_ref '{}'",
+                agent.name, llm_ref.name
+            )));
+        }
+        return Ok(llm_ref.llm.clone());
+    }
+
+    legacy_llm.cloned().ok_or_else(|| {
+        Error::ValidationError(format!(
+            "agent '{}' is missing llm config: set llm_ref_id or legacy llm",
+            agent.name
+        ))
+    })
+}
+
+fn build_chat_llm_model(config: &LlmServiceConfig) -> Arc<dyn LLMBase> {
+    Arc::new(
+        LLMAPI::new(
+            config.model_name.clone(),
+            config.api_endpoint.clone(),
+            config.api_key.clone(),
+            config.stream,
+            config.supports_multimodal_input,
+            std::time::Duration::from_secs(config.timeout_secs),
+        )
+        .with_retry_count(config.retry_count),
+    )
+}
+
+fn run_agent_brain(
+    agent: &AgentConfig,
+    llm: Arc<dyn LLMBase>,
+    default_tools: Vec<Box<dyn BrainTool>>,
+    tool_definitions: Vec<BrainToolDefinition>,
+    messages: Vec<OpenAIMessage>,
+) -> Result<Vec<OpenAIMessage>> {
+    let mut brain = Brain::new(llm);
+
+    for tool in default_tools {
+        brain.add_tool(DynBrainToolWrapper(tool));
+    }
+
+    for tool_def in tool_definitions {
+        brain.add_tool(ServiceSubgraphBrainTool {
+            runner: ToolSubgraphRunner {
+                node_id: format!("agent_inference_{}", agent.id),
+                owner_node_type: "brain".to_string(),
+                shared_inputs: Vec::new(),
+                definition: tool_def,
+                shared_runtime_values: HashMap::new(),
+                result_mode: ToolResultMode::JsonObject,
+            },
+        });
+    }
+
+    let (output_messages, stop_reason) = brain.run(messages);
+    match stop_reason {
+        BrainStopReason::Done => Ok(output_messages),
+        BrainStopReason::TransportError(content) => Err(Error::StringError(format!(
+            "chat stream LLM request failed for '{}': {}",
+            agent.name, content
+        ))),
+        BrainStopReason::MaxIterationsReached => Err(Error::StringError(format!(
+            "chat stream exceeded max tool iterations ({MAX_TOOL_ITERATIONS}) for '{}'",
+            agent.name
+        ))),
+    }
+}
+

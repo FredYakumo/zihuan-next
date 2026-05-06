@@ -199,6 +199,22 @@
   cursor: default;
 }
 
+#toolbar .toolbar-nav-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  height: 28px;
+  padding: 0 10px;
+  transition: background 0.12s;
+}
+
+#toolbar .toolbar-nav-btn:hover {
+  background: var(--node-hover);
+}
+
 #main {
   display: flex;
   flex: 1;

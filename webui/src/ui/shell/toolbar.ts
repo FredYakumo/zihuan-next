@@ -18,6 +18,7 @@ export function buildToolbar(
   onEditGraphInfo: () => void,
   onOpenTaskManager: () => void,
   onStopTask: (taskId: string) => void,
+  onBackToConsole: () => void,
   onUndo: () => void,
   onRedo: () => void,
   getThemeNames: () => Array<{
@@ -49,6 +50,7 @@ export function buildToolbar(
     { label: "浏览工作流集", onClick: onBrowseWorkflows },
     { label: "编辑节点图信息...", onClick: onEditGraphInfo },
     { label: "验证", onClick: onValidate },
+    { label: "返回控制台", onClick: onBackToConsole, separator: true },
   ];
 
   for (const item of menuItems) {
@@ -268,9 +270,19 @@ export function buildToolbar(
   redoBtn.addEventListener("click", () => onRedo());
   toolbar.appendChild(redoBtn);
 
+  const backToConsoleBtn = document.createElement("button");
+  backToConsoleBtn.id = "toolbar-back-console";
+  backToConsoleBtn.className = "toolbar-nav-btn";
+  backToConsoleBtn.type = "button";
+  backToConsoleBtn.title = "控制台";
+  backToConsoleBtn.textContent = "控制台";
+  backToConsoleBtn.addEventListener("click", () => onBackToConsole());
+
   const spacer = document.createElement("span");
   spacer.className = "spacer";
   toolbar.appendChild(spacer);
+
+  toolbar.appendChild(backToConsoleBtn);
 
   const taskStatusWrap = document.createElement("div");
   taskStatusWrap.className = "task-status-wrap";

@@ -199,6 +199,9 @@ export async function bootstrapLegacyEditor() {
   const onSaveToWorkflows = () => saveManager.saveCurrentToWorkflows().catch(console.error);
   const onValidate = () => graphActions.validate().catch(console.error);
   const onBrowseWorkflows = () => graphActions.browseWorkflows().catch(console.error);
+  const onBackToConsole = () => {
+    window.location.href = "/";
+  };
   const onUndo = () => { canvas.undo().catch(console.error); };
   const onRedo = () => { canvas.redo().catch(console.error); };
 
@@ -214,6 +217,7 @@ export async function bootstrapLegacyEditor() {
     () => { graphActions.openGraphMetadata().catch(console.error); },
     () => openTaskManagerDialog(taskStore),
     (taskId) => { taskStore.stopTask(taskId).catch((error) => showErrorDialog(`结束任务失败: ${(error as Error).message}`)); },
+    onBackToConsole,
     onUndo,
     onRedo,
     getThemeNames,

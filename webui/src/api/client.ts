@@ -259,6 +259,7 @@ export interface LlmServiceConfig {
   model_name: string;
   api_endpoint: string;
   api_key?: string | null;
+  stream: boolean;
   supports_multimodal_input: boolean;
   timeout_secs: number;
   retry_count: number;
@@ -300,6 +301,48 @@ export interface AgentConfig {
 
 export interface AgentWithRuntime extends AgentConfig {
   runtime: AgentRuntimeInfo;
+  qq_chat_profile?: {
+    bot_user_id?: string | null;
+    bot_nickname?: string | null;
+    bot_avatar_url?: string | null;
+  } | null;
+}
+
+export interface ChatStreamEvent {
+  type: "start" | "delta" | "done" | "error";
+  session_id?: string;
+  message_id?: string;
+  index?: number;
+  token?: string;
+  error?: string;
+}
+
+export interface ChatToolCall {
+  id: string;
+  type_name: string;
+  function: {
+    name: string;
+    arguments: unknown;
+  };
+}
+
+export interface ChatHistoryRecord {
+  session_id: string;
+  agent_id: string;
+  role: string;
+  content: string;
+  timestamp: string;
+  stream_index?: number | null;
+  trace_id: string;
+  message_id: string;
+  tool_calls?: ChatToolCall[];
+  tool_call_id?: string | null;
+}
+
+export interface ChatSessionSummary {
+  session_id: string;
+  updated_at: string;
+  agent_id?: string | null;
 }
 
 export const system = {
@@ -380,5 +423,83 @@ export const system = {
     stop(id: string): Promise<{ ok: boolean; runtime: AgentRuntimeInfo }> {
       return request("POST", `/system/agents/${id}/stop`);
     },
+  },
+};
+
+export const chat = {
+  async stream(
+    payload: {
+      agent_id: string;
+      session_id?: string | null;
+      stream?: boolean;
+      messages: Array<{
+        role: string;
+        content: string;
+        tool_calls?: ChatToolCall[];
+        tool_call_id?: string | null;
+      }>;
+    },
+    onEvent: (event: ChatStreamEvent) => void,
+  ): Promise<void> {
+    const res = await fetch(`${BASE}/chat/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error((err as { error: string }).error ?? res.statusText);
+    }
+    if (!res.body) {
+      throw new Error("聊天流式响应为空");
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      while (true) {
+        const splitAt = buffer.indexOf("\n\n");
+        if (splitAt < 0) {
+          break;
+        }
+
+        const frame = buffer.slice(0, splitAt);
+        buffer = buffer.slice(splitAt + 2);
+        const dataLine = frame
+          .split("\n")
+          .map((line) => line.trim())
+          .find((line) => line.startsWith("data:"));
+        if (!dataLine) {
+          continue;
+        }
+
+        const data = dataLine.slice(5).trim();
+        if (!data || data === "[DONE]") {
+          continue;
+        }
+
+        try {
+          onEvent(JSON.parse(data) as ChatStreamEvent);
+        } catch (error) {
+          console.warn("Failed to parse chat stream event", error, data);
+        }
+      }
+    }
+  },
+
+  listSessions(): Promise<{ sessions: ChatSessionSummary[] }> {
+    return request("GET", "/chat/sessions");
+  },
+
+  getSessionMessages(sessionId: string): Promise<{ messages: ChatHistoryRecord[] }> {
+    return request("GET", `/chat/sessions/${sessionId}/messages`);
   },
 };

@@ -2,7 +2,7 @@
   <section class="page">
     <div class="page-hero">
       <h2>节点图与工作流</h2>
-      <div class="hero-actions" style="margin-top: 12px;">
+      <div class="hero-actions connection-hero-actions">
         <a class="btn primary" href="/editor">打开编辑器</a>
         <a class="btn" href="/editor">新建空白节点图</a>
       </div>

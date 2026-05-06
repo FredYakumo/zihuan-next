@@ -4,6 +4,7 @@ pub mod extract_group_id_from_event;
 pub mod extract_message_from_event;
 pub mod extract_qq_message_list_from_event;
 pub mod extract_sender_id_from_event;
+pub mod login_info;
 pub mod message_event_type_filter;
 pub mod message_helpers;
 pub mod message_sender;
@@ -33,6 +34,7 @@ pub use system_config::{
     parse_ims_bot_adapter_connection, BotAdapterConnection, BotAdapterConnectionConfig,
     BotAdapterConnectionKind, BotAdapterConnectionsSection,
 };
+pub use login_info::{fetch_login_info, qq_avatar_url};
 
 pub fn init_node_registry() -> Result<()> {
     use extract_group_id_from_event::ExtractGroupIdFromEventNode;

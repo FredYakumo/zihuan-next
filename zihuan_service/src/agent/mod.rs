@@ -1,4 +1,5 @@
 pub mod http_stream_agent;
+pub mod inference;
 pub mod qq_chat_agent;
 
 use std::collections::HashMap;

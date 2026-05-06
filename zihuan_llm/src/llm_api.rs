@@ -2,6 +2,7 @@ use log::{debug, error, warn};
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use std::error::Error as _;
 use std::fmt::Write as _;
 use std::thread;
@@ -13,6 +14,14 @@ use zihuan_core::llm::{role_to_str, str_to_role, InferenceParam, MessageContent,
 const DEFAULT_RETRY_COUNT: u32 = 2;
 const RETRY_DELAY_MS: u64 = 1_000;
 const USER_VISIBLE_REQUEST_ERROR: &str = "Error: LLM API request failed";
+
+#[derive(Default)]
+struct StreamToolCallDelta {
+    id: Option<String>,
+    type_name: Option<String>,
+    function_name: Option<String>,
+    function_arguments: String,
+}
 
 enum RequestError {
     Retryable(String),
@@ -30,6 +39,7 @@ pub struct LLMAPI {
     model_name: String,
     api_endpoint: String,
     api_key: Option<String>,
+    stream: bool,
     supports_multimodal_input: bool,
     pub timeout: Duration,
     retry_count: u32,
@@ -40,6 +50,7 @@ impl LLMAPI {
         model_name: String,
         api_endpoint: String,
         api_key: Option<String>,
+        stream: bool,
         supports_multimodal_input: bool,
         timeout: Duration,
     ) -> Self {
@@ -47,6 +58,7 @@ impl LLMAPI {
             model_name,
             api_endpoint,
             api_key,
+            stream,
             supports_multimodal_input,
             timeout,
             retry_count: DEFAULT_RETRY_COUNT,
@@ -141,6 +153,157 @@ impl LLMAPI {
             reasoning_content,
             tool_calls,
             tool_call_id,
+        })
+    }
+
+    fn parse_sse_message(response_text: &str) -> Option<OpenAIMessage> {
+        let mut role = None;
+        let mut content = String::new();
+        let mut reasoning_content = String::new();
+        let mut streamed_tool_calls: BTreeMap<usize, StreamToolCallDelta> = BTreeMap::new();
+        let mut final_tool_calls: Option<Vec<ToolCalls>> = None;
+
+        for line in response_text.lines() {
+            let line = line.trim();
+            if !line.starts_with("data:") {
+                continue;
+            }
+
+            let payload = line.trim_start_matches("data:").trim();
+            if payload.is_empty() || payload == "[DONE]" {
+                continue;
+            }
+
+            let Ok(chunk) = serde_json::from_str::<Value>(payload) else {
+                continue;
+            };
+
+            let choice = chunk
+                .get("choices")
+                .and_then(|value| value.as_array())
+                .and_then(|arr| arr.first());
+            let Some(choice) = choice else {
+                continue;
+            };
+
+            if let Some(delta) = choice.get("delta") {
+                if let Some(role_str) = delta.get("role").and_then(|value| value.as_str()) {
+                    role = Some(str_to_role(role_str));
+                }
+                if let Some(piece) = delta.get("content").and_then(|value| value.as_str()) {
+                    content.push_str(piece);
+                }
+                if let Some(piece) = delta
+                    .get("reasoning_content")
+                    .and_then(|value| value.as_str())
+                {
+                    reasoning_content.push_str(piece);
+                }
+                if let Some(tool_calls) = delta.get("tool_calls").and_then(|value| value.as_array())
+                {
+                    for tool_call in tool_calls {
+                        let index = tool_call
+                            .get("index")
+                            .and_then(|value| value.as_u64())
+                            .unwrap_or(streamed_tool_calls.len() as u64)
+                            as usize;
+                        let entry = streamed_tool_calls.entry(index).or_default();
+
+                        if let Some(id) = tool_call.get("id").and_then(|value| value.as_str()) {
+                            if !id.is_empty() {
+                                entry.id = Some(id.to_string());
+                            }
+                        }
+                        if let Some(type_name) =
+                            tool_call.get("type").and_then(|value| value.as_str())
+                        {
+                            if !type_name.is_empty() {
+                                entry.type_name = Some(type_name.to_string());
+                            }
+                        }
+
+                        if let Some(function) = tool_call.get("function") {
+                            if let Some(name) = function.get("name").and_then(|value| value.as_str())
+                            {
+                                if !name.is_empty() {
+                                    entry.function_name = Some(name.to_string());
+                                }
+                            }
+                            if let Some(arguments) =
+                                function.get("arguments").and_then(|value| value.as_str())
+                            {
+                                entry.function_arguments.push_str(arguments);
+                            }
+                        }
+                    }
+                }
+            } else if let Some(message) = choice.get("message") {
+                if let Some(role_str) = message.get("role").and_then(|value| value.as_str()) {
+                    role = Some(str_to_role(role_str));
+                }
+                if let Some(text) = message.get("content").and_then(|value| value.as_str()) {
+                    content.push_str(text);
+                }
+                if let Some(text) = message
+                    .get("reasoning_content")
+                    .and_then(|value| value.as_str())
+                {
+                    reasoning_content.push_str(text);
+                }
+                if let Some(tool_calls_value) = message.get("tool_calls") {
+                    let parsed = Self::parse_tool_calls(tool_calls_value);
+                    if !parsed.is_empty() {
+                        final_tool_calls = Some(parsed);
+                    }
+                }
+            }
+        }
+
+        let tool_calls = if let Some(tool_calls) = final_tool_calls {
+            tool_calls
+        } else {
+            streamed_tool_calls
+                .into_iter()
+                .map(|(index, call)| {
+                    let arguments = if call.function_arguments.trim().is_empty() {
+                        Value::Null
+                    } else {
+                        serde_json::from_str::<Value>(&call.function_arguments)
+                            .unwrap_or_else(|_| Value::String(call.function_arguments.clone()))
+                    };
+
+                    ToolCalls {
+                        id: call
+                            .id
+                            .unwrap_or_else(|| format!("stream_tool_call_{index}")),
+                        type_name: call.type_name.unwrap_or_else(|| "function".to_string()),
+                        function: ToolCallsFuncSpec {
+                            name: call.function_name.unwrap_or_default(),
+                            arguments,
+                        },
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
+
+        if content.is_empty() && reasoning_content.is_empty() && tool_calls.is_empty() {
+            return None;
+        }
+
+        Some(OpenAIMessage {
+            role: role.unwrap_or_else(|| str_to_role("assistant")),
+            content: if content.is_empty() {
+                None
+            } else {
+                Some(MessageContent::Text(content))
+            },
+            reasoning_content: if reasoning_content.is_empty() {
+                None
+            } else {
+                Some(reasoning_content)
+            },
+            tool_calls,
+            tool_call_id: None,
         })
     }
 
@@ -253,6 +416,12 @@ impl LLMAPI {
             .text()
             .unwrap_or_else(|_| "Failed to read response".to_string());
 
+
+        if self.stream {
+            if let Some(message) = Self::parse_sse_message(&response_text) {
+                return Ok(message);
+            }
+        }
         if !status.is_success() {
             let err_msg = format!(
                 "{} status={} body={}",
@@ -360,6 +529,7 @@ impl LLMBase for LLMAPI {
         let mut request_body = json!({
             "model": self.model_name,
             "messages": messages,
+            "stream": self.stream,
         });
 
         if let Some(tool_list) = tools {

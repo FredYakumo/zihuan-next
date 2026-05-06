@@ -424,7 +424,15 @@
                   <button class="btn warn connection-card-compact-btn" @click="removeAgent(agent.id)">删除</button>
                 </div>
               </div>
-              <h4>{{ agent.name }}</h4>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <img
+                  v-if="botAvatarUrl(agent)"
+                  :src="botAvatarUrl(agent)"
+                  alt="bot avatar"
+                  style="width: 36px; height: 36px; border-radius: 999px; border: 1px solid var(--line); object-fit: cover; background: var(--surface-soft);"
+                />
+                <h4 style="margin: 0;">{{ agent.name }}</h4>
+              </div>
             </div>
 
             <div class="connection-card-body">
@@ -616,6 +624,7 @@ function summarizeAgent(agent: AgentWithRuntime): Array<{ label: string; value: 
   if (agent.agent_type.type === "qq_chat") {
     items.push(
       { label: "Bot Adapter", value: connectionName(String(agentType.ims_bot_adapter_connection_id ?? "")) || "未绑定" },
+      { label: "Bot QQ", value: String(agent.qq_chat_profile?.bot_user_id ?? "") || "未知" },
       { label: "RustFS", value: connectionName(String(agentType.rustfs_connection_id ?? "")) || "未绑定" },
       { label: "Tavily", value: connectionName(String(agentType.tavily_connection_id ?? "")) || "未绑定" },
       { label: "Bot Name", value: String(agentType.bot_name ?? "") || "未设置" },
@@ -641,6 +650,13 @@ function llmName(agent: AgentWithRuntime): string {
   const agentType = agent.agent_type as Record<string, unknown>;
   const llmId = String(agentType.llm_ref_id ?? "");
   return llm.value.find((item) => item.id === llmId)?.name ?? "未绑定";
+}
+
+function botAvatarUrl(agent: AgentWithRuntime): string {
+  if (agent.agent_type.type !== "qq_chat") {
+    return "";
+  }
+  return String(agent.qq_chat_profile?.bot_avatar_url ?? "");
 }
 
 onMounted(() => {

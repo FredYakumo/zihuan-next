@@ -1,4 +1,5 @@
 pub mod config;
+pub mod chat;
 pub mod execution;
 pub mod file_io;
 pub mod graph;
@@ -135,6 +136,16 @@ pub fn build_router(
         .push(Router::with_path("uploaded-images/<**rest>").get(file_io::serve_uploaded_image))
         // Frontend log forwarding
         .push(Router::with_path("log").post(log::frontend_log))
+        // Chat
+        .push(
+            Router::with_path("chat")
+                .push(Router::with_path("stream").post(chat::stream_chat))
+                .push(Router::with_path("sessions").get(chat::list_chat_sessions))
+                .push(
+                    Router::with_path("sessions/<session_id>/messages")
+                        .get(chat::get_chat_session_messages),
+                ),
+        )
         // Workflows directory
         .push(Router::with_path("workflow_set").get(file_io::list_workflows))
         .push(Router::with_path("workflow_set/save").post(file_io::save_to_workflows))

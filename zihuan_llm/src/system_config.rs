@@ -78,6 +78,8 @@ pub struct LlmServiceConfig {
     pub api_endpoint: String,
     #[serde(default)]
     pub api_key: Option<String>,
+    #[serde(default = "default_stream")]
+    pub stream: bool,
     #[serde(default)]
     pub supports_multimodal_input: bool,
     #[serde(default = "default_timeout_secs")]
@@ -187,6 +189,10 @@ fn default_timeout_secs() -> u64 {
 
 fn default_retry_count() -> u32 {
     2
+}
+
+fn default_stream() -> bool {
+    false
 }
 
 pub struct AgentsSection;

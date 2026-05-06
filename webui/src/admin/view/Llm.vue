@@ -30,6 +30,10 @@
               <input id="llm-multimodal-enabled" v-model="form.llm.supports_multimodal_input" type="checkbox" />
               <label for="llm-multimodal-enabled">多模态模型（允许传入图片）</label>
             </div>
+            <div class="field-full field-check">
+              <input id="llm-stream-enabled" v-model="form.llm.stream" type="checkbox" />
+              <label for="llm-stream-enabled">默认启用 stream 请求参数</label>
+            </div>
             <div class="field"><label>Model Name</label><input v-model="form.llm.model_name" /></div>
             <div class="field"><label>API Endpoint</label><input v-model="form.llm.api_endpoint" /></div>
             <div class="field"><label>API Key</label><input v-model="form.llm.api_key" type="password" /></div>
@@ -95,6 +99,17 @@
                 </label>
               </div>
               <div class="key-value connection-card-edit-row">
+                <strong>Stream</strong>
+                <label class="connection-card-inline-check">
+                  <input
+                    :id="`llm-stream-enabled-${item.id}`"
+                    v-model="form.llm.stream"
+                    type="checkbox"
+                  />
+                  <span>{{ form.llm.stream ? "已启用" : "未启用" }}</span>
+                </label>
+              </div>
+              <div class="key-value connection-card-edit-row">
                 <strong>Model</strong>
                 <input v-model="form.llm.model_name" class="connection-card-inline-input" />
               </div>
@@ -135,6 +150,7 @@
             <div class="connection-card-body">
               <div class="key-value"><strong>Model</strong><span>{{ item.llm.model_name }}</span></div>
               <div class="key-value"><strong>Endpoint</strong><span class="mono">{{ item.llm.api_endpoint }}</span></div>
+              <div class="key-value"><strong>Stream</strong><span>{{ item.llm.stream ? "是" : "否" }}</span></div>
               <div class="key-value"><strong>多模态</strong><span>{{ item.llm.supports_multimodal_input ? "是" : "否" }}</span></div>
               <div class="key-value"><strong>Timeout</strong><span>{{ item.llm.timeout_secs }}s</span></div>
               <div class="key-value"><strong>Retry</strong><span>{{ item.llm.retry_count }} 次</span></div>

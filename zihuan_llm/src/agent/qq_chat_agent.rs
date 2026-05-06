@@ -1487,12 +1487,13 @@ fn lock_pending_state(
 }
 
 fn send_tool_progress_notification(
-    adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
+    adapter: Option<&ims_bot_adapter::adapter::SharedBotAdapter>,
     target_id: &str,
     mention_target_id: Option<&str>,
     is_group: bool,
     call_content: &str,
 ) {
+    let Some(adapter) = adapter else { return; };
     if is_group {
         if let Some(mid) = mention_target_id {
             send_group_progress_notification(adapter, target_id, mid, call_content);
@@ -1890,7 +1891,7 @@ fn send_editable_tool_progress_notification(
 
 struct TavilyBrainTool {
     tavily_ref: Arc<TavilyRef>,
-    adapter: ims_bot_adapter::adapter::SharedBotAdapter,
+    adapter: Option<ims_bot_adapter::adapter::SharedBotAdapter>,
     target_id: String,
     mention_target_id: Option<String>,
     is_group: bool,
@@ -1918,13 +1919,13 @@ impl BrainTool for TavilyBrainTool {
             "{LOG_PREFIX} executing tool 'web_search' call_content='{}' arguments={arguments}",
             call_content
         );
-        if self.is_group {
-            if let Some(mid) = &self.mention_target_id {
-                send_group_progress_notification(&self.adapter, &self.target_id, mid, call_content);
-            }
-        } else {
-            send_friend_progress_notification(&self.adapter, &self.target_id, call_content);
-        }
+        send_tool_progress_notification(
+            self.adapter.as_ref(),
+            &self.target_id,
+            self.mention_target_id.as_deref(),
+            self.is_group,
+            call_content,
+        );
 
         let query = arguments
             .get("query")
@@ -1957,7 +1958,7 @@ impl BrainTool for TavilyBrainTool {
 
 struct GetRecentGroupMessagesBrainTool {
     mysql_ref: Option<Arc<MySqlConfig>>,
-    adapter: ims_bot_adapter::adapter::SharedBotAdapter,
+    adapter: Option<ims_bot_adapter::adapter::SharedBotAdapter>,
     target_id: String,
     mention_target_id: Option<String>,
     is_group: bool,
@@ -1965,16 +1966,36 @@ struct GetRecentGroupMessagesBrainTool {
 
 impl BrainTool for GetRecentGroupMessagesBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
+        let dashboard_mode = self.target_id.is_empty();
+        let mut properties = serde_json::json!({
+            "limit": { "type": "integer", "description": "要查看的消息数量，默认 10，最大 50" }
+        });
+        if dashboard_mode {
+            properties.as_object_mut().unwrap().insert(
+                "group_id".to_string(),
+                serde_json::json!({ "type": "string", "description": "要查询的群号" }),
+            );
+        }
+        let mut schema = serde_json::json!({
+            "type": "object",
+            "properties": properties
+        });
+        if dashboard_mode {
+            schema.as_object_mut().unwrap().insert(
+                "required".to_string(),
+                serde_json::json!(["group_id"]),
+            );
+        } else {
+            schema.as_object_mut().unwrap().insert(
+                "additionalProperties".to_string(),
+                serde_json::json!(false),
+            );
+        }
+        let description: &'static str = "查看指定群或当前群里最近的 n 条消息";
         Arc::new(StaticFunctionToolSpec {
             name: "get_recent_group_messages",
-            description: "查看当前群里最近的 n 条消息，仅群聊可用",
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "limit": { "type": "integer", "description": "要查看的消息数量，默认 10，最大 50" }
-                },
-                "additionalProperties": false
-            }),
+            description,
+            parameters: schema,
         })
     }
 
@@ -1984,7 +2005,7 @@ impl BrainTool for GetRecentGroupMessagesBrainTool {
             call_content
         );
         send_tool_progress_notification(
-            &self.adapter,
+            self.adapter.as_ref(),
             &self.target_id,
             self.mention_target_id.as_deref(),
             self.is_group,
@@ -1992,11 +2013,19 @@ impl BrainTool for GetRecentGroupMessagesBrainTool {
         );
 
         let result = (|| -> Result<Value> {
-            if !self.is_group {
-                return Err(Error::ValidationError(
-                    "get_recent_group_messages can only be used in group chat".to_string(),
-                ));
-            }
+            let group_id = if self.target_id.is_empty() {
+                // dashboard mode: group_id must come from the LLM call argument
+                optional_string_argument(arguments, "group_id")
+                    .ok_or_else(|| Error::ValidationError("group_id is required".to_string()))?
+            } else {
+                // QQ bot mode: group_id comes from the event context
+                if !self.is_group {
+                    return Err(Error::ValidationError(
+                        "get_recent_group_messages can only be used in group chat".to_string(),
+                    ));
+                }
+                self.target_id.clone()
+            };
             let mysql_ref = self.mysql_ref.as_ref().ok_or_else(|| {
                 Error::ValidationError("mysql_ref is required for message lookup".to_string())
             })?;
@@ -2013,7 +2042,7 @@ impl BrainTool for GetRecentGroupMessagesBrainTool {
                 ),
                 (
                     "group_id".to_string(),
-                    DataValue::String(self.target_id.clone()),
+                    DataValue::String(group_id),
                 ),
                 ("limit".to_string(), DataValue::Integer(limit as i64)),
             ]))?;
@@ -2035,7 +2064,7 @@ impl BrainTool for GetRecentGroupMessagesBrainTool {
 
 struct GetRecentUserMessagesBrainTool {
     mysql_ref: Option<Arc<MySqlConfig>>,
-    adapter: ims_bot_adapter::adapter::SharedBotAdapter,
+    adapter: Option<ims_bot_adapter::adapter::SharedBotAdapter>,
     target_id: String,
     mention_target_id: Option<String>,
     is_group: bool,
@@ -2064,7 +2093,7 @@ impl BrainTool for GetRecentUserMessagesBrainTool {
             call_content
         );
         send_tool_progress_notification(
-            &self.adapter,
+            self.adapter.as_ref(),
             &self.target_id,
             self.mention_target_id.as_deref(),
             self.is_group,
@@ -2118,7 +2147,7 @@ impl BrainTool for GetRecentUserMessagesBrainTool {
 struct SearchSimilarMessagesBrainTool {
     weaviate_ref: Option<Arc<WeaviateRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
-    adapter: ims_bot_adapter::adapter::SharedBotAdapter,
+    adapter: Option<ims_bot_adapter::adapter::SharedBotAdapter>,
     target_id: String,
     mention_target_id: Option<String>,
     is_group: bool,
@@ -2148,7 +2177,7 @@ impl BrainTool for SearchSimilarMessagesBrainTool {
             call_content
         );
         send_tool_progress_notification(
-            &self.adapter,
+            self.adapter.as_ref(),
             &self.target_id,
             self.mention_target_id.as_deref(),
             self.is_group,
@@ -2212,7 +2241,7 @@ struct SearchSimilarImagesBrainTool {
     weaviate_image_ref: Option<Arc<WeaviateRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
     tavily_ref: Arc<TavilyRef>,
-    adapter: ims_bot_adapter::adapter::SharedBotAdapter,
+    adapter: Option<ims_bot_adapter::adapter::SharedBotAdapter>,
     target_id: String,
     mention_target_id: Option<String>,
     is_group: bool,
@@ -2240,7 +2269,7 @@ impl BrainTool for SearchSimilarImagesBrainTool {
             call_content
         );
         send_tool_progress_notification(
-            &self.adapter,
+            self.adapter.as_ref(),
             &self.target_id,
             self.mention_target_id.as_deref(),
             self.is_group,
@@ -2790,6 +2819,95 @@ impl BrainTool for EditableQqAgentTool {
     }
 }
 
+/// Build informational Brain tools for a QQ chat agent without requiring an active bot adapter.
+/// Used by the dashboard / HTTP chat endpoint to give the agent the same tools as the live bot.
+/// QQ-specific reply tools (reply_plain_text, reply_at, etc.) are excluded because they have
+/// no meaning outside a real QQ event context.
+pub fn build_info_brain_tools(
+    default_tools_enabled: &HashMap<String, bool>,
+    tavily_ref: Option<Arc<TavilyRef>>,
+    mysql_ref: Option<Arc<MySqlConfig>>,
+    weaviate_ref: Option<Arc<WeaviateRef>>,
+    weaviate_image_ref: Option<Arc<WeaviateRef>>,
+    embedding_model: Option<Arc<dyn EmbeddingBase>>,
+    current_message: String,
+) -> Vec<Box<dyn BrainTool>> {
+    fn is_enabled(map: &HashMap<String, bool>, name: &str) -> bool {
+        *map.get(name).unwrap_or(&true)
+    }
+
+    let mut tools: Vec<Box<dyn BrainTool>> = Vec::new();
+
+    if is_enabled(default_tools_enabled, DEFAULT_TOOL_WEB_SEARCH) {
+        if let Some(tavily) = tavily_ref.as_ref() {
+            tools.push(Box::new(TavilyBrainTool {
+                tavily_ref: tavily.clone(),
+                adapter: None,
+                target_id: String::new(),
+                mention_target_id: None,
+                is_group: false,
+            }));
+        }
+    }
+
+    if is_enabled(default_tools_enabled, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO) {
+        tools.push(Box::new(GetAgentPublicInfoBrainTool {
+            message: current_message,
+        }));
+    }
+
+    if is_enabled(default_tools_enabled, DEFAULT_TOOL_GET_FUNCTION_LIST) {
+        tools.push(Box::new(GetFunctionListBrainTool));
+    }
+
+    if is_enabled(default_tools_enabled, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES) {
+        tools.push(Box::new(GetRecentGroupMessagesBrainTool {
+            mysql_ref: mysql_ref.clone(),
+            adapter: None,
+            target_id: String::new(),
+            mention_target_id: None,
+            is_group: false,
+        }));
+    }
+
+    if is_enabled(default_tools_enabled, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES) {
+        tools.push(Box::new(GetRecentUserMessagesBrainTool {
+            mysql_ref: mysql_ref.clone(),
+            adapter: None,
+            target_id: String::new(),
+            mention_target_id: None,
+            is_group: false,
+        }));
+    }
+
+    if is_enabled(default_tools_enabled, DEFAULT_TOOL_SEARCH_SIMILAR_MESSAGES) {
+        tools.push(Box::new(SearchSimilarMessagesBrainTool {
+            weaviate_ref: weaviate_ref.clone(),
+            embedding_model: embedding_model.clone(),
+            adapter: None,
+            target_id: String::new(),
+            mention_target_id: None,
+            is_group: false,
+        }));
+    }
+
+    if is_enabled(default_tools_enabled, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES) {
+        if let Some(tavily) = tavily_ref {
+            tools.push(Box::new(SearchSimilarImagesBrainTool {
+                weaviate_image_ref,
+                embedding_model,
+                tavily_ref: tavily,
+                adapter: None,
+                target_id: String::new(),
+                mention_target_id: None,
+                is_group: false,
+            }));
+        }
+    }
+
+    tools
+}
+
 pub struct QqChatAgent {
     id: String,
     name: String,
@@ -3143,7 +3261,7 @@ impl QqChatAgent {
         if self.is_default_tool_enabled(DEFAULT_TOOL_WEB_SEARCH) {
             brain = brain.with_tool(TavilyBrainTool {
                 tavily_ref: tavily.clone(),
-                adapter: adapter.clone(),
+                adapter: Some(adapter.clone()),
                 target_id: target_id.to_string(),
                 mention_target_id: if is_group {
                     Some(sender_id.to_string())
@@ -3167,7 +3285,7 @@ impl QqChatAgent {
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES) {
             brain = brain.with_tool(GetRecentGroupMessagesBrainTool {
                 mysql_ref: mysql_ref.cloned(),
-                adapter: adapter.clone(),
+                adapter: Some(adapter.clone()),
                 target_id: target_id.to_string(),
                 mention_target_id: if is_group {
                     Some(sender_id.to_string())
@@ -3181,7 +3299,7 @@ impl QqChatAgent {
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_RECENT_USER_MESSAGES) {
             brain = brain.with_tool(GetRecentUserMessagesBrainTool {
                 mysql_ref: mysql_ref.cloned(),
-                adapter: adapter.clone(),
+                adapter: Some(adapter.clone()),
                 target_id: target_id.to_string(),
                 mention_target_id: if is_group {
                     Some(sender_id.to_string())
@@ -3196,7 +3314,7 @@ impl QqChatAgent {
             brain = brain.with_tool(SearchSimilarMessagesBrainTool {
                 weaviate_ref: weaviate_ref.cloned(),
                 embedding_model: embedding_model.cloned(),
-                adapter: adapter.clone(),
+                adapter: Some(adapter.clone()),
                 target_id: target_id.to_string(),
                 mention_target_id: if is_group {
                     Some(sender_id.to_string())
@@ -3212,7 +3330,7 @@ impl QqChatAgent {
                 weaviate_image_ref: weaviate_image_ref.cloned(),
                 embedding_model: embedding_model.cloned(),
                 tavily_ref: tavily.clone(),
-                adapter: adapter.clone(),
+                adapter: Some(adapter.clone()),
                 target_id: target_id.to_string(),
                 mention_target_id: if is_group {
                     Some(sender_id.to_string())

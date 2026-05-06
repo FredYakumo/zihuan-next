@@ -1,7 +1,7 @@
 <template>
   <section class="page tasks-page">
     <div class="page-hero">
-      <h2>任务与日志</h2>
+      <h2>任务管理器</h2>
     </div>
 
     <section class="panel">

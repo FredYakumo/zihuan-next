@@ -326,21 +326,21 @@ textarea {
 }
 
 .page-hero {
-  position: relative;
-  padding: 28px;
-  padding-bottom: 74px;
-  border-radius: 28px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--admin-bg-elevated) 92%, white 8%), color-mix(in srgb, var(--admin-bg-panel-strong) 96%, transparent 4%)),
-    radial-gradient(circle at top right, color-mix(in srgb, var(--admin-accent) 18%, transparent 82%), transparent 28%);
-  border: 1px solid color-mix(in srgb, var(--admin-accent) 22%, var(--admin-border) 78%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--admin-bg-panel) 92%, transparent 8%), color-mix(in srgb, var(--admin-bg-panel-strong) 96%, transparent 4%));
+  border: 1px solid var(--admin-border);
   box-shadow: var(--admin-card-shadow);
+  backdrop-filter: blur(18px);
 }
 
 .page-hero h2 {
-  margin: 0 0 10px;
-  font-size: 36px;
-  letter-spacing: 0.01em;
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: 0.02em;
 }
 
 .hero-actions,
@@ -354,18 +354,16 @@ textarea {
 }
 
 .connection-hero-actions {
-  position: absolute;
-  right: 28px;
-  bottom: 28px;
+  position: relative;
   justify-content: flex-end;
 }
 
 .connection-hero-add-btn {
-  min-width: 56px;
-  min-height: 56px;
+  min-width: 48px;
+  min-height: 48px;
   padding: 0;
-  border-radius: 18px;
-  font-size: 28px;
+  border-radius: 14px;
+  font-size: 24px;
   line-height: 1;
 }
 
@@ -1030,13 +1028,17 @@ code {
   }
 
   .page-hero {
-    padding-bottom: 28px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 18px;
   }
 
   .connection-hero-actions {
     position: static;
-    margin-top: 18px;
-    justify-content: flex-start;
+    margin-top: 0;
+    width: 100%;
+    justify-content: flex-end;
   }
 
   .connection-picker-grid {

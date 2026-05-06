@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use log::info;
@@ -7,38 +6,18 @@ use salvo::http::{HeaderValue, StatusCode};
 use salvo::prelude::*;
 use tokio::task::JoinHandle;
 use zihuan_core::error::{Error, Result};
-use zihuan_llm::agent::brain::{Brain, BrainStopReason, BrainTool, MAX_TOOL_ITERATIONS};
-use zihuan_llm::brain_tool::BrainToolDefinition;
 use zihuan_llm::system_config::{
-    load_agents, load_llm_refs, AgentConfig, AgentType, HttpStreamAgentConfig, LlmRefConfig,
+    load_agents, load_llm_refs, AgentConfig, AgentType, HttpStreamAgentConfig,
 };
-use zihuan_llm::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
-use zihuan_core::llm::llm_base::LLMBase;
-use zihuan_core::llm::tooling::FunctionTool;
 
 use zihuan_graph_engine::data_value::EXECUTION_TASK_ID;
 
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
-use super::qq_chat_agent::build_enabled_tool_definitions;
-use crate::resource_resolver::{build_llm_model, resolve_llm_service_config};
+use super::inference::{infer_agent_response, resolve_agent_model_name};
 
 #[derive(Clone)]
 struct HttpStreamRuntimeState {
     owner_agent: AgentConfig,
-}
-
-struct ServiceSubgraphBrainTool {
-    runner: ToolSubgraphRunner,
-}
-
-impl BrainTool for ServiceSubgraphBrainTool {
-    fn spec(&self) -> Arc<dyn FunctionTool> {
-        self.runner.spec()
-    }
-
-    fn execute(&self, call_content: &str, arguments: &serde_json::Value) -> String {
-        self.runner.execute_to_string(call_content, arguments)
-    }
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -195,12 +174,11 @@ async fn execute_http_stream_completion(
     let llm_refs = load_llm_refs()?;
     let agents = load_agents()?;
     let target_agent = resolve_http_stream_target_agent(runtime, &agents, agent_id.as_deref())?;
-    let (model_name, llm, tool_definitions) =
-        build_http_stream_agent_runtime(&target_agent, &llm_refs)?;
+    let model_name = resolve_agent_model_name(&target_agent, &llm_refs)?;
     let completion_id = format!("chatcmpl-{}", uuid::Uuid::new_v4().simple());
     let created = chrono::Utc::now().timestamp();
 
-    let final_message = run_http_agent_brain(&target_agent, llm, tool_definitions, messages)?;
+    let final_message = infer_agent_response(&target_agent, &llm_refs, messages)?;
 
     let model_name = model.unwrap_or(model_name);
     if stream {
@@ -262,78 +240,6 @@ fn ensure_http_stream_target_agent_enabled(agent: AgentConfig) -> Result<AgentCo
         )));
     }
     Ok(agent)
-}
-
-fn build_http_stream_agent_runtime(
-    agent: &AgentConfig,
-    llm_refs: &[LlmRefConfig],
-) -> Result<(String, Arc<dyn LLMBase>, Vec<BrainToolDefinition>)> {
-    let config = match &agent.agent_type {
-        AgentType::HttpStream(config) => config,
-        _ => {
-            return Err(Error::ValidationError(format!(
-                "agent '{}' is not an http_stream agent",
-                agent.name
-            )))
-        }
-    };
-    let llm_config = resolve_llm_service_config(
-        config.llm_ref_id.as_deref(),
-        config.llm.as_ref(),
-        llm_refs,
-        &agent.name,
-    )?;
-    let llm = build_llm_model(&llm_config);
-    let tool_definitions = build_enabled_tool_definitions(&agent.tools)?;
-    Ok((llm_config.model_name.clone(), llm, tool_definitions))
-}
-
-fn run_http_agent_brain(
-    agent: &AgentConfig,
-    llm: Arc<dyn LLMBase>,
-    tool_definitions: Vec<BrainToolDefinition>,
-    messages: Vec<zihuan_core::llm::OpenAIMessage>,
-) -> Result<zihuan_core::llm::OpenAIMessage> {
-    let mut brain = Brain::new(llm);
-    for tool_def in tool_definitions {
-        brain.add_tool(ServiceSubgraphBrainTool {
-            runner: ToolSubgraphRunner {
-                node_id: format!("http_stream_{}", agent.id),
-                owner_node_type: "brain".to_string(),
-                shared_inputs: Vec::new(),
-                definition: tool_def,
-                shared_runtime_values: HashMap::new(),
-                result_mode: ToolResultMode::JsonObject,
-            },
-        });
-    }
-
-    let (output_messages, stop_reason) = brain.run(messages);
-    match stop_reason {
-        BrainStopReason::Done => output_messages
-            .into_iter()
-            .rev()
-            .find(|message| {
-                matches!(
-                    message.role,
-                    zihuan_core::llm::model::message_role::MessageRole::Assistant
-                ) && message.tool_calls.is_empty()
-            })
-            .ok_or_else(|| {
-                Error::StringError(format!(
-                    "agent '{}' did not produce a final assistant message",
-                    agent.name
-                ))
-            }),
-        BrainStopReason::TransportError(content) => Err(Error::StringError(format!(
-            "HTTP stream agent '{}' LLM request failed: {}",
-            agent.name, content
-        ))),
-        BrainStopReason::MaxIterationsReached => Err(Error::StringError(format!(
-            "HTTP stream agent '{}' exceeded max tool iterations ({MAX_TOOL_ITERATIONS})",
-            agent.name
-        ))),
-    }
 }
 
 fn build_sse_response(

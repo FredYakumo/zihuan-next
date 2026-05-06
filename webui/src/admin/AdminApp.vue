@@ -16,7 +16,7 @@
         <RouterLink class="admin-nav-link" to="/llm">模型配置</RouterLink>
         <RouterLink class="admin-nav-link" to="/agents">Agent 管理</RouterLink>
         <RouterLink class="admin-nav-link" to="/graphs">节点图与工作流</RouterLink>
-        <RouterLink class="admin-nav-link" to="/tasks">任务与日志</RouterLink>
+        <RouterLink class="admin-nav-link" to="/tasks">任务管理器</RouterLink>
       </nav>
       <section class="admin-theme-card">
         <div class="admin-theme-card-header">

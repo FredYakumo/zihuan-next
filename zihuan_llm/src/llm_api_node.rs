@@ -126,6 +126,7 @@ impl Node for LLMApiNode {
                 model_name,
                 api_endpoint,
                 api_key,
+                false,
                 supports_multimodal_input,
                 Duration::from_secs(timeout_secs),
             )
