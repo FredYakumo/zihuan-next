@@ -58,9 +58,12 @@ fn dir_size(path: &Path) -> u64 {
 }
 
 fn abs_path_str(path: &Path) -> String {
-    path.canonicalize()
+    let s = path
+        .canonicalize()
         .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| path.display().to_string())
+        .unwrap_or_else(|_| path.display().to_string());
+    // Windows canonicalize() prepends \\?\ (extended-length path prefix) — strip it.
+    s.strip_prefix(r"\\?\").unwrap_or(&s).to_string()
 }
 
 #[handler]

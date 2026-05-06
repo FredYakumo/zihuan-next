@@ -318,6 +318,8 @@ textarea {
 
 .admin-main {
   padding: 28px;
+  overflow-y: auto;
+  height: 100vh;
 }
 
 .page {
