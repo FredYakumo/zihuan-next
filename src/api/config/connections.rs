@@ -6,7 +6,8 @@ use uuid::Uuid;
 use crate::system_config;
 use ims_bot_adapter::{
     close_runtime_bot_adapter_instance, list_active_bot_adapter_connection_ids,
-    list_runtime_bot_adapter_instances, parse_ims_bot_adapter_connection, sync_enabled_bot_adapters,
+    list_runtime_bot_adapter_instances, parse_ims_bot_adapter_connection,
+    sync_enabled_bot_adapters,
 };
 use log::info;
 use storage_handler::{
@@ -41,10 +42,7 @@ fn validate_connection(kind: &ConnectionKind) -> Result<(), String> {
             if bot.bot_server_url.trim().is_empty() {
                 return Err("ims_bot_adapter.bot_server_url must not be empty".to_string());
             }
-            if matches!(
-                bot.adapter_server_url.as_deref().map(str::trim),
-                Some("")
-            ) {
+            if matches!(bot.adapter_server_url.as_deref().map(str::trim), Some("")) {
                 return Err("ims_bot_adapter.adapter_server_url must not be empty".to_string());
             }
             Ok(())

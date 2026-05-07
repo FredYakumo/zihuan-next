@@ -7,17 +7,18 @@ pub mod resource_resolver;
 pub mod rustfs;
 pub mod weaviate;
 
+use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use log::info;
-use zihuan_core::error::Result;
 use zihuan_core::config::{
     ConfigCategory, ConfigCenter, ConfigKind, ConfigRecord, StoredConfigRecord,
 };
+use zihuan_core::error::Result;
 
 pub use connection_manager::{
-    cleanup_runtime_storage_instances, close_runtime_storage_instance, list_runtime_storage_instances,
-    MessageStoreConnectionAccess, RuntimeStorageConnectionManager, StorageRuntimeHandle,
+    cleanup_runtime_storage_instances, close_runtime_storage_instance,
+    list_runtime_storage_instances, MessageStoreConnectionAccess, RuntimeStorageConnectionManager,
+    StorageRuntimeHandle,
 };
 pub use message_store::{MessageRecord, MessageStore};
 pub use mysql::MySqlNode;
@@ -145,10 +146,14 @@ impl ConfigRecord for ConnectionConfig {
 
     fn validate(&self) -> Result<()> {
         if self.canonical_config_id().trim().is_empty() {
-            return Err(zihuan_core::string_error!("connection config_id must not be empty"));
+            return Err(zihuan_core::string_error!(
+                "connection config_id must not be empty"
+            ));
         }
         if self.name.trim().is_empty() {
-            return Err(zihuan_core::string_error!("connection name must not be empty"));
+            return Err(zihuan_core::string_error!(
+                "connection name must not be empty"
+            ));
         }
         Ok(())
     }
@@ -204,7 +209,10 @@ pub fn save_connections(connections: Vec<ConnectionConfig>) -> Result<()> {
     Ok(())
 }
 
-fn normalize_connection_identity(mut connection: ConnectionConfig, fallback_id: String) -> ConnectionConfig {
+fn normalize_connection_identity(
+    mut connection: ConnectionConfig,
+    fallback_id: String,
+) -> ConnectionConfig {
     let canonical = if connection.config_id.trim().is_empty() {
         if connection.id.trim().is_empty() {
             fallback_id

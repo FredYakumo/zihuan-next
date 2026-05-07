@@ -170,8 +170,9 @@ impl ConfigRoot {
     }
 
     pub fn to_value(&self) -> Result<Value> {
-        serde_json::to_value(self)
-            .map_err(|err| Error::StringError(format!("failed to serialize unified config root: {err}")))
+        serde_json::to_value(self).map_err(|err| {
+            Error::StringError(format!("failed to serialize unified config root: {err}"))
+        })
     }
 }
 
@@ -283,11 +284,17 @@ fn legacy_object_to_spec(category: ConfigCategory, object: &Map<String, Value>) 
             );
             spec.insert(
                 "auto_start".to_string(),
-                object.get("auto_start").cloned().unwrap_or(Value::Bool(false)),
+                object
+                    .get("auto_start")
+                    .cloned()
+                    .unwrap_or(Value::Bool(false)),
             );
             spec.insert(
                 "is_default".to_string(),
-                object.get("is_default").cloned().unwrap_or(Value::Bool(false)),
+                object
+                    .get("is_default")
+                    .cloned()
+                    .unwrap_or(Value::Bool(false)),
             );
             spec.insert(
                 "tools".to_string(),
@@ -332,8 +339,9 @@ impl ConfigRepository for FsConfigRepository {
             fs::create_dir_all(parent)?;
         }
         let value = root.to_value()?;
-        let content = serde_json::to_string_pretty(&value)
-            .map_err(|err| Error::StringError(format!("failed to serialize unified config root: {err}")))?;
+        let content = serde_json::to_string_pretty(&value).map_err(|err| {
+            Error::StringError(format!("failed to serialize unified config root: {err}"))
+        })?;
         let tmp_path = self.path.with_extension("json.tmp");
         fs::write(&tmp_path, content)?;
         fs::rename(&tmp_path, &self.path)?;

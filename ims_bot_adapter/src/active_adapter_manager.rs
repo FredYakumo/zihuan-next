@@ -85,11 +85,13 @@ impl ActiveAdapterManager {
                 tokio::time::interval(Duration::from_secs(BOT_ADAPTER_HEARTBEAT_INTERVAL_SECS));
             loop {
                 ticker.tick().await;
-                match ws_send_action_async(&adapter, "get_login_info", serde_json::json!({})).await {
+                match ws_send_action_async(&adapter, "get_login_info", serde_json::json!({})).await
+                {
                     Ok(_) => {
                         log::debug!(
                             "[active_adapter_manager] heartbeat ok for '{}' (instance_id={})",
-                            connection_name, instance_id
+                            connection_name,
+                            instance_id
                         );
                     }
                     Err(err) => {
@@ -369,5 +371,7 @@ pub async fn list_runtime_bot_adapter_instances() -> Result<Vec<RuntimeConnectio
 }
 
 pub async fn close_runtime_bot_adapter_instance(instance_id: &str) -> Result<bool> {
-    ActiveAdapterManager::shared().close_instance(instance_id).await
+    ActiveAdapterManager::shared()
+        .close_instance(instance_id)
+        .await
 }

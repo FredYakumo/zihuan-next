@@ -112,8 +112,7 @@ impl RustfsNode {
     }
 
     fn selected_config_id(&self) -> Result<&str> {
-        self
-            .config_id
+        self.config_id
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())

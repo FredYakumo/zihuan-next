@@ -9,8 +9,8 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::task::block_in_place;
-use zihuan_core::url_utils::pct_encode;
 use zihuan_core::error::Result;
+use zihuan_core::url_utils::pct_encode;
 
 /// Redis configuration node - builds Redis connection config from input ports
 pub struct RedisNode {

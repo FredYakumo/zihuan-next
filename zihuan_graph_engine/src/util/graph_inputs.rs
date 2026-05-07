@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use crate::function_graph::{FunctionPortDef, FUNCTION_RUNTIME_VALUES_PORT, FUNCTION_SIGNATURE_PORT};
+use crate::function_graph::{
+    FunctionPortDef, FUNCTION_RUNTIME_VALUES_PORT, FUNCTION_SIGNATURE_PORT,
+};
 use crate::graph_boundary::graph_inputs_ports;
 use crate::util::function::data_value_from_json_with_declared_type;
 use crate::{DataValue, Node, Port};
@@ -26,9 +28,12 @@ impl GraphInputsNode {
     }
 
     fn apply_signature_json(&mut self, value: &Value) -> Result<()> {
-        self.signature = serde_json::from_value::<Vec<FunctionPortDef>>(value.clone()).map_err(
-            |_| Error::ValidationError("graph_inputs.signature 不是有效的节点图签名 JSON".to_string()),
-        )?;
+        self.signature =
+            serde_json::from_value::<Vec<FunctionPortDef>>(value.clone()).map_err(|_| {
+                Error::ValidationError(
+                    "graph_inputs.signature 不是有效的节点图签名 JSON".to_string(),
+                )
+            })?;
         Ok(())
     }
 }
@@ -77,7 +82,10 @@ impl Node for GraphInputsNode {
         Ok(())
     }
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         if let Some(DataValue::Json(value)) = inputs.get(FUNCTION_SIGNATURE_PORT) {
             self.apply_signature_json(value)?;
         }
@@ -87,7 +95,10 @@ impl Node for GraphInputsNode {
         for port in &self.signature {
             if let Some(runtime_values) = &self.runtime_values {
                 let value = runtime_values.get(&port.name).ok_or_else(|| {
-                    Error::ValidationError(format!("节点图输入 '{}' 在 runtime_values 中缺失", port.name))
+                    Error::ValidationError(format!(
+                        "节点图输入 '{}' 在 runtime_values 中缺失",
+                        port.name
+                    ))
                 })?;
                 outputs.insert(port.name.clone(), value.clone());
                 continue;
@@ -111,7 +122,10 @@ impl Node for GraphInputsNode {
             };
 
             let value = runtime_values.get(&port.name).ok_or_else(|| {
-                Error::ValidationError(format!("节点图输入 '{}' 在 runtime_values 中缺失", port.name))
+                Error::ValidationError(format!(
+                    "节点图输入 '{}' 在 runtime_values 中缺失",
+                    port.name
+                ))
             })?;
             outputs.insert(
                 port.name.clone(),

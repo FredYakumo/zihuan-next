@@ -15,12 +15,10 @@ pub fn build_weaviate_ref(
     class_name: &str,
     _image_collection: bool,
 ) -> Result<Arc<WeaviateRef>> {
-    let mut node: Box<dyn Node> = Box::new(
-        zihuan_graph_engine::database::WeaviateNode::new(
-            "__storage_handler__",
-            "__storage_handler__",
-        ),
-    );
+    let mut node: Box<dyn Node> = Box::new(zihuan_graph_engine::database::WeaviateNode::new(
+        "__storage_handler__",
+        "__storage_handler__",
+    ));
 
     let outputs = node.execute(HashMap::from([
         (

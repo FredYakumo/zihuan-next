@@ -19,7 +19,7 @@ use zihuan_graph_engine::data_value::{MySqlConfig, RedisConfig};
 use zihuan_graph_engine::database::weaviate::WeaviateRef;
 use zihuan_graph_engine::object_storage::S3Ref;
 
-    use crate::resource_resolver::find_connection;
+use crate::resource_resolver::find_connection;
 use crate::rustfs::build_s3_ref as build_s3_direct_ref;
 use crate::weaviate::build_weaviate_ref as build_weaviate_direct_ref;
 use crate::{load_connections, ConnectionKind};
@@ -127,9 +127,7 @@ impl RuntimeStorageConnectionManager {
                     MySqlPoolOptions::new()
                         .max_connections(DEFAULT_MYSQL_MAX_CONNECTIONS)
                         .min_connections(1)
-                        .acquire_timeout(Duration::from_secs(
-                            DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS,
-                        ))
+                        .acquire_timeout(Duration::from_secs(DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS))
                         .connect(&mysql.url),
                 )?;
                 let config = Arc::new(MySqlConfig {
@@ -154,12 +152,12 @@ impl RuntimeStorageConnectionManager {
                 (StorageRuntimePayload::S3(s3_ref), "rustfs".to_string())
             }
             ConnectionKind::Weaviate(weaviate) => {
-                let weaviate_ref = build_weaviate_direct_ref(
-                    &weaviate.base_url,
-                    &weaviate.class_name,
-                    false,
-                )?;
-                (StorageRuntimePayload::Weaviate(weaviate_ref), "weaviate".to_string())
+                let weaviate_ref =
+                    build_weaviate_direct_ref(&weaviate.base_url, &weaviate.class_name, false)?;
+                (
+                    StorageRuntimePayload::Weaviate(weaviate_ref),
+                    "weaviate".to_string(),
+                )
             }
             other => {
                 return Err(Error::ValidationError(format!(
@@ -260,7 +258,10 @@ impl ConnectionManagerTrait for RuntimeStorageConnectionManager {
 
     async fn close_instances_for_config(&self, config_id: &str) -> Result<usize> {
         let mut instances = self.instances.write().await;
-        Ok(instances.remove(config_id).map(|items| items.len()).unwrap_or(0))
+        Ok(instances
+            .remove(config_id)
+            .map(|items| items.len())
+            .unwrap_or(0))
     }
 
     async fn cleanup_stale_instances(&self) -> Result<usize> {
@@ -332,7 +333,10 @@ impl std::fmt::Debug for MessageStoreConnectionAccess {
 
 impl MessageStoreConnectionAccess {
     pub fn new(mysql_ref: Arc<MySqlConfig>, redis_ref: Option<Arc<RedisConfig>>) -> Self {
-        Self { mysql_ref, redis_ref }
+        Self {
+            mysql_ref,
+            redis_ref,
+        }
     }
 
     pub fn mysql_ref(&self) -> &Arc<MySqlConfig> {

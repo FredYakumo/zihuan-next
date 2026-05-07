@@ -9,6 +9,10 @@ use crate::resource_resolver::{
 use chrono::Local;
 use ims_bot_adapter::adapter::BotAdapter;
 use ims_bot_adapter::event::EventHandler;
+use ims_bot_adapter::models::message::{
+    AtTargetMessage, ForwardMessage, ForwardNodeMessage, ImageMessage, Message, PlainTextMessage,
+    ReplyMessage,
+};
 use ims_bot_adapter::{build_ims_bot_adapter, parse_ims_bot_adapter_connection};
 use log::{error, info};
 use storage_handler::{
@@ -23,12 +27,402 @@ use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::graph_boundary::{root_graph_to_tool_subgraph, sync_root_graph_io};
 use zihuan_graph_engine::message_restore::register_mysql_ref;
 use zihuan_graph_engine::DataType;
-use zihuan_llm::agent::qq_chat_agent::{QqChatAgentService, QqChatAgentServiceConfig};
+use zihuan_llm::agent::qq_chat_agent::{
+    QqAgentReplyBatchBuilder, QqAgentReplyBuildRequest, QqAgentReplyBuildResult,
+    QqChatAgentService, QqChatAgentServiceConfig,
+};
 use zihuan_llm::brain_tool::BrainToolDefinition;
 use zihuan_llm::system_config::{
     load_llm_refs, AgentConfig, AgentToolConfig, AgentToolType, LlmRefConfig, NodeGraphToolConfig,
     QqChatAgentConfig,
 };
+
+const FORWARD_SPLIT_PREFERRED_SEPARATORS: [char; 14] = [
+    '\n', '。', '！', '？', '；', '：', '.', '!', '?', ';', ':', '，', ',', ' ',
+];
+
+#[derive(Debug, Clone)]
+enum ReplySegment {
+    Text(String),
+    Message(Message),
+    NoReply,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct SplitRepairState {
+    in_code_fence: bool,
+    in_double_quote: bool,
+    in_cn_quote: bool,
+}
+
+fn build_reply_batch_builder() -> QqAgentReplyBatchBuilder {
+    Arc::new(build_reply_batches_from_model_text)
+}
+
+fn build_reply_batches_from_model_text(
+    request: &QqAgentReplyBuildRequest,
+) -> Result<QqAgentReplyBuildResult> {
+    let segments = parse_reply_segments(&request.assistant_text);
+    if segments
+        .iter()
+        .any(|segment| matches!(segment, ReplySegment::NoReply))
+    {
+        return Ok(QqAgentReplyBuildResult {
+            batches: Vec::new(),
+            suppress_send: true,
+        });
+    }
+
+    let mut batches = Vec::new();
+    let mut current_batch = Vec::new();
+    let mut current_text_chars = 0usize;
+
+    for segment in segments {
+        match segment {
+            ReplySegment::Text(text) => {
+                if text.is_empty() {
+                    continue;
+                }
+
+                let text_chars = text.chars().count();
+                if text_chars > request.max_message_length {
+                    flush_batch(&mut batches, &mut current_batch);
+                    if let Some(forward) = build_forward_from_text(
+                        &text,
+                        request.max_message_length,
+                        &request.bot_id,
+                        &request.bot_name,
+                    )? {
+                        batches.push(vec![Message::Forward(forward)]);
+                    }
+                    current_text_chars = 0;
+                    continue;
+                }
+
+                if current_text_chars > 0
+                    && current_text_chars + text_chars > request.max_message_length
+                {
+                    flush_batch(&mut batches, &mut current_batch);
+                    current_text_chars = 0;
+                }
+
+                current_text_chars += text_chars;
+                current_batch.push(Message::PlainText(PlainTextMessage { text }));
+            }
+            ReplySegment::Message(Message::At(at)) => {
+                current_batch.push(Message::At(at));
+            }
+            ReplySegment::Message(message) => {
+                flush_batch(&mut batches, &mut current_batch);
+                current_text_chars = 0;
+                batches.push(vec![message]);
+            }
+            ReplySegment::NoReply => {}
+        }
+    }
+
+    flush_batch(&mut batches, &mut current_batch);
+    Ok(QqAgentReplyBuildResult {
+        batches,
+        suppress_send: false,
+    })
+}
+
+fn flush_batch(batches: &mut Vec<Vec<Message>>, current_batch: &mut Vec<Message>) {
+    if !current_batch.is_empty() {
+        batches.push(std::mem::take(current_batch));
+    }
+}
+
+fn build_forward_from_text(
+    text: &str,
+    max_chars: usize,
+    bot_id: &str,
+    bot_name: &str,
+) -> Result<Option<ForwardMessage>> {
+    let chunks = split_plain_text_for_forward(text, max_chars);
+    if chunks.is_empty() {
+        return Ok(None);
+    }
+
+    let content = chunks
+        .into_iter()
+        .map(|chunk| ForwardNodeMessage {
+            user_id: Some(bot_id.to_string()),
+            nickname: Some(bot_name.to_string()),
+            id: None,
+            content: vec![Message::PlainText(PlainTextMessage { text: chunk })],
+        })
+        .collect();
+
+    Ok(Some(ForwardMessage { id: None, content }))
+}
+
+fn split_plain_text_for_forward(text: &str, max_chars: usize) -> Vec<String> {
+    let normalized = text.replace("\r\n", "\n");
+    let trimmed = normalized.trim();
+    if trimmed.is_empty() || max_chars == 0 {
+        return Vec::new();
+    }
+
+    let chars: Vec<char> = trimmed.chars().collect();
+    let mut start = 0usize;
+    let mut carry_prefix = String::new();
+    let mut state = SplitRepairState::default();
+    let mut chunks = Vec::new();
+
+    while start < chars.len() {
+        let prefix_chars = carry_prefix.chars().count();
+        let available = max_chars.saturating_sub(prefix_chars).max(1);
+        let end = find_split_end(&chars, start, available);
+        let mut chunk = carry_prefix.clone();
+        chunk.extend(chars[start..end].iter());
+        start = end;
+
+        let has_more = start < chars.len();
+        let analysis = analyze_chunk_state(&chunk, state);
+        let mut finalized = chunk.trim().to_string();
+        carry_prefix.clear();
+
+        if has_more {
+            if analysis.in_code_fence {
+                finalized.push_str("\n```");
+                carry_prefix.push_str("```\n");
+            }
+            if analysis.in_cn_quote {
+                finalized.push('”');
+                carry_prefix.push('“');
+            }
+            if analysis.in_double_quote {
+                finalized.push('"');
+                carry_prefix.push('"');
+            }
+        }
+
+        let finalized = finalized.trim().to_string();
+        if !finalized.is_empty() {
+            chunks.push(finalized);
+        }
+        state = analysis;
+    }
+
+    chunks
+}
+
+fn find_split_end(chars: &[char], start: usize, max_chars: usize) -> usize {
+    let hard_end = (start + max_chars).min(chars.len());
+    if hard_end >= chars.len() {
+        return chars.len();
+    }
+
+    for idx in (start + 1..hard_end).rev() {
+        if FORWARD_SPLIT_PREFERRED_SEPARATORS.contains(&chars[idx - 1]) {
+            return idx;
+        }
+    }
+
+    hard_end
+}
+
+fn analyze_chunk_state(chunk: &str, mut state: SplitRepairState) -> SplitRepairState {
+    let mut iter = chunk.chars().peekable();
+    while let Some(ch) = iter.next() {
+        if ch == '`' {
+            let mut count = 1usize;
+            while matches!(iter.peek(), Some('`')) {
+                iter.next();
+                count += 1;
+            }
+            if count >= 3 {
+                state.in_code_fence = !state.in_code_fence;
+                continue;
+            }
+        }
+
+        if state.in_code_fence {
+            continue;
+        }
+
+        match ch {
+            '"' => state.in_double_quote = !state.in_double_quote,
+            '“' => state.in_cn_quote = true,
+            '”' => state.in_cn_quote = false,
+            _ => {}
+        }
+    }
+    state
+}
+
+fn parse_reply_segments(text: &str) -> Vec<ReplySegment> {
+    let mut segments = Vec::new();
+    let mut buffer = String::new();
+    let chars: Vec<char> = text.chars().collect();
+    let mut index = 0usize;
+
+    while index < chars.len() {
+        if chars[index] == '@' && is_mention_prefix_boundary(&chars, index) {
+            if let Some((target, next_index)) = parse_at_segment(&chars, index) {
+                push_text_segment(&mut segments, &mut buffer);
+                segments.push(ReplySegment::Message(Message::At(AtTargetMessage {
+                    target: Some(target),
+                })));
+                index = next_index;
+                continue;
+            }
+        }
+
+        if chars[index] == '[' {
+            if let Some((segment, next_index)) = parse_bracket_segment(&chars, index) {
+                push_text_segment(&mut segments, &mut buffer);
+                segments.push(segment);
+                index = next_index;
+                continue;
+            }
+        }
+
+        buffer.push(chars[index]);
+        index += 1;
+    }
+
+    push_text_segment(&mut segments, &mut buffer);
+    merge_adjacent_text_segments(segments)
+}
+
+fn push_text_segment(segments: &mut Vec<ReplySegment>, buffer: &mut String) {
+    if !buffer.is_empty() {
+        segments.push(ReplySegment::Text(std::mem::take(buffer)));
+    }
+}
+
+fn merge_adjacent_text_segments(segments: Vec<ReplySegment>) -> Vec<ReplySegment> {
+    let mut merged = Vec::new();
+    for segment in segments {
+        match segment {
+            ReplySegment::Text(text) => {
+                if let Some(ReplySegment::Text(last)) = merged.last_mut() {
+                    last.push_str(&text);
+                } else {
+                    merged.push(ReplySegment::Text(text));
+                }
+            }
+            other => merged.push(other),
+        }
+    }
+    merged
+}
+
+fn is_mention_prefix_boundary(chars: &[char], index: usize) -> bool {
+    if index == 0 {
+        return true;
+    }
+
+    !chars[index - 1].is_ascii_alphanumeric()
+}
+
+fn parse_at_segment(chars: &[char], start: usize) -> Option<(String, usize)> {
+    let mut end = start + 1;
+    while end < chars.len() && chars[end].is_ascii_digit() {
+        end += 1;
+    }
+
+    if end == start + 1 {
+        return None;
+    }
+
+    if end < chars.len() {
+        let boundary = chars[end];
+        if !boundary.is_whitespace()
+            && !matches!(
+                boundary,
+                ',' | '，' | '。' | ':' | '：' | '!' | '！' | '?' | '？' | ')' | '）' | ']' | '】'
+            )
+        {
+            return None;
+        }
+    }
+
+    Some((chars[start + 1..end].iter().collect(), end))
+}
+
+fn parse_bracket_segment(chars: &[char], start: usize) -> Option<(ReplySegment, usize)> {
+    let mut end = start + 1;
+    while end < chars.len() {
+        if chars[end] == ']' {
+            let inner: String = chars[start + 1..end].iter().collect();
+            let inner = inner.trim();
+            if let Some(control) = parse_bracket_control(inner) {
+                return Some((control, end + 1));
+            }
+            if let Some(message) = parse_bracket_message(inner) {
+                return Some((ReplySegment::Message(message), end + 1));
+            }
+            return None;
+        }
+        end += 1;
+    }
+    None
+}
+
+fn parse_bracket_message(inner: &str) -> Option<Message> {
+    if let Some(value) = inner.strip_prefix("Reply message_id=") {
+        let message_id = value.trim().parse::<i64>().ok()?;
+        return Some(Message::Reply(ReplyMessage {
+            id: message_id,
+            message_source: None,
+        }));
+    }
+
+    if let Some(value) = inner.strip_prefix("Image path=") {
+        let path = parse_tag_value(value)?;
+        return Some(Message::Image(ImageMessage {
+            path: Some(path),
+            ..ImageMessage::default()
+        }));
+    }
+
+    if let Some(value) = inner.strip_prefix("Image url=") {
+        let url = parse_tag_value(value)?;
+        return Some(Message::Image(ImageMessage {
+            url: Some(url),
+            ..ImageMessage::default()
+        }));
+    }
+
+    None
+}
+
+fn parse_bracket_control(inner: &str) -> Option<ReplySegment> {
+    if inner.eq_ignore_ascii_case("no reply") {
+        return Some(ReplySegment::NoReply);
+    }
+    None
+}
+
+fn parse_tag_value(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if trimmed.len() >= 2 {
+        let quoted = trimmed
+            .strip_prefix('"')
+            .and_then(|value| value.strip_suffix('"'))
+            .or_else(|| {
+                trimmed
+                    .strip_prefix('\'')
+                    .and_then(|value| value.strip_suffix('\''))
+            });
+        if let Some(value) = quoted {
+            let inner = value.trim();
+            if !inner.is_empty() {
+                return Some(inner.to_string());
+            }
+        }
+    }
+
+    Some(trimmed.to_string())
+}
 
 pub async fn spawn(
     manager: &AgentManager,
@@ -147,6 +541,7 @@ pub async fn spawn(
         tavily,
         max_message_length: config.max_message_length,
         compact_context_length: config.compact_context_length,
+        reply_batch_builder: Some(build_reply_batch_builder()),
         default_tools_enabled: config.default_tools_enabled.clone(),
         shared_inputs: Vec::<FunctionPortDef>::new(),
         tool_definitions,
@@ -366,7 +761,8 @@ fn same_param_signature(
 
 fn same_port_signature(left: &[FunctionPortDef], right: &[FunctionPortDef]) -> bool {
     left.len() == right.len()
-        && left.iter().zip(right).all(|(a, b)| {
-            a.name.trim() == b.name.trim() && a.data_type == b.data_type
-        })
+        && left
+            .iter()
+            .zip(right)
+            .all(|(a, b)| a.name.trim() == b.name.trim() && a.data_type == b.data_type)
 }

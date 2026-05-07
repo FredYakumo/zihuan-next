@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::block_in_place;
-use zihuan_core::url_utils::pct_encode;
 use zihuan_core::error::Result;
+use zihuan_core::url_utils::pct_encode;
 
 const DEFAULT_MAX_CONNECTIONS: u32 = 10;
 const DEFAULT_ACQUIRE_TIMEOUT_SECS: u64 = 30;

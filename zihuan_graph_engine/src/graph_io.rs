@@ -255,7 +255,8 @@ pub fn load_graph_definition_from_json_with_migration(
 }
 
 fn migrate_runtime_connection_config_keys(graph: &mut NodeGraphDefinition) {
-    const CONFIG_AWARE_NODES: &[&str] = &["mysql", "rustfs", "weaviate", "ims_bot_adapter_provider"];
+    const CONFIG_AWARE_NODES: &[&str] =
+        &["mysql", "rustfs", "weaviate", "ims_bot_adapter_provider"];
 
     for node in &mut graph.nodes {
         if !CONFIG_AWARE_NODES.contains(&node.node_type.as_str()) {

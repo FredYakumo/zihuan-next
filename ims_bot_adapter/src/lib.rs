@@ -2,10 +2,10 @@ pub mod active_adapter_manager;
 pub mod adapter;
 pub mod event;
 pub mod extract_group_id_from_event;
-pub mod ims_bot_adapter_provider;
 pub mod extract_message_from_event;
 pub mod extract_qq_message_list_from_event;
 pub mod extract_sender_id_from_event;
+pub mod ims_bot_adapter_provider;
 pub mod login_info;
 pub mod message_event_type_filter;
 pub mod message_helpers;
@@ -22,9 +22,15 @@ pub mod ws_action;
 use zihuan_core::error::Result;
 use zihuan_graph_engine::register_node;
 
+pub use active_adapter_manager::{
+    close_runtime_bot_adapter_instance, ensure_active_bot_adapter, get_active_bot_adapter_handle,
+    has_active_bot_adapter, initialize_enabled_bot_adapters,
+    list_active_bot_adapter_connection_ids, list_runtime_bot_adapter_instances,
+    register_active_bot_adapter, stop_active_bot_adapter, sync_enabled_bot_adapters,
+};
 pub use extract_qq_message_list_from_event::ExtractQQMessageListFromEventNode;
-pub use ims_bot_adapter_provider::ImsBotAdapterProviderNode;
 pub use extract_sender_id_from_event::ExtractSenderIdFromEventNode;
+pub use ims_bot_adapter_provider::ImsBotAdapterProviderNode;
 pub use login_info::{fetch_login_info, qq_avatar_url};
 pub use message_event_type_filter::MessageEventTypeFilterNode;
 pub use message_sender::MessageSenderNode;
@@ -37,12 +43,6 @@ pub use system_config::{
     build_ims_bot_adapter, load_ims_bot_adapter_connections, parse_ims_bot_adapter_connection,
     save_ims_bot_adapter_connections, BotAdapterConnection, BotAdapterConnectionConfig,
     BotAdapterConnectionKind, BotAdapterConnectionsSection,
-};
-pub use active_adapter_manager::{
-    close_runtime_bot_adapter_instance, ensure_active_bot_adapter, get_active_bot_adapter_handle,
-    has_active_bot_adapter, initialize_enabled_bot_adapters,
-    list_active_bot_adapter_connection_ids, list_runtime_bot_adapter_instances,
-    register_active_bot_adapter, stop_active_bot_adapter, sync_enabled_bot_adapters,
 };
 
 pub fn init_node_registry() -> Result<()> {

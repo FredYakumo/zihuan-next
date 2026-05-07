@@ -64,9 +64,9 @@ pub fn save_ims_bot_adapter_connections(
         name: connection.name,
         enabled: connection.enabled,
         kind: match connection.kind {
-            BotAdapterConnectionKind::BotAdapter(bot) => {
-                ConnectionKind::BotAdapter(serde_json::to_value(bot).unwrap_or(serde_json::Value::Null))
-            }
+            BotAdapterConnectionKind::BotAdapter(bot) => ConnectionKind::BotAdapter(
+                serde_json::to_value(bot).unwrap_or(serde_json::Value::Null),
+            ),
         },
         updated_at: connection.updated_at,
     }));

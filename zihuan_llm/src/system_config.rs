@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use zihuan_core::error::Result;
 use zihuan_core::config::{
     ConfigCategory, ConfigCenter, ConfigKind, ConfigRecord, StoredConfigRecord,
 };
+use zihuan_core::error::Result;
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::graph_io::NodeGraphDefinition;
 
@@ -257,7 +257,9 @@ impl ConfigRecord for AgentConfig {
 
     fn validate(&self) -> Result<()> {
         if self.canonical_config_id().trim().is_empty() {
-            return Err(zihuan_core::string_error!("agent config_id must not be empty"));
+            return Err(zihuan_core::string_error!(
+                "agent config_id must not be empty"
+            ));
         }
         if self.name.trim().is_empty() {
             return Err(zihuan_core::string_error!("agent name must not be empty"));
@@ -298,7 +300,9 @@ impl ConfigRecord for LlmRefConfig {
 
     fn validate(&self) -> Result<()> {
         if self.canonical_config_id().trim().is_empty() {
-            return Err(zihuan_core::string_error!("llm_ref config_id must not be empty"));
+            return Err(zihuan_core::string_error!(
+                "llm_ref config_id must not be empty"
+            ));
         }
         if self.name.trim().is_empty() {
             return Err(zihuan_core::string_error!("llm_ref name must not be empty"));
@@ -434,7 +438,10 @@ fn normalize_llm_ref_identity(mut llm_ref: LlmRefConfig, fallback_id: String) ->
 fn agent_to_record(agent: &AgentConfig) -> Result<StoredConfigRecord> {
     agent.validate()?;
     let mut spec = Map::new();
-    spec.insert("agent_type".to_string(), serde_json::to_value(&agent.agent_type)?);
+    spec.insert(
+        "agent_type".to_string(),
+        serde_json::to_value(&agent.agent_type)?,
+    );
     spec.insert("auto_start".to_string(), Value::Bool(agent.auto_start));
     spec.insert("is_default".to_string(), Value::Bool(agent.is_default));
     spec.insert("tools".to_string(), serde_json::to_value(&agent.tools)?);
@@ -462,9 +469,7 @@ fn agent_from_record(record: StoredConfigRecord) -> Result<AgentConfig> {
         id: record.config_id.clone(),
         config_id: record.config_id.clone(),
         name: record.name,
-        agent_type: serde_json::from_value(
-            spec.get("agent_type").cloned().unwrap_or(Value::Null),
-        )?,
+        agent_type: serde_json::from_value(spec.get("agent_type").cloned().unwrap_or(Value::Null))?,
         enabled: record.enabled,
         auto_start: spec
             .get("auto_start")

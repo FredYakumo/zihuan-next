@@ -417,7 +417,11 @@ impl WeaviateRef {
     }
 
     async fn post_json_async(&self, path: &str, body: Value) -> Result<Value> {
-        Self::send_json_async(self.authorized(self.client.post(self.url(path))).json(&body)).await
+        Self::send_json_async(
+            self.authorized(self.client.post(self.url(path)))
+                .json(&body),
+        )
+        .await
     }
 
     async fn delete_empty_async(&self, path: &str) -> Result<()> {

@@ -377,7 +377,9 @@ pub async fn delete_node(req: &mut Request, res: &mut Response, depot: &mut Depo
         || node_id == GRAPH_OUTPUTS_NODE_ID
     {
         res.status_code(StatusCode::BAD_REQUEST);
-        res.render(Json(serde_json::json!({"error": "Boundary node cannot be deleted"})));
+        res.render(Json(
+            serde_json::json!({"error": "Boundary node cannot be deleted"}),
+        ));
         return;
     }
 
