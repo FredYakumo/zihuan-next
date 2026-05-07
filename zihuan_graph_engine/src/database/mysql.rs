@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::block_in_place;
-use zihuan_core::config::pct_encode;
+use zihuan_core::url_utils::pct_encode;
 use zihuan_core::error::Result;
 
 const DEFAULT_MAX_CONNECTIONS: u32 = 10;

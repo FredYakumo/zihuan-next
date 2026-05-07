@@ -1,4 +1,3 @@
-pub mod config;
 pub mod connection_manager;
 pub mod error;
 pub mod ims_bot_adapter;

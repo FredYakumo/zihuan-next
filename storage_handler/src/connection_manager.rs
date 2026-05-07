@@ -18,10 +18,8 @@ use zihuan_graph_engine::data_value::{MySqlConfig, RedisConfig};
 use zihuan_graph_engine::database::weaviate::WeaviateRef;
 use zihuan_graph_engine::object_storage::S3Ref;
 
-use crate::resource_resolver::{
-    build_s3_ref as build_s3_runtime_ref, build_weaviate_ref as build_weaviate_runtime_ref,
-    find_connection,
-};
+use crate::resource_resolver::{build_weaviate_ref as build_weaviate_runtime_ref, find_connection};
+use crate::rustfs::build_s3_ref as build_s3_direct_ref;
 use crate::{load_connections, ConnectionKind};
 
 const STORAGE_INSTANCE_IDLE_TIMEOUT_SECS: i64 = 15 * 60;
@@ -142,17 +140,15 @@ impl RuntimeStorageConnectionManager {
                 (StorageRuntimePayload::MySql(config), "mysql".to_string())
             }
             ConnectionKind::Rustfs(rustfs) => {
-                let s3_ref = zihuan_core::runtime::block_async(build_s3_runtime_ref(
-                    Some(config_id),
-                    &connections,
-                ))?
-                .ok_or_else(|| {
-                    Error::ValidationError(format!(
-                        "failed to create rustfs runtime instance for '{}'",
-                        connection.name
-                    ))
-                })?;
-                let _ = rustfs;
+                let s3_ref = zihuan_core::runtime::block_async(build_s3_direct_ref(
+                    &rustfs.endpoint,
+                    &rustfs.bucket,
+                    &rustfs.access_key,
+                    &rustfs.secret_key,
+                    &rustfs.region,
+                    rustfs.public_base_url.clone(),
+                    rustfs.path_style,
+                ))?;
                 (StorageRuntimePayload::S3(s3_ref), "rustfs".to_string())
             }
             ConnectionKind::Weaviate(weaviate) => {
