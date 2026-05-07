@@ -55,16 +55,24 @@
         <div class="chat-layout">
           <aside class="chat-sessions">
             <div class="chat-sessions-header">历史</div>
-            <button
+            <div
               v-for="session in sessions"
               :key="session.session_id"
               class="chat-session-item"
               :class="{ active: session.session_id === activeSessionId }"
-              @click="openSession(session.session_id)"
             >
-              <strong>{{ session.session_id.slice(0, 8) }}</strong>
-              <span class="muted">{{ formatTime(session.updated_at) }}</span>
-            </button>
+              <button class="chat-session-main" @click="openSession(session.session_id)">
+                <strong>{{ session.session_id.slice(0, 8) }}</strong>
+                <span class="muted">{{ formatTime(session.updated_at) }}</span>
+              </button>
+              <button
+                class="chat-session-delete"
+                title="删除会话"
+                @click.stop="removeSession(session.session_id)"
+              >
+                ×
+              </button>
+            </div>
             <div v-if="sessions.length === 0" class="muted">暂无历史会话</div>
           </aside>
 
@@ -384,6 +392,21 @@ function startNewSession() {
   activeToolCallId.value = "";
 }
 
+async function removeSession(sessionId: string) {
+  if (!confirm("确定要删除该会话吗？此操作不可恢复。")) {
+    return;
+  }
+  try {
+    await chat.deleteSession(sessionId);
+    sessions.value = sessions.value.filter((s) => s.session_id !== sessionId);
+    if (activeSessionId.value === sessionId) {
+      startNewSession();
+    }
+  } catch (error) {
+    alert(`删除失败: ${(error as Error).message}`);
+  }
+}
+
 function applyStreamEvent(event: ChatStreamEvent, assistantTempId: string) {
   if (event.type === "start") {
     if (event.session_id) {
@@ -684,11 +707,11 @@ onMounted(() => {
   background: transparent;
   color: var(--admin-ink);
   border-radius: 10px;
-  padding: 10px 14px;
+  padding: 6px 8px 6px 14px;
   text-align: left;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: 4px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -703,14 +726,54 @@ onMounted(() => {
   box-shadow: 0 4px 12px color-mix(in srgb, var(--admin-bg) 60%, transparent);
 }
 
-.chat-session-item strong {
+.chat-session-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-session-main strong {
   font-size: 14px;
   font-family: monospace;
 }
 
-.chat-session-item .muted {
+.chat-session-main .muted {
   font-size: 12px;
   color: var(--admin-subtle);
+}
+
+.chat-session-delete {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--admin-subtle);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: all 0.2s ease;
+}
+
+.chat-session-item:hover .chat-session-delete {
+  opacity: 1;
+}
+
+.chat-session-delete:hover {
+  background: color-mix(in srgb, var(--admin-danger, #ef4444) 12%, transparent);
+  color: var(--admin-danger, #ef4444);
 }
 
 .chat-main {

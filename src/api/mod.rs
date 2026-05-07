@@ -142,6 +142,10 @@ pub fn build_router(
                 .push(Router::with_path("stream").post(chat::stream_chat))
                 .push(Router::with_path("sessions").get(chat::list_chat_sessions))
                 .push(
+                    Router::with_path("sessions/<session_id>")
+                        .delete(chat::delete_chat_session),
+                )
+                .push(
                     Router::with_path("sessions/<session_id>/messages")
                         .get(chat::get_chat_session_messages),
                 ),

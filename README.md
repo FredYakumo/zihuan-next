@@ -165,7 +165,7 @@ cargo build --release --features candle-metal
 Windows helper:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\cargo-cuda.ps1 build --release
+powershell -ExecutionPolicy Bypass -File .\scripts\cargo-cuda.ps1 -Release build
 ```
 
 The local embedding loader prefers `CUDA -> Metal -> CPU` and falls back automatically if GPU initialization fails.

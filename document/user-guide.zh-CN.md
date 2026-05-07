@@ -194,7 +194,7 @@ cargo build --release --features candle-metal
 Windows 推荐脚本：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\cargo-cuda.ps1 build --release
+powershell -ExecutionPolicy Bypass -File .\scripts\cargo-cuda.ps1 -Release build
 ```
 
 运行时本地 embedding 加载器会按 `CUDA -> Metal -> CPU` 顺序尝试。

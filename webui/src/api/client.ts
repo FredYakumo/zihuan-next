@@ -602,4 +602,8 @@ export const chat = {
   getSessionMessages(sessionId: string): Promise<{ messages: ChatHistoryRecord[] }> {
     return request("GET", `/chat/sessions/${sessionId}/messages`);
   },
+
+  deleteSession(sessionId: string): Promise<{ ok: boolean }> {
+    return request("DELETE", `/chat/sessions/${sessionId}`);
+  },
 };

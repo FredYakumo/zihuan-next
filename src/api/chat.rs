@@ -109,6 +109,20 @@ pub async fn get_chat_session_messages(req: &mut Request, res: &mut Response, _d
     }
 }
 
+#[handler]
+pub async fn delete_chat_session(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let session_id = req.param::<String>("session_id").unwrap_or_default();
+    if session_id.trim().is_empty() {
+        render_bad_request(res, "session_id must not be empty".to_string());
+        return;
+    }
+
+    match delete_chat_session_file(&session_id) {
+        Ok(()) => res.render(Json(json!({ "ok": true }))),
+        Err(err) => render_internal_error(res, err),
+    }
+}
+
 async fn execute_chat_stream(
     state: std::sync::Arc<crate::api::state::AppState>,
     body: ChatStreamRequest,
@@ -417,6 +431,14 @@ fn chat_session_file_path(session_id: &str) -> Result<PathBuf> {
         ));
     }
     Ok(chat_history_dir()?.join(format!("{session_id}.jsonl")))
+}
+
+fn delete_chat_session_file(session_id: &str) -> Result<()> {
+    let path = chat_session_file_path(session_id)?;
+    if path.exists() {
+        fs::remove_file(path)?;
+    }
+    Ok(())
 }
 
 fn render_bad_request(res: &mut Response, message: String) {

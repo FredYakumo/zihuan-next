@@ -1,3 +1,5 @@
+param([switch]$Release)
+
 $ErrorActionPreference = 'Stop'
 
 function Get-MsvcClPath {
@@ -39,10 +41,12 @@ function Get-MsvcClPath {
 }
 
 function Ensure-CandleCudaFeature {
-    param([string[]]$Args)
+    param([switch]$Release, [string[]]$Args)
 
     if (-not $Args -or $Args.Count -eq 0) {
-        return @('build', '--features', 'candle-cuda')
+        $base = @('build', '--features', 'candle-cuda')
+        if ($Release) { $base += '--release' }
+        return $base
     }
 
     if ($Args -contains '--all-features') {
@@ -90,6 +94,10 @@ function Ensure-CandleCudaFeature {
         $result.Add('candle-cuda')
     }
 
+    if ($Release -and $result -notcontains '--release') {
+        $result.Add('--release')
+    }
+
     return $result.ToArray()
 }
 
@@ -102,10 +110,10 @@ if (-not $clPath) {
 $env:NVCC_CCBIN = $clPath
 $rawArgs = @()
 if ($args -and $args.Count -gt 0) {
-    $rawArgs = $args
+    $rawArgs = @($args | Where-Object { $_ -ne '-Release' })
 }
 
-$finalArgs = Ensure-CandleCudaFeature -Args $rawArgs
+$finalArgs = Ensure-CandleCudaFeature -Release:$Release -Args $rawArgs
 
 Write-Host "zihuan-next: NVCC_CCBIN=$clPath"
 Write-Host "zihuan-next: cargo $($finalArgs -join ' ')"
