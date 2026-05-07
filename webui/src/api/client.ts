@@ -248,8 +248,7 @@ export const workflows = {
 };
 
 export interface ConnectionConfig {
-  id: string;
-  config_id?: string | null;
+  config_id: string;
   name: string;
   enabled: boolean;
   updated_at: string;
@@ -286,7 +285,7 @@ export interface LlmServiceConfig {
 }
 
 export interface LlmConfig {
-  id: string;
+  config_id: string;
   name: string;
   enabled: boolean;
   updated_at: string;
@@ -303,13 +302,14 @@ export interface AgentToolConfig {
 
 export interface AgentRuntimeInfo {
   agent_id: string;
+  instance_id: string | null;
   status: "stopped" | "starting" | "running" | "error";
   started_at: string | null;
   last_error: string | null;
 }
 
 export interface AgentConfig {
-  id: string;
+  config_id: string;
   name: string;
   enabled: boolean;
   auto_start: boolean;
@@ -404,15 +404,15 @@ export const system = {
     }): Promise<ConnectionConfig> {
       return request("POST", "/system/connections", payload);
     },
-    update(id: string, payload: {
+    update(configId: string, payload: {
       name: string;
       enabled: boolean;
       kind: Record<string, unknown>;
     }): Promise<ConnectionConfig> {
-      return request("PUT", `/system/connections/${id}`, payload);
+      return request("PUT", `/system/connections/${configId}`, payload);
     },
-    delete(id: string): Promise<{ ok: boolean }> {
-      return request("DELETE", `/system/connections/${id}`);
+    delete(configId: string): Promise<{ ok: boolean }> {
+      return request("DELETE", `/system/connections/${configId}`);
     },
   },
   llm: {
@@ -426,15 +426,15 @@ export const system = {
     }): Promise<LlmConfig> {
       return request("POST", "/system/llm-refs", payload);
     },
-    update(id: string, payload: {
+    update(configId: string, payload: {
       name: string;
       enabled: boolean;
       llm: LlmServiceConfig;
     }): Promise<LlmConfig> {
-      return request("PUT", `/system/llm-refs/${id}`, payload);
+      return request("PUT", `/system/llm-refs/${configId}`, payload);
     },
-    delete(id: string): Promise<{ ok: boolean }> {
-      return request("DELETE", `/system/llm-refs/${id}`);
+    delete(configId: string): Promise<{ ok: boolean }> {
+      return request("DELETE", `/system/llm-refs/${configId}`);
     },
   },
   agents: {
@@ -451,7 +451,7 @@ export const system = {
     }): Promise<AgentConfig> {
       return request("POST", "/system/agents", payload);
     },
-    update(id: string, payload: {
+    update(configId: string, payload: {
       name: string;
       enabled: boolean;
       auto_start: boolean;
@@ -459,16 +459,16 @@ export const system = {
       agent_type: Record<string, unknown>;
       tools: AgentToolConfig[];
     }): Promise<AgentConfig> {
-      return request("PUT", `/system/agents/${id}`, payload);
+      return request("PUT", `/system/agents/${configId}`, payload);
     },
-    delete(id: string): Promise<{ ok: boolean }> {
-      return request("DELETE", `/system/agents/${id}`);
+    delete(configId: string): Promise<{ ok: boolean }> {
+      return request("DELETE", `/system/agents/${configId}`);
     },
-    start(id: string): Promise<{ ok: boolean; runtime: AgentRuntimeInfo }> {
-      return request("POST", `/system/agents/${id}/start`);
+    start(configId: string): Promise<{ ok: boolean; runtime: AgentRuntimeInfo }> {
+      return request("POST", `/system/agents/${configId}/start`);
     },
-    stop(id: string): Promise<{ ok: boolean; runtime: AgentRuntimeInfo }> {
-      return request("POST", `/system/agents/${id}/stop`);
+    stop(configId: string): Promise<{ ok: boolean; runtime: AgentRuntimeInfo }> {
+      return request("POST", `/system/agents/${configId}/stop`);
     },
   },
 };

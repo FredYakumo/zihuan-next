@@ -120,14 +120,14 @@ pub async fn create_connection(req: &mut Request, res: &mut Response, _depot: &m
 
     let connection = ConnectionConfig {
         id: Uuid::new_v4().to_string(),
-        config_id: None,
+        config_id: String::new(),
         name: body.name,
         enabled: body.enabled,
         kind: body.kind,
         updated_at: now_rfc3339(),
     };
     let mut connection = connection;
-    connection.config_id = Some(connection.id.clone());
+    connection.config_id = connection.id.clone();
     connections.push(connection.clone());
 
     match system_config::save_connections(connections) {
@@ -166,7 +166,7 @@ pub async fn update_connection(req: &mut Request, res: &mut Response, _depot: &m
     };
 
     connection.name = body.name;
-    connection.config_id = Some(connection.id.clone());
+    connection.config_id = connection.id.clone();
     connection.enabled = body.enabled;
     connection.kind = body.kind;
     connection.updated_at = now_rfc3339();

@@ -1,13 +1,10 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::sync::Arc;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::system_config::{
-    load_system_config_root, save_system_config_root, SystemConfigSection,
-};
 use zihuan_graph_engine::object_storage::S3Ref;
 
 use crate::adapter::{BotAdapter, BotAdapterConfig, SharedBotAdapter};
+use storage_handler::{save_connections, ConnectionConfig, ConnectionKind};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BotAdapterConnection {
@@ -38,69 +35,45 @@ pub enum BotAdapterConnectionKind {
 
 pub struct BotAdapterConnectionsSection;
 
-impl SystemConfigSection for BotAdapterConnectionsSection {
-    const SECTION_KEY: &'static str = "connections";
-    type Value = Vec<BotAdapterConnectionConfig>;
-
-    fn read_from_root(root: &Value) -> Result<Self::Value> {
-        let mut items = Vec::new();
-        let Some(array) = root.get(Self::SECTION_KEY).and_then(Value::as_array) else {
-            return Ok(items);
-        };
-
-        for item in array {
-            if let Ok(parsed) = serde_json::from_value::<BotAdapterConnectionConfig>(item.clone()) {
-                items.push(parsed);
-            }
-        }
-
-        Ok(items)
-    }
-
-    fn write_to_root(root: &mut Value, value: &Self::Value) -> Result<()> {
-        let object = root.as_object_mut().ok_or_else(|| {
-            Error::StringError("system config root must be a JSON object".to_string())
-        })?;
-        let existing = object
-            .get(Self::SECTION_KEY)
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-
-        let mut merged = Vec::new();
-        for item in existing {
-            if serde_json::from_value::<BotAdapterConnectionConfig>(item.clone()).is_err() {
-                merged.push(item);
-            }
-        }
-        for item in value {
-            merged.push(serde_json::to_value(item).map_err(|err| {
-                Error::StringError(format!("failed to serialize bot adapter connection: {err}"))
-            })?);
-        }
-
-        object.insert(Self::SECTION_KEY.to_string(), Value::Array(merged));
-        if !object.contains_key("version") {
-            object.insert("version".to_string(), Value::from(1));
-        }
-        Ok(())
-    }
-}
-
 pub fn load_ims_bot_adapter_connections() -> Result<Vec<BotAdapterConnectionConfig>> {
-    let root = load_system_config_root()?;
-    BotAdapterConnectionsSection::read_from_root(&root)
+    Ok(storage_handler::load_connections()?
+        .into_iter()
+        .filter_map(|connection| match connection.kind {
+            ConnectionKind::BotAdapter(raw) => Some(BotAdapterConnectionConfig {
+                id: connection.id,
+                name: connection.name,
+                enabled: connection.enabled,
+                kind: BotAdapterConnectionKind::BotAdapter(
+                    parse_ims_bot_adapter_connection(&raw).ok()?,
+                ),
+                updated_at: connection.updated_at,
+            }),
+            _ => None,
+        })
+        .collect())
 }
 
 pub fn save_ims_bot_adapter_connections(
     connections: Vec<BotAdapterConnectionConfig>,
 ) -> Result<()> {
-    let mut root = load_system_config_root()?;
-    BotAdapterConnectionsSection::write_to_root(&mut root, &connections)?;
-    save_system_config_root(&root)
+    let mut all = storage_handler::load_connections()?;
+    all.retain(|connection| !matches!(connection.kind, ConnectionKind::BotAdapter(_)));
+    all.extend(connections.into_iter().map(|connection| ConnectionConfig {
+        id: connection.id.clone(),
+        config_id: connection.id,
+        name: connection.name,
+        enabled: connection.enabled,
+        kind: match connection.kind {
+            BotAdapterConnectionKind::BotAdapter(bot) => {
+                ConnectionKind::BotAdapter(serde_json::to_value(bot).unwrap_or(serde_json::Value::Null))
+            }
+        },
+        updated_at: connection.updated_at,
+    }));
+    save_connections(all)
 }
 
-pub fn parse_ims_bot_adapter_connection(value: &Value) -> Result<BotAdapterConnection> {
+pub fn parse_ims_bot_adapter_connection(value: &serde_json::Value) -> Result<BotAdapterConnection> {
     serde_json::from_value::<BotAdapterConnection>(value.clone()).map_err(|err| {
         Error::ValidationError(format!("invalid ims_bot_adapter connection config: {err}"))
     })

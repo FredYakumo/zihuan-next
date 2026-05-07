@@ -102,11 +102,30 @@ The application stores system-level JSON config in:
 - Windows: `%APPDATA%/zihuan-next_aibot/system_config/system_config.json`
 - Linux/macOS: `$XDG_CONFIG_HOME` or `$HOME/.config/zihuan-next_aibot/system_config/system_config.json`
 
-Current sections:
+Current on-disk shape:
+
+```json
+{
+  "version": 2,
+  "configs": {
+    "connections": [],
+    "llm_refs": [],
+    "agents": []
+  }
+}
+```
+
+The core config collections are still:
 
 - `connections`
 - `llm_refs`
 - `agents`
+
+The shared primary key is:
+
+- `config_id`
+
+Legacy top-level `connections` / `llm_refs` / `agents` data is migrated automatically when read.
 
 ### Graph files
 
@@ -129,6 +148,12 @@ In the admin UI:
 1. Create connection records for Redis, MySQL, RustFS, Weaviate, Tavily, or bot adapters.
 2. Create LLM refs for reusable model endpoints.
 3. Create agents if you want long-lived service-hosted runtimes such as QQ chat or HTTP stream agents.
+
+In the current UI:
+
+- connection configs, model configs, and agents all use `config_id` as the primary key
+- long IDs are shortened in cards, for example `abcd1234...`
+- when one connection config owns multiple live instances, the UI may render it as `abcd1234..., and N total`
 
 Enabled agents with `auto_start = true` are started automatically when `zihuan_next` boots.
 

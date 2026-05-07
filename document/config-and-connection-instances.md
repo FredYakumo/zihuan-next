@@ -31,20 +31,42 @@ They are saved into the `connections` section of:
 - Windows: `%APPDATA%/zihuan-next_aibot/system_config/system_config.json`
 - Linux/macOS: `$XDG_CONFIG_HOME` or `$HOME/.config/zihuan-next_aibot/system_config/system_config.json`
 
+The on-disk shape is now unified under one root object:
+
+```json
+{
+  "version": 2,
+  "configs": {
+    "connections": [],
+    "llm_refs": [],
+    "agents": []
+  }
+}
+```
+
+Legacy top-level `connections` / `llm_refs` / `agents` sections are migrated on read and only the unified structure is written back.
+
 Each configuration has a stable identifier:
 
 - `config_id`
 
-For compatibility, the current implementation still stores this canonical ID in:
+The public primary key is now:
 
-- `ConnectionConfig.id`
-
-The API may return both:
-
-- `id`
 - `config_id`
 
-In practice, treat them as the same configuration key.
+Legacy internal `id` values are kept only as a migration-time compatibility field.
+
+In the current implementation, `connections`, `llm_refs`, and `agents` are all routed through the unified configuration center:
+
+- `ConfigCenter` loads and saves the user config file
+- `config_id` is the shared primary key
+- legacy top-level structures are migrated automatically on read
+
+In practice this means:
+
+- connection configs use `config_id`
+- model configs use `config_id`
+- agent configs also use `config_id`
 
 ## 2. Runtime Connection Instance
 
@@ -134,6 +156,11 @@ It displays:
 - status
 - force close action
 
+The current UI also applies two presentation rules:
+
+- long IDs are shortened in cards/tables, for example `abcd1234...`
+- if one configuration currently owns multiple runtime instances, the UI may render it as something like `abcd1234..., and 3 total`
+
 Use this page when you want to inspect or terminate live connections.
 
 Use `连接配置` when you want to create, edit, enable, or disable configurations.
@@ -168,6 +195,13 @@ Force closing a runtime instance:
 - does not delete the saved configuration
 
 The next time a node or agent needs that `config_id`, the manager can create a fresh instance again.
+
+You will typically also see logs for:
+
+- successful config loads with `config_id`
+- successful instance creation with `instance_id` and `config_id`
+- idle instance cleanup with `instance_id` and `config_id`
+- user-triggered force close with `instance_id` and `config_id`
 
 ## 8. Practical Example
 

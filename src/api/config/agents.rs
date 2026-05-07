@@ -249,6 +249,7 @@ pub async fn create_agent(req: &mut Request, res: &mut Response, _depot: &mut De
 
     let agent = AgentConfig {
         id: Uuid::new_v4().to_string(),
+        config_id: String::new(),
         name: body.name,
         agent_type: body.agent_type,
         enabled: body.enabled,
@@ -257,6 +258,8 @@ pub async fn create_agent(req: &mut Request, res: &mut Response, _depot: &mut De
         updated_at: now_rfc3339(),
         tools: body.tools,
     };
+    let mut agent = agent;
+    agent.config_id = agent.id.clone();
     agents.push(agent.clone());
 
     match system_config::save_agents(agents) {

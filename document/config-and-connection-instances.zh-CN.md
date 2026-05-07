@@ -31,20 +31,40 @@
 - Windows：`%APPDATA%/zihuan-next_aibot/system_config/system_config.json`
 - Linux/macOS：`$XDG_CONFIG_HOME` 或 `$HOME/.config/zihuan-next_aibot/system_config/system_config.json`
 
+当前磁盘结构已经统一到单一根对象：
+
+```json
+{
+  "version": 2,
+  "configs": {
+    "connections": [],
+    "llm_refs": [],
+    "agents": []
+  }
+}
+```
+
+旧版根字段 `connections` / `llm_refs` / `agents` 在读取时会自动迁移到这个新结构，写回时只会写新结构。
+
 每条配置都有一个稳定标识：
 
 - `config_id`
 
-为了兼容旧实现，目前 canonical ID 仍然保存在：
+内部仍会保留旧 `id` 作为迁移期兼容字段，但新的对外主键是：
 
-- `ConnectionConfig.id`
-
-API 可能会同时返回：
-
-- `id`
 - `config_id`
 
-实际使用时，可以把它们视为同一个配置主键。
+当前实现中，`connections`、`llm_refs`、`agents` 都已经接入统一的配置中心：
+
+- 由 `ConfigCenter` 负责读取和写回用户数据目录中的配置文件
+- 由 `config_id` 作为统一主键
+- 旧版顶层结构会在读取时自动迁移
+
+这意味着：
+
+- 连接配置使用 `config_id`
+- 模型配置使用 `config_id`
+- Agent 配置也使用 `config_id`
 
 ## 2. 运行时连接实例
 
@@ -134,6 +154,11 @@ API 可能会同时返回：
 - 状态
 - 强制关闭按钮
 
+当前界面会额外做两件事：
+
+- 卡片或表格里的长 ID 会缩短显示，例如 `abcd1234...`
+- 当某个配置对应多个运行时实例时，会显示成类似 `abcd1234..., 等3个`
+
 如果你想查看或关闭当前 live 连接，看这里。
 
 如果你想新建、编辑、启用、禁用某个配置，看：
@@ -170,6 +195,13 @@ API 可能会同时返回：
 - 但不会删除对应的保存配置
 
 后续如果节点或 Agent 再次需要这个 `config_id`，管理器仍然可以重新创建一个新的实例。
+
+日志中通常会看到：
+
+- 配置读取成功：输出 `config_id`
+- 实例创建成功：输出 `instance_id` 和 `config_id`
+- 实例空闲被清理：输出 `instance_id` 和 `config_id`
+- 用户手动强制关闭：输出 `instance_id` 和 `config_id`
 
 ## 8. 一个实际例子
 

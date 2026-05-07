@@ -28,10 +28,10 @@
             <div class="chat-agent-cards">
               <button
                 v-for="agent in agents"
-                :key="agent.id"
+                :key="agent.config_id"
                 class="chat-agent-card"
-                :class="{ active: selectedAgentId === agent.id, inactive: agent.runtime.status !== 'running' }"
-                @click="selectedAgentId = agent.id"
+                :class="{ active: selectedAgentId === agent.config_id, inactive: agent.runtime.status !== 'running' }"
+                @click="selectedAgentId = agent.config_id"
               >
                 <img
                   v-if="agentAvatarUrl(agent)"
@@ -219,7 +219,7 @@ const markdown = new MarkdownIt({
   linkify: true,
 });
 
-const selectedAgent = computed(() => agents.value.find((agent) => agent.id === selectedAgentId.value) ?? null);
+const selectedAgent = computed(() => agents.value.find((agent) => agent.config_id === selectedAgentId.value) ?? null);
 const canSend = computed(() =>
   !!selectedAgent.value &&
   selectedAgent.value.runtime.status === "running" &&
@@ -236,7 +236,7 @@ function messageAvatarUrl(record: ChatHistoryRecord): string {
     return record.agent_avatar_url;
   }
   // Fallback: try current agent config
-  const agent = agents.value.find((a) => a.id === record.agent_id);
+  const agent = agents.value.find((a) => a.config_id === record.agent_id);
   if (agent) {
     return agentAvatarUrl(agent);
   }
@@ -401,7 +401,7 @@ async function openSession(sessionId: string) {
   const result = await chat.getSessionMessages(sessionId);
   // Auto-select the agent associated with this session
   const firstRecord = result.messages[0];
-  if (firstRecord?.agent_id && agents.value.some((a) => a.id === firstRecord.agent_id)) {
+  if (firstRecord?.agent_id && agents.value.some((a) => a.config_id === firstRecord.agent_id)) {
     selectedAgentId.value = firstRecord.agent_id;
   }
   applyHistory(result.messages);
@@ -536,8 +536,8 @@ async function load() {
   stats.agents = loadedAgents.length;
   agents.value = loadedAgents;
 
-  if (!selectedAgentId.value || !loadedAgents.some((agent) => agent.id === selectedAgentId.value)) {
-    selectedAgentId.value = loadedAgents[0]?.id ?? "";
+  if (!selectedAgentId.value || !loadedAgents.some((agent) => agent.config_id === selectedAgentId.value)) {
+    selectedAgentId.value = loadedAgents[0]?.config_id ?? "";
   }
 
   await reloadSessions();

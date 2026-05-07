@@ -187,6 +187,7 @@ pub async fn spawn(
                 manager.update_state(
                     &agent_id,
                     AgentRuntimeState {
+                        instance_id: None,
                         status: AgentRuntimeStatus::Stopped,
                         started_at: None,
                         last_error: None,
@@ -203,6 +204,7 @@ pub async fn spawn(
                 manager.update_state(
                     &agent_id,
                     AgentRuntimeState {
+                        instance_id: None,
                         status: AgentRuntimeStatus::Error,
                         started_at: None,
                         last_error: Some(msg.clone()),

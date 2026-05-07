@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::Utc;
+use log::info;
 use once_cell::sync::Lazy;
 use reqwest::blocking::Client;
 use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
@@ -18,8 +19,9 @@ use zihuan_graph_engine::data_value::{MySqlConfig, RedisConfig};
 use zihuan_graph_engine::database::weaviate::WeaviateRef;
 use zihuan_graph_engine::object_storage::S3Ref;
 
-use crate::resource_resolver::{build_weaviate_ref as build_weaviate_runtime_ref, find_connection};
+    use crate::resource_resolver::find_connection;
 use crate::rustfs::build_s3_ref as build_s3_direct_ref;
+use crate::weaviate::build_weaviate_ref as build_weaviate_direct_ref;
 use crate::{load_connections, ConnectionKind};
 
 const STORAGE_INSTANCE_IDLE_TIMEOUT_SECS: i64 = 15 * 60;
@@ -152,14 +154,11 @@ impl RuntimeStorageConnectionManager {
                 (StorageRuntimePayload::S3(s3_ref), "rustfs".to_string())
             }
             ConnectionKind::Weaviate(weaviate) => {
-                let weaviate_ref = build_weaviate_runtime_ref(Some(config_id), &connections, false)?
-                    .ok_or_else(|| {
-                        Error::ValidationError(format!(
-                            "failed to create weaviate runtime instance for '{}'",
-                            connection.name
-                        ))
-                    })?;
-                let _ = weaviate;
+                let weaviate_ref = build_weaviate_direct_ref(
+                    &weaviate.base_url,
+                    &weaviate.class_name,
+                    false,
+                )?;
                 (StorageRuntimePayload::Weaviate(weaviate_ref), "weaviate".to_string())
             }
             other => {
@@ -182,6 +181,13 @@ impl RuntimeStorageConnectionManager {
             last_used_at: started_at,
             status: RuntimeConnectionStatus::Running,
         };
+        info!(
+            "[storage_instance_manager] instantiated runtime instance_id={} config_id={} kind={} name='{}'",
+            summary.instance_id,
+            summary.config_id,
+            summary.kind,
+            summary.name
+        );
         let handle = payload.clone_handle();
         Ok((StorageRuntimeInstance { summary, payload }, handle))
     }
@@ -234,9 +240,18 @@ impl ConnectionManagerTrait for RuntimeStorageConnectionManager {
     async fn close_instance(&self, instance_id: &str) -> Result<bool> {
         let mut instances = self.instances.write().await;
         for bucket in instances.values_mut() {
-            let before = bucket.len();
-            bucket.retain(|item| item.summary.instance_id != instance_id);
-            if before != bucket.len() {
+            if let Some(index) = bucket
+                .iter()
+                .position(|item| item.summary.instance_id == instance_id)
+            {
+                let removed = bucket.remove(index);
+                info!(
+                    "[storage_instance_manager] force closed runtime instance_id={} config_id={} kind={} name='{}'",
+                    removed.summary.instance_id,
+                    removed.summary.config_id,
+                    removed.summary.kind,
+                    removed.summary.name
+                );
                 return Ok(true);
             }
         }
@@ -259,13 +274,26 @@ impl ConnectionManagerTrait for RuntimeStorageConnectionManager {
                 .find(|item| item.id == *config_id)
                 .map(|item| item.enabled)
                 .unwrap_or(false);
-            let before = bucket.len();
-            bucket.retain(|item| {
-                enabled
-                    && (now - item.summary.last_used_at).num_seconds()
-                        < STORAGE_INSTANCE_IDLE_TIMEOUT_SECS
-            });
-            removed += before.saturating_sub(bucket.len());
+            let mut retained = Vec::new();
+            for item in bucket.drain(..) {
+                let stale = (now - item.summary.last_used_at).num_seconds()
+                    >= STORAGE_INSTANCE_IDLE_TIMEOUT_SECS;
+                if enabled && !stale {
+                    retained.push(item);
+                } else {
+                    info!(
+                        "[storage_instance_manager] destroying idle runtime instance_id={} config_id={} kind={} name='{}' enabled={} stale={}",
+                        item.summary.instance_id,
+                        item.summary.config_id,
+                        item.summary.kind,
+                        item.summary.name,
+                        enabled,
+                        stale
+                    );
+                    removed += 1;
+                }
+            }
+            *bucket = retained;
         }
         instances.retain(|_, bucket| !bucket.is_empty());
         Ok(removed)
@@ -356,4 +384,62 @@ fn _reqwest_client() -> Result<Client> {
         .timeout(Duration::from_secs(DEFAULT_WEAVIATE_TIMEOUT_SECS))
         .build()
         .map_err(Error::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reuses_cached_runtime_instance_for_same_config_id() {
+        let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
+        runtime.block_on(async {
+            let manager = RuntimeStorageConnectionManager::new();
+            let mysql_ref = Arc::new(MySqlConfig {
+                url: Some("mysql://root@localhost/demo".to_string()),
+                reconnect_max_attempts: None,
+                reconnect_interval_secs: None,
+                pool: None,
+                runtime_handle: None,
+            });
+            let started_at = Utc::now();
+            {
+                let mut guard = manager.instances.write().await;
+                guard.insert(
+                    "cfg-1".to_string(),
+                    vec![StorageRuntimeInstance {
+                        summary: RuntimeConnectionInstanceSummary {
+                            instance_id: "inst-1".to_string(),
+                            config_id: "cfg-1".to_string(),
+                            name: "MySQL Default".to_string(),
+                            kind: "mysql".to_string(),
+                            keep_alive: false,
+                            heartbeat_interval_secs: None,
+                            started_at,
+                            last_used_at: started_at,
+                            status: RuntimeConnectionStatus::Running,
+                        },
+                        payload: StorageRuntimePayload::MySql(Arc::clone(&mysql_ref)),
+                    }],
+                );
+            }
+
+            let mut guard = manager.instances.write().await;
+            let handle = manager
+                .mark_used_and_clone("cfg-1", &mut guard)
+                .await
+                .expect("cached handle");
+            drop(guard);
+
+            match handle {
+                StorageRuntimeHandle::MySql(found) => {
+                    assert!(Arc::ptr_eq(&found, &mysql_ref));
+                }
+                _ => panic!("expected mysql runtime handle"),
+            }
+
+            let guard = manager.instances.read().await;
+            assert_eq!(guard.get("cfg-1").map(Vec::len), Some(1));
+        });
+    }
 }

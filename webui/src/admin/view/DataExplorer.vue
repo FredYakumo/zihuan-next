@@ -20,7 +20,7 @@
           <span class="field-label">MySQL 连接</span>
           <select v-model="mysql.connectionId" class="field-input" @change="onMysqlConnectionChange">
             <option value="">— 选择连接 —</option>
-            <option v-for="c in mysqlConnections" :key="c.id" :value="c.id">{{ c.name }}</option>
+            <option v-for="c in mysqlConnections" :key="c.config_id" :value="c.config_id">{{ c.name }}</option>
           </select>
         </label>
       </div>
@@ -113,7 +113,7 @@
           <span class="field-label">Redis 连接</span>
           <select v-model="redis.connectionId" class="field-input" @change="onRedisConnectionChange">
             <option value="">— 选择连接 —</option>
-            <option v-for="c in redisConnections" :key="c.id" :value="c.id">{{ c.name }}</option>
+            <option v-for="c in redisConnections" :key="c.config_id" :value="c.config_id">{{ c.name }}</option>
           </select>
         </label>
       </div>
@@ -167,7 +167,7 @@
           <span class="field-label">RustFS 连接</span>
           <select v-model="rustfs.connectionId" class="field-input" @change="onRustfsConnectionChange">
             <option value="">— 选择连接 —</option>
-            <option v-for="c in rustfsConnections" :key="c.id" :value="c.id">{{ c.name }}</option>
+            <option v-for="c in rustfsConnections" :key="c.config_id" :value="c.config_id">{{ c.name }}</option>
           </select>
         </label>
       </div>

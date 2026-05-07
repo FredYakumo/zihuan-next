@@ -544,8 +544,8 @@ function loadConnectionOptions(
       for (const connection of connections) {
         if (!connection.enabled) continue;
         if (!matchesConnectionKind(String(connection.kind.type ?? ""), connectionKind)) continue;
-        values[connection.id] = connection.name;
-        if (connection.id === initialValue) hasCurrentValue = true;
+        values[connection.config_id] = connection.name;
+        if (connection.config_id === initialValue) hasCurrentValue = true;
       }
       if (initialValue && !hasCurrentValue) {
         values[initialValue] = `(失效) ${initialValue}`;

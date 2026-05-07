@@ -50,11 +50,14 @@ pub async fn create_llm_ref(req: &mut Request, res: &mut Response, _depot: &mut 
 
     let llm_ref = LlmRefConfig {
         id: Uuid::new_v4().to_string(),
+        config_id: String::new(),
         name: body.name,
         enabled: body.enabled,
         llm: body.llm,
         updated_at: now_rfc3339(),
     };
+    let mut llm_ref = llm_ref;
+    llm_ref.config_id = llm_ref.id.clone();
     llm_refs.push(llm_ref.clone());
 
     match system_config::save_llm_refs(llm_refs) {

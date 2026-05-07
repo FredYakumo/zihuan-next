@@ -40,7 +40,7 @@
               <label>模型配置</label>
               <select v-model="form.llm_ref_id">
                 <option value="">请选择</option>
-                <option v-for="item in llm" :key="item.id" :value="item.id">{{ item.name }}</option>
+                <option v-for="item in llm" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
               </select>
             </div>
 
@@ -49,21 +49,21 @@
                 <label>意图分类模型</label>
                 <select v-model="form.intent_llm_ref_id">
                   <option value="">回退主模型</option>
-                  <option v-for="item in llm" :key="item.id" :value="item.id">{{ item.name }}</option>
+                  <option v-for="item in llm" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
               <div class="field">
                 <label>数学编程模型</label>
                 <select v-model="form.math_programming_llm_ref_id">
                   <option value="">回退主模型</option>
-                  <option v-for="item in llm" :key="item.id" :value="item.id">{{ item.name }}</option>
+                  <option v-for="item in llm" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
               <div class="field">
                 <label>Bot Adapter</label>
                 <select v-model="form.ims_bot_adapter_connection_id">
                   <option value="">请选择</option>
-                  <option v-for="item in botConnections" :key="item.id" :value="item.id">{{ item.name }}</option>
+                  <option v-for="item in botConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
               <div class="field"><label>Bot Name</label><input v-model="form.bot_name" /></div>
@@ -75,35 +75,35 @@
                 <label>RustFS Connection</label>
                 <select v-model="form.rustfs_connection_id">
                   <option value="">不使用</option>
-                  <option v-for="item in rustfsConnections" :key="item.id" :value="item.id">{{ item.name }}</option>
+                  <option v-for="item in rustfsConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
               <div class="field">
                 <label>Tavily Connection</label>
                 <select v-model="form.tavily_connection_id">
                   <option value="">请选择</option>
-                  <option v-for="item in tavilyConnections" :key="item.id" :value="item.id">{{ item.name }}</option>
+                  <option v-for="item in tavilyConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
               <div class="field">
                 <label>MySQL Connection</label>
                 <select v-model="form.mysql_connection_id">
                   <option value="">不使用</option>
-                  <option v-for="item in mysqlConnections" :key="item.id" :value="item.id">{{ item.name }}</option>
+                  <option v-for="item in mysqlConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
               <div class="field">
                 <label>Weaviate Connection</label>
                 <select v-model="form.weaviate_connection_id">
                   <option value="">不使用</option>
-                  <option v-for="item in weaviateConnections" :key="item.id" :value="item.id">{{ item.name }}</option>
+                  <option v-for="item in weaviateConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
               <div class="field">
                 <label>Weaviate Image Connection</label>
                 <select v-model="form.weaviate_image_connection_id">
                   <option value="">不使用</option>
-                  <option v-for="item in weaviateConnections" :key="item.id" :value="item.id">{{ item.name }}</option>
+                  <option v-for="item in weaviateConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
               <div class="field"><label>Max Message Length</label><input v-model.number="form.max_message_length" type="number" min="1" /></div>
@@ -219,10 +219,10 @@
       <div class="connection-grid connection-grid--agents" style="margin-top: 0;">
         <article
           v-for="agent in agents"
-          :key="agent.id"
-          :class="['connection-card', { 'connection-card--editing': isEditingAgent(agent.id) }]"
+          :key="agent.config_id"
+          :class="['connection-card', { 'connection-card--editing': isEditingAgent(agent.config_id) }]"
         >
-          <template v-if="isEditingAgent(agent.id)">
+          <template v-if="isEditingAgent(agent.config_id)">
             <div class="connection-card-header connection-card-header--stacked">
               <div class="connection-card-header-top">
                 <div class="connection-card-badges">
@@ -251,21 +251,21 @@
               <div class="key-value connection-card-edit-row">
                 <strong>启用</strong>
                 <label class="connection-card-inline-check">
-                  <input :id="`agent-enabled-${agent.id}`" v-model="form.enabled" type="checkbox" />
+                  <input :id="`agent-enabled-${agent.config_id}`" v-model="form.enabled" type="checkbox" />
                   <span>{{ form.enabled ? "已启用" : "已停用" }}</span>
                 </label>
               </div>
               <div class="key-value connection-card-edit-row">
                 <strong>自启</strong>
                 <label class="connection-card-inline-check">
-                  <input :id="`agent-auto-start-${agent.id}`" v-model="form.auto_start" type="checkbox" />
+                  <input :id="`agent-auto-start-${agent.config_id}`" v-model="form.auto_start" type="checkbox" />
                   <span>{{ form.auto_start ? "开启" : "关闭" }}</span>
                 </label>
               </div>
               <div class="key-value connection-card-edit-row">
                 <strong>默认</strong>
                 <label class="connection-card-inline-check">
-                  <input :id="`agent-default-${agent.id}`" v-model="form.is_default" type="checkbox" />
+                  <input :id="`agent-default-${agent.config_id}`" v-model="form.is_default" type="checkbox" />
                   <span>{{ form.is_default ? "是" : "否" }}</span>
                 </label>
               </div>
@@ -273,7 +273,7 @@
                 <strong>模型</strong>
                 <select v-model="form.llm_ref_id" class="connection-card-inline-input">
                   <option value="">请选择</option>
-                  <option v-for="item in llm" :key="item.id" :value="item.id">{{ item.name }}</option>
+                  <option v-for="item in llm" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
 
@@ -282,21 +282,21 @@
                   <strong>意图分类模型</strong>
                   <select v-model="form.intent_llm_ref_id" class="connection-card-inline-input">
                     <option value="">回退主模型</option>
-                    <option v-for="item in llm" :key="item.id" :value="item.id">{{ item.name }}</option>
+                    <option v-for="item in llm" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                   </select>
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>数学编程模型</strong>
                   <select v-model="form.math_programming_llm_ref_id" class="connection-card-inline-input">
                     <option value="">回退主模型</option>
-                    <option v-for="item in llm" :key="item.id" :value="item.id">{{ item.name }}</option>
+                    <option v-for="item in llm" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                   </select>
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>Bot Adapter</strong>
                   <select v-model="form.ims_bot_adapter_connection_id" class="connection-card-inline-input">
                     <option value="">请选择</option>
-                    <option v-for="item in botConnections" :key="item.id" :value="item.id">{{ item.name }}</option>
+                    <option v-for="item in botConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                   </select>
                 </div>
                 <div class="key-value connection-card-edit-row">
@@ -316,35 +316,35 @@
                   <strong>RustFS</strong>
                   <select v-model="form.rustfs_connection_id" class="connection-card-inline-input">
                     <option value="">不使用</option>
-                    <option v-for="item in rustfsConnections" :key="item.id" :value="item.id">{{ item.name }}</option>
+                    <option v-for="item in rustfsConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                   </select>
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>Tavily</strong>
                   <select v-model="form.tavily_connection_id" class="connection-card-inline-input">
                     <option value="">请选择</option>
-                    <option v-for="item in tavilyConnections" :key="item.id" :value="item.id">{{ item.name }}</option>
+                    <option v-for="item in tavilyConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                   </select>
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>MySQL</strong>
                   <select v-model="form.mysql_connection_id" class="connection-card-inline-input">
                     <option value="">不使用</option>
-                    <option v-for="item in mysqlConnections" :key="item.id" :value="item.id">{{ item.name }}</option>
+                    <option v-for="item in mysqlConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                   </select>
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>Weaviate</strong>
                   <select v-model="form.weaviate_connection_id" class="connection-card-inline-input">
                     <option value="">不使用</option>
-                    <option v-for="item in weaviateConnections" :key="item.id" :value="item.id">{{ item.name }}</option>
+                    <option v-for="item in weaviateConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                   </select>
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>Image DB</strong>
                   <select v-model="form.weaviate_image_connection_id" class="connection-card-inline-input">
                     <option value="">不使用</option>
-                    <option v-for="item in weaviateConnections" :key="item.id" :value="item.id">{{ item.name }}</option>
+                    <option v-for="item in weaviateConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                   </select>
                 </div>
                 <div class="key-value connection-card-edit-row">
@@ -455,14 +455,18 @@
                 <div class="connection-card-badges">
                   <span class="badge">{{ agent.agent_type.type }}</span>
                   <span class="badge" :class="agent.enabled ? 'success' : ''">{{ agent.enabled ? "已启用" : "已停用" }}</span>
-                  <span class="badge" :class="statusTone(agent.runtime.status)">{{ agent.runtime.status }}</span>
+                  <span class="badge" :class="statusTone(agent.runtime.status)">{{ runtimeBadgeText(agent) }}</span>
                   <span v-if="agent.is_default" class="badge">default</span>
                 </div>
                 <div class="inline-actions connection-card-display-actions">
                   <button class="btn ghost connection-card-compact-btn" @click="editAgent(agent)">编辑</button>
-                  <button class="btn connection-card-compact-btn" @click="startAgent(agent.id)">启动</button>
-                  <button class="btn connection-card-compact-btn" @click="stopAgent(agent.id)">停止</button>
-                  <button class="btn warn connection-card-compact-btn" @click="removeAgent(agent.id)">删除</button>
+                  <button
+                    class="btn connection-card-compact-btn"
+                    @click="toggleAgentRuntime(agent)"
+                  >
+                    {{ agent.runtime.status === "running" ? "停止" : "启动" }}
+                  </button>
+                  <button class="btn warn connection-card-compact-btn" @click="removeAgent(agent.config_id)">删除</button>
                 </div>
               </div>
               <div style="display: flex; align-items: center; gap: 10px;">
@@ -505,8 +509,10 @@ import {
   QQ_CHAT_DEFAULT_TOOLS,
   defaultAgentForm,
   defaultToolForm,
+  compactId,
   formatTime,
   statusTone,
+  summarizeIds,
   type AgentFormState,
   type AgentTypeName,
 } from "../model";
@@ -594,7 +600,7 @@ async function load() {
 
 function editAgent(agent: AgentWithRuntime) {
   Object.assign(form, agentFormFromConfig(agent));
-  editingAgentId.value = agent.id;
+  editingAgentId.value = agent.config_id;
   showCreatePicker.value = false;
   showCreateForm.value = false;
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -670,11 +676,23 @@ async function stopAgent(id: string) {
   }
 }
 
+async function toggleAgentRuntime(agent: AgentWithRuntime) {
+  if (agent.runtime.status === "running") {
+    await stopAgent(agent.config_id);
+  } else {
+    await startAgent(agent.config_id);
+  }
+}
+
 function summarizeAgent(agent: AgentWithRuntime): Array<{ label: string; value: string; mono?: boolean }> {
   const items: Array<{ label: string; value: string; mono?: boolean }> = [
+    { label: "Config ID", value: compactId(agent.config_id), mono: true },
     { label: "模型", value: llmName(agent), mono: false },
     { label: "自动启动", value: agent.auto_start ? "开启" : "关闭" },
   ];
+  if (agent.runtime.instance_id) {
+    items.push({ label: "Instance ID", value: compactId(agent.runtime.instance_id), mono: true });
+  }
   const agentType = agent.agent_type as Record<string, unknown>;
   if (agent.agent_type.type === "qq_chat") {
     items.push(
@@ -701,7 +719,7 @@ function summarizeAgent(agent: AgentWithRuntime): Array<{ label: string; value: 
 }
 
 function connectionName(id: string): string {
-  return connections.value.find((item) => item.id === id)?.name ?? "";
+  return connections.value.find((item) => item.config_id === id)?.name ?? "";
 }
 
 function llmName(agent: AgentWithRuntime): string {
@@ -711,7 +729,7 @@ function llmName(agent: AgentWithRuntime): string {
 }
 
 function llmRefName(id: string): string {
-  return llm.value.find((item) => item.id === id)?.name ?? "";
+  return llm.value.find((item) => item.config_id === id)?.name ?? "";
 }
 
 function botAvatarUrl(agent: AgentWithRuntime): string {
@@ -719,6 +737,23 @@ function botAvatarUrl(agent: AgentWithRuntime): string {
     return "";
   }
   return String(agent.qq_chat_profile?.bot_avatar_url ?? "");
+}
+
+function runtimeBadgeText(agent: AgentWithRuntime): string {
+  switch (agent.runtime.status) {
+    case "running":
+      return agent.runtime.instance_id
+        ? `已启动 (${summarizeIds([agent.runtime.instance_id])})`
+        : "已启动";
+    case "stopped":
+      return "已停止";
+    case "starting":
+      return "启动中";
+    case "error":
+      return "错误";
+    default:
+      return agent.runtime.status;
+  }
 }
 
 onMounted(() => {

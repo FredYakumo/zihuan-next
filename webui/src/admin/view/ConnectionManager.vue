@@ -12,40 +12,63 @@
       <div v-else-if="error" class="empty-state">{{ error }}</div>
       <div v-else-if="items.length === 0" class="empty-state">当前没有活动连接实例。</div>
       <template v-else>
-        <table class="task-table">
-          <thead>
-            <tr>
-              <th>连接名</th>
-              <th>类型</th>
-              <th>Config ID</th>
-              <th>Instance ID</th>
-              <th>开始时间</th>
-              <th>持续时间</th>
-              <th>维持长连接</th>
-              <th>心跳</th>
-              <th>状态</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="item in items" :key="item.instance_id">
-              <td>{{ item.name }}</td>
-              <td>{{ item.kind }}</td>
-              <td class="mono">{{ item.config_id }}</td>
-              <td class="mono">{{ item.instance_id }}</td>
-              <td>{{ formatTime(item.started_at) }}</td>
-              <td>{{ durationText(item.started_at) }}</td>
-              <td>{{ item.keep_alive ? "是" : "否" }}</td>
-              <td>{{ heartbeatText(item.heartbeat_interval_secs) }}</td>
-              <td>
-                <span class="badge" :class="statusTone(item.status)">{{ item.status }}</span>
-              </td>
-              <td>
-                <button class="btn warn" @click="forceClose(item.instance_id)">强制关闭</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="runtime-summary">
+          <div class="runtime-stat">
+            <span class="muted">当前实例</span>
+            <strong>{{ total }}</strong>
+          </div>
+          <div class="runtime-stat">
+            <span class="muted">运行中</span>
+            <strong>{{ runningCount }}</strong>
+          </div>
+          <div class="runtime-stat">
+            <span class="muted">长连接</span>
+            <strong>{{ keepAliveCount }}</strong>
+          </div>
+        </div>
+
+        <div class="runtime-table-wrap">
+          <table class="task-table runtime-table">
+            <thead>
+              <tr>
+                <th>连接</th>
+                <th>类型</th>
+                <th>Config ID</th>
+                <th>Instance ID</th>
+                <th>开始时间</th>
+                <th>持续时间</th>
+                <th>长连接</th>
+                <th>心跳</th>
+                <th>状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in items" :key="item.instance_id">
+                <td>
+                  <div class="runtime-name-cell">
+                    <strong>{{ item.name }}</strong>
+                  </div>
+                </td>
+                <td>
+                  <span class="badge">{{ item.kind }}</span>
+                </td>
+                <td class="mono" :title="item.config_id">{{ compactId(item.config_id) }}</td>
+                <td class="mono" :title="item.instance_id">{{ compactId(item.instance_id) }}</td>
+                <td>{{ formatTime(item.started_at) }}</td>
+                <td>{{ durationText(item.started_at) }}</td>
+                <td>{{ item.keep_alive ? "是" : "否" }}</td>
+                <td>{{ heartbeatText(item.heartbeat_interval_secs) }}</td>
+                <td>
+                  <span class="badge" :class="statusTone(item.status)">{{ statusLabel(item.status) }}</span>
+                </td>
+                <td>
+                  <button class="btn warn connection-card-compact-btn" @click="forceClose(item.instance_id)">强制关闭</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
         <div class="explorer-pagination">
           <button class="btn ghost" :disabled="page <= 1" @click="go(page - 1)">上一页</button>
@@ -61,7 +84,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
 import { system, type RuntimeConnectionInstanceSummary } from "../../api/client";
-import { formatTime, statusTone } from "../model";
+import { compactId, formatTime, statusTone } from "../model";
 
 const items = ref<RuntimeConnectionInstanceSummary[]>([]);
 const loading = ref(false);
@@ -71,6 +94,8 @@ const pageSize = ref(20);
 const total = ref(0);
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)));
+const runningCount = computed(() => items.value.filter((item) => item.status === "running").length);
+const keepAliveCount = computed(() => items.value.filter((item) => item.keep_alive).length);
 
 let timer: number | null = null;
 
@@ -126,6 +151,21 @@ function heartbeatText(intervalSecs: number | null): string {
   return `${intervalSecs}s`;
 }
 
+function statusLabel(status: RuntimeConnectionInstanceSummary["status"]): string {
+  switch (status) {
+    case "running":
+      return "运行中";
+    case "idle":
+      return "空闲";
+    case "closing":
+      return "关闭中";
+    case "error":
+      return "错误";
+    default:
+      return status;
+  }
+}
+
 onMounted(() => {
   load();
   timer = window.setInterval(() => {
@@ -139,3 +179,53 @@ onBeforeUnmount(() => {
   }
 });
 </script>
+
+<style scoped>
+.runtime-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.runtime-stat {
+  min-width: 120px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--admin-bg-soft) 88%, transparent 12%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.runtime-stat strong {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.runtime-table-wrap {
+  overflow-x: auto;
+}
+
+.runtime-table {
+  min-width: 1120px;
+}
+
+.runtime-table th {
+  white-space: nowrap;
+}
+
+.runtime-table td {
+  vertical-align: middle;
+}
+
+.runtime-name-cell {
+  min-width: 150px;
+}
+
+.runtime-name-cell strong {
+  display: block;
+  line-height: 1.35;
+}
+</style>

@@ -213,7 +213,7 @@ export function defaultAgentForm(): AgentFormState {
 
 export function connectionFormFromConfig(connection: ConnectionConfig): ConnectionFormState {
   const form = defaultConnectionForm();
-  form.id = connection.id;
+  form.id = connection.config_id;
   form.name = connection.name;
   form.enabled = connection.enabled;
   form.type = isBotAdapterConnectionType(String(connection.kind.type ?? ""))
@@ -342,7 +342,7 @@ export function buildConnectionPayload(form: ConnectionFormState): {
 
 export function llmFormFromConfig(config: LlmConfig): LlmFormState {
   return {
-    id: config.id,
+    id: config.config_id,
     name: config.name,
     enabled: config.enabled,
     llm: {
@@ -393,7 +393,7 @@ export function toolFormFromConfig(tool: AgentToolConfig): ToolFormState {
 
 export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): AgentFormState {
   const form = defaultAgentForm();
-  form.id = agent.id;
+  form.id = agent.config_id;
   form.name = agent.name;
   form.enabled = agent.enabled;
   form.auto_start = agent.auto_start;
@@ -532,6 +532,28 @@ export function formatTime(value: string | null | undefined): string {
     return value;
   }
   return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+export function compactId(value: string | null | undefined): string {
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return "未记录";
+  }
+  if (text.length <= 12) {
+    return text;
+  }
+  return `${text.slice(0, 8)}...`;
+}
+
+export function summarizeIds(values: Array<string | null | undefined>): string {
+  const ids = values.map((value) => String(value ?? "").trim()).filter(Boolean);
+  if (ids.length === 0) {
+    return "无";
+  }
+  if (ids.length === 1) {
+    return compactId(ids[0]);
+  }
+  return `${compactId(ids[0])}, 等${ids.length}个`;
 }
 
 export function statusTone(status: string): string {

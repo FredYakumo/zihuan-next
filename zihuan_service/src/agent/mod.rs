@@ -11,6 +11,7 @@ use serde::Serialize;
 use storage_handler::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+use uuid::Uuid;
 use zihuan_core::error::Result;
 use zihuan_core::llm::OpenAIMessage;
 use zihuan_llm::system_config::{load_agents, AgentConfig, AgentType};
@@ -29,6 +30,7 @@ pub enum AgentRuntimeStatus {
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentRuntimeInfo {
     pub agent_id: String,
+    pub instance_id: Option<String>,
     pub status: AgentRuntimeStatus,
     pub started_at: Option<String>,
     pub last_error: Option<String>,
@@ -36,6 +38,7 @@ pub struct AgentRuntimeInfo {
 
 #[derive(Debug, Clone)]
 pub struct AgentRuntimeState {
+    pub instance_id: Option<String>,
     pub status: AgentRuntimeStatus,
     pub started_at: Option<String>,
     pub last_error: Option<String>,
@@ -44,6 +47,7 @@ pub struct AgentRuntimeState {
 impl Default for AgentRuntimeState {
     fn default() -> Self {
         Self {
+            instance_id: None,
             status: AgentRuntimeStatus::Stopped,
             started_at: None,
             last_error: None,
@@ -92,6 +96,7 @@ impl AgentManager {
             .unwrap_or_default();
         AgentRuntimeInfo {
             agent_id: agent_id.to_string(),
+            instance_id: state.instance_id,
             status: state.status,
             started_at: state.started_at,
             last_error: state.last_error,
@@ -151,11 +156,14 @@ impl AgentManager {
         self.update_state(
             &agent.id,
             AgentRuntimeState {
+                instance_id: None,
                 status: AgentRuntimeStatus::Starting,
                 started_at: None,
                 last_error: None,
             },
         );
+
+        let runtime_instance_id = Uuid::new_v4().to_string();
 
         match &agent.agent_type {
             AgentType::QqChat(config) => {
@@ -174,6 +182,7 @@ impl AgentManager {
                 let entry = guard.entry(agent.id.clone()).or_default();
                 entry.loaded_agent = Some(Arc::clone(&loaded_agent));
                 entry.state = AgentRuntimeState {
+                    instance_id: Some(runtime_instance_id),
                     status: AgentRuntimeStatus::Running,
                     started_at: Some(started_at),
                     last_error: None,
@@ -197,6 +206,7 @@ impl AgentManager {
                 let entry = guard.entry(agent.id.clone()).or_default();
                 entry.loaded_agent = Some(Arc::clone(&loaded_agent));
                 entry.state = AgentRuntimeState {
+                    instance_id: Some(runtime_instance_id),
                     status: AgentRuntimeStatus::Running,
                     started_at: Some(started_at),
                     last_error: None,
@@ -226,6 +236,7 @@ impl AgentManager {
         self.update_state(
             agent_id,
             AgentRuntimeState {
+                instance_id: None,
                 status: AgentRuntimeStatus::Stopped,
                 started_at: None,
                 last_error: None,

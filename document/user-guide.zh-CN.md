@@ -102,11 +102,30 @@ Web 应用当前提供两个浏览器入口：
 - Windows：`%APPDATA%/zihuan-next_aibot/system_config/system_config.json`
 - Linux/macOS：`$XDG_CONFIG_HOME` 或 `$HOME/.config/zihuan-next_aibot/system_config/system_config.json`
 
-当前 section：
+当前磁盘结构：
+
+```json
+{
+  "version": 2,
+  "configs": {
+    "connections": [],
+    "llm_refs": [],
+    "agents": []
+  }
+}
+```
+
+其中核心配置集合仍然是：
 
 - `connections`
 - `llm_refs`
 - `agents`
+
+实际主键统一为：
+
+- `config_id`
+
+旧版顶层 `connections` / `llm_refs` / `agents` 会在读取时自动迁移。
 
 ### 图文件
 
@@ -129,6 +148,12 @@ workflow_set/
 1. 创建 Redis、MySQL、RustFS、Weaviate、Tavily、bot adapter 等连接记录。
 2. 创建可复用的 LLM ref。
 3. 创建需要长期运行的 Agent，例如 QQ Chat Agent 或 HTTP Stream Agent。
+
+当前管理界面中：
+
+- 连接配置、模型配置、Agent 配置都以 `config_id` 作为主键
+- 卡片里的长 ID 会缩短显示，例如 `abcd1234...`
+- 如果一个连接配置当前对应多个运行时实例，相关页面会显示成 `abcd1234..., 等N个`
 
 如果某个 Agent 同时设置了 `enabled = true` 和 `auto_start = true`，那么 `zihuan_next` 启动时会自动拉起它。
 

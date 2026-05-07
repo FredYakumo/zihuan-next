@@ -1,7 +1,7 @@
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use chrono::Local;
 use log::info;
-use reqwest::blocking::{Client, RequestBuilder};
+use reqwest::{Client, RequestBuilder};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -79,24 +79,7 @@ impl WeaviateRef {
     }
 
     pub fn ready(&self) -> Result<bool> {
-        let response = self
-            .authorized(self.client.get(self.url("/v1/.well-known/ready")))
-            .send()?;
-
-        if response.status().is_success() {
-            return Ok(true);
-        }
-
-        if response.status().as_u16() == 503 {
-            return Ok(false);
-        }
-
-        let status = response.status();
-        let body = response.text().unwrap_or_default();
-        Err(Error::StringError(format!(
-            "Weaviate readiness probe failed with status {}: {}",
-            status, body
-        )))
+        zihuan_core::runtime::block_async(self.ready_async())
     }
 
     pub fn meta(&self) -> Result<Value> {
@@ -391,20 +374,57 @@ impl WeaviateRef {
     }
 
     fn get_json(&self, path: &str) -> Result<Value> {
-        self.send_json(self.authorized(self.client.get(self.url(path))))
+        zihuan_core::runtime::block_async(self.get_json_async(path))
     }
 
     fn post_json(&self, path: &str, body: Value) -> Result<Value> {
-        self.send_json(
-            self.authorized(self.client.post(self.url(path)))
-                .json(&body),
-        )
+        zihuan_core::runtime::block_async(self.post_json_async(path, body))
     }
 
     fn delete_empty(&self, path: &str) -> Result<()> {
+        zihuan_core::runtime::block_async(self.delete_empty_async(path))
+    }
+
+    fn send_json(&self, builder: RequestBuilder) -> Result<Value> {
+        zihuan_core::runtime::block_async(Self::send_json_async(builder))
+    }
+
+    async fn ready_async(&self) -> Result<bool> {
+        let response = self
+            .authorized(self.client.get(self.url("/v1/.well-known/ready")))
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            return Ok(true);
+        }
+
+        if response.status().as_u16() == 503 {
+            return Ok(false);
+        }
+
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+
+        Err(Error::StringError(format!(
+            "Weaviate readiness probe failed with status {}: {}",
+            status, body
+        )))
+    }
+
+    async fn get_json_async(&self, path: &str) -> Result<Value> {
+        Self::send_json_async(self.authorized(self.client.get(self.url(path)))).await
+    }
+
+    async fn post_json_async(&self, path: &str, body: Value) -> Result<Value> {
+        Self::send_json_async(self.authorized(self.client.post(self.url(path))).json(&body)).await
+    }
+
+    async fn delete_empty_async(&self, path: &str) -> Result<()> {
         let response = self
             .authorized(self.client.delete(self.url(path)))
             .send()
+            .await
             .map_err(Error::from)?;
 
         if response.status().is_success() {
@@ -412,17 +432,17 @@ impl WeaviateRef {
         }
 
         let status = response.status();
-        let body = response.text().unwrap_or_default();
+        let body = response.text().await.unwrap_or_default();
         Err(Error::StringError(format!(
             "Weaviate request failed with status {}: {}",
             status, body
         )))
     }
 
-    fn send_json(&self, builder: RequestBuilder) -> Result<Value> {
-        let response = builder.send()?;
+    async fn send_json_async(builder: RequestBuilder) -> Result<Value> {
+        let response = builder.send().await?;
         let status = response.status();
-        let body = response.text()?;
+        let body = response.text().await?;
 
         if !status.is_success() {
             return Err(Error::StringError(format!(

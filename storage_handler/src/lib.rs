@@ -8,8 +8,12 @@ pub mod rustfs;
 pub mod weaviate;
 
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use log::info;
 use zihuan_core::error::Result;
-use zihuan_core::system_config::{load_section, save_section, SystemConfigSection};
+use zihuan_core::config::{
+    ConfigCategory, ConfigCenter, ConfigKind, ConfigRecord, StoredConfigRecord,
+};
 
 pub use connection_manager::{
     cleanup_runtime_storage_instances, close_runtime_storage_instance, list_runtime_storage_instances,
@@ -32,9 +36,10 @@ pub use weaviate::WeaviateNode;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ConnectionConfig {
+    #[serde(default, skip_serializing)]
     pub id: String,
     #[serde(default)]
-    pub config_id: Option<String>,
+    pub config_id: String,
     pub name: String,
     #[serde(default)]
     pub enabled: bool,
@@ -95,10 +100,11 @@ fn default_tavily_timeout_secs() -> u64 {
 
 impl ConnectionConfig {
     pub fn canonical_config_id(&self) -> &str {
-        self.config_id
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or(&self.id)
+        if self.config_id.trim().is_empty() {
+            &self.id
+        } else {
+            &self.config_id
+        }
     }
 
     pub fn is_valid(&self) -> bool {
@@ -109,43 +115,144 @@ impl ConnectionConfig {
     }
 }
 
-pub struct ConnectionsSection;
+impl ConfigRecord for ConnectionConfig {
+    fn config_id(&self) -> &str {
+        self.canonical_config_id()
+    }
 
-impl SystemConfigSection for ConnectionsSection {
-    const SECTION_KEY: &'static str = "connections";
-    type Value = Vec<ConnectionConfig>;
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    fn updated_at(&self) -> &str {
+        &self.updated_at
+    }
+
+    fn kind(&self) -> ConfigKind {
+        match &self.kind {
+            ConnectionKind::Mysql(_) => ConfigKind::ConnectionMysql,
+            ConnectionKind::Redis(_) => ConfigKind::ConnectionRedis,
+            ConnectionKind::Weaviate(_) => ConfigKind::ConnectionWeaviate,
+            ConnectionKind::Rustfs(_) => ConfigKind::ConnectionRustfs,
+            ConnectionKind::BotAdapter(_) => ConfigKind::ConnectionBotAdapter,
+            ConnectionKind::Tavily(_) => ConfigKind::ConnectionTavily,
+        }
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.canonical_config_id().trim().is_empty() {
+            return Err(zihuan_core::string_error!("connection config_id must not be empty"));
+        }
+        if self.name.trim().is_empty() {
+            return Err(zihuan_core::string_error!("connection name must not be empty"));
+        }
+        Ok(())
+    }
+
+    fn redacted_summary(&self) -> serde_json::Value {
+        json!({
+            "config_id": self.canonical_config_id(),
+            "kind": self.kind(),
+            "name": self.name,
+            "enabled": self.enabled,
+        })
+    }
 }
 
 pub fn load_connections() -> Result<Vec<ConnectionConfig>> {
-    let mut connections = load_section::<ConnectionsSection>()?;
-    for connection in &mut connections {
-        if connection
-            .config_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .is_none()
-        {
-            connection.config_id = Some(connection.id.clone());
-        }
-        if connection.id.trim().is_empty() {
-            connection.id = connection.canonical_config_id().to_string();
-        }
+    let connections = ConfigCenter::shared()
+        .list_configs(ConfigCategory::Connection)?
+        .into_iter()
+        .map(connection_from_record)
+        .collect::<Result<Vec<_>>>()?;
+    for connection in &connections {
+        info!(
+            "[config_center] loaded connection config_id={} kind={:?} name='{}'",
+            connection.canonical_config_id(),
+            connection.kind(),
+            connection.name
+        );
     }
     Ok(connections)
 }
 
 pub fn save_connections(connections: Vec<ConnectionConfig>) -> Result<()> {
-    let normalized = connections
+    let center = ConfigCenter::shared();
+    let existing = center.list_configs(ConfigCategory::Connection)?;
+    let existing_ids = existing
         .into_iter()
-        .map(|mut connection| {
-            let canonical = connection.canonical_config_id().to_string();
-            connection.id = canonical.clone();
-            connection.config_id = Some(canonical);
-            connection
-        })
-        .collect::<Vec<_>>();
-    save_section::<ConnectionsSection>(&normalized)
+        .map(|record| record.config_id)
+        .collect::<std::collections::HashSet<_>>();
+    let mut incoming_ids = std::collections::HashSet::new();
+
+    for connection in connections {
+        let normalized = normalize_connection_identity(connection, center.new_config_id());
+        incoming_ids.insert(normalized.config_id.clone());
+        center.upsert_config(connection_to_record(&normalized)?)?;
+    }
+
+    for config_id in existing_ids {
+        if !incoming_ids.contains(&config_id) {
+            let _ = center.delete_config(ConfigCategory::Connection, &config_id)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn normalize_connection_identity(mut connection: ConnectionConfig, fallback_id: String) -> ConnectionConfig {
+    let canonical = if connection.config_id.trim().is_empty() {
+        if connection.id.trim().is_empty() {
+            fallback_id
+        } else {
+            connection.id.clone()
+        }
+    } else {
+        connection.config_id.clone()
+    };
+    connection.id = canonical.clone();
+    connection.config_id = canonical;
+    connection
+}
+
+fn connection_to_record(connection: &ConnectionConfig) -> Result<StoredConfigRecord> {
+    connection.validate()?;
+    Ok(StoredConfigRecord {
+        config_id: connection.canonical_config_id().to_string(),
+        kind: connection.kind(),
+        name: connection.name.clone(),
+        enabled: connection.enabled,
+        updated_at: connection.updated_at.clone(),
+        spec: serde_json::to_value(&connection.kind)?,
+    })
+}
+
+fn connection_from_record(record: StoredConfigRecord) -> Result<ConnectionConfig> {
+    if record.kind.category() != ConfigCategory::Connection {
+        return Err(zihuan_core::string_error!(
+            "config '{}' is not a connection config",
+            record.config_id
+        ));
+    }
+    let kind = serde_json::from_value::<ConnectionKind>(record.spec).map_err(|err| {
+        zihuan_core::string_error!(
+            "failed to parse connection spec for '{}': {}",
+            record.config_id,
+            err
+        )
+    })?;
+    Ok(ConnectionConfig {
+        id: record.config_id.clone(),
+        config_id: record.config_id,
+        name: record.name,
+        enabled: record.enabled,
+        kind,
+        updated_at: record.updated_at,
+    })
 }
 
 pub fn init_node_registry() -> Result<()> {

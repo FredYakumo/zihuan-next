@@ -125,10 +125,10 @@
       <div class="connection-grid" style="margin-top: 0;">
         <article
           v-for="connection in connections"
-          :key="connection.id"
-          :class="['connection-card', { 'connection-card--editing': form.id === connection.id }]"
+          :key="connection.config_id"
+          :class="['connection-card', { 'connection-card--editing': form.id === connection.config_id }]"
         >
-          <template v-if="form.id === connection.id">
+          <template v-if="form.id === connection.config_id">
             <div class="connection-card-header connection-card-header--stacked">
               <div class="connection-card-header-top">
                 <div class="connection-card-badges">
@@ -160,7 +160,7 @@
               <div class="key-value connection-card-edit-row">
                 <strong>启用</strong>
                 <label class="connection-card-inline-check">
-                  <input :id="`connection-enabled-${connection.id}`" v-model="form.enabled" type="checkbox" />
+                  <input :id="`connection-enabled-${connection.config_id}`" v-model="form.enabled" type="checkbox" />
                   <span>{{ form.enabled ? "已启用" : "已停用" }}</span>
                 </label>
               </div>
@@ -234,7 +234,7 @@
                 <div class="key-value connection-card-edit-row">
                   <strong>Path Style</strong>
                   <label class="connection-card-inline-check">
-                    <input :id="`rustfs-path-style-${connection.id}`" v-model="form.rustfs_path_style" type="checkbox" />
+                    <input :id="`rustfs-path-style-${connection.config_id}`" v-model="form.rustfs_path_style" type="checkbox" />
                     <span>{{ form.rustfs_path_style ? "开启" : "关闭" }}</span>
                   </label>
                 </div>
@@ -281,7 +281,7 @@
                 </div>
                 <div class="inline-actions connection-card-display-actions">
                   <button class="btn ghost connection-card-compact-btn" @click="editConnection(connection)">编辑</button>
-                  <button class="btn warn connection-card-compact-btn" @click="removeConnection(connection.id)">删除</button>
+                  <button class="btn warn connection-card-compact-btn" @click="removeConnection(connection.config_id)">删除</button>
                 </div>
               </div>
               <h4>{{ connection.name }}</h4>
@@ -307,13 +307,15 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 
-import { system, type ConnectionConfig } from "../../api/client";
+import { system, type ConnectionConfig, type RuntimeConnectionInstanceSummary } from "../../api/client";
 import {
   buildConnectionPayload,
+  compactId,
   connectionFormFromConfig,
   defaultConnectionForm,
   formatTime,
   isBotAdapterConnectionType,
+  summarizeIds,
   type ConnectionFormState,
 } from "../model";
 
@@ -333,6 +335,7 @@ const connectionTypes: ConnectionTypeOption[] = [
 ];
 
 const connections = ref<ConnectionConfig[]>([]);
+const runtimeInstances = ref<RuntimeConnectionInstanceSummary[]>([]);
 const form = reactive<ConnectionFormState>(defaultConnectionForm());
 const showEditor = ref(false);
 const showCreatePicker = ref(false);
@@ -372,7 +375,12 @@ function closeEditor() {
 }
 
 async function load() {
-  connections.value = await system.connections.list();
+  const [loadedConnections, runtimeResponse] = await Promise.all([
+    system.connections.list(),
+    system.connections.listRuntimeInstances({ page: 1, page_size: 200 }),
+  ]);
+  connections.value = loadedConnections;
+  runtimeInstances.value = runtimeResponse.items;
 }
 
 function editConnection(connection: ConnectionConfig) {
@@ -429,37 +437,52 @@ async function removeConnection(id: string) {
 }
 
 function summarizeConnection(connection: ConnectionConfig): Array<{ label: string; value: string }> {
+  const base = [
+    { label: "Config ID", value: compactId(connection.config_id) },
+    { label: "实例", value: summarizeConnectionInstances(connection.config_id) },
+  ];
   const kind = connection.kind as Record<string, unknown>;
   switch (kind.type) {
     case "mysql":
-      return summarizeMysqlUrl(String(kind.url ?? ""));
+      return [...base, ...summarizeMysqlUrl(String(kind.url ?? ""))];
     case "redis":
-      return [{ label: "URL", value: String(kind.url ?? "") }];
+      return [...base, { label: "URL", value: String(kind.url ?? "") }];
     case "weaviate":
       return [
+        ...base,
         { label: "Base URL", value: String(kind.base_url ?? "") },
         { label: "Class", value: String(kind.class_name ?? "") },
       ];
     case "rustfs":
       return [
+        ...base,
         { label: "Endpoint", value: String(kind.endpoint ?? "") },
         { label: "Bucket", value: String(kind.bucket ?? "") },
       ];
     case "bot_adapter":
     case "ims_bot_adapter":
       return [
+        ...base,
         { label: "WS", value: String(kind.bot_server_url ?? "") },
         { label: "HTTP", value: String(kind.adapter_server_url ?? "") || "未设置（默认由 WS 推导）" },
         { label: "QQ", value: String(kind.qq_id ?? "") || "未设置" },
       ];
     case "tavily":
       return [
+        ...base,
         { label: "API Token", value: String(kind.api_token ?? "") ? "已配置" : "未设置" },
         { label: "Timeout", value: String(kind.timeout_secs ?? 30) },
       ];
     default:
-      return [];
+      return base;
   }
+}
+
+function summarizeConnectionInstances(configId: string): string {
+  const ids = runtimeInstances.value
+    .filter((item) => item.config_id === configId)
+    .map((item) => item.instance_id);
+  return summarizeIds(ids);
 }
 
 function summarizeMysqlUrl(rawUrl: string): Array<{ label: string; value: string }> {

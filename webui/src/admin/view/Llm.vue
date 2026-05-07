@@ -59,10 +59,10 @@
       <div class="connection-grid" style="margin-top: 0;">
         <article
           v-for="item in items"
-          :key="item.id"
-          :class="['connection-card', { 'connection-card--editing': form.id === item.id }]"
+          :key="item.config_id"
+          :class="['connection-card', { 'connection-card--editing': form.id === item.config_id }]"
         >
-          <template v-if="form.id === item.id">
+          <template v-if="form.id === item.config_id">
             <div class="connection-card-header connection-card-header--stacked">
               <div class="connection-card-header-top">
                 <div class="connection-card-badges">
@@ -83,7 +83,7 @@
               <div class="key-value connection-card-edit-row">
                 <strong>启用</strong>
                 <label class="connection-card-inline-check">
-                  <input :id="`llm-enabled-${item.id}`" v-model="form.enabled" type="checkbox" />
+                  <input :id="`llm-enabled-${item.config_id}`" v-model="form.enabled" type="checkbox" />
                   <span>{{ form.enabled ? "已启用" : "已停用" }}</span>
                 </label>
               </div>
@@ -91,7 +91,7 @@
                 <strong>多模态</strong>
                 <label class="connection-card-inline-check">
                   <input
-                    :id="`llm-multimodal-enabled-${item.id}`"
+                    :id="`llm-multimodal-enabled-${item.config_id}`"
                     v-model="form.llm.supports_multimodal_input"
                     type="checkbox"
                   />
@@ -102,7 +102,7 @@
                 <strong>Stream</strong>
                 <label class="connection-card-inline-check">
                   <input
-                    :id="`llm-stream-enabled-${item.id}`"
+                    :id="`llm-stream-enabled-${item.config_id}`"
                     v-model="form.llm.stream"
                     type="checkbox"
                   />
@@ -141,13 +141,14 @@
                 </div>
                 <div class="inline-actions connection-card-display-actions">
                   <button class="btn ghost connection-card-compact-btn" @click="editItem(item)">编辑</button>
-                  <button class="btn warn connection-card-compact-btn" @click="removeItem(item.id)">删除</button>
+                  <button class="btn warn connection-card-compact-btn" @click="removeItem(item.config_id)">删除</button>
                 </div>
               </div>
               <h4>{{ item.name }}</h4>
             </div>
 
             <div class="connection-card-body">
+              <div class="key-value"><strong>Config ID</strong><span class="mono">{{ compactId(item.config_id) }}</span></div>
               <div class="key-value"><strong>Model</strong><span>{{ item.llm.model_name }}</span></div>
               <div class="key-value"><strong>Endpoint</strong><span class="mono">{{ item.llm.api_endpoint }}</span></div>
               <div class="key-value"><strong>Stream</strong><span>{{ item.llm.stream ? "是" : "否" }}</span></div>
@@ -170,7 +171,7 @@
 import { onMounted, reactive, ref } from "vue";
 
 import { system, type LlmConfig } from "../../api/client";
-import { defaultLlmForm, formatTime, llmFormFromConfig, type LlmFormState } from "../model";
+import { compactId, defaultLlmForm, formatTime, llmFormFromConfig, type LlmFormState } from "../model";
 
 const items = ref<LlmConfig[]>([]);
 const form = reactive<LlmFormState>(defaultLlmForm());

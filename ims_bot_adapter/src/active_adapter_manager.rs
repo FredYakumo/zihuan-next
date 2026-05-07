@@ -135,7 +135,7 @@ impl ActiveAdapterManager {
         ));
 
         let now = Utc::now();
-        Ok(ActiveBotAdapterInstance {
+        let instance = ActiveBotAdapterInstance {
             summary: RuntimeConnectionInstanceSummary {
                 instance_id,
                 config_id: connection.id.clone(),
@@ -150,7 +150,14 @@ impl ActiveAdapterManager {
             adapter,
             task,
             heartbeat_task,
-        })
+        };
+        info!(
+            "[active_adapter_manager] instantiated bot adapter instance_id={} config_id={} name='{}'",
+            instance.summary.instance_id,
+            instance.summary.config_id,
+            instance.summary.name
+        );
+        Ok(instance)
     }
 
     pub async fn get_active_bot_adapter_handle(
@@ -208,6 +215,12 @@ impl ConnectionManagerTrait for ActiveAdapterManager {
                 .position(|item| item.summary.instance_id == instance_id)
             {
                 let removed = bucket.remove(index);
+                info!(
+                    "[active_adapter_manager] force closed bot adapter instance_id={} config_id={} name='{}'",
+                    removed.summary.instance_id,
+                    removed.summary.config_id,
+                    removed.summary.name
+                );
                 removed.task.abort();
                 removed.heartbeat_task.abort();
                 return Ok(true);
@@ -249,6 +262,14 @@ impl ConnectionManagerTrait for ActiveAdapterManager {
                 if enabled && !stale {
                     retained.push(item);
                 } else {
+                    info!(
+                        "[active_adapter_manager] destroying idle bot adapter instance_id={} config_id={} name='{}' enabled={} stale={}",
+                        item.summary.instance_id,
+                        item.summary.config_id,
+                        item.summary.name,
+                        enabled,
+                        stale
+                    );
                     item.task.abort();
                     item.heartbeat_task.abort();
                     removed += 1;
