@@ -28,23 +28,23 @@
       <div v-if="mysql.connectionId" class="explorer-search">
         <label class="field">
           <span class="field-label">Message ID</span>
-          <input v-model="mysql.filters.message_id" class="field-input" placeholder="模糊搜索" />
+          <input v-model="mysql.filters.message_id" class="field-input" />
         </label>
         <label class="field">
           <span class="field-label">Sender ID</span>
-          <input v-model="mysql.filters.sender_id" class="field-input" placeholder="模糊搜索" />
+          <input v-model="mysql.filters.sender_id" class="field-input" />
         </label>
         <label class="field">
           <span class="field-label">Sender Name</span>
-          <input v-model="mysql.filters.sender_name" class="field-input" placeholder="模糊搜索" />
+          <input v-model="mysql.filters.sender_name" class="field-input" />
         </label>
         <label class="field">
           <span class="field-label">Group ID</span>
-          <input v-model="mysql.filters.group_id" class="field-input" placeholder="模糊搜索" />
+          <input v-model="mysql.filters.group_id" class="field-input" />
         </label>
         <label class="field">
           <span class="field-label">Content</span>
-          <input v-model="mysql.filters.content" class="field-input" placeholder="模糊搜索" />
+          <input v-model="mysql.filters.content" class="field-input" />
         </label>
         <label class="field">
           <span class="field-label">Send Time Start</span>

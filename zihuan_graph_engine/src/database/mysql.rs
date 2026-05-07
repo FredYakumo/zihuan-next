@@ -1,4 +1,5 @@
 use crate::data_value::MySqlConfig;
+use crate::message_persistence::register_mysql_persistence_ref;
 use crate::message_restore::register_mysql_ref;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::{debug, info, warn};
@@ -284,6 +285,7 @@ impl Node for MySqlNode {
             pool: Some(pool),
             runtime_handle: self.runtime_handle.clone(),
         });
+        register_mysql_persistence_ref(config.clone());
         register_mysql_ref(config.clone());
 
         let mut outputs = HashMap::new();

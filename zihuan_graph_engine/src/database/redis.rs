@@ -1,4 +1,5 @@
 use crate::data_value::RedisConfig;
+use crate::message_persistence::register_redis_persistence_ref;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::{info, warn};
 use redis::aio::Connection;
@@ -259,6 +260,7 @@ impl Node for RedisNode {
         });
 
         self.initialize_run(Some(&config))?;
+        register_redis_persistence_ref(config.clone());
 
         let mut outputs = HashMap::new();
         outputs.insert("redis_ref".to_string(), DataValue::RedisRef(config));
