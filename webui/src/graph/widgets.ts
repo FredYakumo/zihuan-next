@@ -13,12 +13,15 @@ import {
   type BrainToolDefinition,
   type EmbeddedFunctionConfig,
 } from "../ui/dialogs/index";
+import { ensureDialogStyles, openOverlay } from "../ui/dialogs/base";
 import { getInlineWidgetTopY } from "./inline_layout";
+import { NODE_TITLE_HEIGHT } from "./canvas/rendering";
 import { setupQQMessagePreviewWidgets } from "./preview_qq_messages";
 
 type WidgetMutationCallback = (pending?: Promise<unknown>) => void;
 
 let cachedTextEmbeddingModels: string[] | null = null;
+const CONNECTION_PLACEHOLDER_VALUE = "__zihuan_no_connection__";
 
 /** Called for every node added to the canvas after the node is created. */
 export function setupNodeWidgets(
@@ -128,7 +131,7 @@ function setupFunctionWidgets(
     inputs: ((nodeDef.inline_values?.["function_config"] as EmbeddedFunctionConfig | undefined)?.inputs) ?? [],
     outputs: ((nodeDef.inline_values?.["function_config"] as EmbeddedFunctionConfig | undefined)?.outputs) ?? [],
     subgraph: ((nodeDef.inline_values?.["function_config"] as EmbeddedFunctionConfig | undefined)?.subgraph) ?? {
-      nodes: [], edges: [], hyperparameter_groups: [], hyperparameters: [], variables: [],
+      nodes: [], edges: [], graph_inputs: [], graph_outputs: [], hyperparameter_groups: [], hyperparameters: [], variables: [],
     } as any,
   });
 
@@ -351,7 +354,20 @@ function setupConfigFieldWidgets(
 ): void {
   const typeInfo = getNodeTypeInfo(nodeDef.node_type);
   const configFields = typeInfo?.config_fields ?? [];
+  let addedConfigWidget = false;
   for (const field of configFields) {
+    if (field.widget === "active_bot_adapter_select") {
+      setupActiveBotAdapterSelectWidget(
+        lNode,
+        nodeDef,
+        field.key,
+        String(nodeDef.inline_values?.[field.key] ?? ""),
+        getSessionId,
+        onMutated,
+      );
+      addedConfigWidget = true;
+      continue;
+    }
     if (field.widget !== "connection_select") continue;
     setupConnectionSelectWidget(
       lNode,
@@ -362,7 +378,64 @@ function setupConfigFieldWidgets(
       getSessionId,
       onMutated,
     );
+    addedConfigWidget = true;
   }
+
+  if (!addedConfigWidget) return;
+
+  if ((lNode.widgets?.length ?? 0) > 0) {
+    lNode.widgets_start_y = NODE_TITLE_HEIGHT + 8;
+    if (!nodeDef.size) {
+      lNode.size = lNode.computeSize();
+    } else {
+      const computed = lNode.computeSize();
+      lNode.size = [
+        Math.max(nodeDef.size.width, computed[0]),
+        Math.max(nodeDef.size.height, computed[1]),
+      ];
+    }
+  }
+}
+
+function setupActiveBotAdapterSelectWidget(
+  lNode: any,
+  nodeDef: NodeDefinition,
+  key: string,
+  initialValue: string,
+  getSessionId: () => string | null,
+  onMutated?: WidgetMutationCallback,
+): any {
+  const widget = lNode.addWidget("button", "请选择连接...", "", () => {
+    void (async () => {
+      const sid = getSessionId();
+      if (!sid) return;
+      const connections = await system.connections.listActiveBotAdapters();
+      const selected = await showActiveBotAdapterPicker(
+        connections,
+        initialValue || widget._selectedConnectionId || "",
+      );
+      if (selected == null) return;
+      widget._selectedConnectionId = selected;
+      widget.label = activeBotAdapterButtonLabel(connections, selected);
+      widget._zihuanTouched = true;
+      widget._zihuanInlineKey = key;
+      const pending = graphs.updateNode(sid, nodeDef.id, {
+        inline_values: {
+          [key]: selected && selected !== CONNECTION_PLACEHOLDER_VALUE ? selected : null,
+        },
+      });
+      onMutated?.(pending);
+      await pending;
+    })();
+  });
+  widget.label = "加载中...";
+  widget._selectedConnectionId = initialValue || CONNECTION_PLACEHOLDER_VALUE;
+  widget._zihuanInlineKey = key;
+  attachWidgetClickProxy(lNode, widget, () => {
+    void widget.callback?.();
+  });
+  loadActiveBotAdapterOptions(widget, lNode, initialValue);
+  return widget;
 }
 
 function setupLocalTextEmbeddingModelWidget(
@@ -398,19 +471,21 @@ function setupConnectionSelectWidget(
   getSessionId: () => string | null,
   onMutated?: WidgetMutationCallback,
 ): any {
-  const widget = lNode.addWidget("combo", key, initialValue, async (selected: string) => {
+  const widget = lNode.addWidget("combo", key, initialValue || CONNECTION_PLACEHOLDER_VALUE, async (selected: string) => {
     const sid = getSessionId();
     if (!sid) return;
-    widget.value = selected ?? "";
+    widget.value = selected ?? CONNECTION_PLACEHOLDER_VALUE;
     widget._zihuanTouched = true;
     widget._zihuanInlineKey = key;
     const pending = graphs.updateNode(sid, nodeDef.id, {
-      inline_values: { [key]: selected ? selected : null },
+      inline_values: {
+        [key]: selected && selected !== CONNECTION_PLACEHOLDER_VALUE ? selected : null,
+      },
     });
     onMutated?.(pending);
     await pending;
-  }, { values: { "": "请选择连接..." } as Record<string, string> });
-  widget.value = initialValue;
+  }, { values: { [CONNECTION_PLACEHOLDER_VALUE]: "请选择连接..." } as Record<string, string> });
+  widget.value = initialValue || CONNECTION_PLACEHOLDER_VALUE;
   widget._zihuanInlineKey = key;
   loadConnectionOptions(widget, lNode, connectionKind, initialValue);
   return widget;
@@ -445,6 +520,15 @@ async function getConnections(): Promise<ConnectionConfig[]> {
   return system.connections.list();
 }
 
+function matchesConnectionKind(actualKind: string, expectedKind: string): boolean {
+  if (actualKind === expectedKind) return true;
+  const botAdapterKinds = new Set(["bot_adapter", "ims_bot_adapter"]);
+  if (botAdapterKinds.has(actualKind) && botAdapterKinds.has(expectedKind)) {
+    return true;
+  }
+  return false;
+}
+
 function loadConnectionOptions(
   widget: any,
   lNode: any,
@@ -453,11 +537,13 @@ function loadConnectionOptions(
 ): void {
   getConnections()
     .then((connections) => {
-      const values: Record<string, string> = { "": "请选择连接..." };
+      const values: Record<string, string> = {
+        [CONNECTION_PLACEHOLDER_VALUE]: "请选择连接...",
+      };
       let hasCurrentValue = !initialValue;
       for (const connection of connections) {
         if (!connection.enabled) continue;
-        if (String(connection.kind.type ?? "") !== connectionKind) continue;
+        if (!matchesConnectionKind(String(connection.kind.type ?? ""), connectionKind)) continue;
         values[connection.id] = connection.name;
         if (connection.id === initialValue) hasCurrentValue = true;
       }
@@ -466,14 +552,172 @@ function loadConnectionOptions(
       }
       widget.options = widget.options ?? {};
       widget.options.values = values;
-      if (!widget.value) {
-        widget.value = "";
+      if (!widget.value || widget.value === "") {
+        widget.value = CONNECTION_PLACEHOLDER_VALUE;
       }
       lNode?.setDirtyCanvas?.(true, true);
     })
     .catch((error) => {
       console.error("failed to load connection options", error);
       widget.options = widget.options ?? {};
-      widget.options.values = { "": "加载连接失败" };
+      widget.options.values = { [CONNECTION_PLACEHOLDER_VALUE]: "加载连接失败" };
+      widget.value = CONNECTION_PLACEHOLDER_VALUE;
     });
+}
+
+function loadActiveBotAdapterOptions(
+  widget: any,
+  lNode: any,
+  initialValue: string,
+): void {
+  system.connections
+    .listActiveBotAdapters()
+    .then((connections) => {
+      const values: Record<string, string> = {
+        [CONNECTION_PLACEHOLDER_VALUE]: "请选择连接...",
+      };
+      let hasCurrentValue = !initialValue;
+      for (const connection of connections) {
+        values[connection.connection_id] = connection.name;
+        if (connection.connection_id === initialValue) {
+          hasCurrentValue = true;
+        }
+      }
+      if (initialValue && !hasCurrentValue) {
+        values[initialValue] = `(未激活) ${initialValue}`;
+      }
+      widget._activeBotAdapterValues = values;
+      widget._selectedConnectionId = initialValue || CONNECTION_PLACEHOLDER_VALUE;
+      widget.label = activeBotAdapterButtonLabel(
+        connections,
+        initialValue || CONNECTION_PLACEHOLDER_VALUE,
+      );
+      lNode?.setDirtyCanvas?.(true, true);
+    })
+    .catch((error) => {
+      console.error("failed to load active bot adapter options", error);
+      widget._activeBotAdapterValues = { [CONNECTION_PLACEHOLDER_VALUE]: "加载连接失败" };
+      widget._selectedConnectionId = CONNECTION_PLACEHOLDER_VALUE;
+      widget.label = "加载连接失败";
+      lNode?.setDirtyCanvas?.(true, true);
+    });
+}
+
+function activeBotAdapterButtonLabel(
+  connections: Array<{ connection_id: string; name: string; ws_url: string }>,
+  selectedId: string,
+): string {
+  if (!selectedId || selectedId === CONNECTION_PLACEHOLDER_VALUE) {
+    return "请选择连接...";
+  }
+  const matched = connections.find((item) => item.connection_id === selectedId);
+  return matched ? `${matched.name} (${matched.ws_url})` : `(未激活) ${selectedId}`;
+}
+
+function attachWidgetClickProxy(
+  lNode: any,
+  widget: any,
+  onClick: () => void,
+): void {
+  const previousMouseDown = lNode.onMouseDown;
+  lNode.onMouseDown = (e: MouseEvent, pos: [number, number]): boolean | undefined => {
+    const margin = 15;
+    const widgetHeight = (window as any).LiteGraph?.NODE_WIDGET_HEIGHT ?? 20;
+    const widgetTop = typeof widget.last_y === "number"
+      ? widget.last_y
+      : ((lNode.widgets_start_y ?? (NODE_TITLE_HEIGHT + 8)) as number);
+    const widgetBottom = widgetTop + widgetHeight;
+    const widgetLeft = margin;
+    const widgetRight = (lNode.size?.[0] ?? 0) - margin;
+
+    if (
+      pos[0] >= widgetLeft
+      && pos[0] <= widgetRight
+      && pos[1] >= widgetTop
+      && pos[1] <= widgetBottom
+    ) {
+      e.preventDefault();
+      e.stopPropagation();
+      onClick();
+      return true;
+    }
+
+    return previousMouseDown?.(e, pos);
+  };
+}
+
+async function showActiveBotAdapterPicker(
+  connections: Array<{ connection_id: string; name: string; ws_url: string }>,
+  selectedId: string,
+): Promise<string | null> {
+  ensureDialogStyles();
+  const { overlay, dialog, close } = openOverlay();
+  dialog.style.minWidth = "360px";
+  dialog.style.maxWidth = "420px";
+
+  const title = document.createElement("h3");
+  title.textContent = "选择 IMS Bot Adapter";
+  dialog.appendChild(title);
+
+  const list = document.createElement("div");
+  list.style.cssText = "display:flex;flex-direction:column;gap:8px;margin-top:12px;";
+
+  const allItems = [
+    { connection_id: CONNECTION_PLACEHOLDER_VALUE, name: "不选择", ws_url: "" },
+    ...connections,
+  ];
+
+  if (allItems.length === 1) {
+    const empty = document.createElement("div");
+    empty.className = "zh-hint";
+    empty.textContent = "当前没有已激活的 Bot Adapter。";
+    dialog.appendChild(empty);
+  } else {
+    for (const item of allItems) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = item.connection_id === CONNECTION_PLACEHOLDER_VALUE
+        ? item.name
+        : `${item.name} (${item.ws_url})`;
+      button.style.cssText = "text-align:left;";
+      if (item.connection_id === selectedId) {
+        button.className = "primary";
+      }
+      button.addEventListener("click", () => {
+        close();
+        resolvePromise(item.connection_id);
+      });
+      list.appendChild(button);
+    }
+    dialog.appendChild(list);
+  }
+
+  const footer = document.createElement("div");
+  footer.className = "zh-buttons";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "取消";
+  footer.appendChild(cancelBtn);
+  dialog.appendChild(footer);
+
+  let resolved = false;
+  const resolvePromise = (value: string | null) => {
+    if (resolved) return;
+    resolved = true;
+    resolver(value);
+  };
+  cancelBtn.addEventListener("click", () => {
+    close();
+    resolvePromise(null);
+  });
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) {
+      close();
+      resolvePromise(null);
+    }
+  });
+
+  let resolver: (value: string | null) => void = () => {};
+  return new Promise<string | null>((resolve) => {
+    resolver = resolve;
+  });
 }

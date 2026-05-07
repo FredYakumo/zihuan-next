@@ -1,13 +1,11 @@
-use ims_bot_adapter::adapter::BotAdapter;
-use ims_bot_adapter::{build_ims_bot_adapter, parse_ims_bot_adapter_connection};
+use ims_bot_adapter::active_adapter_manager::ActiveAdapterManager;
 use serde_json::Value;
 use std::collections::HashMap;
 use storage_handler::{
     build_mysql_ref, build_redis_ref, build_s3_ref, build_tavily_ref, build_weaviate_ref,
-    find_connection, load_connections, ConnectionConfig, ConnectionKind,
+    load_connections, ConnectionConfig,
 };
-use tokio::task::JoinHandle;
-use zihuan_core::error::{Error, Result};
+use zihuan_core::error::Result;
 use zihuan_graph_engine::data_value::DataType;
 use zihuan_graph_engine::function_graph::{
     embedded_function_config_from_node, FUNCTION_CONFIG_PORT,
@@ -65,7 +63,7 @@ pub struct RuntimeInlineValue {
 pub struct PreparedExecutionContext {
     pub definition: NodeGraphDefinition,
     pub runtime_inline_values: Vec<RuntimeInlineValue>,
-    pub background_tasks: Vec<JoinHandle<()>>,
+    pub background_tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
 pub async fn prepare_execution_context(
@@ -143,7 +141,7 @@ async fn resolve_connection_hyperparameter(
     data_type: &DataType,
     connection_id: &str,
     connections: &[ConnectionConfig],
-) -> Result<Option<(DataValue, Option<JoinHandle<()>>)>> {
+) -> Result<Option<(DataValue, Option<tokio::task::JoinHandle<()>>)>> {
     match data_type {
         DataType::MySqlRef => build_mysql_ref(Some(connection_id), connections)
             .await
@@ -157,40 +155,18 @@ async fn resolve_connection_hyperparameter(
         DataType::S3Ref => build_s3_ref(Some(connection_id), connections)
             .await
             .map(|value| value.map(|value| (DataValue::S3Ref(value), None))),
-        DataType::BotAdapterRef => build_ims_bot_adapter_ref(connection_id, connections)
+        DataType::BotAdapterRef => build_ims_bot_adapter_ref(connection_id)
             .await
-            .map(|value| value.map(|value| (value.0, Some(value.1)))),
+            .map(|value| value.map(|value| (value, None))),
         DataType::TavilyRef => build_tavily_ref(Some(connection_id), connections)
             .map(|value| value.map(|value| (DataValue::TavilyRef(value), None))),
         _ => Ok(None),
     }
 }
 
-async fn build_ims_bot_adapter_ref(
-    connection_id: &str,
-    connections: &[ConnectionConfig],
-) -> Result<Option<(DataValue, JoinHandle<()>)>> {
-    let connection = find_connection(connections, connection_id)?;
-    let ConnectionKind::BotAdapter(ims_bot_adapter) = &connection.kind else {
-        return Err(Error::ValidationError(format!(
-            "connection '{}' is not a bot adapter connection",
-            connection.name
-        )));
-    };
-    let ims_bot_adapter = parse_ims_bot_adapter_connection(ims_bot_adapter)?;
-
-    let adapter = build_ims_bot_adapter(&ims_bot_adapter, None).await;
-
-    let adapter_for_task = adapter.clone();
-    let task = tokio::spawn(async move {
-        if let Err(err) = BotAdapter::start(adapter_for_task).await {
-            log::error!(
-                "[graph-exec] bot adapter hyperparameter exited with error: {}",
-                err
-            );
-        }
-    });
-
-    let handle: zihuan_core::ims_bot_adapter::BotAdapterHandle = adapter;
-    Ok(Some((DataValue::BotAdapterRef(handle), task)))
+async fn build_ims_bot_adapter_ref(connection_id: &str) -> Result<Option<DataValue>> {
+    let handle = ActiveAdapterManager::shared()
+        .get_active_bot_adapter_handle(connection_id)
+        .await?;
+    Ok(Some(DataValue::BotAdapterRef(handle)))
 }

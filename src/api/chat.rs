@@ -136,10 +136,8 @@ pub async fn stream_chat(req: &mut Request, res: &mut Response, depot: &mut Depo
         CONTENT_TYPE,
         HeaderValue::from_static("text/event-stream; charset=utf-8"),
     );
-    res.headers_mut().insert(
-        CACHE_CONTROL,
-        HeaderValue::from_static("no-cache"),
-    );
+    res.headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
     res.body = receiver;
 
     tokio::spawn(execute_chat_streaming(state, body, sender));
@@ -197,7 +195,8 @@ async fn execute_chat_streaming(
     let running_agent = match state.agent_manager.running_agent(&agent_id) {
         Some(agent) => agent,
         None => {
-            let event = json!({ "type": "error", "error": format!("agent '{}' is not running", agent_id) });
+            let event =
+                json!({ "type": "error", "error": format!("agent '{}' is not running", agent_id) });
             let _ = sender.send_data(format!("data: {event}\n\n")).await;
             return;
         }
@@ -216,7 +215,8 @@ async fn execute_chat_streaming(
 
     messages = sanitize_messages(messages);
     if messages.is_empty() {
-        let event = json!({ "type": "error", "error": "messages must not be empty after sanitization" });
+        let event =
+            json!({ "type": "error", "error": "messages must not be empty after sanitization" });
         let _ = sender.send_data(format!("data: {event}\n\n")).await;
         return;
     }
@@ -237,7 +237,11 @@ async fn execute_chat_streaming(
         "session_id": session_id,
         "message_id": assistant_message_id,
     });
-    if sender.send_data(format!("data: {start_event}\n\n")).await.is_err() {
+    if sender
+        .send_data(format!("data: {start_event}\n\n"))
+        .await
+        .is_err()
+    {
         return;
     }
 
@@ -263,7 +267,11 @@ async fn execute_chat_streaming(
                 "message_id": assistant_message_id,
                 "token": token,
             });
-            if sender.send_data(format!("data: {delta_event}\n\n")).await.is_err() {
+            if sender
+                .send_data(format!("data: {delta_event}\n\n"))
+                .await
+                .is_err()
+            {
                 break;
             }
         }
@@ -291,7 +299,8 @@ async fn execute_chat_streaming(
             return;
         }
         Err(err) => {
-            let event = json!({ "type": "error", "error": format!("failed to join chat task: {err}") });
+            let event =
+                json!({ "type": "error", "error": format!("failed to join chat task: {err}") });
             let _ = sender.send_data(format!("data: {event}\n\n")).await;
             return;
         }
@@ -453,7 +462,9 @@ fn load_chat_sessions(filter_agent_id: Option<&str>) -> Result<Vec<ChatSessionSu
             agent_id: first_record.as_ref().map(|r| r.agent_id.clone()),
             agent_name: first_record.as_ref().map(|r| r.agent_name.clone()),
             agent_type: first_record.as_ref().map(|r| r.agent_type.clone()),
-            agent_avatar_url: first_record.as_ref().and_then(|r| r.agent_avatar_url.clone()),
+            agent_avatar_url: first_record
+                .as_ref()
+                .and_then(|r| r.agent_avatar_url.clone()),
         });
     }
 

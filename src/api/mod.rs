@@ -47,6 +47,18 @@ pub fn build_router(
                 .push(
                     Router::with_path("connections")
                         .get(config::connections::list_connections)
+                        .push(
+                            Router::with_path("active-bot-adapters")
+                                .get(config::connections::list_active_bot_adapters),
+                        )
+                        .push(
+                            Router::with_path("runtime-instances")
+                                .get(config::connections::list_runtime_instances)
+                                .push(
+                                    Router::with_path("<instance_id>/close")
+                                        .post(config::connections::close_runtime_instance),
+                                ),
+                        )
                         .post(config::connections::create_connection)
                         .push(
                             Router::with_path("<id>")
@@ -141,10 +153,7 @@ pub fn build_router(
             Router::with_path("chat")
                 .push(Router::with_path("stream").post(chat::stream_chat))
                 .push(Router::with_path("sessions").get(chat::list_chat_sessions))
-                .push(
-                    Router::with_path("sessions/<session_id>")
-                        .delete(chat::delete_chat_session),
-                )
+                .push(Router::with_path("sessions/<session_id>").delete(chat::delete_chat_session))
                 .push(
                     Router::with_path("sessions/<session_id>/messages")
                         .get(chat::get_chat_session_messages),

@@ -2,6 +2,7 @@ import { graphs, system, type ConnectionConfig } from "../../api/client";
 import type { GraphMetadata, GraphVariable, HyperParameter } from "../../api/types";
 import { ensureDialogStyles, openOverlay, showErrorDialog } from "./base";
 import { dataTypeSelect } from "./data_types";
+import { buildPortListEditor } from "./shared";
 
 export const HP_TYPES = [
   "String",
@@ -113,6 +114,71 @@ export async function openGraphMetadataDialog(
   dialog.appendChild(btns);
 
   setTimeout(() => nameEl.focus(), 0);
+}
+
+export async function openGraphIODialog(
+  sessionId: string,
+  onSaved: () => void,
+): Promise<void> {
+  ensureDialogStyles();
+  const { dialog, close } = openOverlay();
+  dialog.style.minWidth = "720px";
+
+  const title = document.createElement("h3");
+  title.textContent = "编辑节点图输入/输出";
+  dialog.appendChild(title);
+
+  const hint = document.createElement("div");
+  hint.className = "zh-hint";
+  hint.textContent = "这里定义主节点图的固定输入和输出列表；保存后会自动同步不可删除的“节点图输入/节点图输出”边界节点。";
+  dialog.appendChild(hint);
+
+  const graph = await graphs.get(sessionId);
+
+  const inputsSection = document.createElement("div");
+  const inputsLabel = document.createElement("div");
+  inputsLabel.className = "zh-section-label";
+  inputsLabel.textContent = "输入列表";
+  inputsSection.appendChild(inputsLabel);
+  dialog.appendChild(inputsSection);
+  const readInputs = buildPortListEditor(inputsSection, graph.graph_inputs ?? []);
+
+  const outputsSection = document.createElement("div");
+  outputsSection.style.marginTop = "12px";
+  const outputsLabel = document.createElement("div");
+  outputsLabel.className = "zh-section-label";
+  outputsLabel.textContent = "输出列表";
+  outputsSection.appendChild(outputsLabel);
+  dialog.appendChild(outputsSection);
+  const readOutputs = buildPortListEditor(outputsSection, graph.graph_outputs ?? []);
+
+  const btns = document.createElement("div");
+  btns.className = "zh-buttons";
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "取消";
+  cancelBtn.addEventListener("click", close);
+
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "primary";
+  saveBtn.textContent = "保存";
+  saveBtn.addEventListener("click", async () => {
+    try {
+      await graphs.put(sessionId, {
+        ...graph,
+        graph_inputs: readInputs(),
+        graph_outputs: readOutputs(),
+      });
+      onSaved();
+      close();
+    } catch (e) {
+      showErrorDialog("保存节点图输入/输出失败: " + (e as Error).message);
+    }
+  });
+
+  btns.appendChild(cancelBtn);
+  btns.appendChild(saveBtn);
+  dialog.appendChild(btns);
 }
 
 export async function openHyperparametersDialog(

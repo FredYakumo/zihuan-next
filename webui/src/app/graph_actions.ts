@@ -2,6 +2,7 @@ import { fileIO, graphs, tasks, workflows as workflowsApi } from "../api/client"
 import type { NodeTypeInfo } from "../api/types";
 import type { ZihuanCanvas } from "../graph/canvas";
 import {
+  openGraphIODialog,
   openGraphMetadataDialog,
   openHyperparametersDialog,
   openVariablesDialog,
@@ -234,6 +235,23 @@ export class GraphActions {
     }
     await openGraphMetadataDialog(activeTabId, () => {
       this.options.tabs.setTabDirty(activeTabId, true);
+    });
+  }
+
+  async openGraphIO(): Promise<void> {
+    const activeTabId = this.options.tabs.getActiveTabId();
+    if (!activeTabId) {
+      showErrorDialog("请先打开或新建一个节点图。");
+      return;
+    }
+    await this.options.canvas.syncInlineWidgetValues();
+    await this.options.canvas.flushPendingWidgetMutations();
+    if (this.options.canvas.isInSubgraph) {
+      await this.options.canvas.flushSubgraphToRoot();
+    }
+    await openGraphIODialog(activeTabId, () => {
+      this.options.tabs.setTabDirty(activeTabId, true);
+      this.options.canvas.reloadCurrentSession().catch(console.error);
     });
   }
 }

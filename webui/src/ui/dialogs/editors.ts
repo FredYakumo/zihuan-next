@@ -328,7 +328,7 @@ export function openFunctionSignatureEditor(
     inputs: ((nodeDef.inline_values?.["function_config"] as EmbeddedFunctionConfig | undefined)?.inputs) ?? [],
     outputs: ((nodeDef.inline_values?.["function_config"] as EmbeddedFunctionConfig | undefined)?.outputs) ?? [],
     subgraph: ((nodeDef.inline_values?.["function_config"] as EmbeddedFunctionConfig | undefined)?.subgraph) ?? {
-      nodes: [], edges: [], hyperparameter_groups: [], hyperparameters: [], variables: [],
+      nodes: [], edges: [], graph_inputs: [], graph_outputs: [], hyperparameter_groups: [], hyperparameters: [], variables: [],
     } as any,
   };
 
@@ -462,6 +462,8 @@ export function openBrainToolsEditor(
         subgraph: {
           nodes: [],
           edges: [],
+          graph_inputs: [],
+          graph_outputs: [],
           hyperparameter_groups: [],
           hyperparameters: [],
           variables: [],

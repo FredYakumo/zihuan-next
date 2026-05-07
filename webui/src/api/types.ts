@@ -124,6 +124,8 @@ export interface GraphMetadata {
 export interface NodeGraphDefinition {
   nodes: NodeDefinition[];
   edges: EdgeDefinition[];
+  graph_inputs: Array<{ name: string; data_type: DataTypeMetaData }>;
+  graph_outputs: Array<{ name: string; data_type: DataTypeMetaData }>;
   hyperparameter_groups: string[];
   hyperparameters: HyperParameter[];
   variables: GraphVariable[];

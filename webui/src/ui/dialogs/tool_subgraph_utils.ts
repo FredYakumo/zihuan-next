@@ -194,6 +194,8 @@ export function ensureToolSubgraphSignature(
   const subgraph = cloneGraph(tool.subgraph ?? {
     nodes: [],
     edges: [],
+    graph_inputs: [],
+    graph_outputs: [],
     hyperparameter_groups: [],
     hyperparameters: [],
     variables: [],
@@ -202,6 +204,8 @@ export function ensureToolSubgraphSignature(
   subgraph.hyperparameter_groups ??= [];
   subgraph.hyperparameters ??= [];
   subgraph.variables ??= [];
+  subgraph.graph_inputs ??= [];
+  subgraph.graph_outputs ??= [];
   subgraph.metadata ??= defaultGraphMetadata();
 
   const inputSignature = getToolInputSignature(ownerNodeType, sharedInputs, tool);

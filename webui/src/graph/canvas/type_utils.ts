@@ -20,6 +20,8 @@ export function isNodeGraphDefinitionLike(value: unknown): value is NodeGraphDef
   const graph = value as Partial<NodeGraphDefinition>;
   return Array.isArray(graph.nodes)
     && Array.isArray(graph.edges)
+    && (graph.graph_inputs === undefined || Array.isArray(graph.graph_inputs))
+    && (graph.graph_outputs === undefined || Array.isArray(graph.graph_outputs))
     && Array.isArray(graph.hyperparameter_groups)
     && Array.isArray(graph.hyperparameters)
     && Array.isArray(graph.variables);

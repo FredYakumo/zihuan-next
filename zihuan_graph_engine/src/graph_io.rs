@@ -14,6 +14,7 @@ use crate::function_graph::{
     default_embedded_function_config, embedded_function_config_from_node,
     sync_function_node_definition, sync_function_subgraph_signature,
 };
+use crate::graph_boundary::sync_root_graph_io;
 use crate::{DataValue, Node, NodeGraph, Port};
 use zihuan_core::error::Result;
 
@@ -95,6 +96,10 @@ fn default_hyperparameter_group() -> String {
 pub struct NodeGraphDefinition {
     pub nodes: Vec<NodeDefinition>,
     pub edges: Vec<EdgeDefinition>,
+    #[serde(default)]
+    pub graph_inputs: Vec<crate::function_graph::FunctionPortDef>,
+    #[serde(default)]
+    pub graph_outputs: Vec<crate::function_graph::FunctionPortDef>,
     #[serde(default)]
     pub hyperparameter_groups: Vec<String>,
     #[serde(default)]
@@ -225,10 +230,20 @@ pub fn load_graph_definition_from_json_with_migration(
         .replace(
             "\"node_type\":\"qq_message_agent\"",
             "\"node_type\":\"qq_chat_agent\"",
+        )
+        .replace(
+            "\"node_type\": \"weaviate_image_collection\"",
+            "\"node_type\": \"weaviate\"",
+        )
+        .replace(
+            "\"node_type\":\"weaviate_image_collection\"",
+            "\"node_type\":\"weaviate\"",
         );
     let mut graph: NodeGraphDefinition = serde_json::from_str(&content)?;
+    migrate_runtime_connection_config_keys(&mut graph);
     let before_refresh = serde_json::to_value(&graph).ok();
     refresh_port_types(&mut graph);
+    sync_root_graph_io(&mut graph);
     let migrated = before_refresh
         .and_then(|before| {
             serde_json::to_value(&graph)
@@ -237,6 +252,21 @@ pub fn load_graph_definition_from_json_with_migration(
         })
         .unwrap_or(false);
     Ok(LoadedGraphDefinition { graph, migrated })
+}
+
+fn migrate_runtime_connection_config_keys(graph: &mut NodeGraphDefinition) {
+    const CONFIG_AWARE_NODES: &[&str] = &["mysql", "rustfs", "weaviate", "ims_bot_adapter_provider"];
+
+    for node in &mut graph.nodes {
+        if !CONFIG_AWARE_NODES.contains(&node.node_type.as_str()) {
+            continue;
+        }
+        if !node.inline_values.contains_key("config_id") {
+            if let Some(value) = node.inline_values.get("connection_id").cloned() {
+                node.inline_values.insert("config_id".to_string(), value);
+            }
+        }
+    }
 }
 
 /// Refresh port `data_type` fields in a loaded graph by looking up the canonical types from
@@ -925,7 +955,9 @@ pub fn save_graph_definition_to_json(
     path: impl AsRef<Path>,
     graph: &NodeGraphDefinition,
 ) -> Result<()> {
-    let content = serde_json::to_string_pretty(graph)?;
+    let mut graph = graph.clone();
+    sync_root_graph_io(&mut graph);
+    let content = serde_json::to_string_pretty(&graph)?;
     fs::write(path.as_ref(), content)?;
     Ok(())
 }
@@ -1336,6 +1368,8 @@ pub fn build_definition_from_graph(graph: &NodeGraph) -> NodeGraphDefinition {
     NodeGraphDefinition {
         nodes,
         edges,
+        graph_inputs: Vec::new(),
+        graph_outputs: Vec::new(),
         hyperparameter_groups: Vec::new(),
         hyperparameters: Vec::new(),
         variables: Vec::new(),

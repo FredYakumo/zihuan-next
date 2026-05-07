@@ -13,6 +13,8 @@ use crate::adapter::{BotAdapter, BotAdapterConfig, SharedBotAdapter};
 pub struct BotAdapterConnection {
     pub bot_server_url: String,
     #[serde(default)]
+    pub adapter_server_url: Option<String>,
+    #[serde(default)]
     pub bot_server_token: Option<String>,
     #[serde(default)]
     pub qq_id: Option<String>,

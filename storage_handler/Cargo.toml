@@ -15,5 +15,7 @@ reqwest = { version = "0.12.25", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
 sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "mysql", "chrono"] }
+once_cell = "1.20"
+uuid = { version = "1", features = ["v4"] }
 zihuan_core = { path = "../zihuan_core" }
 zihuan_graph_engine = { path = "../zihuan_graph_engine" }

@@ -7,7 +7,9 @@ use crate::adapter::SharedBotAdapter;
 use crate::models::event_model::{MessageEvent, MessageType, Sender};
 use crate::models::message::{AtTargetMessage, Message, PlainTextMessage};
 use crate::send_qq_message_batches::send_qq_message_batches;
-use crate::ws_action::{qq_message_list_to_json, response_message_id, response_success, ws_send_action};
+use crate::ws_action::{
+    qq_message_list_to_json, response_message_id, response_success, ws_send_action,
+};
 use log::{info, warn};
 use std::sync::Arc;
 use tokio::task::block_in_place;
@@ -56,7 +58,9 @@ fn build_outbound_event(
     let sender_user_id = match bot_id.parse::<i64>() {
         Ok(value) => value,
         Err(error) => {
-            warn!("{LOG_PREFIX} Failed to parse bot_id '{bot_id}' into i64 for persistence: {error}");
+            warn!(
+                "{LOG_PREFIX} Failed to parse bot_id '{bot_id}' into i64 for persistence: {error}"
+            );
             return None;
         }
     };

@@ -389,8 +389,9 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         AndThenNode, ArrayGetNode, AtQQTargetMessageNode, BinaryToImageContentPartNode,
         BooleanBranchNode, BooleanNotNode, BuildMultimodalUserMessageNode, ConcatVecNode,
         ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode,
-        FunctionInputsNode, FunctionNode, FunctionOutputsNode, JoinStringNode, JsonExtractNode,
-        JsonParserNode, JsonToQQMessageVecNode, MessageContentNode, MessageListDataNode,
+        FunctionInputsNode, FunctionNode, FunctionOutputsNode, GraphInputsNode,
+        GraphOutputsNode, JoinStringNode, JsonExtractNode, JsonParserNode,
+        JsonToQQMessageVecNode, MessageContentNode, MessageListDataNode,
         OpenAIMessageContentAsJsonNode, OpenAIMessageSessionCacheClearNode,
         OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode,
         OpenAIMessageSessionCacheSetNode, OpenAIMessageToStringNode, PreviewMessageListNode,
@@ -436,6 +437,20 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         "内部",
         "函数子图内部边界节点，汇总子图结果作为函数返回值",
         FunctionOutputsNode
+    );
+    register_node!(
+        "graph_inputs",
+        "节点图输入",
+        "内部",
+        "主节点图内部边界节点，将运行时参数展开为动态输出端口",
+        GraphInputsNode
+    );
+    register_node!(
+        "graph_outputs",
+        "节点图输出",
+        "内部",
+        "主节点图内部边界节点，汇总主图结果作为返回值",
+        GraphOutputsNode
     );
     register_node!(
         "conditional",

@@ -15,6 +15,7 @@ pub enum NodeType {
 #[serde(rename_all = "snake_case")]
 pub enum NodeConfigWidget {
     ConnectionSelect,
+    ActiveBotAdapterSelect,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -101,6 +102,7 @@ pub mod brain_tool_spec;
 pub mod data_value;
 pub mod database;
 pub mod function_graph;
+pub mod graph_boundary;
 pub mod graph_io;
 pub mod hyperparam_store;
 pub mod image_weaviate_persistence;

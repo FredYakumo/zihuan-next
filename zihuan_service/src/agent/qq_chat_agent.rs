@@ -17,16 +17,16 @@ use storage_handler::{
 };
 use tokio::task::JoinHandle;
 use zihuan_core::error::{Error, Result};
-use zihuan_graph_engine::brain_tool_spec::QQ_AGENT_TOOL_OUTPUT_NAME;
 use zihuan_graph_engine::data_value::EXECUTION_TASK_ID;
 use zihuan_graph_engine::data_value::{OpenAIMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
+use zihuan_graph_engine::graph_boundary::{root_graph_to_tool_subgraph, sync_root_graph_io};
 use zihuan_graph_engine::message_restore::register_mysql_ref;
 use zihuan_graph_engine::DataType;
 use zihuan_llm::agent::qq_chat_agent::{QqChatAgentService, QqChatAgentServiceConfig};
 use zihuan_llm::brain_tool::BrainToolDefinition;
 use zihuan_llm::system_config::{
-    load_llm_refs, AgentConfig, AgentToolConfig, AgentToolType, NodeGraphToolConfig,
+    load_llm_refs, AgentConfig, AgentToolConfig, AgentToolType, LlmRefConfig, NodeGraphToolConfig,
     QqChatAgentConfig,
 };
 
@@ -55,6 +55,26 @@ pub async fn spawn(
         &agent.name,
     )?;
     let llm = build_llm_model(&llm_config);
+    let intent_llm_config = resolve_llm_service_config(
+        config
+            .intent_llm_ref_id
+            .as_deref()
+            .or(config.llm_ref_id.as_deref()),
+        config.llm.as_ref(),
+        &llm_refs,
+        &agent.name,
+    )?;
+    let intent_llm = build_llm_model(&intent_llm_config);
+    let math_programming_llm_config = resolve_llm_service_config(
+        config
+            .math_programming_llm_ref_id
+            .as_deref()
+            .or(config.llm_ref_id.as_deref()),
+        config.llm.as_ref(),
+        &llm_refs,
+        &agent.name,
+    )?;
+    let math_programming_llm = build_llm_model(&math_programming_llm_config);
     let embedding_model = config.embedding.as_ref().map(build_embedding_model);
     let tavily = build_tavily_ref(Some(&config.tavily_connection_id), &connections)?
         .ok_or_else(|| Error::ValidationError("missing tavily connection".to_string()))?;
@@ -82,12 +102,12 @@ pub async fn spawn(
 
     let service = Arc::new(QqChatAgentService::new(QqChatAgentServiceConfig {
         node_id: format!("service_agent_{}", agent.id),
-        node_name: agent.name.clone(),
         bot_name: if config.bot_name.trim().is_empty() {
             agent.name.clone()
         } else {
             config.bot_name.clone()
         },
+        system_prompt: config.system_prompt.clone(),
         cache: Arc::new(OpenAIMessageSessionCacheRef::new(format!(
             "service_agent_cache_{}",
             agent.id
@@ -97,6 +117,29 @@ pub async fn spawn(
             agent.id
         ))),
         llm,
+        intent_llm,
+        math_programming_llm,
+        main_llm_display_name: resolve_llm_ref_display_name(
+            config.llm_ref_id.as_deref(),
+            &llm_refs,
+            &llm_config.model_name,
+        ),
+        intent_llm_display_name: resolve_llm_ref_display_name(
+            config
+                .intent_llm_ref_id
+                .as_deref()
+                .or(config.llm_ref_id.as_deref()),
+            &llm_refs,
+            &intent_llm_config.model_name,
+        ),
+        math_programming_llm_display_name: resolve_llm_ref_display_name(
+            config
+                .math_programming_llm_ref_id
+                .as_deref()
+                .or(config.llm_ref_id.as_deref()),
+            &llm_refs,
+            &math_programming_llm_config.model_name,
+        ),
         mysql_ref,
         weaviate_ref,
         weaviate_image_ref,
@@ -174,6 +217,17 @@ pub async fn spawn(
     })))
 }
 
+fn resolve_llm_ref_display_name(
+    llm_ref_id: Option<&str>,
+    llm_refs: &[LlmRefConfig],
+    fallback_model_name: &str,
+) -> String {
+    llm_ref_id
+        .and_then(|id| llm_refs.iter().find(|item| item.id == id))
+        .map(|item| item.name.clone())
+        .unwrap_or_else(|| fallback_model_name.to_string())
+}
+
 pub fn build_enabled_tool_definitions(
     tools: &[AgentToolConfig],
 ) -> Result<Vec<BrainToolDefinition>> {
@@ -192,7 +246,7 @@ fn build_node_graph_tool_definition(
     tool: &AgentToolConfig,
     config: &NodeGraphToolConfig,
 ) -> Result<BrainToolDefinition> {
-    let (subgraph, parameters, outputs) = match config {
+    let (mut graph, parameters, outputs) = match config {
         NodeGraphToolConfig::FilePath {
             path,
             parameters,
@@ -218,14 +272,9 @@ fn build_node_graph_tool_definition(
         } => (graph.clone(), parameters.clone(), outputs.clone()),
     };
 
-    let outputs = if outputs.is_empty() {
-        vec![FunctionPortDef {
-            name: QQ_AGENT_TOOL_OUTPUT_NAME.to_string(),
-            data_type: DataType::String,
-        }]
-    } else {
-        outputs
-    };
+    sync_root_graph_io(&mut graph);
+    validate_tool_graph_contract(tool, &graph, &parameters, &outputs)?;
+    let subgraph = root_graph_to_tool_subgraph(&graph);
 
     Ok(BrainToolDefinition {
         id: tool.id.clone(),
@@ -248,4 +297,74 @@ fn load_graph_from_path(
     }
     let loaded = zihuan_graph_engine::load_graph_definition_from_json_with_migration(&path)?;
     Ok(loaded.graph)
+}
+
+fn validate_tool_graph_contract(
+    tool: &AgentToolConfig,
+    graph: &zihuan_graph_engine::graph_io::NodeGraphDefinition,
+    parameters: &[zihuan_llm::brain_tool::ToolParamDef],
+    outputs: &[FunctionPortDef],
+) -> Result<()> {
+    if graph.graph_inputs.is_empty() {
+        return Err(Error::ValidationError(format!(
+            "agent tool '{}' 引用的节点图未定义输入列表",
+            tool.name
+        )));
+    }
+    if graph.graph_outputs.is_empty() {
+        return Err(Error::ValidationError(format!(
+            "agent tool '{}' 引用的节点图未定义输出列表",
+            tool.name
+        )));
+    }
+    if outputs.is_empty() {
+        return Err(Error::ValidationError(format!(
+            "agent tool '{}' 未定义 outputs，必须与节点图输出匹配",
+            tool.name
+        )));
+    }
+
+    for port in &graph.graph_inputs {
+        if !matches!(
+            port.data_type,
+            DataType::Integer | DataType::Float | DataType::String | DataType::Boolean
+        ) {
+            return Err(Error::ValidationError(format!(
+                "agent tool '{}' 的节点图输入 '{}' 类型必须是基础类型 int/float/string/boolean，实际为 {}",
+                tool.name, port.name, port.data_type
+            )));
+        }
+    }
+
+    if !same_param_signature(parameters, &graph.graph_inputs) {
+        return Err(Error::ValidationError(format!(
+            "agent tool '{}' 的 parameters 与节点图输入定义不匹配",
+            tool.name
+        )));
+    }
+    if !same_port_signature(outputs, &graph.graph_outputs) {
+        return Err(Error::ValidationError(format!(
+            "agent tool '{}' 的 outputs 与节点图输出定义不匹配",
+            tool.name
+        )));
+    }
+
+    Ok(())
+}
+
+fn same_param_signature(
+    parameters: &[zihuan_llm::brain_tool::ToolParamDef],
+    inputs: &[FunctionPortDef],
+) -> bool {
+    parameters.len() == inputs.len()
+        && parameters.iter().zip(inputs).all(|(param, input)| {
+            param.name.trim() == input.name.trim() && param.data_type == input.data_type
+        })
+}
+
+fn same_port_signature(left: &[FunctionPortDef], right: &[FunctionPortDef]) -> bool {
+    left.len() == right.len()
+        && left.iter().zip(right).all(|(a, b)| {
+            a.name.trim() == b.name.trim() && a.data_type == b.data_type
+        })
 }

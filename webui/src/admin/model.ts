@@ -33,6 +33,7 @@ export interface ConnectionFormState {
   rustfs_public_base_url: string;
   rustfs_path_style: boolean;
   bot_server_url: string;
+  adapter_server_url: string;
   bot_server_token: string;
   qq_id: string;
   tavily_api_token: string;
@@ -69,7 +70,10 @@ export interface AgentFormState {
   ims_bot_adapter_connection_id: string;
   rustfs_connection_id: string;
   bot_name: string;
+  system_prompt: string;
   llm_ref_id: string;
+  intent_llm_ref_id: string;
+  math_programming_llm_ref_id: string;
   tavily_connection_id: string;
   mysql_connection_id: string;
   weaviate_connection_id: string;
@@ -147,6 +151,7 @@ export function defaultConnectionForm(): ConnectionFormState {
     rustfs_public_base_url: "",
     rustfs_path_style: true,
     bot_server_url: "",
+    adapter_server_url: "",
     bot_server_token: "",
     qq_id: "",
     tavily_api_token: "",
@@ -172,7 +177,7 @@ export function defaultToolForm(): ToolFormState {
     targetType: "workflow_set",
     workflowName: "",
     filePath: "",
-    inlineGraphJson: "{\n  \"nodes\": [],\n  \"edges\": []\n}",
+    inlineGraphJson: "{\n  \"nodes\": [],\n  \"edges\": [],\n  \"graph_inputs\": [],\n  \"graph_outputs\": [],\n  \"hyperparameter_groups\": [],\n  \"hyperparameters\": [],\n  \"variables\": [],\n  \"metadata\": { \"name\": null, \"description\": null, \"version\": null }\n}",
     parametersJson: "[]",
     outputsJson: "[]",
   };
@@ -189,7 +194,10 @@ export function defaultAgentForm(): AgentFormState {
     ims_bot_adapter_connection_id: "",
     rustfs_connection_id: "",
     bot_name: "",
+    system_prompt: "",
     llm_ref_id: "",
+    intent_llm_ref_id: "",
+    math_programming_llm_ref_id: "",
     tavily_connection_id: "",
     mysql_connection_id: "",
     weaviate_connection_id: "",
@@ -235,6 +243,7 @@ export function connectionFormFromConfig(connection: ConnectionConfig): Connecti
     case "bot_adapter":
     case "ims_bot_adapter":
       form.bot_server_url = String(connection.kind.bot_server_url ?? "");
+      form.adapter_server_url = String(connection.kind.adapter_server_url ?? "");
       form.bot_server_token = String(connection.kind.bot_server_token ?? "");
       form.qq_id = String(connection.kind.qq_id ?? "");
       break;
@@ -315,6 +324,7 @@ export function buildConnectionPayload(form: ConnectionFormState): {
       payload.kind = {
         type: "bot_adapter",
         bot_server_url: form.bot_server_url.trim(),
+        adapter_server_url: form.adapter_server_url.trim() || null,
         bot_server_token: form.bot_server_token.trim() || null,
         qq_id: form.qq_id.trim() || null,
       };
@@ -363,7 +373,20 @@ export function toolFormFromConfig(tool: AgentToolConfig): ToolFormState {
   } else if (targetType === "file_path") {
     form.filePath = String(nodeGraph.path ?? "");
   } else if (targetType === "inline_graph") {
-    form.inlineGraphJson = JSON.stringify(nodeGraph.graph ?? { nodes: [], edges: [] }, null, 2);
+    form.inlineGraphJson = JSON.stringify(
+      nodeGraph.graph ?? {
+        nodes: [],
+        edges: [],
+        graph_inputs: [],
+        graph_outputs: [],
+        hyperparameter_groups: [],
+        hyperparameters: [],
+        variables: [],
+        metadata: { name: null, description: null, version: null },
+      },
+      null,
+      2,
+    );
   }
   return form;
 }
@@ -382,7 +405,10 @@ export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): Agen
     form.ims_bot_adapter_connection_id = String(agentType.ims_bot_adapter_connection_id ?? "");
     form.rustfs_connection_id = String(agentType.rustfs_connection_id ?? "");
     form.bot_name = String(agentType.bot_name ?? "");
+    form.system_prompt = String(agentType.system_prompt ?? "");
     form.llm_ref_id = String(agentType.llm_ref_id ?? "");
+    form.intent_llm_ref_id = String(agentType.intent_llm_ref_id ?? "");
+    form.math_programming_llm_ref_id = String(agentType.math_programming_llm_ref_id ?? "");
     form.tavily_connection_id = String(agentType.tavily_connection_id ?? "");
     form.mysql_connection_id = String(agentType.mysql_connection_id ?? "");
     form.weaviate_connection_id = String(agentType.weaviate_connection_id ?? "");
@@ -470,7 +496,10 @@ export function buildAgentPayload(form: AgentFormState): {
         ims_bot_adapter_connection_id: form.ims_bot_adapter_connection_id,
         rustfs_connection_id: form.rustfs_connection_id || null,
         bot_name: form.bot_name.trim(),
+        system_prompt: form.system_prompt.trim() || null,
         llm_ref_id: form.llm_ref_id || null,
+        intent_llm_ref_id: form.intent_llm_ref_id || null,
+        math_programming_llm_ref_id: form.math_programming_llm_ref_id || null,
         tavily_connection_id: form.tavily_connection_id,
         embedding: null,
         mysql_connection_id: form.mysql_connection_id || null,

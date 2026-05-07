@@ -133,7 +133,9 @@ impl AgentManager {
                 agent_id
             ))
         })?;
-        agent.infer_response_streaming_with_trace(messages, token_tx).await
+        agent
+            .infer_response_streaming_with_trace(messages, token_tx)
+            .await
     }
 
     pub async fn start_agent(

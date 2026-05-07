@@ -1,15 +1,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use sqlx::mysql::MySqlPoolOptions;
 use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::data_value::{MySqlConfig, RedisConfig, TavilyRef};
 use zihuan_graph_engine::database::weaviate::WeaviateRef;
-use zihuan_graph_engine::database::{WeaviateImageCollectionNode, WeaviateNode};
 use zihuan_graph_engine::object_storage::S3Ref;
-use zihuan_graph_engine::{DataValue, Node};
+use zihuan_graph_engine::DataValue;
 
-use crate::{ConnectionConfig, ConnectionKind};
+use crate::{ConnectionConfig, ConnectionKind, RuntimeStorageConnectionManager};
 
 pub fn find_connection<'a>(
     connections: &'a [ConnectionConfig],
@@ -28,25 +26,12 @@ pub async fn build_mysql_ref(
     let Some(connection_id) = connection_id else {
         return Ok(None);
     };
-    let connection = find_connection(connections, connection_id)?;
-    let ConnectionKind::Mysql(mysql) = &connection.kind else {
-        return Err(Error::ValidationError(format!(
-            "connection '{}' is not a mysql connection",
-            connection.name
-        )));
-    };
-    let pool = MySqlPoolOptions::new()
-        .max_connections(10)
-        .min_connections(1)
-        .connect(&mysql.url)
-        .await?;
-    Ok(Some(Arc::new(MySqlConfig {
-        url: Some(mysql.url.clone()),
-        reconnect_max_attempts: None,
-        reconnect_interval_secs: None,
-        pool: Some(pool),
-        runtime_handle: Some(tokio::runtime::Handle::current()),
-    })))
+    let _ = connections;
+    Ok(Some(
+        RuntimeStorageConnectionManager::shared()
+            .get_or_create_mysql_ref(connection_id)
+            .await?,
+    ))
 }
 
 pub fn build_redis_ref(
@@ -75,8 +60,6 @@ pub fn build_weaviate_ref(
     connections: &[ConnectionConfig],
     image_collection: bool,
 ) -> Result<Option<Arc<WeaviateRef>>> {
-    use std::collections::HashMap;
-
     let Some(connection_id) = connection_id else {
         return Ok(None);
     };
@@ -88,32 +71,11 @@ pub fn build_weaviate_ref(
         )));
     };
 
-    let mut node: Box<dyn Node> = if image_collection {
-        Box::new(WeaviateImageCollectionNode::new(
-            "__service__",
-            "__service__",
-        ))
-    } else {
-        Box::new(WeaviateNode::new("__service__", "__service__"))
-    };
-
-    let outputs = node.execute(HashMap::from([
-        (
-            "base_url".to_string(),
-            DataValue::String(weaviate.base_url.clone()),
-        ),
-        (
-            "class_name".to_string(),
-            DataValue::String(weaviate.class_name.clone()),
-        ),
-    ]))?;
-
-    match outputs.get("weaviate_ref") {
-        Some(DataValue::WeaviateRef(reference)) => Ok(Some(reference.clone())),
-        _ => Err(Error::StringError(
-            "weaviate node did not return weaviate_ref".to_string(),
-        )),
-    }
+    let _ = image_collection;
+    let _ = weaviate;
+    Ok(Some(zihuan_core::runtime::block_async(
+        RuntimeStorageConnectionManager::shared().get_or_create_weaviate_ref(connection_id),
+    )?))
 }
 
 pub async fn build_s3_ref(
@@ -123,27 +85,12 @@ pub async fn build_s3_ref(
     let Some(connection_id) = connection_id else {
         return Ok(None);
     };
-    let connection = find_connection(connections, connection_id)?;
-    let ConnectionKind::Rustfs(rustfs) = &connection.kind else {
-        return Err(Error::ValidationError(format!(
-            "connection '{}' is not a rustfs connection",
-            connection.name
-        )));
-    };
-
-    let s3_ref = Arc::new(S3Ref {
-        endpoint: rustfs.endpoint.clone(),
-        bucket: rustfs.bucket.clone(),
-        access_key: rustfs.access_key.clone(),
-        secret_key: rustfs.secret_key.clone(),
-        region: rustfs.region.clone(),
-        public_base_url: rustfs.public_base_url.clone(),
-        path_style: rustfs.path_style,
-    });
-
-    ensure_endpoint_bypasses_proxy(&s3_ref.endpoint);
-    s3_ref.ensure_bucket_exists().await?;
-    Ok(Some(s3_ref))
+    let _ = connections;
+    Ok(Some(
+        RuntimeStorageConnectionManager::shared()
+            .get_or_create_s3_ref(connection_id)
+            .await?,
+    ))
 }
 
 pub fn build_tavily_ref(

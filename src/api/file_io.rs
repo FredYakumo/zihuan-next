@@ -284,6 +284,7 @@ pub async fn open_file(req: &mut Request, res: &mut Response, depot: &mut Depot)
                 mut graph,
                 migrated,
             } = loaded;
+            zihuan_graph_engine::graph_boundary::sync_root_graph_io(&mut graph);
             zihuan_graph_engine::ensure_positions(&mut graph);
             let session_id = uuid::Uuid::new_v4().to_string();
             let session =
@@ -385,6 +386,7 @@ pub async fn upload_graph(req: &mut Request, res: &mut Response, depot: &mut Dep
         };
 
     let mut graph = graph;
+    zihuan_graph_engine::graph_boundary::sync_root_graph_io(&mut graph);
     zihuan_graph_engine::ensure_positions(&mut graph);
     let session_id = uuid::Uuid::new_v4().to_string();
     let session = super::state::GraphSession::new(session_id.clone(), graph, None);

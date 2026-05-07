@@ -16,6 +16,7 @@ export function buildToolbar(
   onValidate: () => void,
   onBrowseWorkflows: () => void,
   onEditGraphInfo: () => void,
+  onEditGraphIO: () => void,
   onOpenTaskManager: () => void,
   onStopTask: (taskId: string) => void,
   onBackToConsole: () => void,
@@ -49,6 +50,7 @@ export function buildToolbar(
     { label: "保存为工作流集", onClick: onSaveToWorkflows, separator: true },
     { label: "浏览工作流集", onClick: onBrowseWorkflows },
     { label: "编辑节点图信息...", onClick: onEditGraphInfo },
+    { label: "编辑节点图输入/输出...", onClick: onEditGraphIO },
     { label: "验证", onClick: onValidate },
     { label: "返回控制台", onClick: onBackToConsole, separator: true },
   ];

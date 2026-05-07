@@ -2,8 +2,7 @@ pub mod agent;
 pub mod agent_text_similarity;
 pub mod brain_node;
 pub mod brain_tool;
-pub mod context_compact_node;
-pub mod context_compaction;
+pub mod inference_function;
 pub mod linalg;
 pub mod llm_api;
 pub mod llm_api_node;
@@ -25,9 +24,8 @@ pub use model::{InferenceParam, MessageRole, OpenAIMessage};
 pub use util::{role_to_str, str_to_role, SystemMessage, UserMessage};
 
 pub fn init_node_registry() -> Result<()> {
-    use agent::qq_chat_agent::QqChatAgent;
     use brain_node::BrainNode;
-    use context_compact_node::ContextCompactNode;
+    use inference_function::compact_message::ContextCompactNode;
     use linalg::batch_text_embedding_node::BatchTextEmbeddingNode;
     use linalg::embedding_api_node::LoadTextEmbedderNode;
     use linalg::text_embedding_node::TextEmbeddingNode;
@@ -122,13 +120,6 @@ pub fn init_node_registry() -> Result<()> {
         "AI",
         "使用 TavilyRef 执行 Tavily 搜索并输出包含标题、链接和内容的 Vec<String>",
         TavilySearchNode
-    );
-    register_node!(
-        "qq_chat_agent",
-        "QQ Chat Agent",
-        "Bot适配器",
-        "使用Brain智能体响应消息事件，智能体会结合自身状态对消息事件进行判断并做出响应。",
-        QqChatAgent
     );
 
     Ok(())

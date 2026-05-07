@@ -183,7 +183,11 @@ async fn hot_reload_agents_for_llm_ref(state: &crate::api::state::AppState, llm_
 
 fn agent_uses_llm_ref(agent: &AgentConfig, llm_ref_id: &str) -> bool {
     match &agent.agent_type {
-        AgentType::QqChat(config) => config.llm_ref_id.as_deref() == Some(llm_ref_id),
+        AgentType::QqChat(config) => {
+            config.llm_ref_id.as_deref() == Some(llm_ref_id)
+                || config.intent_llm_ref_id.as_deref() == Some(llm_ref_id)
+                || config.math_programming_llm_ref_id.as_deref() == Some(llm_ref_id)
+        }
         AgentType::HttpStream(config) => config.llm_ref_id.as_deref() == Some(llm_ref_id),
     }
 }

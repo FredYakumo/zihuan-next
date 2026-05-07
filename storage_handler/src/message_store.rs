@@ -7,11 +7,11 @@ use tokio::sync::Mutex;
 use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::data_value::{MySqlConfig, RedisConfig};
 
-use crate::ConnectionManager;
+use crate::MessageStoreConnectionAccess;
 
 /// MessageStore provides Redis-backed message storage with MySQL persistence and in-memory fallback.
 pub struct MessageStore {
-    connection_manager: ConnectionManager,
+    connection_manager: MessageStoreConnectionAccess,
     memory_store: Arc<Mutex<HashMap<String, String>>>,
     mysql_memory_store: Arc<Mutex<HashMap<String, MessageRecord>>>,
 }
@@ -40,7 +40,7 @@ pub struct MessageRecord {
 
 impl MessageStore {
     pub fn new(mysql_ref: Arc<MySqlConfig>, redis_ref: Option<Arc<RedisConfig>>) -> Self {
-        let connection_manager = ConnectionManager::new(mysql_ref, redis_ref);
+        let connection_manager = MessageStoreConnectionAccess::new(mysql_ref, redis_ref);
 
         if connection_manager.mysql_pool().is_none() {
             warn!("[MessageStore] mysql_ref has no pool. Persistent storage will fall back to memory.");

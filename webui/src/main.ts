@@ -5,6 +5,7 @@ import { bootstrapLegacyEditor } from "./legacy_editor";
 import AdminApp from "./admin/AdminApp.vue";
 import Dashboard from "./admin/view/Dashboard.vue";
 import Connections from "./admin/view/Connections.vue";
+import ConnectionManager from "./admin/view/ConnectionManager.vue";
 import Llm from "./admin/view/Llm.vue";
 import Agents from "./admin/view/Agents.vue";
 import Graphs from "./admin/view/Graphs.vue";
@@ -31,6 +32,7 @@ async function main() {
     routes: [
       { path: "/", component: Dashboard },
       { path: "/connections", component: Connections },
+      { path: "/connection-manager", component: ConnectionManager },
       { path: "/llm", component: Llm },
       { path: "/agents", component: Agents },
       { path: "/graphs", component: Graphs },

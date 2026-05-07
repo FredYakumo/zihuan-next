@@ -46,6 +46,20 @@
 
             <template v-if="form.type === 'qq_chat'">
               <div class="field">
+                <label>意图分类模型</label>
+                <select v-model="form.intent_llm_ref_id">
+                  <option value="">回退主模型</option>
+                  <option v-for="item in llm" :key="item.id" :value="item.id">{{ item.name }}</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>数学编程模型</label>
+                <select v-model="form.math_programming_llm_ref_id">
+                  <option value="">回退主模型</option>
+                  <option v-for="item in llm" :key="item.id" :value="item.id">{{ item.name }}</option>
+                </select>
+              </div>
+              <div class="field">
                 <label>Bot Adapter</label>
                 <select v-model="form.ims_bot_adapter_connection_id">
                   <option value="">请选择</option>
@@ -53,6 +67,10 @@
                 </select>
               </div>
               <div class="field"><label>Bot Name</label><input v-model="form.bot_name" /></div>
+              <div class="field-full">
+                <label>System Prompt</label>
+                <textarea v-model="form.system_prompt" placeholder="可选。会追加在 QQ Chat Agent 的通用系统规则后面。" />
+              </div>
               <div class="field">
                 <label>RustFS Connection</label>
                 <select v-model="form.rustfs_connection_id">
@@ -198,13 +216,13 @@
     </div>
 
     <section v-if="agents.length > 0" class="panel">
-      <div class="connection-grid" style="margin-top: 0;">
+      <div class="connection-grid connection-grid--agents" style="margin-top: 0;">
         <article
           v-for="agent in agents"
           :key="agent.id"
-          :class="['connection-card', { 'connection-card--editing': form.id === agent.id }]"
+          :class="['connection-card', { 'connection-card--editing': isEditingAgent(agent.id) }]"
         >
-          <template v-if="form.id === agent.id">
+          <template v-if="isEditingAgent(agent.id)">
             <div class="connection-card-header connection-card-header--stacked">
               <div class="connection-card-header-top">
                 <div class="connection-card-badges">
@@ -261,6 +279,20 @@
 
               <template v-if="form.type === 'qq_chat'">
                 <div class="key-value connection-card-edit-row">
+                  <strong>意图分类模型</strong>
+                  <select v-model="form.intent_llm_ref_id" class="connection-card-inline-input">
+                    <option value="">回退主模型</option>
+                    <option v-for="item in llm" :key="item.id" :value="item.id">{{ item.name }}</option>
+                  </select>
+                </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>数学编程模型</strong>
+                  <select v-model="form.math_programming_llm_ref_id" class="connection-card-inline-input">
+                    <option value="">回退主模型</option>
+                    <option v-for="item in llm" :key="item.id" :value="item.id">{{ item.name }}</option>
+                  </select>
+                </div>
+                <div class="key-value connection-card-edit-row">
                   <strong>Bot Adapter</strong>
                   <select v-model="form.ims_bot_adapter_connection_id" class="connection-card-inline-input">
                     <option value="">请选择</option>
@@ -270,6 +302,15 @@
                 <div class="key-value connection-card-edit-row">
                   <strong>Bot Name</strong>
                   <input v-model="form.bot_name" class="connection-card-inline-input" />
+                </div>
+                <div class="key-value connection-card-edit-row" style="align-items: flex-start;">
+                  <strong>System Prompt</strong>
+                  <textarea
+                    v-model="form.system_prompt"
+                    class="connection-card-inline-input"
+                    placeholder="可选。会追加在 QQ Chat Agent 的通用系统规则后面。"
+                    style="min-height: 110px;"
+                  />
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>RustFS</strong>
@@ -486,6 +527,7 @@ const connections = ref<ConnectionConfig[]>([]);
 const llm = ref<LlmConfig[]>([]);
 const workflows = ref<Array<{ name: string; file: string; cover_url: string | null; display_name: string | null; description: string | null; version: string | null }>>([]);
 const form = reactive<AgentFormState>(defaultAgentForm());
+const editingAgentId = ref("");
 const showCreatePicker = ref(false);
 const showCreateForm = ref(false);
 const qqChatDefaultTools = QQ_CHAT_DEFAULT_TOOLS;
@@ -500,20 +542,31 @@ function resetForm() {
   Object.assign(form, defaultAgentForm());
 }
 
+function clearEditingAgent() {
+  editingAgentId.value = "";
+}
+
+function isEditingAgent(agentId: string) {
+  return editingAgentId.value === agentId;
+}
+
 function startCreate() {
   resetForm();
+  clearEditingAgent();
   showCreatePicker.value = true;
   showCreateForm.value = false;
 }
 
 function closeCreatePicker() {
   resetForm();
+  clearEditingAgent();
   showCreatePicker.value = false;
   showCreateForm.value = false;
 }
 
 function pickCreateType(type: AgentTypeName) {
   resetForm();
+  clearEditingAgent();
   form.type = type;
   showCreatePicker.value = true;
   showCreateForm.value = true;
@@ -521,6 +574,7 @@ function pickCreateType(type: AgentTypeName) {
 
 function closeEditor() {
   resetForm();
+  clearEditingAgent();
   showCreatePicker.value = false;
   showCreateForm.value = false;
 }
@@ -540,6 +594,7 @@ async function load() {
 
 function editAgent(agent: AgentWithRuntime) {
   Object.assign(form, agentFormFromConfig(agent));
+  editingAgentId.value = agent.id;
   showCreatePicker.value = false;
   showCreateForm.value = false;
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -628,6 +683,9 @@ function summarizeAgent(agent: AgentWithRuntime): Array<{ label: string; value: 
       { label: "RustFS", value: connectionName(String(agentType.rustfs_connection_id ?? "")) || "未绑定" },
       { label: "Tavily", value: connectionName(String(agentType.tavily_connection_id ?? "")) || "未绑定" },
       { label: "Bot Name", value: String(agentType.bot_name ?? "") || "未设置" },
+      { label: "意图分类模型", value: llmRefName(String(agentType.intent_llm_ref_id ?? "")) || llmName(agent) },
+      { label: "数学编程模型", value: llmRefName(String(agentType.math_programming_llm_ref_id ?? "")) || llmName(agent) },
+      { label: "System Prompt", value: String(agentType.system_prompt ?? "").trim() ? "已配置" : "未设置" },
       { label: "Max Message", value: String(agentType.max_message_length ?? 500) },
     );
   } else {
@@ -649,7 +707,11 @@ function connectionName(id: string): string {
 function llmName(agent: AgentWithRuntime): string {
   const agentType = agent.agent_type as Record<string, unknown>;
   const llmId = String(agentType.llm_ref_id ?? "");
-  return llm.value.find((item) => item.id === llmId)?.name ?? "未绑定";
+  return llmRefName(llmId) || "未绑定";
+}
+
+function llmRefName(id: string): string {
+  return llm.value.find((item) => item.id === id)?.name ?? "";
 }
 
 function botAvatarUrl(agent: AgentWithRuntime): string {

@@ -6,13 +6,15 @@ pub mod redis;
 pub mod resource_resolver;
 pub mod rustfs;
 pub mod weaviate;
-pub mod weaviate_image_collection;
 
 use serde::{Deserialize, Serialize};
 use zihuan_core::error::Result;
 use zihuan_core::system_config::{load_section, save_section, SystemConfigSection};
 
-pub use connection_manager::ConnectionManager;
+pub use connection_manager::{
+    cleanup_runtime_storage_instances, close_runtime_storage_instance, list_runtime_storage_instances,
+    MessageStoreConnectionAccess, RuntimeStorageConnectionManager, StorageRuntimeHandle,
+};
 pub use message_store::{MessageRecord, MessageStore};
 pub use mysql::MySqlNode;
 pub use object_storage::{
@@ -26,12 +28,13 @@ pub use resource_resolver::{
 };
 pub use rustfs::RustfsNode;
 pub use weaviate::WeaviateNode;
-pub use weaviate_image_collection::WeaviateImageCollectionNode;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ConnectionConfig {
     pub id: String,
+    #[serde(default)]
+    pub config_id: Option<String>,
     pub name: String,
     #[serde(default)]
     pub enabled: bool,
@@ -91,6 +94,13 @@ fn default_tavily_timeout_secs() -> u64 {
 }
 
 impl ConnectionConfig {
+    pub fn canonical_config_id(&self) -> &str {
+        self.config_id
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or(&self.id)
+    }
+
     pub fn is_valid(&self) -> bool {
         match &self.kind {
             ConnectionKind::Tavily(tavily) => !tavily.api_token.trim().is_empty(),
@@ -107,11 +117,35 @@ impl SystemConfigSection for ConnectionsSection {
 }
 
 pub fn load_connections() -> Result<Vec<ConnectionConfig>> {
-    load_section::<ConnectionsSection>()
+    let mut connections = load_section::<ConnectionsSection>()?;
+    for connection in &mut connections {
+        if connection
+            .config_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_none()
+        {
+            connection.config_id = Some(connection.id.clone());
+        }
+        if connection.id.trim().is_empty() {
+            connection.id = connection.canonical_config_id().to_string();
+        }
+    }
+    Ok(connections)
 }
 
 pub fn save_connections(connections: Vec<ConnectionConfig>) -> Result<()> {
-    save_section::<ConnectionsSection>(&connections)
+    let normalized = connections
+        .into_iter()
+        .map(|mut connection| {
+            let canonical = connection.canonical_config_id().to_string();
+            connection.id = canonical.clone();
+            connection.config_id = Some(canonical);
+            connection
+        })
+        .collect::<Vec<_>>();
+    save_section::<ConnectionsSection>(&normalized)
 }
 
 pub fn init_node_registry() -> Result<()> {
@@ -145,17 +179,10 @@ pub fn init_node_registry() -> Result<()> {
     );
     register_node!(
         "weaviate",
-        "Weaviate消息Collection",
+        "Weaviate向量数据库",
         "数据库",
-        "从系统连接配置中选择 Weaviate 并输出消息集合 WeaviateRef 引用",
+        "从系统连接配置中选择 Weaviate 并输出 WeaviateRef 引用",
         WeaviateNode
-    );
-    register_node!(
-        "weaviate_image_collection",
-        "Weaviate图片Collection",
-        "数据库",
-        "从系统连接配置中选择 Weaviate 并输出图片集合 WeaviateRef 引用",
-        WeaviateImageCollectionNode
     );
     register_node!(
         "qq_message_list_mysql_persistence",

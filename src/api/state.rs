@@ -51,7 +51,7 @@ impl GraphSession {
         Self {
             id,
             file_path: None,
-            graph: NodeGraphDefinition::default(),
+            graph: zihuan_graph_engine::graph_boundary::default_root_graph_definition(),
             dirty: false,
         }
     }

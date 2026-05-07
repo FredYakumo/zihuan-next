@@ -335,18 +335,36 @@ function bindDrawNodeWidgets(canvas: CanvasFacade) {
               ctx.font = `${(LiteGraph as any).NODE_TEXT_SIZE ?? 14}px Arial`;
               ctx.fillText(widget.label || widget.name, widgetWidth * 0.5, widget.last_y + widgetHeight * 0.7);
             }
-          } else if ((widget.type === "text" || widget.type === "number") && showText) {
+          } else if ((widget.type === "text" || widget.type === "number" || widget.type === "combo") && showText) {
             const label = widget.label || widget.name || "";
             const labelWidth = label ? ctx.measureText(label).width + 8 : 0;
-            const maxValueWidth = Math.max(0, contentWidth - labelWidth - 20);
-            const value = widget.type === "number"
-              ? Number(widget.value).toFixed(widget.options?.precision ?? 3)
-              : String(widget.value ?? "");
+            const comboArrowWidth = widget.type === "combo" ? 14 : 0;
+            const maxValueWidth = Math.max(0, contentWidth - labelWidth - 20 - comboArrowWidth);
+            let value: string;
+            if (widget.type === "number") {
+              value = Number(widget.value).toFixed(widget.options?.precision ?? 3);
+            } else if (widget.type === "combo") {
+              let comboValue = widget.value;
+              const values = widget.options?.values;
+              if (values && values.constructor !== Array) {
+                comboValue = values[widget.value] ?? widget.value;
+              }
+              value = String(comboValue ?? "");
+            } else {
+              value = String(widget.value ?? "");
+            }
             const truncatedValue = truncateText(ctx, value, maxValueWidth);
             ctx.font = `${(LiteGraph as any).NODE_TEXT_SIZE ?? 14}px Arial`;
             ctx.textAlign = "right";
             ctx.fillStyle = widget.disabled ? c.widgetDisabled : c.widgetText;
-            ctx.fillText(truncatedValue, widgetWidth - margin * 2, widget.last_y + widgetHeight * 0.7);
+            const textRightX = widget.type === "combo"
+              ? widgetWidth - margin * 2 - comboArrowWidth
+              : widgetWidth - margin * 2;
+            ctx.fillText(truncatedValue, textRightX, widget.last_y + widgetHeight * 0.7);
+            if (widget.type === "combo" && !widget.disabled) {
+              ctx.textAlign = "right";
+              ctx.fillText("▾", widgetWidth - margin * 2, widget.last_y + widgetHeight * 0.7);
+            }
           }
         }
       }

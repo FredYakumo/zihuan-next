@@ -3,32 +3,24 @@ use std::sync::Arc;
 
 use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::database::weaviate::WeaviateRef;
-use zihuan_graph_engine::database::{
-    WeaviateImageCollectionNode as LegacyWeaviateImageCollectionNode,
-    WeaviateNode as LegacyWeaviateNode,
-};
 use zihuan_graph_engine::{DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port};
 
-use crate::{load_connections, resource_resolver};
+use crate::RuntimeStorageConnectionManager;
 
-const CONNECTION_ID_FIELD: &str = "connection_id";
+const CONFIG_ID_FIELD: &str = "config_id";
+const LEGACY_CONNECTION_ID_FIELD: &str = "connection_id";
 
 pub fn build_weaviate_ref(
     base_url: &str,
     class_name: &str,
-    image_collection: bool,
+    _image_collection: bool,
 ) -> Result<Arc<WeaviateRef>> {
-    let mut node: Box<dyn Node> = if image_collection {
-        Box::new(LegacyWeaviateImageCollectionNode::new(
+    let mut node: Box<dyn Node> = Box::new(
+        zihuan_graph_engine::database::WeaviateNode::new(
             "__storage_handler__",
             "__storage_handler__",
-        ))
-    } else {
-        Box::new(LegacyWeaviateNode::new(
-            "__storage_handler__",
-            "__storage_handler__",
-        ))
-    };
+        ),
+    );
 
     let outputs = node.execute(HashMap::from([
         (
@@ -52,7 +44,7 @@ pub fn build_weaviate_ref(
 pub struct WeaviateNode {
     id: String,
     name: String,
-    connection_id: Option<String>,
+    config_id: Option<String>,
 }
 
 impl WeaviateNode {
@@ -60,13 +52,13 @@ impl WeaviateNode {
         Self {
             id: id.into(),
             name: name.into(),
-            connection_id: None,
+            config_id: None,
         }
     }
 
     fn connection_select_field() -> NodeConfigField {
         NodeConfigField::new(
-            CONNECTION_ID_FIELD,
+            CONFIG_ID_FIELD,
             DataType::String,
             NodeConfigWidget::ConnectionSelect,
         )
@@ -85,7 +77,7 @@ impl Node for WeaviateNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("Weaviate 消息 collection 配置 - 从系统连接中选择并输出 WeaviateRef")
+        Some("Weaviate 向量数据库配置 - 从系统连接中选择并输出 WeaviateRef")
     }
 
     fn input_ports(&self) -> Vec<Port> {
@@ -102,8 +94,9 @@ impl Node for WeaviateNode {
     }
 
     fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
-        self.connection_id = inline_values
-            .get(CONNECTION_ID_FIELD)
+        self.config_id = inline_values
+            .get(CONFIG_ID_FIELD)
+            .or_else(|| inline_values.get(LEGACY_CONNECTION_ID_FIELD))
             .and_then(|value| match value {
                 DataValue::String(value) => Some(value.clone()),
                 _ => None,
@@ -115,16 +108,15 @@ impl Node for WeaviateNode {
         &mut self,
         _inputs: HashMap<String, DataValue>,
     ) -> Result<HashMap<String, DataValue>> {
-        let connection_id = self
-            .connection_id
+        let config_id = self
+            .config_id
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .ok_or_else(|| Error::ValidationError("connection_id is required".to_string()))?;
-        let connections = load_connections()?;
-        let weaviate_ref =
-            resource_resolver::build_weaviate_ref(Some(connection_id), &connections, false)?
-                .ok_or_else(|| Error::ValidationError("connection_id is required".to_string()))?;
+            .ok_or_else(|| Error::ValidationError("config_id is required".to_string()))?;
+        let weaviate_ref = zihuan_core::runtime::block_async(
+            RuntimeStorageConnectionManager::shared().get_or_create_weaviate_ref(config_id),
+        )?;
 
         Ok(HashMap::from([(
             "weaviate_ref".to_string(),

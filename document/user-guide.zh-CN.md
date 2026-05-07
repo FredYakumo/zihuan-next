@@ -132,6 +132,10 @@ workflow_set/
 
 如果某个 Agent 同时设置了 `enabled = true` 和 `auto_start = true`，那么 `zihuan_next` 启动时会自动拉起它。
 
+如果你需要区分“保存下来的连接定义”和“运行中的 live 连接实例”，请继续阅读：
+
+- [配置与连接实例](./config-and-connection-instances.zh-CN.md)
+
 ## 7. 使用节点图
 
 你可以：

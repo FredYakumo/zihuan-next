@@ -5,6 +5,9 @@ use salvo::writing::Json;
 use serde::Deserialize;
 use uuid::Uuid;
 use zihuan_graph_engine::function_graph::embedded_function_config_from_value;
+use zihuan_graph_engine::graph_boundary::{
+    sync_root_graph_io, GRAPH_INPUTS_NODE_ID, GRAPH_OUTPUTS_NODE_ID,
+};
 use zihuan_graph_engine::graph_io::{
     refresh_node_dynamic_ports, GraphMetadata, GraphPosition, GraphSize, NodeDefinition,
     NodeGraphDefinition, PortBinding,
@@ -87,6 +90,18 @@ pub async fn put_graph(req: &mut Request, res: &mut Response, depot: &mut Depot)
     let mut sessions = state.sessions.write().unwrap();
     match sessions.get_mut(&id) {
         Some(s) => {
+            let mut body = body;
+            let is_root_graph = !body.graph_inputs.is_empty()
+                || !body.graph_outputs.is_empty()
+                || body.nodes.iter().any(|node| {
+                    node.id == GRAPH_INPUTS_NODE_ID
+                        || node.id == GRAPH_OUTPUTS_NODE_ID
+                        || node.node_type == "graph_inputs"
+                        || node.node_type == "graph_outputs"
+                });
+            if is_root_graph {
+                sync_root_graph_io(&mut body);
+            }
             s.graph = body;
             s.dirty = true;
             res.render(Json(serde_json::json!({"ok": true})));
@@ -273,7 +288,11 @@ pub async fn update_node(req: &mut Request, res: &mut Response, depot: &mut Depo
         }
     }
     if let Some(d) = body.disabled {
-        if node.id != "__function_inputs__" && node.id != "__function_outputs__" {
+        if node.id != "__function_inputs__"
+            && node.id != "__function_outputs__"
+            && node.id != GRAPH_INPUTS_NODE_ID
+            && node.id != GRAPH_OUTPUTS_NODE_ID
+        {
             node.disabled = d;
         }
     }
@@ -351,6 +370,17 @@ pub async fn delete_node(req: &mut Request, res: &mut Response, depot: &mut Depo
     };
 
     let before = session.graph.nodes.len();
+    if matches!(
+        node_id.as_str(),
+        "__function_inputs__" | "__function_outputs__"
+    ) || node_id == GRAPH_INPUTS_NODE_ID
+        || node_id == GRAPH_OUTPUTS_NODE_ID
+    {
+        res.status_code(StatusCode::BAD_REQUEST);
+        res.render(Json(serde_json::json!({"error": "Boundary node cannot be deleted"})));
+        return;
+    }
+
     session.graph.nodes.retain(|n| n.id != node_id);
     // Also remove all edges connected to this node
     session

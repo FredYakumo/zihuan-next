@@ -249,10 +249,30 @@ export const workflows = {
 
 export interface ConnectionConfig {
   id: string;
+  config_id?: string | null;
   name: string;
   enabled: boolean;
   updated_at: string;
   kind: Record<string, unknown> & { type: string };
+}
+
+export interface ActiveBotAdapterInfo {
+  connection_id: string;
+  config_id: string;
+  name: string;
+  ws_url: string;
+}
+
+export interface RuntimeConnectionInstanceSummary {
+  instance_id: string;
+  config_id: string;
+  name: string;
+  kind: string;
+  keep_alive: boolean;
+  heartbeat_interval_secs: number | null;
+  started_at: string;
+  last_used_at: string;
+  status: "running" | "idle" | "closing" | "error";
 }
 
 export interface LlmServiceConfig {
@@ -355,6 +375,27 @@ export const system = {
   connections: {
     list(): Promise<ConnectionConfig[]> {
       return request("GET", "/system/connections");
+    },
+    listActiveBotAdapters(): Promise<ActiveBotAdapterInfo[]> {
+      return request("GET", "/system/connections/active-bot-adapters");
+    },
+    listRuntimeInstances(params?: {
+      page?: number;
+      page_size?: number;
+    }): Promise<{
+      items: RuntimeConnectionInstanceSummary[];
+      total: number;
+      page: number;
+      page_size: number;
+    }> {
+      const qs = new URLSearchParams();
+      if (params?.page != null) qs.set("page", String(params.page));
+      if (params?.page_size != null) qs.set("page_size", String(params.page_size));
+      const suffix = qs.size > 0 ? `?${qs.toString()}` : "";
+      return request("GET", `/system/connections/runtime-instances${suffix}`);
+    },
+    closeRuntimeInstance(instanceId: string): Promise<{ ok: boolean }> {
+      return request("POST", `/system/connections/runtime-instances/${instanceId}/close`);
     },
     create(payload: {
       name: string;

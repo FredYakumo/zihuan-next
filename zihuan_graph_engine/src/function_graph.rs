@@ -54,6 +54,8 @@ pub fn default_function_subgraph() -> NodeGraphDefinition {
             build_function_outputs_node_definition(&outputs),
         ],
         edges: Vec::new(),
+        graph_inputs: Vec::new(),
+        graph_outputs: Vec::new(),
         hyperparameter_groups: Vec::new(),
         hyperparameters: Vec::new(),
         variables: Vec::new(),

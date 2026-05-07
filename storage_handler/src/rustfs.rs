@@ -5,9 +5,10 @@ use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::{DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port};
 
-use crate::{find_connection, load_connections, ConnectionKind};
+use crate::RuntimeStorageConnectionManager;
 
-const CONNECTION_ID_FIELD: &str = "connection_id";
+const CONFIG_ID_FIELD: &str = "config_id";
+const LEGACY_CONNECTION_ID_FIELD: &str = "connection_id";
 
 pub async fn build_s3_ref(
     endpoint: &str,
@@ -88,7 +89,7 @@ fn extract_host(endpoint: &str) -> Option<String> {
 pub struct RustfsNode {
     id: String,
     name: String,
-    connection_id: Option<String>,
+    config_id: Option<String>,
 }
 
 impl RustfsNode {
@@ -96,13 +97,13 @@ impl RustfsNode {
         Self {
             id: id.into(),
             name: name.into(),
-            connection_id: None,
+            config_id: None,
         }
     }
 
     fn connection_select_field() -> NodeConfigField {
         NodeConfigField::new(
-            CONNECTION_ID_FIELD,
+            CONFIG_ID_FIELD,
             DataType::String,
             NodeConfigWidget::ConnectionSelect,
         )
@@ -110,28 +111,13 @@ impl RustfsNode {
         .with_description("选择系统中的 RustFS 对象存储连接配置")
     }
 
-    fn resolve_connection(&self) -> Result<crate::RustfsConnection> {
-        let connection_id = self
-            .connection_id
+    fn selected_config_id(&self) -> Result<&str> {
+        self
+            .config_id
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .ok_or_else(|| Error::ValidationError("connection_id is required".to_string()))?;
-        let connections = load_connections()?;
-        let connection = find_connection(&connections, connection_id)?;
-        let ConnectionKind::Rustfs(rustfs) = &connection.kind else {
-            return Err(Error::ValidationError(format!(
-                "connection '{}' is not a rustfs connection",
-                connection.name
-            )));
-        };
-        if !connection.enabled {
-            return Err(Error::ValidationError(format!(
-                "connection '{}' is disabled",
-                connection.name
-            )));
-        }
-        Ok(rustfs.clone())
+            .ok_or_else(|| Error::ValidationError("config_id is required".to_string()))
     }
 }
 
@@ -161,8 +147,9 @@ impl Node for RustfsNode {
     }
 
     fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
-        self.connection_id = inline_values
-            .get(CONNECTION_ID_FIELD)
+        self.config_id = inline_values
+            .get(CONFIG_ID_FIELD)
+            .or_else(|| inline_values.get(LEGACY_CONNECTION_ID_FIELD))
             .and_then(|value| match value {
                 DataValue::String(value) => Some(value.clone()),
                 _ => None,
@@ -174,16 +161,10 @@ impl Node for RustfsNode {
         &mut self,
         _inputs: HashMap<String, DataValue>,
     ) -> Result<HashMap<String, DataValue>> {
-        let rustfs = self.resolve_connection()?;
-        let s3_ref = zihuan_core::runtime::block_async(build_s3_ref(
-            &rustfs.endpoint,
-            &rustfs.bucket,
-            &rustfs.access_key,
-            &rustfs.secret_key,
-            &rustfs.region,
-            rustfs.public_base_url.clone(),
-            rustfs.path_style,
-        ))?;
+        let config_id = self.selected_config_id()?;
+        let s3_ref = zihuan_core::runtime::block_async(
+            RuntimeStorageConnectionManager::shared().get_or_create_s3_ref(config_id),
+        )?;
 
         Ok(HashMap::from([(
             "s3_ref".to_string(),

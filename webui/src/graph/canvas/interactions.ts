@@ -13,6 +13,13 @@ import type { CanvasFacade } from "./types";
 import { findInlineInputAtPosition } from "./rendering";
 import { isCompatibleTypes, visibleInputPorts } from "./type_utils";
 
+const PROTECTED_BOUNDARY_NODE_IDS = new Set([
+  "__function_inputs__",
+  "__function_outputs__",
+  "__graph_inputs__",
+  "__graph_outputs__",
+]);
+
 export class CanvasInteractions {
   constructor(private readonly canvas: CanvasFacade) {}
 
@@ -213,16 +220,16 @@ export class CanvasInteractions {
     makeItem("粘贴", hasClipboard, () => { this.pasteNodes(graphX, graphY).catch(console.error); });
     const hasDeletable = selectedNodes.some((node: any) => {
       const id: string | undefined = node.zihuanId;
-      return id !== "__function_inputs__" && id !== "__function_outputs__";
+      return !!id && !PROTECTED_BOUNDARY_NODE_IDS.has(id);
     });
     makeItem("删除", hasDeletable, () => { this.deleteSelectedNodes().catch(console.error); });
     const hasToggleable = selectedNodes.some((node: any) => {
       const id: string | undefined = node.zihuanId;
-      return id !== undefined && id !== "__function_inputs__" && id !== "__function_outputs__";
+      return id !== undefined && !PROTECTED_BOUNDARY_NODE_IDS.has(id);
     });
     const allDisabled = hasToggleable && selectedNodes.every((node: any) => {
       const id: string | undefined = node.zihuanId;
-      if (!id || id === "__function_inputs__" || id === "__function_outputs__") return true;
+      if (!id || PROTECTED_BOUNDARY_NODE_IDS.has(id)) return true;
       return !!this.canvas.state.graph?.nodes.find((item) => item.id === id)?.disabled;
     });
     makeItem(allDisabled ? "启用节点" : "禁用节点", hasToggleable, () => {
@@ -249,6 +256,7 @@ export class CanvasInteractions {
     for (const node of selectedNodes) {
       const nodeId = node.zihuanId as string | undefined;
       if (!nodeId) continue;
+      if (PROTECTED_BOUNDARY_NODE_IDS.has(nodeId)) continue;
       const def = this.canvas.state.graph?.nodes.find((item) => item.id === nodeId);
       if (def) defs.push(def);
     }
@@ -277,7 +285,7 @@ export class CanvasInteractions {
     if (selectedNodes.length === 0) return;
     for (const node of [...selectedNodes]) {
       const id: string | undefined = node.zihuanId;
-      if (id === "__function_inputs__" || id === "__function_outputs__") continue;
+      if (id && PROTECTED_BOUNDARY_NODE_IDS.has(id)) continue;
       this.canvas.lGraph.remove(node);
     }
   }
@@ -292,7 +300,7 @@ export class CanvasInteractions {
     for (const node of selectedNodes) {
       const id = node.zihuanId as string | undefined;
       if (!id) continue;
-      if (id === "__function_inputs__" || id === "__function_outputs__") continue;
+      if (PROTECTED_BOUNDARY_NODE_IDS.has(id)) continue;
       const def = graph.nodes.find((item) => item.id === id);
       if (!def) continue;
       targets.push({ id, nextDisabled: !def.disabled });
@@ -633,6 +641,8 @@ export class CanvasInteractions {
       subgraph: {
         nodes: [...selectedDefs, fnInputsNode, fnOutputsNode],
         edges: subgraphEdges,
+        graph_inputs: [],
+        graph_outputs: [],
         hyperparameter_groups: [],
         hyperparameters: [],
         variables: [],

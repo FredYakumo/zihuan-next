@@ -215,6 +215,7 @@ export async function bootstrapLegacyEditor() {
     onValidate,
     onBrowseWorkflows,
     () => { graphActions.openGraphMetadata().catch(console.error); },
+    () => { graphActions.openGraphIO().catch(console.error); },
     () => openTaskManagerDialog(taskStore),
     (taskId) => { taskStore.stopTask(taskId).catch((error) => showErrorDialog(`结束任务失败: ${(error as Error).message}`)); },
     onBackToConsole,

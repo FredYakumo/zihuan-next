@@ -1,6 +1,8 @@
+pub mod active_adapter_manager;
 pub mod adapter;
 pub mod event;
 pub mod extract_group_id_from_event;
+pub mod ims_bot_adapter_provider;
 pub mod extract_message_from_event;
 pub mod extract_qq_message_list_from_event;
 pub mod extract_sender_id_from_event;
@@ -21,6 +23,7 @@ use zihuan_core::error::Result;
 use zihuan_graph_engine::register_node;
 
 pub use extract_qq_message_list_from_event::ExtractQQMessageListFromEventNode;
+pub use ims_bot_adapter_provider::ImsBotAdapterProviderNode;
 pub use extract_sender_id_from_event::ExtractSenderIdFromEventNode;
 pub use login_info::{fetch_login_info, qq_avatar_url};
 pub use message_event_type_filter::MessageEventTypeFilterNode;
@@ -35,12 +38,26 @@ pub use system_config::{
     save_ims_bot_adapter_connections, BotAdapterConnection, BotAdapterConnectionConfig,
     BotAdapterConnectionKind, BotAdapterConnectionsSection,
 };
+pub use active_adapter_manager::{
+    close_runtime_bot_adapter_instance, ensure_active_bot_adapter, get_active_bot_adapter_handle,
+    has_active_bot_adapter, initialize_enabled_bot_adapters,
+    list_active_bot_adapter_connection_ids, list_runtime_bot_adapter_instances,
+    register_active_bot_adapter, stop_active_bot_adapter, sync_enabled_bot_adapters,
+};
 
 pub fn init_node_registry() -> Result<()> {
     use extract_group_id_from_event::ExtractGroupIdFromEventNode;
     use extract_message_from_event::ExtractMessageFromEventNode;
     use extract_qq_message_list_from_event::ExtractQQMessageListFromEventNode;
+    use ims_bot_adapter_provider::ImsBotAdapterProviderNode;
 
+    register_node!(
+        "ims_bot_adapter_provider",
+        "IMS BotAdapter Provider",
+        "Bot适配器",
+        "从系统连接配置中选择已启用的 IMS Bot Adapter 并输出 BotAdapterRef 引用",
+        ImsBotAdapterProviderNode
+    );
     register_node!(
         "send_friend_message",
         "发送好友消息",

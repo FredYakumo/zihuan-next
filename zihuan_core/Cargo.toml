@@ -15,3 +15,5 @@ log = "0.4"
 tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
 tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
 sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "mysql", "chrono"] }
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }

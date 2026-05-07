@@ -17,6 +17,13 @@ import {
 } from "./rendering";
 import { portTypeString } from "../registry";
 
+const PROTECTED_BOUNDARY_NODE_IDS = new Set([
+  "__function_inputs__",
+  "__function_outputs__",
+  "__graph_inputs__",
+  "__graph_outputs__",
+]);
+
 export class CanvasGraphOps {
   constructor(private readonly canvas: CanvasFacade) {}
 
@@ -375,7 +382,12 @@ export class CanvasGraphOps {
     if (nodeDef.position) node.pos = [nodeDef.position.x, nodeDef.position.y];
     node.zihuanId = nodeDef.id;
 
-    if (nodeDef.node_type === "function_inputs" || nodeDef.node_type === "function_outputs") {
+    if (
+      nodeDef.node_type === "function_inputs"
+      || nodeDef.node_type === "function_outputs"
+      || nodeDef.node_type === "graph_inputs"
+      || nodeDef.node_type === "graph_outputs"
+    ) {
       const boundaryColors = getBoundaryNodeColors();
       node.color = boundaryColors.header;
       node.bgcolor = boundaryColors.bg;
@@ -497,7 +509,7 @@ export class CanvasGraphOps {
     const sessionId = this.canvas.state.sessionId;
     const nodeId: string | undefined = node.zihuanId;
     if (!sessionId || !nodeId) return;
-    if (nodeId === "__function_inputs__" || nodeId === "__function_outputs__") return;
+    if (PROTECTED_BOUNDARY_NODE_IDS.has(nodeId)) return;
     this.canvas.nodeMap.delete(nodeId);
     graphs.deleteNode(sessionId, nodeId)
       .then(async () => {

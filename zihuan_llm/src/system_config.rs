@@ -40,7 +40,13 @@ pub struct QqChatAgentConfig {
     #[serde(default)]
     pub bot_name: String,
     #[serde(default)]
+    pub system_prompt: Option<String>,
+    #[serde(default)]
     pub llm_ref_id: Option<String>,
+    #[serde(default)]
+    pub intent_llm_ref_id: Option<String>,
+    #[serde(default)]
+    pub math_programming_llm_ref_id: Option<String>,
     #[serde(default)]
     pub llm: Option<LlmServiceConfig>,
     pub tavily_connection_id: String,

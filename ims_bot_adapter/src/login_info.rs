@@ -46,7 +46,13 @@ pub async fn fetch_login_info(connection: &BotAdapterConnection) -> Result<BotLo
 }
 
 async fn fetch_login_info_via_http(connection: &BotAdapterConnection) -> Result<BotLoginInfo> {
-    let base_url = websocket_url_to_http_base(&connection.bot_server_url);
+    let base_url = connection
+        .adapter_server_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| websocket_url_to_http_base(&connection.bot_server_url));
     let endpoint = format!("{}/get_login_info", base_url.trim_end_matches('/'));
 
     let client = reqwest::Client::new();

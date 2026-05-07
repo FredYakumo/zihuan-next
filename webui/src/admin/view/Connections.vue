@@ -91,7 +91,8 @@
             </template>
 
             <template v-else-if="isBotAdapterConnectionType(form.type)">
-              <div class="field"><label>Bot Server URL</label><input v-model="form.bot_server_url" /></div>
+              <div class="field"><label>Bot WS URL</label><input v-model="form.bot_server_url" placeholder="ws://192.168.71.2:3008" /></div>
+              <div class="field"><label>Adapter HTTP URL</label><input v-model="form.adapter_server_url" placeholder="http://192.168.71.2:3001" /></div>
               <div class="field"><label>QQ 号</label><input v-model="form.qq_id" /></div>
               <div class="field-full"><label>Token</label><input v-model="form.bot_server_token" /></div>
             </template>
@@ -241,8 +242,12 @@
 
               <template v-else-if="isBotAdapterConnectionType(form.type)">
                 <div class="key-value connection-card-edit-row">
-                  <strong>Server</strong>
-                  <input v-model="form.bot_server_url" class="connection-card-inline-input" />
+                  <strong>WS</strong>
+                  <input v-model="form.bot_server_url" class="connection-card-inline-input" placeholder="ws://192.168.71.2:3008" />
+                </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>HTTP</strong>
+                  <input v-model="form.adapter_server_url" class="connection-card-inline-input" placeholder="http://192.168.71.2:3001" />
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>QQ</strong>
@@ -443,7 +448,8 @@ function summarizeConnection(connection: ConnectionConfig): Array<{ label: strin
     case "bot_adapter":
     case "ims_bot_adapter":
       return [
-        { label: "Server", value: String(kind.bot_server_url ?? "") },
+        { label: "WS", value: String(kind.bot_server_url ?? "") },
+        { label: "HTTP", value: String(kind.adapter_server_url ?? "") || "未设置（默认由 WS 推导）" },
         { label: "QQ", value: String(kind.qq_id ?? "") || "未设置" },
       ];
     case "tavily":

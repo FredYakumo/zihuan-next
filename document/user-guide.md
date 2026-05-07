@@ -132,6 +132,10 @@ In the admin UI:
 
 Enabled agents with `auto_start = true` are started automatically when `zihuan_next` boots.
 
+If you need the distinction between saved connection definitions and live runtime instances, see:
+
+- [Configuration And Connection Instances](./config-and-connection-instances.md)
+
 ## 7. Work With Graphs
 
 You can:

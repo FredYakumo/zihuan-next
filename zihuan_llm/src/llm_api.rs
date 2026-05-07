@@ -699,7 +699,10 @@ impl LLMAPI {
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            error!("Streaming LLM API request failed with status {status}: {}", Self::shorten_text(&body, 800));
+            error!(
+                "Streaming LLM API request failed with status {status}: {}",
+                Self::shorten_text(&body, 800)
+            );
             return OpenAIMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR);
         }
 
@@ -767,10 +770,7 @@ impl LLMAPI {
                             let _ = token_tx.send(piece.to_string());
                         }
                     }
-                    if let Some(piece) = delta
-                        .get("reasoning_content")
-                        .and_then(|v| v.as_str())
-                    {
+                    if let Some(piece) = delta.get("reasoning_content").and_then(|v| v.as_str()) {
                         reasoning_content.push_str(piece);
                     }
                     if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
@@ -787,17 +787,14 @@ impl LLMAPI {
                                     entry.id = Some(id.to_string());
                                 }
                             }
-                            if let Some(type_name) =
-                                tool_call.get("type").and_then(|v| v.as_str())
+                            if let Some(type_name) = tool_call.get("type").and_then(|v| v.as_str())
                             {
                                 if !type_name.is_empty() {
                                     entry.type_name = Some(type_name.to_string());
                                 }
                             }
                             if let Some(function) = tool_call.get("function") {
-                                if let Some(name) =
-                                    function.get("name").and_then(|v| v.as_str())
-                                {
+                                if let Some(name) = function.get("name").and_then(|v| v.as_str()) {
                                     if !name.is_empty() {
                                         entry.function_name = Some(name.to_string());
                                     }
@@ -818,10 +815,7 @@ impl LLMAPI {
                         content.push_str(text);
                         let _ = token_tx.send(text.to_string());
                     }
-                    if let Some(text) = message
-                        .get("reasoning_content")
-                        .and_then(|v| v.as_str())
-                    {
+                    if let Some(text) = message.get("reasoning_content").and_then(|v| v.as_str()) {
                         reasoning_content.push_str(text);
                     }
                     if let Some(tool_calls_value) = message.get("tool_calls") {

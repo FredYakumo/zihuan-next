@@ -1,43 +1,20 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use zihuan_core::error::{Error, Result};
-use zihuan_graph_engine::data_value::MySqlConfig;
-use zihuan_graph_engine::message_restore::register_mysql_ref;
 use zihuan_graph_engine::{DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port};
 
-use crate::RuntimeStorageConnectionManager;
+use crate::active_adapter_manager::ActiveAdapterManager;
 
 const CONFIG_ID_FIELD: &str = "config_id";
 const LEGACY_CONNECTION_ID_FIELD: &str = "connection_id";
 
-pub async fn build_mysql_ref(url: &str) -> Result<Arc<MySqlConfig>> {
-    let pool = sqlx::mysql::MySqlPoolOptions::new()
-        .max_connections(10)
-        .min_connections(1)
-        .connect(url)
-        .await?;
-
-    Ok(Arc::new(MySqlConfig {
-        url: Some(url.to_string()),
-        reconnect_max_attempts: None,
-        reconnect_interval_secs: None,
-        pool: Some(pool),
-        runtime_handle: tokio::runtime::Handle::try_current().ok(),
-    }))
-}
-
-pub fn get_pool(mysql_ref: &Arc<MySqlConfig>) -> Option<&sqlx::mysql::MySqlPool> {
-    mysql_ref.pool.as_ref()
-}
-
-pub struct MySqlNode {
+pub struct ImsBotAdapterProviderNode {
     id: String,
     name: String,
     config_id: Option<String>,
 }
 
-impl MySqlNode {
+impl ImsBotAdapterProviderNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -52,20 +29,12 @@ impl MySqlNode {
             DataType::String,
             NodeConfigWidget::ConnectionSelect,
         )
-        .with_connection_kind("mysql")
-        .with_description("选择系统中的 MySQL 连接配置")
-    }
-
-    fn selected_config_id(&self) -> Result<&str> {
-        self.config_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| Error::ValidationError("config_id is required".to_string()))
+        .with_connection_kind("bot_adapter")
+        .with_description("选择系统中的 IMS Bot Adapter 连接配置")
     }
 }
 
-impl Node for MySqlNode {
+impl Node for ImsBotAdapterProviderNode {
     fn id(&self) -> &str {
         &self.id
     }
@@ -75,7 +44,7 @@ impl Node for MySqlNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("MySQL连接配置 - 从系统连接中选择并输出 MySqlRef")
+        Some("从系统连接中选择 IMS Bot Adapter 并输出 BotAdapterRef")
     }
 
     fn input_ports(&self) -> Vec<Port> {
@@ -83,7 +52,8 @@ impl Node for MySqlNode {
     }
 
     fn output_ports(&self) -> Vec<Port> {
-        vec![Port::new("mysql_ref", DataType::MySqlRef).with_description("MySQL连接配置引用")]
+        vec![Port::new("ims_bot_adapter", DataType::BotAdapterRef)
+            .with_description("IMS Bot Adapter 引用")]
     }
 
     fn config_fields(&self) -> Vec<NodeConfigField> {
@@ -105,14 +75,19 @@ impl Node for MySqlNode {
         &mut self,
         _inputs: HashMap<String, DataValue>,
     ) -> Result<HashMap<String, DataValue>> {
-        let config_id = self.selected_config_id()?;
-        let config = zihuan_core::runtime::block_async(
-            RuntimeStorageConnectionManager::shared().get_or_create_mysql_ref(config_id),
+        let config_id = self
+            .config_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| Error::ValidationError("config_id is required".to_string()))?;
+        let handle = zihuan_core::runtime::block_async(
+            ActiveAdapterManager::shared().get_active_bot_adapter_handle(config_id),
         )?;
-        register_mysql_ref(config.clone());
+
         Ok(HashMap::from([(
-            "mysql_ref".to_string(),
-            DataValue::MySqlRef(config),
+            "ims_bot_adapter".to_string(),
+            DataValue::BotAdapterRef(handle),
         )]))
     }
 }

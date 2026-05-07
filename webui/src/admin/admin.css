@@ -872,7 +872,11 @@ textarea {
   display: grid;
   gap: 18px;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  align-items: stretch;
+  align-items: start;
+}
+
+.connection-grid--agents .connection-card--editing {
+  grid-column: 1 / -1;
 }
 
 .connection-card {

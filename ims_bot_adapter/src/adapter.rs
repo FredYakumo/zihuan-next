@@ -496,9 +496,11 @@ fn parse_forward_content_value(value: Option<&serde_json::Value>) -> Vec<Message
             .iter()
             .filter_map(|item| serde_json::from_value::<Message>(item.clone()).ok())
             .collect(),
-        Some(serde_json::Value::Object(_)) => serde_json::from_value::<Message>(value.cloned().unwrap())
-            .map(|message| vec![message])
-            .unwrap_or_default(),
+        Some(serde_json::Value::Object(_)) => {
+            serde_json::from_value::<Message>(value.cloned().unwrap())
+                .map(|message| vec![message])
+                .unwrap_or_default()
+        }
         Some(serde_json::Value::String(text)) => parse_cq_string_to_messages(text),
         _ => Vec::new(),
     }
