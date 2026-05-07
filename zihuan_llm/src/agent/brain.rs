@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use log::{info, warn};
 use serde_json::Value;
+use tokio::sync::mpsc;
 
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
@@ -163,7 +164,6 @@ impl Brain {
                 },
             });
 
-            // Transport errors → abort immediately.
             if let Some(content) = response.content_text() {
                 if is_transport_error(content) {
                     warn!("[Brain] Transport error on iteration {iteration}: {content}");
@@ -178,7 +178,116 @@ impl Brain {
                 return (output, BrainStopReason::Done);
             }
 
-            // On the last iteration, refuse to execute further tool calls.
+            if is_last_iteration {
+                output.push(response);
+                return (output, BrainStopReason::MaxIterationsReached);
+            }
+
+            let tool_call_content = response.content_text_owned().unwrap_or_default();
+            if !tool_call_content.is_empty() {
+                info!(
+                    "[Brain] iteration {} assistant content: {tool_call_content}",
+                    iteration + 1
+                );
+            }
+            info!(
+                "[Brain] iteration {} processing {} tool call(s)",
+                iteration + 1,
+                response.tool_calls.len()
+            );
+            conversation.push(response.clone());
+            output.push(response.clone());
+
+            for tc in &response.tool_calls {
+                info!(
+                    "[Brain] tool call id={} name={} arguments={}",
+                    tc.id, tc.function.name, tc.function.arguments
+                );
+                let result = self
+                    .tools
+                    .iter()
+                    .find(|t| t.spec().name() == tc.function.name)
+                    .map(|t| t.execute(&tool_call_content, &tc.function.arguments))
+                    .unwrap_or_else(|| {
+                        warn!(
+                            "[Brain] Tool '{}' not found for call id={} arguments={}",
+                            tc.function.name, tc.id, tc.function.arguments
+                        );
+                        serde_json::json!({"error": format!("Tool '{}' not found", tc.function.name)})
+                            .to_string()
+                    });
+
+                info!(
+                    "[Brain] tool call id={} name={} result: {result}",
+                    tc.id, tc.function.name
+                );
+                let msg = OpenAIMessage::tool_result(tc.id.clone(), result);
+                conversation.push(msg.clone());
+                output.push(msg);
+            }
+        }
+
+        warn!("[Brain] Tool loop exceeded max iterations ({MAX_TOOL_ITERATIONS})");
+        (output, BrainStopReason::MaxIterationsReached)
+    }
+
+    pub async fn run_streaming(
+        &self,
+        messages: Vec<OpenAIMessage>,
+        token_tx: mpsc::UnboundedSender<String>,
+    ) -> (Vec<OpenAIMessage>, BrainStopReason) {
+        let tool_specs: Vec<Arc<dyn FunctionTool>> = self.tools.iter().map(|t| t.spec()).collect();
+        let mut conversation = sanitize_messages_for_inference(messages);
+        let mut output: Vec<OpenAIMessage> = Vec::new();
+
+        let streaming_llm = self.llm.as_streaming();
+
+        for iteration in 0..MAX_TOOL_ITERATIONS {
+            let is_last_iteration = iteration == MAX_TOOL_ITERATIONS - 1;
+
+            if is_last_iteration {
+                let counts = count_tool_calls(&conversation);
+                append_tool_summary_to_system(&mut conversation, &counts);
+            }
+
+            let tools_param: Option<&Vec<Arc<dyn FunctionTool>>> =
+                if is_last_iteration || tool_specs.is_empty() {
+                    None
+                } else {
+                    Some(&tool_specs)
+                };
+
+            let response = if let Some(streaming) = streaming_llm {
+                streaming
+                    .inference_streaming(
+                        &InferenceParam {
+                            messages: &conversation,
+                            tools: tools_param,
+                        },
+                        token_tx.clone(),
+                    )
+                    .await
+            } else {
+                self.llm.inference(&InferenceParam {
+                    messages: &conversation,
+                    tools: tools_param,
+                })
+            };
+
+            if let Some(content) = response.content_text() {
+                if is_transport_error(content) {
+                    warn!("[Brain] Transport error on iteration {iteration}: {content}");
+                    let msg = content.to_string();
+                    output.push(response);
+                    return (output, BrainStopReason::TransportError(msg));
+                }
+            }
+
+            if response.tool_calls.is_empty() {
+                output.push(response);
+                return (output, BrainStopReason::Done);
+            }
+
             if is_last_iteration {
                 output.push(response);
                 return (output, BrainStopReason::MaxIterationsReached);

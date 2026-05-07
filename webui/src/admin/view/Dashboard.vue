@@ -27,10 +27,10 @@
             <div class="chat-agent-picker-title">选择 Agent</div>
             <div class="chat-agent-cards">
               <button
-                v-for="agent in runningAgents"
+                v-for="agent in agents"
                 :key="agent.id"
                 class="chat-agent-card"
-                :class="{ active: selectedAgentId === agent.id }"
+                :class="{ active: selectedAgentId === agent.id, inactive: agent.runtime.status !== 'running' }"
                 @click="selectedAgentId = agent.id"
               >
                 <img
@@ -46,6 +46,7 @@
                   <strong>{{ agent.name }}</strong>
                   <span>{{ readableAgentType(agent.agent_type.type) }}</span>
                 </div>
+                <span v-if="agent.runtime.status !== 'running'" class="agent-status-badge">未运行</span>
               </button>
             </div>
           </div>
@@ -88,16 +89,16 @@
                 :class="message.role"
               >
                 <img
-                  v-if="message.role === 'assistant' && selectedAgentAvatarUrl"
+                  v-if="message.role === 'assistant' && (message.agentAvatarUrl || selectedAgentAvatarUrl)"
                   class="chat-message-avatar"
-                  :src="selectedAgentAvatarUrl"
+                  :src="message.agentAvatarUrl || selectedAgentAvatarUrl"
                   alt="bot avatar"
                 />
                 <div
                   v-else-if="message.role === 'assistant'"
                   class="chat-message-avatar chat-message-avatar--fallback"
                 >
-                  {{ selectedAgentAvatarFallback }}
+                  {{ agentInitial(message.agentName || selectedAgent?.name || "Bot") }}
                 </div>
                 <div class="chat-bubble" :class="message.role">
                   <div
@@ -165,7 +166,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from "vue";
+import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
 import MarkdownIt from "markdown-it";
 
 import {
@@ -189,6 +190,8 @@ type DashboardMessage = {
   toolCalls: ChatToolCall[];
   toolCallId?: string | null;
   linkedToolCall?: ChatToolCall | null;
+  agentAvatarUrl?: string;
+  agentName?: string;
 };
 type ToolDetail = {
   messageId: string;
@@ -216,7 +219,6 @@ const markdown = new MarkdownIt({
   linkify: true,
 });
 
-const runningAgents = computed(() => agents.value.filter((agent) => agent.runtime.status === "running"));
 const selectedAgent = computed(() => agents.value.find((agent) => agent.id === selectedAgentId.value) ?? null);
 const canSend = computed(() =>
   !!selectedAgent.value &&
@@ -228,6 +230,18 @@ const selectedAgentAvatarFallback = computed(() => {
   const name = selectedAgent.value?.name ?? "Bot";
   return agentInitial(name);
 });
+
+function messageAvatarUrl(record: ChatHistoryRecord): string {
+  if (record.agent_avatar_url) {
+    return record.agent_avatar_url;
+  }
+  // Fallback: try current agent config
+  const agent = agents.value.find((a) => a.id === record.agent_id);
+  if (agent) {
+    return agentAvatarUrl(agent);
+  }
+  return "";
+}
 const visibleMessages = computed(() => messages.value.filter((message) => message.role !== "tool"));
 const activeToolDetail = computed<ToolDetail | null>(() => {
   if (!activeToolCallId.value) {
@@ -296,6 +310,8 @@ function applyHistory(records: ChatHistoryRecord[]) {
       toolCalls: item.tool_calls ?? [],
       toolCallId: item.tool_call_id ?? null,
       linkedToolCall: null,
+      agentAvatarUrl: messageAvatarUrl(item) || undefined,
+      agentName: item.agent_name || undefined,
     }));
   const toolCallMap = new Map<string, ChatToolCall>();
   for (const message of mapped) {
@@ -376,13 +392,18 @@ function scrollToBottom() {
 }
 
 async function reloadSessions() {
-  const result = await chat.listSessions();
+  const result = await chat.listSessions(selectedAgentId.value || undefined);
   sessions.value = result.sessions;
 }
 
 async function openSession(sessionId: string) {
   activeSessionId.value = sessionId;
   const result = await chat.getSessionMessages(sessionId);
+  // Auto-select the agent associated with this session
+  const firstRecord = result.messages[0];
+  if (firstRecord?.agent_id && agents.value.some((a) => a.id === firstRecord.agent_id)) {
+    selectedAgentId.value = firstRecord.agent_id;
+  }
   applyHistory(result.messages);
 }
 
@@ -391,6 +412,11 @@ function startNewSession() {
   messages.value = [];
   activeToolCallId.value = "";
 }
+
+watch(selectedAgentId, async () => {
+  await reloadSessions();
+  startNewSession();
+});
 
 async function removeSession(sessionId: string) {
   if (!confirm("确定要删除该会话吗？此操作不可恢复。")) {
@@ -510,14 +536,11 @@ async function load() {
   stats.agents = loadedAgents.length;
   agents.value = loadedAgents;
 
-  if (!selectedAgentId.value || !loadedAgents.some((agent) => agent.id === selectedAgentId.value && agent.runtime.status === "running")) {
-    selectedAgentId.value = runningAgents.value[0]?.id ?? "";
+  if (!selectedAgentId.value || !loadedAgents.some((agent) => agent.id === selectedAgentId.value)) {
+    selectedAgentId.value = loadedAgents[0]?.id ?? "";
   }
 
   await reloadSessions();
-  if (sessions.value.length > 0) {
-    await openSession(sessions.value[0].session_id);
-  }
 }
 
 onMounted(() => {
@@ -669,6 +692,26 @@ onMounted(() => {
 .chat-agent-card-meta span {
   font-size: 12px;
   color: var(--admin-subtle);
+}
+
+.chat-agent-card.inactive {
+  opacity: 0.55;
+  border-color: var(--admin-border);
+}
+
+.chat-agent-card.inactive:hover {
+  opacity: 0.8;
+}
+
+.agent-status-badge {
+  background: var(--admin-danger, #ef4444);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 5px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .chat-layout {

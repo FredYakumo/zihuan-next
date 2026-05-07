@@ -5,6 +5,7 @@ use log::warn;
 use storage_handler::{
     build_mysql_ref, build_tavily_ref, build_weaviate_ref, load_connections, ConnectionConfig,
 };
+use tokio::sync::mpsc;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;
@@ -174,6 +175,57 @@ impl LoadedInferenceAgent {
             self.tool_definitions.clone(),
             conversation,
         )
+    }
+
+    pub async fn infer_response_streaming_with_trace(
+        &self,
+        messages: Vec<OpenAIMessage>,
+        token_tx: mpsc::UnboundedSender<String>,
+    ) -> Result<Vec<OpenAIMessage>> {
+        let last_user_text = messages
+            .iter()
+            .rev()
+            .find(|m| matches!(m.role, MessageRole::User))
+            .and_then(|m| m.content_text())
+            .map(ToOwned::to_owned)
+            .unwrap_or_default();
+
+        let mut conversation = sanitize_messages_for_inference(messages);
+        if conversation.is_empty() {
+            return Err(Error::ValidationError(
+                "messages must not be empty after sanitization".to_string(),
+            ));
+        }
+
+        let mut default_brain_tools: Vec<Box<dyn BrainTool>> = Vec::new();
+        if let Some(resources) = &self.qq_resources {
+            conversation.insert(
+                0,
+                OpenAIMessage::system(format!(
+                    "你是 {}。请保持回答简洁、友好、准确；当可调用工具时优先使用工具获取事实。",
+                    resources.bot_name
+                )),
+            );
+            default_brain_tools = build_info_brain_tools(
+                &resources.default_tools_enabled,
+                resources.tavily_ref.clone(),
+                resources.mysql_ref.clone(),
+                resources.weaviate_ref.clone(),
+                resources.weaviate_image_ref.clone(),
+                resources.embedding_model.clone(),
+                last_user_text,
+            );
+        }
+
+        run_agent_brain_streaming(
+            &self.agent,
+            Arc::clone(&self.llm),
+            default_brain_tools,
+            self.tool_definitions.clone(),
+            conversation,
+            token_tx,
+        )
+        .await
     }
 }
 
@@ -376,6 +428,47 @@ fn run_agent_brain(
     }
 
     let (output_messages, stop_reason) = brain.run(messages);
+    match stop_reason {
+        BrainStopReason::Done => Ok(output_messages),
+        BrainStopReason::TransportError(content) => Err(Error::StringError(format!(
+            "chat stream LLM request failed for '{}': {}",
+            agent.name, content
+        ))),
+        BrainStopReason::MaxIterationsReached => Err(Error::StringError(format!(
+            "chat stream exceeded max tool iterations ({MAX_TOOL_ITERATIONS}) for '{}'",
+            agent.name
+        ))),
+    }
+}
+
+async fn run_agent_brain_streaming(
+    agent: &AgentConfig,
+    llm: Arc<dyn LLMBase>,
+    default_tools: Vec<Box<dyn BrainTool>>,
+    tool_definitions: Vec<BrainToolDefinition>,
+    messages: Vec<OpenAIMessage>,
+    token_tx: mpsc::UnboundedSender<String>,
+) -> Result<Vec<OpenAIMessage>> {
+    let mut brain = Brain::new(llm);
+
+    for tool in default_tools {
+        brain.add_tool(DynBrainToolWrapper(tool));
+    }
+
+    for tool_def in tool_definitions {
+        brain.add_tool(ServiceSubgraphBrainTool {
+            runner: ToolSubgraphRunner {
+                node_id: format!("agent_inference_{}", agent.id),
+                owner_node_type: "brain".to_string(),
+                shared_inputs: Vec::new(),
+                definition: tool_def,
+                shared_runtime_values: HashMap::new(),
+                result_mode: ToolResultMode::JsonObject,
+            },
+        });
+    }
+
+    let (output_messages, stop_reason) = brain.run_streaming(messages, token_tx).await;
     match stop_reason {
         BrainStopReason::Done => Ok(output_messages),
         BrainStopReason::TransportError(content) => Err(Error::StringError(format!(

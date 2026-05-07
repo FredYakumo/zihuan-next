@@ -9,6 +9,7 @@ use chrono::Local;
 use log::error;
 use serde::Serialize;
 use storage_handler::{load_connections, ConnectionConfig};
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use zihuan_core::error::Result;
 use zihuan_core::llm::OpenAIMessage;
@@ -118,6 +119,21 @@ impl AgentManager {
             ))
         })?;
         agent.infer_response_with_trace(messages)
+    }
+
+    pub async fn infer_agent_response_streaming(
+        &self,
+        agent_id: &str,
+        messages: Vec<OpenAIMessage>,
+        token_tx: mpsc::UnboundedSender<String>,
+    ) -> Result<Vec<OpenAIMessage>> {
+        let agent = self.running_agent(agent_id).ok_or_else(|| {
+            zihuan_core::error::Error::ValidationError(format!(
+                "agent '{}' is not running",
+                agent_id
+            ))
+        })?;
+        agent.infer_response_streaming_with_trace(messages, token_tx).await
     }
 
     pub async fn start_agent(

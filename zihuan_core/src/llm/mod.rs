@@ -4,6 +4,7 @@ pub mod model;
 pub mod tooling;
 pub mod util;
 
+pub use llm_base::StreamingLLMBase;
 pub use model::{
     ContentPart, InferenceParam, MediaUrlSpec, MessageContent, MessageRole, OpenAIMessage,
 };

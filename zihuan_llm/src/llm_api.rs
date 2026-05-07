@@ -7,7 +7,8 @@ use std::error::Error as _;
 use std::fmt::Write as _;
 use std::thread;
 use std::time::Duration;
-use zihuan_core::llm::llm_base::LLMBase;
+use tokio::sync::mpsc;
+use zihuan_core::llm::llm_base::{LLMBase, StreamingLLMBase};
 use zihuan_core::llm::tooling::{ToolCalls, ToolCallsFuncSpec};
 use zihuan_core::llm::{role_to_str, str_to_role, InferenceParam, MessageContent, OpenAIMessage};
 
@@ -465,13 +466,16 @@ impl LLMBase for LLMAPI {
         self.supports_multimodal_input
     }
 
+    fn as_streaming(&self) -> Option<&dyn StreamingLLMBase> {
+        Some(self)
+    }
+
     fn inference(&self, param: &InferenceParam) -> OpenAIMessage {
         let client = Client::builder()
             .timeout(self.timeout)
             .build()
             .expect("Failed to create HTTP client");
 
-        // Convert internal MessageRole enum to string
         let messages: Vec<serde_json::Value> = param
             .messages
             .iter()
@@ -493,7 +497,6 @@ impl LLMBase for LLMAPI {
                     msg_obj["reasoning_content"] = json!(reasoning_content);
                 }
 
-                // Add tool_calls if present
                 if !msg.tool_calls.is_empty() {
                     let tool_calls: Vec<_> = msg
                         .tool_calls
@@ -520,7 +523,6 @@ impl LLMBase for LLMAPI {
             })
             .collect();
 
-        // Build tools array if provided
         let tools: Option<Vec<Value>> = param
             .tools
             .as_ref()
@@ -605,5 +607,289 @@ impl LLMBase for LLMAPI {
         }
 
         OpenAIMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR)
+    }
+}
+
+impl LLMAPI {
+    pub async fn inference_streaming(
+        &self,
+        param: &InferenceParam<'_>,
+        token_tx: mpsc::UnboundedSender<String>,
+    ) -> OpenAIMessage {
+        let messages: Vec<serde_json::Value> = param
+            .messages
+            .iter()
+            .map(|msg| {
+                let role_str = role_to_str(&msg.role);
+                let content_value = msg
+                    .content
+                    .as_ref()
+                    .map(|c| serde_json::to_value(c).unwrap_or(Value::Null))
+                    .unwrap_or(Value::Null);
+                let mut msg_obj = json!({
+                    "role": role_str,
+                    "content": content_value,
+                });
+                if let Some(reasoning_content) = &msg.reasoning_content {
+                    msg_obj["reasoning_content"] = json!(reasoning_content);
+                }
+                if !msg.tool_calls.is_empty() {
+                    let tool_calls: Vec<_> = msg
+                        .tool_calls
+                        .iter()
+                        .map(|tc| {
+                            json!({
+                                "id": tc.id,
+                                "type": tc.type_name,
+                                "function": {
+                                    "name": tc.function.name,
+                                    "arguments": tc.function.arguments.to_string(),
+                                }
+                            })
+                        })
+                        .collect();
+                    msg_obj["tool_calls"] = json!(tool_calls);
+                }
+                if let Some(ref id) = msg.tool_call_id {
+                    msg_obj["tool_call_id"] = json!(id);
+                }
+                msg_obj
+            })
+            .collect();
+
+        let tools: Option<Vec<Value>> = param
+            .tools
+            .as_ref()
+            .map(|ts| ts.iter().map(|tool| tool.get_json()).collect());
+
+        let mut request_body = json!({
+            "model": self.model_name,
+            "messages": messages,
+            "stream": true,
+        });
+
+        if let Some(tool_list) = tools {
+            request_body["tools"] = json!(tool_list);
+            request_body["tool_choice"] = json!("auto");
+        }
+
+        let client = reqwest::Client::builder()
+            .timeout(self.timeout)
+            .build()
+            .expect("Failed to create async HTTP client");
+
+        let mut request = client.post(&self.api_endpoint).json(&request_body);
+        if let Some(ref api_key) = self.api_key {
+            let auth_header = if api_key.starts_with("Bearer ") {
+                api_key.to_string()
+            } else {
+                format!("Bearer {}", api_key)
+            };
+            request = request.header("Authorization", auth_header);
+        }
+
+        let response = match request.send().await {
+            Ok(r) => r,
+            Err(e) => {
+                error!("Streaming LLM API request failed: {e}");
+                return OpenAIMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR);
+            }
+        };
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            error!("Streaming LLM API request failed with status {status}: {}", Self::shorten_text(&body, 800));
+            return OpenAIMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR);
+        }
+
+        Self::parse_sse_stream(response, token_tx).await
+    }
+
+    async fn parse_sse_stream(
+        response: reqwest::Response,
+        token_tx: mpsc::UnboundedSender<String>,
+    ) -> OpenAIMessage {
+        use futures_util::StreamExt;
+
+        let mut role = None;
+        let mut content = String::new();
+        let mut reasoning_content = String::new();
+        let mut streamed_tool_calls: BTreeMap<usize, StreamToolCallDelta> = BTreeMap::new();
+        let mut final_tool_calls: Option<Vec<ToolCalls>> = None;
+
+        let mut stream = response.bytes_stream();
+        let mut sse_buffer = String::new();
+
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = match chunk_result {
+                Ok(c) => c,
+                Err(e) => {
+                    error!("Error reading SSE stream chunk: {e}");
+                    break;
+                }
+            };
+
+            sse_buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+            while let Some(line_end) = sse_buffer.find('\n') {
+                let line = sse_buffer[..line_end].trim_end_matches('\r').to_string();
+                sse_buffer = sse_buffer[line_end + 1..].to_string();
+
+                if !line.starts_with("data:") {
+                    continue;
+                }
+
+                let payload = line.trim_start_matches("data:").trim();
+                if payload.is_empty() || payload == "[DONE]" {
+                    continue;
+                }
+
+                let Ok(chunk_data) = serde_json::from_str::<Value>(payload) else {
+                    continue;
+                };
+
+                let choice = chunk_data
+                    .get("choices")
+                    .and_then(|v| v.as_array())
+                    .and_then(|arr| arr.first());
+                let Some(choice) = choice else {
+                    continue;
+                };
+
+                if let Some(delta) = choice.get("delta") {
+                    if let Some(role_str) = delta.get("role").and_then(|v| v.as_str()) {
+                        role = Some(str_to_role(role_str));
+                    }
+                    if let Some(piece) = delta.get("content").and_then(|v| v.as_str()) {
+                        if !piece.is_empty() {
+                            content.push_str(piece);
+                            let _ = token_tx.send(piece.to_string());
+                        }
+                    }
+                    if let Some(piece) = delta
+                        .get("reasoning_content")
+                        .and_then(|v| v.as_str())
+                    {
+                        reasoning_content.push_str(piece);
+                    }
+                    if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
+                        for tool_call in tool_calls {
+                            let index = tool_call
+                                .get("index")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(streamed_tool_calls.len() as u64)
+                                as usize;
+                            let entry = streamed_tool_calls.entry(index).or_default();
+
+                            if let Some(id) = tool_call.get("id").and_then(|v| v.as_str()) {
+                                if !id.is_empty() {
+                                    entry.id = Some(id.to_string());
+                                }
+                            }
+                            if let Some(type_name) =
+                                tool_call.get("type").and_then(|v| v.as_str())
+                            {
+                                if !type_name.is_empty() {
+                                    entry.type_name = Some(type_name.to_string());
+                                }
+                            }
+                            if let Some(function) = tool_call.get("function") {
+                                if let Some(name) =
+                                    function.get("name").and_then(|v| v.as_str())
+                                {
+                                    if !name.is_empty() {
+                                        entry.function_name = Some(name.to_string());
+                                    }
+                                }
+                                if let Some(arguments) =
+                                    function.get("arguments").and_then(|v| v.as_str())
+                                {
+                                    entry.function_arguments.push_str(arguments);
+                                }
+                            }
+                        }
+                    }
+                } else if let Some(message) = choice.get("message") {
+                    if let Some(role_str) = message.get("role").and_then(|v| v.as_str()) {
+                        role = Some(str_to_role(role_str));
+                    }
+                    if let Some(text) = message.get("content").and_then(|v| v.as_str()) {
+                        content.push_str(text);
+                        let _ = token_tx.send(text.to_string());
+                    }
+                    if let Some(text) = message
+                        .get("reasoning_content")
+                        .and_then(|v| v.as_str())
+                    {
+                        reasoning_content.push_str(text);
+                    }
+                    if let Some(tool_calls_value) = message.get("tool_calls") {
+                        let parsed = Self::parse_tool_calls(tool_calls_value);
+                        if !parsed.is_empty() {
+                            final_tool_calls = Some(parsed);
+                        }
+                    }
+                }
+            }
+        }
+
+        drop(token_tx);
+
+        let tool_calls = if let Some(tool_calls) = final_tool_calls {
+            tool_calls
+        } else {
+            streamed_tool_calls
+                .into_iter()
+                .map(|(index, call)| {
+                    let arguments = if call.function_arguments.trim().is_empty() {
+                        Value::Null
+                    } else {
+                        serde_json::from_str::<Value>(&call.function_arguments)
+                            .unwrap_or_else(|_| Value::String(call.function_arguments.clone()))
+                    };
+                    ToolCalls {
+                        id: call
+                            .id
+                            .unwrap_or_else(|| format!("stream_tool_call_{index}")),
+                        type_name: call.type_name.unwrap_or_else(|| "function".to_string()),
+                        function: ToolCallsFuncSpec {
+                            name: call.function_name.unwrap_or_default(),
+                            arguments,
+                        },
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
+
+        if content.is_empty() && reasoning_content.is_empty() && tool_calls.is_empty() {
+            return OpenAIMessage::assistant_text("");
+        }
+
+        OpenAIMessage {
+            role: role.unwrap_or_else(|| str_to_role("assistant")),
+            content: if content.is_empty() {
+                None
+            } else {
+                Some(MessageContent::Text(content))
+            },
+            reasoning_content: if reasoning_content.is_empty() {
+                None
+            } else {
+                Some(reasoning_content)
+            },
+            tool_calls,
+            tool_call_id: None,
+        }
+    }
+}
+
+impl StreamingLLMBase for LLMAPI {
+    fn inference_streaming<'a>(
+        &'a self,
+        param: &'a InferenceParam<'a>,
+        token_tx: mpsc::UnboundedSender<String>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = OpenAIMessage> + Send + 'a>> {
+        Box::pin(async move { self.inference_streaming(param, token_tx).await })
     }
 }

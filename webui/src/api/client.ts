@@ -329,6 +329,9 @@ export interface ChatToolCall {
 export interface ChatHistoryRecord {
   session_id: string;
   agent_id: string;
+  agent_name: string;
+  agent_type: string;
+  agent_avatar_url: string | null;
   role: string;
   content: string;
   timestamp: string;
@@ -343,6 +346,9 @@ export interface ChatSessionSummary {
   session_id: string;
   updated_at: string;
   agent_id?: string | null;
+  agent_name?: string | null;
+  agent_type?: string | null;
+  agent_avatar_url?: string | null;
 }
 
 export const system = {
@@ -587,7 +593,13 @@ export const chat = {
         }
 
         try {
-          onEvent(JSON.parse(data) as ChatStreamEvent);
+          const event = JSON.parse(data) as ChatStreamEvent;
+          onEvent(event);
+          if (event.type === "delta") {
+            // Yield to the event loop so Vue can flush its reactive updates
+            // and the browser can repaint between tokens.
+            await new Promise<void>((r) => setTimeout(r, 0));
+          }
         } catch (error) {
           console.warn("Failed to parse chat stream event", error, data);
         }
@@ -595,8 +607,9 @@ export const chat = {
     }
   },
 
-  listSessions(): Promise<{ sessions: ChatSessionSummary[] }> {
-    return request("GET", "/chat/sessions");
+  listSessions(agentId?: string): Promise<{ sessions: ChatSessionSummary[] }> {
+    const qs = agentId ? `?agent_id=${encodeURIComponent(agentId)}` : "";
+    return request("GET", `/chat/sessions${qs}`);
   },
 
   getSessionMessages(sessionId: string): Promise<{ messages: ChatHistoryRecord[] }> {
