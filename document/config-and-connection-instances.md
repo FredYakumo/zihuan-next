@@ -185,12 +185,3 @@ Later:
 If you open the connection manager page, you will see the runtime instance.
 
 If you disable the configuration in `连接配置`, future use of `abc123` fails, and existing runtime instances for that configuration are cleaned up.
-
-## 9. Short Version
-
-- `config_id` identifies a saved connection definition
-- `instance_id` identifies a live runtime connection
-- graph nodes bind to `config_id`
-- runtime managers create and reuse instances
-- the connection manager page shows live instances
-- the connection config page manages persistent definitions
