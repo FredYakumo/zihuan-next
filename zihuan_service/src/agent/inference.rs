@@ -24,7 +24,10 @@ use zihuan_llm::system_config::{AgentConfig, AgentType, LlmRefConfig, LlmService
 use zihuan_llm::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 
 use super::qq_chat_agent::build_enabled_tool_definitions;
-use crate::resource_resolver::build_embedding_model;
+use crate::resource_resolver::{
+    build_embedding_model, resolve_local_embedding_model_name,
+};
+use zihuan_llm::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 
 #[derive(Clone)]
 struct QqLoadedInferenceResources {
@@ -336,6 +339,23 @@ fn load_qq_resources(
         None
     });
 
+    let embedding_model = if let Some(model_ref_id) = config.embedding_model_ref_id.as_deref() {
+        let llm_refs = zihuan_llm::system_config::load_llm_refs().unwrap_or_default();
+        match resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, &agent.name) {
+            Ok(Some(_)) => block_async(
+                RuntimeEmbeddingModelManager::shared().get_or_create_embedding_model(model_ref_id),
+            )
+            .ok(),
+            Ok(None) => None,
+            Err(err) => {
+                warn!("[inference] embedding model ref unavailable: {err}");
+                None
+            }
+        }
+    } else {
+        config.embedding.as_ref().map(build_embedding_model)
+    };
+
     Some(QqLoadedInferenceResources {
         bot_name: if config.bot_name.trim().is_empty() {
             agent.name.clone()
@@ -347,7 +367,7 @@ fn load_qq_resources(
         mysql_ref,
         weaviate_ref,
         weaviate_image_ref,
-        embedding_model: config.embedding.as_ref().map(build_embedding_model),
+        embedding_model,
     })
 }
 
@@ -376,7 +396,12 @@ fn resolve_agent_llm_config(
                 agent.name, llm_ref.name
             )));
         }
-        return Ok(llm_ref.llm.clone());
+        return llm_ref.chat_llm().cloned().ok_or_else(|| {
+            Error::ValidationError(format!(
+                "agent '{}' references non-chat model_ref '{}'",
+                agent.name, llm_ref.name
+            ))
+        });
     }
 
     legacy_llm.cloned().ok_or_else(|| {

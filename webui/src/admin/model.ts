@@ -4,11 +4,13 @@ import type {
   AgentWithRuntime,
   ConnectionConfig,
   LlmConfig,
+  ModelRefSpec,
   LlmServiceConfig,
 } from "../api/client";
 
 export type ConnectionType = "mysql" | "redis" | "weaviate" | "rustfs" | "bot_adapter" | "ims_bot_adapter" | "tavily";
 export type AgentTypeName = "qq_chat" | "http_stream";
+export type ModelRefType = "chat_llm" | "text_embedding_local";
 export type ToolTargetType = "workflow_set" | "file_path" | "inline_graph";
 
 export interface ConnectionFormState {
@@ -44,7 +46,9 @@ export interface LlmFormState {
   id: string | null;
   name: string;
   enabled: boolean;
+  model_type: ModelRefType;
   llm: LlmServiceConfig;
+  local_model_name: string;
 }
 
 export interface ToolFormState {
@@ -74,6 +78,7 @@ export interface AgentFormState {
   llm_ref_id: string;
   intent_llm_ref_id: string;
   math_programming_llm_ref_id: string;
+  embedding_model_ref_id: string;
   tavily_connection_id: string;
   mysql_connection_id: string;
   weaviate_connection_id: string;
@@ -164,7 +169,9 @@ export function defaultLlmForm(): LlmFormState {
     id: null,
     name: "",
     enabled: true,
+    model_type: "chat_llm",
     llm: defaultLlmConfig(),
+    local_model_name: "",
   };
 }
 
@@ -198,6 +205,7 @@ export function defaultAgentForm(): AgentFormState {
     llm_ref_id: "",
     intent_llm_ref_id: "",
     math_programming_llm_ref_id: "",
+    embedding_model_ref_id: "",
     tavily_connection_id: "",
     mysql_connection_id: "",
     weaviate_connection_id: "",
@@ -341,18 +349,26 @@ export function buildConnectionPayload(form: ConnectionFormState): {
 }
 
 export function llmFormFromConfig(config: LlmConfig): LlmFormState {
+  const form = defaultLlmForm();
+  form.id = config.config_id;
+  form.name = config.name;
+  form.enabled = config.enabled;
+  if (config.model.type === "text_embedding_local") {
+    form.model_type = "text_embedding_local";
+    form.local_model_name = config.model.model_name;
+    return form;
+  }
   return {
-    id: config.config_id,
-    name: config.name,
-    enabled: config.enabled,
+    ...form,
+    model_type: "chat_llm",
     llm: {
-      model_name: config.llm.model_name,
-      api_endpoint: config.llm.api_endpoint,
-      api_key: config.llm.api_key ?? "",
-      stream: Boolean(config.llm.stream ?? false),
-      supports_multimodal_input: Boolean(config.llm.supports_multimodal_input ?? false),
-      timeout_secs: config.llm.timeout_secs,
-      retry_count: config.llm.retry_count,
+      model_name: config.model.llm.model_name,
+      api_endpoint: config.model.llm.api_endpoint,
+      api_key: config.model.llm.api_key ?? "",
+      stream: Boolean(config.model.llm.stream ?? false),
+      supports_multimodal_input: Boolean(config.model.llm.supports_multimodal_input ?? false),
+      timeout_secs: config.model.llm.timeout_secs,
+      retry_count: config.model.llm.retry_count,
     },
   };
 }
@@ -409,6 +425,7 @@ export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): Agen
     form.llm_ref_id = String(agentType.llm_ref_id ?? "");
     form.intent_llm_ref_id = String(agentType.intent_llm_ref_id ?? "");
     form.math_programming_llm_ref_id = String(agentType.math_programming_llm_ref_id ?? "");
+    form.embedding_model_ref_id = String(agentType.embedding_model_ref_id ?? "");
     form.tavily_connection_id = String(agentType.tavily_connection_id ?? "");
     form.mysql_connection_id = String(agentType.mysql_connection_id ?? "");
     form.weaviate_connection_id = String(agentType.weaviate_connection_id ?? "");
@@ -500,6 +517,7 @@ export function buildAgentPayload(form: AgentFormState): {
         llm_ref_id: form.llm_ref_id || null,
         intent_llm_ref_id: form.intent_llm_ref_id || null,
         math_programming_llm_ref_id: form.math_programming_llm_ref_id || null,
+        embedding_model_ref_id: form.embedding_model_ref_id || null,
         tavily_connection_id: form.tavily_connection_id,
         embedding: null,
         mysql_connection_id: form.mysql_connection_id || null,
@@ -519,6 +537,23 @@ export function buildAgentPayload(form: AgentFormState): {
       bind: form.http_bind.trim(),
       api_key: form.http_api_key.trim() || null,
       llm_ref_id: form.llm_ref_id || null,
+    },
+  };
+}
+
+export function buildModelRefPayload(form: LlmFormState): ModelRefSpec {
+  if (form.model_type === "text_embedding_local") {
+    return {
+      type: "text_embedding_local",
+      model_name: form.local_model_name.trim(),
+    };
+  }
+
+  return {
+    type: "chat_llm",
+    llm: {
+      ...form.llm,
+      api_key: form.llm.api_key?.trim() || null,
     },
   };
 }

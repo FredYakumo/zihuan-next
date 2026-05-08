@@ -284,12 +284,22 @@ export interface LlmServiceConfig {
   retry_count: number;
 }
 
+export type ModelRefSpec =
+  | {
+      type: "chat_llm";
+      llm: LlmServiceConfig;
+    }
+  | {
+      type: "text_embedding_local";
+      model_name: string;
+    };
+
 export interface LlmConfig {
   config_id: string;
   name: string;
   enabled: boolean;
   updated_at: string;
-  llm: LlmServiceConfig;
+  model: ModelRefSpec;
 }
 
 export interface AgentToolConfig {
@@ -422,14 +432,14 @@ export const system = {
     create(payload: {
       name: string;
       enabled: boolean;
-      llm: LlmServiceConfig;
+      model: ModelRefSpec;
     }): Promise<LlmConfig> {
       return request("POST", "/system/llm-refs", payload);
     },
     update(configId: string, payload: {
       name: string;
       enabled: boolean;
-      llm: LlmServiceConfig;
+      model: ModelRefSpec;
     }): Promise<LlmConfig> {
       return request("PUT", `/system/llm-refs/${configId}`, payload);
     },

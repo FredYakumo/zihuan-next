@@ -1,7 +1,7 @@
 <template>
   <section class="page">
     <div class="page-hero">
-      <h2>连接管理器</h2>
+      <h2>运行时实例</h2>
       <div class="hero-actions">
         <button class="btn ghost" @click="load">刷新</button>
       </div>
@@ -10,7 +10,7 @@
     <section class="panel">
       <div v-if="loading" class="empty-state">加载中…</div>
       <div v-else-if="error" class="empty-state">{{ error }}</div>
-      <div v-else-if="items.length === 0" class="empty-state">当前没有活动连接实例。</div>
+      <div v-else-if="items.length === 0" class="empty-state">当前没有活动运行时实例。</div>
       <template v-else>
         <div class="runtime-summary">
           <div class="runtime-stat">
@@ -28,11 +28,23 @@
         </div>
 
         <div class="runtime-table-wrap">
-          <table class="task-table runtime-table">
+          <table class="explorer-table runtime-table">
+            <colgroup>
+              <col class="col-name" />
+              <col class="col-kind" />
+              <col class="col-config" />
+              <col class="col-instance" />
+              <col class="col-started" />
+              <col class="col-duration" />
+              <col class="col-keepalive" />
+              <col class="col-heartbeat" />
+              <col class="col-status" />
+              <col class="col-actions" />
+            </colgroup>
             <thead>
               <tr>
-                <th>连接</th>
-                <th>类型</th>
+                <th>名称</th>
+                <th>实例类型</th>
                 <th>Config ID</th>
                 <th>Instance ID</th>
                 <th>开始时间</th>
@@ -45,25 +57,25 @@
             </thead>
             <tbody>
               <tr v-for="item in items" :key="item.instance_id">
-                <td>
+                <td class="runtime-cell-name">
                   <div class="runtime-name-cell">
                     <strong>{{ item.name }}</strong>
                   </div>
                 </td>
-                <td>
+                <td class="runtime-cell-nowrap">
                   <span class="badge">{{ item.kind }}</span>
                 </td>
-                <td class="mono" :title="item.config_id">{{ compactId(item.config_id) }}</td>
-                <td class="mono" :title="item.instance_id">{{ compactId(item.instance_id) }}</td>
-                <td>{{ formatTime(item.started_at) }}</td>
-                <td>{{ durationText(item.started_at) }}</td>
-                <td>{{ item.keep_alive ? "是" : "否" }}</td>
-                <td>{{ heartbeatText(item.heartbeat_interval_secs) }}</td>
-                <td>
+                <td class="mono runtime-cell-ellipsis runtime-cell-nowrap" :title="item.config_id">{{ compactId(item.config_id) }}</td>
+                <td class="mono runtime-cell-ellipsis runtime-cell-nowrap" :title="item.instance_id">{{ compactId(item.instance_id) }}</td>
+                <td class="runtime-cell-nowrap">{{ formatTime(item.started_at) }}</td>
+                <td class="runtime-cell-nowrap">{{ durationText(item.started_at) }}</td>
+                <td class="runtime-cell-center runtime-cell-nowrap">{{ item.keep_alive ? "是" : "否" }}</td>
+                <td class="runtime-cell-nowrap">{{ heartbeatText(item.heartbeat_interval_secs) }}</td>
+                <td class="runtime-cell-nowrap">
                   <span class="badge" :class="statusTone(item.status)">{{ statusLabel(item.status) }}</span>
                 </td>
-                <td>
-                  <button class="btn warn connection-card-compact-btn" @click="forceClose(item.instance_id)">强制关闭</button>
+                <td class="runtime-cell-actions">
+                  <button class="btn warn runtime-action-btn" @click="forceClose(item.instance_id)">强制关闭</button>
                 </td>
               </tr>
             </tbody>
@@ -123,7 +135,7 @@ async function go(nextPage: number) {
 }
 
 async function forceClose(instanceId: string) {
-  if (!window.confirm("确认强制关闭这个连接实例吗？")) {
+  if (!window.confirm("确认强制关闭这个运行时实例吗？")) {
     return;
   }
   await system.connections.closeRuntimeInstance(instanceId);
@@ -206,26 +218,108 @@ onBeforeUnmount(() => {
 
 .runtime-table-wrap {
   overflow-x: auto;
+  border: 1px solid var(--admin-border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--admin-bg-soft) 78%, transparent 22%);
 }
 
 .runtime-table {
-  min-width: 1120px;
+  width: 100%;
+  min-width: 1220px;
+  table-layout: fixed;
 }
 
 .runtime-table th {
   white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: color-mix(in srgb, var(--admin-bg-panel-strong) 94%, transparent 6%);
 }
 
 .runtime-table td {
   vertical-align: middle;
 }
 
+.runtime-table tbody tr:hover {
+  background: color-mix(in srgb, var(--admin-accent-soft) 14%, transparent 86%);
+}
+
+.runtime-table .col-name {
+  width: 210px;
+}
+
+.runtime-table .col-kind {
+  width: 140px;
+}
+
+.runtime-table .col-config,
+.runtime-table .col-instance {
+  width: 150px;
+}
+
+.runtime-table .col-started {
+  width: 170px;
+}
+
+.runtime-table .col-duration {
+  width: 110px;
+}
+
+.runtime-table .col-keepalive {
+  width: 84px;
+}
+
+.runtime-table .col-heartbeat {
+  width: 92px;
+}
+
+.runtime-table .col-status {
+  width: 100px;
+}
+
+.runtime-table .col-actions {
+  width: 118px;
+}
+
 .runtime-name-cell {
-  min-width: 150px;
+  min-width: 0;
 }
 
 .runtime-name-cell strong {
   display: block;
   line-height: 1.35;
+  word-break: break-word;
+}
+
+.runtime-cell-name {
+  min-width: 0;
+}
+
+.runtime-cell-nowrap {
+  white-space: nowrap;
+}
+
+.runtime-cell-center {
+  text-align: center;
+}
+
+.runtime-cell-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.runtime-cell-actions {
+  white-space: nowrap;
+}
+
+.runtime-action-btn {
+  width: 100%;
+}
+
+@media (max-width: 1400px) {
+  .runtime-table {
+    min-width: 1160px;
+  }
 }
 </style>

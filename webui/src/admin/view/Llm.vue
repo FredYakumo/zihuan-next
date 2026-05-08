@@ -22,23 +22,41 @@
               <label>名称</label>
               <input v-model="form.name" placeholder="例如：OpenAI 主模型" />
             </div>
+            <div class="field">
+              <label>类型</label>
+              <select v-model="form.model_type">
+                <option value="chat_llm">聊天模型</option>
+                <option value="text_embedding_local">本地文本向量模型</option>
+              </select>
+            </div>
             <div class="field-full field-check">
               <input id="llm-enabled" v-model="form.enabled" type="checkbox" />
               <label for="llm-enabled">启用该模型配置</label>
             </div>
-            <div class="field-full field-check">
-              <input id="llm-multimodal-enabled" v-model="form.llm.supports_multimodal_input" type="checkbox" />
-              <label for="llm-multimodal-enabled">多模态模型（允许传入图片）</label>
-            </div>
-            <div class="field-full field-check">
-              <input id="llm-stream-enabled" v-model="form.llm.stream" type="checkbox" />
-              <label for="llm-stream-enabled">默认启用 stream 请求参数</label>
-            </div>
-            <div class="field"><label>Model Name</label><input v-model="form.llm.model_name" /></div>
-            <div class="field"><label>API Endpoint</label><input v-model="form.llm.api_endpoint" /></div>
-            <div class="field"><label>API Key</label><input v-model="form.llm.api_key" type="password" /></div>
-            <div class="field"><label>Timeout Secs</label><input v-model.number="form.llm.timeout_secs" type="number" min="1" /></div>
-            <div class="field"><label>Retry Count</label><input v-model.number="form.llm.retry_count" type="number" min="0" /></div>
+            <template v-if="form.model_type === 'chat_llm'">
+              <div class="field-full field-check">
+                <input id="llm-multimodal-enabled" v-model="form.llm.supports_multimodal_input" type="checkbox" />
+                <label for="llm-multimodal-enabled">多模态模型（允许传入图片）</label>
+              </div>
+              <div class="field-full field-check">
+                <input id="llm-stream-enabled" v-model="form.llm.stream" type="checkbox" />
+                <label for="llm-stream-enabled">默认启用 stream 请求参数</label>
+              </div>
+              <div class="field"><label>Model Name</label><input v-model="form.llm.model_name" /></div>
+              <div class="field"><label>API Endpoint</label><input v-model="form.llm.api_endpoint" /></div>
+              <div class="field"><label>API Key</label><input v-model="form.llm.api_key" type="password" /></div>
+              <div class="field"><label>Timeout Secs</label><input v-model.number="form.llm.timeout_secs" type="number" min="1" /></div>
+              <div class="field"><label>Retry Count</label><input v-model.number="form.llm.retry_count" type="number" min="0" /></div>
+            </template>
+            <template v-else>
+              <div class="field-full">
+                <label>本地模型目录</label>
+                <select v-model="form.local_model_name">
+                  <option value="">请选择</option>
+                  <option v-for="item in localEmbeddingModels" :key="item" :value="item">{{ item }}</option>
+                </select>
+              </div>
+            </template>
           </div>
           <div class="panel-actions connection-picker-form-actions">
             <button class="btn ghost" @click="showCreateForm = false">返回</button>
@@ -88,47 +106,65 @@
                 </label>
               </div>
               <div class="key-value connection-card-edit-row">
-                <strong>多模态</strong>
-                <label class="connection-card-inline-check">
-                  <input
-                    :id="`llm-multimodal-enabled-${item.config_id}`"
-                    v-model="form.llm.supports_multimodal_input"
-                    type="checkbox"
-                  />
-                  <span>{{ form.llm.supports_multimodal_input ? "已启用" : "未启用" }}</span>
-                </label>
+                <strong>类型</strong>
+                <select v-model="form.model_type" class="connection-card-inline-input">
+                  <option value="chat_llm">聊天模型</option>
+                  <option value="text_embedding_local">本地文本向量模型</option>
+                </select>
               </div>
-              <div class="key-value connection-card-edit-row">
-                <strong>Stream</strong>
-                <label class="connection-card-inline-check">
-                  <input
-                    :id="`llm-stream-enabled-${item.config_id}`"
-                    v-model="form.llm.stream"
-                    type="checkbox"
-                  />
-                  <span>{{ form.llm.stream ? "已启用" : "未启用" }}</span>
-                </label>
-              </div>
-              <div class="key-value connection-card-edit-row">
-                <strong>Model</strong>
-                <input v-model="form.llm.model_name" class="connection-card-inline-input" />
-              </div>
-              <div class="key-value connection-card-edit-row">
-                <strong>Endpoint</strong>
-                <input v-model="form.llm.api_endpoint" class="connection-card-inline-input" />
-              </div>
-              <div class="key-value connection-card-edit-row">
-                <strong>API Key</strong>
-                <input v-model="form.llm.api_key" class="connection-card-inline-input" type="password" />
-              </div>
-              <div class="key-value connection-card-edit-row">
-                <strong>Timeout</strong>
-                <input v-model.number="form.llm.timeout_secs" class="connection-card-inline-input" type="number" min="1" />
-              </div>
-              <div class="key-value connection-card-edit-row">
-                <strong>Retry</strong>
-                <input v-model.number="form.llm.retry_count" class="connection-card-inline-input" type="number" min="0" />
-              </div>
+              <template v-if="form.model_type === 'chat_llm'">
+                <div class="key-value connection-card-edit-row">
+                  <strong>多模态</strong>
+                  <label class="connection-card-inline-check">
+                    <input
+                      :id="`llm-multimodal-enabled-${item.config_id}`"
+                      v-model="form.llm.supports_multimodal_input"
+                      type="checkbox"
+                    />
+                    <span>{{ form.llm.supports_multimodal_input ? "已启用" : "未启用" }}</span>
+                  </label>
+                </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>Stream</strong>
+                  <label class="connection-card-inline-check">
+                    <input
+                      :id="`llm-stream-enabled-${item.config_id}`"
+                      v-model="form.llm.stream"
+                      type="checkbox"
+                    />
+                    <span>{{ form.llm.stream ? "已启用" : "未启用" }}</span>
+                  </label>
+                </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>Model</strong>
+                  <input v-model="form.llm.model_name" class="connection-card-inline-input" />
+                </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>Endpoint</strong>
+                  <input v-model="form.llm.api_endpoint" class="connection-card-inline-input" />
+                </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>API Key</strong>
+                  <input v-model="form.llm.api_key" class="connection-card-inline-input" type="password" />
+                </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>Timeout</strong>
+                  <input v-model.number="form.llm.timeout_secs" class="connection-card-inline-input" type="number" min="1" />
+                </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>Retry</strong>
+                  <input v-model.number="form.llm.retry_count" class="connection-card-inline-input" type="number" min="0" />
+                </div>
+              </template>
+              <template v-else>
+                <div class="key-value connection-card-edit-row">
+                  <strong>本地模型目录</strong>
+                  <select v-model="form.local_model_name" class="connection-card-inline-input">
+                    <option value="">请选择</option>
+                    <option v-for="name in localEmbeddingModels" :key="name" :value="name">{{ name }}</option>
+                  </select>
+                </div>
+              </template>
             </div>
           </template>
 
@@ -137,6 +173,7 @@
               <div class="connection-card-header-top">
                 <div class="connection-card-badges">
                   <span class="badge">model</span>
+                  <span class="badge">{{ item.model.type }}</span>
                   <span class="badge" :class="item.enabled ? 'success' : ''">{{ item.enabled ? "已启用" : "已停用" }}</span>
                 </div>
                 <div class="inline-actions connection-card-display-actions">
@@ -149,12 +186,17 @@
 
             <div class="connection-card-body">
               <div class="key-value"><strong>Config ID</strong><span class="mono">{{ compactId(item.config_id) }}</span></div>
-              <div class="key-value"><strong>Model</strong><span>{{ item.llm.model_name }}</span></div>
-              <div class="key-value"><strong>Endpoint</strong><span class="mono">{{ item.llm.api_endpoint }}</span></div>
-              <div class="key-value"><strong>Stream</strong><span>{{ item.llm.stream ? "是" : "否" }}</span></div>
-              <div class="key-value"><strong>多模态</strong><span>{{ item.llm.supports_multimodal_input ? "是" : "否" }}</span></div>
-              <div class="key-value"><strong>Timeout</strong><span>{{ item.llm.timeout_secs }}s</span></div>
-              <div class="key-value"><strong>Retry</strong><span>{{ item.llm.retry_count }} 次</span></div>
+              <template v-if="item.model.type === 'chat_llm'">
+                <div class="key-value"><strong>Model</strong><span>{{ item.model.llm.model_name }}</span></div>
+                <div class="key-value"><strong>Endpoint</strong><span class="mono">{{ item.model.llm.api_endpoint }}</span></div>
+                <div class="key-value"><strong>Stream</strong><span>{{ item.model.llm.stream ? "是" : "否" }}</span></div>
+                <div class="key-value"><strong>多模态</strong><span>{{ item.model.llm.supports_multimodal_input ? "是" : "否" }}</span></div>
+                <div class="key-value"><strong>Timeout</strong><span>{{ item.model.llm.timeout_secs }}s</span></div>
+                <div class="key-value"><strong>Retry</strong><span>{{ item.model.llm.retry_count }} 次</span></div>
+              </template>
+              <template v-else>
+                <div class="key-value"><strong>本地模型目录</strong><span>{{ item.model.model_name }}</span></div>
+              </template>
             </div>
 
             <div class="connection-card-footer">
@@ -170,16 +212,21 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 
-import { system, type LlmConfig } from "../../api/client";
-import { compactId, defaultLlmForm, formatTime, llmFormFromConfig, type LlmFormState } from "../model";
+import { fileIO, system, type LlmConfig } from "../../api/client";
+import { buildModelRefPayload, compactId, defaultLlmForm, formatTime, llmFormFromConfig, type LlmFormState } from "../model";
 
 const items = ref<LlmConfig[]>([]);
 const form = reactive<LlmFormState>(defaultLlmForm());
 const showCreatePicker = ref(false);
 const showCreateForm = ref(false);
+const localEmbeddingModels = ref<string[]>([]);
 
 function resetCreateForm() {
   Object.assign(form, defaultLlmForm());
+}
+
+function resetForm() {
+  resetCreateForm();
 }
 
 function startCreate() {
@@ -195,7 +242,12 @@ function closeCreatePicker() {
 }
 
 async function load() {
-  items.value = await system.llm.list();
+  const [models, localModels] = await Promise.all([
+    system.llm.list(),
+    fileIO.listTextEmbeddingModels(),
+  ]);
+  items.value = models;
+  localEmbeddingModels.value = localModels.models;
 }
 
 function editItem(item: LlmConfig) {
@@ -205,17 +257,23 @@ function editItem(item: LlmConfig) {
 }
 
 async function submitForm() {
-  if (!form.name.trim() || !form.llm.model_name.trim() || !form.llm.api_endpoint.trim()) {
-    alert("请至少填写名称、模型名和 API Endpoint");
+  if (!form.name.trim()) {
+    alert("请至少填写名称");
+    return;
+  }
+  if (form.model_type === "chat_llm") {
+    if (!form.llm.model_name.trim() || !form.llm.api_endpoint.trim()) {
+      alert("请至少填写名称、模型名和 API Endpoint");
+      return;
+    }
+  } else if (!form.local_model_name.trim()) {
+    alert("请选择本地文本向量模型目录");
     return;
   }
   const payload = {
     name: form.name.trim(),
     enabled: form.enabled,
-    llm: {
-      ...form.llm,
-      api_key: form.llm.api_key?.trim() || null,
-    },
+    model: buildModelRefPayload(form),
   };
   if (form.id) {
     await system.llm.update(form.id, payload);

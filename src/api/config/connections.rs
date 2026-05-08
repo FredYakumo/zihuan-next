@@ -14,6 +14,9 @@ use storage_handler::{
     close_runtime_storage_instance, list_runtime_storage_instances, ConnectionConfig,
     ConnectionKind,
 };
+use zihuan_llm::nn::embedding::embedding_runtime_manager::{
+    close_runtime_embedding_instance, list_runtime_embedding_instances,
+};
 
 use super::{
     now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found,
@@ -224,9 +227,11 @@ pub async fn list_runtime_instances(req: &mut Request, res: &mut Response, _depo
 
     match (
         list_runtime_storage_instances(),
+        list_runtime_embedding_instances(),
         list_runtime_bot_adapter_instances().await,
     ) {
-        (Ok(mut storage), Ok(mut bot)) => {
+        (Ok(mut storage), Ok(mut embedding), Ok(mut bot)) => {
+            storage.append(&mut embedding);
             storage.append(&mut bot);
             storage.sort_by(|a, b| b.started_at.cmp(&a.started_at));
             let total = storage.len();
@@ -243,7 +248,9 @@ pub async fn list_runtime_instances(req: &mut Request, res: &mut Response, _depo
                 page_size,
             }));
         }
-        (Err(err), _) | (_, Err(err)) => render_internal_error(res, err),
+        (Err(err), _, _) | (_, Err(err), _) | (_, _, Err(err)) => {
+            render_internal_error(res, err)
+        }
     }
 }
 
@@ -255,6 +262,18 @@ pub async fn close_runtime_instance(req: &mut Request, res: &mut Response, _depo
     }
 
     match close_runtime_storage_instance(&instance_id) {
+        Ok(true) => {
+            res.render(Json(ok_response()));
+            return;
+        }
+        Ok(false) => {}
+        Err(err) => {
+            render_internal_error(res, err);
+            return;
+        }
+    }
+
+    match close_runtime_embedding_instance(&instance_id) {
         Ok(true) => {
             res.render(Json(ok_response()));
             return;

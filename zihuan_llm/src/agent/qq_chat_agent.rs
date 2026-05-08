@@ -324,12 +324,16 @@ fn sender_display_name(sender_name: &str, sender_card: &str) -> String {
 
 fn outbound_persistence(
     mysql_ref: Option<&Arc<MySqlConfig>>,
+    weaviate_ref: Option<&Arc<WeaviateRef>>,
+    embedding_model: Option<&Arc<dyn EmbeddingBase>>,
     group_name: Option<&str>,
     sender_name: &str,
 ) -> OutboundMessagePersistence {
     OutboundMessagePersistence {
         mysql_ref: mysql_ref.cloned(),
         redis_ref: None,
+        weaviate_ref: weaviate_ref.cloned(),
+        embedding_model: embedding_model.cloned(),
         group_name: group_name.map(ToOwned::to_owned),
         sender_name: Some(sender_name.to_string()),
     }
@@ -977,6 +981,114 @@ fn build_user_message(
     }
 }
 
+fn collect_images_for_persistence<'a>(messages: &'a [Message], images: &mut Vec<&'a ImageMessage>) {
+    for message in messages {
+        match message {
+            Message::Image(image) => images.push(image),
+            Message::Reply(reply) => {
+                if let Some(source) = reply.message_source.as_deref() {
+                    collect_images_for_persistence(source, images);
+                }
+            }
+            Message::Forward(forward) => {
+                for node in &forward.content {
+                    collect_images_for_persistence(&node.content, images);
+                }
+            }
+            Message::PlainText(_) | Message::At(_) => {}
+        }
+    }
+}
+
+fn build_image_summary_message(image: &ImageMessage) -> Option<OpenAIMessage> {
+    let mut parts = vec![ContentPart::text(
+        "请用一句简短中文概括这张图片中可见的主要内容，只输出图片内容摘要，不要加前缀、解释或礼貌用语。",
+    )];
+    let image_part = image_part(image)?;
+    parts.push(image_part);
+    Some(OpenAIMessage::user_with_parts(parts))
+}
+
+fn summarize_and_persist_event_images(
+    llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
+    event: &ims_bot_adapter::models::MessageEvent,
+    weaviate_image_ref: Option<&Arc<WeaviateRef>>,
+    embedding_model: Option<&Arc<dyn EmbeddingBase>>,
+) {
+    let (Some(weaviate_image_ref), Some(embedding_model)) = (weaviate_image_ref, embedding_model)
+    else {
+        return;
+    };
+    if !llm.supports_multimodal_input() {
+        return;
+    }
+
+    let mut images = Vec::new();
+    collect_images_for_persistence(&event.message_list, &mut images);
+    if images.is_empty() {
+        return;
+    }
+
+    for image in images {
+        let Some(object_key) = image
+            .object_key
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+
+        let Some(user_message) = build_image_summary_message(image) else {
+            continue;
+        };
+
+        let messages = vec![
+            OpenAIMessage::system(
+                "你在为图片向量数据库生成摘要。输出必须简短、客观，并只描述图片本身可见内容。",
+            ),
+            user_message,
+        ];
+        let response = llm.inference(&InferenceParam {
+            messages: &messages,
+            tools: None,
+        });
+        let summary = response
+            .content_text_owned()
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if summary.is_empty() {
+            continue;
+        }
+
+        match embedding_model.inference(&summary) {
+            Ok(vector) if !vector.is_empty() => {
+                if let Err(err) = weaviate_image_ref.upsert_image_record(
+                    object_key,
+                    &summary,
+                    &vector,
+                    Some("qq"),
+                    Some(&event.message_id.to_string()),
+                    Some(&event.sender.user_id.to_string()),
+                ) {
+                    warn!(
+                        "{LOG_PREFIX} Failed to persist image vector for message {} object_key={}: {}",
+                        event.message_id, object_key, err
+                    );
+                }
+            }
+            Ok(_) => {}
+            Err(err) => {
+                warn!(
+                    "{LOG_PREFIX} Failed to build image embedding for message {} object_key={}: {}",
+                    event.message_id, object_key, err
+                );
+            }
+        }
+    }
+}
+
 fn extract_user_message_text(
     event: &ims_bot_adapter::models::MessageEvent,
     bot_id: &str,
@@ -1370,6 +1482,8 @@ fn send_direct_text_reply(
     adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
     target_id: &str,
     mysql_ref: Option<&Arc<MySqlConfig>>,
+    weaviate_ref: Option<&Arc<WeaviateRef>>,
+    embedding_model: Option<&Arc<dyn EmbeddingBase>>,
     group_name: Option<&str>,
     bot_name: &str,
     bot_id: &str,
@@ -1396,7 +1510,8 @@ fn send_direct_text_reply(
         return Ok(None);
     }
 
-    let persistence = outbound_persistence(mysql_ref, group_name, bot_name);
+    let persistence =
+        outbound_persistence(mysql_ref, weaviate_ref, embedding_model, group_name, bot_name);
     if is_group {
         send_group_batches_with_persistence(adapter, target_id, &batches, &persistence);
     } else {
@@ -3228,7 +3343,8 @@ impl QqChatAgent {
         if !claimed {
             info!("{LOG_PREFIX} Session busy for {sender_id}");
             if !is_group {
-                let persistence = outbound_persistence(mysql_ref, None, bot_name);
+                let persistence =
+                    outbound_persistence(mysql_ref, weaviate_ref, embedding_model, None, bot_name);
                 send_friend_text_with_persistence(adapter, &target_id, BUSY_REPLY, &persistence);
             }
             self.enqueue_weaviate_persistence(event, weaviate_ref, embedding_model);
@@ -3307,6 +3423,12 @@ impl QqChatAgent {
             bot_name,
             selected_llm.supports_multimodal_input(),
         );
+        summarize_and_persist_event_images(
+            selected_llm,
+            &inference_event,
+            weaviate_image_ref,
+            embedding_model,
+        );
 
         let history_key =
             conversation_history_key(&bot_id, sender_id, is_group, inference_event.group_id);
@@ -3329,6 +3451,8 @@ impl QqChatAgent {
                 adapter,
                 target_id,
                 mysql_ref,
+                weaviate_ref,
+                embedding_model,
                 event.group_name.as_deref(),
                 bot_name,
                 &bot_id,
@@ -3540,8 +3664,13 @@ impl QqChatAgent {
             if reply_result.suppress_send {
                 info!("{LOG_PREFIX} reply send suppressed by explicit model output");
             } else if !reply_result.batches.is_empty() {
-                let persistence =
-                    outbound_persistence(mysql_ref, event.group_name.as_deref(), bot_name);
+                let persistence = outbound_persistence(
+                    mysql_ref,
+                    weaviate_ref,
+                    embedding_model,
+                    event.group_name.as_deref(),
+                    bot_name,
+                );
                 if is_group {
                     send_group_batches_with_persistence(
                         adapter,

@@ -36,27 +36,34 @@
               <label class="field-check"><input v-model="form.is_default" type="checkbox" />默认 Agent</label>
             </div>
 
-            <div class="field">
-              <label>模型配置</label>
-              <select v-model="form.llm_ref_id">
-                <option value="">请选择</option>
-                <option v-for="item in llm" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
-              </select>
-            </div>
+              <div class="field">
+                <label>模型配置</label>
+                <select v-model="form.llm_ref_id">
+                  <option value="">请选择</option>
+                  <option v-for="item in chatModels" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                </select>
+              </div>
 
             <template v-if="form.type === 'qq_chat'">
               <div class="field">
                 <label>意图分类模型</label>
                 <select v-model="form.intent_llm_ref_id">
                   <option value="">回退主模型</option>
-                  <option v-for="item in llm" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                  <option v-for="item in chatModels" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
               <div class="field">
                 <label>数学编程模型</label>
                 <select v-model="form.math_programming_llm_ref_id">
                   <option value="">回退主模型</option>
-                  <option v-for="item in llm" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                  <option v-for="item in chatModels" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>文本向量模型</label>
+                <select v-model="form.embedding_model_ref_id">
+                  <option value="">不使用</option>
+                  <option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
               <div class="field">
@@ -273,7 +280,7 @@
                 <strong>模型</strong>
                 <select v-model="form.llm_ref_id" class="connection-card-inline-input">
                   <option value="">请选择</option>
-                  <option v-for="item in llm" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                  <option v-for="item in chatModels" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
 
@@ -282,14 +289,21 @@
                   <strong>意图分类模型</strong>
                   <select v-model="form.intent_llm_ref_id" class="connection-card-inline-input">
                     <option value="">回退主模型</option>
-                    <option v-for="item in llm" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                    <option v-for="item in chatModels" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                   </select>
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>数学编程模型</strong>
                   <select v-model="form.math_programming_llm_ref_id" class="connection-card-inline-input">
                     <option value="">回退主模型</option>
-                    <option v-for="item in llm" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                    <option v-for="item in chatModels" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                  </select>
+                </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>文本向量模型</strong>
+                  <select v-model="form.embedding_model_ref_id" class="connection-card-inline-input">
+                    <option value="">不使用</option>
+                    <option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                   </select>
                 </div>
                 <div class="key-value connection-card-edit-row">
@@ -537,6 +551,8 @@ const editingAgentId = ref("");
 const showCreatePicker = ref(false);
 const showCreateForm = ref(false);
 const qqChatDefaultTools = QQ_CHAT_DEFAULT_TOOLS;
+const chatModels = computed(() => llm.value.filter((item) => item.model.type === "chat_llm"));
+const embeddingModels = computed(() => llm.value.filter((item) => item.model.type === "text_embedding_local" && item.enabled));
 
 const botConnections = computed(() => connections.value.filter((item) => isBotAdapterConnectionType(String(item.kind.type ?? ""))));
 const rustfsConnections = computed(() => connections.value.filter((item) => item.kind.type === "rustfs"));
@@ -703,6 +719,7 @@ function summarizeAgent(agent: AgentWithRuntime): Array<{ label: string; value: 
       { label: "Bot Name", value: String(agentType.bot_name ?? "") || "未设置" },
       { label: "意图分类模型", value: llmRefName(String(agentType.intent_llm_ref_id ?? "")) || llmName(agent) },
       { label: "数学编程模型", value: llmRefName(String(agentType.math_programming_llm_ref_id ?? "")) || llmName(agent) },
+      { label: "文本向量模型", value: llmRefName(String(agentType.embedding_model_ref_id ?? "")) || "未绑定" },
       { label: "System Prompt", value: String(agentType.system_prompt ?? "").trim() ? "已配置" : "未设置" },
       { label: "Max Message", value: String(agentType.max_message_length ?? 500) },
     );

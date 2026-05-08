@@ -55,6 +55,8 @@ pub struct QqChatAgentConfig {
     #[serde(default)]
     pub math_programming_llm_ref_id: Option<String>,
     #[serde(default)]
+    pub embedding_model_ref_id: Option<String>,
+    #[serde(default)]
     pub llm: Option<LlmServiceConfig>,
     pub tavily_connection_id: String,
     #[serde(default)]
@@ -114,6 +116,13 @@ pub struct EmbeddingServiceConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ModelRefSpec {
+    ChatLlm { llm: LlmServiceConfig },
+    TextEmbeddingLocal { model_name: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentToolConfig {
     pub id: String,
     pub name: String,
@@ -165,7 +174,7 @@ pub struct LlmRefConfig {
     pub name: String,
     #[serde(default)]
     pub enabled: bool,
-    pub llm: LlmServiceConfig,
+    pub model: ModelRefSpec,
     #[serde(default)]
     pub updated_at: String,
 }
@@ -227,6 +236,13 @@ impl LlmRefConfig {
             &self.id
         } else {
             &self.config_id
+        }
+    }
+
+    pub fn chat_llm(&self) -> Option<&LlmServiceConfig> {
+        match &self.model {
+            ModelRefSpec::ChatLlm { llm } => Some(llm),
+            ModelRefSpec::TextEmbeddingLocal { .. } => None,
         }
     }
 }
@@ -307,19 +323,50 @@ impl ConfigRecord for LlmRefConfig {
         if self.name.trim().is_empty() {
             return Err(zihuan_core::string_error!("llm_ref name must not be empty"));
         }
+        match &self.model {
+            ModelRefSpec::ChatLlm { llm } => {
+                if llm.model_name.trim().is_empty() {
+                    return Err(zihuan_core::string_error!(
+                        "chat_llm model_name must not be empty"
+                    ));
+                }
+                if llm.api_endpoint.trim().is_empty() {
+                    return Err(zihuan_core::string_error!(
+                        "chat_llm api_endpoint must not be empty"
+                    ));
+                }
+            }
+            ModelRefSpec::TextEmbeddingLocal { model_name } => {
+                if model_name.trim().is_empty() {
+                    return Err(zihuan_core::string_error!(
+                        "text_embedding_local model_name must not be empty"
+                    ));
+                }
+            }
+        }
         Ok(())
     }
 
     fn redacted_summary(&self) -> Value {
+        let model = match &self.model {
+            ModelRefSpec::ChatLlm { llm } => json!({
+                "type": "chat_llm",
+                "llm": {
+                    "model_name": llm.model_name,
+                    "api_endpoint": llm.api_endpoint,
+                }
+            }),
+            ModelRefSpec::TextEmbeddingLocal { model_name } => json!({
+                "type": "text_embedding_local",
+                "model_name": model_name,
+            }),
+        };
         json!({
             "config_id": self.canonical_config_id(),
             "kind": self.kind(),
             "name": self.name,
             "enabled": self.enabled,
-            "llm": {
-                "model_name": self.llm.model_name,
-                "api_endpoint": self.llm.api_endpoint,
-            }
+            "model": model,
         })
     }
 }
@@ -496,7 +543,7 @@ fn llm_ref_to_record(llm_ref: &LlmRefConfig) -> Result<StoredConfigRecord> {
         name: llm_ref.name.clone(),
         enabled: llm_ref.enabled,
         updated_at: llm_ref.updated_at.clone(),
-        spec: serde_json::to_value(&llm_ref.llm)?,
+        spec: serde_json::to_value(&llm_ref.model)?,
     })
 }
 
@@ -512,7 +559,22 @@ fn llm_ref_from_record(record: StoredConfigRecord) -> Result<LlmRefConfig> {
         config_id: record.config_id,
         name: record.name,
         enabled: record.enabled,
-        llm: serde_json::from_value(record.spec)?,
+        model: model_ref_spec_from_value(record.spec)?,
         updated_at: record.updated_at,
+    })
+}
+
+fn model_ref_spec_from_value(value: Value) -> Result<ModelRefSpec> {
+    if value
+        .as_object()
+        .and_then(|object| object.get("type"))
+        .and_then(Value::as_str)
+        .is_some()
+    {
+        return Ok(serde_json::from_value(value)?);
+    }
+
+    Ok(ModelRefSpec::ChatLlm {
+        llm: serde_json::from_value(value)?,
     })
 }
