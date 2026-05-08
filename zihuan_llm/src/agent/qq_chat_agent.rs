@@ -1811,6 +1811,10 @@ fn optional_string_argument(arguments: &Value, key: &str) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+fn optional_bool_argument(arguments: &Value, key: &str) -> Option<bool> {
+    arguments.get(key).and_then(Value::as_bool)
+}
+
 fn graphql_string_literal(value: &str) -> Result<String> {
     serde_json::to_string(value)
         .map_err(|e| Error::ValidationError(format!("failed to encode GraphQL string: {e}")))
@@ -2557,12 +2561,13 @@ impl BrainTool for SearchSimilarImagesBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "search_similar_images",
-            description: "搜索图片：优先在 Weaviate 图片 collection 做向量检索，失败时回退 Tavily 联网搜索并回填 Weaviate",
+            description: "搜索图片：默认优先在 Weaviate 图片 collection 做向量检索，找不到合适结果时可设置 force_web_search=true 强制使用 Tavily 联网搜索，并把联网结果回填 Weaviate",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "要搜索的图片语义查询文本" },
-                    "limit": { "type": "integer", "description": "返回数量，默认 5，最大 20" }
+                    "limit": { "type": "integer", "description": "返回数量，默认 5，最大 20" },
+                    "force_web_search": { "type": "boolean", "description": "是否强制跳过本地 Weaviate 检索，直接使用 Tavily 联网搜索；当本地图片不合适时设为 true" }
                 },
                 "required": ["query"]
             }),
@@ -2590,82 +2595,91 @@ impl BrainTool for SearchSimilarImagesBrainTool {
                 DEFAULT_SEMANTIC_SEARCH_LIMIT,
                 MAX_SEMANTIC_SEARCH_LIMIT,
             );
+            let force_web_search =
+                optional_bool_argument(arguments, "force_web_search").unwrap_or(false);
 
-            if let (Some(weaviate_image_ref), Some(embedding_model)) = (
-                self.weaviate_image_ref.as_ref(),
-                self.embedding_model.as_ref(),
-            ) {
-                let vector = embedding_model.inference(&query)?;
-                let mut items = run_weaviate_image_get_query(
-                    weaviate_image_ref,
-                    limit,
-                    Some(&vector),
-                    None,
-                    None,
-                    true,
-                )?;
-                items.sort_by(semantic_result_order);
-                items.retain(|item| {
-                    extract_string_field(item, "object_storage_path")
-                        .as_deref()
-                        .map(is_direct_image_url)
-                        .unwrap_or(false)
-                });
-                // If we have local S3 storage, further filter to only paths that the
-                // QQ client can actually reach (local-network origin). Foreign CDN URLs
-                // that pass the extension check are dropped here so the Tavily fallback
-                // downloads and re-uploads them to local S3, healing stale records.
-                if let Some(s3) = self.s3_ref.as_ref() {
-                    let local_base = s3_local_base(s3);
+            if !force_web_search {
+                if let (Some(weaviate_image_ref), Some(embedding_model)) = (
+                    self.weaviate_image_ref.as_ref(),
+                    self.embedding_model.as_ref(),
+                ) {
+                    let vector = embedding_model.inference(&query)?;
+                    let mut items = run_weaviate_image_get_query(
+                        weaviate_image_ref,
+                        limit,
+                        Some(&vector),
+                        None,
+                        None,
+                        true,
+                    )?;
+                    items.sort_by(semantic_result_order);
                     items.retain(|item| {
                         extract_string_field(item, "object_storage_path")
                             .as_deref()
-                            .map(|p| is_local_s3_path(p, &local_base))
+                            .map(is_direct_image_url)
                             .unwrap_or(false)
                     });
-                }
-                // Drop results whose semantic distance is too large — they are
-                // unrelated to the query and Tavily will do better.
-                let candidate_count_after_path_filters = items.len();
-                let dropped_by_distance: Vec<String> = items
-                    .iter()
-                    .filter(|item| {
-                        extract_distance(item)
-                            .map(|d| d > WEAVIATE_IMAGE_MAX_GOOD_DISTANCE)
-                            .unwrap_or(false)
-                    })
-                    .map(format_weaviate_image_candidate_for_log)
-                    .collect();
-                items.retain(|item| {
-                    item.get("distance")
-                        .and_then(Value::as_f64)
-                        .map(|d| d <= WEAVIATE_IMAGE_MAX_GOOD_DISTANCE)
-                        .unwrap_or(true)
-                });
-                if !dropped_by_distance.is_empty() {
-                    info!(
-                        "{LOG_PREFIX} search_similar_images dropped {} Weaviate candidates after URL/path filtering for query='{}' because distance exceeded {}: {}",
-                        dropped_by_distance.len(),
-                        query,
-                        WEAVIATE_IMAGE_MAX_GOOD_DISTANCE,
-                        dropped_by_distance.join(", ")
-                    );
-                }
-                if candidate_count_after_path_filters > 0 && items.is_empty() {
-                    info!(
-                        "{LOG_PREFIX} search_similar_images will fall back to Tavily for query='{}' because no Weaviate candidates remained after distance filtering (threshold={})",
-                        query,
-                        WEAVIATE_IMAGE_MAX_GOOD_DISTANCE
-                    );
-                }
+                    // If we have local S3 storage, further filter to only paths that the
+                    // QQ client can actually reach (local-network origin). Foreign CDN URLs
+                    // that pass the extension check are dropped here so the Tavily fallback
+                    // downloads and re-uploads them to local S3, healing stale records.
+                    if let Some(s3) = self.s3_ref.as_ref() {
+                        let local_base = s3_local_base(s3);
+                        items.retain(|item| {
+                            extract_string_field(item, "object_storage_path")
+                                .as_deref()
+                                .map(|p| is_local_s3_path(p, &local_base))
+                                .unwrap_or(false)
+                        });
+                    }
+                    // Drop results whose semantic distance is too large — they are
+                    // unrelated to the query and Tavily will do better.
+                    let candidate_count_after_path_filters = items.len();
+                    let dropped_by_distance: Vec<String> = items
+                        .iter()
+                        .filter(|item| {
+                            extract_distance(item)
+                                .map(|d| d > WEAVIATE_IMAGE_MAX_GOOD_DISTANCE)
+                                .unwrap_or(false)
+                        })
+                        .map(format_weaviate_image_candidate_for_log)
+                        .collect();
+                    items.retain(|item| {
+                        item.get("distance")
+                            .and_then(Value::as_f64)
+                            .map(|d| d <= WEAVIATE_IMAGE_MAX_GOOD_DISTANCE)
+                            .unwrap_or(true)
+                    });
+                    if !dropped_by_distance.is_empty() {
+                        info!(
+                            "{LOG_PREFIX} search_similar_images dropped {} Weaviate candidates after URL/path filtering for query='{}' because distance exceeded {}: {}",
+                            dropped_by_distance.len(),
+                            query,
+                            WEAVIATE_IMAGE_MAX_GOOD_DISTANCE,
+                            dropped_by_distance.join(", ")
+                        );
+                    }
+                    if candidate_count_after_path_filters > 0 && items.is_empty() {
+                        info!(
+                            "{LOG_PREFIX} search_similar_images will fall back to Tavily for query='{}' because no Weaviate candidates remained after distance filtering (threshold={})",
+                            query,
+                            WEAVIATE_IMAGE_MAX_GOOD_DISTANCE
+                        );
+                    }
 
-                if !items.is_empty() {
-                    return Ok(serde_json::json!({
-                        "ok": true,
-                        "source": "weaviate",
-                        "images": format_image_lookup_results(&items),
-                    }));
+                    if !items.is_empty() {
+                        return Ok(serde_json::json!({
+                            "ok": true,
+                            "source": "weaviate",
+                            "images": format_image_lookup_results(&items),
+                        }));
+                    }
                 }
+            } else {
+                info!(
+                    "{LOG_PREFIX} search_similar_images skipping Weaviate and forcing Tavily web search for query='{}'",
+                    query
+                );
             }
 
             let fallback_count = limit.min(10) as i64;
