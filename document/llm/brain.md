@@ -183,7 +183,7 @@ Implement `BrainTool` to wrap any callable resource — a function subgraph, a R
 | Type | Location | What it does |
 |---|---|---|
 | `SubgraphBrainTool` | `brain_node.rs` | Executes a `BrainToolDefinition` function subgraph |
-| `TavilyBrainTool` | `qq_chat_agent.rs` | Calls the Tavily search API and sends a progress notification |
+| `WebSearchBrainTool` | `qq_chat_agent.rs` | Calls Tavily search/extract APIs and sends a progress notification |
 
 ### BrainStopReason
 
