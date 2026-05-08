@@ -1,6 +1,6 @@
 use crate::send_qq_message_batches::{describe_message_segments, qq_messages_from_data_value};
 use crate::ws_action::{
-    json_i64, qq_message_list_to_json, response_message_id, response_success, ws_send_action,
+    json_i64, qq_message_list_to_send_json, response_message_id, response_success, ws_send_action,
 };
 use log::{info, warn};
 use std::collections::HashMap;
@@ -62,7 +62,7 @@ impl Node for SendGroupMessageNode {
 
         let params = serde_json::json!({
             "group_id": target_id,
-            "message": qq_message_list_to_json(&messages),
+            "message": qq_message_list_to_send_json(&adapter_ref, &messages),
         });
         info!(
             "[SendGroupMessageNode] Sending group message to {} with {}",

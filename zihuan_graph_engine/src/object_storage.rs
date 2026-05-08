@@ -59,6 +59,25 @@ impl S3Ref {
         self.object_url_for_key(key)
     }
 
+    pub async fn get_object_bytes(&self, key: &str) -> Result<Vec<u8>> {
+        let client = self.s3_client().await?;
+        let response = client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .send()
+            .await
+            .map_err(|e| Error::ValidationError(format!("object storage GET failed: {}", e)))?;
+
+        let body = response
+            .body
+            .collect()
+            .await
+            .map_err(|e| Error::ValidationError(format!("object storage body read failed: {}", e)))?;
+
+        Ok(body.into_bytes().to_vec())
+    }
+
     pub async fn list_objects(
         &self,
         prefix: Option<&str>,

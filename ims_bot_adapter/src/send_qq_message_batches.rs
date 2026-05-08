@@ -5,7 +5,8 @@ use std::time::Duration;
 use crate::adapter::SharedBotAdapter;
 use crate::models::message::{ForwardMessage, ForwardNodeMessage, Message};
 use crate::ws_action::{
-    json_i64, qq_message_list_to_json, response_message_id, response_success, ws_send_action,
+    json_i64, qq_message_list_to_send_json, response_message_id, response_success,
+    ws_send_action,
 };
 use log::{info, warn};
 use zihuan_core::error::{Error, Result};
@@ -148,7 +149,10 @@ pub fn describe_message_segments(messages: &[Message]) -> String {
     )
 }
 
-fn forward_nodes_to_json(nodes: &[ForwardNodeMessage]) -> serde_json::Value {
+fn forward_nodes_to_send_json(
+    adapter_ref: &SharedBotAdapter,
+    nodes: &[ForwardNodeMessage],
+) -> serde_json::Value {
     serde_json::Value::Array(
         nodes
             .iter()
@@ -181,7 +185,7 @@ fn forward_nodes_to_json(nodes: &[ForwardNodeMessage]) -> serde_json::Value {
                 if !node.content.is_empty() {
                     data.insert(
                         "content".to_string(),
-                        qq_message_list_to_json(&node.content),
+                        qq_message_list_to_send_json(adapter_ref, &node.content),
                     );
                 }
 
@@ -195,6 +199,7 @@ fn forward_nodes_to_json(nodes: &[ForwardNodeMessage]) -> serde_json::Value {
 }
 
 fn forward_payload(
+    adapter_ref: &SharedBotAdapter,
     target_type: &str,
     target_id: &str,
     forward: &ForwardMessage,
@@ -205,7 +210,6 @@ fn forward_payload(
         ));
     }
 
-    let messages = forward_nodes_to_json(&forward.content);
     let action_name = if target_type == TARGET_TYPE_GROUP {
         "send_group_forward_msg"
     } else {
@@ -214,12 +218,12 @@ fn forward_payload(
     let params = if target_type == TARGET_TYPE_GROUP {
         serde_json::json!({
             "group_id": target_id,
-            "messages": messages,
+            "messages": forward_nodes_to_send_json(adapter_ref, &forward.content),
         })
     } else {
         serde_json::json!({
             "user_id": target_id,
-            "messages": messages,
+            "messages": forward_nodes_to_send_json(adapter_ref, &forward.content),
         })
     };
 
@@ -243,17 +247,17 @@ fn send_one_batch(
     }
 
     let (action_name, params) = if let [Message::Forward(forward)] = messages {
-        forward_payload(target_type, target_id, forward)?
+        forward_payload(adapter_ref, target_type, target_id, forward)?
     } else {
         let params = if target_type == TARGET_TYPE_GROUP {
             serde_json::json!({
                 "group_id": target_id,
-                "message": qq_message_list_to_json(messages),
+                "message": qq_message_list_to_send_json(adapter_ref, messages),
             })
         } else {
             serde_json::json!({
                 "user_id": target_id,
-                "message": qq_message_list_to_json(messages),
+                "message": qq_message_list_to_send_json(adapter_ref, messages),
             })
         };
 

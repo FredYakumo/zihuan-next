@@ -1,12 +1,18 @@
 use crate::adapter::SharedBotAdapter;
+use base64::Engine;
+use log::warn;
 use serde_json::Value;
+use std::future::Future;
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::oneshot;
 use tokio::task::block_in_place;
 use zihuan_core::error::Result;
+use zihuan_core::ims_bot_adapter::models::message::{ImageMessage, Message};
 
 /// Global counter for generating unique echo IDs.
 static ECHO_COUNTER: AtomicU64 = AtomicU64::new(0);
+const LOG_PREFIX: &str = "[ws_action]";
 
 pub fn next_echo() -> String {
     format!("zhn_echo_{}", ECHO_COUNTER.fetch_add(1, Ordering::Relaxed))
@@ -65,6 +71,179 @@ pub fn qq_message_list_to_json(messages: &[crate::models::message::Message]) -> 
             })
             .collect(),
     )
+}
+
+pub fn qq_message_list_to_send_json(
+    adapter_ref: &SharedBotAdapter,
+    messages: &[Message],
+) -> serde_json::Value {
+    let normalized = normalize_messages_for_send(adapter_ref, messages);
+    qq_message_list_to_json(&normalized)
+}
+
+fn normalize_messages_for_send(adapter_ref: &SharedBotAdapter, messages: &[Message]) -> Vec<Message> {
+    messages
+        .iter()
+        .map(|message| normalize_message_for_send(adapter_ref, message))
+        .collect()
+}
+
+fn normalize_message_for_send(adapter_ref: &SharedBotAdapter, message: &Message) -> Message {
+    match message {
+        Message::Image(image) => Message::Image(normalize_image_for_send(adapter_ref, image)),
+        Message::Forward(forward) => {
+            let mut cloned = forward.clone();
+            for node in &mut cloned.content {
+                node.content = normalize_messages_for_send(adapter_ref, &node.content);
+            }
+            Message::Forward(cloned)
+        }
+        _ => message.clone(),
+    }
+}
+
+fn normalize_image_for_send(adapter_ref: &SharedBotAdapter, image: &ImageMessage) -> ImageMessage {
+    if let Some(local_path) = outbound_local_image_path(image) {
+        let mut normalized = image.clone();
+        normalized.file = Some(format!("file://{local_path}"));
+        normalized.path = None;
+        normalized.url = None;
+        normalized.object_url = None;
+        normalized.object_key = None;
+        normalized.local_path = None;
+        return normalized;
+    }
+
+    if let Some(base64_file) = outbound_base64_file(adapter_ref, image) {
+        let mut normalized = image.clone();
+        normalized.file = Some(base64_file);
+        normalized.path = None;
+        normalized.url = None;
+        normalized.object_url = None;
+        normalized.object_key = None;
+        normalized.local_path = None;
+        return normalized;
+    }
+
+    let mut normalized = image.clone();
+    if normalized.file.is_none() {
+        normalized.file = image
+            .url
+            .clone()
+            .or_else(|| image.object_url.clone())
+            .or_else(|| image.path.clone())
+            .or_else(|| image.local_path.clone());
+    }
+    normalized
+}
+
+fn outbound_local_image_path(image: &ImageMessage) -> Option<String> {
+    for path in [
+        image.local_path.as_deref(),
+        image.path.as_deref(),
+        image.file.as_deref().and_then(|value| value.strip_prefix("file://")),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if Path::new(path).exists() {
+            return Some(path.to_string());
+        }
+    }
+    None
+}
+
+fn outbound_base64_file(adapter_ref: &SharedBotAdapter, image: &ImageMessage) -> Option<String> {
+    if let Some(file) = image.file.as_deref() {
+        if file.starts_with("base64://") {
+            return Some(file.to_string());
+        }
+        if let Some(base64_payload) = file.strip_prefix("data:").and_then(data_url_base64_payload) {
+            return Some(format!("base64://{base64_payload}"));
+        }
+    }
+
+    if let Some(key) = image.object_key.as_deref() {
+        match block_on_async(download_object_storage_bytes(adapter_ref, key)) {
+            Ok(Some(bytes)) => {
+                return Some(format!(
+                    "base64://{}",
+                    base64::engine::general_purpose::STANDARD.encode(bytes)
+                ));
+            }
+            Ok(None) => {}
+            Err(error) => {
+                warn!(
+                    "{LOG_PREFIX} failed to read object storage image for outbound send key={}: {}",
+                    key, error
+                );
+            }
+        }
+    }
+
+    for url in [
+        image.object_url.as_deref(),
+        image.url.as_deref(),
+        image.file.as_deref().filter(|value| value.starts_with("http://") || value.starts_with("https://")),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        match block_on_async(download_remote_bytes(url)) {
+            Ok(Some(bytes)) => {
+                return Some(format!(
+                    "base64://{}",
+                    base64::engine::general_purpose::STANDARD.encode(bytes)
+                ));
+            }
+            Ok(None) => {}
+            Err(error) => {
+                warn!(
+                    "{LOG_PREFIX} failed to download outbound image url={}: {}",
+                    url, error
+                );
+            }
+        }
+    }
+
+    None
+}
+
+async fn download_object_storage_bytes(
+    adapter_ref: &SharedBotAdapter,
+    object_key: &str,
+) -> Result<Option<Vec<u8>>> {
+    let object_storage = adapter_ref.lock().await.object_storage.clone();
+    let Some(object_storage) = object_storage else {
+        return Ok(None);
+    };
+    object_storage.get_object_bytes(object_key).await.map(Some)
+}
+
+async fn download_remote_bytes(url: &str) -> Result<Option<Vec<u8>>> {
+    let response = reqwest::Client::new().get(url).send().await?;
+    if !response.status().is_success() {
+        return Ok(None);
+    }
+    Ok(Some(response.bytes().await?.to_vec()))
+}
+
+fn data_url_base64_payload(value: &str) -> Option<&str> {
+    let (_, payload) = value.split_once(',')?;
+    value.contains(";base64,").then_some(payload)
+}
+
+fn block_on_async<F>(future: F) -> F::Output
+where
+    F: Future,
+{
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        block_in_place(|| handle.block_on(future))
+    } else {
+        tokio::runtime::Runtime::new()
+            .expect("failed to create tokio runtime for outbound image normalization")
+            .block_on(future)
+    }
 }
 
 pub async fn ws_send_action_async(
