@@ -73,6 +73,8 @@ pub struct QqChatAgentConfig {
     pub compact_context_length: usize,
     #[serde(default = "default_qq_chat_default_tools_enabled")]
     pub default_tools_enabled: HashMap<String, bool>,
+    #[serde(default)]
+    pub event_handler_threads: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

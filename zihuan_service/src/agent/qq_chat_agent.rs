@@ -22,6 +22,7 @@ use storage_handler::{
 };
 use tokio::task::JoinHandle;
 use zihuan_core::error::{Error, Result};
+use zihuan_core::worker_pool::WorkerPool;
 use zihuan_graph_engine::data_value::EXECUTION_TASK_ID;
 use zihuan_graph_engine::data_value::{OpenAIMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
@@ -568,22 +569,24 @@ pub async fn spawn(
 
     let adapter = build_ims_bot_adapter(&ims_bot_adapter_connection, object_storage).await;
 
+    let pool = WorkerPool::new(config.event_handler_threads.unwrap_or(8), 256);
+
     {
         let service = Arc::clone(&service);
         let adapter_for_handler = adapter.clone();
+        let pool_for_handler = pool.clone();
         let handler: EventHandler = Arc::new(move |event| {
             let service = Arc::clone(&service);
             let adapter = adapter_for_handler.clone();
             let event = event.clone();
+            let pool = pool_for_handler.clone();
             Box::pin(async move {
                 let time = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-                // block_in_place allows blocking calls (reqwest::blocking::Client drop)
-                // inside a tokio worker thread without panicking.
-                if let Err(err) =
-                    tokio::task::block_in_place(|| service.handle_event(&event, &adapter, &time))
-                {
-                    error!("[service][qq_agent] failed to handle message event: {err}");
-                }
+                pool.submit(move || {
+                    if let Err(err) = service.handle_event(&event, &adapter, &time) {
+                        error!("[service][qq_agent] failed to handle message event: {err}");
+                    }
+                });
             })
         });
         adapter.lock().await.register_event_handler(handler);
@@ -626,6 +629,7 @@ pub async fn spawn(
                 (false, Some(msg))
             }
         };
+        pool.wait_idle();
         if let Some(cb) = on_finish.lock().unwrap().take() {
             cb(success, error_msg);
         }

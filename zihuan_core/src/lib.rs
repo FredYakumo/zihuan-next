@@ -6,3 +6,4 @@ pub mod llm;
 pub mod runtime;
 pub mod system_config;
 pub mod url_utils;
+pub mod worker_pool;
