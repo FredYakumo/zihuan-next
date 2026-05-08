@@ -65,12 +65,9 @@ fn build_reply_batch_builder() -> QqAgentReplyBatchBuilder {
 fn build_reply_batches_from_model_text(
     request: &QqAgentReplyBuildRequest,
 ) -> Result<QqAgentReplyBuildResult> {
-    // Resolve [Reply his_message] to the actual triggering message ID before parsing.
     let resolved_text;
     let text = if let Some(mid) = request.trigger_message_id {
-        resolved_text = request
-            .assistant_text
-            .replace("[Reply his_message]", &format!("[Reply message_id={mid}]"));
+        resolved_text = resolve_reply_his_message_aliases(&request.assistant_text, mid);
         &resolved_text
     } else {
         &request.assistant_text
@@ -126,6 +123,13 @@ fn build_reply_batches_from_model_text(
             ReplySegment::Message(Message::At(at)) => {
                 current_batch.push(Message::At(at));
             }
+            ReplySegment::Message(Message::Reply(reply)) => {
+                if !current_batch.is_empty() {
+                    flush_batch(&mut batches, &mut current_batch);
+                    current_text_chars = 0;
+                }
+                current_batch.push(Message::Reply(reply));
+            }
             ReplySegment::Message(message) => {
                 flush_batch(&mut batches, &mut current_batch);
                 current_text_chars = 0;
@@ -140,6 +144,17 @@ fn build_reply_batches_from_model_text(
         batches,
         suppress_send: false,
     })
+}
+
+fn resolve_reply_his_message_aliases(text: &str, trigger_message_id: i64) -> String {
+    text.replace(
+        "[Reply his_message]",
+        &format!("[Reply message_id={trigger_message_id}]"),
+    )
+    .replace(
+        "[Reply his message]",
+        &format!("[Reply message_id={trigger_message_id}]"),
+    )
 }
 
 fn flush_batch(batches: &mut Vec<Vec<Message>>, current_batch: &mut Vec<Message>) {
