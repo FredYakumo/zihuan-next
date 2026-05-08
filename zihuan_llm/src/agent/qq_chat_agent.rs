@@ -46,11 +46,11 @@ use zihuan_graph_engine::data_value::{
     TavilyRef, SESSION_CLAIM_CONTEXT,
 };
 use zihuan_graph_engine::database::weaviate::WeaviateRef;
-use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::message_mysql_get_group_history::MessageMySQLGetGroupHistoryNode;
 use zihuan_graph_engine::message_mysql_get_user_history::MessageMySQLGetUserHistoryNode;
 use zihuan_graph_engine::message_persistence::persist_message_event;
+use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::{DataType, DataValue, Node};
 
 mod build_metadata {
@@ -1524,8 +1524,13 @@ fn send_direct_text_reply(
         return Ok(None);
     }
 
-    let persistence =
-        outbound_persistence(mysql_ref, weaviate_ref, embedding_model, group_name, bot_name);
+    let persistence = outbound_persistence(
+        mysql_ref,
+        weaviate_ref,
+        embedding_model,
+        group_name,
+        bot_name,
+    );
     if is_group {
         send_group_batches_with_persistence(adapter, target_id, &batches, &persistence);
     } else {
@@ -1660,6 +1665,18 @@ fn build_forward_message_via_llm(
     }
 }
 
+fn ensure_space_after_at(batch: &mut [Message]) {
+    for i in 1..batch.len() {
+        if matches!(batch[i - 1], Message::At(_)) {
+            if let Message::PlainText(ref mut pt) = batch[i] {
+                if !pt.text.starts_with(' ') {
+                    pt.text.insert(0, ' ');
+                }
+            }
+        }
+    }
+}
+
 type SharedPendingReplyState = Arc<Mutex<PendingReplyState>>;
 
 #[derive(Debug, Default, Clone)]
@@ -1669,7 +1686,7 @@ struct PendingReplyState {
 }
 
 impl PendingReplyState {
-    fn append_batches(&mut self, batches: Vec<Vec<Message>>) -> Result<usize> {
+    fn append_batches(&mut self, mut batches: Vec<Vec<Message>>) -> Result<usize> {
         if self.suppress_send {
             return Ok(0);
         }
@@ -1677,6 +1694,9 @@ impl PendingReplyState {
             return Err(Error::ValidationError(
                 "QQ message batch must not be empty".to_string(),
             ));
+        }
+        for batch in &mut batches {
+            ensure_space_after_at(batch);
         }
         let count = batches.len();
         self.batches.extend(batches);
@@ -1793,8 +1813,7 @@ fn s3_local_base(s3_ref: &S3Ref) -> String {
 // origin matches the configured object-storage endpoint, meaning the QQ client
 // can reach it on the local network.
 fn is_local_s3_path(path: &str, local_base: &str) -> bool {
-    !(path.starts_with("http://") || path.starts_with("https://"))
-        || path.starts_with(local_base)
+    !(path.starts_with("http://") || path.starts_with("https://")) || path.starts_with(local_base)
 }
 
 fn sanitize_positive_limit(value: Option<i64>, default_limit: i64, max_limit: i64) -> usize {
@@ -2775,9 +2794,9 @@ impl BrainTool for SearchSimilarImagesBrainTool {
                     } else {
                         image.url.clone()
                     };
-                    let vector = embedding_model.inference(summary).unwrap_or_else(|_| {
-                        embedding_model.inference(&query).unwrap_or_default()
-                    });
+                    let vector = embedding_model
+                        .inference(summary)
+                        .unwrap_or_else(|_| embedding_model.inference(&query).unwrap_or_default());
                     if !vector.is_empty() {
                         if let Err(err) = weaviate_image_ref.upsert_image_record(
                             &object_storage_path,
@@ -3377,7 +3396,7 @@ pub struct QqChatAgent {
     default_tools_enabled: HashMap<String, bool>,
     shared_inputs: Vec<FunctionPortDef>,
     tool_definitions: Vec<BrainToolDefinition>,
-    weaviate_persistence_queue: Option<WeaviatePersistenceQueue>,
+    weaviate_persistence_queue: Mutex<Option<WeaviatePersistenceQueue>>,
 }
 
 impl QqChatAgent {
@@ -3387,7 +3406,7 @@ impl QqChatAgent {
             default_tools_enabled: default_tools_enabled_map(),
             shared_inputs: Vec::new(),
             tool_definitions: Vec::new(),
-            weaviate_persistence_queue: None,
+            weaviate_persistence_queue: Mutex::new(None),
         }
     }
 
@@ -3413,37 +3432,48 @@ impl QqChatAgent {
     }
 
     fn ensure_weaviate_persistence_queue(
-        &mut self,
+        &self,
         weaviate_ref: &Arc<WeaviateRef>,
         embedding_model: &Arc<dyn EmbeddingBase>,
     ) -> Result<SyncSender<WeaviatePersistenceJob>> {
         let config_key = weaviate_persistence_config_key(weaviate_ref, embedding_model);
-        let needs_restart = self
-            .weaviate_persistence_queue
-            .as_ref()
-            .map(|queue| queue.config_key != config_key)
-            .unwrap_or(true);
-
-        if needs_restart {
-            let sender = spawn_weaviate_persistence_worker(
-                &self.id,
-                &config_key,
-                weaviate_ref,
-                embedding_model,
-            )?;
-            self.weaviate_persistence_queue = Some(WeaviatePersistenceQueue { config_key, sender });
+        {
+            let queue = self
+                .weaviate_persistence_queue
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if let Some(existing) = queue.as_ref() {
+                if existing.config_key == config_key {
+                    return Ok(existing.sender.clone());
+                }
+            }
         }
 
-        Ok(self
+        let sender = spawn_weaviate_persistence_worker(
+            &self.id,
+            &config_key,
+            weaviate_ref,
+            embedding_model,
+        )?;
+
+        let mut queue = self
             .weaviate_persistence_queue
-            .as_ref()
-            .expect("queue initialized above")
-            .sender
-            .clone())
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(existing) = queue.as_ref() {
+            if existing.config_key == config_key {
+                return Ok(existing.sender.clone());
+            }
+        }
+        *queue = Some(WeaviatePersistenceQueue {
+            config_key,
+            sender: sender.clone(),
+        });
+        Ok(sender)
     }
 
     fn enqueue_weaviate_persistence(
-        &mut self,
+        &self,
         event: &ims_bot_adapter::models::MessageEvent,
         weaviate_ref: Option<&Arc<WeaviateRef>>,
         embedding_model: Option<&Arc<dyn EmbeddingBase>>,
@@ -3476,7 +3506,10 @@ impl QqChatAgent {
                 "{LOG_PREFIX} Failed to enqueue message {} for Weaviate persistence: {}. Restarting worker.",
                 event.message_id, err
             );
-            self.weaviate_persistence_queue = None;
+            *self
+                .weaviate_persistence_queue
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = None;
 
             match self.ensure_weaviate_persistence_queue(weaviate_ref, embedding_model) {
                 Ok(sender) => {
@@ -3521,7 +3554,7 @@ impl QqChatAgent {
     }
 
     fn handle(
-        &mut self,
+        &self,
         event: &ims_bot_adapter::models::MessageEvent,
         adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
         time: &str,
@@ -3986,7 +4019,7 @@ pub struct QqChatAgentServiceConfig {
 }
 
 pub struct QqChatAgentService {
-    inner: Mutex<QqChatAgent>,
+    inner: QqChatAgent,
     config: QqChatAgentServiceConfig,
 }
 
@@ -3996,10 +4029,7 @@ impl QqChatAgentService {
         inner.set_default_tools_enabled(config.default_tools_enabled.clone());
         inner.set_shared_inputs(config.shared_inputs.clone())?;
         inner.set_tool_definitions(config.tool_definitions.clone())?;
-        Ok(Self {
-            inner: Mutex::new(inner),
-            config,
-        })
+        Ok(Self { inner, config })
     }
 
     pub fn handle_event(
@@ -4013,7 +4043,7 @@ impl QqChatAgentService {
             self.config.intent_llm_display_name.clone(),
             self.config.math_programming_llm_display_name.clone(),
         ];
-        self.inner.lock().unwrap_or_else(|e| e.into_inner()).handle(
+        self.inner.handle(
             event,
             adapter,
             time,

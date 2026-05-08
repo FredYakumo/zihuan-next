@@ -5,8 +5,7 @@ use std::time::Duration;
 use crate::adapter::SharedBotAdapter;
 use crate::models::message::{ForwardMessage, ForwardNodeMessage, Message};
 use crate::ws_action::{
-    json_i64, qq_message_list_to_send_json, response_message_id, response_success,
-    ws_send_action,
+    json_i64, qq_message_list_to_send_json, response_message_id, response_success, ws_send_action,
 };
 use log::{info, warn};
 use zihuan_core::error::{Error, Result};

@@ -5,9 +5,9 @@ use uuid::Uuid;
 
 use crate::system_config;
 use log::{info, warn};
+use zihuan_llm::nn::embedding::embedding_runtime_manager::close_runtime_embedding_instances_for_config;
 use zihuan_llm::system_config::{AgentConfig, AgentType, LlmRefConfig, ModelRefSpec};
 use zihuan_service::AgentRuntimeStatus;
-use zihuan_llm::nn::embedding::embedding_runtime_manager::close_runtime_embedding_instances_for_config;
 
 use super::{
     now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found,

@@ -24,9 +24,7 @@ use zihuan_llm::system_config::{AgentConfig, AgentType, LlmRefConfig, LlmService
 use zihuan_llm::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 
 use super::qq_chat_agent::build_enabled_tool_definitions;
-use crate::resource_resolver::{
-    build_embedding_model, resolve_local_embedding_model_name,
-};
+use crate::resource_resolver::{build_embedding_model, resolve_local_embedding_model_name};
 use zihuan_llm::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 
 #[derive(Clone)]

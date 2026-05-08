@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
 use crate::resource_resolver::{
-    build_embedding_model, build_llm_model, resolve_local_embedding_model_name,
-    resolve_llm_service_config,
+    build_embedding_model, build_llm_model, resolve_llm_service_config,
+    resolve_local_embedding_model_name,
 };
 use chrono::Local;
 use ims_bot_adapter::adapter::BotAdapter;
@@ -33,8 +33,8 @@ use zihuan_llm::agent::qq_chat_agent::{
     QqAgentReplyBatchBuilder, QqAgentReplyBuildRequest, QqAgentReplyBuildResult,
     QqChatAgentService, QqChatAgentServiceConfig,
 };
-use zihuan_llm::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use zihuan_llm::brain_tool::BrainToolDefinition;
+use zihuan_llm::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use zihuan_llm::system_config::{
     load_llm_refs, AgentConfig, AgentToolConfig, AgentToolType, LlmRefConfig, NodeGraphToolConfig,
     QqChatAgentConfig,
@@ -509,11 +509,8 @@ pub async fn spawn(
     )?;
     let math_programming_llm = build_llm_model(&math_programming_llm_config);
     let embedding_model = if let Some(model_ref_id) = config.embedding_model_ref_id.as_deref() {
-        let model_name = resolve_local_embedding_model_name(
-            Some(model_ref_id),
-            &llm_refs,
-            &agent.name,
-        )?;
+        let model_name =
+            resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, &agent.name)?;
         match model_name {
             Some(_) => Some(
                 RuntimeEmbeddingModelManager::shared()
@@ -525,7 +522,7 @@ pub async fn spawn(
     } else {
         config.embedding.as_ref().map(build_embedding_model)
     };
-        let tavily = build_tavily_ref(Some(&config.tavily_connection_id), &connections)?
+    let tavily = build_tavily_ref(Some(&config.tavily_connection_id), &connections)?
         .ok_or_else(|| Error::ValidationError("missing tavily connection".to_string()))?;
     let object_storage = build_s3_ref(config.rustfs_connection_id.as_deref(), &connections).await?;
     let mysql_ref = build_mysql_ref(config.mysql_connection_id.as_deref(), &connections).await?;

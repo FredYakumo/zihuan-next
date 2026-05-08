@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Instant;
 
@@ -80,7 +80,10 @@ impl EmbeddingBase for LoggedEmbeddingModel {
         let started = Instant::now();
         let vectors = self.inner.batch_inference(texts)?;
         let dim = vectors.first().map(Vec::len).unwrap_or(0);
-        let total_chars = texts.iter().map(|text| text_char_count(text)).sum::<usize>();
+        let total_chars = texts
+            .iter()
+            .map(|text| text_char_count(text))
+            .sum::<usize>();
         let preview = texts
             .first()
             .map(|text| preview_text(text))
@@ -131,7 +134,9 @@ impl RuntimeEmbeddingModelManager {
         let llm_ref = llm_refs
             .iter()
             .find(|item| item.id == config_id)
-            .ok_or_else(|| Error::ValidationError(format!("model_ref '{}' not found", config_id)))?;
+            .ok_or_else(|| {
+                Error::ValidationError(format!("model_ref '{}' not found", config_id))
+            })?;
 
         if !llm_ref.enabled {
             return Err(Error::ValidationError(format!(
@@ -144,10 +149,8 @@ impl RuntimeEmbeddingModelManager {
         let inner_model: Arc<dyn EmbeddingBase> = Arc::new(QueuedEmbeddingModel::new(model_name)?);
         let started_at = Utc::now();
         let instance_id = next_instance_id();
-        let model: Arc<dyn EmbeddingBase> = Arc::new(LoggedEmbeddingModel::new(
-            instance_id.clone(),
-            inner_model,
-        ));
+        let model: Arc<dyn EmbeddingBase> =
+            Arc::new(LoggedEmbeddingModel::new(instance_id.clone(), inner_model));
         let summary = RuntimeConnectionInstanceSummary {
             instance_id,
             config_id: llm_ref.id.clone(),
@@ -238,8 +241,7 @@ impl RuntimeEmbeddingModelManager {
                 .iter()
                 .find(|item| item.id == *config_id)
                 .map(|item| {
-                    item.enabled
-                        && matches!(item.model, ModelRefSpec::TextEmbeddingLocal { .. })
+                    item.enabled && matches!(item.model, ModelRefSpec::TextEmbeddingLocal { .. })
                 })
                 .unwrap_or(false);
 

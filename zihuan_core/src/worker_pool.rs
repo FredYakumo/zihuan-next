@@ -27,8 +27,7 @@ impl WorkerPool {
 
         let (sender, receiver) = mpsc::sync_channel::<Task>(queue_capacity);
         let receiver = Arc::new(Mutex::new(receiver));
-        let active: Arc<(Mutex<usize>, Condvar)> =
-            Arc::new((Mutex::new(0usize), Condvar::new()));
+        let active: Arc<(Mutex<usize>, Condvar)> = Arc::new((Mutex::new(0usize), Condvar::new()));
 
         for i in 0..num_threads {
             let receiver = Arc::clone(&receiver);

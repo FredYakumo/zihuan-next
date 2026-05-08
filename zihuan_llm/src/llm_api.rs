@@ -10,7 +10,9 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use zihuan_core::llm::llm_base::{LLMBase, StreamingLLMBase};
 use zihuan_core::llm::tooling::{ToolCalls, ToolCallsFuncSpec};
-use zihuan_core::llm::{role_to_str, str_to_role, InferenceParam, MessageContent, OpenAIMessage};
+use zihuan_core::llm::{
+    role_to_str, str_to_role, ContentPart, InferenceParam, MessageContent, OpenAIMessage,
+};
 
 const DEFAULT_RETRY_COUNT: u32 = 2;
 const RETRY_DELAY_MS: u64 = 1_000;
@@ -25,14 +27,46 @@ struct StreamToolCallDelta {
 }
 
 enum RequestError {
-    Retryable(String),
-    NonRetryable(String),
+    Retryable {
+        message: String,
+    },
+    NonRetryable {
+        message: String,
+        status: Option<StatusCode>,
+        response_body: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone)]
 struct RequestContext {
     message_count: usize,
     tool_count: usize,
+    has_multimodal_input: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RequestFormat {
+    DefaultOpenAI,
+    TencentMultimodalCompat,
+}
+
+impl RequestFormat {
+    fn label(self) -> &'static str {
+        match self {
+            RequestFormat::DefaultOpenAI => "default",
+            RequestFormat::TencentMultimodalCompat => "tencent_multimodal_compat",
+        }
+    }
+}
+
+impl RequestError {
+    fn message(&self) -> &str {
+        match self {
+            RequestError::Retryable { message } | RequestError::NonRetryable { message, .. } => {
+                message
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -321,14 +355,17 @@ impl LLMAPI {
         &self,
         request_context: &RequestContext,
         attempt: Option<(u32, u32)>,
+        request_format: RequestFormat,
     ) -> String {
         let mut context = format!(
-            "model={} endpoint={} timeout_secs={} messages={} tools={}",
+            "model={} endpoint={} format={} timeout_secs={} messages={} tools={} multimodal={}",
             self.model_name,
             self.endpoint_label(),
+            request_format.label(),
             self.timeout.as_secs(),
             request_context.message_count,
-            request_context.tool_count
+            request_context.tool_count,
+            request_context.has_multimodal_input
         );
 
         if let Some((current, total)) = attempt {
@@ -385,6 +422,167 @@ impl LLMAPI {
         format!("{}...(truncated)", truncated)
     }
 
+    fn has_multimodal_messages(messages: &[OpenAIMessage]) -> bool {
+        messages.iter().any(|msg| {
+            matches!(
+                msg.content.as_ref(),
+                Some(MessageContent::Parts(parts))
+                    if parts.iter().any(|part| {
+                        matches!(
+                            part,
+                            ContentPart::ImageUrl { .. } | ContentPart::VideoUrl { .. }
+                        )
+                    })
+            )
+        })
+    }
+
+    fn serialize_message_content(
+        content: Option<&MessageContent>,
+        request_format: RequestFormat,
+    ) -> Value {
+        match (request_format, content) {
+            (_, None) => Value::Null,
+            (RequestFormat::DefaultOpenAI, Some(content)) => {
+                serde_json::to_value(content).unwrap_or(Value::Null)
+            }
+            (RequestFormat::TencentMultimodalCompat, Some(MessageContent::Text(text))) => {
+                json!([{ "type": "text", "text": text }])
+            }
+            (RequestFormat::TencentMultimodalCompat, Some(MessageContent::Parts(parts))) => {
+                Value::Array(
+                    parts
+                        .iter()
+                        .map(|part| match part {
+                            ContentPart::Text { text } => json!({
+                                "type": "text",
+                                "text": text,
+                            }),
+                            ContentPart::ImageUrl { image_url } => json!({
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": image_url.as_url(),
+                                }
+                            }),
+                            ContentPart::VideoUrl { video_url } => json!({
+                                "type": "video_url",
+                                "video_url": {
+                                    "url": video_url.as_url(),
+                                }
+                            }),
+                        })
+                        .collect(),
+                )
+            }
+        }
+    }
+
+    fn build_messages_json(
+        &self,
+        param: &InferenceParam<'_>,
+        request_format: RequestFormat,
+    ) -> Vec<Value> {
+        param
+            .messages
+            .iter()
+            .map(|msg| {
+                let role_str = role_to_str(&msg.role);
+                let content_value =
+                    Self::serialize_message_content(msg.content.as_ref(), request_format);
+
+                let mut msg_obj = json!({
+                    "role": role_str,
+                    "content": content_value,
+                });
+
+                if let Some(reasoning_content) = &msg.reasoning_content {
+                    msg_obj["reasoning_content"] = json!(reasoning_content);
+                }
+
+                if !msg.tool_calls.is_empty() {
+                    let tool_calls: Vec<_> = msg
+                        .tool_calls
+                        .iter()
+                        .map(|tc| {
+                            json!({
+                                "id": tc.id,
+                                "type": tc.type_name,
+                                "function": {
+                                    "name": tc.function.name,
+                                    "arguments": tc.function.arguments.to_string(),
+                                }
+                            })
+                        })
+                        .collect();
+                    msg_obj["tool_calls"] = json!(tool_calls);
+                }
+
+                if let Some(ref id) = msg.tool_call_id {
+                    msg_obj["tool_call_id"] = json!(id);
+                }
+
+                msg_obj
+            })
+            .collect()
+    }
+
+    fn build_request_body(
+        &self,
+        param: &InferenceParam<'_>,
+        stream: bool,
+        request_format: RequestFormat,
+    ) -> Value {
+        let messages = self.build_messages_json(param, request_format);
+        let tools: Option<Vec<Value>> = param
+            .tools
+            .as_ref()
+            .map(|ts| ts.iter().map(|tool| tool.get_json()).collect());
+
+        let mut request_body = json!({
+            "model": self.model_name,
+            "messages": messages,
+            "stream": stream,
+        });
+
+        if let Some(tool_list) = tools {
+            request_body["tools"] = json!(tool_list);
+            request_body["tool_choice"] = json!("auto");
+        }
+
+        request_body
+    }
+
+    fn is_tencent_multimodal_compat_retry_candidate(
+        request_context: &RequestContext,
+        err: &RequestError,
+    ) -> bool {
+        if !request_context.has_multimodal_input {
+            return false;
+        }
+
+        let RequestError::NonRetryable {
+            status,
+            response_body,
+            ..
+        } = err
+        else {
+            return false;
+        };
+
+        if *status != Some(StatusCode::BAD_REQUEST) {
+            return false;
+        }
+
+        let Some(response_body) = response_body.as_deref() else {
+            return false;
+        };
+
+        let response_body_lower = response_body.to_ascii_lowercase();
+        response_body_lower.contains("\"code\":\"20024\"")
+            || response_body_lower.contains("\"code\":20024")
+            || response_body_lower.contains("invalid params")
+    }
+
     fn send_request(
         &self,
         client: &Client,
@@ -392,6 +590,7 @@ impl LLMAPI {
         request_context: &RequestContext,
         attempt: u32,
         max_attempts: u32,
+        request_format: RequestFormat,
     ) -> Result<OpenAIMessage, RequestError> {
         let mut request = client.post(&self.api_endpoint).json(request_body);
 
@@ -407,11 +606,17 @@ impl LLMAPI {
         let response = request.send().map_err(|e| {
             let err_detail = format!(
                 "{} detail={} message={}",
-                self.format_request_context(request_context, Some((attempt, max_attempts))),
+                self.format_request_context(
+                    request_context,
+                    Some((attempt, max_attempts)),
+                    request_format,
+                ),
                 Self::describe_reqwest_error(&e),
                 e
             );
-            RequestError::Retryable(err_detail)
+            RequestError::Retryable {
+                message: err_detail,
+            }
         })?;
         let status = response.status();
         let response_text = response
@@ -426,33 +631,55 @@ impl LLMAPI {
         if !status.is_success() {
             let err_msg = format!(
                 "{} status={} body={}",
-                self.format_request_context(request_context, Some((attempt, max_attempts))),
+                self.format_request_context(
+                    request_context,
+                    Some((attempt, max_attempts)),
+                    request_format,
+                ),
                 status,
                 Self::shorten_text(&response_text, 800)
             );
             return if Self::should_retry_status(status) {
-                Err(RequestError::Retryable(err_msg))
+                Err(RequestError::Retryable { message: err_msg })
             } else {
-                Err(RequestError::NonRetryable(err_msg))
+                Err(RequestError::NonRetryable {
+                    message: err_msg,
+                    status: Some(status),
+                    response_body: Some(response_text),
+                })
             };
         }
 
         let api_resp = serde_json::from_str::<Value>(&response_text).map_err(|e| {
-            RequestError::NonRetryable(format!(
-                "{} parse_error={} body={}",
-                self.format_request_context(request_context, Some((attempt, max_attempts))),
-                e,
-                Self::shorten_text(&response_text, 800)
-            ))
+            RequestError::NonRetryable {
+                message: format!(
+                    "{} parse_error={} body={}",
+                    self.format_request_context(
+                        request_context,
+                        Some((attempt, max_attempts)),
+                        request_format,
+                    ),
+                    e,
+                    Self::shorten_text(&response_text, 800)
+                ),
+                status: Some(status),
+                response_body: Some(response_text.clone()),
+            }
         })?;
 
-        Self::parse_api_message(&api_resp).ok_or_else(|| {
-            RequestError::NonRetryable(format!(
+        Self::parse_api_message(&api_resp).ok_or_else(|| RequestError::NonRetryable {
+            message: format!(
                 "{} invalid_response choices_present={} body={}",
-                self.format_request_context(request_context, Some((attempt, max_attempts))),
+                self.format_request_context(
+                    request_context,
+                    Some((attempt, max_attempts)),
+                    request_format,
+                ),
                 api_resp.get("choices").is_some(),
                 Self::shorten_text(&response_text, 800)
-            ))
+            ),
+            status: Some(status),
+            response_body: Some(response_text.clone()),
         })
     }
 }
@@ -476,123 +703,107 @@ impl LLMBase for LLMAPI {
             .build()
             .expect("Failed to create HTTP client");
 
-        let messages: Vec<serde_json::Value> = param
-            .messages
-            .iter()
-            .map(|msg| {
-                let role_str = role_to_str(&msg.role);
-
-                let content_value = msg
-                    .content
-                    .as_ref()
-                    .map(|c| serde_json::to_value(c).unwrap_or(Value::Null))
-                    .unwrap_or(Value::Null);
-
-                let mut msg_obj = json!({
-                    "role": role_str,
-                    "content": content_value,
-                });
-
-                if let Some(reasoning_content) = &msg.reasoning_content {
-                    msg_obj["reasoning_content"] = json!(reasoning_content);
-                }
-
-                if !msg.tool_calls.is_empty() {
-                    let tool_calls: Vec<_> = msg
-                        .tool_calls
-                        .iter()
-                        .map(|tc| {
-                            json!({
-                                "id": tc.id,
-                                "type": tc.type_name,
-                                "function": {
-                                    "name": tc.function.name,
-                                    "arguments": tc.function.arguments.to_string(),
-                                }
-                            })
-                        })
-                        .collect();
-                    msg_obj["tool_calls"] = json!(tool_calls);
-                }
-
-                if let Some(ref id) = msg.tool_call_id {
-                    msg_obj["tool_call_id"] = json!(id);
-                }
-
-                msg_obj
-            })
-            .collect();
-
-        let tools: Option<Vec<Value>> = param
-            .tools
-            .as_ref()
-            .map(|ts| ts.iter().map(|tool| tool.get_json()).collect());
-
-        let mut request_body = json!({
-            "model": self.model_name,
-            "messages": messages,
-            "stream": self.stream,
-        });
-
-        if let Some(tool_list) = tools {
-            request_body["tools"] = json!(tool_list);
-            request_body["tool_choice"] = json!("auto");
-        }
-
         let request_context = RequestContext {
             message_count: param.messages.len(),
             tool_count: param.tools.as_ref().map(|tools| tools.len()).unwrap_or(0),
+            has_multimodal_input: Self::has_multimodal_messages(param.messages),
         };
+        let default_request_body =
+            self.build_request_body(param, self.stream, RequestFormat::DefaultOpenAI);
+        let compat_request_body = request_context.has_multimodal_input.then(|| {
+            self.build_request_body(param, self.stream, RequestFormat::TencentMultimodalCompat)
+        });
         let max_attempts = self.retry_count.saturating_add(1);
         let mut last_error = None;
+        let mut request_format = RequestFormat::DefaultOpenAI;
 
-        for attempt in 1..=max_attempts {
-            debug!(
-                "Sending LLM API request: {}",
-                self.format_request_context(&request_context, Some((attempt, max_attempts)))
-            );
+        'attempts: for attempt in 1..=max_attempts {
+            loop {
+                let request_body = match request_format {
+                    RequestFormat::DefaultOpenAI => &default_request_body,
+                    RequestFormat::TencentMultimodalCompat => compat_request_body
+                        .as_ref()
+                        .unwrap_or(&default_request_body),
+                };
 
-            match self.send_request(
-                &client,
-                &request_body,
-                &request_context,
-                attempt,
-                max_attempts,
-            ) {
-                Ok(msg) => {
-                    debug!(
-                        "Successfully parsed API response: {}",
-                        self.format_request_context(
-                            &request_context,
-                            Some((attempt, max_attempts))
-                        )
-                    );
-                    return msg;
-                }
-                Err(RequestError::Retryable(err_msg)) => {
-                    last_error = Some(err_msg.clone());
+                debug!(
+                    "Sending LLM API request: {}",
+                    self.format_request_context(
+                        &request_context,
+                        Some((attempt, max_attempts)),
+                        request_format,
+                    )
+                );
 
-                    if attempt < max_attempts {
+                match self.send_request(
+                    &client,
+                    request_body,
+                    &request_context,
+                    attempt,
+                    max_attempts,
+                    request_format,
+                ) {
+                    Ok(msg) => {
+                        if request_format == RequestFormat::TencentMultimodalCompat {
+                            warn!(
+                                "LLM API request succeeded after retrying with Tencent multimodal compatibility format: {}",
+                                self.format_request_context(
+                                    &request_context,
+                                    Some((attempt, max_attempts)),
+                                    request_format,
+                                )
+                            );
+                        }
+                        debug!(
+                            "Successfully parsed API response: {}",
+                            self.format_request_context(
+                                &request_context,
+                                Some((attempt, max_attempts)),
+                                request_format,
+                            )
+                        );
+                        return msg;
+                    }
+                    Err(err)
+                        if request_format == RequestFormat::DefaultOpenAI
+                            && compat_request_body.is_some()
+                            && Self::is_tencent_multimodal_compat_retry_candidate(
+                                &request_context,
+                                &err,
+                            ) =>
+                    {
                         warn!(
-                            "LLM API request failed on attempt {}/{} and will retry: {}",
-                            attempt, max_attempts, err_msg
+                            "LLM API request hit multimodal parameter validation error; retrying with Tencent multimodal compatibility format: {}",
+                            err.message()
                         );
-                        thread::sleep(Duration::from_millis(RETRY_DELAY_MS));
-                    } else {
-                        error!(
-                            "LLM API request failed on attempt {}/{}: {}",
-                            attempt, max_attempts, err_msg
-                        );
+                        request_format = RequestFormat::TencentMultimodalCompat;
+                        continue;
+                    }
+                    Err(RequestError::Retryable { message }) => {
+                        last_error = Some(message.clone());
+
+                        if attempt < max_attempts {
+                            warn!(
+                                "LLM API request failed on attempt {}/{} and will retry: {}",
+                                attempt, max_attempts, message
+                            );
+                            thread::sleep(Duration::from_millis(RETRY_DELAY_MS));
+                        } else {
+                            error!(
+                                "LLM API request failed on attempt {}/{}: {}",
+                                attempt, max_attempts, message
+                            );
+                        }
                         break;
                     }
-                }
-                Err(RequestError::NonRetryable(err_msg)) => {
-                    error!(
-                        "LLM API request failed on attempt {}/{} without retry: {}",
-                        attempt, max_attempts, err_msg
-                    );
-                    last_error = Some(err_msg);
-                    break;
+                    Err(RequestError::NonRetryable { message, .. }) => {
+                        error!(
+                            "LLM API request failed on attempt {}/{} without retry: {}",
+                            attempt, max_attempts, message
+                        );
+                        last_error = Some(message);
+                        break 'attempts;
+                    }
                 }
             }
         }
@@ -616,97 +827,88 @@ impl LLMAPI {
         param: &InferenceParam<'_>,
         token_tx: mpsc::UnboundedSender<String>,
     ) -> OpenAIMessage {
-        let messages: Vec<serde_json::Value> = param
-            .messages
-            .iter()
-            .map(|msg| {
-                let role_str = role_to_str(&msg.role);
-                let content_value = msg
-                    .content
-                    .as_ref()
-                    .map(|c| serde_json::to_value(c).unwrap_or(Value::Null))
-                    .unwrap_or(Value::Null);
-                let mut msg_obj = json!({
-                    "role": role_str,
-                    "content": content_value,
-                });
-                if let Some(reasoning_content) = &msg.reasoning_content {
-                    msg_obj["reasoning_content"] = json!(reasoning_content);
-                }
-                if !msg.tool_calls.is_empty() {
-                    let tool_calls: Vec<_> = msg
-                        .tool_calls
-                        .iter()
-                        .map(|tc| {
-                            json!({
-                                "id": tc.id,
-                                "type": tc.type_name,
-                                "function": {
-                                    "name": tc.function.name,
-                                    "arguments": tc.function.arguments.to_string(),
-                                }
-                            })
-                        })
-                        .collect();
-                    msg_obj["tool_calls"] = json!(tool_calls);
-                }
-                if let Some(ref id) = msg.tool_call_id {
-                    msg_obj["tool_call_id"] = json!(id);
-                }
-                msg_obj
-            })
-            .collect();
-
-        let tools: Option<Vec<Value>> = param
-            .tools
-            .as_ref()
-            .map(|ts| ts.iter().map(|tool| tool.get_json()).collect());
-
-        let mut request_body = json!({
-            "model": self.model_name,
-            "messages": messages,
-            "stream": true,
-        });
-
-        if let Some(tool_list) = tools {
-            request_body["tools"] = json!(tool_list);
-            request_body["tool_choice"] = json!("auto");
-        }
+        let request_context = RequestContext {
+            message_count: param.messages.len(),
+            tool_count: param.tools.as_ref().map(|tools| tools.len()).unwrap_or(0),
+            has_multimodal_input: Self::has_multimodal_messages(param.messages),
+        };
+        let default_request_body =
+            self.build_request_body(param, true, RequestFormat::DefaultOpenAI);
+        let compat_request_body = request_context
+            .has_multimodal_input
+            .then(|| self.build_request_body(param, true, RequestFormat::TencentMultimodalCompat));
 
         let client = reqwest::Client::builder()
             .timeout(self.timeout)
             .build()
             .expect("Failed to create async HTTP client");
+        let mut request_format = RequestFormat::DefaultOpenAI;
 
-        let mut request = client.post(&self.api_endpoint).json(&request_body);
-        if let Some(ref api_key) = self.api_key {
-            let auth_header = if api_key.starts_with("Bearer ") {
-                api_key.to_string()
-            } else {
-                format!("Bearer {}", api_key)
+        loop {
+            let request_body = match request_format {
+                RequestFormat::DefaultOpenAI => &default_request_body,
+                RequestFormat::TencentMultimodalCompat => compat_request_body
+                    .as_ref()
+                    .unwrap_or(&default_request_body),
             };
-            request = request.header("Authorization", auth_header);
-        }
 
-        let response = match request.send().await {
-            Ok(r) => r,
-            Err(e) => {
-                error!("Streaming LLM API request failed: {e}");
+            let mut request = client.post(&self.api_endpoint).json(request_body);
+            if let Some(ref api_key) = self.api_key {
+                let auth_header = if api_key.starts_with("Bearer ") {
+                    api_key.to_string()
+                } else {
+                    format!("Bearer {}", api_key)
+                };
+                request = request.header("Authorization", auth_header);
+            }
+
+            let response = match request.send().await {
+                Ok(r) => r,
+                Err(e) => {
+                    error!("Streaming LLM API request failed: {e}");
+                    return OpenAIMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR);
+                }
+            };
+
+            let status = response.status();
+            if !status.is_success() {
+                let body = response.text().await.unwrap_or_default();
+                let err = RequestError::NonRetryable {
+                    message: format!(
+                        "{} status={} body={}",
+                        self.format_request_context(&request_context, None, request_format),
+                        status,
+                        Self::shorten_text(&body, 800)
+                    ),
+                    status: Some(status),
+                    response_body: Some(body),
+                };
+
+                if request_format == RequestFormat::DefaultOpenAI
+                    && compat_request_body.is_some()
+                    && Self::is_tencent_multimodal_compat_retry_candidate(&request_context, &err)
+                {
+                    warn!(
+                        "Streaming LLM API request hit multimodal parameter validation error; retrying with Tencent multimodal compatibility format: {}",
+                        err.message()
+                    );
+                    request_format = RequestFormat::TencentMultimodalCompat;
+                    continue;
+                }
+
+                error!("Streaming LLM API request failed: {}", err.message());
                 return OpenAIMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR);
             }
-        };
 
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
-            error!(
-                "Streaming LLM API request failed with status {status}: {}",
-                Self::shorten_text(&body, 800)
-            );
-            return OpenAIMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR);
+            if request_format == RequestFormat::TencentMultimodalCompat {
+                warn!(
+                    "Streaming LLM API request succeeded after retrying with Tencent multimodal compatibility format: {}",
+                    self.format_request_context(&request_context, None, request_format)
+                );
+            }
+
+            return Self::parse_sse_stream(response, token_tx).await;
         }
-
-        Self::parse_sse_stream(response, token_tx).await
     }
 
     async fn parse_sse_stream(

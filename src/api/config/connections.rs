@@ -248,9 +248,7 @@ pub async fn list_runtime_instances(req: &mut Request, res: &mut Response, _depo
                 page_size,
             }));
         }
-        (Err(err), _, _) | (_, Err(err), _) | (_, _, Err(err)) => {
-            render_internal_error(res, err)
-        }
+        (Err(err), _, _) | (_, Err(err), _) | (_, _, Err(err)) => render_internal_error(res, err),
     }
 }
 

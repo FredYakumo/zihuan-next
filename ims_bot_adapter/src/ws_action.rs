@@ -81,7 +81,10 @@ pub fn qq_message_list_to_send_json(
     qq_message_list_to_json(&normalized)
 }
 
-fn normalize_messages_for_send(adapter_ref: &SharedBotAdapter, messages: &[Message]) -> Vec<Message> {
+fn normalize_messages_for_send(
+    adapter_ref: &SharedBotAdapter,
+    messages: &[Message],
+) -> Vec<Message> {
     messages
         .iter()
         .map(|message| normalize_message_for_send(adapter_ref, message))
@@ -141,7 +144,10 @@ fn outbound_local_image_path(image: &ImageMessage) -> Option<String> {
     for path in [
         image.local_path.as_deref(),
         image.path.as_deref(),
-        image.file.as_deref().and_then(|value| value.strip_prefix("file://")),
+        image
+            .file
+            .as_deref()
+            .and_then(|value| value.strip_prefix("file://")),
     ]
     .into_iter()
     .flatten()
@@ -184,7 +190,10 @@ fn outbound_base64_file(adapter_ref: &SharedBotAdapter, image: &ImageMessage) ->
     for url in [
         image.object_url.as_deref(),
         image.url.as_deref(),
-        image.file.as_deref().filter(|value| value.starts_with("http://") || value.starts_with("https://")),
+        image
+            .file
+            .as_deref()
+            .filter(|value| value.starts_with("http://") || value.starts_with("https://")),
     ]
     .into_iter()
     .flatten()

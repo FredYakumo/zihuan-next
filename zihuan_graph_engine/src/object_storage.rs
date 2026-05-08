@@ -69,11 +69,9 @@ impl S3Ref {
             .await
             .map_err(|e| Error::ValidationError(format!("object storage GET failed: {}", e)))?;
 
-        let body = response
-            .body
-            .collect()
-            .await
-            .map_err(|e| Error::ValidationError(format!("object storage body read failed: {}", e)))?;
+        let body = response.body.collect().await.map_err(|e| {
+            Error::ValidationError(format!("object storage body read failed: {}", e))
+        })?;
 
         Ok(body.into_bytes().to_vec())
     }

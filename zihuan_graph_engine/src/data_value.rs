@@ -261,7 +261,10 @@ impl TavilyRef {
         }
 
         let body = response.text()?;
-        Ok(vec![format!("链接: {url}\n内容: {}", strip_html_tags(&body))])
+        Ok(vec![format!(
+            "链接: {url}\n内容: {}",
+            strip_html_tags(&body)
+        )])
     }
 
     pub fn search_images(
