@@ -65,7 +65,17 @@ fn build_reply_batch_builder() -> QqAgentReplyBatchBuilder {
 fn build_reply_batches_from_model_text(
     request: &QqAgentReplyBuildRequest,
 ) -> Result<QqAgentReplyBuildResult> {
-    let segments = parse_reply_segments(&request.assistant_text);
+    // Resolve [Reply his_message] to the actual triggering message ID before parsing.
+    let resolved_text;
+    let text = if let Some(mid) = request.trigger_message_id {
+        resolved_text = request
+            .assistant_text
+            .replace("[Reply his_message]", &format!("[Reply message_id={mid}]"));
+        &resolved_text
+    } else {
+        &request.assistant_text
+    };
+    let segments = parse_reply_segments(text);
     if segments
         .iter()
         .any(|segment| matches!(segment, ReplySegment::NoReply))
@@ -83,6 +93,7 @@ fn build_reply_batches_from_model_text(
     for segment in segments {
         match segment {
             ReplySegment::Text(text) => {
+                let text = text.trim().to_string();
                 if text.is_empty() {
                     continue;
                 }
@@ -558,6 +569,7 @@ pub async fn spawn(
         weaviate_image_ref,
         embedding_model,
         tavily,
+        s3_ref: object_storage.clone(),
         max_message_length: config.max_message_length,
         compact_context_length: config.compact_context_length,
         reply_batch_builder: Some(build_reply_batch_builder()),

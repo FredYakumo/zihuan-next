@@ -42,10 +42,11 @@ use zihuan_core::llm::InferenceParam;
 use zihuan_core::llm::{ContentPart, OpenAIMessage};
 use zihuan_core::runtime::block_async;
 use zihuan_graph_engine::data_value::{
-    MySqlConfig, OpenAIMessageSessionCacheRef, SessionClaim, SessionStateRef, TavilyRef,
-    SESSION_CLAIM_CONTEXT,
+    MySqlConfig, OpenAIMessageSessionCacheRef, SessionClaim, SessionStateRef, TavilyImage,
+    TavilyRef, SESSION_CLAIM_CONTEXT,
 };
 use zihuan_graph_engine::database::weaviate::WeaviateRef;
+use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::message_mysql_get_group_history::MessageMySQLGetGroupHistoryNode;
 use zihuan_graph_engine::message_mysql_get_user_history::MessageMySQLGetUserHistoryNode;
@@ -70,6 +71,9 @@ const DEFAULT_HISTORY_TOOL_LIMIT: i64 = 10;
 const MAX_HISTORY_TOOL_LIMIT: i64 = 50;
 const DEFAULT_SEMANTIC_SEARCH_LIMIT: i64 = 5;
 const MAX_SEMANTIC_SEARCH_LIMIT: i64 = 20;
+// Weaviate cosine distance above this value is considered a poor semantic match;
+// the image search falls through to Tavily to find genuinely relevant results.
+const WEAVIATE_IMAGE_MAX_GOOD_DISTANCE: f64 = 0.55;
 const WEAVIATE_PERSISTENCE_QUEUE_CAPACITY: usize = 1024;
 const DEFAULT_TOOL_WEB_SEARCH: &str = "web_search";
 const DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO: &str = "get_agent_public_info";
@@ -86,7 +90,6 @@ const DEFAULT_TOOL_REPLY_SEND_IMAGE: &str = "reply_send_image";
 const DEFAULT_TOOL_NO_REPLY: &str = "no_reply";
 const FUNCTION_LIST_TEXT: &str = "/new 新对话\n/search 联网搜索";
 const DIRECT_REPLY_NO_SYSTEM_PROMPT: &str = "没有系统提示词";
-const DIRECT_REPLY_OTHER_INTENT: &str = "你想说什么？";
 const MODEL_NAME_REPLY_PREFIX: &str = "我不是模型，不过我会调用: ";
 
 fn default_tools_enabled_map() -> HashMap<String, bool> {
@@ -174,10 +177,13 @@ fn build_group_system_prompt(
     group_id: &str,
     agent_system_prompt: Option<&str>,
 ) -> String {
-    let rules = build_common_system_rules(
+    let mut rules = build_common_system_rules(
         &format!("我是{bot_name}，QQ号 {bot_id}。"),
         agent_system_prompt,
     );
+    rules.push_str(&format!(
+        "\n- 群聊回复时，尽量在回复中 @{sender_id} 或使用 [Reply his_message] 引用触发这条对话的消息，让对方清楚你是在回应他。"
+    ));
     format!(
         "你的名字叫`{bot_name}`(QQ号为`{bot_id}`)。现在时间是{time}，你正在`{group_name}`群(群号:{group_id})里聊天，群友`{sender_name}`(QQ号`{sender_id}`)向你发送了一条消息。\n\
          {rules}"
@@ -483,6 +489,9 @@ pub struct QqAgentReplyBuildRequest {
     pub bot_id: String,
     pub bot_name: String,
     pub max_message_length: usize,
+    /// Message ID of the event that triggered this agent invocation.
+    /// Used to resolve `[Reply his_message]` in the assistant output.
+    pub trigger_message_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -503,6 +512,7 @@ fn build_reply_result(
     bot_id: &str,
     bot_name: &str,
     max_message_length: usize,
+    trigger_message_id: Option<i64>,
     reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
 ) -> Result<QqAgentReplyBuildResult> {
     let trimmed = content.trim();
@@ -520,6 +530,7 @@ fn build_reply_result(
             bot_id: bot_id.to_string(),
             bot_name: bot_name.to_string(),
             max_message_length,
+            trigger_message_id,
         });
     }
 
@@ -544,6 +555,7 @@ fn build_reply_batches(
     bot_id: &str,
     bot_name: &str,
     max_message_length: usize,
+    trigger_message_id: Option<i64>,
     reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
 ) -> Result<Vec<Vec<Message>>> {
     Ok(build_reply_result(
@@ -555,6 +567,7 @@ fn build_reply_batches(
         bot_id,
         bot_name,
         max_message_length,
+        trigger_message_id,
         reply_batch_builder,
     )?
     .batches)
@@ -1411,7 +1424,7 @@ fn split_text_hard(content: &str, max_chars: usize) -> Vec<String> {
 
 fn build_output_contract_priming_message() -> OpenAIMessage {
     OpenAIMessage::assistant_text(
-        "明白。我最终只会写聊天对象真正会看到的话，必要时直接使用 @QQ号、[Reply message_id=...]、[Image path=...]、[Image url=...]、[no reply] 这些标记，不写内部汇报。"
+        "明白。我最终只会写聊天对象真正会看到的话，必要时直接使用 @QQ号、[Reply his_message]、[Reply message_id=...]、[Image path=...]、[Image url=...]、[no reply] 这些标记，不写内部汇报。"
             .to_string(),
     )
 }
@@ -1504,6 +1517,7 @@ fn send_direct_text_reply(
         bot_id,
         bot_name,
         max_message_length,
+        None,
         reply_batch_builder,
     )?;
     if batches.is_empty() {
@@ -1717,6 +1731,72 @@ fn send_tool_progress_notification(
     }
 }
 
+fn is_direct_image_url(url: &str) -> bool {
+    let path = url.split('?').next().unwrap_or(url).to_lowercase();
+    matches!(
+        path.rsplit('.').next().unwrap_or(""),
+        "jpg" | "jpeg" | "png" | "webp" | "gif" | "bmp" | "avif" | "svg"
+    )
+}
+
+fn derive_tavily_s3_key(url: &str) -> String {
+    let after_scheme = url.find("://").map(|i| &url[i + 3..]).unwrap_or(url);
+    let path_start = after_scheme.find('/').map(|i| i + 1).unwrap_or(0);
+    let path = after_scheme[path_start..].split('?').next().unwrap_or("");
+    let sanitized: String = path
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let trimmed = sanitized.trim_matches('/');
+    if trimmed.is_empty() {
+        "tavily/image.jpg".to_string()
+    } else {
+        format!("tavily/{}", &trimmed[..trimmed.len().min(200)])
+    }
+}
+
+fn content_type_from_url(url: &str) -> &'static str {
+    let path = url.split('?').next().unwrap_or(url).to_lowercase();
+    match path.rsplit('.').next().unwrap_or("") {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "avif" => "image/avif",
+        "svg" => "image/svg+xml",
+        _ => "image/jpeg",
+    }
+}
+
+fn s3_local_base(s3_ref: &S3Ref) -> String {
+    if let Some(ref pub_base) = s3_ref.public_base_url {
+        pub_base.trim_end_matches('/').to_string()
+    } else if s3_ref.path_style {
+        format!(
+            "{}/{}",
+            s3_ref.endpoint.trim_end_matches('/'),
+            s3_ref.bucket.trim_matches('/')
+        )
+    } else {
+        s3_ref.endpoint.trim_end_matches('/').to_string()
+    }
+}
+
+// A path is "local" when it either has no HTTP scheme (bare S3 key) or its URL
+// origin matches the configured object-storage endpoint, meaning the QQ client
+// can reach it on the local network.
+fn is_local_s3_path(path: &str, local_base: &str) -> bool {
+    !(path.starts_with("http://") || path.starts_with("https://"))
+        || path.starts_with(local_base)
+}
+
 fn sanitize_positive_limit(value: Option<i64>, default_limit: i64, max_limit: i64) -> usize {
     let limit = value.unwrap_or(default_limit);
     limit.clamp(1, max_limit) as usize
@@ -1837,6 +1917,15 @@ fn extract_distance(value: &Value) -> Option<f64> {
         .get("_additional")
         .and_then(|extra| extra.get("distance"))
         .and_then(Value::as_f64)
+}
+
+fn format_weaviate_image_candidate_for_log(value: &Value) -> String {
+    let path = extract_string_field(value, "object_storage_path")
+        .unwrap_or_else(|| "<missing-path>".to_string());
+    let distance = extract_distance(value)
+        .map(|d| format!("{d:.4}"))
+        .unwrap_or_else(|| "none".to_string());
+    format!("{path} (distance={distance})")
 }
 
 fn format_message_lookup_results(items: &[Value]) -> Value {
@@ -2457,6 +2546,7 @@ struct SearchSimilarImagesBrainTool {
     weaviate_image_ref: Option<Arc<WeaviateRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
     tavily_ref: Arc<TavilyRef>,
+    s3_ref: Option<Arc<S3Ref>>,
     adapter: Option<ims_bot_adapter::adapter::SharedBotAdapter>,
     target_id: String,
     mention_target_id: Option<String>,
@@ -2515,6 +2605,59 @@ impl BrainTool for SearchSimilarImagesBrainTool {
                     true,
                 )?;
                 items.sort_by(semantic_result_order);
+                items.retain(|item| {
+                    extract_string_field(item, "object_storage_path")
+                        .as_deref()
+                        .map(is_direct_image_url)
+                        .unwrap_or(false)
+                });
+                // If we have local S3 storage, further filter to only paths that the
+                // QQ client can actually reach (local-network origin). Foreign CDN URLs
+                // that pass the extension check are dropped here so the Tavily fallback
+                // downloads and re-uploads them to local S3, healing stale records.
+                if let Some(s3) = self.s3_ref.as_ref() {
+                    let local_base = s3_local_base(s3);
+                    items.retain(|item| {
+                        extract_string_field(item, "object_storage_path")
+                            .as_deref()
+                            .map(|p| is_local_s3_path(p, &local_base))
+                            .unwrap_or(false)
+                    });
+                }
+                // Drop results whose semantic distance is too large — they are
+                // unrelated to the query and Tavily will do better.
+                let candidate_count_after_path_filters = items.len();
+                let dropped_by_distance: Vec<String> = items
+                    .iter()
+                    .filter(|item| {
+                        extract_distance(item)
+                            .map(|d| d > WEAVIATE_IMAGE_MAX_GOOD_DISTANCE)
+                            .unwrap_or(false)
+                    })
+                    .map(format_weaviate_image_candidate_for_log)
+                    .collect();
+                items.retain(|item| {
+                    item.get("distance")
+                        .and_then(Value::as_f64)
+                        .map(|d| d <= WEAVIATE_IMAGE_MAX_GOOD_DISTANCE)
+                        .unwrap_or(true)
+                });
+                if !dropped_by_distance.is_empty() {
+                    info!(
+                        "{LOG_PREFIX} search_similar_images dropped {} Weaviate candidates after URL/path filtering for query='{}' because distance exceeded {}: {}",
+                        dropped_by_distance.len(),
+                        query,
+                        WEAVIATE_IMAGE_MAX_GOOD_DISTANCE,
+                        dropped_by_distance.join(", ")
+                    );
+                }
+                if candidate_count_after_path_filters > 0 && items.is_empty() {
+                    info!(
+                        "{LOG_PREFIX} search_similar_images will fall back to Tavily for query='{}' because no Weaviate candidates remained after distance filtering (threshold={})",
+                        query,
+                        WEAVIATE_IMAGE_MAX_GOOD_DISTANCE
+                    );
+                }
 
                 if !items.is_empty() {
                     return Ok(serde_json::json!({
@@ -2526,44 +2669,87 @@ impl BrainTool for SearchSimilarImagesBrainTool {
             }
 
             let fallback_count = limit.min(10) as i64;
-            let tavily_items = self
+            let tavily_images: Vec<TavilyImage> = self
                 .tavily_ref
-                .search(&format!("{} 图片", query), fallback_count)?;
+                .search_images(&format!("{} 图片", query), fallback_count)?;
 
             if let (Some(weaviate_image_ref), Some(embedding_model)) = (
                 self.weaviate_image_ref.as_ref(),
                 self.embedding_model.as_ref(),
             ) {
-                for item in &tavily_items {
-                    if let Some(link) = extract_tavily_link(item) {
-                        let vector = embedding_model.inference(item).unwrap_or_else(|_| {
-                            embedding_model.inference(&query).unwrap_or_default()
-                        });
-                        if !vector.is_empty() {
-                            if let Err(err) = weaviate_image_ref.upsert_image_record(
-                                &link,
-                                item,
-                                &vector,
-                                Some("tavily"),
-                                None,
-                                None,
-                            ) {
-                                warn!(
-                                    "{LOG_PREFIX} Failed to persist tavily image fallback result into weaviate: {}",
-                                    err
-                                );
+                for image in &tavily_images {
+                    let summary = image.description.as_deref().unwrap_or(&image.url);
+                    // Try uploading to S3 so future lookups use local storage.
+                    let object_storage_path = if let Some(s3_ref) = self.s3_ref.as_ref() {
+                        let download_result = (|| -> zihuan_core::error::Result<Vec<u8>> {
+                            let client = reqwest::blocking::Client::builder()
+                                .timeout(std::time::Duration::from_secs(15))
+                                .build()?;
+                            let resp = client.get(&image.url).send()?;
+                            if !resp.status().is_success() {
+                                return Err(zihuan_core::error::Error::StringError(format!(
+                                    "image download returned status {}",
+                                    resp.status()
+                                )));
                             }
+                            Ok(resp.bytes()?.to_vec())
+                        })();
+                        match download_result {
+                            Ok(bytes) => {
+                                let key = derive_tavily_s3_key(&image.url);
+                                let content_type = content_type_from_url(&image.url);
+                                let s3_ref_clone = s3_ref.clone();
+                                match block_async(async move {
+                                    s3_ref_clone.put_object(&key, content_type, &bytes).await
+                                }) {
+                                    Ok(s3_url) => s3_url,
+                                    Err(err) => {
+                                        warn!(
+                                            "{LOG_PREFIX} S3 upload failed for tavily image {}: {}",
+                                            image.url, err
+                                        );
+                                        image.url.clone()
+                                    }
+                                }
+                            }
+                            Err(err) => {
+                                warn!(
+                                    "{LOG_PREFIX} Failed to download tavily image {}: {}",
+                                    image.url, err
+                                );
+                                image.url.clone()
+                            }
+                        }
+                    } else {
+                        image.url.clone()
+                    };
+                    let vector = embedding_model.inference(summary).unwrap_or_else(|_| {
+                        embedding_model.inference(&query).unwrap_or_default()
+                    });
+                    if !vector.is_empty() {
+                        if let Err(err) = weaviate_image_ref.upsert_image_record(
+                            &object_storage_path,
+                            summary,
+                            &vector,
+                            Some("tavily"),
+                            None,
+                            None,
+                        ) {
+                            warn!(
+                                "{LOG_PREFIX} Failed to persist tavily image fallback result into weaviate: {}",
+                                err
+                            );
                         }
                     }
                 }
             }
 
-            let images = tavily_items
+            let images = tavily_images
                 .iter()
-                .map(|item| {
+                .map(|image| {
                     serde_json::json!({
-                        "object_storage_path": extract_tavily_link(item),
-                        "summary": item,
+                        "object_storage_path": image.url,
+                        "summary": image.description,
                         "source": "tavily",
                     })
                 })
@@ -3122,6 +3308,7 @@ pub fn build_info_brain_tools(
                 weaviate_image_ref,
                 embedding_model,
                 tavily_ref: tavily,
+                s3_ref: None,
                 adapter: None,
                 target_id: String::new(),
                 mention_target_id: None,
@@ -3299,6 +3486,7 @@ impl QqChatAgent {
         weaviate_image_ref: Option<&Arc<WeaviateRef>>,
         embedding_model: Option<&Arc<dyn EmbeddingBase>>,
         tavily: &Arc<TavilyRef>,
+        s3_ref: Option<&Arc<S3Ref>>,
         max_message_length: usize,
         compact_context_length: usize,
         reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
@@ -3368,6 +3556,7 @@ impl QqChatAgent {
             weaviate_image_ref,
             embedding_model,
             tavily,
+            s3_ref,
             &sender_id,
             &target_id,
             is_group,
@@ -3401,6 +3590,7 @@ impl QqChatAgent {
         weaviate_image_ref: Option<&Arc<WeaviateRef>>,
         embedding_model: Option<&Arc<dyn EmbeddingBase>>,
         tavily: &Arc<TavilyRef>,
+        s3_ref: Option<&Arc<S3Ref>>,
         sender_id: &str,
         target_id: &str,
         is_group: bool,
@@ -3442,7 +3632,6 @@ impl QqChatAgent {
             IntentCategory::AskSystemPrompt => Some(DIRECT_REPLY_NO_SYSTEM_PROMPT.to_string()),
             IntentCategory::AskModelName => Some(build_model_name_reply(model_display_names)),
             IntentCategory::AskToolList => Some(FUNCTION_LIST_TEXT.to_string()),
-            IntentCategory::Other => Some(DIRECT_REPLY_OTHER_INTENT.to_string()),
             _ => None,
         };
 
@@ -3609,6 +3798,7 @@ impl QqChatAgent {
                 weaviate_image_ref: weaviate_image_ref.cloned(),
                 embedding_model: embedding_model.cloned(),
                 tavily_ref: tavily.clone(),
+                s3_ref: s3_ref.cloned(),
                 adapter: Some(adapter.clone()),
                 target_id: target_id.to_string(),
                 mention_target_id: if is_group {
@@ -3658,6 +3848,7 @@ impl QqChatAgent {
                 &bot_id,
                 bot_name,
                 max_message_length,
+                Some(inference_event.message_id),
                 reply_batch_builder,
             )?;
 
@@ -3732,6 +3923,7 @@ pub struct QqChatAgentServiceConfig {
     pub weaviate_image_ref: Option<Arc<WeaviateRef>>,
     pub embedding_model: Option<Arc<dyn EmbeddingBase>>,
     pub tavily: Arc<TavilyRef>,
+    pub s3_ref: Option<Arc<S3Ref>>,
     pub max_message_length: usize,
     pub compact_context_length: usize,
     pub reply_batch_builder: Option<QqAgentReplyBatchBuilder>,
@@ -3786,6 +3978,7 @@ impl QqChatAgentService {
             self.config.weaviate_image_ref.as_ref(),
             self.config.embedding_model.as_ref(),
             &self.config.tavily,
+            self.config.s3_ref.as_ref(),
             self.config.max_message_length,
             self.config.compact_context_length,
             self.config.reply_batch_builder.as_ref(),

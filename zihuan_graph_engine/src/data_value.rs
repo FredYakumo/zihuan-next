@@ -116,6 +116,18 @@ struct TavilySearchItem {
     content: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct TavilyImage {
+    pub url: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TavilyImageSearchResponse {
+    #[serde(default)]
+    images: Vec<TavilyImage>,
+}
+
 impl TavilyRef {
     pub fn new(api_token: impl Into<String>, timeout: Duration) -> Self {
         Self {
@@ -169,6 +181,45 @@ impl TavilyRef {
                 )
             })
             .collect())
+    }
+
+    pub fn search_images(
+        &self,
+        query: &str,
+        max_results: i64,
+    ) -> zihuan_core::error::Result<Vec<TavilyImage>> {
+        let client = Client::builder().timeout(self.timeout).build()?;
+        let response = client
+            .post("https://api.tavily.com/search")
+            .bearer_auth(&self.api_token)
+            .json(&serde_json::json!({
+                "query": query,
+                "max_results": max_results,
+                "search_depth": "basic",
+                "include_answer": false,
+                "include_images": true,
+                "include_image_descriptions": true,
+                "include_raw_content": false,
+            }))
+            .send()?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().unwrap_or_default();
+            return Err(zihuan_core::error::Error::StringError(format!(
+                "Tavily search request failed with status {}: {}",
+                status, body
+            )));
+        }
+
+        let body = response.text()?;
+        let parsed: TavilyImageSearchResponse = serde_json::from_str(&body).map_err(|err| {
+            zihuan_core::error::Error::StringError(format!(
+                "Failed to parse Tavily search response: {err}"
+            ))
+        })?;
+
+        Ok(parsed.images)
     }
 }
 
