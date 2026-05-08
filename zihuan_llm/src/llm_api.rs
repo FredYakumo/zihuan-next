@@ -1,4 +1,4 @@
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
 use serde_json::{json, Value};
@@ -745,7 +745,7 @@ impl LLMBase for LLMAPI {
                 ) {
                     Ok(msg) => {
                         if request_format == RequestFormat::TencentMultimodalCompat {
-                            warn!(
+                            info!(
                                 "LLM API request succeeded after retrying with Tencent multimodal compatibility format: {}",
                                 self.format_request_context(
                                     &request_context,
@@ -901,7 +901,7 @@ impl LLMAPI {
             }
 
             if request_format == RequestFormat::TencentMultimodalCompat {
-                warn!(
+                info!(
                     "Streaming LLM API request succeeded after retrying with Tencent multimodal compatibility format: {}",
                     self.format_request_context(&request_context, None, request_format)
                 );
