@@ -86,6 +86,7 @@ fn build_reply_batches_from_model_text(
     let mut batches = Vec::new();
     let mut current_batch = Vec::new();
     let mut current_text_chars = 0usize;
+    let mut pending_reply: Option<ReplyMessage> = None;
 
     for segment in segments {
         match segment {
@@ -124,11 +125,9 @@ fn build_reply_batches_from_model_text(
                 current_batch.push(Message::At(at));
             }
             ReplySegment::Message(Message::Reply(reply)) => {
-                if !current_batch.is_empty() {
-                    flush_batch(&mut batches, &mut current_batch);
-                    current_text_chars = 0;
+                if pending_reply.is_none() {
+                    pending_reply = Some(reply);
                 }
-                current_batch.push(Message::Reply(reply));
             }
             ReplySegment::Message(message) => {
                 flush_batch(&mut batches, &mut current_batch);
@@ -140,6 +139,9 @@ fn build_reply_batches_from_model_text(
     }
 
     flush_batch(&mut batches, &mut current_batch);
+    if let Some(reply) = pending_reply {
+        attach_reply_to_first_batch(&mut batches, reply);
+    }
     Ok(QqAgentReplyBuildResult {
         batches,
         suppress_send: false,
@@ -160,6 +162,14 @@ fn resolve_reply_his_message_aliases(text: &str, trigger_message_id: i64) -> Str
 fn flush_batch(batches: &mut Vec<Vec<Message>>, current_batch: &mut Vec<Message>) {
     if !current_batch.is_empty() {
         batches.push(std::mem::take(current_batch));
+    }
+}
+
+fn attach_reply_to_first_batch(batches: &mut Vec<Vec<Message>>, reply: ReplyMessage) {
+    if let Some(first_batch) = batches.first_mut() {
+        first_batch.insert(0, Message::Reply(reply));
+    } else {
+        batches.push(vec![Message::Reply(reply)]);
     }
 }
 
