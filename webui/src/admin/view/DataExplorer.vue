@@ -160,6 +160,72 @@
       </div>
     </section>
 
+    <!-- Weaviate Tab -->
+    <section v-if="activeTab === 'weaviate'" class="panel">
+      <div class="explorer-connection-select">
+        <label class="field">
+          <span class="field-label">Weaviate 连接</span>
+          <select v-model="weaviate.connectionId" class="field-input" @change="onWeaviateConnectionChange">
+            <option value="">— 选择连接 —</option>
+            <option v-for="c in weaviateConnections" :key="c.config_id" :value="c.config_id">{{ c.name }}</option>
+          </select>
+        </label>
+      </div>
+
+      <div v-if="weaviate.connectionId" class="explorer-search">
+        <label class="field">
+          <span class="field-label">Text Embedding 模型</span>
+          <select v-model="weaviate.embeddingModelRefId" class="field-input" @change="onWeaviateEmbeddingChange">
+            <option value="">— 选择模型 —</option>
+            <option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+          </select>
+        </label>
+        <label class="field" style="grid-column: span 2;">
+          <span class="field-label">Query</span>
+          <input v-model="weaviate.query" class="field-input" placeholder="输入要向量检索的文本" @keyup.enter="searchWeaviate" />
+        </label>
+        <label class="field">
+          <span class="field-label">Limit</span>
+          <input v-model.number="weaviate.limit" type="number" min="1" max="50" class="field-input" />
+        </label>
+        <div class="field" style="align-self: flex-end;">
+          <button class="btn" :disabled="weaviate.loading" @click="searchWeaviate">搜索</button>
+        </div>
+      </div>
+
+      <div v-if="selectedWeaviateConnection" class="explorer-meta muted">
+        Class: {{ selectedWeaviateClassName }}
+      </div>
+
+      <div v-if="weaviate.loading" class="empty-state">检索中…</div>
+      <div v-else-if="weaviate.connectionId && weaviate.items.length === 0 && weaviate.searched" class="empty-state">无匹配结果。</div>
+      <div v-else-if="weaviate.items.length > 0" class="explorer-weaviate-list">
+        <article v-for="(item, i) in weaviate.items" :key="i" class="explorer-weaviate-card">
+          <div class="explorer-weaviate-card-header">
+            <span class="badge">#{{ i + 1 }}</span>
+            <span class="badge">distance {{ formatWeaviateDistance(item.distance) }}</span>
+            <span v-if="item.object_id" class="td-mono explorer-weaviate-object-id">{{ item.object_id }}</span>
+          </div>
+          <div class="explorer-weaviate-card-body">
+            <div v-if="readStringProperty(item.properties, 'content')" class="explorer-weaviate-content">
+              {{ readStringProperty(item.properties, 'content') }}
+            </div>
+            <div class="explorer-weaviate-grid">
+              <div v-if="readStringProperty(item.properties, 'sender_name')" class="key-value"><strong>Sender</strong><span>{{ readStringProperty(item.properties, 'sender_name') }}</span></div>
+              <div v-if="readStringProperty(item.properties, 'sender_id')" class="key-value"><strong>Sender ID</strong><span class="mono">{{ readStringProperty(item.properties, 'sender_id') }}</span></div>
+              <div v-if="readStringProperty(item.properties, 'group_name')" class="key-value"><strong>Group</strong><span>{{ readStringProperty(item.properties, 'group_name') }}</span></div>
+              <div v-if="readStringProperty(item.properties, 'group_id')" class="key-value"><strong>Group ID</strong><span class="mono">{{ readStringProperty(item.properties, 'group_id') }}</span></div>
+              <div v-if="readStringProperty(item.properties, 'send_time')" class="key-value"><strong>Send Time</strong><span>{{ readStringProperty(item.properties, 'send_time') }}</span></div>
+            </div>
+            <details class="explorer-weaviate-details">
+              <summary>查看原始字段</summary>
+              <pre>{{ stringifyWeaviateProperties(item.properties) }}</pre>
+            </details>
+          </div>
+        </article>
+      </div>
+    </section>
+
     <!-- RustFS Tab -->
     <section v-if="activeTab === 'rustfs'" class="panel">
       <div class="explorer-connection-select">
@@ -243,19 +309,23 @@ import {
   system,
   explorer,
   type ConnectionConfig,
+  type LlmConfig,
   type MysqlRecord,
   type RedisKeyEntry,
   type RustfsObject,
+  type WeaviateSearchResult,
 } from "../../api/client";
 
 const tabs = [
   { id: "mysql" as const, label: "MySQL" },
   { id: "redis" as const, label: "Redis" },
+  { id: "weaviate" as const, label: "Weaviate" },
   { id: "rustfs" as const, label: "RustFS" },
 ];
 
-const activeTab = ref<"mysql" | "redis" | "rustfs">("mysql");
+const activeTab = ref<"mysql" | "redis" | "weaviate" | "rustfs">("mysql");
 const connections = ref<ConnectionConfig[]>([]);
+const llmRefs = ref<LlmConfig[]>([]);
 
 const mysqlGoto = ref(1);
 const redisGoto = ref(1);
@@ -267,11 +337,25 @@ const mysqlConnections = computed(() =>
 const redisConnections = computed(() =>
   connections.value.filter((c) => c.kind.type === "redis" && c.enabled)
 );
+const weaviateConnections = computed(() =>
+  connections.value.filter((c) => c.kind.type === "weaviate" && c.enabled)
+);
+const selectedWeaviateConnection = computed(
+  () => connections.value.find((c) => c.config_id === weaviate.value.connectionId) ?? null
+);
+const selectedWeaviateClassName = computed(() =>
+  typeof selectedWeaviateConnection.value?.kind.class_name === "string"
+    ? selectedWeaviateConnection.value.kind.class_name
+    : weaviate.value.className
+);
 const rustfsConnections = computed(() =>
   connections.value.filter((c) => c.kind.type === "rustfs" && c.enabled)
 );
+const embeddingModels = computed(() =>
+  llmRefs.value.filter((item) => item.model.type === "text_embedding_local" && item.enabled)
+);
 
-function switchTab(tab: "mysql" | "redis" | "rustfs") {
+function switchTab(tab: "mysql" | "redis" | "weaviate" | "rustfs") {
   activeTab.value = tab;
 }
 
@@ -404,6 +488,73 @@ function formatTTL(ttl: number): string {
   return `${h}h ${m}m`;
 }
 
+// ── Weaviate ─────────────────────────────────────────────────
+
+const weaviate = ref({
+  connectionId: "",
+  embeddingModelRefId: "",
+  loading: false,
+  searched: false,
+  query: "",
+  limit: 10,
+  className: "",
+  items: [] as WeaviateSearchResult[],
+});
+
+function onWeaviateConnectionChange() {
+  weaviate.value.items = [];
+  weaviate.value.className = "";
+  weaviate.value.searched = false;
+}
+
+function onWeaviateEmbeddingChange() {
+  weaviate.value.items = [];
+  weaviate.value.searched = false;
+}
+
+async function searchWeaviate() {
+  if (!weaviate.value.connectionId) {
+    return;
+  }
+  if (!weaviate.value.embeddingModelRefId) {
+    alert("请选择 Text Embedding 模型");
+    return;
+  }
+  if (!weaviate.value.query.trim()) {
+    alert("请输入查询文本");
+    return;
+  }
+  weaviate.value.loading = true;
+  weaviate.value.searched = true;
+  try {
+    const res = await explorer.queryWeaviate({
+      connection_id: weaviate.value.connectionId,
+      embedding_model_ref_id: weaviate.value.embeddingModelRefId,
+      query: weaviate.value.query.trim(),
+      limit: weaviate.value.limit,
+    });
+    weaviate.value.items = res.items;
+    weaviate.value.className = res.class_name;
+  } catch (e: unknown) {
+    alert((e as Error).message);
+  } finally {
+    weaviate.value.loading = false;
+  }
+}
+
+function readStringProperty(properties: Record<string, unknown>, key: string): string {
+  const value = properties[key];
+  return typeof value === "string" ? value : "";
+}
+
+function formatWeaviateDistance(distance: number | null): string {
+  return typeof distance === "number" ? distance.toFixed(4) : "—";
+}
+
+function stringifyWeaviateProperties(properties: Record<string, unknown>): string {
+  return JSON.stringify(properties, null, 2);
+}
+
 // ── RustFS ─────────────────────────────────────────────────────
 
 const rustfs = ref({
@@ -485,10 +636,15 @@ function onImageError(e: Event) {
 // ── Init ───────────────────────────────────────────────────────
 
 onMounted(async () => {
-  try {
-    connections.value = await system.connections.list();
-  } catch {
-    // silently fail
+  const [connectionResult, llmResult] = await Promise.allSettled([
+    system.connections.list(),
+    system.llm.list(),
+  ]);
+  if (connectionResult.status === "fulfilled") {
+    connections.value = connectionResult.value;
+  }
+  if (llmResult.status === "fulfilled") {
+    llmRefs.value = llmResult.value;
   }
 });
 </script>

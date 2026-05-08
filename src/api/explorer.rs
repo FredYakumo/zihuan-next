@@ -2,7 +2,9 @@ use redis::AsyncCommands;
 use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::Serialize;
+use serde_json::{Map, Value};
 use sqlx::Row as SqlxRow;
+use zihuan_llm::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 
 use crate::system_config::load_connections;
 use storage_handler::resource_resolver;
@@ -452,4 +454,159 @@ pub async fn query_rustfs(req: &mut Request, res: &mut Response, _depot: &mut De
         page,
         page_size,
     }));
+}
+
+// ── Weaviate ───────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+struct WeaviateExploreResponse {
+    items: Vec<WeaviateSearchResult>,
+    total: usize,
+    limit: usize,
+    class_name: String,
+}
+
+#[derive(Serialize)]
+struct WeaviateSearchResult {
+    object_id: Option<String>,
+    distance: Option<f64>,
+    properties: Value,
+}
+
+#[handler]
+pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let connection_id = match req.query::<String>("connection_id") {
+        Some(id) => id,
+        None => return render_bad_request(res, "connection_id is required".into()),
+    };
+    let embedding_model_ref_id = match req.query::<String>("embedding_model_ref_id") {
+        Some(id) => id,
+        None => return render_bad_request(res, "embedding_model_ref_id is required".into()),
+    };
+    let query = match req
+        .query::<String>("query")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        Some(query) => query,
+        None => return render_bad_request(res, "query is required".into()),
+    };
+    let limit = req.query::<usize>("limit").unwrap_or(10).clamp(1, 50);
+
+    let connections = match load_connections() {
+        Ok(c) => c,
+        Err(e) => return render_internal_error(res, e),
+    };
+
+    let weaviate_ref =
+        match resource_resolver::build_weaviate_ref(Some(&connection_id), &connections, false) {
+            Ok(Some(r)) => r,
+            Ok(None) => return render_bad_request(res, "connection not found".into()),
+            Err(e) => return render_internal_error(res, e),
+        };
+
+    let embedding_model = match RuntimeEmbeddingModelManager::shared()
+        .get_or_create_embedding_model(&embedding_model_ref_id)
+        .await
+    {
+        Ok(model) => model,
+        Err(err) => return render_internal_error(res, err),
+    };
+
+    let vector = match tokio::task::block_in_place(|| embedding_model.inference(&query)) {
+        Ok(vector) if !vector.is_empty() => vector,
+        Ok(_) => return render_internal_error(res, "embedding model returned an empty vector"),
+        Err(err) => return render_internal_error(res, err),
+    };
+
+    let property_names = match list_weaviate_class_properties(&weaviate_ref) {
+        Ok(properties) if !properties.is_empty() => properties,
+        Ok(_) => return render_internal_error(res, "weaviate class has no readable properties"),
+        Err(err) => return render_internal_error(res, err),
+    };
+
+    let response = match weaviate_ref.query_near_vector(
+        &weaviate_ref.class_name,
+        &vector,
+        limit,
+        &property_names,
+        true,
+        false,
+    ) {
+        Ok(value) => value,
+        Err(err) => return render_internal_error(res, err),
+    };
+
+    let items = response
+        .get("data")
+        .and_then(|value| value.get("Get"))
+        .and_then(|value| value.get(&weaviate_ref.class_name))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .map(weaviate_search_result_from_value)
+        .collect::<Vec<_>>();
+
+    res.render(Json(WeaviateExploreResponse {
+        total: items.len(),
+        limit,
+        class_name: weaviate_ref.class_name.clone(),
+        items,
+    }));
+}
+
+fn list_weaviate_class_properties(
+    weaviate_ref: &zihuan_graph_engine::database::weaviate::WeaviateRef,
+) -> zihuan_core::error::Result<Vec<String>> {
+    let schema = weaviate_ref.schema()?;
+    Ok(schema
+        .get("classes")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|class| {
+            class
+                .get("class")
+                .and_then(Value::as_str)
+                .map(|name| name == weaviate_ref.class_name)
+                .unwrap_or(false)
+        })
+        .and_then(|class| class.get("properties"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|property| {
+            property
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(ToOwned::to_owned)
+        })
+        .collect())
+}
+
+fn weaviate_search_result_from_value(value: Value) -> WeaviateSearchResult {
+    let object_id = value
+        .get("_additional")
+        .and_then(|extra| extra.get("id"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    let distance = value
+        .get("_additional")
+        .and_then(|extra| extra.get("distance"))
+        .and_then(Value::as_f64);
+
+    let mut properties = match value {
+        Value::Object(object) => object,
+        _ => Map::new(),
+    };
+    properties.remove("_additional");
+
+    WeaviateSearchResult {
+        object_id,
+        distance,
+        properties: Value::Object(properties),
+    }
 }

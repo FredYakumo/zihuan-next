@@ -177,6 +177,7 @@ pub fn build_router(
             Router::with_path("explorer")
                 .push(Router::with_path("mysql").get(explorer::query_mysql))
                 .push(Router::with_path("redis").get(explorer::query_redis))
+                .push(Router::with_path("weaviate").get(explorer::query_weaviate))
                 .push(Router::with_path("rustfs").get(explorer::query_rustfs)),
         );
 

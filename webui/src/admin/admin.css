@@ -1163,6 +1163,72 @@ code {
   color: var(--admin-muted);
 }
 
+/* Weaviate result list */
+.explorer-meta {
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.explorer-weaviate-list {
+  display: grid;
+  gap: 12px;
+}
+
+.explorer-weaviate-card {
+  border: 1px solid var(--admin-border);
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--admin-bg-soft) 72%, transparent 28%);
+}
+
+.explorer-weaviate-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.explorer-weaviate-object-id {
+  word-break: break-all;
+  font-size: 12px;
+}
+
+.explorer-weaviate-card-body {
+  display: grid;
+  gap: 12px;
+}
+
+.explorer-weaviate-content {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--admin-bg-panel) 90%, transparent 10%);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.55;
+}
+
+.explorer-weaviate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.explorer-weaviate-details {
+  color: var(--admin-muted);
+}
+
+.explorer-weaviate-details pre {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--admin-bg-panel) 90%, transparent 10%);
+  overflow: auto;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* Redis key list */
 .explorer-redis-list {
   display: grid;

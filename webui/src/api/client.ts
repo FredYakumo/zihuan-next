@@ -533,6 +533,19 @@ export interface RustfsExploreResponse {
   page_size: number;
 }
 
+export interface WeaviateSearchResult {
+  object_id: string | null;
+  distance: number | null;
+  properties: Record<string, unknown>;
+}
+
+export interface WeaviateExploreResponse {
+  items: WeaviateSearchResult[];
+  total: number;
+  limit: number;
+  class_name: string;
+}
+
 function buildQueryString(params: Record<string, unknown>): string {
   const qs = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -580,6 +593,16 @@ export const explorer = {
   }): Promise<RustfsExploreResponse> {
     const qs = buildQueryString(params as Record<string, unknown>);
     return request("GET", `/explorer/rustfs?${qs}`);
+  },
+
+  queryWeaviate(params: {
+    connection_id: string;
+    embedding_model_ref_id: string;
+    query: string;
+    limit?: number;
+  }): Promise<WeaviateExploreResponse> {
+    const qs = buildQueryString(params as Record<string, unknown>);
+    return request("GET", `/explorer/weaviate?${qs}`);
   },
 };
 
