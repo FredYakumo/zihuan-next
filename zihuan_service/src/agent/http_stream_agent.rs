@@ -6,6 +6,9 @@ use salvo::http::{HeaderValue, StatusCode};
 use salvo::prelude::*;
 use tokio::task::JoinHandle;
 use zihuan_core::error::{Error, Result};
+use zihuan_core::task_context::{
+    AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
+};
 use zihuan_llm::system_config::{
     load_agents, load_llm_refs, AgentConfig, AgentType, HttpStreamAgentConfig,
 };
@@ -18,6 +21,7 @@ use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
 #[derive(Clone)]
 struct HttpStreamRuntimeState {
     owner_agent: AgentConfig,
+    task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -41,7 +45,7 @@ pub async fn spawn(
     agent: AgentConfig,
     config: HttpStreamAgentConfig,
     on_finish: super::OnFinishShared,
-    task_id: String,
+    task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
 ) -> Result<JoinHandle<()>> {
     validate_http_stream_config(&config)?;
     let acceptor = salvo::conn::TcpListener::new(config.bind.clone())
@@ -56,6 +60,7 @@ pub async fn spawn(
 
     let runtime_state = Arc::new(HttpStreamRuntimeState {
         owner_agent: agent.clone(),
+        task_runtime,
     });
     let auth_token = normalize_optional_token(config.api_key.clone());
     let router = Router::new()
@@ -70,7 +75,7 @@ pub async fn spawn(
     let agent_id = agent.id.clone();
     let agent_name = agent.name.clone();
 
-    Ok(tokio::spawn(EXECUTION_TASK_ID.scope(task_id, async move {
+    Ok(tokio::spawn(async move {
         info!(
             "[service] starting HTTP stream agent '{}' on {}",
             agent_name, config.bind
@@ -89,7 +94,7 @@ pub async fn spawn(
         if let Some(cb) = on_finish.lock().unwrap().take() {
             cb(true, None);
         }
-    })))
+    }))
 }
 
 struct HttpStreamAuth {
@@ -154,7 +159,39 @@ async fn http_stream_chat_completions(req: &mut Request, res: &mut Response, dep
         return;
     }
 
-    match execute_http_stream_completion(runtime.as_ref(), body).await {
+    let request_ip = req
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(',').next())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| Some(req.remote_addr().to_string()));
+    let model_hint = body.model.clone();
+    let task_name = format!(
+        "处理HTTP流请求[{}]",
+        request_ip.as_deref().unwrap_or("unknown")
+    );
+    let task_handle = runtime.task_runtime.as_ref().map(|task_runtime| {
+        task_runtime.start_task(AgentTaskRequest {
+            task_name,
+            agent_id: runtime.owner_agent.id.clone(),
+            agent_name: runtime.owner_agent.name.clone(),
+            user_ip: request_ip.clone(),
+        })
+    });
+
+    let task_id = task_handle.as_ref().map(|handle| handle.task_id.clone());
+    let execution = async move {
+        execute_http_stream_completion(runtime.as_ref(), body).await
+    };
+    let result = match task_id {
+        Some(task_id) => EXECUTION_TASK_ID.scope(task_id, execution).await,
+        None => execution.await,
+    };
+
+    match result {
         Ok(HttpStreamCompletion::Json(value)) => res.render(Json(value)),
         Ok(HttpStreamCompletion::Sse(body)) => {
             res.headers_mut().insert(
@@ -164,8 +201,27 @@ async fn http_stream_chat_completions(req: &mut Request, res: &mut Response, dep
             res.render(Text::Plain(body));
         }
         Err(err) => {
-            render_http_stream_error(res, StatusCode::UNPROCESSABLE_ENTITY, err.to_string())
+            let error_message = err.to_string();
+            if let Some(task_handle) = task_handle {
+                task_handle.finish(AgentTaskResult {
+                    status: Some(AgentTaskStatus::Failed),
+                    result_summary: Some(format!("HTTP 流请求失败: {error_message}")),
+                    error_message: Some(error_message.clone()),
+                });
+            }
+            render_http_stream_error(res, StatusCode::UNPROCESSABLE_ENTITY, error_message);
+            return;
         }
+    }
+    if let Some(task_handle) = task_handle {
+        task_handle.finish(AgentTaskResult {
+            status: Some(AgentTaskStatus::Success),
+            result_summary: Some(format!(
+                "已完成 HTTP 流请求，模型={}",
+                model_hint.unwrap_or_else(|| "default".to_string())
+            )),
+            error_message: None,
+        });
     }
 }
 

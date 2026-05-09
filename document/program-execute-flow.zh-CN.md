@@ -93,6 +93,40 @@
 
 这些长期运行的服务逻辑由 `zihuan_service` 承载，而不是图执行器。
 
+需要特别注意当前任务模型：
+
+- 启动 Agent 本身**不再**创建任务记录
+- Task 列表里的 Agent 任务表示“一次具体响应/请求处理”，而不是 Agent 的存活周期
+- `qq_chat_agent` 在真正进入回复流程时创建一个任务，例如 `回复[3507578481]的消息`
+- `http_stream_agent` 在每次处理一个 HTTP 请求时创建一个任务
+- 群聊里未 `@` 机器人这类纯忽略路径不会创建任务
+
+每个 Agent 响应任务都有独立的：
+
+- `task_id`
+- `start_time`
+- `end_time`
+- `duration_ms`
+- `status`
+- `error_message`
+- `result_summary`
+- `log_path`
+
+任务日志按 task 维度持久化到：
+
+- `logs/tasks/<task_id>.jsonl`
+
+`qq_chat_agent` 的任务日志还会额外记录：
+
+- 用户原始消息
+- 展开后的推理消息文本
+- 历史上下文消息数
+- 上下文 token 估算值
+- 历史压缩前后 token
+- 当前请求 token 消耗信息
+
+当前底层并没有统一的精确 usage 结构，因此 `prompt_tokens` / `completion_tokens` / `total_tokens` 在不可用时会明确记录为 unavailable，并补充估算值，而不是伪造精确数字。
+
 ## 6. CLI 执行流程
 
 入口：`zihuan_graph_cli/src/main.rs`

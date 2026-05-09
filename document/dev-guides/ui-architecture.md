@@ -110,6 +110,14 @@ The browser uses `/api/ws` to receive:
 
 This keeps long-running feedback out of request/response polling loops.
 
+For the task UI, remember the current semantics:
+
+- graph tasks represent one graph execution
+- agent tasks represent one handled response/request
+- starting an agent does not create a task row
+- QQ agent tasks are typically named like `回复[sender_id]的消息`
+- agent task logs come from persisted task log files, not only live WebSocket output
+
 ## Editor-Specific Notes
 
 The graph editor still uses the LiteGraph-based browser canvas. If you touch inline widgets, canvas rendering, or link layout, also review:

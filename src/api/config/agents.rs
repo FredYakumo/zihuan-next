@@ -1,4 +1,3 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use salvo::prelude::*;
@@ -6,6 +5,9 @@ use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
 use storage_handler::{ConnectionConfig, ConnectionKind};
 use uuid::Uuid;
+use zihuan_core::task_context::{
+    AgentTaskHandle, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
+};
 
 use ims_bot_adapter::{fetch_login_info, parse_ims_bot_adapter_connection, qq_avatar_url};
 use log::{info, warn};
@@ -37,93 +39,105 @@ struct QqChatProfile {
     bot_avatar_url: Option<String>,
 }
 
-/// Register the agent as a task entry, start it, and wire up lifecycle callbacks.
-/// The stop_flag in the task entry is watched: when set, `agent_manager.stop_agent()` is called.
-pub async fn start_agent_with_task(
+struct DefaultAgentTaskRuntime {
+    state: Arc<AppState>,
+    broadcast_tx: WsBroadcast,
+}
+
+impl AgentTaskRuntime for DefaultAgentTaskRuntime {
+    fn start_task(&self, request: AgentTaskRequest) -> Arc<AgentTaskHandle> {
+        let task_id = self.state.tasks.lock().unwrap().add_agent_response_task(
+            request.agent_id.clone(),
+            request.task_name.clone(),
+            request.user_ip.clone(),
+        );
+
+        let _ = self.broadcast_tx.send(ServerMessage::TaskStarted {
+            task_id: task_id.clone(),
+            graph_name: request.task_name,
+            graph_session_id: request.agent_id,
+        });
+
+        let state = Arc::clone(&self.state);
+        let broadcast_tx = self.broadcast_tx.clone();
+        AgentTaskHandle::new(task_id.clone(), move |result: AgentTaskResult| {
+            let status = match result.status.unwrap_or_else(|| {
+                if result.error_message.is_some() {
+                    AgentTaskStatus::Failed
+                } else {
+                    AgentTaskStatus::Success
+                }
+            }) {
+                AgentTaskStatus::Success => TaskStatus::Success,
+                AgentTaskStatus::Failed => TaskStatus::Failed,
+                AgentTaskStatus::Stopped => TaskStatus::Stopped,
+            };
+
+            state.tasks.lock().unwrap().finish_task(
+                &task_id,
+                status.clone(),
+                result.error_message.clone(),
+                result.result_summary.clone(),
+            );
+
+            match status {
+                TaskStatus::Stopped => {
+                    let _ = broadcast_tx.send(ServerMessage::TaskStopped {
+                        task_id: task_id.clone(),
+                    });
+                }
+                TaskStatus::Success => {
+                    let _ = broadcast_tx.send(ServerMessage::TaskFinished {
+                        task_id: task_id.clone(),
+                        success: true,
+                        error: None,
+                    });
+                }
+                TaskStatus::Failed => {
+                    let _ = broadcast_tx.send(ServerMessage::TaskFinished {
+                        task_id: task_id.clone(),
+                        success: false,
+                        error: result.error_message,
+                    });
+                }
+                TaskStatus::Running => {}
+            }
+        })
+    }
+}
+
+pub fn build_agent_task_runtime(
+    state: Arc<AppState>,
+    broadcast_tx: WsBroadcast,
+) -> Arc<dyn AgentTaskRuntime> {
+    Arc::new(DefaultAgentTaskRuntime { state, broadcast_tx })
+}
+
+pub async fn start_agent_runtime(
     state: Arc<AppState>,
     broadcast_tx: WsBroadcast,
     agent: AgentConfig,
     connections: Vec<ConnectionConfig>,
-    user_ip: Option<String>,
 ) {
-    let agent_id = agent.id.clone();
     let agent_name = agent.name.clone();
-
-    let stop_flag = Arc::new(AtomicBool::new(false));
-    let task_id = state.tasks.lock().unwrap().add_agent_task(
-        agent_id.clone(),
-        agent_name.clone(),
-        user_ip,
-        Arc::clone(&stop_flag),
-    );
-
-    let _ = broadcast_tx.send(ServerMessage::TaskStarted {
-        task_id: task_id.clone(),
-        graph_name: agent_name.clone(),
-        graph_session_id: agent_id.clone(),
-    });
-
-    // Watcher: when stop_flag is set via /api/tasks/{id}/stop, forward to agent_manager.
-    let agent_stopped = Arc::new(AtomicBool::new(false));
-    {
-        let state_w = Arc::clone(&state);
-        let agent_id_w = agent_id.clone();
-        let stop_flag_w = Arc::clone(&stop_flag);
-        let agent_stopped_w = Arc::clone(&agent_stopped);
-        tokio::spawn(async move {
-            loop {
-                if agent_stopped_w.load(Ordering::Relaxed) {
-                    break;
-                }
-                if stop_flag_w.load(Ordering::Relaxed) {
-                    let _ = state_w.agent_manager.stop_agent(&agent_id_w).await;
-                    break;
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-            }
-        });
-    }
-
-    let state_finish = Arc::clone(&state);
-    let broadcast_finish = broadcast_tx.clone();
-    let task_id_finish = task_id.clone();
     let on_finish: Box<dyn FnOnce(bool, Option<String>) + Send + 'static> =
         Box::new(move |success, error_message| {
-            agent_stopped.store(true, Ordering::Relaxed);
-            let status = if success {
-                TaskStatus::Success
-            } else if error_message.is_some() {
-                TaskStatus::Failed
-            } else {
-                TaskStatus::Stopped
-            };
-            state_finish.tasks.lock().unwrap().finish_task(
-                &task_id_finish,
-                status,
-                error_message.clone(),
-            );
-            let _ = broadcast_finish.send(ServerMessage::TaskFinished {
-                task_id: task_id_finish,
-                success,
-                error: error_message,
-            });
+            if !success {
+                log::warn!(
+                    "[agents] agent '{}' stopped with error: {}",
+                    agent_name,
+                    error_message.unwrap_or_else(|| "stopped".to_string())
+                );
+            }
         });
 
+    let task_runtime = build_agent_task_runtime(state.clone(), broadcast_tx.clone());
     if let Err(err) = state
         .agent_manager
-        .start_agent(agent, connections, Some(on_finish), Some(task_id.clone()))
+        .start_agent(agent, connections, Some(on_finish), Some(task_runtime))
         .await
     {
-        state.tasks.lock().unwrap().finish_task(
-            &task_id,
-            TaskStatus::Failed,
-            Some(err.to_string()),
-        );
-        let _ = broadcast_tx.send(ServerMessage::TaskFinished {
-            task_id,
-            success: false,
-            error: Some(err.to_string()),
-        });
+        log::error!("[agents] failed to start agent: {}", err);
     }
 }
 
@@ -330,16 +344,12 @@ pub async fn start_agent(req: &mut Request, res: &mut Response, depot: &mut Depo
         Err(err) => return render_internal_error(res, err),
     };
 
-    let user_ip = req
-        .header::<String>("x-forwarded-for")
-        .or_else(|| Some(req.remote_addr().to_string()));
     info!(
-        "[agents] starting agent '{}' (id={}) from {}",
+        "[agents] starting agent '{}' (id={})",
         agent.name,
         id,
-        user_ip.as_deref().unwrap_or("unknown")
     );
-    start_agent_with_task(state.clone(), broadcast_tx, agent, connections, user_ip).await;
+    start_agent_runtime(state.clone(), broadcast_tx, agent, connections).await;
     res.render(Json(serde_json::json!({
         "ok": true,
         "runtime": state.agent_manager.runtime_info(&id),

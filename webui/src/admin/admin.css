@@ -519,6 +519,23 @@ textarea {
   gap: 14px;
 }
 
+.tasks-table {
+  display: grid;
+  gap: 12px;
+}
+
+.tasks-table-head {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) minmax(150px, 1fr) minmax(90px, 0.7fr) minmax(200px, 1.4fr) minmax(220px, 1.7fr) minmax(120px, 0.8fr) minmax(220px, 1.2fr);
+  gap: 14px;
+  align-items: center;
+  padding: 0 12px;
+  color: var(--admin-subtle);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
 .record,
 .tool-block {
   padding: 16px;
@@ -538,6 +555,84 @@ textarea {
   gap: 8px 14px;
   color: var(--admin-muted);
   font-size: 13px;
+}
+
+.task-row-card {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) minmax(150px, 1fr) minmax(90px, 0.7fr) minmax(200px, 1.4fr) minmax(220px, 1.7fr) minmax(120px, 0.8fr) minmax(220px, 1.2fr);
+  gap: 14px;
+  align-items: center;
+  padding: 18px 16px;
+}
+
+.task-row-main,
+.task-row-meta,
+.task-row-summary,
+.task-row-status {
+  min-width: 0;
+}
+
+.task-row-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.task-row-title h4 {
+  margin: 0;
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-row-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.task-row-id {
+  margin-top: 6px;
+  color: var(--admin-subtle);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.task-row-label {
+  display: none;
+  margin-bottom: 4px;
+  color: var(--admin-subtle);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.task-row-meta,
+.task-row-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--admin-muted);
+  font-size: 13px;
+}
+
+.task-row-ellipsis {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-row-status {
+  display: flex;
+  align-items: center;
+}
+
+.task-row-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 0;
 }
 
 .badge.running,
@@ -671,6 +766,52 @@ textarea {
   flex-direction: column;
   gap: 20px;
   min-height: 0;
+}
+
+.tasks-list-shell {
+  width: 100%;
+}
+
+.tasks-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.tasks-pagination-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--admin-muted);
+  font-size: 13px;
+}
+
+.tasks-pagination-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.tasks-pagination-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.tasks-pagination-select {
+  width: 86px;
+}
+
+.tasks-pagination-input {
+  width: 78px;
+  text-align: center;
 }
 
 /* ---- terminal widget ---- */
@@ -867,6 +1008,51 @@ textarea {
   margin-top: 4px;
 }
 
+@media (max-width: 1360px) {
+  .tasks-table-head,
+  .task-row-card {
+    grid-template-columns: minmax(220px, 2fr) minmax(150px, 1fr) minmax(90px, 0.7fr) minmax(180px, 1.2fr) minmax(180px, 1.3fr) minmax(110px, 0.8fr) minmax(200px, 1fr);
+  }
+}
+
+@media (max-width: 1100px) {
+  .tasks-table-head {
+    display: none;
+  }
+
+  .task-row-card {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .task-row-main,
+  .task-row-summary,
+  .task-row-actions {
+    grid-column: 1 / -1;
+  }
+
+  .task-row-label {
+    display: block;
+  }
+
+  .task-row-actions {
+    justify-content: flex-start;
+    margin-top: 6px;
+  }
+}
+
+@media (max-width: 720px) {
+  .task-row-card {
+    grid-template-columns: 1fr;
+  }
+
+  .task-row-main,
+  .task-row-summary,
+  .task-row-actions {
+    grid-column: auto;
+  }
+}
+
 
 .connection-grid {
   display: grid;
@@ -1038,6 +1224,15 @@ code {
     align-items: flex-start;
     gap: 16px;
     padding: 18px;
+  }
+
+  .tasks-pagination {
+    align-items: flex-start;
+  }
+
+  .tasks-pagination-actions {
+    justify-content: flex-start;
+    margin-left: 0;
   }
 
   .connection-hero-actions {

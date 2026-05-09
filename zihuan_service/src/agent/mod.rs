@@ -14,6 +14,7 @@ use tokio::task::JoinHandle;
 use uuid::Uuid;
 use zihuan_core::error::Result;
 use zihuan_core::llm::OpenAIMessage;
+use zihuan_core::task_context::AgentTaskRuntime;
 use zihuan_llm::system_config::{load_agents, AgentConfig, AgentType};
 
 use self::inference::LoadedInferenceAgent;
@@ -148,7 +149,7 @@ impl AgentManager {
         agent: AgentConfig,
         connections: Vec<ConnectionConfig>,
         on_finish: Option<Box<dyn FnOnce(bool, Option<String>) + Send + 'static>>,
-        task_id: Option<String>,
+        task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
     ) -> Result<()> {
         self.stop_agent(&agent.id).await?;
         let loaded_agent = Arc::new(LoadedInferenceAgent::load(&agent, &connections)?);
@@ -174,7 +175,7 @@ impl AgentManager {
                     config.clone(),
                     connections,
                     Arc::clone(&on_finish_shared),
-                    task_id.unwrap_or_default(),
+                    task_runtime.clone(),
                 )
                 .await?;
                 let started_at = Local::now().to_rfc3339();
@@ -198,7 +199,7 @@ impl AgentManager {
                     agent.clone(),
                     config.clone(),
                     Arc::clone(&on_finish_shared),
-                    task_id.unwrap_or_default(),
+                    task_runtime.clone(),
                 )
                 .await?;
                 let started_at = Local::now().to_rfc3339();

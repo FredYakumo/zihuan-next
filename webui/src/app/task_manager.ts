@@ -106,12 +106,19 @@ export function formatTaskTimestamp(value: string | null): string {
   });
 }
 
-export function formatTaskDuration(task: Pick<TaskEntry, "start_time" | "end_time" | "is_running">): string {
+export function formatTaskDuration(task: Pick<TaskEntry, "start_time" | "end_time" | "is_running" | "duration_ms">): string {
+  if (!task.is_running && typeof task.duration_ms === "number") {
+    return formatDurationMs(task.duration_ms);
+  }
   const start = new Date(task.start_time).getTime();
   if (Number.isNaN(start)) return "-";
   const end = task.is_running || !task.end_time ? Date.now() : new Date(task.end_time).getTime();
   if (Number.isNaN(end)) return "-";
-  const totalSeconds = Math.max(0, Math.floor((end - start) / 1000));
+  return formatDurationMs(end - start);
+}
+
+function formatDurationMs(durationMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;

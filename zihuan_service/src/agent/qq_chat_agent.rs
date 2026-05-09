@@ -22,8 +22,8 @@ use storage_handler::{
 };
 use tokio::task::JoinHandle;
 use zihuan_core::error::{Error, Result};
+use zihuan_core::task_context::AgentTaskRuntime;
 use zihuan_core::worker_pool::WorkerPool;
-use zihuan_graph_engine::data_value::EXECUTION_TASK_ID;
 use zihuan_graph_engine::data_value::{OpenAIMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::graph_boundary::{root_graph_to_tool_subgraph, sync_root_graph_io};
@@ -469,7 +469,7 @@ pub async fn spawn(
     config: QqChatAgentConfig,
     connections: Vec<ConnectionConfig>,
     on_finish: super::OnFinishShared,
-    task_id: String,
+    task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
 ) -> Result<JoinHandle<()>> {
     let llm_refs = load_llm_refs()?;
     let bot_connection = find_connection(&connections, &config.ims_bot_adapter_connection_id)?;
@@ -547,6 +547,7 @@ pub async fn spawn(
     }
 
     let service = Arc::new(QqChatAgentService::new(QqChatAgentServiceConfig {
+        agent_id: agent.id.clone(),
         node_id: format!("service_agent_{}", agent.id),
         bot_name: if config.bot_name.trim().is_empty() {
             agent.name.clone()
@@ -599,6 +600,7 @@ pub async fn spawn(
         shared_inputs: Vec::<FunctionPortDef>::new(),
         tool_definitions,
         shared_runtime_values: HashMap::new(),
+        task_runtime,
     })?);
 
     let adapter = build_ims_bot_adapter(&ims_bot_adapter_connection, object_storage).await;
@@ -629,7 +631,7 @@ pub async fn spawn(
     let manager = manager.clone();
     let agent_id = agent.id.clone();
     let agent_name = agent.name.clone();
-    Ok(tokio::spawn(EXECUTION_TASK_ID.scope(task_id, async move {
+    Ok(tokio::spawn(async move {
         info!("[service] starting QQ chat agent '{}'", agent_name);
         let (success, error_msg) = match BotAdapter::start(adapter).await {
             Ok(()) => {
@@ -667,7 +669,7 @@ pub async fn spawn(
         if let Some(cb) = on_finish.lock().unwrap().take() {
             cb(success, error_msg);
         }
-    })))
+    }))
 }
 
 fn resolve_llm_ref_display_name(

@@ -40,6 +40,8 @@ This index describes the project as it exists now: a browser-based management/ed
 - auto-starts enabled agents
 - serves the browser UI and HTTP/WebSocket APIs
 
+Auto-start restores agent runtime only. It does not create task-list entries by itself. Task entries for agents are created later per handled response/request.
+
 ### CLI graph runner
 
 `zihuan_graph_cli/src/main.rs`:

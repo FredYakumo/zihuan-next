@@ -37,7 +37,7 @@ Every record is converted into `ServerMessage::LogMessage` and broadcast to conn
 
 When code runs inside `log_forwarder::scope_task(task_id, || { ... })`, log lines are also appended to that task's stored log list in `AppState`.
 
-This is how graph execution logs become visible in the task UI and task log APIs.
+This is how graph execution logs and agent-response logs become visible in the task UI and task log APIs.
 
 ## Task Logging Flow
 
@@ -49,6 +49,36 @@ During graph execution:
 4. the same record is still written to console/files and broadcast over WebSocket
 
 This means one log call can feed all observer channels at once.
+
+During agent handling:
+
+1. starting an agent does **not** create a task entry
+2. a task entry is created only when the agent begins handling one concrete input/request
+3. QQ chat uses one task per reply flow, for example `回复[123456]的消息`
+4. HTTP stream uses one task per request
+5. the handling code runs under that response task ID, so every `log::*` call is persisted into `logs/tasks/<task_id>.jsonl`
+
+This keeps the task list focused on concrete work units instead of long-lived agent uptime.
+
+## Persisted Task Logs
+
+Task logs are persisted as JSONL files under:
+
+- `logs/tasks/<task_id>.jsonl`
+
+Each task has its own log file. The task log API reads from those persisted files; the UI is not reading transient in-memory-only logs.
+
+The current task record also stores:
+
+- `start_time`
+- `end_time`
+- `duration_ms`
+- `status`
+- `error_message`
+- `result_summary`
+- `log_path`
+
+For agent response tasks this means every individual reply/request has its own durable log trail.
 
 ## Log Levels
 

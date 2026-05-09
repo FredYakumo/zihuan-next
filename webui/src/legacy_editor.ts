@@ -24,6 +24,7 @@ import { SaveManager } from "./app/save_manager";
 import { GraphActions } from "./app/graph_actions";
 import { WorkspaceController } from "./app/workspace_controller";
 import { openTaskManagerDialog } from "./ui/dialogs/index";
+import { mountLiveLogConsole } from "./ui/live_log_console";
 
 export async function bootstrapLegacyEditor() {
   initTheme();
@@ -32,6 +33,7 @@ export async function bootstrapLegacyEditor() {
   const { toolbar, canvasContainer, canvasEl, backArrow } = buildDOM();
 
   ws.connect();
+  mountLiveLogConsole();
   installPreviewWsHandler(ws);
 
   let nodeTypes: NodeTypeInfo[] = [];

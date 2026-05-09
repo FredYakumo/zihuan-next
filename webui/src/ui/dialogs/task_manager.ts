@@ -142,6 +142,12 @@ export function openTaskManagerDialog(store: TaskManagerStore): void {
       name.className = "task-name";
       name.textContent = taskDisplayName(task);
       nameCell.appendChild(name);
+      if (task.result_summary) {
+        const summary = document.createElement("div");
+        summary.className = "task-manager-subtitle";
+        summary.textContent = task.result_summary;
+        nameCell.appendChild(summary);
+      }
       if (task.error_message) {
         const err = document.createElement("div");
         err.className = "task-error-text";
@@ -182,7 +188,7 @@ export function openTaskManagerDialog(store: TaskManagerStore): void {
       });
       actionCell.appendChild(logBtn);
 
-      if (task.is_running) {
+      if (task.is_running && task.task_type !== "agent_service") {
         const stopBtn = document.createElement("button");
         stopBtn.className = "task-action-btn danger";
         stopBtn.textContent = "结束";

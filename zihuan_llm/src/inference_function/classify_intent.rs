@@ -3,7 +3,8 @@ use std::sync::Arc;
 use log::{info, warn};
 
 use crate::agent_text_similarity::{
-    rank_matches, HybridSimilarityConfig, SimilarityCandidate, SimilarityMatch,
+    compare_similarity_match_desc, rank_matches, HybridSimilarityConfig, SimilarityCandidate,
+    SimilarityMatch,
 };
 use crate::model::OpenAIMessage;
 use zihuan_core::llm::embedding_base::EmbeddingBase;
@@ -384,16 +385,7 @@ fn best_match_for_sources<'a>(
     matches
         .iter()
         .filter(|matched| sources.iter().any(|source| matched.source == *source))
-        .max_by(|left, right| {
-            left.hybrid_score
-                .partial_cmp(&right.hybrid_score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| {
-                    left.bm25_score
-                        .partial_cmp(&right.bm25_score)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
-        })
+        .max_by(|left, right| compare_similarity_match_desc(right, left))
 }
 
 fn detect_prompt_injection_by_similarity(

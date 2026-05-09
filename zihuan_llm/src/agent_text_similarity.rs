@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -79,7 +80,7 @@ pub fn rank_matches(
     let query_tokens = tokenize(&normalized_query);
     let corpus_tokens: Vec<Vec<String>> = prepared.iter().map(|(_, text)| tokenize(text)).collect();
     let bm25_scores = bm25_scores(&query_tokens, &corpus_tokens);
-    let max_bm25 = bm25_scores.iter().copied().fold(0.0_f64, f64::max);
+    let max_bm25 = finite_score(bm25_scores.iter().copied().fold(0.0_f64, f64::max));
 
     let cosine_scores = if let Some(model) = embedding_model {
         let mut texts = Vec::with_capacity(prepared.len() + 1);
@@ -92,7 +93,8 @@ pub fn rank_matches(
                 embeddings[1..]
                     .iter()
                     .map(|embedding| {
-                        cosine_similarity(query_embedding, embedding).unwrap_or(0.0) as f64
+                        let score = cosine_similarity(query_embedding, embedding).unwrap_or(0.0);
+                        finite_score(score as f64)
                     })
                     .collect::<Vec<_>>(),
             )
@@ -105,7 +107,7 @@ pub fn rank_matches(
 
     let mut matches = Vec::with_capacity(prepared.len());
     for (index, (candidate, normalized_text)) in prepared.iter().enumerate() {
-        let bm25_score = bm25_scores.get(index).copied().unwrap_or_default();
+        let bm25_score = finite_score(bm25_scores.get(index).copied().unwrap_or_default());
         let bm25_normalized = if max_bm25 > 0.0 {
             (bm25_score / max_bm25).clamp(0.0, 1.0)
         } else {
@@ -113,12 +115,14 @@ pub fn rank_matches(
         };
         let cosine_score = cosine_scores
             .as_ref()
-            .and_then(|scores| scores.get(index).copied());
+            .and_then(|scores| scores.get(index).copied())
+            .map(finite_score);
         let hybrid_score = if let Some(cosine) = cosine_score {
             config.bm25_weight * bm25_normalized + config.cosine_weight * cosine.clamp(0.0, 1.0)
         } else {
             bm25_normalized
         };
+        let hybrid_score = finite_score(hybrid_score);
 
         let current = SimilarityMatch {
             source: candidate.source.clone(),
@@ -131,19 +135,25 @@ pub fn rank_matches(
         matches.push(current);
     }
 
-    matches.sort_by(|left, right| {
-        right
-            .hybrid_score
-            .partial_cmp(&left.hybrid_score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| {
-                right
-                    .bm25_score
-                    .partial_cmp(&left.bm25_score)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-    });
+    matches.sort_by(compare_similarity_match_desc);
     Ok(matches)
+}
+
+pub fn compare_similarity_match_desc(left: &SimilarityMatch, right: &SimilarityMatch) -> Ordering {
+    right
+        .hybrid_score
+        .total_cmp(&left.hybrid_score)
+        .then_with(|| right.bm25_score.total_cmp(&left.bm25_score))
+        .then_with(|| right.source.cmp(&left.source))
+        .then_with(|| right.text.cmp(&left.text))
+}
+
+fn finite_score(score: f64) -> f64 {
+    if score.is_finite() {
+        score
+    } else {
+        0.0
+    }
 }
 
 pub fn normalize_text(text: &str) -> String {

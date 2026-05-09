@@ -75,9 +75,11 @@ pub struct TaskEntry {
     pub start_time: DateTime<Local>,
     pub is_running: bool,
     pub end_time: Option<DateTime<Local>>,
+    pub duration_ms: Option<i64>,
     pub user_ip: Option<String>,
     pub status: TaskStatus,
     pub error_message: Option<String>,
+    pub result_summary: Option<String>,
     pub log_path: Option<String>,
     pub can_rerun: bool,
     #[serde(skip)]
@@ -118,53 +120,68 @@ impl TaskManager {
         user_ip: Option<String>,
         stop_flag: Arc<AtomicBool>,
     ) -> String {
-        let id = Uuid::new_v4().to_string();
-        let log_path = Self::task_log_path(&id).ok();
-        self.tasks.push(TaskEntry {
-            id: id.clone(),
-            task_type: TaskType::NodeGraph,
+        let can_rerun = file_path.is_some();
+        self.add_task_with_type(
+            TaskType::NodeGraph,
             graph_name,
             graph_session_id,
-            can_rerun: file_path.is_some(),
             file_path,
             is_workflow_set,
-            start_time: Local::now(),
-            is_running: true,
-            end_time: None,
             user_ip,
-            status: TaskStatus::Running,
-            error_message: None,
-            log_path,
-            stop_flag: Some(stop_flag),
-        });
-        id
+            Some(stop_flag),
+            can_rerun,
+        )
     }
 
-    pub fn add_agent_task(
+    pub fn add_agent_response_task(
         &mut self,
         agent_id: String,
-        agent_name: String,
+        task_name: String,
         user_ip: Option<String>,
-        stop_flag: Arc<AtomicBool>,
+    ) -> String {
+        self.add_task_with_type(
+            TaskType::AgentService,
+            task_name,
+            agent_id,
+            None,
+            false,
+            user_ip,
+            None,
+            false,
+        )
+    }
+
+    fn add_task_with_type(
+        &mut self,
+        task_type: TaskType,
+        graph_name: String,
+        graph_session_id: String,
+        file_path: Option<String>,
+        is_workflow_set: bool,
+        user_ip: Option<String>,
+        stop_flag: Option<Arc<AtomicBool>>,
+        can_rerun: bool,
     ) -> String {
         let id = Uuid::new_v4().to_string();
         let log_path = Self::task_log_path(&id).ok();
         self.tasks.push(TaskEntry {
             id: id.clone(),
-            task_type: TaskType::AgentService,
-            graph_name: agent_name,
-            graph_session_id: agent_id,
-            can_rerun: false,
-            file_path: None,
-            is_workflow_set: false,
+            task_type,
+            graph_name,
+            graph_session_id,
+            can_rerun,
+            file_path,
+            is_workflow_set,
             start_time: Local::now(),
             is_running: true,
             end_time: None,
+            duration_ms: None,
             user_ip,
             status: TaskStatus::Running,
             error_message: None,
+            result_summary: None,
             log_path,
-            stop_flag: Some(stop_flag),
+            stop_flag,
         });
         id
     }
@@ -173,19 +190,29 @@ impl TaskManager {
         if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
             if let Some(flag) = &task.stop_flag {
                 flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                return true;
             }
-            return true;
+            return false;
         }
 
         false
     }
 
-    pub fn finish_task(&mut self, id: &str, status: TaskStatus, error_message: Option<String>) {
+    pub fn finish_task(
+        &mut self,
+        id: &str,
+        status: TaskStatus,
+        error_message: Option<String>,
+        result_summary: Option<String>,
+    ) {
         if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
+            let end_time = Local::now();
             task.is_running = false;
-            task.end_time = Some(Local::now());
+            task.end_time = Some(end_time);
+            task.duration_ms = Some((end_time - task.start_time).num_milliseconds().max(0));
             task.status = status;
             task.error_message = error_message;
+            task.result_summary = result_summary;
             task.stop_flag = None;
         }
     }

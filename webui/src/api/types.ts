@@ -162,9 +162,11 @@ export interface TaskEntry {
   start_time: string;
   is_running: boolean;
   end_time: string | null;
+  duration_ms: number | null;
   user_ip: string | null;
   status: "running" | "success" | "failed" | "stopped";
   error_message: string | null;
+  result_summary: string | null;
   log_path: string | null;
   can_rerun: boolean;
 }

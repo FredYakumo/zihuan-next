@@ -15,56 +15,99 @@
           <button class="btn" @click="clearFinished">清理已结束任务</button>
         </div>
       </div>
-      <div class="list" style="margin-top: 16px;">
+      <div class="tasks-list-shell tasks-pagination">
+        <label class="tasks-pagination-label">
+          每页条数
+          <select v-model.number="pageSize" class="field-input tasks-pagination-select">
+            <option :value="10">10</option>
+            <option :value="20">20</option>
+            <option :value="50">50</option>
+            <option :value="100">100</option>
+          </select>
+        </label>
+        <span class="muted tasks-pagination-status">
+          第 {{ listPage }} / {{ listTotalPages }} 页
+          <span>共 {{ taskItems.length }} 条</span>
+        </span>
+        <div class="tasks-pagination-actions">
+          <button class="btn ghost" :disabled="listPage <= 1" @click="goToListPage(1)">首页</button>
+          <button class="btn ghost" :disabled="listPage <= 1" @click="goToListPage(listPage - 1)">上一页</button>
+          <label class="tasks-pagination-label">
+            跳转
+            <input
+              v-model.number="listPageInput"
+              type="number"
+              min="1"
+              :max="listTotalPages"
+              class="field-input tasks-pagination-input"
+              @keydown.enter.prevent="jumpToListPage"
+            />
+          </label>
+          <button class="btn ghost" @click="jumpToListPage">前往</button>
+          <button class="btn ghost" :disabled="listPage >= listTotalPages" @click="goToListPage(listPage + 1)">下一页</button>
+          <button class="btn ghost" :disabled="listPage >= listTotalPages" @click="goToListPage(listTotalPages)">末页</button>
+        </div>
+      </div>
+      <div class="tasks-table tasks-list-shell" style="margin-top: 16px;">
+        <div v-if="taskItems.length > 0" class="tasks-table-head">
+          <span>任务</span>
+          <span>开始时间</span>
+          <span>耗时</span>
+          <span>来源</span>
+          <span>摘要</span>
+          <span>状态</span>
+          <span>操作</span>
+        </div>
         <div v-if="taskItems.length === 0" class="empty-state">还没有任务。</div>
         <article
-          v-for="task in taskItems"
+          v-for="task in pagedTaskItems"
           :key="task.id"
-          class="record"
+          class="record task-row-card"
         >
-          <div class="split-header">
-            <div>
+          <div class="task-row-main">
+            <div class="task-row-title">
               <h4>{{ task.graph_name }}</h4>
-              <div class="record-meta">
-                <span>{{ formatTime(task.start_time) }}</span>
-                <span v-if="task.file_path">{{ task.file_path }}</span>
+              <div class="task-row-badges">
+                <span class="badge task-type-badge" :class="task.task_type === 'agent_service' ? 'task-type-agent' : 'task-type-graph'">
+                  {{ task.task_type === "agent_service" ? "Agent 响应" : "节点图" }}
+                </span>
               </div>
             </div>
+            <div class="task-row-id mono">{{ task.id }}</div>
+          </div>
+          <div class="task-row-meta">
+            <span class="task-row-label">开始时间</span>
+            <span>{{ formatTime(task.start_time) }}</span>
+          </div>
+          <div class="task-row-meta">
+            <span class="task-row-label">耗时</span>
+            <span>{{ formatTaskDuration(task) }}</span>
+          </div>
+          <div class="task-row-meta">
+            <span class="task-row-label">来源</span>
+            <span class="mono task-row-ellipsis">{{ task.file_path ?? "-" }}</span>
+          </div>
+          <div class="task-row-summary">
+            <span class="task-row-label">摘要</span>
+            <span class="task-row-ellipsis">{{ task.result_summary ?? task.error_message ?? "-" }}</span>
+          </div>
+          <div class="task-row-status">
             <div style="display:flex;align-items:center;gap:8px;">
-              <span class="badge task-type-badge" :class="task.task_type === 'agent_service' ? 'task-type-agent' : 'task-type-graph'">
-                {{ task.task_type === "agent_service" ? "Agent 服务" : "节点图" }}
-              </span>
               <span class="badge" :class="statusTone(task.status)">{{ task.status }}</span>
             </div>
           </div>
-          <div class="panel-actions" style="margin-top: 14px;">
-            <button class="btn" :disabled="!task.is_running" @click="stopTask(task.id)">停止</button>
+          <div class="panel-actions task-row-actions">
+            <button
+              class="btn"
+              :disabled="!task.is_running || task.task_type === 'agent_service'"
+              @click="stopTask(task.id)"
+            >
+              停止
+            </button>
             <button class="btn" :disabled="!task.can_rerun" @click="rerunTask(task.id)">重跑</button>
             <button class="btn ghost" @click="openLogViewer(task)">查看日志</button>
           </div>
         </article>
-      </div>
-    </section>
-
-    <section class="task-terminal">
-      <div class="task-terminal-bar">
-        <span class="task-terminal-title">实时日志</span>
-        <span class="task-terminal-live">● 实时</span>
-        <button class="task-terminal-btn" title="清除" @click="clearTerminal">清除</button>
-        <button class="task-terminal-btn" title="滚到底部" @click="scrollToBottom">↓</button>
-      </div>
-      <div ref="terminalEl" class="task-terminal-body">
-        <div v-if="logs.length === 0" class="task-terminal-hint">等待日志输出…</div>
-        <div
-          v-for="(entry, index) in logs"
-          :key="`${entry.timestamp}-${index}`"
-          class="task-terminal-line"
-          :class="logLevelClass(entry.level)"
-        >
-          <span class="task-terminal-ts">{{ entry.timestamp }}</span>
-          <span class="task-terminal-level">{{ entry.level }}</span>
-          <span class="task-terminal-msg">{{ entry.message }}</span>
-        </div>
       </div>
     </section>
 
@@ -97,9 +140,9 @@
             </select>
           </label>
           <div class="log-viewer-pagination">
-            <span class="muted" style="font-size:13px;">第 {{ currentPage + 1 }} / {{ totalPages }} 页（共 {{ logTotal }} 条）</span>
+            <span class="muted" style="font-size:13px;">第 {{ currentPage + 1 }} / {{ logTotalPages }} 页（共 {{ logTotal }} 条）</span>
             <button class="task-terminal-btn" :disabled="currentPage === 0" @click="prevPage">‹ 上一页</button>
-            <button class="task-terminal-btn" :disabled="currentPage + 1 >= totalPages" @click="nextPage">下一页 ›</button>
+            <button class="task-terminal-btn" :disabled="currentPage + 1 >= logTotalPages" @click="nextPage">下一页 ›</button>
           </div>
           <button class="task-terminal-btn" style="margin-left:auto;" @click="fetchLogs(true)">刷新</button>
         </div>
@@ -125,33 +168,51 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 import { tasks, type TaskEntry, type TaskLogEntry } from "../../api/client";
+import { formatTaskDuration } from "../../app/task_manager";
 import { ws } from "../../api/ws";
 import { formatTime, statusTone } from "../model";
 
 const taskItems = ref<TaskEntry[]>([]);
-const logs = ref<TaskLogEntry[]>([]);
-const terminalEl = ref<HTMLElement | null>(null);
+const pageSize = ref(10);
+const listPage = ref(1);
+const listPageInput = ref(1);
+
+const listTotalPages = computed(() => Math.max(1, Math.ceil(taskItems.value.length / pageSize.value)));
+const pagedTaskItems = computed(() => {
+  const start = (listPage.value - 1) * pageSize.value;
+  return taskItems.value.slice(start, start + pageSize.value);
+});
+
+watch(pageSize, () => {
+  goToListPage(Math.min(listPage.value, listTotalPages.value));
+});
+
+watch(
+  () => taskItems.value.length,
+  () => {
+    goToListPage(Math.min(listPage.value, listTotalPages.value));
+  }
+);
+
+function goToListPage(page: number) {
+  const normalized = Math.min(Math.max(1, page || 1), listTotalPages.value);
+  listPage.value = normalized;
+  listPageInput.value = normalized;
+}
+
+function jumpToListPage() {
+  goToListPage(listPageInput.value);
+}
 
 function logLevelClass(level: string): string {
-  const l = level.toUpperCase();
-  if (l === "ERROR" || l === "ERROR_DETAIL") return "task-terminal-line--error";
-  if (l === "WARN" || l === "WARNING") return "task-terminal-line--warn";
-  if (l === "DEBUG") return "task-terminal-line--debug";
+  const normalized = level.toUpperCase();
+  if (normalized === "ERROR" || normalized === "ERROR_DETAIL") return "task-terminal-line--error";
+  if (normalized === "WARN" || normalized === "WARNING") return "task-terminal-line--warn";
+  if (normalized === "DEBUG") return "task-terminal-line--debug";
   return "";
-}
-
-async function scrollToBottom() {
-  await nextTick();
-  if (terminalEl.value) {
-    terminalEl.value.scrollTop = terminalEl.value.scrollHeight;
-  }
-}
-
-function clearTerminal() {
-  logs.value = [];
 }
 
 async function load() {
@@ -187,7 +248,7 @@ const logFilter = ref<{ date: string; limit: number; page: number }>({
   page: 0,
 });
 
-const totalPages = computed(() =>
+const logTotalPages = computed(() =>
   logTotal.value === 0 ? 1 : Math.ceil(logTotal.value / logFilter.value.limit)
 );
 const currentPage = computed(() => logFilter.value.page);
@@ -232,7 +293,7 @@ function prevPage() {
 }
 
 function nextPage() {
-  if (logFilter.value.page + 1 < totalPages.value) {
+  if (logFilter.value.page + 1 < logTotalPages.value) {
     logFilter.value.page++;
     void fetchLogs();
   }
@@ -251,32 +312,14 @@ onMounted(() => {
   unsubWs = ws.onMessage((msg) => {
     if (msg.type === "TaskStarted") {
       load().catch(console.error);
-      const entry = { timestamp: new Date().toLocaleString("zh-CN", { hour12: false }), level: "INFO", message: `任务 "${msg.graph_name}" 已启动 (ID: ${msg.task_id})` };
-      logs.value.push(entry);
-      void scrollToBottom();
       return;
     }
     if (msg.type === "TaskFinished") {
       load().catch(console.error);
-      const entry = {
-        timestamp: new Date().toLocaleString("zh-CN", { hour12: false }),
-        level: msg.success ? "INFO" : "ERROR",
-        message: msg.success ? `任务已完成 (ID: ${msg.task_id})` : `任务失败: ${msg.error ?? "未知错误"} (ID: ${msg.task_id})`,
-      };
-      logs.value.push(entry);
-      void scrollToBottom();
       return;
     }
     if (msg.type === "TaskStopped") {
       load().catch(console.error);
-      const entry = { timestamp: new Date().toLocaleString("zh-CN", { hour12: false }), level: "WARN", message: `任务已停止 (ID: ${msg.task_id})` };
-      logs.value.push(entry);
-      void scrollToBottom();
-      return;
-    }
-    if (msg.type === "LogMessage") {
-      logs.value.push({ timestamp: msg.timestamp, level: msg.level, message: msg.message });
-      void scrollToBottom();
     }
   });
 });

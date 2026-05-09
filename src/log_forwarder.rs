@@ -120,6 +120,7 @@ pub fn scope_task<T>(task_id: impl Into<String>, f: impl FnOnce() -> T) -> T {
 fn current_task_id() -> Option<String> {
     CURRENT_TASK_ID
         .with(|cell| cell.borrow().clone())
+        .or_else(zihuan_core::task_context::current_task_id)
         .or_else(|| {
             zihuan_graph_engine::data_value::EXECUTION_TASK_ID
                 .try_with(Clone::clone)

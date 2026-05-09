@@ -93,6 +93,40 @@ Current long-lived agent types are defined in `zihuan_llm::system_config::AgentT
 
 The long-lived runtime is hosted by `zihuan_service`, not by the graph executor.
 
+The current task model is important:
+
+- starting an agent no longer creates a task entry
+- task-list agent entries represent one concrete handled response/request, not agent uptime
+- `qq_chat_agent` creates a task when it actually starts a reply flow, for example `回复[3507578481]的消息`
+- `http_stream_agent` creates one task per handled HTTP request
+- pure ignore/filter paths such as a group message that does not mention the bot do not create tasks
+
+Each agent response task has its own:
+
+- `task_id`
+- `start_time`
+- `end_time`
+- `duration_ms`
+- `status`
+- `error_message`
+- `result_summary`
+- `log_path`
+
+Task logs are persisted per task under:
+
+- `logs/tasks/<task_id>.jsonl`
+
+`qq_chat_agent` task logs also include per-response details such as:
+
+- raw user message text
+- expanded inference message text
+- context message count
+- estimated context token totals
+- history compaction token before/after
+- current request token usage information
+
+The current LLM abstraction does not expose a unified exact usage object yet. When exact `prompt_tokens` / `completion_tokens` / `total_tokens` are unavailable, logs explicitly mark them unavailable and include estimates instead.
+
 ## 6. CLI Execution Flow
 
 Entry point: `zihuan_graph_cli/src/main.rs`

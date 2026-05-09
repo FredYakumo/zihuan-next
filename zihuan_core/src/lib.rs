@@ -5,5 +5,6 @@ pub mod ims_bot_adapter;
 pub mod llm;
 pub mod runtime;
 pub mod system_config;
+pub mod task_context;
 pub mod url_utils;
 pub mod worker_pool;

@@ -16,6 +16,7 @@ import "./admin/admin.css";
 import "./ui/theme.css";
 import { initTheme, loadThemes } from "./ui/theme";
 import { ws } from "./api/ws";
+import { mountLiveLogConsole } from "./ui/live_log_console";
 
 async function main() {
   if (window.location.pathname.startsWith("/editor")) {
@@ -26,6 +27,7 @@ async function main() {
   initTheme();
   await loadThemes();
   ws.connect();
+  mountLiveLogConsole();
 
   const router = createRouter({
     history: createWebHistory(),

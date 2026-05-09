@@ -306,6 +306,7 @@ fn start_graph_task(
                     &task_id_clone,
                     TaskStatus::Failed,
                     Some(summary.clone()),
+                    Some(summary.clone()),
                 );
                 let _ = broadcast_tx_clone.send(ServerMessage::TaskFinished {
                     task_id: task_id_clone,
@@ -387,6 +388,7 @@ fn start_graph_task(
         state_clone.tasks.lock().unwrap().finish_task(
             &task_id_clone,
             status.clone(),
+            error_message.clone(),
             error_message.clone(),
         );
 

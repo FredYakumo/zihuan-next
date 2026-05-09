@@ -19,7 +19,9 @@ use crate::brain_tool::{
     QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use crate::inference_function::classify_intent::{classify_intent, IntentCategory};
-use crate::inference_function::compact_message::compact_message_history;
+use crate::inference_function::compact_message::{
+    compact_message_history, estimate_messages_tokens,
+};
 use crate::tool_subgraph::{
     validate_shared_inputs, validate_tool_definitions, ToolResultMode, ToolSubgraphRunner,
 };
@@ -41,6 +43,9 @@ use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::InferenceParam;
 use zihuan_core::llm::{ContentPart, OpenAIMessage};
 use zihuan_core::runtime::block_async;
+use zihuan_core::task_context::{
+    scope_task_id, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
+};
 use zihuan_graph_engine::data_value::{
     MySqlConfig, OpenAIMessageSessionCacheRef, SessionClaim, SessionStateRef, TavilyImage,
     TavilyRef, SESSION_CLAIM_CONTEXT,
@@ -91,6 +96,11 @@ const DEFAULT_TOOL_NO_REPLY: &str = "no_reply";
 const FUNCTION_LIST_TEXT: &str = "/new 新对话\n/search 联网搜索";
 const DIRECT_REPLY_NO_SYSTEM_PROMPT: &str = "没有系统提示词";
 const MODEL_NAME_REPLY_PREFIX: &str = "我不是模型，不过我会调用: ";
+
+#[derive(Debug, Clone)]
+struct QqChatHandleReport {
+    result_summary: String,
+}
 
 fn default_tools_enabled_map() -> HashMap<String, bool> {
     [
@@ -447,6 +457,17 @@ fn sender_mention_patterns(
     }
 
     patterns
+}
+
+fn summarize_task_text(text: &str, max_chars: usize) -> String {
+    let compact = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut chars = compact.chars();
+    let summary: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_some() {
+        format!("{summary}...")
+    } else {
+        summary
+    }
 }
 
 fn assistant_reply_batches(
@@ -3558,6 +3579,7 @@ impl QqChatAgent {
         event: &ims_bot_adapter::models::MessageEvent,
         adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
         time: &str,
+        agent_id: &str,
         bot_name: &str,
         agent_system_prompt: Option<&str>,
         cache: &Arc<OpenAIMessageSessionCacheRef>,
@@ -3576,6 +3598,8 @@ impl QqChatAgent {
         compact_context_length: usize,
         reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
         shared_runtime_values: HashMap<String, DataValue>,
+        task_runtime: Option<&Arc<dyn AgentTaskRuntime>>,
+        user_ip: Option<String>,
     ) -> Result<()> {
         let is_group = event.message_type == MessageType::Group;
         let sender_id = event.sender.user_id.to_string();
@@ -3616,44 +3640,132 @@ impl QqChatAgent {
         if !claimed {
             info!("{LOG_PREFIX} Session busy for {sender_id}");
             if !is_group {
-                let persistence =
-                    outbound_persistence(mysql_ref, weaviate_ref, embedding_model, None, bot_name);
-                send_friend_text_with_persistence(adapter, &target_id, BUSY_REPLY, &persistence);
+                let task_handle = task_runtime.map(|runtime| {
+                    runtime.start_task(AgentTaskRequest {
+                        task_name: format!("回复[{sender_id}]的消息"),
+                        agent_id: agent_id.to_string(),
+                        agent_name: bot_name.to_string(),
+                        user_ip: user_ip.clone(),
+                    })
+                });
+                if let Some(task_handle) = task_handle.as_ref() {
+                    scope_task_id(task_handle.task_id.clone(), || {
+                        info!(
+                            "{LOG_PREFIX} responding busy reply: sender={} target={}",
+                            sender_id, target_id
+                        );
+                        let persistence = outbound_persistence(
+                            mysql_ref,
+                            weaviate_ref,
+                            embedding_model,
+                            None,
+                            bot_name,
+                        );
+                        send_friend_text_with_persistence(
+                            adapter,
+                            &target_id,
+                            BUSY_REPLY,
+                            &persistence,
+                        );
+                    });
+                    task_handle.finish(AgentTaskResult {
+                        status: Some(AgentTaskStatus::Success),
+                        result_summary: Some(format!("会话忙，已向[{sender_id}]发送忙碌提示")),
+                        error_message: None,
+                    });
+                } else {
+                    let persistence =
+                        outbound_persistence(mysql_ref, weaviate_ref, embedding_model, None, bot_name);
+                    send_friend_text_with_persistence(adapter, &target_id, BUSY_REPLY, &persistence);
+                }
             }
             self.enqueue_weaviate_persistence(event, weaviate_ref, embedding_model);
             return Ok(());
         }
 
-        let result = self.handle_claimed(
-            event,
-            adapter,
-            time,
-            bot_name,
-            agent_system_prompt,
-            cache,
-            session,
-            llm,
-            intent_llm,
-            math_programming_llm,
-            model_display_names,
-            mysql_ref,
-            weaviate_ref,
-            weaviate_image_ref,
-            embedding_model,
-            tavily,
-            s3_ref,
-            &sender_id,
-            &target_id,
-            is_group,
-            max_message_length,
-            compact_context_length,
-            reply_batch_builder,
-            shared_runtime_values,
-        );
+        let task_handle = task_runtime.map(|runtime| {
+            runtime.start_task(AgentTaskRequest {
+                task_name: format!("回复[{sender_id}]的消息"),
+                agent_id: agent_id.to_string(),
+                agent_name: bot_name.to_string(),
+                user_ip,
+            })
+        });
+        let result = if let Some(task_handle) = task_handle.as_ref() {
+            scope_task_id(task_handle.task_id.clone(), || {
+                self.handle_claimed(
+                    event,
+                    adapter,
+                    time,
+                    bot_name,
+                    agent_system_prompt,
+                    cache,
+                    session,
+                    llm,
+                    intent_llm,
+                    math_programming_llm,
+                    model_display_names,
+                    mysql_ref,
+                    weaviate_ref,
+                    weaviate_image_ref,
+                    embedding_model,
+                    tavily,
+                    s3_ref,
+                    &sender_id,
+                    &target_id,
+                    is_group,
+                    max_message_length,
+                    compact_context_length,
+                    reply_batch_builder,
+                    shared_runtime_values,
+                )
+            })
+        } else {
+            self.handle_claimed(
+                event,
+                adapter,
+                time,
+                bot_name,
+                agent_system_prompt,
+                cache,
+                session,
+                llm,
+                intent_llm,
+                math_programming_llm,
+                model_display_names,
+                mysql_ref,
+                weaviate_ref,
+                weaviate_image_ref,
+                embedding_model,
+                tavily,
+                s3_ref,
+                &sender_id,
+                &target_id,
+                is_group,
+                max_message_length,
+                compact_context_length,
+                reply_batch_builder,
+                shared_runtime_values,
+            )
+        };
 
         release_session(session, &sender_id, claim_token);
         self.enqueue_weaviate_persistence(event, weaviate_ref, embedding_model);
-        result
+        if let Some(task_handle) = task_handle {
+            match &result {
+                Ok(report) => task_handle.finish(AgentTaskResult {
+                    status: Some(AgentTaskStatus::Success),
+                    result_summary: Some(report.result_summary.clone()),
+                    error_message: None,
+                }),
+                Err(err) => task_handle.finish(AgentTaskResult {
+                    status: Some(AgentTaskStatus::Failed),
+                    result_summary: Some(format!("回复[{sender_id}]失败: {err}")),
+                    error_message: Some(err.to_string()),
+                }),
+            }
+        }
+        result.map(|_| ())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3683,9 +3795,10 @@ impl QqChatAgent {
         compact_context_length: usize,
         reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
         shared_runtime_values: HashMap<String, DataValue>,
-    ) -> Result<()> {
+    ) -> Result<QqChatHandleReport> {
         let bot_id = get_bot_id(adapter);
         let inference_event = expand_event_for_inference(event);
+        let raw_user_message = extract_user_message_text(event, &bot_id, bot_name);
         let current_message = extract_user_message_text(&inference_event, &bot_id, bot_name);
         let intent = classify_intent(intent_llm, embedding_model, &current_message);
         let selected_llm = match intent {
@@ -3713,6 +3826,14 @@ impl QqChatAgent {
             &history_key,
             &legacy_history_key,
         ));
+        info!("{LOG_PREFIX} user message(raw)={raw_user_message}");
+        info!("{LOG_PREFIX} user message(expanded)={current_message}");
+        info!(
+            "{LOG_PREFIX} selected model={} intent={intent:?} history_messages={} context_tokens_estimated={}",
+            selected_llm.get_model_name(),
+            history.len(),
+            estimate_messages_tokens(&history)
+        );
         let direct_reply = match intent {
             IntentCategory::AskSystemPrompt => Some(DIRECT_REPLY_NO_SYSTEM_PROMPT.to_string()),
             IntentCategory::AskModelName => Some(build_model_name_reply(model_display_names)),
@@ -3743,8 +3864,18 @@ impl QqChatAgent {
                 history.push(OpenAIMessage::assistant_text(assistant_text));
             }
             save_history(cache, &history_key, history);
-            return Ok(());
+            info!("{LOG_PREFIX} direct reply path hit=true");
+            info!(
+                "{LOG_PREFIX} token usage exact=unavailable prompt_tokens=unavailable completion_tokens=unavailable total_tokens=unavailable"
+            );
+            return Ok(QqChatHandleReport {
+                result_summary: format!(
+                    "已直接回复[{sender_id}]，内容：{}",
+                    summarize_task_text(&content, 80)
+                ),
+            });
         }
+        info!("{LOG_PREFIX} direct reply path hit=false");
 
         let compact_result = compact_message_history(
             selected_llm,
@@ -3764,6 +3895,12 @@ impl QqChatAgent {
             history = compact_result.messages;
             save_history(cache, &history_key, history.clone());
         }
+        info!(
+            "{LOG_PREFIX} history compacted={} tokens_before={} tokens_after={}",
+            compact_result.did_compact,
+            compact_result.estimated_tokens_before,
+            compact_result.estimated_tokens_after
+        );
 
         let system_prompt = if is_group {
             let group_name = inference_event.group_name.as_deref().unwrap_or("未知");
@@ -3808,6 +3945,11 @@ impl QqChatAgent {
         conversation.push(priming_msg);
         conversation.extend(history.iter().cloned());
         conversation.push(user_msg.clone());
+        let prompt_tokens_estimated = estimate_messages_tokens(&conversation);
+        info!(
+            "{LOG_PREFIX} prompt tokens estimated={} exact_usage=unavailable",
+            prompt_tokens_estimated
+        );
 
         let mut brain = Brain::new(selected_llm.clone());
 
@@ -3908,6 +4050,13 @@ impl QqChatAgent {
             });
         }
         let (brain_output, stop_reason) = brain.run(conversation);
+        let completion_tokens_estimated = estimate_messages_tokens(&brain_output);
+        info!(
+            "{LOG_PREFIX} token usage exact=unavailable prompt_tokens=unavailable completion_tokens=unavailable total_tokens=unavailable estimated_prompt_tokens={} estimated_completion_tokens={} estimated_total_tokens={}",
+            prompt_tokens_estimated,
+            completion_tokens_estimated,
+            prompt_tokens_estimated + completion_tokens_estimated
+        );
 
         let last_assistant = brain_output.iter().rev().find(|m| {
             matches!(m.role, zihuan_core::llm::MessageRole::Assistant) && m.tool_calls.is_empty()
@@ -3981,17 +4130,30 @@ impl QqChatAgent {
         }
 
         history.push(user_msg);
-        if let Some(assistant_text) = visible_assistant_history_text {
-            history.push(OpenAIMessage::assistant_text(assistant_text));
+        if let Some(ref assistant_text) = visible_assistant_history_text {
+            history.push(OpenAIMessage::assistant_text(assistant_text.clone()));
         }
         save_history(cache, &history_key, history);
 
-        Ok(())
+        let result_summary = if let Some(ref assistant_text) = visible_assistant_history_text {
+            format!(
+                "已回复[{sender_id}]，内容：{}",
+                summarize_task_text(&assistant_text, 80)
+            )
+        } else if matches!(stop_reason, BrainStopReason::TransportError(_)) {
+            format!("回复[{sender_id}]失败：模型请求异常")
+        } else {
+            format!("已处理[{sender_id}]的消息，但未发送回复")
+        };
+        info!("{LOG_PREFIX} result summary={result_summary}");
+
+        Ok(QqChatHandleReport { result_summary })
     }
 }
 
 #[derive(Clone)]
 pub struct QqChatAgentServiceConfig {
+    pub agent_id: String,
     pub node_id: String,
     pub bot_name: String,
     pub system_prompt: Option<String>,
@@ -4016,6 +4178,7 @@ pub struct QqChatAgentServiceConfig {
     pub shared_inputs: Vec<FunctionPortDef>,
     pub tool_definitions: Vec<BrainToolDefinition>,
     pub shared_runtime_values: HashMap<String, DataValue>,
+    pub task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
 }
 
 pub struct QqChatAgentService {
@@ -4047,6 +4210,7 @@ impl QqChatAgentService {
             event,
             adapter,
             time,
+            &self.config.agent_id,
             &self.config.bot_name,
             self.config.system_prompt.as_deref(),
             &self.config.cache,
@@ -4065,6 +4229,8 @@ impl QqChatAgentService {
             self.config.compact_context_length,
             self.config.reply_batch_builder.as_ref(),
             self.config.shared_runtime_values.clone(),
+            self.config.task_runtime.as_ref(),
+            None,
         )
     }
 }
