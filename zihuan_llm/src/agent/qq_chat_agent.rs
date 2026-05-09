@@ -3687,7 +3687,7 @@ impl QqChatAgent {
         let bot_id = get_bot_id(adapter);
         let inference_event = expand_event_for_inference(event);
         let current_message = extract_user_message_text(&inference_event, &bot_id, bot_name);
-        let intent = classify_intent(intent_llm, &current_message);
+        let intent = classify_intent(intent_llm, embedding_model, &current_message);
         let selected_llm = match intent {
             IntentCategory::SolveComplexProblem | IntentCategory::WriteCode => math_programming_llm,
             _ => llm,

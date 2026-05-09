@@ -45,9 +45,20 @@ pub fn find_best_match(
     embedding_model: Option<&Arc<dyn EmbeddingBase>>,
     config: HybridSimilarityConfig,
 ) -> Result<Option<SimilarityMatch>> {
+    Ok(rank_matches(query, candidates, embedding_model, config)?
+        .into_iter()
+        .next())
+}
+
+pub fn rank_matches(
+    query: &str,
+    candidates: &[SimilarityCandidate],
+    embedding_model: Option<&Arc<dyn EmbeddingBase>>,
+    config: HybridSimilarityConfig,
+) -> Result<Vec<SimilarityMatch>> {
     let normalized_query = normalize_text(query);
     if normalized_query.is_empty() || candidates.is_empty() {
-        return Ok(None);
+        return Ok(Vec::new());
     }
 
     let prepared: Vec<_> = candidates
@@ -62,7 +73,7 @@ pub fn find_best_match(
         })
         .collect();
     if prepared.is_empty() {
-        return Ok(None);
+        return Ok(Vec::new());
     }
 
     let query_tokens = tokenize(&normalized_query);
@@ -92,7 +103,7 @@ pub fn find_best_match(
         None
     };
 
-    let mut best: Option<SimilarityMatch> = None;
+    let mut matches = Vec::with_capacity(prepared.len());
     for (index, (candidate, normalized_text)) in prepared.iter().enumerate() {
         let bm25_score = bm25_scores.get(index).copied().unwrap_or_default();
         let bm25_normalized = if max_bm25 > 0.0 {
@@ -117,21 +128,22 @@ pub fn find_best_match(
             cosine_score,
             hybrid_score,
         };
-
-        let replace = best
-            .as_ref()
-            .map(|prev| {
-                current.hybrid_score > prev.hybrid_score
-                    || (current.hybrid_score == prev.hybrid_score
-                        && current.bm25_score > prev.bm25_score)
-            })
-            .unwrap_or(true);
-        if replace {
-            best = Some(current);
-        }
+        matches.push(current);
     }
 
-    Ok(best)
+    matches.sort_by(|left, right| {
+        right
+            .hybrid_score
+            .partial_cmp(&left.hybrid_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                right
+                    .bm25_score
+                    .partial_cmp(&left.bm25_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+    });
+    Ok(matches)
 }
 
 pub fn normalize_text(text: &str) -> String {

@@ -3,12 +3,13 @@ use base64::Engine;
 use log::warn;
 use serde_json::Value;
 use std::future::Future;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::oneshot;
 use tokio::task::block_in_place;
 use zihuan_core::error::Result;
 use zihuan_core::ims_bot_adapter::models::message::{ImageMessage, Message};
+use zihuan_graph_engine::object_storage::S3Ref;
 
 /// Global counter for generating unique echo IDs.
 static ECHO_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -152,10 +153,60 @@ fn outbound_local_image_path(image: &ImageMessage) -> Option<String> {
     .into_iter()
     .flatten()
     {
-        if Path::new(path).exists() {
-            return Some(path.to_string());
+        if let Some(normalized) = normalize_existing_local_path(path) {
+            return Some(normalized);
         }
     }
+    None
+}
+
+fn normalize_existing_local_path(path: &str) -> Option<String> {
+    let direct = Path::new(path);
+    if direct.exists() {
+        return Some(path.to_string());
+    }
+
+    let file_uri_candidate = path.replace('\\', "/");
+    let file_uri_candidate = file_uri_candidate.trim_start_matches('/');
+    if file_uri_candidate.len() >= 3 {
+        let bytes = file_uri_candidate.as_bytes();
+        let looks_like_windows_drive = bytes[1] == b':' && bytes[2] == b'/';
+        if looks_like_windows_drive {
+            let candidate = PathBuf::from(file_uri_candidate.replace('/', "\\"));
+            if candidate.exists() {
+                return Some(candidate.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    None
+}
+
+fn outbound_object_storage_key(
+    adapter_ref: &SharedBotAdapter,
+    image: &ImageMessage,
+) -> Option<String> {
+    if let Some(key) = image.object_key.as_deref().map(str::trim).filter(|key| !key.is_empty()) {
+        return Some(key.to_string());
+    }
+
+    let object_storage = block_on_async(async {
+        adapter_ref.lock().await.object_storage.clone()
+    })?;
+
+    for locator in [
+        image.object_url.as_deref(),
+        image.url.as_deref(),
+        image.file.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if let Some(key) = object_key_from_locator(&object_storage, locator) {
+            return Some(key);
+        }
+    }
+
     None
 }
 
@@ -169,8 +220,8 @@ fn outbound_base64_file(adapter_ref: &SharedBotAdapter, image: &ImageMessage) ->
         }
     }
 
-    if let Some(key) = image.object_key.as_deref() {
-        match block_on_async(download_object_storage_bytes(adapter_ref, key)) {
+    if let Some(key) = outbound_object_storage_key(adapter_ref, image) {
+        match block_on_async(download_object_storage_bytes(adapter_ref, &key)) {
             Ok(Some(bytes)) => {
                 return Some(format!(
                     "base64://{}",
@@ -218,15 +269,70 @@ fn outbound_base64_file(adapter_ref: &SharedBotAdapter, image: &ImageMessage) ->
     None
 }
 
+fn object_key_from_locator(object_storage: &S3Ref, locator: &str) -> Option<String> {
+    let locator = locator.trim();
+    if locator.is_empty() {
+        return None;
+    }
+
+    let prefixes = object_storage_url_prefixes(object_storage);
+    for prefix in prefixes {
+        if let Some(rest) = locator.strip_prefix(&prefix) {
+            let key = rest.trim_start_matches('/');
+            if !key.is_empty() {
+                return Some(key.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+fn object_storage_url_prefixes(object_storage: &S3Ref) -> Vec<String> {
+    let mut prefixes = Vec::new();
+
+    if let Some(public_base_url) = object_storage.public_base_url.as_deref() {
+        let public_base_url = public_base_url.trim_end_matches('/');
+        if !public_base_url.is_empty() {
+            prefixes.push(public_base_url.to_string());
+        }
+    }
+
+    if object_storage.path_style {
+        let endpoint_prefix = format!(
+            "{}/{}",
+            object_storage.endpoint.trim_end_matches('/'),
+            object_storage.bucket.trim_matches('/')
+        );
+        prefixes.push(endpoint_prefix);
+    } else if let Ok(endpoint) = reqwest::Url::parse(&object_storage.endpoint) {
+        if let Some(host) = endpoint.host_str() {
+            let scheme = endpoint.scheme();
+            prefixes.push(format!(
+                "{scheme}://{}.{}",
+                object_storage.bucket.trim_matches('/'),
+                host
+            ));
+        }
+    }
+
+    prefixes.sort();
+    prefixes.dedup();
+    prefixes
+}
+
 async fn download_object_storage_bytes(
     adapter_ref: &SharedBotAdapter,
-    object_key: &str,
+    object_key: impl AsRef<str>,
 ) -> Result<Option<Vec<u8>>> {
     let object_storage = adapter_ref.lock().await.object_storage.clone();
     let Some(object_storage) = object_storage else {
         return Ok(None);
     };
-    object_storage.get_object_bytes(object_key).await.map(Some)
+    object_storage
+        .get_object_bytes(object_key.as_ref())
+        .await
+        .map(Some)
 }
 
 async fn download_remote_bytes(url: &str) -> Result<Option<Vec<u8>>> {
