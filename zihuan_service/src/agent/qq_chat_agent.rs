@@ -142,6 +142,7 @@ fn build_reply_batches_from_model_text(
     if let Some(reply) = pending_reply {
         attach_reply_to_first_batch(&mut batches, reply);
     }
+    ensure_space_after_at(&mut batches);
     Ok(QqAgentReplyBuildResult {
         batches,
         suppress_send: false,
@@ -157,6 +158,20 @@ fn resolve_reply_his_message_aliases(text: &str, trigger_message_id: i64) -> Str
         "[Reply his message]",
         &format!("[Reply message_id={trigger_message_id}]"),
     )
+}
+
+fn ensure_space_after_at(batches: &mut [Vec<Message>]) {
+    for batch in batches {
+        for i in 0..batch.len().saturating_sub(1) {
+            if matches!(batch[i], Message::At(_)) {
+                if let Message::PlainText(ref mut pt) = batch[i + 1] {
+                    if !pt.text.starts_with(' ') {
+                        pt.text = format!(" {}", pt.text);
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn flush_batch(batches: &mut Vec<Vec<Message>>, current_batch: &mut Vec<Message>) {
