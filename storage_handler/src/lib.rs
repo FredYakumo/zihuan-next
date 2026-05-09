@@ -9,7 +9,7 @@ pub mod weaviate;
 
 use log::info;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use zihuan_core::config::{
     ConfigCategory, ConfigCenter, ConfigKind, ConfigRecord, StoredConfigRecord,
 };
@@ -17,8 +17,8 @@ use zihuan_core::error::Result;
 
 pub use connection_manager::{
     cleanup_runtime_storage_instances, close_runtime_storage_instance,
-    list_runtime_storage_instances, MessageStoreConnectionAccess, RuntimeStorageConnectionManager,
-    StorageRuntimeHandle,
+    close_runtime_storage_instances_for_config, list_runtime_storage_instances,
+    MessageStoreConnectionAccess, RuntimeStorageConnectionManager, StorageRuntimeHandle,
 };
 pub use message_store::{MessageRecord, MessageStore};
 pub use mysql::MySqlNode;
@@ -33,6 +33,7 @@ pub use resource_resolver::{
 };
 pub use rustfs::RustfsNode;
 pub use weaviate::WeaviateNode;
+pub use zihuan_graph_engine::database::weaviate::WeaviateCollectionSchema;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -73,6 +74,7 @@ pub struct RedisConnection {
 pub struct WeaviateConnection {
     pub base_url: String,
     pub class_name: String,
+    pub collection_schema: WeaviateCollectionSchema,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -169,11 +171,30 @@ impl ConfigRecord for ConnectionConfig {
 }
 
 pub fn load_connections() -> Result<Vec<ConnectionConfig>> {
-    let connections = ConfigCenter::shared()
+    let center = ConfigCenter::shared();
+    let mut migrated = Vec::new();
+    let connections = center
         .list_configs(ConfigCategory::Connection)?
         .into_iter()
-        .map(connection_from_record)
+        .map(|record| {
+            let (connection, did_migrate) = connection_from_record(record)?;
+            if did_migrate {
+                migrated.push(connection.clone());
+            }
+            Ok(connection)
+        })
         .collect::<Result<Vec<_>>>()?;
+    for connection in migrated {
+        center.upsert_config(connection_to_record(&connection)?)?;
+        info!(
+            "[config_center] migrated weaviate connection config_id={} collection_schema={:?}",
+            connection.canonical_config_id(),
+            match &connection.kind {
+                ConnectionKind::Weaviate(weaviate) => Some(weaviate.collection_schema),
+                _ => None,
+            }
+        );
+    }
     for connection in &connections {
         info!(
             "[config_center] loaded connection config_id={} kind={:?} name='{}'",
@@ -239,28 +260,71 @@ fn connection_to_record(connection: &ConnectionConfig) -> Result<StoredConfigRec
     })
 }
 
-fn connection_from_record(record: StoredConfigRecord) -> Result<ConnectionConfig> {
+fn connection_from_record(record: StoredConfigRecord) -> Result<(ConnectionConfig, bool)> {
     if record.kind.category() != ConfigCategory::Connection {
         return Err(zihuan_core::string_error!(
             "config '{}' is not a connection config",
             record.config_id
         ));
     }
-    let kind = serde_json::from_value::<ConnectionKind>(record.spec).map_err(|err| {
+    let (spec, migrated) = migrate_connection_spec(&record);
+    let kind = serde_json::from_value::<ConnectionKind>(spec).map_err(|err| {
         zihuan_core::string_error!(
             "failed to parse connection spec for '{}': {}",
             record.config_id,
             err
         )
     })?;
-    Ok(ConnectionConfig {
-        id: record.config_id.clone(),
-        config_id: record.config_id,
-        name: record.name,
-        enabled: record.enabled,
-        kind,
-        updated_at: record.updated_at,
-    })
+    Ok((
+        ConnectionConfig {
+            id: record.config_id.clone(),
+            config_id: record.config_id,
+            name: record.name,
+            enabled: record.enabled,
+            kind,
+            updated_at: record.updated_at,
+        },
+        migrated,
+    ))
+}
+
+fn migrate_connection_spec(record: &StoredConfigRecord) -> (Value, bool) {
+    if record.kind != ConfigKind::ConnectionWeaviate {
+        return (record.spec.clone(), false);
+    }
+    let mut spec = record.spec.clone();
+    let Some(object) = spec.as_object_mut() else {
+        return (spec, false);
+    };
+    if object.contains_key("collection_schema") {
+        return (spec, false);
+    }
+    let class_name = object
+        .get("class_name")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let inferred = infer_weaviate_collection_schema(&record.name, class_name);
+    object.insert(
+        "collection_schema".to_string(),
+        serde_json::to_value(inferred)
+            .unwrap_or_else(|_| Value::String("message_record_semantic".to_string())),
+    );
+    (spec, true)
+}
+
+pub fn infer_weaviate_collection_schema(
+    connection_name: &str,
+    class_name: &str,
+) -> WeaviateCollectionSchema {
+    let haystack = format!("{connection_name} {class_name}").to_lowercase();
+    if ["image", "img", "picture", "photo", "图片", "图像"]
+        .iter()
+        .any(|needle| haystack.contains(needle))
+    {
+        WeaviateCollectionSchema::ImageSemantic
+    } else {
+        WeaviateCollectionSchema::MessageRecordSemantic
+    }
 }
 
 pub fn init_node_registry() -> Result<()> {

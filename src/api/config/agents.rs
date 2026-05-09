@@ -3,7 +3,7 @@ use std::sync::Arc;
 use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
-use storage_handler::{ConnectionConfig, ConnectionKind};
+use storage_handler::{ConnectionConfig, ConnectionKind, WeaviateCollectionSchema};
 use uuid::Uuid;
 use zihuan_core::task_context::{
     AgentTaskHandle, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
@@ -110,7 +110,10 @@ pub fn build_agent_task_runtime(
     state: Arc<AppState>,
     broadcast_tx: WsBroadcast,
 ) -> Arc<dyn AgentTaskRuntime> {
-    Arc::new(DefaultAgentTaskRuntime { state, broadcast_tx })
+    Arc::new(DefaultAgentTaskRuntime {
+        state,
+        broadcast_tx,
+    })
 }
 
 pub async fn start_agent_runtime(
@@ -260,6 +263,13 @@ pub async fn create_agent(req: &mut Request, res: &mut Response, _depot: &mut De
     if let Err(message) = validate_default_agent_flag(&agents, None, body.is_default) {
         return render_unprocessable_entity(res, message);
     }
+    let connections = match system_config::load_connections() {
+        Ok(connections) => connections,
+        Err(err) => return render_internal_error(res, err),
+    };
+    if let Err(message) = validate_agent_connection_schemas(&body.agent_type, &connections) {
+        return render_unprocessable_entity(res, message);
+    }
 
     let agent = AgentConfig {
         id: Uuid::new_v4().to_string(),
@@ -299,6 +309,13 @@ pub async fn update_agent(req: &mut Request, res: &mut Response, _depot: &mut De
     };
 
     if let Err(message) = validate_default_agent_flag(&agents, Some(id.as_str()), body.is_default) {
+        return render_unprocessable_entity(res, message);
+    }
+    let connections = match system_config::load_connections() {
+        Ok(connections) => connections,
+        Err(err) => return render_internal_error(res, err),
+    };
+    if let Err(message) = validate_agent_connection_schemas(&body.agent_type, &connections) {
         return render_unprocessable_entity(res, message);
     }
 
@@ -343,12 +360,11 @@ pub async fn start_agent(req: &mut Request, res: &mut Response, depot: &mut Depo
         Ok(connections) => connections,
         Err(err) => return render_internal_error(res, err),
     };
+    if let Err(message) = validate_agent_connection_schemas(&agent.agent_type, &connections) {
+        return render_unprocessable_entity(res, message);
+    }
 
-    info!(
-        "[agents] starting agent '{}' (id={})",
-        agent.name,
-        id,
-    );
+    info!("[agents] starting agent '{}' (id={})", agent.name, id,);
     start_agent_runtime(state.clone(), broadcast_tx, agent, connections).await;
     res.render(Json(serde_json::json!({
         "ok": true,
@@ -413,4 +429,56 @@ fn validate_default_agent_flag(
     } else {
         Ok(())
     }
+}
+
+fn validate_agent_connection_schemas(
+    agent_type: &AgentType,
+    connections: &[ConnectionConfig],
+) -> Result<(), String> {
+    let AgentType::QqChat(config) = agent_type else {
+        return Ok(());
+    };
+    validate_weaviate_connection_schema(
+        connections,
+        config.weaviate_connection_id.as_deref(),
+        WeaviateCollectionSchema::MessageRecordSemantic,
+        "weaviate_connection_id",
+    )?;
+    validate_weaviate_connection_schema(
+        connections,
+        config.weaviate_image_connection_id.as_deref(),
+        WeaviateCollectionSchema::ImageSemantic,
+        "weaviate_image_connection_id",
+    )
+}
+
+fn validate_weaviate_connection_schema(
+    connections: &[ConnectionConfig],
+    connection_id: Option<&str>,
+    expected_schema: WeaviateCollectionSchema,
+    field_name: &str,
+) -> Result<(), String> {
+    let Some(connection_id) = connection_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(());
+    };
+    let connection = connections
+        .iter()
+        .find(|item| item.id == connection_id || item.config_id == connection_id)
+        .ok_or_else(|| format!("{field_name} '{}' not found", connection_id))?;
+    let ConnectionKind::Weaviate(weaviate) = &connection.kind else {
+        return Err(format!(
+            "{field_name} '{}' is not a weaviate connection",
+            connection.name
+        ));
+    };
+    if weaviate.collection_schema != expected_schema {
+        return Err(format!(
+            "{} '{}' schema mismatch: expected {:?}, got {:?}",
+            field_name, connection.name, expected_schema, weaviate.collection_schema
+        ));
+    }
+    Ok(())
 }

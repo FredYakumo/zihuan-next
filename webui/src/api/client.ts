@@ -18,6 +18,20 @@ export type { GraphTabInfo, TaskEntry, TaskLogEntry } from "./types";
 
 const BASE = "/api";
 
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  details: Record<string, unknown>;
+
+  constructor(message: string, status: number, details: Record<string, unknown>) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = typeof details.code === "string" ? details.code : undefined;
+    this.details = details;
+  }
+}
+
 export async function request<T>(
   method: string,
   path: string,
@@ -30,7 +44,9 @@ export async function request<T>(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error((err as { error: string }).error ?? res.statusText);
+    const details = err && typeof err === "object" ? err as Record<string, unknown> : {};
+    const message = typeof details.error === "string" ? details.error : res.statusText;
+    throw new ApiError(message, res.status, details);
   }
   return res.json() as Promise<T>;
 }
@@ -261,6 +277,10 @@ export interface ConnectionConfig {
   kind: Record<string, unknown> & { type: string };
 }
 
+export interface ConnectionMutationResponse extends ConnectionConfig {
+  collection_created: boolean;
+}
+
 export interface ActiveBotAdapterInfo {
   connection_id: string;
   config_id: string;
@@ -417,14 +437,16 @@ export const system = {
       name: string;
       enabled: boolean;
       kind: Record<string, unknown>;
-    }): Promise<ConnectionConfig> {
+      allow_create_collection?: boolean;
+    }): Promise<ConnectionMutationResponse> {
       return request("POST", "/system/connections", payload);
     },
     update(configId: string, payload: {
       name: string;
       enabled: boolean;
       kind: Record<string, unknown>;
-    }): Promise<ConnectionConfig> {
+      allow_create_collection?: boolean;
+    }): Promise<ConnectionMutationResponse> {
       return request("PUT", `/system/connections/${configId}`, payload);
     },
     delete(configId: string): Promise<{ ok: boolean }> {
