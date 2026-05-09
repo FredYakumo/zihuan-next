@@ -75,6 +75,13 @@
                 <label>Class Name</label>
                 <input v-model="form.weaviate_class_name" />
               </div>
+              <div class="field-full">
+                <label>Collection Schema</label>
+                <select v-model="form.weaviate_collection_schema">
+                  <option value="message_record_semantic">消息记录语义</option>
+                  <option value="image_semantic">图片语义</option>
+                </select>
+              </div>
             </template>
 
             <template v-else-if="form.type === 'rustfs'">
@@ -204,6 +211,13 @@
                   <strong>Class</strong>
                   <input v-model="form.weaviate_class_name" class="connection-card-inline-input" />
                 </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>Schema</strong>
+                  <select v-model="form.weaviate_collection_schema" class="connection-card-inline-input">
+                    <option value="message_record_semantic">消息记录语义</option>
+                    <option value="image_semantic">图片语义</option>
+                  </select>
+                </div>
               </template>
 
               <template v-else-if="form.type === 'rustfs'">
@@ -307,7 +321,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 
-import { system, type ConnectionConfig, type RuntimeConnectionInstanceSummary } from "../../api/client";
+import { ApiError, system, type ConnectionConfig, type RuntimeConnectionInstanceSummary } from "../../api/client";
 import {
   buildConnectionPayload,
   compactId,
@@ -416,13 +430,48 @@ async function submitForm() {
     alert("请填写 Tavily API Token");
     return;
   }
-  if (form.id) {
-    await system.connections.update(form.id, payload);
-  } else {
-    await system.connections.create(payload);
+  if (form.type === "weaviate") {
+    if (!form.weaviate_base_url.trim()) {
+      alert("请填写 Weaviate Base URL");
+      return;
+    }
+    if (!form.weaviate_class_name.trim()) {
+      alert("请填写 Weaviate Class Name");
+      return;
+    }
+  }
+  const result = await saveConnection(payload, false);
+  if (!result) return;
+  if (result.collection_created) {
+    alert(`已自动创建 Weaviate collection: ${form.weaviate_class_name.trim()}`);
   }
   closeEditor();
   await load();
+}
+
+async function saveConnection(
+  payload: ReturnType<typeof buildConnectionPayload>,
+  allowCreateCollection: boolean,
+) {
+  try {
+    const requestPayload = {
+      ...payload,
+      allow_create_collection: allowCreateCollection,
+    };
+    if (form.id) {
+      return await system.connections.update(form.id, requestPayload);
+    }
+    return await system.connections.create(requestPayload);
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "weaviate_collection_missing") {
+      const className = String(error.details.class_name ?? form.weaviate_class_name.trim());
+      if (window.confirm(`Weaviate collection "${className}" 不存在，是否自动新建？`)) {
+        return await saveConnection(payload, true);
+      }
+      return null;
+    }
+    throw error;
+  }
 }
 
 async function removeConnection(id: string) {
@@ -452,6 +501,7 @@ function summarizeConnection(connection: ConnectionConfig): Array<{ label: strin
         ...base,
         { label: "Base URL", value: String(kind.base_url ?? "") },
         { label: "Class", value: String(kind.class_name ?? "") },
+        { label: "Schema", value: formatWeaviateSchema(String(kind.collection_schema ?? "")) },
       ];
     case "rustfs":
       return [
@@ -476,6 +526,12 @@ function summarizeConnection(connection: ConnectionConfig): Array<{ label: strin
     default:
       return base;
   }
+}
+
+function formatWeaviateSchema(schema: string): string {
+  if (schema === "image_semantic") return "图片语义";
+  if (schema === "message_record_semantic") return "消息记录语义";
+  return schema || "未设置";
 }
 
 function summarizeConnectionInstances(configId: string): string {

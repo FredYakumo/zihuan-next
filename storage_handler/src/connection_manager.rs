@@ -152,8 +152,11 @@ impl RuntimeStorageConnectionManager {
                 (StorageRuntimePayload::S3(s3_ref), "rustfs".to_string())
             }
             ConnectionKind::Weaviate(weaviate) => {
-                let weaviate_ref =
-                    build_weaviate_direct_ref(&weaviate.base_url, &weaviate.class_name, false)?;
+                let weaviate_ref = build_weaviate_direct_ref(
+                    &weaviate.base_url,
+                    &weaviate.class_name,
+                    weaviate.collection_schema,
+                )?;
                 (
                     StorageRuntimePayload::Weaviate(weaviate_ref),
                     "weaviate".to_string(),
@@ -308,6 +311,12 @@ pub fn list_runtime_storage_instances() -> Result<Vec<RuntimeConnectionInstanceS
 pub fn close_runtime_storage_instance(instance_id: &str) -> Result<bool> {
     zihuan_core::runtime::block_async(
         RuntimeStorageConnectionManager::shared().close_instance(instance_id),
+    )
+}
+
+pub fn close_runtime_storage_instances_for_config(config_id: &str) -> Result<usize> {
+    zihuan_core::runtime::block_async(
+        RuntimeStorageConnectionManager::shared().close_instances_for_config(config_id),
     )
 }
 

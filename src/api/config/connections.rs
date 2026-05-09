@@ -1,6 +1,7 @@
 use salvo::prelude::*;
 use salvo::writing::Json;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use uuid::Uuid;
 
 use crate::system_config;
@@ -11,9 +12,10 @@ use ims_bot_adapter::{
 };
 use log::info;
 use storage_handler::{
-    close_runtime_storage_instance, list_runtime_storage_instances, ConnectionConfig,
-    ConnectionKind,
+    close_runtime_storage_instance, close_runtime_storage_instances_for_config,
+    list_runtime_storage_instances, ConnectionConfig, ConnectionKind,
 };
+use zihuan_graph_engine::database::weaviate::{WeaviateEnsureCollectionResult, WeaviateRef};
 use zihuan_llm::nn::embedding::embedding_runtime_manager::{
     close_runtime_embedding_instance, list_runtime_embedding_instances,
 };
@@ -28,6 +30,8 @@ pub struct CreateConnectionRequest {
     #[serde(default)]
     pub enabled: bool,
     pub kind: ConnectionKind,
+    #[serde(default)]
+    pub allow_create_collection: bool,
 }
 
 #[derive(Deserialize)]
@@ -36,9 +40,23 @@ pub struct UpdateConnectionRequest {
     #[serde(default)]
     pub enabled: bool,
     pub kind: ConnectionKind,
+    #[serde(default)]
+    pub allow_create_collection: bool,
 }
 
-fn validate_connection(kind: &ConnectionKind) -> Result<(), String> {
+#[derive(Serialize)]
+struct ConnectionMutationResponse {
+    #[serde(flatten)]
+    connection: ConnectionConfig,
+    collection_created: bool,
+}
+
+enum ConnectionValidationError {
+    BadRequest(String),
+    WeaviateCollectionMissing { class_name: String },
+}
+
+fn validate_connection_basics(kind: &ConnectionKind) -> Result<(), String> {
     match kind {
         ConnectionKind::BotAdapter(bot) => {
             let bot = parse_ims_bot_adapter_connection(bot).map_err(|err| err.to_string())?;
@@ -57,6 +75,59 @@ fn validate_connection(kind: &ConnectionKind) -> Result<(), String> {
             Ok(())
         }
         _ => Ok(()),
+    }
+}
+
+fn validate_connection(
+    kind: &ConnectionKind,
+    allow_create_collection: bool,
+) -> Result<bool, ConnectionValidationError> {
+    validate_connection_basics(kind).map_err(ConnectionValidationError::BadRequest)?;
+    let ConnectionKind::Weaviate(weaviate) = kind else {
+        return Ok(false);
+    };
+    if weaviate.base_url.trim().is_empty() {
+        return Err(ConnectionValidationError::BadRequest(
+            "weaviate.base_url must not be empty".to_string(),
+        ));
+    }
+    if weaviate.class_name.trim().is_empty() {
+        return Err(ConnectionValidationError::BadRequest(
+            "weaviate.class_name must not be empty".to_string(),
+        ));
+    }
+    let weaviate_ref = WeaviateRef::new(
+        weaviate.base_url.clone(),
+        weaviate.class_name.clone(),
+        None,
+        Duration::from_secs(30),
+    )
+    .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
+    let existing = weaviate_ref
+        .find_collection_schema(&weaviate_ref.class_name)
+        .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
+    if existing.is_none() && !allow_create_collection {
+        return Err(ConnectionValidationError::WeaviateCollectionMissing {
+            class_name: weaviate_ref.class_name.clone(),
+        });
+    }
+    let result = weaviate_ref
+        .ensure_collection_schema(weaviate.collection_schema, allow_create_collection)
+        .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
+    Ok(matches!(result, WeaviateEnsureCollectionResult::Created))
+}
+
+fn render_connection_validation_error(res: &mut Response, err: ConnectionValidationError) {
+    match err {
+        ConnectionValidationError::BadRequest(message) => render_bad_request(res, message),
+        ConnectionValidationError::WeaviateCollectionMissing { class_name } => {
+            res.status_code(StatusCode::UNPROCESSABLE_ENTITY);
+            res.render(Json(serde_json::json!({
+                "error": format!("Weaviate collection '{}' does not exist", class_name),
+                "code": "weaviate_collection_missing",
+                "class_name": class_name,
+            })));
+        }
     }
 }
 
@@ -110,9 +181,10 @@ pub async fn create_connection(req: &mut Request, res: &mut Response, _depot: &m
         Err(err) => return render_bad_request(res, err.to_string()),
     };
 
-    if let Err(err) = validate_connection(&body.kind) {
-        return render_bad_request(res, err);
-    }
+    let collection_created = match validate_connection(&body.kind, body.allow_create_collection) {
+        Ok(collection_created) => collection_created,
+        Err(err) => return render_connection_validation_error(res, err),
+    };
 
     let mut connections = match system_config::load_connections() {
         Ok(connections) => connections,
@@ -133,13 +205,17 @@ pub async fn create_connection(req: &mut Request, res: &mut Response, _depot: &m
 
     match system_config::save_connections(connections) {
         Ok(()) => {
+            let _ = close_runtime_storage_instances_for_config(&id);
             let refreshed = system_config::load_connections().unwrap_or_default();
             sync_enabled_bot_adapters(&refreshed).await;
             info!(
                 "[connections] created connection '{}' (id={})",
                 connection.name, connection.id
             );
-            res.render(Json(connection));
+            res.render(Json(ConnectionMutationResponse {
+                connection,
+                collection_created,
+            }));
         }
         Err(err) => render_internal_error(res, err),
     }
@@ -153,9 +229,10 @@ pub async fn update_connection(req: &mut Request, res: &mut Response, _depot: &m
         Err(err) => return render_bad_request(res, err.to_string()),
     };
 
-    if let Err(err) = validate_connection(&body.kind) {
-        return render_bad_request(res, err);
-    }
+    let collection_created = match validate_connection(&body.kind, body.allow_create_collection) {
+        Ok(collection_created) => collection_created,
+        Err(err) => return render_connection_validation_error(res, err),
+    };
 
     let mut connections = match system_config::load_connections() {
         Ok(connections) => connections,
@@ -175,13 +252,17 @@ pub async fn update_connection(req: &mut Request, res: &mut Response, _depot: &m
 
     match system_config::save_connections(connections) {
         Ok(()) => {
+            let _ = close_runtime_storage_instances_for_config(&response.id);
             let refreshed = system_config::load_connections().unwrap_or_default();
             sync_enabled_bot_adapters(&refreshed).await;
             info!(
                 "[connections] updated connection '{}' (id={})",
                 response.name, response.id
             );
-            res.render(Json(response));
+            res.render(Json(ConnectionMutationResponse {
+                connection: response,
+                collection_created,
+            }));
         }
         Err(err) => render_internal_error(res, err),
     }

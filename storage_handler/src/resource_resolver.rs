@@ -7,6 +7,7 @@ use zihuan_graph_engine::database::weaviate::WeaviateRef;
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
 
+use crate::WeaviateCollectionSchema;
 use crate::{ConnectionConfig, ConnectionKind, RuntimeStorageConnectionManager};
 
 pub fn find_connection<'a>(
@@ -71,8 +72,17 @@ pub fn build_weaviate_ref(
         )));
     };
 
-    let _ = image_collection;
-    let _ = weaviate;
+    let expected_schema = if image_collection {
+        WeaviateCollectionSchema::ImageSemantic
+    } else {
+        WeaviateCollectionSchema::MessageRecordSemantic
+    };
+    if weaviate.collection_schema != expected_schema {
+        return Err(Error::ValidationError(format!(
+            "weaviate connection '{}' schema mismatch: expected {:?}, got {:?}",
+            connection.name, expected_schema, weaviate.collection_schema
+        )));
+    }
     Ok(Some(zihuan_core::runtime::block_async(
         RuntimeStorageConnectionManager::shared().get_or_create_weaviate_ref(connection_id),
     )?))

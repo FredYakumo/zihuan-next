@@ -16,6 +16,19 @@ use zihuan_core::llm::embedding_base::EmbeddingBase;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WeaviateCollectionSchema {
+    MessageRecordSemantic,
+    ImageSemantic,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WeaviateEnsureCollectionResult {
+    Existing,
+    Created,
+}
+
 #[derive(Clone)]
 pub struct WeaviateRef {
     pub base_url: String,
@@ -131,6 +144,45 @@ impl WeaviateRef {
 
         self.create_collection(collection)?;
         Ok(())
+    }
+
+    pub fn ensure_collection_schema(
+        &self,
+        schema: WeaviateCollectionSchema,
+        create_missing: bool,
+    ) -> Result<WeaviateEnsureCollectionResult> {
+        let collection = collection_config_for_schema(schema, self.class_name.clone());
+        match self.find_collection_schema(&collection.class_name)? {
+            Some(existing) => {
+                validate_collection_schema(&existing, &collection)?;
+                Ok(WeaviateEnsureCollectionResult::Existing)
+            }
+            None if create_missing => {
+                self.create_collection(&collection)?;
+                Ok(WeaviateEnsureCollectionResult::Created)
+            }
+            None => Err(Error::ValidationError(format!(
+                "Weaviate collection '{}' does not exist",
+                collection.class_name
+            ))),
+        }
+    }
+
+    pub fn find_collection_schema(&self, class_name: &str) -> Result<Option<Value>> {
+        let schema = self.schema()?;
+        let classes = schema
+            .get("classes")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+
+        Ok(classes.into_iter().find(|class| {
+            class
+                .get("class")
+                .and_then(Value::as_str)
+                .map(|name| name == class_name)
+                .unwrap_or(false)
+        }))
     }
 
     pub fn delete_collection(&self, class_name: &str) -> Result<()> {
@@ -581,7 +633,8 @@ impl Node for WeaviateNode {
             ));
         }
 
-        weaviate_ref.ensure_collection(&message_vector_collection_config(class_name))?;
+        weaviate_ref
+            .ensure_collection_schema(WeaviateCollectionSchema::MessageRecordSemantic, true)?;
 
         let outputs = HashMap::from([(
             "weaviate_ref".to_string(),
@@ -646,6 +699,90 @@ fn deterministic_message_object_id(class_name: &str, message_id: &str) -> String
     Uuid::new_v4().to_string()
 }
 
+pub fn collection_config_for_schema(
+    schema: WeaviateCollectionSchema,
+    class_name: String,
+) -> WeaviateCollectionConfig {
+    match schema {
+        WeaviateCollectionSchema::MessageRecordSemantic => {
+            message_vector_collection_config(class_name)
+        }
+        WeaviateCollectionSchema::ImageSemantic => image_vector_collection_config(class_name),
+    }
+}
+
+pub fn validate_collection_schema(
+    existing: &Value,
+    expected: &WeaviateCollectionConfig,
+) -> Result<()> {
+    let existing_name = existing
+        .get("class")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if existing_name != expected.class_name {
+        return Err(Error::ValidationError(format!(
+            "Weaviate collection name mismatch: expected '{}', got '{}'",
+            expected.class_name, existing_name
+        )));
+    }
+
+    let expected_vectorizer = expected.vectorizer.as_deref().unwrap_or_default();
+    let existing_vectorizer = existing
+        .get("vectorizer")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if existing_vectorizer != expected_vectorizer {
+        return Err(Error::ValidationError(format!(
+            "Weaviate collection '{}' vectorizer mismatch: expected '{}', got '{}'",
+            expected.class_name, expected_vectorizer, existing_vectorizer
+        )));
+    }
+
+    let existing_properties = existing
+        .get("properties")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    for expected_property in &expected.properties {
+        let Some(existing_property) = existing_properties.iter().find(|property| {
+            property
+                .get("name")
+                .and_then(Value::as_str)
+                .map(|name| name == expected_property.name)
+                .unwrap_or(false)
+        }) else {
+            return Err(Error::ValidationError(format!(
+                "Weaviate collection '{}' missing property '{}'",
+                expected.class_name, expected_property.name
+            )));
+        };
+
+        let existing_data_type = existing_property
+            .get("dataType")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(ToOwned::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if existing_data_type != expected_property.data_type {
+            return Err(Error::ValidationError(format!(
+                "Weaviate collection '{}' property '{}' dataType mismatch: expected {:?}, got {:?}",
+                expected.class_name,
+                expected_property.name,
+                expected_property.data_type,
+                existing_data_type
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 fn message_vector_collection_config(class_name: String) -> WeaviateCollectionConfig {
     WeaviateCollectionConfig {
         class_name,
@@ -678,5 +815,24 @@ fn date_property(name: &str, description: &str) -> WeaviatePropertyConfig {
         name: name.to_string(),
         data_type: vec!["date".to_string()],
         description: Some(description.to_string()),
+    }
+}
+
+fn image_vector_collection_config(class_name: String) -> WeaviateCollectionConfig {
+    WeaviateCollectionConfig {
+        class_name,
+        description: Some("Image vector storage".to_string()),
+        properties: vec![
+            text_property(
+                "object_storage_path",
+                "对象存储路径（object_key/object_url）",
+            ),
+            text_property("summary", "图片总结说明"),
+            text_property("source", "来源标记，如 qq 或 tavily"),
+            text_property("message_id", "关联消息ID"),
+            text_property("sender_id", "关联发送者ID"),
+            date_property("send_time", "记录时间"),
+        ],
+        vectorizer: Some("none".to_string()),
     }
 }

@@ -103,14 +103,14 @@
                 <label>Weaviate Connection</label>
                 <select v-model="form.weaviate_connection_id">
                   <option value="">不使用</option>
-                  <option v-for="item in weaviateConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                  <option v-for="item in messageWeaviateConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
               <div class="field">
                 <label>Weaviate Image Connection</label>
                 <select v-model="form.weaviate_image_connection_id">
                   <option value="">不使用</option>
-                  <option v-for="item in weaviateConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                  <option v-for="item in imageWeaviateConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
               <div class="field"><label>Max Message Length</label><input v-model.number="form.max_message_length" type="number" min="1" /></div>
@@ -351,14 +351,14 @@
                   <strong>Weaviate</strong>
                   <select v-model="form.weaviate_connection_id" class="connection-card-inline-input">
                     <option value="">不使用</option>
-                    <option v-for="item in weaviateConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                    <option v-for="item in messageWeaviateConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                   </select>
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>Image DB</strong>
                   <select v-model="form.weaviate_image_connection_id" class="connection-card-inline-input">
                     <option value="">不使用</option>
-                    <option v-for="item in weaviateConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                    <option v-for="item in imageWeaviateConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                   </select>
                 </div>
                 <div class="key-value connection-card-edit-row">
@@ -558,7 +558,12 @@ const botConnections = computed(() => connections.value.filter((item) => isBotAd
 const rustfsConnections = computed(() => connections.value.filter((item) => item.kind.type === "rustfs"));
 const tavilyConnections = computed(() => connections.value.filter((item) => item.kind.type === "tavily"));
 const mysqlConnections = computed(() => connections.value.filter((item) => item.kind.type === "mysql"));
-const weaviateConnections = computed(() => connections.value.filter((item) => item.kind.type === "weaviate"));
+const messageWeaviateConnections = computed(() =>
+  connections.value.filter((item) => item.kind.type === "weaviate" && item.kind.collection_schema === "message_record_semantic"),
+);
+const imageWeaviateConnections = computed(() =>
+  connections.value.filter((item) => item.kind.type === "weaviate" && item.kind.collection_schema === "image_semantic"),
+);
 
 function resetForm() {
   Object.assign(form, defaultAgentForm());

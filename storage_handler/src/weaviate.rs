@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use zihuan_core::error::{Error, Result};
-use zihuan_graph_engine::database::weaviate::WeaviateRef;
+use zihuan_graph_engine::database::weaviate::{WeaviateCollectionSchema, WeaviateRef};
 use zihuan_graph_engine::{DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port};
 
 use crate::RuntimeStorageConnectionManager;
@@ -13,30 +13,21 @@ const LEGACY_CONNECTION_ID_FIELD: &str = "connection_id";
 pub fn build_weaviate_ref(
     base_url: &str,
     class_name: &str,
-    _image_collection: bool,
+    collection_schema: WeaviateCollectionSchema,
 ) -> Result<Arc<WeaviateRef>> {
-    let mut node: Box<dyn Node> = Box::new(zihuan_graph_engine::database::WeaviateNode::new(
-        "__storage_handler__",
-        "__storage_handler__",
-    ));
-
-    let outputs = node.execute(HashMap::from([
-        (
-            "base_url".to_string(),
-            DataValue::String(base_url.to_string()),
-        ),
-        (
-            "class_name".to_string(),
-            DataValue::String(class_name.to_string()),
-        ),
-    ]))?;
-
-    match outputs.get("weaviate_ref") {
-        Some(DataValue::WeaviateRef(reference)) => Ok(reference.clone()),
-        _ => Err(Error::StringError(
-            "weaviate node did not return weaviate_ref".to_string(),
-        )),
+    let weaviate_ref = Arc::new(WeaviateRef::new(
+        base_url,
+        class_name,
+        None,
+        std::time::Duration::from_secs(30),
+    )?);
+    if !weaviate_ref.ready()? {
+        return Err(Error::StringError(
+            "Weaviate is reachable but not ready yet".to_string(),
+        ));
     }
+    weaviate_ref.ensure_collection_schema(collection_schema, true)?;
+    Ok(weaviate_ref)
 }
 
 pub struct WeaviateNode {

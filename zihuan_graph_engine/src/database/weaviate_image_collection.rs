@@ -1,4 +1,4 @@
-use crate::database::weaviate::{WeaviateCollectionConfig, WeaviatePropertyConfig, WeaviateRef};
+use crate::database::weaviate::{WeaviateCollectionSchema, WeaviateRef};
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -110,7 +110,7 @@ impl Node for WeaviateImageCollectionNode {
             ));
         }
 
-        weaviate_ref.ensure_collection(&image_vector_collection_config(class_name))?;
+        weaviate_ref.ensure_collection_schema(WeaviateCollectionSchema::ImageSemantic, true)?;
 
         let outputs = HashMap::from([(
             "weaviate_ref".to_string(),
@@ -118,40 +118,5 @@ impl Node for WeaviateImageCollectionNode {
         )]);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
-    }
-}
-
-fn image_vector_collection_config(class_name: String) -> WeaviateCollectionConfig {
-    WeaviateCollectionConfig {
-        class_name,
-        description: Some("Image vector storage".to_string()),
-        properties: vec![
-            text_property(
-                "object_storage_path",
-                "对象存储路径（object_key/object_url）",
-            ),
-            text_property("summary", "图片总结说明"),
-            text_property("source", "来源标记，如 qq 或 tavily"),
-            text_property("message_id", "关联消息ID"),
-            text_property("sender_id", "关联发送者ID"),
-            date_property("send_time", "记录时间"),
-        ],
-        vectorizer: Some("none".to_string()),
-    }
-}
-
-fn text_property(name: &str, description: &str) -> WeaviatePropertyConfig {
-    WeaviatePropertyConfig {
-        name: name.to_string(),
-        data_type: vec!["text".to_string()],
-        description: Some(description.to_string()),
-    }
-}
-
-fn date_property(name: &str, description: &str) -> WeaviatePropertyConfig {
-    WeaviatePropertyConfig {
-        name: name.to_string(),
-        data_type: vec!["date".to_string()],
-        description: Some(description.to_string()),
     }
 }

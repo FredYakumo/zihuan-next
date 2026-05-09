@@ -9,6 +9,7 @@ import type {
 } from "../api/client";
 
 export type ConnectionType = "mysql" | "redis" | "weaviate" | "rustfs" | "bot_adapter" | "ims_bot_adapter" | "tavily";
+export type WeaviateCollectionSchema = "message_record_semantic" | "image_semantic";
 export type AgentTypeName = "qq_chat" | "http_stream";
 export type ModelRefType = "chat_llm" | "text_embedding_local";
 export type ToolTargetType = "workflow_set" | "file_path" | "inline_graph";
@@ -27,6 +28,7 @@ export interface ConnectionFormState {
   redis_url: string;
   weaviate_base_url: string;
   weaviate_class_name: string;
+  weaviate_collection_schema: WeaviateCollectionSchema;
   rustfs_endpoint: string;
   rustfs_bucket: string;
   rustfs_region: string;
@@ -142,6 +144,7 @@ export function defaultConnectionForm(): ConnectionFormState {
     redis_url: "",
     weaviate_base_url: "",
     weaviate_class_name: "",
+    weaviate_collection_schema: "message_record_semantic",
     rustfs_endpoint: "",
     rustfs_bucket: "",
     rustfs_region: "",
@@ -232,6 +235,9 @@ export function connectionFormFromConfig(connection: ConnectionConfig): Connecti
     case "weaviate":
       form.weaviate_base_url = String(connection.kind.base_url ?? "");
       form.weaviate_class_name = String(connection.kind.class_name ?? "");
+      form.weaviate_collection_schema = String(
+        connection.kind.collection_schema ?? "message_record_semantic",
+      ) as WeaviateCollectionSchema;
       break;
     case "rustfs":
       form.rustfs_endpoint = String(connection.kind.endpoint ?? "");
@@ -307,6 +313,7 @@ export function buildConnectionPayload(form: ConnectionFormState): {
         type: "weaviate",
         base_url: form.weaviate_base_url.trim(),
         class_name: form.weaviate_class_name.trim(),
+        collection_schema: form.weaviate_collection_schema,
       };
       break;
     case "rustfs":
