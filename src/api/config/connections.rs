@@ -205,7 +205,7 @@ pub async fn create_connection(req: &mut Request, res: &mut Response, _depot: &m
 
     match system_config::save_connections(connections) {
         Ok(()) => {
-            let _ = close_runtime_storage_instances_for_config(&id);
+            let _ = close_runtime_storage_instances_for_config(&connection.id);
             let refreshed = system_config::load_connections().unwrap_or_default();
             sync_enabled_bot_adapters(&refreshed).await;
             info!(
