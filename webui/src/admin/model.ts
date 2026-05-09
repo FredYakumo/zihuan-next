@@ -109,12 +109,6 @@ export const QQ_CHAT_DEFAULT_TOOLS: QqChatDefaultTool[] = [
   { id: "get_recent_user_messages", label: "get_recent_user_messages", description: "查询用户近期消息" },
   { id: "search_similar_messages", label: "search_similar_messages", description: "语义检索相似文本消息" },
   { id: "search_similar_images", label: "search_similar_images", description: "语义检索相似图片" },
-  { id: "reply_plain_text", label: "reply_plain_text", description: "发送纯文本回复" },
-  { id: "reply_at", label: "reply_at", description: "发送 @ 回复（群聊）" },
-  { id: "reply_combine_text", label: "reply_combine_text", description: "发送组合消息（at + 文本）" },
-  { id: "reply_forward_text", label: "reply_forward_text", description: "发送转发长文" },
-  { id: "reply_send_image", label: "reply_send_image", description: "发送图片回复" },
-  { id: "no_reply", label: "no_reply", description: "本轮不回复" },
 ];
 
 export function defaultQqChatDefaultToolsEnabled(): Record<string, boolean> {
