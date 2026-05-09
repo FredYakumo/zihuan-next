@@ -198,12 +198,6 @@ fn default_qq_chat_default_tools_enabled() -> HashMap<String, bool> {
         "get_recent_user_messages",
         "search_similar_messages",
         "search_similar_images",
-        "reply_plain_text",
-        "reply_at",
-        "reply_combine_text",
-        "reply_forward_text",
-        "reply_send_image",
-        "no_reply",
     ]
     .into_iter()
     .map(|name| (name.to_string(), true))
