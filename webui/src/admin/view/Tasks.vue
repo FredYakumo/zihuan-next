@@ -12,6 +12,9 @@
         </div>
         <div class="inline-actions">
           <button class="btn ghost" @click="load">刷新</button>
+          <button class="btn danger" :disabled="selectedTaskIds.size === 0" @click="deleteSelectedTasks">
+            删除选中
+          </button>
           <button class="btn" @click="clearFinished">清理已结束任务</button>
         </div>
       </div>
@@ -50,6 +53,15 @@
       </div>
       <div class="tasks-table tasks-list-shell" style="margin-top: 16px;">
         <div v-if="taskItems.length > 0" class="tasks-table-head">
+          <span>
+            <input
+              type="checkbox"
+              :checked="allPagedTasksSelected"
+              :indeterminate="somePagedTasksSelected && !allPagedTasksSelected"
+              aria-label="选择当前页任务"
+              @change="toggleCurrentPageSelection"
+            />
+          </span>
           <span>任务</span>
           <span>开始时间</span>
           <span>耗时</span>
@@ -64,6 +76,14 @@
           :key="task.id"
           class="record task-row-card"
         >
+          <div class="task-row-check">
+            <input
+              type="checkbox"
+              :checked="selectedTaskIds.has(task.id)"
+              :aria-label="`选择任务 ${task.graph_name}`"
+              @change="toggleTaskSelection(task.id)"
+            />
+          </div>
           <div class="task-row-main">
             <div class="task-row-title">
               <h4>{{ task.graph_name }}</h4>
@@ -106,6 +126,7 @@
             </button>
             <button class="btn" :disabled="!task.can_rerun" @click="rerunTask(task.id)">重跑</button>
             <button class="btn ghost" @click="openLogViewer(task)">查看日志</button>
+            <button class="btn danger" @click="deleteSingleTask(task)">删除</button>
           </div>
         </article>
       </div>
@@ -179,12 +200,19 @@ const taskItems = ref<TaskEntry[]>([]);
 const pageSize = ref(10);
 const listPage = ref(1);
 const listPageInput = ref(1);
+const selectedTaskIds = ref(new Set<string>());
 
 const listTotalPages = computed(() => Math.max(1, Math.ceil(taskItems.value.length / pageSize.value)));
 const pagedTaskItems = computed(() => {
   const start = (listPage.value - 1) * pageSize.value;
   return taskItems.value.slice(start, start + pageSize.value);
 });
+const allPagedTasksSelected = computed(() =>
+  pagedTaskItems.value.length > 0 && pagedTaskItems.value.every((task) => selectedTaskIds.value.has(task.id))
+);
+const somePagedTasksSelected = computed(() =>
+  pagedTaskItems.value.some((task) => selectedTaskIds.value.has(task.id))
+);
 
 watch(pageSize, () => {
   goToListPage(Math.min(listPage.value, listTotalPages.value));
@@ -217,6 +245,8 @@ function logLevelClass(level: string): string {
 
 async function load() {
   taskItems.value = await tasks.list();
+  const existingIds = new Set(taskItems.value.map((task) => task.id));
+  selectedTaskIds.value = new Set([...selectedTaskIds.value].filter((id) => existingIds.has(id)));
 }
 
 async function stopTask(id: string) {
@@ -231,6 +261,41 @@ async function rerunTask(id: string) {
 
 async function clearFinished() {
   await tasks.clearFinished();
+  await load();
+}
+
+function toggleTaskSelection(id: string) {
+  const next = new Set(selectedTaskIds.value);
+  if (next.has(id)) {
+    next.delete(id);
+  } else {
+    next.add(id);
+  }
+  selectedTaskIds.value = next;
+}
+
+function toggleCurrentPageSelection() {
+  const next = new Set(selectedTaskIds.value);
+  if (allPagedTasksSelected.value) {
+    for (const task of pagedTaskItems.value) next.delete(task.id);
+  } else {
+    for (const task of pagedTaskItems.value) next.add(task.id);
+  }
+  selectedTaskIds.value = next;
+}
+
+async function deleteSingleTask(task: TaskEntry) {
+  if (!confirm(`永久删除任务“${task.graph_name}”？对应日志也会被清除。`)) return;
+  await tasks.delete(task.id);
+  await load();
+}
+
+async function deleteSelectedTasks() {
+  const ids = [...selectedTaskIds.value];
+  if (ids.length === 0) return;
+  if (!confirm(`永久删除选中的 ${ids.length} 个任务？对应日志也会被清除。`)) return;
+  await tasks.deleteBatch(ids);
+  selectedTaskIds.value = new Set();
   await load();
 }
 

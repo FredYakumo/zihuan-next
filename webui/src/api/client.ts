@@ -229,6 +229,12 @@ export const tasks = {
   clearFinished(): Promise<{ ok: boolean; cleared: number }> {
     return request("DELETE", "/tasks");
   },
+  delete(taskId: string): Promise<{ ok: boolean }> {
+    return request("DELETE", `/tasks/${taskId}`);
+  },
+  deleteBatch(taskIds: string[]): Promise<{ ok: boolean; deleted: number }> {
+    return request("POST", "/tasks/delete-batch", { task_ids: taskIds });
+  },
 };
 
 // Workflows

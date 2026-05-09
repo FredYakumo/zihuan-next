@@ -1,4 +1,5 @@
 import { ws } from "../api/ws";
+import { tasks } from "../api/client";
 import type { TaskLogEntry } from "../api/types";
 
 const MAX_LOG_ENTRIES = 500;
@@ -347,6 +348,36 @@ function pushLog(entry: TaskLogEntry): void {
   render();
 }
 
+async function loadHistoricalLogs(): Promise<void> {
+  try {
+    const taskList = await tasks.list();
+    const results = await Promise.all(
+      taskList.map(async (task) => {
+        try {
+          const result = await tasks.logs(task.id);
+          return result.entries;
+        } catch (error) {
+          console.warn("Failed to load historical task logs", task.id, error);
+          return [];
+        }
+      })
+    );
+    const merged = [...results.flat(), ...logs];
+    const seen = new Set<string>();
+    const deduped = merged.filter((entry) => {
+      const key = `${entry.timestamp}\n${entry.level}\n${entry.message}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    deduped.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    logs.splice(0, logs.length, ...deduped.slice(-MAX_LOG_ENTRIES));
+    render();
+  } catch (error) {
+    console.warn("Failed to load historical logs", error);
+  }
+}
+
 function bindSocket(): void {
   if (unsubWs) return;
   unsubWs = ws.onMessage((msg) => {
@@ -440,4 +471,5 @@ export function mountLiveLogConsole(): void {
   frameEl.append(bar, previewEl, bodyEl);
   document.body.appendChild(frameEl);
   render();
+  void loadHistoricalLogs();
 }

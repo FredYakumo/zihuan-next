@@ -526,7 +526,7 @@ textarea {
 
 .tasks-table-head {
   display: grid;
-  grid-template-columns: minmax(220px, 2fr) minmax(150px, 1fr) minmax(90px, 0.7fr) minmax(200px, 1.4fr) minmax(220px, 1.7fr) minmax(120px, 0.8fr) minmax(220px, 1.2fr);
+  grid-template-columns: 32px minmax(220px, 2fr) minmax(150px, 1fr) minmax(90px, 0.7fr) minmax(200px, 1.4fr) minmax(220px, 1.7fr) minmax(120px, 0.8fr) minmax(280px, 1.5fr);
   gap: 14px;
   align-items: center;
   padding: 0 12px;
@@ -559,17 +559,24 @@ textarea {
 
 .task-row-card {
   display: grid;
-  grid-template-columns: minmax(220px, 2fr) minmax(150px, 1fr) minmax(90px, 0.7fr) minmax(200px, 1.4fr) minmax(220px, 1.7fr) minmax(120px, 0.8fr) minmax(220px, 1.2fr);
+  grid-template-columns: 32px minmax(220px, 2fr) minmax(150px, 1fr) minmax(90px, 0.7fr) minmax(200px, 1.4fr) minmax(220px, 1.7fr) minmax(120px, 0.8fr) minmax(280px, 1.5fr);
   gap: 14px;
   align-items: center;
   padding: 18px 16px;
 }
 
 .task-row-main,
+.task-row-check,
 .task-row-meta,
 .task-row-summary,
 .task-row-status {
   min-width: 0;
+}
+
+.task-row-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .task-row-title {
@@ -686,6 +693,18 @@ textarea {
   color: var(--btn-primary-text);
   background: color-mix(in srgb, var(--badge-error-text) 72%, #550000 28%);
   border-color: transparent;
+}
+
+.btn.danger {
+  color: var(--btn-primary-text);
+  background: linear-gradient(135deg, #dc2626, #991b1b);
+  border-color: color-mix(in srgb, #ef4444 55%, transparent 45%);
+  box-shadow: 0 12px 24px color-mix(in srgb, #dc2626 18%, transparent 82%);
+}
+
+.btn.danger:hover {
+  background: linear-gradient(135deg, #ef4444, #b91c1c);
+  border-color: color-mix(in srgb, #f87171 62%, transparent 38%);
 }
 
 .btn:disabled {
@@ -1011,7 +1030,7 @@ textarea {
 @media (max-width: 1360px) {
   .tasks-table-head,
   .task-row-card {
-    grid-template-columns: minmax(220px, 2fr) minmax(150px, 1fr) minmax(90px, 0.7fr) minmax(180px, 1.2fr) minmax(180px, 1.3fr) minmax(110px, 0.8fr) minmax(200px, 1fr);
+    grid-template-columns: 32px minmax(220px, 2fr) minmax(150px, 1fr) minmax(90px, 0.7fr) minmax(180px, 1.2fr) minmax(180px, 1.3fr) minmax(110px, 0.8fr) minmax(240px, 1.2fr);
   }
 }
 
@@ -1021,14 +1040,14 @@ textarea {
   }
 
   .task-row-card {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 32px repeat(2, minmax(0, 1fr));
     align-items: start;
   }
 
   .task-row-main,
   .task-row-summary,
   .task-row-actions {
-    grid-column: 1 / -1;
+    grid-column: 2 / -1;
   }
 
   .task-row-label {
@@ -1043,13 +1062,13 @@ textarea {
 
 @media (max-width: 720px) {
   .task-row-card {
-    grid-template-columns: 1fr;
+    grid-template-columns: 32px 1fr;
   }
 
   .task-row-main,
   .task-row-summary,
   .task-row-actions {
-    grid-column: auto;
+    grid-column: 2;
   }
 }
 

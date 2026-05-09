@@ -20,6 +20,11 @@ pub struct RerunTaskRequest {
     pub user_ip: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct DeleteTasksRequest {
+    pub task_ids: Vec<String>,
+}
+
 #[handler]
 pub async fn execute_graph(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
@@ -248,6 +253,34 @@ pub async fn clear_non_running_tasks(_req: &mut Request, res: &mut Response, dep
     let state = depot.obtain::<Arc<AppState>>().unwrap();
     let cleared = state.tasks.lock().unwrap().clear_non_running();
     res.render(Json(serde_json::json!({"ok": true, "cleared": cleared})));
+}
+
+#[handler]
+pub async fn delete_task(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+    let state = depot.obtain::<Arc<AppState>>().unwrap();
+    let task_id = req.param::<String>("task_id").unwrap_or_default();
+    let ok = state.tasks.lock().unwrap().delete_task(&task_id);
+    if !ok {
+        res.status_code(StatusCode::NOT_FOUND);
+        res.render(Json(serde_json::json!({"error": "Task not found"})));
+        return;
+    }
+    res.render(Json(serde_json::json!({"ok": true})));
+}
+
+#[handler]
+pub async fn delete_tasks(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+    let state = depot.obtain::<Arc<AppState>>().unwrap();
+    let body = match req.parse_json::<DeleteTasksRequest>().await {
+        Ok(body) => body,
+        Err(err) => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(serde_json::json!({"error": err.to_string()})));
+            return;
+        }
+    };
+    let deleted = state.tasks.lock().unwrap().delete_tasks(&body.task_ids);
+    res.render(Json(serde_json::json!({"ok": true, "deleted": deleted})));
 }
 
 // ─── List tasks ───────────────────────────────────────────────────────────────

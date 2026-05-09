@@ -136,6 +136,8 @@ pub fn build_router(
             Router::with_path("tasks")
                 .get(execution::list_tasks)
                 .delete(execution::clear_non_running_tasks)
+                .push(Router::with_path("delete-batch").post(execution::delete_tasks))
+                .push(Router::with_path("<task_id>").delete(execution::delete_task))
                 .push(Router::with_path("<task_id>/stop").post(execution::stop_task))
                 .push(Router::with_path("<task_id>/rerun").post(execution::rerun_task))
                 .push(Router::with_path("<task_id>/logs").get(execution::get_task_logs)),
