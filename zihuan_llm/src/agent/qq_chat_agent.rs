@@ -2304,7 +2304,7 @@ impl BrainTool for SearchSimilarImagesBrainTool {
 
                 stored_images.push(serde_json::json!({
                     "object_storage_path": object_storage_path,
-                    "summary": image.description.clone(),
+                    "summary": image.description,
                     "source": "tavily",
                 }));
 

@@ -506,8 +506,14 @@
                   "to_port": "message_event"
                 },
                 {
-                  "from_node_id": "__function_inputs__",
-                  "from_port": "sender_id",
+                  "from_node_id": "eec128f0-76ba-45d5-9cce-8fe207404756",
+                  "from_port": "true_event",
+                  "to_node_id": "extract_sender_id_for_progress",
+                  "to_port": "message_event"
+                },
+                {
+                  "from_node_id": "extract_sender_id_for_progress",
+                  "from_port": "result",
                   "to_node_id": "aeb03482-fbfe-4b39-bdc5-8e415a167574",
                   "to_port": "target_id"
                 },
@@ -554,6 +560,12 @@
                   "to_port": "first"
                 },
                 {
+                  "from_node_id": "eec128f0-76ba-45d5-9cce-8fe207404756",
+                  "from_port": "false_event",
+                  "to_node_id": "extract_group_id_for_progress",
+                  "to_port": "message_event"
+                },
+                {
                   "from_node_id": "__function_inputs__",
                   "from_port": "content",
                   "to_node_id": "0c8800ff-12fd-4eb2-9653-a3f9c9a79fa3",
@@ -578,8 +590,8 @@
                   "to_port": "message"
                 },
                 {
-                  "from_node_id": "__function_inputs__",
-                  "from_port": "group_id",
+                  "from_node_id": "extract_group_id_for_progress",
+                  "from_port": "result",
                   "to_node_id": "d0497969-93b2-454c-9a60-282d953e009e",
                   "to_port": "target_id"
                 },
@@ -1014,6 +1026,84 @@
                   "size": {
                     "height": 105.199455,
                     "width": 322.55606
+                  }
+                },
+                {
+                  "description": null,
+                  "disabled": false,
+                  "dynamic_input_ports": false,
+                  "dynamic_output_ports": false,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "extract_sender_id_for_progress",
+                  "inline_values": {},
+                  "input_ports": [
+                    {
+                      "data_type": "MessageEvent",
+                      "description": "输入的消息事件",
+                      "hidden": false,
+                      "name": "message_event",
+                      "required": true
+                    }
+                  ],
+                  "name": "extract sender id for progress",
+                  "node_type": "extract_sender_id_from_event",
+                  "output_ports": [
+                    {
+                      "data_type": "String",
+                      "description": "发送者的QQ号字符串",
+                      "hidden": false,
+                      "name": "result",
+                      "required": true
+                    }
+                  ],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 900,
+                    "y": 520
+                  },
+                  "size": {
+                    "height": 120,
+                    "width": 220
+                  }
+                },
+                {
+                  "description": null,
+                  "disabled": false,
+                  "dynamic_input_ports": false,
+                  "dynamic_output_ports": false,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "extract_group_id_for_progress",
+                  "inline_values": {},
+                  "input_ports": [
+                    {
+                      "data_type": "MessageEvent",
+                      "description": "输入的消息事件",
+                      "hidden": false,
+                      "name": "message_event",
+                      "required": true
+                    }
+                  ],
+                  "name": "extract group id for progress",
+                  "node_type": "extract_group_id_from_event",
+                  "output_ports": [
+                    {
+                      "data_type": "String",
+                      "description": "群号字符串",
+                      "hidden": false,
+                      "name": "result",
+                      "required": true
+                    }
+                  ],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 900,
+                    "y": 670
+                  },
+                  "size": {
+                    "height": 120,
+                    "width": 220
                   }
                 },
                 {

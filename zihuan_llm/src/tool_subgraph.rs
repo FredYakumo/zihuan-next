@@ -345,7 +345,13 @@ impl ToolSubgraphRunner {
     pub fn execute_to_string(&self, call_content: &str, arguments: &Value) -> String {
         match self.run_subgraph(call_content.to_string(), arguments.clone()) {
             Ok(result) => result,
-            Err(e) => build_tool_error_message(e.to_string()),
+            Err(e) => {
+                warn!(
+                    "[ToolSubgraph:{}] tool '{}' failed; returning sanitized error to caller: {e}",
+                    self.node_id, self.definition.name
+                );
+                format!("{} 执行出错", self.definition.name)
+            }
         }
     }
 
