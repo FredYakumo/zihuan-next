@@ -128,7 +128,7 @@ impl Node for MessageMySQLSearchNode {
                 DataValue::Integer(limit) => Some(*limit),
                 _ => None,
             })
-            .unwrap_or(10);
+            .unwrap_or(100);
 
         if limit <= 0 {
             return Err(Error::ValidationError(
