@@ -15,6 +15,8 @@ pub enum NodeType {
 #[serde(rename_all = "snake_case")]
 pub enum NodeConfigWidget {
     ConnectionSelect,
+    LlmRefSelect,
+    AgentLlmKindSelect,
     ActiveBotAdapterSelect,
 }
 
@@ -110,6 +112,7 @@ pub mod message_mysql_chunking;
 pub mod message_mysql_get_group_history;
 pub mod message_mysql_get_user_history;
 pub mod message_mysql_history_common;
+pub mod message_mysql_search;
 pub mod message_persistence;
 pub mod message_restore;
 pub mod object_storage;

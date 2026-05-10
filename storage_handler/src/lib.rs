@@ -331,6 +331,7 @@ pub fn init_node_registry() -> Result<()> {
     use zihuan_graph_engine::image_weaviate_persistence::ImageWeaviatePersistenceNode;
     use zihuan_graph_engine::message_mysql_get_group_history::MessageMySQLGetGroupHistoryNode;
     use zihuan_graph_engine::message_mysql_get_user_history::MessageMySQLGetUserHistoryNode;
+    use zihuan_graph_engine::message_mysql_search::MessageMySQLSearchNode;
     use zihuan_graph_engine::qq_message_list_mysql_persistence::QQMessageListMySQLPersistenceNode;
     use zihuan_graph_engine::qq_message_list_weaviate_persistence::QQMessageListWeaviatePersistenceNode;
     use zihuan_graph_engine::register_node;
@@ -397,6 +398,13 @@ pub fn init_node_registry() -> Result<()> {
         "消息存储",
         "根据 group_id 读取最近消息历史",
         MessageMySQLGetGroupHistoryNode
+    );
+    register_node!(
+        "message_mysql_search",
+        "搜索消息记录",
+        "消息存储",
+        "在消息记录中搜索，支持发送者、群组、内容关键词、时间范围过滤",
+        MessageMySQLSearchNode
     );
 
     Ok(())

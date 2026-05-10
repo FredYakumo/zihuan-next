@@ -24,8 +24,6 @@ import { SaveManager } from "./app/save_manager";
 import { GraphActions } from "./app/graph_actions";
 import { WorkspaceController } from "./app/workspace_controller";
 import { openTaskManagerDialog } from "./ui/dialogs/index";
-import { mountLiveLogConsole } from "./ui/live_log_console";
-
 export async function bootstrapLegacyEditor() {
   initTheme();
   await loadThemes();
@@ -33,7 +31,6 @@ export async function bootstrapLegacyEditor() {
   const { toolbar, canvasContainer, canvasEl, backArrow } = buildDOM();
 
   ws.connect();
-  mountLiveLogConsole();
   installPreviewWsHandler(ws);
 
   let nodeTypes: NodeTypeInfo[] = [];
@@ -134,8 +131,19 @@ export async function bootstrapLegacyEditor() {
       throw new Error(`未找到工作流 ${workflowName}`);
     }
 
-    const loaded = await fileIO.open(`workflow_set/${target.file}`);
+    const workflowPath = `workflow_set/${target.file}`;
+    const existing = tabs.findWorkflowTabByPath(workflowPath);
+    if (existing) {
+      tabs.setActiveTabId(existing.id);
+      await canvas.loadExternalSession(existing.id);
+      updateRunButton(taskStore.getRunningTaskForSession(existing.id) !== null);
+      await workspace.persistWorkspaceState();
+      return;
+    }
+
+    const loaded = await fileIO.open(workflowPath);
     await tabs.openTab(loaded.session_id, target.display_name ?? workflowName, false, true);
+    tabs.updateTab(loaded.session_id, { workflowPath });
     await canvas.loadExternalSession(loaded.session_id);
     updateRunButton(taskStore.getRunningTaskForSession(loaded.session_id) !== null);
     await workspace.persistWorkspaceState();

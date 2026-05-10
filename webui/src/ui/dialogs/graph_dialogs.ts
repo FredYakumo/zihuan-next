@@ -33,6 +33,74 @@ function isConnectionHyperparameterType(type: string): boolean {
   return Object.prototype.hasOwnProperty.call(CONNECTION_KIND_BY_HP_TYPE, type);
 }
 
+export function showTextInputDialog(
+  titleText: string,
+  labelText: string,
+  initialValue = "",
+  placeholder = "",
+): Promise<string | null> {
+  ensureDialogStyles();
+  const { dialog, overlay, close } = openOverlay();
+  dialog.style.minWidth = "420px";
+  dialog.style.maxWidth = "520px";
+
+  const title = document.createElement("h3");
+  title.textContent = titleText;
+  dialog.appendChild(title);
+
+  const label = document.createElement("label");
+  label.htmlFor = "zh-text-input-dialog";
+  label.textContent = labelText;
+  dialog.appendChild(label);
+
+  const input = document.createElement("input");
+  input.id = "zh-text-input-dialog";
+  input.type = "text";
+  input.value = initialValue;
+  input.placeholder = placeholder;
+  dialog.appendChild(input);
+
+  return new Promise((resolve) => {
+    const done = (value: string | null) => {
+      close();
+      resolve(value);
+    };
+
+    const buttons = document.createElement("div");
+    buttons.className = "zh-buttons";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.textContent = "取消";
+    cancelBtn.addEventListener("click", () => done(null));
+
+    const saveBtn = document.createElement("button");
+    saveBtn.className = "primary";
+    saveBtn.textContent = "确定";
+    saveBtn.addEventListener("click", () => done(input.value));
+
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        done(input.value);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        done(null);
+      }
+    });
+
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) done(null);
+    });
+
+    buttons.append(cancelBtn, saveBtn);
+    dialog.appendChild(buttons);
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 0);
+  });
+}
+
 export async function openGraphMetadataDialog(
   sessionId: string,
   onSaved: () => void,

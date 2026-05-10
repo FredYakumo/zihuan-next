@@ -64,8 +64,6 @@ pub struct QqChatAgentConfig {
     #[serde(default)]
     pub mysql_connection_id: Option<String>,
     #[serde(default)]
-    pub weaviate_connection_id: Option<String>,
-    #[serde(default)]
     pub weaviate_image_connection_id: Option<String>,
     #[serde(default = "default_max_message_length")]
     pub max_message_length: usize,
@@ -196,7 +194,6 @@ fn default_qq_chat_default_tools_enabled() -> HashMap<String, bool> {
         "get_function_list",
         "get_recent_group_messages",
         "get_recent_user_messages",
-        "search_similar_messages",
         "search_similar_images",
     ]
     .into_iter()

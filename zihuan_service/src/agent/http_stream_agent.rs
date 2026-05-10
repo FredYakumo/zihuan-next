@@ -183,9 +183,7 @@ async fn http_stream_chat_completions(req: &mut Request, res: &mut Response, dep
     });
 
     let task_id = task_handle.as_ref().map(|handle| handle.task_id.clone());
-    let execution = async move {
-        execute_http_stream_completion(runtime.as_ref(), body).await
-    };
+    let execution = async move { execute_http_stream_completion(runtime.as_ref(), body).await };
     let result = match task_id {
         Some(task_id) => EXECUTION_TASK_ID.scope(task_id, execution).await,
         None => execution.await,

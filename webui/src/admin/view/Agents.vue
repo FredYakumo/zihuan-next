@@ -100,13 +100,6 @@
                 </select>
               </div>
               <div class="field">
-                <label>Weaviate Connection</label>
-                <select v-model="form.weaviate_connection_id">
-                  <option value="">不使用</option>
-                  <option v-for="item in messageWeaviateConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
-                </select>
-              </div>
-              <div class="field">
                 <label>Weaviate Image Connection</label>
                 <select v-model="form.weaviate_image_connection_id">
                   <option value="">不使用</option>
@@ -165,7 +158,7 @@
                   <div class="field-full"><label>描述</label><input v-model="tool.description" /></div>
                   <div class="field">
                     <label>目标类型</label>
-                    <select v-model="tool.targetType">
+                    <select v-model="tool.targetType" @change="handleToolTargetTypeChange(tool)">
                       <option value="workflow_set">workflow_set</option>
                       <option value="file_path">file_path</option>
                       <option value="inline_graph">inline_graph</option>
@@ -174,7 +167,7 @@
                   <div class="field field-check"><input v-model="tool.enabled" type="checkbox" />启用该工具</div>
                   <div v-if="tool.targetType === 'workflow_set'" class="field-full">
                     <label>Workflow Set 名称</label>
-                    <select v-model="tool.workflowName">
+                    <select v-model="tool.workflowName" @change="applyWorkflowSetMetadata(tool)">
                       <option value="">请选择</option>
                       <option v-for="workflow in workflows" :key="workflow.name" :value="workflow.name">
                         {{ workflow.display_name || workflow.name }}
@@ -348,13 +341,6 @@
                   </select>
                 </div>
                 <div class="key-value connection-card-edit-row">
-                  <strong>Weaviate</strong>
-                  <select v-model="form.weaviate_connection_id" class="connection-card-inline-input">
-                    <option value="">不使用</option>
-                    <option v-for="item in messageWeaviateConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
-                  </select>
-                </div>
-                <div class="key-value connection-card-edit-row">
                   <strong>Image DB</strong>
                   <select v-model="form.weaviate_image_connection_id" class="connection-card-inline-input">
                     <option value="">不使用</option>
@@ -424,7 +410,7 @@
                       <div class="field-full"><label>描述</label><input v-model="tool.description" /></div>
                       <div class="field">
                         <label>目标类型</label>
-                        <select v-model="tool.targetType">
+                        <select v-model="tool.targetType" @change="handleToolTargetTypeChange(tool)">
                           <option value="workflow_set">workflow_set</option>
                           <option value="file_path">file_path</option>
                           <option value="inline_graph">inline_graph</option>
@@ -433,7 +419,7 @@
                       <div class="field field-check"><input v-model="tool.enabled" type="checkbox" />启用该工具</div>
                       <div v-if="tool.targetType === 'workflow_set'" class="field-full">
                         <label>Workflow Set 名称</label>
-                        <select v-model="tool.workflowName">
+                        <select v-model="tool.workflowName" @change="applyWorkflowSetMetadata(tool)">
                           <option value="">请选择</option>
                           <option v-for="workflow in workflows" :key="workflow.name" :value="workflow.name">
                             {{ workflow.display_name || workflow.name }}
@@ -515,7 +501,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 
-import { system, workflows as workflowApi, type AgentWithRuntime, type ConnectionConfig, type LlmConfig } from "../../api/client";
+import { system, workflows as workflowApi, type AgentWithRuntime, type ConnectionConfig, type LlmConfig, type WorkflowInfo } from "../../api/client";
 import {
   agentFormFromConfig,
   buildAgentPayload,
@@ -545,7 +531,7 @@ const agentTypes: AgentTypeOption[] = [
 const agents = ref<AgentWithRuntime[]>([]);
 const connections = ref<ConnectionConfig[]>([]);
 const llm = ref<LlmConfig[]>([]);
-const workflows = ref<Array<{ name: string; file: string; cover_url: string | null; display_name: string | null; description: string | null; version: string | null }>>([]);
+const workflows = ref<WorkflowInfo[]>([]);
 const form = reactive<AgentFormState>(defaultAgentForm());
 const editingAgentId = ref("");
 const showCreatePicker = ref(false);
@@ -558,9 +544,6 @@ const botConnections = computed(() => connections.value.filter((item) => isBotAd
 const rustfsConnections = computed(() => connections.value.filter((item) => item.kind.type === "rustfs"));
 const tavilyConnections = computed(() => connections.value.filter((item) => item.kind.type === "tavily"));
 const mysqlConnections = computed(() => connections.value.filter((item) => item.kind.type === "mysql"));
-const messageWeaviateConnections = computed(() =>
-  connections.value.filter((item) => item.kind.type === "weaviate" && item.kind.collection_schema === "message_record_semantic"),
-);
 const imageWeaviateConnections = computed(() =>
   connections.value.filter((item) => item.kind.type === "weaviate" && item.kind.collection_schema === "image_semantic"),
 );
@@ -633,6 +616,53 @@ function addTool() {
 
 function removeTool(index: number) {
   form.tools.splice(index, 1);
+}
+
+const RESERVED_TOOL_RUNTIME_INPUTS = new Set(["content", "message_event", "qq_ims_bot_adapter"]);
+
+function isGeneratedToolId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
+}
+
+function handleToolTargetTypeChange(tool: AgentFormState["tools"][number]) {
+  if (tool.targetType === "workflow_set" && tool.workflowName) {
+    applyWorkflowSetMetadata(tool);
+  }
+}
+
+function applyWorkflowSetMetadata(tool: AgentFormState["tools"][number]) {
+  if (tool.targetType !== "workflow_set" || !tool.workflowName) {
+    return;
+  }
+  const workflow = workflows.value.find((item) => item.name === tool.workflowName);
+  if (!workflow) {
+    return;
+  }
+
+  if (!tool.id.trim() || isGeneratedToolId(tool.id)) {
+    tool.id = workflow.name;
+  }
+  tool.name = workflow.name;
+  tool.description = workflow.description ?? "";
+  tool.parametersJson = JSON.stringify(
+    (workflow.inputs ?? [])
+      .filter((port) => !RESERVED_TOOL_RUNTIME_INPUTS.has(port.name))
+      .map((port) => ({
+        name: port.name,
+        data_type: port.data_type,
+        desc: "",
+      })),
+    null,
+    2,
+  );
+  tool.outputsJson = JSON.stringify(
+    (workflow.outputs ?? []).map((port) => ({
+      name: port.name,
+      data_type: port.data_type,
+    })),
+    null,
+    2,
+  );
 }
 
 async function submitForm() {

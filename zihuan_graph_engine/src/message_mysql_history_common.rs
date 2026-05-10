@@ -211,6 +211,63 @@ pub(crate) fn format_history_messages(mut records: Vec<MessageHistoryRecord>) ->
     messages
 }
 
+pub(crate) struct SearchMessagesQueryBuilder {
+    pub sender_id: Option<String>,
+    pub group_id: Option<String>,
+    pub contain: Option<String>,
+    pub start_time: Option<String>,
+    pub end_time: Option<String>,
+    pub sort_by_time_desc: bool,
+    pub limit: u32,
+}
+
+impl SearchMessagesQueryBuilder {
+    pub fn build(&self) -> (String, Vec<String>) {
+        let mut where_clauses = Vec::new();
+        let mut params = Vec::new();
+
+        if let Some(ref sender_id) = self.sender_id {
+            where_clauses.push("sender_id = ?".to_string());
+            params.push(sender_id.clone());
+        }
+        if let Some(ref group_id) = self.group_id {
+            where_clauses.push("group_id = ?".to_string());
+            params.push(group_id.clone());
+        }
+        if let Some(ref contain) = self.contain {
+            where_clauses.push("content LIKE ?".to_string());
+            params.push(format!("%{contain}%"));
+        }
+        if let Some(ref start_time) = self.start_time {
+            where_clauses.push("send_time >= ?".to_string());
+            params.push(start_time.clone());
+        }
+        if let Some(ref end_time) = self.end_time {
+            where_clauses.push("send_time <= ?".to_string());
+            params.push(end_time.clone());
+        }
+
+        let order = if self.sort_by_time_desc {
+            "ORDER BY send_time DESC, id DESC"
+        } else {
+            "ORDER BY send_time ASC, id ASC"
+        };
+
+        let where_sql = if where_clauses.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", where_clauses.join(" AND "))
+        };
+
+        let sql = format!(
+            "SELECT id, message_id, sender_id, sender_name, send_time, content FROM message_record {where_sql} {order} LIMIT ?"
+        );
+        params.push(history_query_row_limit(self.limit).to_string());
+
+        (sql, params)
+    }
+}
+
 fn format_gap(duration: Duration) -> String {
     let total_minutes = duration.num_minutes().max(0);
     if total_minutes < 60 {

@@ -28,6 +28,10 @@ export class TabManager {
     return this.tabList.find((tab) => tab.id === id);
   }
 
+  findWorkflowTabByPath(path: string): TabInfo | undefined {
+    return this.tabList.find((tab) => tab.isWorkflowSet && tab.workflowPath === path);
+  }
+
   setActiveTabId(id: string | null): void {
     this.activeTabId = id;
     this.render();

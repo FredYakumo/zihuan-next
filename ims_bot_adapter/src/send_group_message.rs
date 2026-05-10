@@ -62,7 +62,7 @@ impl Node for SendGroupMessageNode {
 
         let params = serde_json::json!({
             "group_id": target_id,
-            "message": qq_message_list_to_send_json(&adapter_ref, &messages),
+            "message": qq_message_list_to_send_json(&adapter_ref, &messages)?,
         });
         info!(
             "[SendGroupMessageNode] Sending group message to {} with {}",

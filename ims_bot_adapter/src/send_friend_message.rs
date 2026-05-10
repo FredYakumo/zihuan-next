@@ -62,7 +62,7 @@ impl Node for SendFriendMessageNode {
 
         let params = serde_json::json!({
             "user_id": target_id,
-            "message": qq_message_list_to_send_json(&adapter_ref, &messages),
+            "message": qq_message_list_to_send_json(&adapter_ref, &messages)?,
         });
         info!(
             "[SendFriendMessageNode] Sending private message to {} with {}",

@@ -25,6 +25,23 @@ export interface GraphActionsOptions {
 export class GraphActions {
   constructor(private readonly options: GraphActionsOptions) {}
 
+  private async openWorkflowSetTab(workflowPath: string): Promise<void> {
+    const existing = this.options.tabs.findWorkflowTabByPath(workflowPath);
+    if (existing) {
+      this.options.tabs.setActiveTabId(existing.id);
+      await this.options.canvas.loadExternalSession(existing.id);
+      await this.options.persistWorkspace();
+      return;
+    }
+
+    const openResult = await fileIO.open(workflowPath);
+    const name = tabNameFrom(workflowPath);
+    await this.options.tabs.openTab(openResult.session_id, name, false, true);
+    this.options.tabs.updateTab(openResult.session_id, { workflowPath });
+    await this.options.canvas.loadExternalSession(openResult.session_id);
+    await this.options.persistWorkspace();
+  }
+
   private summarizeErrorMessage(error: unknown, fallback: string): string {
     const message = error instanceof Error ? error.message : String(error ?? "");
     return message
@@ -83,11 +100,7 @@ export class GraphActions {
       }
       const selected = await showWorkflowsDialog(result.files);
       if (!selected) return;
-      const openResult = await fileIO.open("workflow_set/" + selected);
-      const name = tabNameFrom("workflow_set/" + selected);
-      await this.options.tabs.openTab(openResult.session_id, name, false, true);
-      await this.options.canvas.loadExternalSession(openResult.session_id);
-      await this.options.persistWorkspace();
+      await this.openWorkflowSetTab("workflow_set/" + selected);
     } catch (e) {
       showErrorDialog(`打开 workflow 失败: ${(e as Error).message}`);
     }
@@ -98,11 +111,7 @@ export class GraphActions {
       const result = await workflowsApi.listDetailed();
       const selected = await showWorkflowBrowserDialog(result.workflows);
       if (!selected) return;
-      const openResult = await fileIO.open("workflow_set/" + selected);
-      const name = tabNameFrom("workflow_set/" + selected);
-      await this.options.tabs.openTab(openResult.session_id, name, false, true);
-      await this.options.canvas.loadExternalSession(openResult.session_id);
-      await this.options.persistWorkspace();
+      await this.openWorkflowSetTab("workflow_set/" + selected);
     } catch (e) {
       showErrorDialog(`打开 workflow 失败: ${(e as Error).message}`);
     }

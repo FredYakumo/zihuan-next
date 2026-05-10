@@ -41,6 +41,7 @@ export class WorkspaceController {
             try {
               const openResult = await fileIO.open(tab.workflowPath);
               await this.options.tabs.openTab(openResult.session_id, tab.name, false, true);
+              this.options.tabs.updateTab(openResult.session_id, { workflowPath: tab.workflowPath });
               await this.options.canvas.loadExternalSession(openResult.session_id);
 
               if (i === state.activeTabIndex && tab.canvasOffset && tab.canvasScale) {

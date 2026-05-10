@@ -13,9 +13,7 @@ use crate::ws_action::{
 use log::{info, warn};
 use std::sync::Arc;
 use tokio::task::block_in_place;
-use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_graph_engine::data_value::{MySqlConfig, RedisConfig};
-use zihuan_graph_engine::database::weaviate::WeaviateRef;
 use zihuan_graph_engine::message_persistence::persist_message_event;
 
 const LOG_PREFIX: &str = "[message_helpers]";
@@ -24,8 +22,6 @@ const LOG_PREFIX: &str = "[message_helpers]";
 pub struct OutboundMessagePersistence {
     pub mysql_ref: Option<Arc<MySqlConfig>>,
     pub redis_ref: Option<Arc<RedisConfig>>,
-    pub weaviate_ref: Option<Arc<WeaviateRef>>,
-    pub embedding_model: Option<Arc<dyn EmbeddingBase>>,
     pub group_name: Option<String>,
     pub sender_name: Option<String>,
 }
@@ -141,20 +137,6 @@ fn persist_outbound_messages(
             message_id,
             error
         );
-    }
-
-    if let (Some(weaviate_ref), Some(embedding_model)) = (
-        persistence.weaviate_ref.as_ref(),
-        persistence.embedding_model.as_ref(),
-    ) {
-        if let Err(error) = weaviate_ref.upsert_message_event(&event, embedding_model.as_ref()) {
-            warn!(
-                "{LOG_PREFIX} Failed to persist outbound {} message {} into Weaviate: {}",
-                message_type.as_str(),
-                message_id,
-                error
-            );
-        }
     }
 }
 

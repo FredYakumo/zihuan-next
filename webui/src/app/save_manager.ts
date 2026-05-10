@@ -36,6 +36,7 @@ export class SaveManager {
           name: displayName,
           dirty: false,
           isWorkflowSet: true,
+          workflowPath: result.path,
         });
         await this.options.persistWorkspace();
       } catch (e) {
@@ -82,6 +83,7 @@ export class SaveManager {
         name: displayName,
         isWorkflowSet: true,
         dirty: false,
+        workflowPath: result.path,
       });
     } catch (e) {
       showErrorDialog(`保存失败: ${(e as Error).message}`);
@@ -104,6 +106,7 @@ export class SaveManager {
         name: displayName,
         isWorkflowSet: true,
         dirty: false,
+        workflowPath: result.path,
       });
       await this.options.persistWorkspace();
     } catch (e) {
@@ -132,6 +135,7 @@ export class SaveManager {
             name: displayName,
             dirty: false,
             isWorkflowSet: true,
+            workflowPath: result.path,
           });
         } else {
           await graphs.saveFile(tab.id);

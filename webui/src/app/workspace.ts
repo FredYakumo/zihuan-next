@@ -31,8 +31,9 @@ export async function saveWorkspaceState(options: {
 
   for (const tab of tabList) {
     if (tab.isWorkflowSet) {
+      if (!tab.workflowPath) continue;
       tabsToSave.push({
-        workflowPath: `workflow_set/${tab.name}.json`,
+        workflowPath: tab.workflowPath,
         name: tab.name,
         isWorkflowSet: true,
         canvasOffset: tab.id === activeTabId ? viewport?.offset : undefined,
