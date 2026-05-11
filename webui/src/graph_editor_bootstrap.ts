@@ -62,20 +62,14 @@ export async function bootstrapGraphEditor() {
   const saveManager = new SaveManager({
     canvas,
     tabs,
-    persistWorkspace: () => workspace.persistWorkspaceState(),
   });
   const graphActions = new GraphActions({
     canvas,
     tabs,
     getNodeTypes: () => nodeTypes,
     getCurrentTaskId: () => currentTaskId,
-    persistWorkspace: () => workspace.persistWorkspaceState(),
   });
   const workspace = new WorkspaceController({
-    canvas,
-    tabs,
-    isSessionRunning: (sessionId) => taskStore.getRunningTaskForSession(sessionId) !== null,
-    updateRunButton: (isRunning) => updateRunButton(isRunning),
     createNewTab,
   });
 
@@ -84,7 +78,6 @@ export async function bootstrapGraphEditor() {
     tabs.setActiveTabId(id);
     await canvas.loadExternalSession(id);
     updateRunButton(taskStore.getRunningTaskForSession(id) !== null);
-    await workspace.persistWorkspaceState();
   }
 
   async function closeTab(id: string): Promise<void> {
@@ -112,11 +105,8 @@ export async function bootstrapGraphEditor() {
       }
       canvas.clearCanvas();
       updateRunButton(false);
-      await workspace.persistWorkspaceState();
       return;
     }
-
-    await workspace.persistWorkspaceState();
   }
 
   async function createNewTab(): Promise<void> {
@@ -124,7 +114,6 @@ export async function bootstrapGraphEditor() {
     await tabs.openTab(tab.id, "未命名", false);
     await canvas.loadExternalSession(tab.id);
     updateRunButton(taskStore.getRunningTaskForSession(tab.id) !== null);
-    await workspace.persistWorkspaceState();
   }
 
   async function openWorkflowFromRoute(): Promise<void> {
@@ -146,7 +135,6 @@ export async function bootstrapGraphEditor() {
       tabs.setActiveTabId(existing.id);
       await canvas.loadExternalSession(existing.id);
       updateRunButton(taskStore.getRunningTaskForSession(existing.id) !== null);
-      await workspace.persistWorkspaceState();
       return;
     }
 
@@ -155,7 +143,6 @@ export async function bootstrapGraphEditor() {
     tabs.updateTab(loaded.session_id, { workflowPath });
     await canvas.loadExternalSession(loaded.session_id);
     updateRunButton(taskStore.getRunningTaskForSession(loaded.session_id) !== null);
-    await workspace.persistWorkspaceState();
   }
 
   backArrow.querySelector("button")!.addEventListener("click", () => {

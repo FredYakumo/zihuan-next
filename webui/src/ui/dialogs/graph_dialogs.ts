@@ -186,7 +186,7 @@ export async function openGraphMetadataDialog(
 
 export async function openGraphIODialog(
   sessionId: string,
-  onSaved: () => void,
+  onSaved: () => void | Promise<void>,
 ): Promise<void> {
   ensureDialogStyles();
   const { dialog, close } = openOverlay();
@@ -237,7 +237,7 @@ export async function openGraphIODialog(
         graph_inputs: readInputs(),
         graph_outputs: readOutputs(),
       });
-      onSaved();
+      await onSaved();
       close();
     } catch (e) {
       showErrorDialog("保存节点图输入/输出失败: " + (e as Error).message);
