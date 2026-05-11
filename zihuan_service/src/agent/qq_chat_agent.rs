@@ -488,6 +488,21 @@ fn parse_tag_value(value: &str) -> Option<String> {
     Some(trimmed.to_string())
 }
 
+/// Purpose: Bootstrap and launch a long-running QQ chat agent instance.
+///
+/// Resolves all runtime dependencies (`llm`, `embedding_model`, `tavily`, `s3_ref`,
+/// `mysql_ref`, `weaviate_image_ref`), wires the IMS bot adapter event handler
+/// through a `WorkerPool`, then spawns a background task that runs the
+/// `BotAdapter::start` loop until exit.
+///
+/// Called when the service layer starts an agent whose type is QQ chat —
+/// typically from `AgentManager::start_agent` after validating the agent config.
+///
+/// Call chain:
+///   `AgentManager::start_agent` → `QqChatAgent::spawn`
+///     → build deps → register `EventHandler` on bot adapter
+///     → `tokio::spawn`(`BotAdapter::start`) → `handle_event` per incoming message
+///     → `on_finish` callback on exit
 pub async fn spawn(
     manager: &AgentManager,
     agent: AgentConfig,
@@ -512,7 +527,7 @@ pub async fn spawn(
         &llm_refs,
         &agent.name,
     )?;
-    let llm = build_llm_model(&llm_config);
+    let llm = build_llm_model(&llm_config)?;
     let intent_llm_config = resolve_llm_service_config(
         config
             .intent_llm_ref_id
@@ -522,7 +537,7 @@ pub async fn spawn(
         &llm_refs,
         &agent.name,
     )?;
-    let intent_llm = build_llm_model(&intent_llm_config);
+    let intent_llm = build_llm_model(&intent_llm_config)?;
     let math_programming_llm_config = resolve_llm_service_config(
         config
             .math_programming_llm_ref_id
@@ -532,7 +547,7 @@ pub async fn spawn(
         &llm_refs,
         &agent.name,
     )?;
-    let math_programming_llm = build_llm_model(&math_programming_llm_config);
+    let math_programming_llm = build_llm_model(&math_programming_llm_config)?;
     let embedding_model = if let Some(model_ref_id) = config.embedding_model_ref_id.as_deref() {
         let model_name =
             resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, &agent.name)?;

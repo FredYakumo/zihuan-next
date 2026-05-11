@@ -19,12 +19,11 @@ use zihuan_llm::agent::brain::{
 };
 use zihuan_llm::agent::qq_chat_agent::build_info_brain_tools;
 use zihuan_llm::brain_tool::BrainToolDefinition;
-use zihuan_llm::llm_api::LLMAPI;
-use zihuan_llm::system_config::{AgentConfig, AgentType, LlmRefConfig, LlmServiceConfig};
+use zihuan_llm::system_config::{AgentConfig, AgentType, LlmRefConfig};
 use zihuan_llm::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 
 use super::qq_chat_agent::build_enabled_tool_definitions;
-use crate::resource_resolver::{build_embedding_model, resolve_local_embedding_model_name};
+use crate::resource_resolver::{build_embedding_model, build_llm_model, resolve_llm_service_config, resolve_local_embedding_model_name};
 use zihuan_llm::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 
 #[derive(Clone)]
@@ -90,9 +89,13 @@ impl LoadedInferenceAgent {
             )));
         }
 
-        let llm_config = resolve_agent_llm_config(agent, llm_refs)?;
+        let llm_ref_id = match &agent.agent_type {
+            AgentType::HttpStream(config) => config.llm_ref_id.as_deref(),
+            AgentType::QqChat(config) => config.llm_ref_id.as_deref(),
+        };
+        let llm_config = resolve_llm_service_config(llm_ref_id, llm_refs, &agent.name)?;
         let model_name = llm_config.model_name.clone();
-        let llm = build_chat_llm_model(&llm_config);
+        let llm = build_llm_model(&llm_config)?;
         let tool_definitions = build_enabled_tool_definitions(&agent.tools)?;
         let qq_resources = load_qq_resources(agent, connections);
 
@@ -247,7 +250,11 @@ pub fn infer_agent_response_with_trace(
 }
 
 pub fn resolve_agent_model_name(agent: &AgentConfig, llm_refs: &[LlmRefConfig]) -> Result<String> {
-    Ok(resolve_agent_llm_config(agent, llm_refs)?.model_name)
+    let llm_ref_id = match &agent.agent_type {
+        AgentType::HttpStream(config) => config.llm_ref_id.as_deref(),
+        AgentType::QqChat(config) => config.llm_ref_id.as_deref(),
+    };
+    Ok(resolve_llm_service_config(llm_ref_id, llm_refs, &agent.name)?.model_name)
 }
 
 fn load_qq_resources(
@@ -341,61 +348,6 @@ fn load_qq_resources(
         weaviate_image_ref,
         embedding_model,
     })
-}
-
-fn resolve_agent_llm_config(
-    agent: &AgentConfig,
-    llm_refs: &[LlmRefConfig],
-) -> Result<LlmServiceConfig> {
-    let (llm_ref_id, legacy_llm) = match &agent.agent_type {
-        AgentType::HttpStream(config) => (config.llm_ref_id.as_deref(), config.llm.as_ref()),
-        AgentType::QqChat(config) => (config.llm_ref_id.as_deref(), config.llm.as_ref()),
-    };
-
-    if let Some(ref_id) = llm_ref_id.filter(|value| !value.trim().is_empty()) {
-        let llm_ref = llm_refs
-            .iter()
-            .find(|item| item.id == ref_id)
-            .ok_or_else(|| {
-                Error::ValidationError(format!(
-                    "agent '{}' references missing llm_ref '{}'",
-                    agent.name, ref_id
-                ))
-            })?;
-        if !llm_ref.enabled {
-            return Err(Error::ValidationError(format!(
-                "agent '{}' references disabled llm_ref '{}'",
-                agent.name, llm_ref.name
-            )));
-        }
-        return llm_ref.chat_llm().cloned().ok_or_else(|| {
-            Error::ValidationError(format!(
-                "agent '{}' references non-chat model_ref '{}'",
-                agent.name, llm_ref.name
-            ))
-        });
-    }
-
-    legacy_llm.cloned().ok_or_else(|| {
-        Error::ValidationError(format!(
-            "agent '{}' is missing llm config: set llm_ref_id or legacy llm",
-            agent.name
-        ))
-    })
-}
-
-fn build_chat_llm_model(config: &LlmServiceConfig) -> Arc<dyn LLMBase> {
-    Arc::new(
-        LLMAPI::new(
-            config.model_name.clone(),
-            config.api_endpoint.clone(),
-            config.api_key.clone(),
-            config.stream,
-            config.supports_multimodal_input,
-            std::time::Duration::from_secs(config.timeout_secs),
-        )
-        .with_retry_count(config.retry_count),
-    )
 }
 
 fn run_agent_brain(
