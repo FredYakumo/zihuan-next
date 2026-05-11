@@ -7,7 +7,6 @@ import { tabNameFrom } from "./workspace";
 export interface SaveManagerOptions {
   canvas: ZihuanCanvas;
   tabs: TabManager;
-  persistWorkspace: () => Promise<void>;
 }
 
 export class SaveManager {
@@ -30,14 +29,7 @@ export class SaveManager {
 
     if (currentTab?.isWorkflowSet) {
       try {
-        const result = await workflowsApi.save(sid, currentTab.name);
-        const displayName = tabNameFrom(result.path, currentTab.name);
-        this.options.tabs.updateTab(sid, {
-          name: displayName,
-          dirty: false,
-          isWorkflowSet: true,
-        });
-        await this.options.persistWorkspace();
+        await this.saveWorkflowSetInPlace(sid, currentTab);
       } catch (e) {
         showErrorDialog(`保存失败: ${(e as Error).message}`);
       }
@@ -82,6 +74,7 @@ export class SaveManager {
         name: displayName,
         isWorkflowSet: true,
         dirty: false,
+        workflowPath: result.path,
       });
     } catch (e) {
       showErrorDialog(`保存失败: ${(e as Error).message}`);
@@ -104,8 +97,8 @@ export class SaveManager {
         name: displayName,
         isWorkflowSet: true,
         dirty: false,
+        workflowPath: result.path,
       });
-      await this.options.persistWorkspace();
     } catch (e) {
       showErrorDialog(`保存失败: ${(e as Error).message}`);
     }
@@ -126,13 +119,7 @@ export class SaveManager {
           await this.writeViaFileHandle(tab.id, tab.fileHandle);
           this.options.tabs.setTabDirty(tab.id, false);
         } else if (tab.isWorkflowSet) {
-          const result = await workflowsApi.save(tab.id, tab.name);
-          const displayName = tabNameFrom(result.path, tab.name);
-          this.options.tabs.updateTab(tab.id, {
-            name: displayName,
-            dirty: false,
-            isWorkflowSet: true,
-          });
+          await this.saveWorkflowSetInPlace(tab.id, tab);
         } else {
           await graphs.saveFile(tab.id);
           this.options.tabs.setTabDirty(tab.id, false);
@@ -163,6 +150,20 @@ export class SaveManager {
       return null;
     }
     return sid;
+  }
+
+  private async saveWorkflowSetInPlace(
+    sid: string,
+    tab: { name: string; workflowPath?: string },
+  ): Promise<void> {
+    const result = await graphs.saveFile(sid, tab.workflowPath);
+    const displayName = tabNameFrom(result.path, tab.name);
+    this.options.tabs.updateTab(sid, {
+      name: displayName,
+      dirty: false,
+      isWorkflowSet: true,
+      workflowPath: result.path,
+    });
   }
 
   private async writeViaFileHandle(sid: string, handle: FileSystemFileHandle): Promise<void> {

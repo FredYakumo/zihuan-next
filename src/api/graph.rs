@@ -6,7 +6,8 @@ use serde::Deserialize;
 use uuid::Uuid;
 use zihuan_graph_engine::function_graph::embedded_function_config_from_value;
 use zihuan_graph_engine::graph_boundary::{
-    sync_root_graph_io, GRAPH_INPUTS_NODE_ID, GRAPH_OUTPUTS_NODE_ID,
+    sync_root_graph_io, sync_root_graph_io_signature, GRAPH_INPUTS_NODE_ID,
+    GRAPH_OUTPUTS_NODE_ID,
 };
 use zihuan_graph_engine::graph_io::{
     refresh_node_dynamic_ports, GraphMetadata, GraphPosition, GraphSize, NodeDefinition,
@@ -14,8 +15,6 @@ use zihuan_graph_engine::graph_io::{
 };
 
 use super::state::{AppState, GraphSession, GraphTabInfo};
-
-// ─── List open graphs ─────────────────────────────────────────────────────────
 
 #[handler]
 pub async fn list_graphs(_req: &mut Request, res: &mut Response, depot: &mut Depot) {
@@ -35,7 +34,6 @@ pub async fn list_graphs(_req: &mut Request, res: &mut Response, depot: &mut Dep
     res.render(Json(tabs));
 }
 
-// ─── Create new empty graph ───────────────────────────────────────────────────
 
 #[handler]
 pub async fn create_graph(_req: &mut Request, res: &mut Response, depot: &mut Depot) {
@@ -57,8 +55,6 @@ pub async fn create_graph(_req: &mut Request, res: &mut Response, depot: &mut De
     res.render(Json(tab));
 }
 
-// ─── Get full graph ───────────────────────────────────────────────────────────
-
 #[handler]
 pub async fn get_graph(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
@@ -72,8 +68,6 @@ pub async fn get_graph(req: &mut Request, res: &mut Response, depot: &mut Depot)
         }
     }
 }
-
-// ─── Replace full graph ───────────────────────────────────────────────────────
 
 #[handler]
 pub async fn put_graph(req: &mut Request, res: &mut Response, depot: &mut Depot) {
@@ -100,7 +94,9 @@ pub async fn put_graph(req: &mut Request, res: &mut Response, depot: &mut Depot)
                         || node.node_type == "graph_outputs"
                 });
             if is_root_graph {
-                sync_root_graph_io(&mut body);
+                let graph_inputs = body.graph_inputs.clone();
+                let graph_outputs = body.graph_outputs.clone();
+                sync_root_graph_io_signature(&mut body, &graph_inputs, &graph_outputs);
             }
             s.graph = body;
             s.dirty = true;
@@ -112,8 +108,6 @@ pub async fn put_graph(req: &mut Request, res: &mut Response, depot: &mut Depot)
         }
     }
 }
-
-// ─── Delete (close) graph ─────────────────────────────────────────────────────
 
 #[handler]
 pub async fn delete_graph(req: &mut Request, res: &mut Response, depot: &mut Depot) {
@@ -127,8 +121,6 @@ pub async fn delete_graph(req: &mut Request, res: &mut Response, depot: &mut Dep
         res.render(Json(serde_json::json!({"error": "Graph not found"})));
     }
 }
-
-// ─── Add node ─────────────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
 pub struct AddNodeRequest {
@@ -202,8 +194,6 @@ pub async fn add_node(req: &mut Request, res: &mut Response, depot: &mut Depot) 
         }
     }
 }
-
-// ─── Update node ──────────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
 pub struct UpdateNodeRequest {
@@ -351,8 +341,6 @@ pub async fn update_node(req: &mut Request, res: &mut Response, depot: &mut Depo
     res.render(Json(serde_json::json!({"ok": true})));
 }
 
-// ─── Delete node ──────────────────────────────────────────────────────────────
-
 #[handler]
 pub async fn delete_node(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
@@ -398,8 +386,6 @@ pub async fn delete_node(req: &mut Request, res: &mut Response, depot: &mut Depo
         res.render(Json(serde_json::json!({"error": "Node not found"})));
     }
 }
-
-// ─── Add edge ─────────────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
 pub struct AddEdgeRequest {
@@ -451,8 +437,6 @@ pub async fn add_edge(req: &mut Request, res: &mut Response, depot: &mut Depot) 
     res.render(Json(serde_json::json!({"ok": true})));
 }
 
-// ─── Delete edge ──────────────────────────────────────────────────────────────
-
 #[derive(Deserialize)]
 pub struct DeleteEdgeRequest {
     pub source_node: String,
@@ -501,7 +485,6 @@ pub async fn delete_edge(req: &mut Request, res: &mut Response, depot: &mut Depo
     }
 }
 
-// ─── Validate graph ───────────────────────────────────────────────────────────
 
 #[handler]
 pub async fn validate_graph(req: &mut Request, res: &mut Response, depot: &mut Depot) {
@@ -533,7 +516,6 @@ pub async fn validate_graph(req: &mut Request, res: &mut Response, depot: &mut D
     })));
 }
 
-// ─── Get / update graph metadata ─────────────────────────────────────────────
 
 #[handler]
 pub async fn get_metadata(req: &mut Request, res: &mut Response, depot: &mut Depot) {
@@ -586,7 +568,6 @@ pub async fn update_metadata(req: &mut Request, res: &mut Response, depot: &mut 
     }
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 fn session_display_name(s: &GraphSession) -> String {
     if let Some(path) = &s.file_path {

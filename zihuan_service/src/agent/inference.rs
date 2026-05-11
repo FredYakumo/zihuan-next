@@ -33,7 +33,6 @@ struct QqLoadedInferenceResources {
     default_tools_enabled: HashMap<String, bool>,
     tavily_ref: Option<Arc<TavilyRef>>,
     mysql_ref: Option<Arc<MySqlConfig>>,
-    weaviate_ref: Option<Arc<WeaviateRef>>,
     weaviate_image_ref: Option<Arc<WeaviateRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
 }
@@ -162,7 +161,6 @@ impl LoadedInferenceAgent {
                 &resources.default_tools_enabled,
                 resources.tavily_ref.clone(),
                 resources.mysql_ref.clone(),
-                resources.weaviate_ref.clone(),
                 resources.weaviate_image_ref.clone(),
                 resources.embedding_model.clone(),
                 last_user_text,
@@ -211,7 +209,6 @@ impl LoadedInferenceAgent {
                 &resources.default_tools_enabled,
                 resources.tavily_ref.clone(),
                 resources.mysql_ref.clone(),
-                resources.weaviate_ref.clone(),
                 resources.weaviate_image_ref.clone(),
                 resources.embedding_model.clone(),
                 last_user_text,
@@ -293,28 +290,6 @@ fn load_qq_resources(
         None
     });
 
-    let weaviate_ref = tokio::task::block_in_place(|| {
-        build_weaviate_ref(
-            if config
-                .weaviate_connection_id
-                .as_deref()
-                .map(str::trim)
-                .unwrap_or("")
-                .is_empty()
-            {
-                None
-            } else {
-                config.weaviate_connection_id.as_deref()
-            },
-            connections,
-            false,
-        )
-    })
-    .unwrap_or_else(|e| {
-        warn!("[inference] weaviate connection unavailable: {e}");
-        None
-    });
-
     let weaviate_image_ref = tokio::task::block_in_place(|| {
         build_weaviate_ref(
             if config
@@ -363,7 +338,6 @@ fn load_qq_resources(
         default_tools_enabled: config.default_tools_enabled.clone(),
         tavily_ref,
         mysql_ref,
-        weaviate_ref,
         weaviate_image_ref,
         embedding_model,
     })

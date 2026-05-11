@@ -83,7 +83,6 @@ export interface AgentFormState {
   embedding_model_ref_id: string;
   tavily_connection_id: string;
   mysql_connection_id: string;
-  weaviate_connection_id: string;
   weaviate_image_connection_id: string;
   max_message_length: number;
   compact_context_length: number;
@@ -107,9 +106,8 @@ export const QQ_CHAT_DEFAULT_TOOLS: QqChatDefaultTool[] = [
   { id: "web_search", label: "web_search", description: "联网搜索（Tavily）" },
   { id: "get_agent_public_info", label: "get_agent_public_info", description: "返回智能体公开信息" },
   { id: "get_function_list", label: "get_function_list", description: "获取功能列表" },
-  { id: "get_recent_group_messages", label: "get_recent_group_messages", description: "查询群近期消息" },
+  { id: "get_recent_group_messages", label: "get_recent_group_messages", description: "只看群里最近几条消息，不适合按时段分析" },
   { id: "get_recent_user_messages", label: "get_recent_user_messages", description: "查询用户近期消息" },
-  { id: "search_similar_messages", label: "search_similar_messages", description: "语义检索相似文本消息" },
   { id: "search_similar_images", label: "search_similar_images", description: "语义检索相似图片" },
 ];
 
@@ -205,7 +203,6 @@ export function defaultAgentForm(): AgentFormState {
     embedding_model_ref_id: "",
     tavily_connection_id: "",
     mysql_connection_id: "",
-    weaviate_connection_id: "",
     weaviate_image_connection_id: "",
     max_message_length: 500,
     compact_context_length: 0,
@@ -429,7 +426,6 @@ export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): Agen
     form.embedding_model_ref_id = String(agentType.embedding_model_ref_id ?? "");
     form.tavily_connection_id = String(agentType.tavily_connection_id ?? "");
     form.mysql_connection_id = String(agentType.mysql_connection_id ?? "");
-    form.weaviate_connection_id = String(agentType.weaviate_connection_id ?? "");
     form.weaviate_image_connection_id = String(agentType.weaviate_image_connection_id ?? "");
     form.max_message_length = Number(agentType.max_message_length ?? 500);
     form.compact_context_length = Number(agentType.compact_context_length ?? 0);
@@ -522,7 +518,6 @@ export function buildAgentPayload(form: AgentFormState): {
         tavily_connection_id: form.tavily_connection_id,
         embedding: null,
         mysql_connection_id: form.mysql_connection_id || null,
-        weaviate_connection_id: form.weaviate_connection_id || null,
         weaviate_image_connection_id: form.weaviate_image_connection_id || null,
         max_message_length: form.max_message_length,
         compact_context_length: form.compact_context_length,

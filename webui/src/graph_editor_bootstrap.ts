@@ -24,16 +24,14 @@ import { SaveManager } from "./app/save_manager";
 import { GraphActions } from "./app/graph_actions";
 import { WorkspaceController } from "./app/workspace_controller";
 import { openTaskManagerDialog } from "./ui/dialogs/index";
-import { mountLiveLogConsole } from "./ui/live_log_console";
 
-export async function bootstrapLegacyEditor() {
+export async function bootstrapGraphEditor() {
   initTheme();
   await loadThemes();
   injectStyles();
   const { toolbar, canvasContainer, canvasEl, backArrow } = buildDOM();
 
   ws.connect();
-  mountLiveLogConsole();
   installPreviewWsHandler(ws);
 
   let nodeTypes: NodeTypeInfo[] = [];
@@ -64,20 +62,14 @@ export async function bootstrapLegacyEditor() {
   const saveManager = new SaveManager({
     canvas,
     tabs,
-    persistWorkspace: () => workspace.persistWorkspaceState(),
   });
   const graphActions = new GraphActions({
     canvas,
     tabs,
     getNodeTypes: () => nodeTypes,
     getCurrentTaskId: () => currentTaskId,
-    persistWorkspace: () => workspace.persistWorkspaceState(),
   });
   const workspace = new WorkspaceController({
-    canvas,
-    tabs,
-    isSessionRunning: (sessionId) => taskStore.getRunningTaskForSession(sessionId) !== null,
-    updateRunButton: (isRunning) => updateRunButton(isRunning),
     createNewTab,
   });
 
@@ -86,10 +78,17 @@ export async function bootstrapLegacyEditor() {
     tabs.setActiveTabId(id);
     await canvas.loadExternalSession(id);
     updateRunButton(taskStore.getRunningTaskForSession(id) !== null);
-    await workspace.persistWorkspaceState();
   }
 
   async function closeTab(id: string): Promise<void> {
+    const tab = tabs.findTab(id);
+    if (!tab) return;
+    if (tab.dirty) {
+      const displayName = tab.name + (tab.isWorkflowSet ? " [工作流集]" : "");
+      const confirmed = window.confirm(`“${displayName}”有未保存更改，确认关闭并放弃更改吗？`);
+      if (!confirmed) return;
+    }
+
     const activeBeforeClose = tabs.getActiveTabId();
     const { removed, index } = tabs.removeTab(id);
     if (!removed) return;
@@ -106,11 +105,8 @@ export async function bootstrapLegacyEditor() {
       }
       canvas.clearCanvas();
       updateRunButton(false);
-      await workspace.persistWorkspaceState();
       return;
     }
-
-    await workspace.persistWorkspaceState();
   }
 
   async function createNewTab(): Promise<void> {
@@ -118,7 +114,6 @@ export async function bootstrapLegacyEditor() {
     await tabs.openTab(tab.id, "未命名", false);
     await canvas.loadExternalSession(tab.id);
     updateRunButton(taskStore.getRunningTaskForSession(tab.id) !== null);
-    await workspace.persistWorkspaceState();
   }
 
   async function openWorkflowFromRoute(): Promise<void> {
@@ -134,11 +129,20 @@ export async function bootstrapLegacyEditor() {
       throw new Error(`未找到工作流 ${workflowName}`);
     }
 
-    const loaded = await fileIO.open(`workflow_set/${target.file}`);
+    const workflowPath = `workflow_set/${target.file}`;
+    const existing = tabs.findWorkflowTabByPath(workflowPath);
+    if (existing) {
+      tabs.setActiveTabId(existing.id);
+      await canvas.loadExternalSession(existing.id);
+      updateRunButton(taskStore.getRunningTaskForSession(existing.id) !== null);
+      return;
+    }
+
+    const loaded = await fileIO.open(workflowPath);
     await tabs.openTab(loaded.session_id, target.display_name ?? workflowName, false, true);
+    tabs.updateTab(loaded.session_id, { workflowPath });
     await canvas.loadExternalSession(loaded.session_id);
     updateRunButton(taskStore.getRunningTaskForSession(loaded.session_id) !== null);
-    await workspace.persistWorkspaceState();
   }
 
   backArrow.querySelector("button")!.addEventListener("click", () => {

@@ -155,8 +155,8 @@ pub fn describe_message_segments(messages: &[Message]) -> String {
 fn forward_nodes_to_send_json(
     adapter_ref: &SharedBotAdapter,
     nodes: &[ForwardNodeMessage],
-) -> serde_json::Value {
-    serde_json::Value::Array(
+) -> Result<serde_json::Value> {
+    Ok(serde_json::Value::Array(
         nodes
             .iter()
             .map(|node| {
@@ -188,17 +188,17 @@ fn forward_nodes_to_send_json(
                 if !node.content.is_empty() {
                     data.insert(
                         "content".to_string(),
-                        qq_message_list_to_send_json(adapter_ref, &node.content),
+                        qq_message_list_to_send_json(adapter_ref, &node.content)?,
                     );
                 }
 
-                serde_json::json!({
+                Ok(serde_json::json!({
                     "type": "node",
                     "data": data,
-                })
+                }))
             })
-            .collect(),
-    )
+            .collect::<Result<Vec<_>>>()?,
+    ))
 }
 
 fn forward_payload(
@@ -218,15 +218,16 @@ fn forward_payload(
     } else {
         "send_private_forward_msg"
     };
+    let messages = forward_nodes_to_send_json(adapter_ref, &forward.content)?;
     let params = if target_type == TARGET_TYPE_GROUP {
         serde_json::json!({
             "group_id": target_id,
-            "messages": forward_nodes_to_send_json(adapter_ref, &forward.content),
+            "messages": messages.clone(),
         })
     } else {
         serde_json::json!({
             "user_id": target_id,
-            "messages": forward_nodes_to_send_json(adapter_ref, &forward.content),
+            "messages": messages,
         })
     };
 
@@ -255,12 +256,12 @@ fn send_one_batch(
         let params = if target_type == TARGET_TYPE_GROUP {
             serde_json::json!({
                 "group_id": target_id,
-                "message": qq_message_list_to_send_json(adapter_ref, messages),
+                "message": qq_message_list_to_send_json(adapter_ref, messages)?,
             })
         } else {
             serde_json::json!({
                 "user_id": target_id,
-                "message": qq_message_list_to_send_json(adapter_ref, messages),
+                "message": qq_message_list_to_send_json(adapter_ref, messages)?,
             })
         };
 

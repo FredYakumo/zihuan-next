@@ -12,6 +12,7 @@ import type {
   HyperParameter,
   GraphVariable,
   GraphMetadata,
+  DataTypeMetaData,
 } from "./types";
 
 export type { GraphTabInfo, TaskEntry, TaskLogEntry } from "./types";
@@ -39,6 +40,7 @@ export async function request<T>(
 ): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method,
+    cache: "no-store",
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -258,7 +260,7 @@ export const workflows = {
   list(): Promise<{ files: string[] }> {
     return request("GET", "/workflow_set");
   },
-  listDetailed(): Promise<{ workflows: Array<{ name: string; file: string; cover_url: string | null; display_name: string | null; description: string | null; version: string | null }> }> {
+  listDetailed(): Promise<{ workflows: Array<WorkflowInfo> }> {
     return request("GET", "/workflow_set/detailed");
   },
   save(graphId: string, name: string): Promise<{ ok: boolean; path: string }> {
@@ -268,6 +270,22 @@ export const workflows = {
     return request("POST", "/file/open", { path: file });
   },
 };
+
+export interface WorkflowPortDef {
+  name: string;
+  data_type: DataTypeMetaData;
+}
+
+export interface WorkflowInfo {
+  name: string;
+  file: string;
+  cover_url: string | null;
+  display_name: string | null;
+  description: string | null;
+  version: string | null;
+  inputs: WorkflowPortDef[];
+  outputs: WorkflowPortDef[];
+}
 
 export interface ConnectionConfig {
   config_id: string;

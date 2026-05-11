@@ -90,6 +90,8 @@ pub struct WorkflowInfo {
     pub display_name: Option<String>,
     pub description: Option<String>,
     pub version: Option<String>,
+    pub inputs: Vec<zihuan_graph_engine::function_graph::FunctionPortDef>,
+    pub outputs: Vec<zihuan_graph_engine::function_graph::FunctionPortDef>,
 }
 
 /// Return detailed workflow listing: name, json filename, optional cover URL.
@@ -124,29 +126,20 @@ pub async fn list_workflows_detailed(_req: &mut Request, res: &mut Response, _de
                 }
             });
 
-            // Try to read metadata from the JSON file
-            let (display_name, description, version) = std::fs::read_to_string(&p)
-                .ok()
-                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-                .map(|v| {
-                    let dn = v
-                        .get("metadata")
-                        .and_then(|m| m.get("name"))
-                        .and_then(|n| n.as_str())
-                        .map(|s| s.to_string());
-                    let desc = v
-                        .get("metadata")
-                        .and_then(|m| m.get("description"))
-                        .and_then(|d| d.as_str())
-                        .map(|s| s.to_string());
-                    let ver = v
-                        .get("metadata")
-                        .and_then(|m| m.get("version"))
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-                    (dn, desc, ver)
-                })
-                .unwrap_or((None, None, None));
+            let (display_name, description, version, inputs, outputs) =
+                zihuan_graph_engine::load_graph_definition_from_json_with_migration(&p)
+                    .ok()
+                    .map(|loaded| {
+                        let graph = loaded.graph;
+                        (
+                            graph.metadata.name,
+                            graph.metadata.description,
+                            graph.metadata.version,
+                            graph.graph_inputs,
+                            graph.graph_outputs,
+                        )
+                    })
+                    .unwrap_or((None, None, None, Vec::new(), Vec::new()));
 
             Some(WorkflowInfo {
                 name: stem,
@@ -155,6 +148,8 @@ pub async fn list_workflows_detailed(_req: &mut Request, res: &mut Response, _de
                 display_name,
                 description,
                 version,
+                inputs,
+                outputs,
             })
         })
         .collect();

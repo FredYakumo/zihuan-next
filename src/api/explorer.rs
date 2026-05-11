@@ -125,45 +125,36 @@ pub async fn query_mysql(req: &mut Request, res: &mut Response, _depot: &mut Dep
         "SELECT message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json FROM message_record {where_sql} ORDER BY send_time DESC, id DESC LIMIT ? OFFSET ?"
     );
 
-    let handle = match mysql_ref.runtime_handle.as_ref() {
-        Some(h) => h.clone(),
-        None => return render_internal_error(res, "mysql runtime handle not available"),
-    };
-
-    let total: i64 = match tokio::task::block_in_place(|| {
-        handle.block_on(async {
-            let mut query = sqlx::query(&count_sql);
-            for val in &bind_values {
-                query = query.bind(val);
-            }
+    let total: i64 = match {
+        let mut query = sqlx::query(&count_sql);
+        for val in &bind_values {
+            query = query.bind(val);
+        }
+        async {
             let row = query.fetch_one(&pool).await?;
             let count: i64 = row.try_get("cnt")?;
             Ok::<i64, sqlx::Error>(count)
-        })
-    }) {
+        }
+        .await
+    } {
         Ok(t) => t,
         Err(e) => return render_internal_error(res, format!("mysql count query failed: {e}")),
     };
 
     let offset = (page - 1) * page_size;
-    let bv = bind_values.clone();
-    let records = match tokio::task::block_in_place(|| {
-        handle.block_on(async {
-            let mut query = sqlx::query(&data_sql);
-            for val in &bv {
-                query = query.bind(val);
-            }
-            query = query.bind(page_size).bind(offset);
+    let records = match {
+        let mut query = sqlx::query(&data_sql);
+        for val in &bind_values {
+            query = query.bind(val);
+        }
+        query = query.bind(page_size).bind(offset);
+        async {
             let rows = query.fetch_all(&pool).await?;
             let mut result = Vec::with_capacity(rows.len());
             for row in rows {
                 let send_time: chrono::NaiveDateTime = row.try_get("send_time")?;
                 let content_raw: String = row.try_get("content").unwrap_or_default();
-                let content_display = if content_raw.len() > 500 {
-                    format!("{}...", &content_raw[..500])
-                } else {
-                    content_raw
-                };
+                let content_display = truncate_preview(&content_raw, 500);
                 result.push(MessageRecordResponse {
                     message_id: row.try_get("message_id").unwrap_or_default(),
                     sender_id: row.try_get("sender_id").unwrap_or_default(),
@@ -177,8 +168,9 @@ pub async fn query_mysql(req: &mut Request, res: &mut Response, _depot: &mut Dep
                 });
             }
             Ok::<Vec<MessageRecordResponse>, sqlx::Error>(result)
-        })
-    }) {
+        }
+        .await
+    } {
         Ok(r) => r,
         Err(e) => return render_internal_error(res, format!("mysql query failed: {e}")),
     };
@@ -189,6 +181,16 @@ pub async fn query_mysql(req: &mut Request, res: &mut Response, _depot: &mut Dep
         page,
         page_size,
     }));
+}
+
+fn truncate_preview(value: &str, max_chars: usize) -> String {
+    let mut chars = value.chars();
+    let preview = chars.by_ref().take(max_chars).collect::<String>();
+    if chars.next().is_some() {
+        format!("{preview}...")
+    } else {
+        preview
+    }
 }
 
 // ── Redis ──────────────────────────────────────────────────────────────

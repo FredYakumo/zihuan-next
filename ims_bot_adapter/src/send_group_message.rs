@@ -54,15 +54,18 @@ impl Node for SendGroupMessageNode {
             _ => return Err("ims_bot_adapter input is required".into()),
         };
         let target_id = match inputs.get("target_id") {
-            Some(DataValue::String(s)) => s.clone(),
+            Some(DataValue::String(s)) => s.trim().to_string(),
             _ => return Err("target_id input is required".into()),
         };
+        if target_id.is_empty() {
+            return Err("target_id must not be empty for send_group_message".into());
+        }
         let messages = qq_messages_from_data_value(inputs.get("message"), "message")?;
         let segment_summary = describe_message_segments(&messages);
 
         let params = serde_json::json!({
             "group_id": target_id,
-            "message": qq_message_list_to_send_json(&adapter_ref, &messages),
+            "message": qq_message_list_to_send_json(&adapter_ref, &messages)?,
         });
         info!(
             "[SendGroupMessageNode] Sending group message to {} with {}",

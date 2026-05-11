@@ -3,6 +3,7 @@ export interface TabInfo {
   name: string;
   dirty: boolean;
   isWorkflowSet: boolean;
+  workflowPath?: string;
   fileHandle?: FileSystemFileHandle;
 }
 

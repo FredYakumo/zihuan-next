@@ -213,6 +213,10 @@ impl BotAdapter {
         &self.token
     }
 
+    pub fn get_object_storage(&self) -> Option<Arc<S3Ref>> {
+        self.object_storage.clone()
+    }
+
     pub fn get_brain_agent(&self) -> Option<&AgentBox> {
         self.brain_agent.as_ref()
     }
@@ -552,8 +556,18 @@ async fn hydrate_message_segments(
         match message {
             Message::Reply(reply) => match restore_message_snapshot(reply.id) {
                 Ok(Some(snapshot)) => {
-                    let image_count = snapshot
-                        .messages
+                    let mut restored_messages = snapshot.messages;
+                    hydrate_message_segments(
+                        adapter,
+                        image_cache_handle,
+                        reply.id,
+                        &mut restored_messages,
+                    )
+                    .await;
+                    enrich_message_images(image_cache_handle, reply.id, &mut restored_messages)
+                        .await;
+
+                    let image_count = restored_messages
                         .iter()
                         .filter(|message| matches!(message, Message::Image(_)))
                         .count();
@@ -561,10 +575,10 @@ async fn hydrate_message_segments(
                         "[adapter] hydrated reply source for message_id={} via {} (segments={}, images={})",
                         reply.id,
                         snapshot.source.as_str(),
-                        snapshot.messages.len(),
+                        restored_messages.len(),
                         image_count
                     );
-                    reply.message_source = Some(snapshot.messages);
+                    reply.message_source = Some(restored_messages);
                 }
                 Ok(None) => {
                     debug!(

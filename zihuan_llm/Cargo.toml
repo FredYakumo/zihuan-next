@@ -13,6 +13,7 @@ general_wheel_cpp = { path = "../general_wheel_cpp" }
 zihuan_core = { path = "../zihuan_core" }
 zihuan_graph_engine = { path = "../zihuan_graph_engine" }
 ims_bot_adapter = { path = "../ims_bot_adapter" }
+storage_handler = { path = "../storage_handler" }
 node_macros = { path = "../node_macros" }
 
 candle-core = "0.10.2"

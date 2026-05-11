@@ -1,7 +1,7 @@
 import { createApp } from "vue";
 import { createRouter, createWebHistory } from "vue-router";
 
-import { bootstrapLegacyEditor } from "./legacy_editor";
+import { bootstrapGraphEditor } from "./graph_editor_bootstrap";
 import AdminApp from "./admin/AdminApp.vue";
 import Dashboard from "./admin/view/Dashboard.vue";
 import Connections from "./admin/view/Connections.vue";
@@ -12,7 +12,7 @@ import Graphs from "./admin/view/Graphs.vue";
 import Tasks from "./admin/view/Tasks.vue";
 import DataExplorer from "./admin/view/DataExplorer.vue";
 import Settings from "./admin/view/Settings.vue";
-import "./admin/admin.css";
+import "./admin/admin.scss";
 import "./ui/theme.css";
 import { initTheme, loadThemes } from "./ui/theme";
 import { ws } from "./api/ws";
@@ -20,7 +20,7 @@ import { mountLiveLogConsole } from "./ui/live_log_console";
 
 async function main() {
   if (window.location.pathname.startsWith("/editor")) {
-    await bootstrapLegacyEditor();
+    await bootstrapGraphEditor();
     return;
   }
 

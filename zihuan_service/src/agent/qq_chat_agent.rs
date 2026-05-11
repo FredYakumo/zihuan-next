@@ -33,7 +33,9 @@ use zihuan_llm::agent::qq_chat_agent::{
     QqAgentReplyBatchBuilder, QqAgentReplyBuildRequest, QqAgentReplyBuildResult,
     QqChatAgentService, QqChatAgentServiceConfig,
 };
-use zihuan_llm::brain_tool::BrainToolDefinition;
+use zihuan_llm::brain_tool::{
+    fixed_tool_runtime_inputs, BrainToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE,
+};
 use zihuan_llm::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use zihuan_llm::system_config::{
     load_llm_refs, AgentConfig, AgentToolConfig, AgentToolType, LlmRefConfig, NodeGraphToolConfig,
@@ -43,6 +45,7 @@ use zihuan_llm::system_config::{
 const FORWARD_SPLIT_PREFERRED_SEPARATORS: [char; 14] = [
     '\n', '。', '！', '？', '；', '：', '.', '!', '?', ';', ':', '，', ',', ' ',
 ];
+const LEGACY_QQ_AGENT_TOOL_OWNER_TYPE: &str = "qq_message_agent";
 
 #[derive(Debug, Clone)]
 enum ReplySegment {
@@ -71,6 +74,13 @@ fn build_reply_batches_from_model_text(
         &resolved_text
     } else {
         &request.assistant_text
+    };
+    let sender_resolved_text;
+    let text = if request.is_group {
+        sender_resolved_text = text.replace("@sender", &format!("@{}", request.sender_id));
+        &sender_resolved_text
+    } else {
+        text
     };
     let segments = parse_reply_segments(text);
     if segments
@@ -541,13 +551,6 @@ pub async fn spawn(
         .ok_or_else(|| Error::ValidationError("missing tavily connection".to_string()))?;
     let object_storage = build_s3_ref(config.rustfs_connection_id.as_deref(), &connections).await?;
     let mysql_ref = build_mysql_ref(config.mysql_connection_id.as_deref(), &connections).await?;
-    let weaviate_ref = tokio::task::block_in_place(|| {
-        build_weaviate_ref(
-            config.weaviate_connection_id.as_deref(),
-            &connections,
-            false,
-        )
-    })?;
     let weaviate_image_ref = tokio::task::block_in_place(|| {
         build_weaviate_ref(
             config.weaviate_image_connection_id.as_deref(),
@@ -563,6 +566,7 @@ pub async fn spawn(
 
     let service = Arc::new(QqChatAgentService::new(QqChatAgentServiceConfig {
         agent_id: agent.id.clone(),
+        qq_chat_config: config.clone(),
         node_id: format!("service_agent_{}", agent.id),
         bot_name: if config.bot_name.trim().is_empty() {
             agent.name.clone()
@@ -603,7 +607,6 @@ pub async fn spawn(
             &math_programming_llm_config.model_name,
         ),
         mysql_ref,
-        weaviate_ref,
         weaviate_image_ref,
         embedding_model,
         tavily,
@@ -795,15 +798,7 @@ fn validate_tool_graph_contract(
     }
 
     for port in &graph.graph_inputs {
-        if !matches!(
-            port.data_type,
-            DataType::Integer | DataType::Float | DataType::String | DataType::Boolean
-        ) {
-            return Err(Error::ValidationError(format!(
-                "agent tool '{}' 的节点图输入 '{}' 类型必须是基础类型 int/float/string/boolean，实际为 {}",
-                tool.name, port.name, port.data_type
-            )));
-        }
+        validate_tool_graph_input_port(tool, port)?;
     }
 
     if !same_param_signature(parameters, &graph.graph_inputs) {
@@ -822,12 +817,57 @@ fn validate_tool_graph_contract(
     Ok(())
 }
 
+fn validate_tool_graph_input_port(tool: &AgentToolConfig, port: &FunctionPortDef) -> Result<()> {
+    if let Some(expected_type) = reserved_tool_graph_input_type(&port.name) {
+        if port.data_type != expected_type {
+            return Err(Error::ValidationError(format!(
+                "agent tool '{}' 的保留输入 '{}' 类型不匹配：期望 {}，实际为 {}",
+                tool.name, port.name, expected_type, port.data_type
+            )));
+        }
+        return Ok(());
+    }
+
+    if matches!(
+        port.data_type,
+        DataType::Integer | DataType::Float | DataType::String | DataType::Boolean
+    ) {
+        return Ok(());
+    }
+
+    Err(Error::ValidationError(format!(
+        "agent tool '{}' 的节点图输入 '{}' 类型必须是基础类型 int/float/string/boolean，或受支持的保留运行时输入；实际为 {}",
+        tool.name, port.name, port.data_type
+    )))
+}
+
+fn reserved_tool_graph_input_type(name: &str) -> Option<DataType> {
+    let trimmed = name.trim();
+    for owner_type in [
+        "brain",
+        QQ_AGENT_TOOL_OWNER_TYPE,
+        LEGACY_QQ_AGENT_TOOL_OWNER_TYPE,
+    ] {
+        for port in fixed_tool_runtime_inputs(owner_type) {
+            if port.name == trimmed {
+                return Some(port.data_type);
+            }
+        }
+    }
+    None
+}
+
 fn same_param_signature(
     parameters: &[zihuan_llm::brain_tool::ToolParamDef],
     inputs: &[FunctionPortDef],
 ) -> bool {
-    parameters.len() == inputs.len()
-        && parameters.iter().zip(inputs).all(|(param, input)| {
+    let exposed_inputs = inputs
+        .iter()
+        .filter(|input| reserved_tool_graph_input_type(&input.name).is_none())
+        .collect::<Vec<_>>();
+
+    parameters.len() == exposed_inputs.len()
+        && parameters.iter().zip(exposed_inputs).all(|(param, input)| {
             param.name.trim() == input.name.trim() && param.data_type == input.data_type
         })
 }

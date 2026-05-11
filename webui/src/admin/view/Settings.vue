@@ -249,7 +249,7 @@ function formatBytes(bytes: number): string {
 }
 </script>
 
-<style scoped>
+<style scoped lang="scss">
 .settings-section {
   padding: 24px;
   display: grid;

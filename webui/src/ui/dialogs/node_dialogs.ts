@@ -170,6 +170,63 @@ export function showAddNodeDialog(nodeTypes: NodeTypeInfo[]): Promise<string | n
         rightPane.appendChild(descEl);
       }
 
+      const makeConfigFields = () => {
+        if (nt.config_fields.length === 0) return;
+        const section = document.createElement("div");
+        section.className = "zh-an-detail-section";
+        section.textContent = "配置项";
+        rightPane.appendChild(section);
+
+        for (const field of nt.config_fields) {
+          const fieldDiv = document.createElement("div");
+          fieldDiv.className = "zh-an-detail-port";
+
+          const top = document.createElement("div");
+          top.className = "zh-an-detail-port-top";
+
+          const fieldName = document.createElement("span");
+          fieldName.className = "zh-an-detail-port-name";
+          fieldName.textContent = field.key;
+          top.appendChild(fieldName);
+
+          const typeBadge = document.createElement("span");
+          typeBadge.className = "zh-ni-type-badge";
+          typeBadge.textContent = field.data_type;
+          top.appendChild(typeBadge);
+
+          if (field.required) {
+            const req = document.createElement("span");
+            req.className = "zh-ni-required";
+            req.textContent = "必填";
+            top.appendChild(req);
+          }
+
+          fieldDiv.appendChild(top);
+
+          const widgetHint = document.createElement("div");
+          widgetHint.className = "zh-an-detail-port-desc";
+          widgetHint.textContent = field.widget === "connection_select"
+            ? "通过连接配置选择器填写"
+            : field.widget === "agent_llm_kind_select"
+              ? "通过 Agent LLM 类型选择器填写"
+            : field.widget === "llm_ref_select"
+              ? "通过 LLM 配置选择器填写"
+              : field.widget === "active_bot_adapter_select"
+                ? "通过已激活 Bot Adapter 选择器填写"
+                : `通过 ${field.widget} 填写`;
+          fieldDiv.appendChild(widgetHint);
+
+          if (field.description) {
+            const desc = document.createElement("div");
+            desc.className = "zh-an-detail-port-desc";
+            desc.textContent = field.description;
+            fieldDiv.appendChild(desc);
+          }
+
+          rightPane.appendChild(fieldDiv);
+        }
+      };
+
       const makePorts = (ports: NodeTypeInfo["input_ports"], sectionLabel: string) => {
         if (ports.length === 0) return;
         const section = document.createElement("div");
@@ -214,6 +271,7 @@ export function showAddNodeDialog(nodeTypes: NodeTypeInfo[]): Promise<string | n
         }
       };
 
+      makeConfigFields();
       makePorts(nt.input_ports, "输入端口");
       makePorts(nt.output_ports, "输出端口");
       updateActiveItem();

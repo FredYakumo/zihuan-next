@@ -1,7 +1,13 @@
 // Node widget setup — adds inline value widgets and special editor buttons to LiteGraph nodes
 
 import type { NodeDefinition } from "../api/types";
-import { fileIO, graphs, system, type ConnectionConfig } from "../api/client";
+import {
+  fileIO,
+  graphs,
+  system,
+  type ConnectionConfig,
+  type LlmConfig,
+} from "../api/client";
 import { getNodeTypeInfo, portTypeString } from "./registry";
 import {
   openFormatStringEditor,
@@ -22,6 +28,12 @@ type WidgetMutationCallback = (pending?: Promise<unknown>) => void;
 
 let cachedTextEmbeddingModels: string[] | null = null;
 const CONNECTION_PLACEHOLDER_VALUE = "__zihuan_no_connection__";
+const LLM_PLACEHOLDER_VALUE = "__zihuan_no_llm__";
+const AGENT_LLM_KIND_OPTIONS = [
+  { value: "main", label: "主模型" },
+  { value: "intent", label: "意图分类模型" },
+  { value: "math_programming", label: "数学编程模型" },
+] as const;
 
 /** Called for every node added to the canvas after the node is created. */
 export function setupNodeWidgets(
@@ -368,6 +380,30 @@ function setupConfigFieldWidgets(
       addedConfigWidget = true;
       continue;
     }
+    if (field.widget === "agent_llm_kind_select") {
+      setupAgentLlmKindSelectWidget(
+        lNode,
+        nodeDef,
+        field.key,
+        String(nodeDef.inline_values?.[field.key] ?? ""),
+        getSessionId,
+        onMutated,
+      );
+      addedConfigWidget = true;
+      continue;
+    }
+    if (field.widget === "llm_ref_select") {
+      setupLlmRefSelectWidget(
+        lNode,
+        nodeDef,
+        field.key,
+        String(nodeDef.inline_values?.[field.key] ?? ""),
+        getSessionId,
+        onMutated,
+      );
+      addedConfigWidget = true;
+      continue;
+    }
     if (field.widget !== "connection_select") continue;
     setupConnectionSelectWidget(
       lNode,
@@ -395,6 +431,90 @@ function setupConfigFieldWidgets(
       ];
     }
   }
+}
+
+function setupAgentLlmKindSelectWidget(
+  lNode: any,
+  nodeDef: NodeDefinition,
+  key: string,
+  initialValue: string,
+  getSessionId: () => string | null,
+  onMutated?: WidgetMutationCallback,
+): any {
+  const widget = lNode.addWidget("button", "请选择 LLM 类型...", "", () => {
+    void (async () => {
+      const sid = getSessionId();
+      if (!sid) return;
+      const selected = await showAgentLlmKindPicker(
+        widget._selectedAgentLlmKind || initialValue || "main",
+      );
+      if (selected == null) return;
+      widget._selectedAgentLlmKind = selected;
+      widget.label = agentLlmKindButtonLabel(selected);
+      widget._zihuanTouched = true;
+      widget._zihuanInlineKey = key;
+      const pending = graphs.updateNode(sid, nodeDef.id, {
+        inline_values: {
+          [key]: selected,
+        },
+      });
+      onMutated?.(pending);
+      await pending;
+    })().catch((error) => {
+      console.error("agent llm kind picker failed", error);
+    });
+  });
+  widget.value = initialValue || "main";
+  widget._selectedAgentLlmKind = initialValue || "main";
+  widget._zihuanInlineKey = key;
+  attachWidgetClickProxy(lNode, widget, () => {
+    void widget.callback?.();
+  });
+  widget.label = agentLlmKindButtonLabel(initialValue || "main");
+  return widget;
+}
+
+function setupLlmRefSelectWidget(
+  lNode: any,
+  nodeDef: NodeDefinition,
+  key: string,
+  initialValue: string,
+  getSessionId: () => string | null,
+  onMutated?: WidgetMutationCallback,
+): any {
+  const widget = lNode.addWidget("button", "请选择 LLM 配置...", "", () => {
+    void (async () => {
+      const sid = getSessionId();
+      if (!sid) return;
+      const llmRefs = await getChatLlmRefs();
+      const selected = await showLlmRefPicker(
+        llmRefs,
+        widget._selectedLlmRefId || LLM_PLACEHOLDER_VALUE,
+      );
+      if (selected == null) return;
+      widget._selectedLlmRefId = selected;
+      widget.label = llmRefButtonLabel(llmRefs, selected);
+      widget._zihuanTouched = true;
+      widget._zihuanInlineKey = key;
+      const pending = graphs.updateNode(sid, nodeDef.id, {
+        inline_values: {
+          [key]: selected && selected !== LLM_PLACEHOLDER_VALUE ? selected : null,
+        },
+      });
+      onMutated?.(pending);
+      await pending;
+    })().catch((error) => {
+      console.error("llm ref picker failed", error);
+    });
+  });
+  widget.value = initialValue || LLM_PLACEHOLDER_VALUE;
+  widget._selectedLlmRefId = initialValue || LLM_PLACEHOLDER_VALUE;
+  widget._zihuanInlineKey = key;
+  attachWidgetClickProxy(lNode, widget, () => {
+    void widget.callback?.();
+  });
+  loadLlmRefOptions(widget, lNode, initialValue);
+  return widget;
 }
 
 function setupActiveBotAdapterSelectWidget(
@@ -446,18 +566,33 @@ function setupLocalTextEmbeddingModelWidget(
   getSessionId: () => string | null,
   onMutated?: WidgetMutationCallback,
 ): any {
-  const widget = lNode.addWidget("combo", key, initialValue, async (selected: string) => {
-      if (selected == null) return;
+  const widget = lNode.addWidget("button", "请选择模型...", "", () => {
+    void (async () => {
       const sid = getSessionId();
       if (!sid) return;
       if (nodeDef.port_bindings?.[key]) return;
+      const models = await getTextEmbeddingModels();
+      const selected = await showTextEmbeddingModelPicker(
+        models,
+        widget._selectedModelName || initialValue || "",
+      );
+      if (selected == null) return;
       widget.value = selected;
+      widget._selectedModelName = selected;
+      widget.label = embeddingModelButtonLabel(selected);
       widget._zihuanTouched = true;
       const pending = graphs.updateNode(sid, nodeDef.id, { inline_values: { [key]: selected } });
       onMutated?.(pending);
       await pending;
-  }, { values: [] as string[] });
+    })().catch((error) => {
+      console.error("embedding model picker failed", error);
+    });
+  });
   widget.value = initialValue;
+  widget._selectedModelName = initialValue || "";
+  attachWidgetClickProxy(lNode, widget, () => {
+    void widget.callback?.();
+  });
   loadTextEmbeddingModelOptions(widget, lNode);
   return widget;
 }
@@ -471,22 +606,38 @@ function setupConnectionSelectWidget(
   getSessionId: () => string | null,
   onMutated?: WidgetMutationCallback,
 ): any {
-  const widget = lNode.addWidget("combo", key, initialValue || CONNECTION_PLACEHOLDER_VALUE, async (selected: string) => {
-    const sid = getSessionId();
-    if (!sid) return;
-    widget.value = selected ?? CONNECTION_PLACEHOLDER_VALUE;
-    widget._zihuanTouched = true;
-    widget._zihuanInlineKey = key;
-    const pending = graphs.updateNode(sid, nodeDef.id, {
-      inline_values: {
-        [key]: selected && selected !== CONNECTION_PLACEHOLDER_VALUE ? selected : null,
-      },
+  const widget = lNode.addWidget("button", "请选择连接...", "", () => {
+    void (async () => {
+      const sid = getSessionId();
+      if (!sid) return;
+      const connections = await getConnections();
+      const selected = await showConnectionPicker(
+        connections,
+        connectionKind,
+        widget._selectedConnectionId || CONNECTION_PLACEHOLDER_VALUE,
+      );
+      if (selected == null) return;
+      widget._selectedConnectionId = selected;
+      widget.label = connectionButtonLabel(connections, connectionKind, selected);
+      widget._zihuanTouched = true;
+      widget._zihuanInlineKey = key;
+      const pending = graphs.updateNode(sid, nodeDef.id, {
+        inline_values: {
+          [key]: selected && selected !== CONNECTION_PLACEHOLDER_VALUE ? selected : null,
+        },
+      });
+      onMutated?.(pending);
+      await pending;
+    })().catch((error) => {
+      console.error("connection picker failed", error);
     });
-    onMutated?.(pending);
-    await pending;
-  }, { values: { [CONNECTION_PLACEHOLDER_VALUE]: "请选择连接..." } as Record<string, string> });
+  });
   widget.value = initialValue || CONNECTION_PLACEHOLDER_VALUE;
+  widget._selectedConnectionId = initialValue || CONNECTION_PLACEHOLDER_VALUE;
   widget._zihuanInlineKey = key;
+  attachWidgetClickProxy(lNode, widget, () => {
+    void widget.callback?.();
+  });
   loadConnectionOptions(widget, lNode, connectionKind, initialValue);
   return widget;
 }
@@ -502,22 +653,32 @@ async function getTextEmbeddingModels(forceRefresh = false): Promise<string[]> {
 function loadTextEmbeddingModelOptions(widget: any, lNode: any): void {
   getTextEmbeddingModels()
     .then((models) => {
-      widget.options = widget.options ?? {};
-      widget.options.values = models;
+      widget._modelOptions = models;
       if (!widget.value && models.length > 0) {
         widget.value = models[0];
+        widget._selectedModelName = models[0];
       }
+      widget.label = embeddingModelButtonLabel(widget._selectedModelName || widget.value || "");
       lNode?.setDirtyCanvas?.(true, true);
     })
     .catch((error) => {
       console.error("failed to load local text embedding models", error);
-      widget.options = widget.options ?? {};
-      widget.options.values = [];
+      widget._modelOptions = [];
+      widget.label = "加载模型失败";
     });
+}
+
+function embeddingModelButtonLabel(modelName: string): string {
+  return modelName?.trim() ? modelName : "请选择模型...";
 }
 
 async function getConnections(): Promise<ConnectionConfig[]> {
   return system.connections.list();
+}
+
+async function getChatLlmRefs(): Promise<LlmConfig[]> {
+  const llmRefs = await system.llm.list();
+  return llmRefs.filter((item) => item.enabled && item.model.type === "chat_llm");
 }
 
 function matchesConnectionKind(actualKind: string, expectedKind: string): boolean {
@@ -537,32 +698,108 @@ function loadConnectionOptions(
 ): void {
   getConnections()
     .then((connections) => {
-      const values: Record<string, string> = {
-        [CONNECTION_PLACEHOLDER_VALUE]: "请选择连接...",
-      };
-      let hasCurrentValue = !initialValue;
-      for (const connection of connections) {
-        if (!connection.enabled) continue;
-        if (!matchesConnectionKind(String(connection.kind.type ?? ""), connectionKind)) continue;
-        values[connection.config_id] = connection.name;
-        if (connection.config_id === initialValue) hasCurrentValue = true;
-      }
-      if (initialValue && !hasCurrentValue) {
-        values[initialValue] = `(失效) ${initialValue}`;
-      }
-      widget.options = widget.options ?? {};
-      widget.options.values = values;
-      if (!widget.value || widget.value === "") {
-        widget.value = CONNECTION_PLACEHOLDER_VALUE;
-      }
+      widget._connectionValues = buildConnectionValueMap(connections, connectionKind, initialValue);
+      widget._selectedConnectionId = initialValue || CONNECTION_PLACEHOLDER_VALUE;
+      widget.label = connectionButtonLabel(
+        connections,
+        connectionKind,
+        initialValue || CONNECTION_PLACEHOLDER_VALUE,
+      );
       lNode?.setDirtyCanvas?.(true, true);
     })
     .catch((error) => {
       console.error("failed to load connection options", error);
-      widget.options = widget.options ?? {};
-      widget.options.values = { [CONNECTION_PLACEHOLDER_VALUE]: "加载连接失败" };
-      widget.value = CONNECTION_PLACEHOLDER_VALUE;
+      widget._connectionValues = { [CONNECTION_PLACEHOLDER_VALUE]: "加载连接失败" };
+      widget._selectedConnectionId = CONNECTION_PLACEHOLDER_VALUE;
+      widget.label = "加载连接失败";
     });
+}
+
+function loadLlmRefOptions(widget: any, lNode: any, initialValue: string): void {
+  getChatLlmRefs()
+    .then((llmRefs) => {
+      widget._llmRefValues = buildLlmRefValueMap(llmRefs, initialValue);
+      widget._selectedLlmRefId = initialValue || LLM_PLACEHOLDER_VALUE;
+      widget.label = llmRefButtonLabel(llmRefs, initialValue || LLM_PLACEHOLDER_VALUE);
+      lNode?.setDirtyCanvas?.(true, true);
+    })
+    .catch((error) => {
+      console.error("failed to load llm ref options", error);
+      widget._llmRefValues = { [LLM_PLACEHOLDER_VALUE]: "加载 LLM 配置失败" };
+      widget._selectedLlmRefId = LLM_PLACEHOLDER_VALUE;
+      widget.label = "加载 LLM 配置失败";
+      lNode?.setDirtyCanvas?.(true, true);
+    });
+}
+
+function buildConnectionValueMap(
+  connections: ConnectionConfig[],
+  connectionKind: string,
+  initialValue: string,
+): Record<string, string> {
+  const values: Record<string, string> = {
+    [CONNECTION_PLACEHOLDER_VALUE]: "请选择连接...",
+  };
+  let hasCurrentValue = !initialValue;
+  for (const connection of connections) {
+    if (!connection.enabled) continue;
+    if (!matchesConnectionKind(String(connection.kind.type ?? ""), connectionKind)) continue;
+    values[connection.config_id] = connection.name;
+    if (connection.config_id === initialValue) hasCurrentValue = true;
+  }
+  if (initialValue && !hasCurrentValue) {
+    values[initialValue] = `(失效) ${initialValue}`;
+  }
+  return values;
+}
+
+function agentLlmKindButtonLabel(selectedKind: string): string {
+  return AGENT_LLM_KIND_OPTIONS.find((item) => item.value === selectedKind)?.label ?? "主模型";
+}
+
+function connectionButtonLabel(
+  connections: ConnectionConfig[],
+  connectionKind: string,
+  selectedId: string,
+): string {
+  if (!selectedId || selectedId === CONNECTION_PLACEHOLDER_VALUE) {
+    return "请选择连接...";
+  }
+  const matched = connections.find((item) => (
+    item.enabled
+      && matchesConnectionKind(String(item.kind.type ?? ""), connectionKind)
+      && item.config_id === selectedId
+  ));
+  return matched ? `${matched.name} (${matched.config_id})` : `(失效) ${selectedId}`;
+}
+
+function buildLlmRefValueMap(
+  llmRefs: LlmConfig[],
+  initialValue: string,
+): Record<string, string> {
+  const values: Record<string, string> = {
+    [LLM_PLACEHOLDER_VALUE]: "请选择 LLM 配置...",
+  };
+  let hasCurrentValue = !initialValue;
+  for (const llmRef of llmRefs) {
+    values[llmRef.config_id] = llmRef.name;
+    if (llmRef.config_id === initialValue) hasCurrentValue = true;
+  }
+  if (initialValue && !hasCurrentValue) {
+    values[initialValue] = `(失效) ${initialValue}`;
+  }
+  return values;
+}
+
+function llmRefButtonLabel(
+  llmRefs: LlmConfig[],
+  selectedId: string,
+): string {
+  if (!selectedId || selectedId === LLM_PLACEHOLDER_VALUE) {
+    return "请选择 LLM 配置...";
+  }
+  const matched = llmRefs.find((item) => item.config_id === selectedId);
+  return matched ? `${matched.name} (${matched.config_id})` : `(失效) ${selectedId}`;
 }
 
 function loadActiveBotAdapterOptions(
@@ -686,6 +923,283 @@ async function showActiveBotAdapterPicker(
       button.addEventListener("click", () => {
         close();
         resolvePromise(item.connection_id);
+      });
+      list.appendChild(button);
+    }
+    dialog.appendChild(list);
+  }
+
+  const footer = document.createElement("div");
+  footer.className = "zh-buttons";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "取消";
+  footer.appendChild(cancelBtn);
+  dialog.appendChild(footer);
+
+  let resolved = false;
+  const resolvePromise = (value: string | null) => {
+    if (resolved) return;
+    resolved = true;
+    resolver(value);
+  };
+  cancelBtn.addEventListener("click", () => {
+    close();
+    resolvePromise(null);
+  });
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) {
+      close();
+      resolvePromise(null);
+    }
+  });
+
+  let resolver: (value: string | null) => void = () => {};
+  return new Promise<string | null>((resolve) => {
+    resolver = resolve;
+  });
+}
+
+async function showConnectionPicker(
+  connections: ConnectionConfig[],
+  connectionKind: string,
+  selectedId: string,
+): Promise<string | null> {
+  ensureDialogStyles();
+  const { overlay, dialog, close } = openOverlay();
+  dialog.style.minWidth = "360px";
+  dialog.style.maxWidth = "460px";
+
+  const title = document.createElement("h3");
+  title.textContent = "选择连接配置";
+  dialog.appendChild(title);
+
+  const list = document.createElement("div");
+  list.style.cssText = "display:flex;flex-direction:column;gap:8px;margin-top:12px;";
+
+  const filteredConnections = connections.filter((item) => (
+    item.enabled && matchesConnectionKind(String(item.kind.type ?? ""), connectionKind)
+  ));
+  const valueMap = buildConnectionValueMap(filteredConnections, connectionKind, selectedId);
+  const allItems = Object.entries(valueMap);
+
+  if (allItems.length === 1) {
+    const empty = document.createElement("div");
+    empty.className = "zh-hint";
+    empty.textContent = "当前没有可用的连接配置。";
+    dialog.appendChild(empty);
+  } else {
+    for (const [connectionId, label] of allItems) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.style.cssText = "text-align:left;";
+      if (connectionId === selectedId) {
+        button.className = "primary";
+      }
+      button.addEventListener("click", () => {
+        close();
+        resolvePromise(connectionId);
+      });
+      list.appendChild(button);
+    }
+    dialog.appendChild(list);
+  }
+
+  const footer = document.createElement("div");
+  footer.className = "zh-buttons";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "取消";
+  footer.appendChild(cancelBtn);
+  dialog.appendChild(footer);
+
+  let resolved = false;
+  const resolvePromise = (value: string | null) => {
+    if (resolved) return;
+    resolved = true;
+    resolver(value);
+  };
+  cancelBtn.addEventListener("click", () => {
+    close();
+    resolvePromise(null);
+  });
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) {
+      close();
+      resolvePromise(null);
+    }
+  });
+
+  let resolver: (value: string | null) => void = () => {};
+  return new Promise<string | null>((resolve) => {
+    resolver = resolve;
+  });
+}
+
+async function showAgentLlmKindPicker(
+  selectedKind: string,
+): Promise<string | null> {
+  ensureDialogStyles();
+  const { overlay, dialog, close } = openOverlay();
+  dialog.style.minWidth = "360px";
+  dialog.style.maxWidth = "420px";
+
+  const title = document.createElement("h3");
+  title.textContent = "选择 Agent LLM 类型";
+  dialog.appendChild(title);
+
+  const list = document.createElement("div");
+  list.style.cssText = "display:flex;flex-direction:column;gap:8px;margin-top:12px;";
+  for (const item of AGENT_LLM_KIND_OPTIONS) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = item.label;
+    button.style.cssText = "text-align:left;";
+    if (item.value === selectedKind) {
+      button.className = "primary";
+    }
+    button.addEventListener("click", () => {
+      close();
+      resolvePromise(item.value);
+    });
+    list.appendChild(button);
+  }
+  dialog.appendChild(list);
+
+  const footer = document.createElement("div");
+  footer.className = "zh-buttons";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "取消";
+  footer.appendChild(cancelBtn);
+  dialog.appendChild(footer);
+
+  let resolved = false;
+  const resolvePromise = (value: string | null) => {
+    if (resolved) return;
+    resolved = true;
+    resolver(value);
+  };
+  cancelBtn.addEventListener("click", () => {
+    close();
+    resolvePromise(null);
+  });
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) {
+      close();
+      resolvePromise(null);
+    }
+  });
+
+  let resolver: (value: string | null) => void = () => {};
+  return new Promise<string | null>((resolve) => {
+    resolver = resolve;
+  });
+}
+
+async function showLlmRefPicker(
+  llmRefs: LlmConfig[],
+  selectedId: string,
+): Promise<string | null> {
+  ensureDialogStyles();
+  const { overlay, dialog, close } = openOverlay();
+  dialog.style.minWidth = "360px";
+  dialog.style.maxWidth = "460px";
+
+  const title = document.createElement("h3");
+  title.textContent = "选择 LLM 配置";
+  dialog.appendChild(title);
+
+  const list = document.createElement("div");
+  list.style.cssText = "display:flex;flex-direction:column;gap:8px;margin-top:12px;";
+
+  const valueMap = buildLlmRefValueMap(llmRefs, selectedId);
+  const allItems = Object.entries(valueMap);
+
+  if (allItems.length === 1) {
+    const empty = document.createElement("div");
+    empty.className = "zh-hint";
+    empty.textContent = "当前没有可用的聊天 LLM 配置。";
+    dialog.appendChild(empty);
+  } else {
+    for (const [llmRefId, label] of allItems) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.style.cssText = "text-align:left;";
+      if (llmRefId === selectedId) {
+        button.className = "primary";
+      }
+      button.addEventListener("click", () => {
+        close();
+        resolvePromise(llmRefId);
+      });
+      list.appendChild(button);
+    }
+    dialog.appendChild(list);
+  }
+
+  const footer = document.createElement("div");
+  footer.className = "zh-buttons";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "取消";
+  footer.appendChild(cancelBtn);
+  dialog.appendChild(footer);
+
+  let resolved = false;
+  const resolvePromise = (value: string | null) => {
+    if (resolved) return;
+    resolved = true;
+    resolver(value);
+  };
+  cancelBtn.addEventListener("click", () => {
+    close();
+    resolvePromise(null);
+  });
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) {
+      close();
+      resolvePromise(null);
+    }
+  });
+
+  let resolver: (value: string | null) => void = () => {};
+  return new Promise<string | null>((resolve) => {
+    resolver = resolve;
+  });
+}
+
+async function showTextEmbeddingModelPicker(
+  models: string[],
+  selectedModel: string,
+): Promise<string | null> {
+  ensureDialogStyles();
+  const { overlay, dialog, close } = openOverlay();
+  dialog.style.minWidth = "360px";
+  dialog.style.maxWidth = "460px";
+
+  const title = document.createElement("h3");
+  title.textContent = "选择 Embedding 模型";
+  dialog.appendChild(title);
+
+  const list = document.createElement("div");
+  list.style.cssText = "display:flex;flex-direction:column;gap:8px;margin-top:12px;";
+
+  if (models.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "zh-hint";
+    empty.textContent = "当前没有可用的本地 Embedding 模型。";
+    dialog.appendChild(empty);
+  } else {
+    for (const model of models) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = model;
+      button.style.cssText = "text-align:left;";
+      if (model === selectedModel) {
+        button.className = "primary";
+      }
+      button.addEventListener("click", () => {
+        close();
+        resolvePromise(model);
       });
       list.appendChild(button);
     }

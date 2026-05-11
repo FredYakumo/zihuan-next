@@ -8,6 +8,8 @@ import {
   showConnectPortDialog,
   showNodeInfoDialog,
   showPortSelectDialog,
+  showTextInputDialog,
+  showErrorDialog,
 } from "../../ui/dialogs/index";
 import type { CanvasFacade } from "./types";
 import { findInlineInputAtPosition } from "./rendering";
@@ -91,15 +93,56 @@ export class CanvasInteractions {
         }
       }
 
+      e.preventDefault();
+      e.stopPropagation();
       if (node) {
         const alreadySelected = !!(this.canvas.lCanvas as any).selected_nodes?.[node.id];
         if (!alreadySelected) (this.canvas.lCanvas as any).selectNode(node, false);
+        this.showNodeContextMenu(node, e, gx, gy);
+        return;
       }
 
-      e.preventDefault();
-      e.stopPropagation();
       this.showCanvasContextMenu(e, gx, gy);
     }, { capture: true });
+  }
+
+  private createContextMenu(event: MouseEvent): {
+    menu: HTMLDivElement;
+    makeItem: (label: string, enabled: boolean, onClick: () => void) => void;
+  } {
+    document.getElementById("zh-canvas-menu")?.remove();
+    document.getElementById("zh-node-menu")?.remove();
+
+    const menu = document.createElement("div");
+    menu.style.cssText = `
+      position:fixed;z-index:10000;left:${event.clientX}px;top:${event.clientY}px;
+      background:var(--toolbar-bg);border:1px solid var(--border);border-radius:4px;
+      box-shadow:0 4px 16px rgba(0,0,0,0.4);font-family:sans-serif;font-size:13px;
+      color:var(--text);min-width:170px;overflow:hidden;
+    `;
+
+    const makeItem = (label: string, enabled: boolean, onClick: () => void) => {
+      const item = document.createElement("div");
+      item.textContent = label;
+      item.style.cssText = `padding:8px 14px;cursor:${enabled ? "pointer" : "default"};border-bottom:1px solid var(--border);color:${enabled ? "var(--text)" : "var(--text-dim)"};`;
+      if (enabled) {
+        item.addEventListener("mouseenter", () => { item.style.background = "var(--node-hover)"; });
+        item.addEventListener("mouseleave", () => { item.style.background = ""; });
+        item.addEventListener("click", () => { menu.remove(); onClick(); });
+      }
+      menu.appendChild(item);
+    };
+
+    document.body.appendChild(menu);
+    const dismiss = (e: MouseEvent) => {
+      if (!menu.contains(e.target as Node)) {
+        menu.remove();
+        document.removeEventListener("click", dismiss);
+      }
+    };
+    setTimeout(() => document.addEventListener("click", dismiss), 0);
+
+    return { menu, makeItem };
   }
 
   async handleConnectionDropOnEmpty(
@@ -189,31 +232,12 @@ export class CanvasInteractions {
   }
 
   showCanvasContextMenu(event: MouseEvent, graphX: number, graphY: number): void {
-    document.getElementById("zh-canvas-menu")?.remove();
     const selectedNodes: any[] = Object.values((this.canvas.lCanvas as any).selected_nodes ?? {});
     const hasSelection = selectedNodes.length > 0;
     const hasClipboard = this.canvas.nodeClipboard.length > 0;
 
-    const menu = document.createElement("div");
+    const { menu, makeItem } = this.createContextMenu(event);
     menu.id = "zh-canvas-menu";
-    menu.style.cssText = `
-      position:fixed;z-index:10000;left:${event.clientX}px;top:${event.clientY}px;
-      background:var(--toolbar-bg);border:1px solid var(--border);border-radius:4px;
-      box-shadow:0 4px 16px rgba(0,0,0,0.4);font-family:sans-serif;font-size:13px;
-      color:var(--text);min-width:170px;overflow:hidden;
-    `;
-
-    const makeItem = (label: string, enabled: boolean, onClick: () => void) => {
-      const item = document.createElement("div");
-      item.textContent = label;
-      item.style.cssText = `padding:8px 14px;cursor:${enabled ? "pointer" : "default"};border-bottom:1px solid var(--border);color:${enabled ? "var(--text)" : "var(--text-dim)"};`;
-      if (enabled) {
-        item.addEventListener("mouseenter", () => { item.style.background = "var(--node-hover)"; });
-        item.addEventListener("mouseleave", () => { item.style.background = ""; });
-        item.addEventListener("click", () => { menu.remove(); onClick(); });
-      }
-      menu.appendChild(item);
-    };
 
     makeItem("新建节点", true, () => this.canvas.onAddNodeRequest?.(graphX, graphY));
     makeItem("复制", hasSelection, () => this.copySelectedNodes());
@@ -238,15 +262,51 @@ export class CanvasInteractions {
     makeItem("提取为函数子图", hasSelection && this.canvas.state.graph !== null, () => {
       this.convertSelectionToFunction().catch(console.error);
     });
+  }
 
-    document.body.appendChild(menu);
-    const dismiss = (e: MouseEvent) => {
-      if (!menu.contains(e.target as Node)) {
-        menu.remove();
-        document.removeEventListener("click", dismiss);
-      }
-    };
-    setTimeout(() => document.addEventListener("click", dismiss), 0);
+  showNodeContextMenu(node: any, event: MouseEvent, graphX: number, graphY: number): void {
+    const selectedNodes: any[] = Object.values((this.canvas.lCanvas as any).selected_nodes ?? {});
+    const nodeId = node.zihuanId as string | undefined;
+    const renameEnabled = !!nodeId && !PROTECTED_BOUNDARY_NODE_IDS.has(nodeId);
+
+    const { menu, makeItem } = this.createContextMenu(event);
+    menu.id = "zh-node-menu";
+
+    makeItem("修改节点名字", renameEnabled, () => {
+      this.renameNode(node).catch(console.error);
+    });
+    makeItem("复制", selectedNodes.length > 0, () => this.copySelectedNodes());
+    makeItem("删除", renameEnabled, () => { this.deleteSelectedNodes().catch(console.error); });
+    makeItem("新建节点", true, () => this.canvas.onAddNodeRequest?.(graphX, graphY));
+    makeItem("提取为函数子图", selectedNodes.length > 0 && this.canvas.state.graph !== null, () => {
+      this.convertSelectionToFunction().catch(console.error);
+    });
+  }
+
+  private async renameNode(node: any): Promise<void> {
+    const sid = this.canvas.state.sessionId;
+    const nodeId = node.zihuanId as string | undefined;
+    if (!sid || !nodeId || PROTECTED_BOUNDARY_NODE_IDS.has(nodeId)) return;
+
+    const currentName = String(node.title ?? "");
+    const nextName = await showTextInputDialog("修改节点名字", "节点名字", currentName, "请输入节点名字");
+    if (nextName === null) return;
+
+    const trimmedName = nextName.trim();
+    if (!trimmedName || trimmedName === currentName) return;
+
+    try {
+      await graphs.updateNode(sid, nodeId, { name: trimmedName });
+      const updated = await graphs.get(sid);
+      this.canvas.state.graph = updated;
+      this.canvas.state.dirty = true;
+      this.canvas.history.push(updated);
+      this.canvas.onGraphDirty?.();
+      this.canvas.onHistoryChange?.();
+      this.canvas.rebuildCanvas(updated);
+    } catch (error) {
+      showErrorDialog(`修改节点名字失败: ${(error as Error).message}`);
+    }
   }
 
   private copySelectedNodes(): void {

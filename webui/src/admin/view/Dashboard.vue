@@ -551,7 +551,7 @@ onMounted(() => {
 });
 </script>
 
-<style scoped>
+<style scoped lang="scss">
 .dashboard-page {
   gap: 16px;
   display: flex;

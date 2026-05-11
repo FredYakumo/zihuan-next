@@ -2,7 +2,7 @@
   "servers": {
     "rust-analyzer": {
       "type": "stdio",
-      "command": "/home/fredyakumo/.cargo/bin/rust-analyzer-mcp"
+      "command": "rust-analyzer-mcp"
     },
     "typescript": {
       "type": "stdio",
@@ -12,7 +12,7 @@
     "playwright": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@anthropic-ai/playwright-mcp"]
+      "args": ["-y", "@playwright/mcp"]
     }
   }
 }

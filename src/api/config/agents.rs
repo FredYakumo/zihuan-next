@@ -440,12 +440,6 @@ fn validate_agent_connection_schemas(
     };
     validate_weaviate_connection_schema(
         connections,
-        config.weaviate_connection_id.as_deref(),
-        WeaviateCollectionSchema::MessageRecordSemantic,
-        "weaviate_connection_id",
-    )?;
-    validate_weaviate_connection_schema(
-        connections,
         config.weaviate_image_connection_id.as_deref(),
         WeaviateCollectionSchema::ImageSemantic,
         "weaviate_image_connection_id",
