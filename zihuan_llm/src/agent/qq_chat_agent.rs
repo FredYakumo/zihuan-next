@@ -542,6 +542,49 @@ fn image_part_from_bytes(image: &ImageMessage, bytes: Vec<u8>) -> ContentPart {
     ContentPart::image_data_url(infer_content_type(image_name(image)), base64_payload)
 }
 
+#[derive(Debug, Clone, Copy)]
+enum ImagePartSource {
+    LocalFile,
+    ObjectStorage,
+    DownloadedRemote,
+    UploadedToS3,
+    DataUrl,
+}
+
+#[derive(Debug)]
+struct ResolvedImagePart {
+    part: ContentPart,
+    source: ImagePartSource,
+}
+
+#[derive(Debug, Default)]
+struct MultimodalImageStats {
+    image_parts: usize,
+    local_file_images: usize,
+    object_storage_images: usize,
+    downloaded_remote_images: usize,
+    uploaded_to_s3_images: usize,
+    data_url_images: usize,
+    skipped_images: usize,
+}
+
+impl MultimodalImageStats {
+    fn record_success(&mut self, source: ImagePartSource) {
+        self.image_parts += 1;
+        match source {
+            ImagePartSource::LocalFile => self.local_file_images += 1,
+            ImagePartSource::ObjectStorage => self.object_storage_images += 1,
+            ImagePartSource::DownloadedRemote => self.downloaded_remote_images += 1,
+            ImagePartSource::UploadedToS3 => self.uploaded_to_s3_images += 1,
+            ImagePartSource::DataUrl => self.data_url_images += 1,
+        }
+    }
+
+    fn record_skipped(&mut self) {
+        self.skipped_images += 1;
+    }
+}
+
 fn append_text_segment(buffer: &mut String, segment: &str) {
     let segment = segment.trim();
     if segment.is_empty() {
@@ -580,6 +623,107 @@ fn image_part_from_local_file(path: &str, image: &ImageMessage) -> Option<Conten
     }
 }
 
+fn sanitize_object_storage_key_fragment(value: &str, max_len: usize) -> String {
+    let sanitized: String = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '/' | '.' | '-' | '_') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let trimmed = sanitized.trim_matches('/');
+    if trimmed.is_empty() {
+        return "image".to_string();
+    }
+
+    trimmed.chars().take(max_len).collect()
+}
+
+fn derive_multimodal_cache_key(url: &str, image: &ImageMessage) -> String {
+    let without_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
+    let source_fragment = sanitize_object_storage_key_fragment(without_scheme, 160);
+    let file_name_fragment = sanitize_object_storage_key_fragment(image_name(image), 80);
+    format!(
+        "qq-images/multimodal-cache/{}_{}",
+        source_fragment, file_name_fragment
+    )
+}
+
+fn image_part_from_object_storage(
+    s3_ref: &S3Ref,
+    object_key: &str,
+    image: &ImageMessage,
+) -> Option<ContentPart> {
+    let s3_ref = s3_ref.clone();
+    let key = object_key.to_string();
+    match block_async(async move { s3_ref.get_object_bytes(&key).await }) {
+        Ok(bytes) => Some(image_part_from_bytes(image, bytes)),
+        Err(error) => {
+            warn!(
+                "{LOG_PREFIX} failed to read object storage image for multimodal input object_key={}: {}",
+                object_key, error
+            );
+            None
+        }
+    }
+}
+
+fn image_part_from_remote_url(
+    direct_url: &str,
+    image: &ImageMessage,
+    s3_ref: Option<&Arc<S3Ref>>,
+    cache_to_s3: bool,
+) -> Option<ResolvedImagePart> {
+    if direct_url.starts_with("data:") {
+        return Some(ResolvedImagePart {
+            part: ContentPart::image_url_string(direct_url.to_string()),
+            source: ImagePartSource::DataUrl,
+        });
+    }
+
+    let bytes = block_async(download_remote_bytes(direct_url))?;
+    let part = image_part_from_bytes(image, bytes.clone());
+
+    if cache_to_s3 {
+        if let Some(s3_ref) = s3_ref {
+            let object_key = derive_multimodal_cache_key(direct_url, image);
+            let content_type = infer_content_type(image_name(image)).to_string();
+            let bytes_for_upload = bytes.clone();
+            let s3_ref = s3_ref.as_ref().clone();
+            match block_async(async move {
+                s3_ref
+                    .put_object(&object_key, &content_type, &bytes_for_upload)
+                    .await
+            }) {
+                Ok(object_url) => {
+                    info!(
+                        "{LOG_PREFIX} cached remote image to object storage for multimodal input url={} object_url={}",
+                        direct_url, object_url
+                    );
+                    return Some(ResolvedImagePart {
+                        part,
+                        source: ImagePartSource::UploadedToS3,
+                    });
+                }
+                Err(error) => {
+                    warn!(
+                        "{LOG_PREFIX} failed to cache remote image to object storage for multimodal input url={}: {}",
+                        direct_url, error
+                    );
+                }
+            }
+        }
+    }
+
+    Some(ResolvedImagePart {
+        part,
+        source: ImagePartSource::DownloadedRemote,
+    })
+}
+
 async fn download_remote_bytes(url: &str) -> Option<Vec<u8>> {
     let response = match reqwest::Client::new().get(url).send().await {
         Ok(response) => response,
@@ -613,7 +757,7 @@ async fn download_remote_bytes(url: &str) -> Option<Vec<u8>> {
     }
 }
 
-fn image_part(image: &ImageMessage) -> Option<ContentPart> {
+fn image_part(image: &ImageMessage, s3_ref: Option<&Arc<S3Ref>>) -> Option<ResolvedImagePart> {
     for local_path in [
         image.local_path.as_deref(),
         image.path.as_deref(),
@@ -626,39 +770,43 @@ fn image_part(image: &ImageMessage) -> Option<ContentPart> {
     .flatten()
     {
         if let Some(part) = image_part_from_local_file(local_path, image) {
-            return Some(part);
+            return Some(ResolvedImagePart {
+                part,
+                source: ImagePartSource::LocalFile,
+            });
         }
     }
 
-    for direct_url in [image.object_url.as_deref(), image.url.as_deref()]
-        .into_iter()
-        .flatten()
-    {
-        if direct_url.starts_with("data:") {
-            return Some(ContentPart::image_url_string(direct_url.to_string()));
+    if let (Some(s3_ref), Some(object_key)) = (s3_ref, image.object_key.as_deref()) {
+        if let Some(part) = image_part_from_object_storage(s3_ref.as_ref(), object_key, image) {
+            return Some(ResolvedImagePart {
+                part,
+                source: ImagePartSource::ObjectStorage,
+            });
         }
+    }
 
-        let bytes = block_async(download_remote_bytes(direct_url));
-        if let Some(bytes) = bytes {
-            return Some(image_part_from_bytes(image, bytes));
-        }
-
-        if direct_url.starts_with("https://") {
-            return Some(ContentPart::image_url_string(direct_url.to_string()));
+    for (direct_url, cache_to_s3) in [
+        (image.object_url.as_deref(), false),
+        (image.url.as_deref(), true),
+    ] {
+        if let Some(direct_url) = direct_url {
+            if let Some(part) = image_part_from_remote_url(direct_url, image, s3_ref, cache_to_s3)
+            {
+                return Some(part);
+            }
         }
     }
 
     let file_value = image.file.as_deref()?;
-    if file_value.starts_with("data:") {
-        return Some(ContentPart::image_url_string(file_value.to_string()));
+    if let Some(part) = image_part_from_remote_url(file_value, image, s3_ref, true) {
+        return Some(part);
     }
-    if file_value.starts_with("https://") {
-        let bytes = block_async(download_remote_bytes(file_value));
-        if let Some(bytes) = bytes {
-            return Some(image_part_from_bytes(image, bytes));
-        }
-        return Some(ContentPart::image_url_string(file_value.to_string()));
-    }
+
+    warn!(
+        "{LOG_PREFIX} skipping multimodal image because no safe source could be resolved: {}",
+        image
+    );
     None
 }
 
@@ -668,6 +816,8 @@ fn append_messages_as_parts(
     text_buffer: &mut String,
     has_media: &mut bool,
     include_reply_source_block: bool,
+    s3_ref: Option<&Arc<S3Ref>>,
+    image_stats: &mut MultimodalImageStats,
 ) {
     for message in messages {
         match message {
@@ -675,12 +825,14 @@ fn append_messages_as_parts(
                 append_text_segment(text_buffer, &plain.text);
             }
             Message::Image(image) => {
-                if let Some(part) = image_part(image) {
+                if let Some(resolved) = image_part(image, s3_ref) {
                     flush_text_part(parts, text_buffer);
-                    parts.push(part);
+                    parts.push(resolved.part);
                     *has_media = true;
+                    image_stats.record_success(resolved.source);
                 } else {
                     append_text_segment(text_buffer, &image.to_string());
+                    image_stats.record_skipped();
                 }
             }
             Message::Reply(reply) => {
@@ -698,6 +850,8 @@ fn append_messages_as_parts(
                             text_buffer,
                             has_media,
                             false,
+                            s3_ref,
+                            image_stats,
                         );
                     }
                 }
@@ -727,6 +881,8 @@ fn append_messages_as_parts(
                             text_buffer,
                             has_media,
                             false,
+                            s3_ref,
+                            image_stats,
                         );
                         if !text_buffer.ends_with('\n') {
                             text_buffer.push('\n');
@@ -816,6 +972,7 @@ fn build_user_message(
     bot_id: &str,
     bot_name: &str,
     llm_supports_multimodal_input: bool,
+    s3_ref: Option<&Arc<S3Ref>>,
 ) -> OpenAIMessage {
     let msg_prop =
         MessageProp::from_messages_with_bot_name(&event.message_list, Some(bot_id), Some(bot_name));
@@ -864,12 +1021,15 @@ fn build_user_message(
     let mut parts = Vec::new();
     let mut text_buffer = format!("{}\n\n[用户消息]\n", metadata_lines.join("\n"));
     let mut has_media = false;
+    let mut image_stats = MultimodalImageStats::default();
     append_messages_as_parts(
         &event.message_list,
         &mut parts,
         &mut text_buffer,
         &mut has_media,
         true,
+        s3_ref,
+        &mut image_stats,
     );
 
     if let Some(ref ref_cnt) = msg_prop
@@ -894,22 +1054,16 @@ fn build_user_message(
 
     if has_media {
         flush_text_part(&mut parts, &mut text_buffer);
-        let image_part_count = parts
-            .iter()
-            .filter(|part| matches!(part, ContentPart::ImageUrl { .. }))
-            .count();
-        let data_url_image_count = parts
-            .iter()
-            .filter(|part| match part {
-                ContentPart::ImageUrl { image_url } => image_url.as_url().starts_with("data:"),
-                _ => false,
-            })
-            .count();
         info!(
-            "{LOG_PREFIX} Built multimodal user message: total_parts={}, image_parts={}, data_url_images={}",
+            "{LOG_PREFIX} Built multimodal user message: total_parts={}, image_parts={}, local_file_images={}, object_storage_images={}, downloaded_remote_images={}, uploaded_to_s3_images={}, data_url_images={}, skipped_images={}",
             parts.len(),
-            image_part_count,
-            data_url_image_count
+            image_stats.image_parts,
+            image_stats.local_file_images,
+            image_stats.object_storage_images,
+            image_stats.downloaded_remote_images,
+            image_stats.uploaded_to_s3_images,
+            image_stats.data_url_images,
+            image_stats.skipped_images,
         );
         if parts.is_empty() {
             OpenAIMessage::user("(无可用文本内容)")
@@ -2793,6 +2947,7 @@ impl QqChatAgent {
             &bot_id,
             bot_name,
             selected_llm.supports_multimodal_input(),
+            s3_ref,
         );
 
         let history_key =

@@ -6,6 +6,7 @@ use std::path::Path;
 use tokio::task::block_in_place;
 use zihuan_core::error::Result;
 use zihuan_core::llm::{ContentPart, OpenAIMessage};
+use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
 
 use crate::models::message::{ImageMessage, Message};
@@ -98,6 +99,50 @@ impl ExtractMessageFromEventNode {
         )
     }
 
+    fn image_part_from_object_storage(
+        s3_ref: &S3Ref,
+        object_key: &str,
+        image: &ImageMessage,
+    ) -> Option<ContentPart> {
+        let s3_ref = s3_ref.clone();
+        let key = object_key.to_string();
+        let result = if tokio::runtime::Handle::try_current().is_ok() {
+            block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(async move {
+                    s3_ref.get_object_bytes(&key).await
+                })
+            })
+        } else {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .ok()
+                .and_then(|runtime| {
+                    runtime
+                        .block_on(async move { s3_ref.get_object_bytes(&key).await })
+                        .ok()
+                })
+                .ok_or_else(|| {
+                    zihuan_core::error::Error::StringError(
+                        "failed to create runtime for object storage read".to_string(),
+                    )
+                })
+        };
+
+        match result {
+            Ok(bytes) => Some(Self::image_part_from_bytes(image, bytes)),
+            Err(error) => {
+                warn!(
+                    "{} failed to read object storage image for multimodal input object_key={}: {}",
+                    Self::LOG_PREFIX,
+                    object_key,
+                    error
+                );
+                None
+            }
+        }
+    }
+
     fn image_part_from_local_file(path: &str, image: &ImageMessage) -> Option<ContentPart> {
         let file_path = Path::new(path);
         if !file_path.exists() {
@@ -172,7 +217,7 @@ impl ExtractMessageFromEventNode {
         Some(Self::image_part_from_bytes(image, bytes))
     }
 
-    fn image_part(image: &ImageMessage) -> Option<ContentPart> {
+    fn image_part(image: &ImageMessage, s3_ref: Option<&S3Ref>) -> Option<ContentPart> {
         for local_path in [
             image.local_path.as_deref(),
             image.path.as_deref(),
@@ -189,6 +234,12 @@ impl ExtractMessageFromEventNode {
             }
         }
 
+        if let (Some(s3_ref), Some(object_key)) = (s3_ref, image.object_key.as_deref()) {
+            if let Some(part) = Self::image_part_from_object_storage(s3_ref, object_key, image) {
+                return Some(part);
+            }
+        }
+
         for direct_url in [image.object_url.as_deref(), image.url.as_deref()]
             .into_iter()
             .flatten()
@@ -200,10 +251,6 @@ impl ExtractMessageFromEventNode {
             if let Some(part) = Self::image_part_from_remote_url(direct_url, image) {
                 return Some(part);
             }
-
-            if direct_url.starts_with("https://") {
-                return Some(ContentPart::image_url_string(direct_url.to_string()));
-            }
         }
 
         let file_value = image.file.as_deref()?;
@@ -214,17 +261,25 @@ impl ExtractMessageFromEventNode {
             if let Some(part) = Self::image_part_from_remote_url(file_value, image) {
                 return Some(part);
             }
-            return Some(ContentPart::image_url_string(file_value.to_string()));
         }
+
+        warn!(
+            "{} skipping multimodal image because no safe source could be resolved: {}",
+            Self::LOG_PREFIX,
+            image
+        );
         None
     }
 
+    /// Purpose: Recursively process a list of messages, <br />
+    /// appending text segments to the text buffer and flushing to parts when media is encountered.
     fn append_messages_as_parts(
         messages: &[Message],
         parts: &mut Vec<ContentPart>,
         text_buffer: &mut String,
         has_media: &mut bool,
         include_reply_source_block: bool,
+        s3_ref: Option<&S3Ref>,
     ) {
         for message in messages {
             match message {
@@ -232,7 +287,7 @@ impl ExtractMessageFromEventNode {
                     Self::append_text_segment(text_buffer, &plain.text);
                 }
                 Message::Image(image) => {
-                    if let Some(part) = Self::image_part(image) {
+                    if let Some(part) = Self::image_part(image, s3_ref) {
                         Self::flush_text_part(parts, text_buffer);
                         parts.push(part);
                         *has_media = true;
@@ -255,6 +310,7 @@ impl ExtractMessageFromEventNode {
                                 text_buffer,
                                 has_media,
                                 false,
+                                s3_ref,
                             );
                         }
                     }
@@ -284,6 +340,7 @@ impl ExtractMessageFromEventNode {
                                 text_buffer,
                                 has_media,
                                 false,
+                                s3_ref,
                             );
                             if !text_buffer.ends_with('\n') {
                                 text_buffer.push('\n');
@@ -298,7 +355,11 @@ impl ExtractMessageFromEventNode {
         }
     }
 
-    fn build_user_message(messages: &[Message], msg_prop: &MessageProp) -> OpenAIMessage {
+    fn build_user_message(
+        messages: &[Message],
+        msg_prop: &MessageProp,
+        s3_ref: Option<&S3Ref>,
+    ) -> OpenAIMessage {
         let mut parts = Vec::new();
         let mut text_buffer = String::new();
         let mut has_media = false;
@@ -309,6 +370,7 @@ impl ExtractMessageFromEventNode {
             &mut text_buffer,
             &mut has_media,
             true,
+            s3_ref,
         );
 
         if let Some(ref_cnt) = msg_prop
@@ -406,19 +468,26 @@ impl Node for ExtractMessageFromEventNode {
 
             // This node still has a sync execute() API, so if we're already on a Tokio
             // worker thread we must move the blocking lock into block_in_place.
-            let bot_id = if tokio::runtime::Handle::try_current().is_ok() {
+            let (bot_id, object_storage) = if tokio::runtime::Handle::try_current().is_ok() {
                 block_in_place(|| {
                     let adapter = ims_bot_adapter_ref.blocking_lock();
-                    adapter.get_bot_id().to_string()
+                    (
+                        adapter.get_bot_id().to_string(),
+                        adapter.get_object_storage(),
+                    )
                 })
             } else {
                 let adapter = ims_bot_adapter_ref.blocking_lock();
-                adapter.get_bot_id().to_string()
+                (
+                    adapter.get_bot_id().to_string(),
+                    adapter.get_object_storage(),
+                )
             };
 
             let msg_prop = MessageProp::from_messages(&event.message_list, Some(&bot_id));
 
-            let user_msg = Self::build_user_message(&event.message_list, &msg_prop);
+            let user_msg =
+                Self::build_user_message(&event.message_list, &msg_prop, object_storage.as_deref());
 
             let messages = vec![user_msg];
             outputs.insert(

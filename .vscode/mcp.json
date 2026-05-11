@@ -1,0 +1,18 @@
+{
+  "servers": {
+    "rust-analyzer": {
+      "type": "stdio",
+      "command": "rust-analyzer-mcp"
+    },
+    "typescript": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@mizchi/lsmcp", "-p", "typescript"]
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp"]
+    }
+  }
+}
