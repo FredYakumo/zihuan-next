@@ -88,6 +88,14 @@ export async function bootstrapGraphEditor() {
   }
 
   async function closeTab(id: string): Promise<void> {
+    const tab = tabs.findTab(id);
+    if (!tab) return;
+    if (tab.dirty) {
+      const displayName = tab.name + (tab.isWorkflowSet ? " [工作流集]" : "");
+      const confirmed = window.confirm(`“${displayName}”有未保存更改，确认关闭并放弃更改吗？`);
+      if (!confirmed) return;
+    }
+
     const activeBeforeClose = tabs.getActiveTabId();
     const { removed, index } = tabs.removeTab(id);
     if (!removed) return;
