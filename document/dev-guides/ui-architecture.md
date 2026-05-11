@@ -53,7 +53,7 @@ The admin UI is responsible for:
 
 ## Graph Editor
 
-When the path starts with `/editor`, `bootstrapLegacyEditor()` is used to start the browser graph editor.
+When the path starts with `/editor`, `bootstrapGraphEditor()` is used to start the browser graph editor.
 
 The editor is responsible for:
 

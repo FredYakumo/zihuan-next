@@ -53,7 +53,7 @@
 
 ## 图编辑器
 
-当路径以 `/editor` 开头时，会调用 `bootstrapLegacyEditor()` 启动浏览器图编辑器。
+当路径以 `/editor` 开头时，会调用 `bootstrapGraphEditor()` 启动浏览器图编辑器。
 
 图编辑器负责：
 

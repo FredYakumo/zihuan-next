@@ -1,7 +1,7 @@
 import { createApp } from "vue";
 import { createRouter, createWebHistory } from "vue-router";
 
-import { bootstrapLegacyEditor } from "./legacy_editor";
+import { bootstrapGraphEditor } from "./graph_editor_bootstrap";
 import AdminApp from "./admin/AdminApp.vue";
 import Dashboard from "./admin/view/Dashboard.vue";
 import Connections from "./admin/view/Connections.vue";
@@ -20,7 +20,7 @@ import { mountLiveLogConsole } from "./ui/live_log_console";
 
 async function main() {
   if (window.location.pathname.startsWith("/editor")) {
-    await bootstrapLegacyEditor();
+    await bootstrapGraphEditor();
     return;
   }
 

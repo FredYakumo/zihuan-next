@@ -24,7 +24,8 @@ import { SaveManager } from "./app/save_manager";
 import { GraphActions } from "./app/graph_actions";
 import { WorkspaceController } from "./app/workspace_controller";
 import { openTaskManagerDialog } from "./ui/dialogs/index";
-export async function bootstrapLegacyEditor() {
+
+export async function bootstrapGraphEditor() {
   initTheme();
   await loadThemes();
   injectStyles();
