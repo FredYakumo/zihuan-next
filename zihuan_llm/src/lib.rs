@@ -89,9 +89,9 @@ pub fn init_node_registry() -> Result<()> {
     );
     register_node!(
         "llm_api",
-        "LLM API配置",
+        "llm配置",
         "AI",
-        "配置语言模型API连接，输出LLModel引用",
+        "配置语言模型连接，输出LLModel引用",
         LLMApiNode
     );
     register_node!(

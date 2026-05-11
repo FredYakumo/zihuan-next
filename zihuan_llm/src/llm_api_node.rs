@@ -129,7 +129,7 @@ impl Node for LLMApiNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("配置语言模型API连接，输出LLModel引用供下游节点使用")
+        Some("配置语言模型连接，输出LLModel引用供下游节点使用")
     }
 
     fn input_ports(&self) -> Vec<Port> {
