@@ -49,7 +49,6 @@ async fn main() {
     log_forwarder::set_app_state(Arc::clone(&state));
     log_forwarder::set_broadcast(broadcast.clone());
 
-    // Auto-start enabled agents without creating long-lived task entries.
     {
         let agents = crate::system_config::load_agents().unwrap_or_else(|e| {
             error!("Failed to load agents for auto start: {e}");

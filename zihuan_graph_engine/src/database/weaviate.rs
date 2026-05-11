@@ -7,7 +7,6 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
-use std::time::Duration;
 use uuid::Uuid;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
@@ -16,12 +15,7 @@ use zihuan_core::llm::embedding_base::EmbeddingBase;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WeaviateCollectionSchema {
-    MessageRecordSemantic,
-    ImageSemantic,
-}
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WeaviateEnsureCollectionResult {
@@ -29,35 +23,9 @@ pub enum WeaviateEnsureCollectionResult {
     Created,
 }
 
-#[derive(Clone)]
-pub struct WeaviateRef {
-    pub base_url: String,
-    pub class_name: String,
-    pub api_key: Option<String>,
-    pub timeout: Duration,
-    client: Client,
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WeaviatePropertyConfig {
-    pub name: String,
-    #[serde(rename = "dataType")]
-    pub data_type: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WeaviateCollectionConfig {
-    #[serde(rename = "class")]
-    pub class_name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(default)]
-    pub properties: Vec<WeaviatePropertyConfig>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub vectorizer: Option<String>,
-}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WeaviateObjectInput {

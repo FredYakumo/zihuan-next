@@ -15,7 +15,6 @@ use std::sync::Arc;
 use crate::api::state::{AppState, TaskLogEntry};
 use crate::api::ws::{ServerMessage, WsBroadcast};
 
-// ── Statics ───────────────────────────────────────────────────────────────────
 
 static BROADCAST: OnceCell<WsBroadcast> = OnceCell::new();
 static FORWARDER: OnceCell<LogForwarder> = OnceCell::new();
@@ -25,7 +24,6 @@ thread_local! {
     static CURRENT_TASK_ID: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
-// ── LogForwarder ──────────────────────────────────────────────────────────────
 
 pub struct LogForwarder {
     inner: &'static LogUtil,
@@ -79,7 +77,6 @@ impl Log for LogForwarder {
     }
 }
 
-// ── Public API ────────────────────────────────────────────────────────────────
 
 /// Replace the global logger with `LogForwarder` wrapping `inner`.
 /// Must be called exactly once, before any `log::*` macro is invoked.
