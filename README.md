@@ -204,7 +204,8 @@ uv run alembic upgrade head
 
 - [User Guide](document/user-guide.md)
 - [Program Execution Flow](document/program-execute-flow.md)
-- [Developer Guide Index](document/dev-guides/README.md)
+- [Node System](document/dev-guides/node-system.md)
+- [Code Conventions](document/dev-guides/code-conventions.md)
 - [UI Architecture](document/dev-guides/ui-architecture.md)
 - [Node Lifecycle](document/node/node-lifecycle.md)
 - [Function Subgraphs](document/node/function-subgraphs.md)

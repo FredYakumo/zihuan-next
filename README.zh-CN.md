@@ -205,7 +205,8 @@ uv run alembic upgrade head
 
 - [用户指南](document/user-guide.zh-CN.md)
 - [程序执行流程](document/program-execute-flow.zh-CN.md)
-- [开发文档索引](document/dev-guides/README.md)
+- [节点系统](document/dev-guides/node-system.md)
+- [代码规范（命名与文件布局）](document/dev-guides/code-conventions.zh-CN.md)
 - [UI 架构](document/dev-guides/ui-architecture.zh-CN.md)
 - [节点生命周期](document/node/node-lifecycle.zh-CN.md)
 - [函数子图](document/node/function-subgraphs.zh-CN.md)

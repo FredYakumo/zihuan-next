@@ -75,14 +75,20 @@ Current registry entry points:
 
 | Package | Role |
 |---|---|
-| `zihuan_core` | Shared core types and helpers |
-| `zihuan_graph_engine` | Synchronous graph runtime |
+| `zihuan_core` | Core types |
+| `zihuan_graph_engine` | Node-graph runtime |
 | `zihuan_llm` | LLM, Brain, embeddings, agent config models |
 | `storage_handler` | Connection-backed nodes and storage helpers |
-| `ims_bot_adapter` | QQ/IMS adapter integration |
-| `zihuan_service` | Long-lived agent hosting |
+| `ims_bot_adapter` | IMS adapter integration |
+| `zihuan_service` | Long-lived service and task hosting |
 | `src/api` | Web API and task orchestration |
-| `webui/` | Browser UI |
+| `webui/` | Web UI |
+
+## Type Placement
+
+- Common/shared type definitions, and type definitions that may introduce circular references, should be placed in `zihuan_core`.
+- Otherwise, keep code and type definitions in the package that owns the functional responsibility.
+- Prefer high cohesion and low coupling across package boundaries.
 
 ## Error Handling
 
