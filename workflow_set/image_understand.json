@@ -1,0 +1,545 @@
+{
+  "nodes": [
+    {
+      "id": "__graph_inputs__",
+      "name": "节点图输入",
+      "description": "主节点图的输入边界节点",
+      "node_type": "graph_inputs",
+      "input_ports": [
+        {
+          "name": "signature",
+          "data_type": "Json",
+          "description": "隐藏的函数签名 JSON",
+          "required": false,
+          "hidden": true
+        },
+        {
+          "name": "runtime_values",
+          "data_type": "Json",
+          "description": "运行时注入的函数输入 JSON",
+          "required": false,
+          "hidden": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "message_event",
+          "data_type": "MessageEvent",
+          "description": "节点图输入 'message_event'",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "qq_ims_bot_adapter",
+          "data_type": "BotAdapterRef",
+          "description": "节点图输入 'qq_ims_bot_adapter'",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": true,
+      "position": {
+        "x": 60.0,
+        "y": 120.0
+      },
+      "size": {
+        "width": 220.0,
+        "height": 120.0
+      },
+      "inline_values": {
+        "signature": [
+          {
+            "data_type": "MessageEvent",
+            "name": "message_event"
+          },
+          {
+            "data_type": "BotAdapterRef",
+            "name": "qq_ims_bot_adapter"
+          }
+        ]
+      },
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false,
+      "disabled": false
+    },
+    {
+      "id": "__graph_outputs__",
+      "name": "节点图输出",
+      "description": "主节点图的输出边界节点",
+      "node_type": "graph_outputs",
+      "input_ports": [
+        {
+          "name": "signature",
+          "data_type": "Json",
+          "description": "隐藏的函数签名 JSON",
+          "required": false,
+          "hidden": true
+        },
+        {
+          "name": "image_description",
+          "data_type": "String",
+          "description": "节点图输出 'image_description'",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "output_ports": [],
+      "dynamic_input_ports": true,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 1540.0,
+        "y": 600.0
+      },
+      "size": {
+        "width": 220.0,
+        "height": 120.0
+      },
+      "inline_values": {
+        "signature": [
+          {
+            "data_type": "String",
+            "name": "image_description"
+          }
+        ]
+      },
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false,
+      "disabled": false
+    },
+    {
+      "id": "1429dd06-0384-4761-ac60-1a8282c9b739",
+      "name": "extract message from event",
+      "description": null,
+      "node_type": "extract_message_from_event",
+      "input_ports": [
+        {
+          "name": "message_event",
+          "data_type": "MessageEvent",
+          "description": "MessageEvent containing message data",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "ims_bot_adapter",
+          "data_type": "BotAdapterRef",
+          "description": "BotAdapter reference for context-aware system message",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "messages",
+          "data_type": {
+            "Vec": "OpenAIMessage"
+          },
+          "description": "Vec<OpenAIMessage> containing system and user messages",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "content",
+          "data_type": "String",
+          "description": "Merged readable message body",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "ref_content",
+          "data_type": "String",
+          "description": "Referenced/replied message content",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "is_at_me",
+          "data_type": "Boolean",
+          "description": "Whether the message @'s the bot",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "at_target_list",
+          "data_type": {
+            "Vec": "String"
+          },
+          "description": "List of all @ targets in the message",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 400.0,
+        "y": 330.0
+      },
+      "size": {
+        "width": 200.0,
+        "height": 120.0
+      },
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false,
+      "disabled": false
+    },
+    {
+      "id": "8dec26d8-40bc-4766-aa5a-b8c384474fb9",
+      "name": "llm infer",
+      "description": null,
+      "node_type": "llm_infer",
+      "input_ports": [
+        {
+          "name": "llm_model",
+          "data_type": "LLModel",
+          "description": "LLM模型引用，由LLMApiNode提供",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "messages",
+          "data_type": {
+            "Vec": "OpenAIMessage"
+          },
+          "description": "输入消息列表，包含系统消息和用户消息",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "response",
+          "data_type": {
+            "Vec": "OpenAIMessage"
+          },
+          "description": "LLM返回的消息列表",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 1610.0,
+        "y": 150.0
+      },
+      "size": {
+        "width": 200.0,
+        "height": 120.0
+      },
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false,
+      "disabled": false
+    },
+    {
+      "id": "b60898f1-93ff-4e23-a545-6583bff413cd",
+      "name": "llm api",
+      "description": null,
+      "node_type": "llm_api",
+      "input_ports": [],
+      "output_ports": [
+        {
+          "name": "llm_model",
+          "data_type": "LLModel",
+          "description": "LLM模型引用，传递给LLMInfer等节点使用",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 1270.0,
+        "y": 110.0
+      },
+      "size": {
+        "width": 200.0,
+        "height": 120.0
+      },
+      "inline_values": {
+        "llm_ref_id": "llm-multimodal-default"
+      },
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false,
+      "disabled": false
+    },
+    {
+      "id": "f0cc5031-662a-4e1d-96d4-74ef8d879e1e",
+      "name": "message list data",
+      "description": null,
+      "node_type": "message_list_data",
+      "input_ports": [
+        {
+          "name": "messages",
+          "data_type": {
+            "Vec": "OpenAIMessage"
+          },
+          "description": "Vec<OpenAIMessage> provided by UI inline editor",
+          "required": false,
+          "hidden": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "messages",
+          "data_type": {
+            "Vec": "OpenAIMessage"
+          },
+          "description": "Output Vec<OpenAIMessage> from UI data source",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 650.0,
+        "y": 20.0
+      },
+      "size": {
+        "width": 200.0,
+        "height": 120.0
+      },
+      "inline_values": {
+        "messages": [
+          {
+            "content": "你是一个图片理解专家，请将消息中的所有图片总结成文字",
+            "role": "system"
+          }
+        ]
+      },
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false,
+      "disabled": false
+    },
+    {
+      "id": "81de3bde-f79a-48c6-9ef1-9d388ba632a9",
+      "name": "concat vec",
+      "description": null,
+      "node_type": "concat_vec",
+      "input_ports": [
+        {
+          "name": "vec1",
+          "data_type": {
+            "Vec": "Any"
+          },
+          "description": "前半部分列表",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "vec2",
+          "data_type": {
+            "Vec": "Any"
+          },
+          "description": "后半部分列表，将拼接到 vec1 后面",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "vec",
+          "data_type": {
+            "Vec": "Any"
+          },
+          "description": "拼接后的列表，元素类型与输入列表一致",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 960.0,
+        "y": 190.0
+      },
+      "size": {
+        "width": 200.0,
+        "height": 120.0
+      },
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false,
+      "disabled": false
+    },
+    {
+      "id": "7d69d6d1-46eb-4c5e-b285-cbdecfb30b6f",
+      "name": "array get",
+      "description": null,
+      "node_type": "array_get",
+      "input_ports": [
+        {
+          "name": "array",
+          "data_type": {
+            "Vec": "Any"
+          },
+          "description": "输入列表",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "index",
+          "data_type": "Integer",
+          "description": "元素下标，负数表示从末尾倒数（-1为最后一个）",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "element",
+          "data_type": "Any",
+          "description": "提取出的元素，类型与列表中元素的类型一致",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 1300.0,
+        "y": 340.0
+      },
+      "size": {
+        "width": 200.0,
+        "height": 120.0
+      },
+      "inline_values": {
+        "index": -1
+      },
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false,
+      "disabled": false
+    },
+    {
+      "id": "b3d5a186-291d-49be-a7c7-4780d69268cf",
+      "name": "openai message to string",
+      "description": null,
+      "node_type": "openai_message_to_string",
+      "input_ports": [
+        {
+          "name": "message",
+          "data_type": "OpenAIMessage",
+          "description": "输入的 OpenAIMessage",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "content",
+          "data_type": "String",
+          "description": "拼接后的字符串：先 reasoning_content（如有），后 content",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 1180.0,
+        "y": 590.0
+      },
+      "size": {
+        "width": 200.0,
+        "height": 120.0
+      },
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false,
+      "disabled": false
+    }
+  ],
+  "edges": [
+    {
+      "from_node_id": "__graph_inputs__",
+      "from_port": "message_event",
+      "to_node_id": "1429dd06-0384-4761-ac60-1a8282c9b739",
+      "to_port": "message_event"
+    },
+    {
+      "from_node_id": "b60898f1-93ff-4e23-a545-6583bff413cd",
+      "from_port": "llm_model",
+      "to_node_id": "8dec26d8-40bc-4766-aa5a-b8c384474fb9",
+      "to_port": "llm_model"
+    },
+    {
+      "from_node_id": "f0cc5031-662a-4e1d-96d4-74ef8d879e1e",
+      "from_port": "messages",
+      "to_node_id": "81de3bde-f79a-48c6-9ef1-9d388ba632a9",
+      "to_port": "vec1"
+    },
+    {
+      "from_node_id": "1429dd06-0384-4761-ac60-1a8282c9b739",
+      "from_port": "messages",
+      "to_node_id": "81de3bde-f79a-48c6-9ef1-9d388ba632a9",
+      "to_port": "vec2"
+    },
+    {
+      "from_node_id": "81de3bde-f79a-48c6-9ef1-9d388ba632a9",
+      "from_port": "vec",
+      "to_node_id": "8dec26d8-40bc-4766-aa5a-b8c384474fb9",
+      "to_port": "messages"
+    },
+    {
+      "from_node_id": "8dec26d8-40bc-4766-aa5a-b8c384474fb9",
+      "from_port": "response",
+      "to_node_id": "7d69d6d1-46eb-4c5e-b285-cbdecfb30b6f",
+      "to_port": "array"
+    },
+    {
+      "from_node_id": "7d69d6d1-46eb-4c5e-b285-cbdecfb30b6f",
+      "from_port": "element",
+      "to_node_id": "b3d5a186-291d-49be-a7c7-4780d69268cf",
+      "to_port": "message"
+    },
+    {
+      "from_node_id": "b3d5a186-291d-49be-a7c7-4780d69268cf",
+      "from_port": "content",
+      "to_node_id": "__graph_outputs__",
+      "to_port": "image_description"
+    },
+    {
+      "from_node_id": "__graph_inputs__",
+      "from_port": "qq_ims_bot_adapter",
+      "to_node_id": "1429dd06-0384-4761-ac60-1a8282c9b739",
+      "to_port": "ims_bot_adapter"
+    }
+  ],
+  "graph_inputs": [
+    {
+      "name": "message_event",
+      "data_type": "MessageEvent"
+    },
+    {
+      "name": "qq_ims_bot_adapter",
+      "data_type": "BotAdapterRef"
+    }
+  ],
+  "graph_outputs": [
+    {
+      "name": "image_description",
+      "data_type": "String"
+    }
+  ],
+  "hyperparameter_groups": [],
+  "hyperparameters": [],
+  "variables": [],
+  "metadata": {
+    "name": "图像分析能力",
+    "description": "调用图像分析模型对图像进行分析",
+    "version": null
+  }
+}
