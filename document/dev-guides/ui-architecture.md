@@ -63,6 +63,8 @@ The editor is responsible for:
 - graph save/load interactions
 - validation and execution requests through backend APIs
 
+The editor does not persist graph workspace or tab state in browser storage. Reloading `/editor` starts a fresh workspace unless the user explicitly opens a file or uses a route that targets a workflow.
+
 The backend remains the source of truth for execution, saved graph state, and registry metadata.
 
 ## Backend Boundary
@@ -87,6 +89,8 @@ The frontend owns:
 - local interaction state
 - route navigation
 - canvas interaction state
+
+That local interaction state is session-scoped in memory. Persistence for graph content happens through explicit save flows or backend-managed graph/session APIs, not browser `localStorage`.
 
 ## Theme System
 
