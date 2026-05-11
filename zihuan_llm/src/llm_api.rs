@@ -1,3 +1,4 @@
+use crate::system_config::LlmApiStyle;
 use log::{debug, error, info, warn};
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
@@ -11,7 +12,8 @@ use tokio::sync::mpsc;
 use zihuan_core::llm::llm_base::{LLMBase, StreamingLLMBase};
 use zihuan_core::llm::tooling::{ToolCalls, ToolCallsFuncSpec};
 use zihuan_core::llm::{
-    role_to_str, str_to_role, ContentPart, InferenceParam, MessageContent, OpenAIMessage,
+    role_to_str, str_to_role, ContentPart, InferenceParam, MessageContent, MessageRole,
+    OpenAIMessage,
 };
 
 const DEFAULT_RETRY_COUNT: u32 = 2;
@@ -74,6 +76,7 @@ pub struct LLMAPI {
     model_name: String,
     api_endpoint: String,
     api_key: Option<String>,
+    api_style: LlmApiStyle,
     stream: bool,
     supports_multimodal_input: bool,
     pub timeout: Duration,
@@ -85,6 +88,7 @@ impl LLMAPI {
         model_name: String,
         api_endpoint: String,
         api_key: Option<String>,
+        api_style: LlmApiStyle,
         stream: bool,
         supports_multimodal_input: bool,
         timeout: Duration,
@@ -93,6 +97,7 @@ impl LLMAPI {
             model_name,
             api_endpoint,
             api_key,
+            api_style,
             stream,
             supports_multimodal_input,
             timeout,
@@ -100,29 +105,24 @@ impl LLMAPI {
         }
     }
 
-    /// Set custom timeout for requests
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
     }
 
-    /// Set max retry count for retryable request failures
     pub fn with_retry_count(mut self, retry_count: u32) -> Self {
         self.retry_count = retry_count;
         self
     }
 
-    /// Create a system message
     pub fn system_message(content: &str) -> OpenAIMessage {
         OpenAIMessage::system(content)
     }
 
-    /// Create a user message
     pub fn user_message(content: &str) -> OpenAIMessage {
         OpenAIMessage::user(content)
     }
 
-    /// Parse tool calls from JSON array
     fn parse_tool_calls(tool_calls_value: &Value) -> Vec<ToolCalls> {
         tool_calls_value
             .as_array()
@@ -188,6 +188,89 @@ impl LLMAPI {
             reasoning_content,
             tool_calls,
             tool_call_id,
+        })
+    }
+
+    fn parse_responses_api_message(api_resp: &Value) -> Option<OpenAIMessage> {
+        let output_items = api_resp.get("output")?.as_array()?;
+        let mut role = str_to_role("assistant");
+        let mut content = String::new();
+        let mut reasoning_content = String::new();
+        let mut tool_calls = Vec::new();
+
+        for item in output_items {
+            match item.get("type").and_then(|value| value.as_str()) {
+                Some("message") => {
+                    if let Some(role_str) = item.get("role").and_then(|value| value.as_str()) {
+                        role = str_to_role(role_str);
+                    }
+                    if let Some(contents) = item.get("content").and_then(|value| value.as_array()) {
+                        for content_item in contents {
+                            match content_item.get("type").and_then(|value| value.as_str()) {
+                                Some("output_text") | Some("text") => {
+                                    if let Some(text) =
+                                        content_item.get("text").and_then(|value| value.as_str())
+                                    {
+                                        content.push_str(text);
+                                    }
+                                }
+                                Some("reasoning") => {
+                                    if let Some(text) =
+                                        content_item.get("summary").and_then(|value| value.as_str())
+                                    {
+                                        reasoning_content.push_str(text);
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                Some("function_call") => {
+                    let name = item.get("name").and_then(|value| value.as_str())?;
+                    let arguments_raw = item
+                        .get("arguments")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("{}");
+                    let arguments = serde_json::from_str::<Value>(arguments_raw)
+                        .unwrap_or_else(|_| Value::String(arguments_raw.to_string()));
+                    let id = item
+                        .get("call_id")
+                        .and_then(|value| value.as_str())
+                        .or_else(|| item.get("id").and_then(|value| value.as_str()))
+                        .unwrap_or("responses_function_call")
+                        .to_string();
+                    tool_calls.push(ToolCalls {
+                        id,
+                        type_name: "function".to_string(),
+                        function: ToolCallsFuncSpec {
+                            name: name.to_string(),
+                            arguments,
+                        },
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        if content.is_empty() && reasoning_content.is_empty() && tool_calls.is_empty() {
+            return None;
+        }
+
+        Some(OpenAIMessage {
+            role,
+            content: if content.is_empty() {
+                None
+            } else {
+                Some(MessageContent::Text(content))
+            },
+            reasoning_content: if reasoning_content.is_empty() {
+                None
+            } else {
+                Some(reasoning_content)
+            },
+            tool_calls,
+            tool_call_id: None,
         })
     }
 
@@ -358,9 +441,10 @@ impl LLMAPI {
         request_format: RequestFormat,
     ) -> String {
         let mut context = format!(
-            "model={} endpoint={} format={} timeout_secs={} messages={} tools={} multimodal={}",
+            "model={} endpoint={} api_style={:?} format={} timeout_secs={} messages={} tools={} multimodal={}",
             self.model_name,
             self.endpoint_label(),
+            self.api_style,
             request_format.label(),
             self.timeout.as_secs(),
             request_context.message_count,
@@ -441,38 +525,60 @@ impl LLMAPI {
         content: Option<&MessageContent>,
         request_format: RequestFormat,
     ) -> Value {
+        fn serialize_content_parts(parts: &[ContentPart]) -> Value {
+            Value::Array(
+                parts
+                    .iter()
+                    .map(|part| match part {
+                        ContentPart::Text { text } => json!({
+                            "type": "text",
+                            "text": text,
+                        }),
+                        ContentPart::ImageUrl { image_url } => json!({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": image_url.as_url(),
+                            }
+                        }),
+                        ContentPart::VideoUrl { video_url } => json!({
+                            "type": "video_url",
+                            "video_url": {
+                                "url": video_url.as_url(),
+                            }
+                        }),
+                    })
+                    .collect(),
+            )
+        }
+
         match (request_format, content) {
             (_, None) => Value::Null,
-            (RequestFormat::DefaultOpenAI, Some(content)) => {
-                serde_json::to_value(content).unwrap_or(Value::Null)
+            (RequestFormat::DefaultOpenAI, Some(MessageContent::Text(text))) => {
+                Value::String(text.clone())
+            }
+            (RequestFormat::DefaultOpenAI, Some(MessageContent::Parts(parts))) => {
+                // Old code kept for reference:
+                //
+                // serde_json::to_value(content).unwrap_or(Value::Null)
+                //
+                // Do not switch back to the old code. When `MediaUrlSpec` is `Bare(String)`,
+                // serde serializes `image_url` as a raw string:
+                //
+                // { "type": "image_url", "image_url": "data:..." }
+                //
+                // but the chat/completions-compatible multimodal endpoints we use require:
+                //
+                // { "type": "image_url", "image_url": { "url": "data:..." } }
+                //
+                // If we send the raw-string shape, the model ignores the image part and behaves
+                // as if no image was attached. We therefore serialize parts manually here.
+                serialize_content_parts(parts)
             }
             (RequestFormat::TencentMultimodalCompat, Some(MessageContent::Text(text))) => {
                 json!([{ "type": "text", "text": text }])
             }
             (RequestFormat::TencentMultimodalCompat, Some(MessageContent::Parts(parts))) => {
-                Value::Array(
-                    parts
-                        .iter()
-                        .map(|part| match part {
-                            ContentPart::Text { text } => json!({
-                                "type": "text",
-                                "text": text,
-                            }),
-                            ContentPart::ImageUrl { image_url } => json!({
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": image_url.as_url(),
-                                }
-                            }),
-                            ContentPart::VideoUrl { video_url } => json!({
-                                "type": "video_url",
-                                "video_url": {
-                                    "url": video_url.as_url(),
-                                }
-                            }),
-                        })
-                        .collect(),
-                )
+                serialize_content_parts(parts)
             }
         }
     }
@@ -532,6 +638,39 @@ impl LLMAPI {
         stream: bool,
         request_format: RequestFormat,
     ) -> Value {
+        if matches!(self.api_style, LlmApiStyle::OpenAiResponses) {
+            let input = param
+                .messages
+                .iter()
+                .flat_map(|msg| Self::build_responses_input_items(msg))
+                .collect::<Vec<_>>();
+            let tools = param.tools.as_ref().map(|ts| {
+                ts.iter()
+                    .map(|tool| {
+                        json!({
+                            "type": "function",
+                            "name": tool.name(),
+                            "description": tool.description(),
+                            "parameters": tool.parameters(),
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            });
+
+            let mut request_body = json!({
+                "model": self.model_name,
+                "input": input,
+                "stream": stream,
+            });
+
+            if let Some(tool_list) = tools {
+                request_body["tools"] = json!(tool_list);
+                request_body["tool_choice"] = json!("auto");
+            }
+
+            return request_body;
+        }
+
         let messages = self.build_messages_json(param, request_format);
         let tools: Option<Vec<Value>> = param
             .tools
@@ -550,6 +689,94 @@ impl LLMAPI {
         }
 
         request_body
+    }
+
+    fn build_responses_input_items(msg: &OpenAIMessage) -> Vec<Value> {
+        match msg.role {
+            zihuan_core::llm::MessageRole::Tool => {
+                let output = msg.content_text_owned().unwrap_or_default();
+                vec![json!({
+                    "type": "function_call_output",
+                    "call_id": msg.tool_call_id.clone().unwrap_or_default(),
+                    "output": output,
+                })]
+            }
+            zihuan_core::llm::MessageRole::Assistant if !msg.tool_calls.is_empty() => {
+                let mut items = Vec::new();
+                let content_items =
+                    Self::serialize_responses_message_content(&msg.role, msg.content.as_ref());
+                if !content_items.is_empty() {
+                    items.push(json!({
+                        "type": "message",
+                        "role": "assistant",
+                        "content": content_items,
+                    }));
+                }
+                for tool_call in &msg.tool_calls {
+                    items.push(json!({
+                        "type": "function_call",
+                        "call_id": tool_call.id,
+                        "name": tool_call.function.name,
+                        "arguments": tool_call.function.arguments.to_string(),
+                    }));
+                }
+                items
+            }
+            _ => {
+                let content_items =
+                    Self::serialize_responses_message_content(&msg.role, msg.content.as_ref());
+                vec![json!({
+                    "type": "message",
+                    "role": role_to_str(&msg.role),
+                    "content": content_items,
+                })]
+            }
+        }
+    }
+
+    fn serialize_responses_message_content(
+        role: &MessageRole,
+        content: Option<&MessageContent>,
+    ) -> Vec<Value> {
+        let text_type = match role {
+            MessageRole::Assistant => "output_text",
+            MessageRole::System | MessageRole::User | MessageRole::Tool => "input_text",
+        };
+
+        match content {
+            None => Vec::new(),
+            Some(MessageContent::Text(text)) => vec![json!({
+                "type": text_type,
+                "text": text,
+            })],
+            Some(MessageContent::Parts(parts)) => parts
+                .iter()
+                .map(|part| match part {
+                    ContentPart::Text { text } => json!({
+                        "type": text_type,
+                        "text": text,
+                    }),
+                    ContentPart::ImageUrl { image_url } => {
+                        if matches!(role, MessageRole::Assistant) {
+                            json!({
+                                "type": "output_text",
+                                "text": format!("[image omitted] {}", image_url.as_url()),
+                            })
+                        } else {
+                            json!({
+                                "type": "input_image",
+                                "image_url": image_url.as_url(),
+                                "detail": "auto",
+                            })
+                        }
+                    }
+                    ContentPart::VideoUrl { video_url } => json!({
+                        "type": text_type,
+                        "text": format!("[video omitted] {}", video_url.as_url()),
+                    }),
+                })
+                .collect(),
+        }
     }
 
     fn is_tencent_multimodal_compat_retry_candidate(
@@ -624,7 +851,10 @@ impl LLMAPI {
             .unwrap_or_else(|_| "Failed to read response".to_string());
 
         if self.stream {
-            if let Some(message) = Self::parse_sse_message(&response_text) {
+            if let Some(message) = match self.api_style {
+                LlmApiStyle::OpenAiResponses => Self::parse_responses_sse_message(&response_text),
+                _ => Self::parse_sse_message(&response_text),
+            } {
                 return Ok(message);
             }
         }
@@ -667,7 +897,11 @@ impl LLMAPI {
             }
         })?;
 
-        Self::parse_api_message(&api_resp).ok_or_else(|| RequestError::NonRetryable {
+        let parsed_message = match self.api_style {
+            LlmApiStyle::OpenAiResponses => Self::parse_responses_api_message(&api_resp),
+            _ => Self::parse_api_message(&api_resp),
+        };
+        parsed_message.ok_or_else(|| RequestError::NonRetryable {
             message: format!(
                 "{} invalid_response choices_present={} body={}",
                 self.format_request_context(
@@ -675,11 +909,54 @@ impl LLMAPI {
                     Some((attempt, max_attempts)),
                     request_format,
                 ),
-                api_resp.get("choices").is_some(),
+                api_resp.get("choices").is_some() || api_resp.get("output").is_some(),
                 Self::shorten_text(&response_text, 800)
             ),
             status: Some(status),
             response_body: Some(response_text.clone()),
+        })
+    }
+
+    fn parse_responses_sse_message(response_text: &str) -> Option<OpenAIMessage> {
+        let mut content = String::new();
+        let mut final_message = None;
+
+        for line in response_text.lines() {
+            let line = line.trim();
+            if !line.starts_with("data:") {
+                continue;
+            }
+
+            let payload = line.trim_start_matches("data:").trim();
+            if payload.is_empty() || payload == "[DONE]" {
+                continue;
+            }
+
+            let Ok(chunk) = serde_json::from_str::<Value>(payload) else {
+                continue;
+            };
+
+            match chunk.get("type").and_then(|value| value.as_str()) {
+                Some("response.output_text.delta") => {
+                    if let Some(delta) = chunk.get("delta").and_then(|value| value.as_str()) {
+                        content.push_str(delta);
+                    }
+                }
+                Some("response.completed") => {
+                    if let Some(response) = chunk.get("response") {
+                        final_message = Self::parse_responses_api_message(response);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        final_message.or_else(|| {
+            if content.is_empty() {
+                None
+            } else {
+                Some(OpenAIMessage::assistant_text(content))
+            }
         })
     }
 }
@@ -698,6 +975,11 @@ impl LLMBase for LLMAPI {
     }
 
     fn inference(&self, param: &InferenceParam) -> OpenAIMessage {
+        if matches!(self.api_style, LlmApiStyle::Candle) {
+            error!("Candle chat backend is not implemented yet");
+            return OpenAIMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR);
+        }
+
         let client = Client::builder()
             .timeout(self.timeout)
             .build()
@@ -827,6 +1109,11 @@ impl LLMAPI {
         param: &InferenceParam<'_>,
         token_tx: mpsc::UnboundedSender<String>,
     ) -> OpenAIMessage {
+        if matches!(self.api_style, LlmApiStyle::Candle) {
+            error!("Candle chat backend is not implemented yet");
+            return OpenAIMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR);
+        }
+
         let request_context = RequestContext {
             message_count: param.messages.len(),
             tool_count: param.tools.as_ref().map(|tools| tools.len()).unwrap_or(0),
@@ -907,7 +1194,12 @@ impl LLMAPI {
                 );
             }
 
-            return Self::parse_sse_stream(response, token_tx).await;
+            return match self.api_style {
+                LlmApiStyle::OpenAiResponses => {
+                    Self::parse_responses_sse_stream(response, token_tx).await
+                }
+                _ => Self::parse_sse_stream(response, token_tx).await,
+            };
         }
     }
 
@@ -1074,6 +1366,149 @@ impl LLMAPI {
             } else {
                 Some(reasoning_content)
             },
+            tool_calls,
+            tool_call_id: None,
+        }
+    }
+
+    async fn parse_responses_sse_stream(
+        response: reqwest::Response,
+        token_tx: mpsc::UnboundedSender<String>,
+    ) -> OpenAIMessage {
+        use futures_util::StreamExt;
+
+        let mut content = String::new();
+        let mut streamed_tool_calls: BTreeMap<String, StreamToolCallDelta> = BTreeMap::new();
+        let mut completed_message = None;
+
+        let mut stream = response.bytes_stream();
+        let mut sse_buffer = String::new();
+
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = match chunk_result {
+                Ok(c) => c,
+                Err(e) => {
+                    error!("Error reading Responses SSE stream chunk: {e}");
+                    break;
+                }
+            };
+
+            sse_buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+            while let Some(line_end) = sse_buffer.find('\n') {
+                let line = sse_buffer[..line_end].trim_end_matches('\r').to_string();
+                sse_buffer = sse_buffer[line_end + 1..].to_string();
+
+                if !line.starts_with("data:") {
+                    continue;
+                }
+
+                let payload = line.trim_start_matches("data:").trim();
+                if payload.is_empty() || payload == "[DONE]" {
+                    continue;
+                }
+
+                let Ok(chunk_data) = serde_json::from_str::<Value>(payload) else {
+                    continue;
+                };
+
+                match chunk_data.get("type").and_then(|value| value.as_str()) {
+                    Some("response.output_text.delta") => {
+                        if let Some(delta) =
+                            chunk_data.get("delta").and_then(|value| value.as_str())
+                        {
+                            if !delta.is_empty() {
+                                content.push_str(delta);
+                                let _ = token_tx.send(delta.to_string());
+                            }
+                        }
+                    }
+                    Some("response.output_item.added") => {
+                        if let Some(item) = chunk_data.get("item") {
+                            if item.get("type").and_then(|value| value.as_str())
+                                == Some("function_call")
+                            {
+                                let key = item
+                                    .get("call_id")
+                                    .and_then(|value| value.as_str())
+                                    .or_else(|| item.get("id").and_then(|value| value.as_str()))
+                                    .unwrap_or("responses_function_call")
+                                    .to_string();
+                                let entry = streamed_tool_calls.entry(key.clone()).or_default();
+                                entry.id = Some(key);
+                                entry.type_name = Some("function".to_string());
+                                if let Some(name) =
+                                    item.get("name").and_then(|value| value.as_str())
+                                {
+                                    entry.function_name = Some(name.to_string());
+                                }
+                                if let Some(arguments) =
+                                    item.get("arguments").and_then(|value| value.as_str())
+                                {
+                                    entry.function_arguments.push_str(arguments);
+                                }
+                            }
+                        }
+                    }
+                    Some("response.function_call_arguments.delta") => {
+                        let key = chunk_data
+                            .get("call_id")
+                            .and_then(|value| value.as_str())
+                            .or_else(|| chunk_data.get("item_id").and_then(|value| value.as_str()))
+                            .unwrap_or("responses_function_call")
+                            .to_string();
+                        let entry = streamed_tool_calls.entry(key.clone()).or_default();
+                        entry.id = Some(key);
+                        entry.type_name = Some("function".to_string());
+                        if let Some(delta) =
+                            chunk_data.get("delta").and_then(|value| value.as_str())
+                        {
+                            entry.function_arguments.push_str(delta);
+                        }
+                    }
+                    Some("response.completed") => {
+                        if let Some(response_value) = chunk_data.get("response") {
+                            completed_message = Self::parse_responses_api_message(response_value);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if let Some(message) = completed_message {
+            return message;
+        }
+
+        let tool_calls = streamed_tool_calls
+            .into_iter()
+            .map(|(index, call)| {
+                let arguments = if call.function_arguments.trim().is_empty() {
+                    Value::Null
+                } else {
+                    serde_json::from_str::<Value>(&call.function_arguments)
+                        .unwrap_or_else(|_| Value::String(call.function_arguments.clone()))
+                };
+
+                ToolCalls {
+                    id: call.id.unwrap_or(index),
+                    type_name: call.type_name.unwrap_or_else(|| "function".to_string()),
+                    function: ToolCallsFuncSpec {
+                        name: call.function_name.unwrap_or_default(),
+                        arguments,
+                    },
+                }
+            })
+            .collect::<Vec<_>>();
+
+        OpenAIMessage {
+            role: str_to_role("assistant"),
+            content: if content.is_empty() {
+                None
+            } else {
+                Some(MessageContent::Text(content))
+            },
+            reasoning_content: None,
             tool_calls,
             tool_call_id: None,
         }
