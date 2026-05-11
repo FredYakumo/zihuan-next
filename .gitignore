@@ -16,3 +16,4 @@ pnpm
 models/*/
 !models/text_embedding/Put_text_embedding_models_here.txt
 zihuan_llm/models/*/
+.vscode/

@@ -12,7 +12,7 @@ import Graphs from "./admin/view/Graphs.vue";
 import Tasks from "./admin/view/Tasks.vue";
 import DataExplorer from "./admin/view/DataExplorer.vue";
 import Settings from "./admin/view/Settings.vue";
-import "./admin/admin.css";
+import "./admin/admin.scss";
 import "./ui/theme.css";
 import { initTheme, loadThemes } from "./ui/theme";
 import { ws } from "./api/ws";

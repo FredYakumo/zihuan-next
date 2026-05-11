@@ -1,0 +1,225 @@
+.connection-hero-actions {
+  position: relative;
+  justify-content: flex-end;
+}
+
+.connection-hero-add-btn {
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0;
+  border-radius: 14px;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.connection-create-panel {
+  margin-top: 18px;
+}
+
+.connection-picker-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.connection-picker-grid--single {
+  grid-template-columns: 1fr;
+}
+
+.connection-picker-form {
+  margin-top: 18px;
+}
+
+.connection-picker-form-actions {
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.connection-picker-option {
+  padding: 16px;
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  border-radius: 18px;
+  border: 1px solid var(--admin-border);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--admin-bg-soft) 88%, transparent 12%), color-mix(in srgb, var(--admin-bg-panel) 96%, transparent 4%));
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.connection-picker-option strong {
+  font-size: 16px;
+}
+
+.connection-picker-option span {
+  color: var(--admin-muted);
+  font-size: 13px;
+}
+
+.connection-picker-option:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--admin-accent) 32%, var(--admin-border) 68%);
+  box-shadow: 0 12px 24px color-mix(in srgb, var(--admin-accent) 10%, transparent 90%);
+}
+
+.agent-picker-dialog {
+  width: min(920px, 100%);
+}
+
+.connection-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  align-items: start;
+}
+
+.connection-grid--agents .connection-card--editing {
+  grid-column: 1 / -1;
+}
+
+.connection-card {
+  width: 100%;
+  min-height: 220px;
+  padding: 20px;
+  display: grid;
+  gap: 16px;
+  text-align: left;
+  border-radius: 24px;
+  border: 1px solid color-mix(in srgb, var(--admin-border) 80%, var(--admin-accent) 20%);
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--admin-accent) 10%, transparent 90%), transparent 34%),
+    linear-gradient(180deg, color-mix(in srgb, var(--admin-bg-soft) 92%, transparent 8%), color-mix(in srgb, var(--admin-bg-panel) 96%, transparent 4%));
+  box-shadow: 0 20px 42px color-mix(in srgb, var(--bg) 78%, transparent 22%);
+}
+
+.connection-card--editing {
+  gap: 12px;
+}
+
+.connection-card-header,
+.connection-card-footer {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.connection-card-header--stacked {
+  display: grid;
+  gap: 10px;
+}
+
+.connection-card-header-top {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.connection-card-header h4 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.connection-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.connection-card-body {
+  display: grid;
+  gap: 10px;
+}
+
+.connection-card-title-edit {
+  margin-top: 8px;
+}
+
+.connection-card-edit-actions {
+  gap: 8px;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.connection-card-display-actions {
+  gap: 8px;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.connection-card-compact-btn {
+  min-width: 68px;
+  min-height: 36px;
+  padding: 7px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+.connection-card-compact-btn.btn.primary {
+  box-shadow: 0 10px 20px color-mix(in srgb, var(--btn-primary) 18%, transparent 82%);
+}
+
+.connection-card-compact-btn.btn.ghost {
+  background: color-mix(in srgb, var(--btn-bg) 72%, transparent 28%);
+}
+
+.connection-card-inline-input {
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--admin-border);
+  background: color-mix(in srgb, var(--admin-bg-panel) 92%, white 8%);
+  color: var(--admin-ink);
+  font: inherit;
+}
+
+.connection-card-inline-input--title {
+  min-height: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.connection-card-edit-row {
+  align-items: center;
+  gap: 10px;
+}
+
+.connection-card-edit-row strong {
+  min-width: 76px;
+  font-size: 13px;
+}
+
+.connection-card-inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--admin-muted);
+}
+
+@media (max-width: 1180px) {
+  .connection-hero-actions {
+    position: static;
+    margin-top: 0;
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .connection-picker-grid {
+    grid-template-columns: 1fr;
+  }
+}

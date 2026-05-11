@@ -192,7 +192,7 @@ onBeforeUnmount(() => {
 });
 </script>
 
-<style scoped>
+<style scoped lang="scss">
 .runtime-summary {
   display: flex;
   flex-wrap: wrap;
