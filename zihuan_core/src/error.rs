@@ -58,7 +58,6 @@ impl From<&str> for Error {
     }
 }
 
-/// Create a `StringError` from a format string.
 #[macro_export]
 macro_rules! string_error {
     ($($arg:tt)*) => {
@@ -66,10 +65,9 @@ macro_rules! string_error {
     };
 }
 
-/// Return early with a `StringError`.
 #[macro_export]
-macro_rules! bail {
+macro_rules! validation_error {
     ($($arg:tt)*) => {
-        return Err($crate::string_error!($($arg)*))
+        $crate::error::Error::ValidationError(format!($($arg)*))
     };
 }
