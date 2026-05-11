@@ -350,13 +350,12 @@ fn load_qq_resources(
     })
 }
 
-fn run_agent_brain(
+fn build_brain(
     agent: &AgentConfig,
     llm: Arc<dyn LLMBase>,
     default_tools: Vec<Box<dyn BrainTool>>,
     tool_definitions: Vec<BrainToolDefinition>,
-    messages: Vec<OpenAIMessage>,
-) -> Result<Vec<OpenAIMessage>> {
+) -> Brain {
     let mut brain = Brain::new(llm);
 
     for tool in default_tools {
@@ -376,18 +375,37 @@ fn run_agent_brain(
         });
     }
 
-    let (output_messages, stop_reason) = brain.run(messages);
+    brain
+}
+
+fn handle_brain_result(
+    agent_name: &str,
+    output_messages: Vec<OpenAIMessage>,
+    stop_reason: BrainStopReason,
+) -> Result<Vec<OpenAIMessage>> {
     match stop_reason {
         BrainStopReason::Done => Ok(output_messages),
         BrainStopReason::TransportError(content) => Err(Error::StringError(format!(
             "chat stream LLM request failed for '{}': {}",
-            agent.name, content
+            agent_name, content
         ))),
         BrainStopReason::MaxIterationsReached => Err(Error::StringError(format!(
             "chat stream exceeded max tool iterations ({MAX_TOOL_ITERATIONS}) for '{}'",
-            agent.name
+            agent_name
         ))),
     }
+}
+
+fn run_agent_brain(
+    agent: &AgentConfig,
+    llm: Arc<dyn LLMBase>,
+    default_tools: Vec<Box<dyn BrainTool>>,
+    tool_definitions: Vec<BrainToolDefinition>,
+    messages: Vec<OpenAIMessage>,
+) -> Result<Vec<OpenAIMessage>> {
+    let brain = build_brain(agent, llm, default_tools, tool_definitions);
+    let (output_messages, stop_reason) = brain.run(messages);
+    handle_brain_result(&agent.name, output_messages, stop_reason)
 }
 
 async fn run_agent_brain_streaming(
@@ -398,35 +416,7 @@ async fn run_agent_brain_streaming(
     messages: Vec<OpenAIMessage>,
     token_tx: mpsc::UnboundedSender<String>,
 ) -> Result<Vec<OpenAIMessage>> {
-    let mut brain = Brain::new(llm);
-
-    for tool in default_tools {
-        brain.add_tool(DynBrainToolWrapper(tool));
-    }
-
-    for tool_def in tool_definitions {
-        brain.add_tool(ServiceSubgraphBrainTool {
-            runner: ToolSubgraphRunner {
-                node_id: format!("agent_inference_{}", agent.id),
-                owner_node_type: "brain".to_string(),
-                shared_inputs: Vec::new(),
-                definition: tool_def,
-                shared_runtime_values: HashMap::new(),
-                result_mode: ToolResultMode::JsonObject,
-            },
-        });
-    }
-
+    let brain = build_brain(agent, llm, default_tools, tool_definitions);
     let (output_messages, stop_reason) = brain.run_streaming(messages, token_tx).await;
-    match stop_reason {
-        BrainStopReason::Done => Ok(output_messages),
-        BrainStopReason::TransportError(content) => Err(Error::StringError(format!(
-            "chat stream LLM request failed for '{}': {}",
-            agent.name, content
-        ))),
-        BrainStopReason::MaxIterationsReached => Err(Error::StringError(format!(
-            "chat stream exceeded max tool iterations ({MAX_TOOL_ITERATIONS}) for '{}'",
-            agent.name
-        ))),
-    }
+    handle_brain_result(&agent.name, output_messages, stop_reason)
 }
