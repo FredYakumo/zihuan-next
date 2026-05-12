@@ -50,6 +50,7 @@ struct RequestContext {
 enum RequestFormat {
     DefaultOpenAI,
     TencentMultimodalCompat,
+    OpenAiResponsesMultimodalCompat,
 }
 
 impl RequestFormat {
@@ -57,6 +58,7 @@ impl RequestFormat {
         match self {
             RequestFormat::DefaultOpenAI => "default",
             RequestFormat::TencentMultimodalCompat => "tencent_multimodal_compat",
+            RequestFormat::OpenAiResponsesMultimodalCompat => "openai_responses_multimodal_compat",
         }
     }
 }
@@ -577,9 +579,16 @@ impl LLMAPI {
             (RequestFormat::TencentMultimodalCompat, Some(MessageContent::Text(text))) => {
                 json!([{ "type": "text", "text": text }])
             }
+            (RequestFormat::OpenAiResponsesMultimodalCompat, Some(MessageContent::Text(text))) => {
+                Value::String(text.clone())
+            }
             (RequestFormat::TencentMultimodalCompat, Some(MessageContent::Parts(parts))) => {
                 serialize_content_parts(parts)
             }
+            (
+                RequestFormat::OpenAiResponsesMultimodalCompat,
+                Some(MessageContent::Parts(parts)),
+            ) => serialize_content_parts(parts),
         }
     }
 
@@ -642,7 +651,7 @@ impl LLMAPI {
             let input = param
                 .messages
                 .iter()
-                .flat_map(|msg| Self::build_responses_input_items(msg))
+                .flat_map(|msg| Self::build_responses_input_items(msg, request_format))
                 .collect::<Vec<_>>();
             let tools = param.tools.as_ref().map(|ts| {
                 ts.iter()
@@ -691,7 +700,10 @@ impl LLMAPI {
         request_body
     }
 
-    fn build_responses_input_items(msg: &OpenAIMessage) -> Vec<Value> {
+    fn build_responses_input_items(
+        msg: &OpenAIMessage,
+        request_format: RequestFormat,
+    ) -> Vec<Value> {
         match msg.role {
             zihuan_core::llm::MessageRole::Tool => {
                 let output = msg.content_text_owned().unwrap_or_default();
@@ -703,8 +715,11 @@ impl LLMAPI {
             }
             zihuan_core::llm::MessageRole::Assistant if !msg.tool_calls.is_empty() => {
                 let mut items = Vec::new();
-                let content_items =
-                    Self::serialize_responses_message_content(&msg.role, msg.content.as_ref());
+                let content_items = Self::serialize_responses_message_content(
+                    &msg.role,
+                    msg.content.as_ref(),
+                    request_format,
+                );
                 if !content_items.is_empty() {
                     items.push(json!({
                         "type": "message",
@@ -723,13 +738,19 @@ impl LLMAPI {
                 items
             }
             _ => {
-                let content_items =
-                    Self::serialize_responses_message_content(&msg.role, msg.content.as_ref());
-                vec![json!({
-                    "type": "message",
+                let content_items = Self::serialize_responses_message_content(
+                    &msg.role,
+                    msg.content.as_ref(),
+                    request_format,
+                );
+                let mut item = json!({
                     "role": role_to_str(&msg.role),
                     "content": content_items,
-                })]
+                });
+                if request_format != RequestFormat::OpenAiResponsesMultimodalCompat {
+                    item["type"] = json!("message");
+                }
+                vec![item]
             }
         }
     }
@@ -737,6 +758,7 @@ impl LLMAPI {
     fn serialize_responses_message_content(
         role: &MessageRole,
         content: Option<&MessageContent>,
+        request_format: RequestFormat,
     ) -> Vec<Value> {
         let text_type = match role {
             MessageRole::Assistant => "output_text",
@@ -761,6 +783,14 @@ impl LLMAPI {
                             json!({
                                 "type": "output_text",
                                 "text": format!("[image omitted] {}", image_url.as_url()),
+                            })
+                        } else if request_format == RequestFormat::OpenAiResponsesMultimodalCompat {
+                            json!({
+                                "type": "input_image",
+                                "image_url": {
+                                    "url": image_url.as_url(),
+                                    "detail": "auto",
+                                },
                             })
                         } else {
                             json!({
@@ -808,6 +838,21 @@ impl LLMAPI {
         response_body_lower.contains("\"code\":\"20024\"")
             || response_body_lower.contains("\"code\":20024")
             || response_body_lower.contains("invalid params")
+    }
+
+    fn is_openai_responses_multimodal_compat_retry_candidate(
+        request_context: &RequestContext,
+        err: &RequestError,
+    ) -> bool {
+        if !request_context.has_multimodal_input {
+            return false;
+        }
+
+        let RequestError::NonRetryable { status, .. } = err else {
+            return false;
+        };
+
+        *status == Some(StatusCode::BAD_REQUEST)
     }
 
     fn send_request(
@@ -992,8 +1037,17 @@ impl LLMBase for LLMAPI {
         };
         let default_request_body =
             self.build_request_body(param, self.stream, RequestFormat::DefaultOpenAI);
-        let compat_request_body = request_context.has_multimodal_input.then(|| {
+        let tencent_compat_request_body = request_context.has_multimodal_input.then(|| {
             self.build_request_body(param, self.stream, RequestFormat::TencentMultimodalCompat)
+        });
+        let responses_compat_request_body = (request_context.has_multimodal_input
+            && matches!(self.api_style, LlmApiStyle::OpenAiResponses))
+        .then(|| {
+            self.build_request_body(
+                param,
+                self.stream,
+                RequestFormat::OpenAiResponsesMultimodalCompat,
+            )
         });
         let max_attempts = self.retry_count.saturating_add(1);
         let mut last_error = None;
@@ -1003,7 +1057,10 @@ impl LLMBase for LLMAPI {
             loop {
                 let request_body = match request_format {
                     RequestFormat::DefaultOpenAI => &default_request_body,
-                    RequestFormat::TencentMultimodalCompat => compat_request_body
+                    RequestFormat::TencentMultimodalCompat => tencent_compat_request_body
+                        .as_ref()
+                        .unwrap_or(&default_request_body),
+                    RequestFormat::OpenAiResponsesMultimodalCompat => responses_compat_request_body
                         .as_ref()
                         .unwrap_or(&default_request_body),
                 };
@@ -1048,7 +1105,7 @@ impl LLMBase for LLMAPI {
                     }
                     Err(err)
                         if request_format == RequestFormat::DefaultOpenAI
-                            && compat_request_body.is_some()
+                            && tencent_compat_request_body.is_some()
                             && Self::is_tencent_multimodal_compat_retry_candidate(
                                 &request_context,
                                 &err,
@@ -1059,6 +1116,21 @@ impl LLMBase for LLMAPI {
                             err.message()
                         );
                         request_format = RequestFormat::TencentMultimodalCompat;
+                        continue;
+                    }
+                    Err(err)
+                        if request_format == RequestFormat::DefaultOpenAI
+                            && responses_compat_request_body.is_some()
+                            && Self::is_openai_responses_multimodal_compat_retry_candidate(
+                                &request_context,
+                                &err,
+                            ) =>
+                    {
+                        warn!(
+                            "LLM API request hit OpenAI Responses multimodal compatibility issue; retrying with alternate image payload format: {}",
+                            err.message()
+                        );
+                        request_format = RequestFormat::OpenAiResponsesMultimodalCompat;
                         continue;
                     }
                     Err(RequestError::Retryable { message }) => {
@@ -1121,9 +1193,14 @@ impl LLMAPI {
         };
         let default_request_body =
             self.build_request_body(param, true, RequestFormat::DefaultOpenAI);
-        let compat_request_body = request_context
+        let tencent_compat_request_body = request_context
             .has_multimodal_input
             .then(|| self.build_request_body(param, true, RequestFormat::TencentMultimodalCompat));
+        let responses_compat_request_body = (request_context.has_multimodal_input
+            && matches!(self.api_style, LlmApiStyle::OpenAiResponses))
+        .then(|| {
+            self.build_request_body(param, true, RequestFormat::OpenAiResponsesMultimodalCompat)
+        });
 
         let client = reqwest::Client::builder()
             .timeout(self.timeout)
@@ -1134,7 +1211,10 @@ impl LLMAPI {
         loop {
             let request_body = match request_format {
                 RequestFormat::DefaultOpenAI => &default_request_body,
-                RequestFormat::TencentMultimodalCompat => compat_request_body
+                RequestFormat::TencentMultimodalCompat => tencent_compat_request_body
+                    .as_ref()
+                    .unwrap_or(&default_request_body),
+                RequestFormat::OpenAiResponsesMultimodalCompat => responses_compat_request_body
                     .as_ref()
                     .unwrap_or(&default_request_body),
             };
@@ -1172,7 +1252,7 @@ impl LLMAPI {
                 };
 
                 if request_format == RequestFormat::DefaultOpenAI
-                    && compat_request_body.is_some()
+                    && tencent_compat_request_body.is_some()
                     && Self::is_tencent_multimodal_compat_retry_candidate(&request_context, &err)
                 {
                     warn!(
@@ -1180,6 +1260,21 @@ impl LLMAPI {
                         err.message()
                     );
                     request_format = RequestFormat::TencentMultimodalCompat;
+                    continue;
+                }
+
+                if request_format == RequestFormat::DefaultOpenAI
+                    && responses_compat_request_body.is_some()
+                    && Self::is_openai_responses_multimodal_compat_retry_candidate(
+                        &request_context,
+                        &err,
+                    )
+                {
+                    warn!(
+                        "Streaming LLM API request hit OpenAI Responses multimodal compatibility issue; retrying with alternate image payload format: {}",
+                        err.message()
+                    );
+                    request_format = RequestFormat::OpenAiResponsesMultimodalCompat;
                     continue;
                 }
 
