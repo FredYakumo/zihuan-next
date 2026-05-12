@@ -87,7 +87,9 @@ pub struct HttpStreamAgentConfig {
 #[serde(rename_all = "snake_case")]
 pub enum LlmApiStyle {
     Candle,
+    #[serde(alias = "open_ai_chat_completions_api")]
     OpenAiChatCompletions,
+    #[serde(alias = "open_ai_responses_api")]
     OpenAiResponses,
 }
 

@@ -7,7 +7,7 @@
       </div>
     </div>
 
-    <div v-if="showCreatePicker" class="connection-picker-backdrop" @click="closeCreatePicker">
+    <div v-if="showCreatePicker" class="connection-picker-backdrop">
       <div class="connection-picker-dialog" @click.stop>
         <div class="connection-picker-header">
           <h3>新建模型配置</h3>
@@ -46,8 +46,8 @@
                 <label>后端格式</label>
                 <select v-model="form.llm.api_style">
                   <option value="candle">Candle推理引擎(待实现)</option>
-                  <option value="open_ai_chat_completions_api">OpenAI Chat Completions API</option>
-                  <option value="open_ai_responses_api">OpenAI Responses API</option>
+                  <option value="open_ai_chat_completions">OpenAI Chat Completions API</option>
+                  <option value="open_ai_responses">OpenAI Responses API</option>
                 </select>
               </div>
               <div class="field"><label>Model Name</label><input v-model="form.llm.model_name" /></div>

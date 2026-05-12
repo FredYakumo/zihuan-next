@@ -1,10 +1,14 @@
 use crate::models::message::MessageProp;
 use base64::Engine;
 use log::{info, warn};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
 use tokio::task::block_in_place;
 use zihuan_core::error::Result;
+use zihuan_core::ims_bot_adapter::logging::{
+    LOG_DATA_URL_PREVIEW_CHARS, LOG_MESSAGE_PREVIEW_CHARS,
+};
 use zihuan_core::llm::{ContentPart, OpenAIMessage};
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
@@ -67,6 +71,69 @@ impl ExtractMessageFromEventNode {
             Some("bmp") => "image/bmp",
             Some("svg") => "image/svg+xml",
             _ => "image/png",
+        }
+    }
+
+    fn truncate_for_log(text: &str, max_chars: usize) -> String {
+        let total_chars = text.chars().count();
+        if total_chars <= max_chars {
+            return text.to_string();
+        }
+
+        let truncated: String = text.chars().take(max_chars).collect();
+        format!("{truncated}...(truncated,total_chars={total_chars})")
+    }
+
+    fn truncate_data_url_for_log(url: &str) -> String {
+        const BASE64_MARKER: &str = ";base64,";
+
+        let Some(marker_index) = url.find(BASE64_MARKER) else {
+            return Self::truncate_for_log(url, LOG_DATA_URL_PREVIEW_CHARS);
+        };
+
+        let payload_start = marker_index + BASE64_MARKER.len();
+        let payload = &url[payload_start..];
+        let payload_chars = payload.chars().count();
+        if payload_chars <= LOG_DATA_URL_PREVIEW_CHARS {
+            return url.to_string();
+        }
+
+        let prefix = &url[..payload_start];
+        let payload_preview: String = payload.chars().take(LOG_DATA_URL_PREVIEW_CHARS).collect();
+        format!("{prefix}{payload_preview}...(truncated,base64_chars={payload_chars})")
+    }
+
+    fn sanitize_json_for_log(value: &mut Value) {
+        match value {
+            Value::String(text) => {
+                if text.starts_with("data:") {
+                    *text = Self::truncate_data_url_for_log(text);
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    Self::sanitize_json_for_log(item);
+                }
+            }
+            Value::Object(map) => {
+                for value in map.values_mut() {
+                    Self::sanitize_json_for_log(value);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn json_for_log<T: serde::Serialize>(value: &T) -> String {
+        let mut json_value = match serde_json::to_value(value) {
+            Ok(value) => value,
+            Err(err) => return format!("<serialize failed: {err}>"),
+        };
+        Self::sanitize_json_for_log(&mut json_value);
+
+        match serde_json::to_string(&json_value) {
+            Ok(json) => Self::truncate_for_log(&json, LOG_MESSAGE_PREVIEW_CHARS),
+            Err(err) => format!("<serialize failed: {err}>"),
         }
     }
 
@@ -530,8 +597,7 @@ impl Node for ExtractMessageFromEventNode {
             info!(
                 "{} output user message={}",
                 Self::LOG_PREFIX,
-                serde_json::to_string(&user_msg)
-                    .unwrap_or_else(|err| format!("<serialize failed: {err}>"))
+                Self::json_for_log(&user_msg)
             );
 
             let messages = vec![user_msg];

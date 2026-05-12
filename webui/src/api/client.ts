@@ -322,7 +322,7 @@ export interface LlmServiceConfig {
   model_name: string;
   api_endpoint: string;
   api_key?: string | null;
-  api_style: "candle" | "open_ai_chat_completions_api" | "open_ai_responses_api";
+  api_style: "candle" | "open_ai_chat_completions" | "open_ai_responses";
   stream: boolean;
   supports_multimodal_input: boolean;
   timeout_secs: number;
