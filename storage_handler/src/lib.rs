@@ -6,7 +6,6 @@ pub mod redis;
 pub mod resource_resolver;
 pub mod rustfs;
 pub mod weaviate;
-pub mod weaviate_client;
 
 use log::info;
 use serde::{Deserialize, Serialize};
