@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use zihuan_core::error::{Error, Result};
-use zihuan_graph_engine::database::weaviate::{WeaviateCollectionSchema, WeaviateRef};
+use zihuan_core::weaviate::{WeaviateCollectionSchema, WeaviateRef};
 use zihuan_graph_engine::{DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port};
 
 use crate::RuntimeStorageConnectionManager;

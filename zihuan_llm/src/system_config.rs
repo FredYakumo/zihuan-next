@@ -56,8 +56,6 @@ pub struct QqChatAgentConfig {
     pub math_programming_llm_ref_id: Option<String>,
     #[serde(default)]
     pub embedding_model_ref_id: Option<String>,
-    #[serde(default)]
-    pub llm: Option<LlmServiceConfig>,
     pub tavily_connection_id: String,
     #[serde(default)]
     pub embedding: Option<EmbeddingServiceConfig>,
@@ -83,8 +81,18 @@ pub struct HttpStreamAgentConfig {
     pub api_key: Option<String>,
     #[serde(default)]
     pub llm_ref_id: Option<String>,
-    #[serde(default)]
-    pub llm: Option<LlmServiceConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LlmApiStyle {
+    Candle,
+    OpenAiChatCompletions,
+    OpenAiResponses,
+}
+
+fn default_llm_api_style() -> LlmApiStyle {
+    LlmApiStyle::OpenAiChatCompletions
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +101,8 @@ pub struct LlmServiceConfig {
     pub api_endpoint: String,
     #[serde(default)]
     pub api_key: Option<String>,
+    #[serde(default = "default_llm_api_style")]
+    pub api_style: LlmApiStyle,
     #[serde(default = "default_stream")]
     pub stream: bool,
     #[serde(default)]
@@ -323,7 +333,9 @@ impl ConfigRecord for LlmRefConfig {
                         "chat_llm model_name must not be empty"
                     ));
                 }
-                if llm.api_endpoint.trim().is_empty() {
+                if !matches!(llm.api_style, LlmApiStyle::Candle)
+                    && llm.api_endpoint.trim().is_empty()
+                {
                     return Err(zihuan_core::string_error!(
                         "chat_llm api_endpoint must not be empty"
                     ));
@@ -347,6 +359,7 @@ impl ConfigRecord for LlmRefConfig {
                 "llm": {
                     "model_name": llm.model_name,
                     "api_endpoint": llm.api_endpoint,
+                    "api_style": llm.api_style,
                 }
             }),
             ModelRefSpec::TextEmbeddingLocal { model_name } => json!({

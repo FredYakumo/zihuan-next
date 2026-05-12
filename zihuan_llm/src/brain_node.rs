@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use crate::agent::brain::{Brain, BrainStopReason, BrainTool, MAX_TOOL_ITERATIONS};
 use crate::brain_tool::{
     brain_shared_inputs_from_value, BrainToolDefinition, BRAIN_SHARED_INPUTS_PORT,
     BRAIN_TOOLS_CONFIG_PORT,
@@ -12,6 +11,7 @@ use crate::tool_subgraph::{
     shared_inputs_ports, validate_shared_inputs, validate_tool_definitions, SubgraphFunctionTool,
     ToolResultMode, ToolSubgraphRunner,
 };
+use zihuan_agent::brain::{Brain, BrainStopReason, BrainTool, MAX_TOOL_ITERATIONS};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::OpenAIMessage;

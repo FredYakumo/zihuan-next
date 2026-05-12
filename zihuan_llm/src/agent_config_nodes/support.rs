@@ -6,11 +6,12 @@ use std::time::Duration;
 use storage_handler::{
     load_connections, resource_resolver, RuntimeStorageConnectionManager, WeaviateCollectionSchema,
 };
+use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;
-use zihuan_graph_engine::data_value::TavilyRef;
-use zihuan_graph_engine::database::weaviate::WeaviateRef;
+use zihuan_core::rag::TavilyRef;
+use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::{DataType, DataValue, NodeConfigField, NodeConfigWidget};
 
@@ -127,6 +128,7 @@ pub fn build_llm_from_ref_id(llm_ref_id: Option<&str>) -> Result<Arc<dyn LLMBase
             llm.model_name,
             llm.api_endpoint,
             llm.api_key,
+            llm.api_style,
             llm.stream,
             llm.supports_multimodal_input,
             Duration::from_secs(llm.timeout_secs),
@@ -149,9 +151,7 @@ pub fn build_embedding_from_ref_id(
     )
 }
 
-pub fn build_mysql_ref(
-    mysql_connection_id: Option<&str>,
-) -> Result<Arc<zihuan_graph_engine::data_value::MySqlConfig>> {
+pub fn build_mysql_ref(mysql_connection_id: Option<&str>) -> Result<Arc<MySqlConfig>> {
     let mysql_connection_id = mysql_connection_id
         .map(str::trim)
         .filter(|value| !value.is_empty())

@@ -167,6 +167,7 @@ pub fn validate_shared_inputs(
         normalized.push(FunctionPortDef {
             name: name.to_string(),
             data_type: port.data_type,
+            description: port.description,
         });
     }
 
@@ -414,6 +415,7 @@ impl ToolSubgraphRunner {
                         &FunctionPortDef {
                             name: param.name.clone(),
                             data_type: param.data_type.clone(),
+                            description: param.desc.clone(),
                         },
                         &value,
                     )

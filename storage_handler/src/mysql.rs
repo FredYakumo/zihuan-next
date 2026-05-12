@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
-use zihuan_graph_engine::data_value::MySqlConfig;
 use zihuan_graph_engine::message_restore::register_mysql_ref;
 use zihuan_graph_engine::{DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port};
 

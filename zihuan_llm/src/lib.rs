@@ -6,9 +6,9 @@ pub mod brain_tool;
 pub mod inference_function;
 pub mod linalg;
 pub mod llm_api;
-pub mod llm_api_node;
 pub mod llm_base;
 pub mod llm_infer_node;
+pub mod llm_node;
 pub mod model;
 pub mod nn;
 pub mod prompt;
@@ -38,8 +38,8 @@ pub fn init_node_registry() -> Result<()> {
     use linalg::text_embedding_node::TextEmbeddingNode;
     use linalg::top_k_similarity_node::TopKSimilarityNode;
     use linalg::vector_cosine_similarity_node::VectorCosineSimilarityNode;
-    use llm_api_node::LLMApiNode;
     use llm_infer_node::LLMInferNode;
+    use llm_node::LlmNode;
     use nn::local_candle_embedding_node::LoadLocalTextEmbedderNode;
     use rag::tavily_provider_node::TavilyProviderNode;
     use rag::tavily_search_node::TavilySearchNode;
@@ -92,7 +92,7 @@ pub fn init_node_registry() -> Result<()> {
         "llm配置",
         "AI",
         "配置语言模型连接，输出LLModel引用",
-        LLMApiNode
+        LlmNode
     );
     register_node!(
         "llm_infer",
@@ -161,7 +161,7 @@ pub fn init_node_registry() -> Result<()> {
         "tavily_provider",
         "Tavily Provider",
         "AI",
-        "配置 Tavily 搜索 API Token，输出 TavilyRef 引用",
+        "从系统连接中选择 Tavily 配置，输出 TavilyRef 引用",
         TavilyProviderNode
     );
     register_node!(

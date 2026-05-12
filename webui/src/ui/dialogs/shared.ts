@@ -24,7 +24,7 @@ export function extractTemplateVars(template: string): string[] {
 export function buildPortListEditor(
   container: HTMLElement,
   ports: FunctionPortDef[],
-  _showDesc?: boolean,
+  showDesc = false,
 ): () => FunctionPortDef[] {
   const items: Array<{
     nameEl: HTMLInputElement;
@@ -52,6 +52,13 @@ export function buildPortListEditor(
       item.dataType = parseDisplayDataType(typeEl.value);
     });
 
+    const descEl = showDesc ? document.createElement("input") : undefined;
+    if (descEl) {
+      descEl.type = "text";
+      descEl.placeholder = "description";
+      descEl.value = port?.description ?? "";
+    }
+
     const removeBtn = document.createElement("button");
     removeBtn.textContent = "✕";
     removeBtn.className = "danger";
@@ -64,10 +71,11 @@ export function buildPortListEditor(
 
     row.appendChild(nameEl);
     row.appendChild(typeEl);
+    if (descEl) row.appendChild(descEl);
     row.appendChild(removeBtn);
     container.insertBefore(row, addBtn);
 
-    items.push(item);
+    items.push({ ...item, descEl });
   };
 
   const addBtn = document.createElement("button");
@@ -82,6 +90,7 @@ export function buildPortListEditor(
     .map((it) => ({
       name: it.nameEl.value.trim(),
       data_type: cloneDataTypeMetaData(it.dataType),
+      description: it.descEl?.value.trim() ?? "",
     }))
     .filter((p) => p.name);
 }

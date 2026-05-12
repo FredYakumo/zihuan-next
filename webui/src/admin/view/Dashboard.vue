@@ -1079,4 +1079,66 @@ onMounted(() => {
   border: 0;
   border-top: 1px solid var(--admin-border);
 }
+
+@media (max-width: 1180px) {
+  .chat-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .chat-agent-picker {
+    min-width: 0;
+  }
+
+  .chat-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-sessions {
+    max-height: 240px;
+  }
+}
+
+@media (max-width: 900px) {
+  .dashboard-page {
+    height: auto;
+    min-height: calc(100vh - 32px);
+  }
+
+  .dashboard-stats {
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+
+  .stat-divider {
+    display: none;
+  }
+
+  .chat-panel {
+    padding: 18px;
+  }
+
+  .chat-agent-card {
+    min-width: min(220px, 100%);
+    flex: 1 1 220px;
+  }
+
+  .chat-messages {
+    padding: 18px;
+  }
+
+  .chat-input-area {
+    padding: 14px 16px;
+  }
+
+  .chat-input-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .chat-bubble,
+  .chat-bubble-row.assistant .chat-bubble {
+    max-width: 100%;
+  }
+}
 </style>

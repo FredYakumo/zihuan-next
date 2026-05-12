@@ -10,6 +10,17 @@ use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::{ContentPart, InferenceParam, MessageContent, MessageRole, OpenAIMessage};
 
 pub const MAX_TOOL_ITERATIONS: usize = 25;
+const LOG_PREVIEW_CHARS: usize = 600;
+
+fn truncate_for_log(text: &str, max_chars: usize) -> String {
+    let total_chars = text.chars().count();
+    if total_chars <= max_chars {
+        return text.to_string();
+    }
+
+    let truncated: String = text.chars().take(max_chars).collect();
+    format!("{truncated}...(truncated,total_chars={total_chars})")
+}
 
 /// Remove dangling / unresolved tool-call sequences from a message history so
 /// that the sequence passed to the LLM is always well-formed.
@@ -79,10 +90,6 @@ pub fn sanitize_messages_for_inference(messages: Vec<OpenAIMessage>) -> Vec<Open
     sanitized
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BrainTool trait
-// ─────────────────────────────────────────────────────────────────────────────
-
 /// A tool that [`Brain`] can invoke during an inference loop.
 pub trait BrainTool: Send + Sync + 'static {
     /// Returns the LLM-facing function specification (name, description, parameters).
@@ -91,10 +98,6 @@ pub trait BrainTool: Send + Sync + 'static {
     /// (used e.g. to send a progress notification before doing the actual work).
     fn execute(&self, call_content: &str, arguments: &Value) -> String;
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// BrainStopReason
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// The reason a [`Brain::run`] call returned.
 #[derive(Debug)]
@@ -106,10 +109,6 @@ pub enum BrainStopReason {
     /// Reached [`MAX_TOOL_ITERATIONS`] without a final assistant message.
     MaxIterationsReached,
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Brain
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Orchestrates a multi-turn LLM ↔ tool call loop.
 ///
@@ -186,8 +185,9 @@ impl Brain {
             let tool_call_content = response.content_text_owned().unwrap_or_default();
             if !tool_call_content.is_empty() {
                 info!(
-                    "[Brain] iteration {} assistant content: {tool_call_content}",
-                    iteration + 1
+                    "[Brain] iteration {} assistant content: {}",
+                    iteration + 1,
+                    truncate_for_log(&tool_call_content, LOG_PREVIEW_CHARS)
                 );
             }
             info!(
@@ -201,7 +201,9 @@ impl Brain {
             for tc in &response.tool_calls {
                 info!(
                     "[Brain] tool call id={} name={} arguments={}",
-                    tc.id, tc.function.name, tc.function.arguments
+                    tc.id,
+                    tc.function.name,
+                    truncate_for_log(&tc.function.arguments.to_string(), LOG_PREVIEW_CHARS)
                 );
                 let result = self
                     .tools
@@ -218,8 +220,10 @@ impl Brain {
                     });
 
                 info!(
-                    "[Brain] tool call id={} name={} result: {result}",
-                    tc.id, tc.function.name
+                    "[Brain] tool call id={} name={} result: {}",
+                    tc.id,
+                    tc.function.name,
+                    truncate_for_log(&result, LOG_PREVIEW_CHARS)
                 );
                 let msg = OpenAIMessage::tool_result(tc.id.clone(), result);
                 conversation.push(msg.clone());
@@ -284,6 +288,13 @@ impl Brain {
             }
 
             if response.tool_calls.is_empty() {
+                let response_preview = response.content_text_owned().unwrap_or_default();
+                if !response_preview.is_empty() {
+                    info!(
+                        "[Brain] final assistant response: {}",
+                        truncate_for_log(&response_preview, LOG_PREVIEW_CHARS)
+                    );
+                }
                 output.push(response);
                 return (output, BrainStopReason::Done);
             }
@@ -296,8 +307,9 @@ impl Brain {
             let tool_call_content = response.content_text_owned().unwrap_or_default();
             if !tool_call_content.is_empty() {
                 info!(
-                    "[Brain] iteration {} assistant content: {tool_call_content}",
-                    iteration + 1
+                    "[Brain] iteration {} assistant content: {}",
+                    iteration + 1,
+                    truncate_for_log(&tool_call_content, LOG_PREVIEW_CHARS)
                 );
             }
             info!(
@@ -311,7 +323,9 @@ impl Brain {
             for tc in &response.tool_calls {
                 info!(
                     "[Brain] tool call id={} name={} arguments={}",
-                    tc.id, tc.function.name, tc.function.arguments
+                    tc.id,
+                    tc.function.name,
+                    truncate_for_log(&tc.function.arguments.to_string(), LOG_PREVIEW_CHARS)
                 );
                 let result = self
                     .tools
@@ -328,8 +342,10 @@ impl Brain {
                     });
 
                 info!(
-                    "[Brain] tool call id={} name={} result: {result}",
-                    tc.id, tc.function.name
+                    "[Brain] tool call id={} name={} result: {}",
+                    tc.id,
+                    tc.function.name,
+                    truncate_for_log(&result, LOG_PREVIEW_CHARS)
                 );
                 let msg = OpenAIMessage::tool_result(tc.id.clone(), result);
                 conversation.push(msg.clone());
@@ -395,10 +411,6 @@ fn append_tool_summary_to_system(
 
     messages.push(OpenAIMessage::system(summary));
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Returns `true` if `content` looks like a transport-level LLM error string.
 pub fn is_transport_error(content: &str) -> bool {

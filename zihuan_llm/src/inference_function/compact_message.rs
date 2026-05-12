@@ -7,7 +7,7 @@ use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::{InferenceParam, MessageRole, OpenAIMessage};
 use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
 
-use crate::agent::brain::{is_transport_error, sanitize_messages_for_inference};
+use zihuan_agent::brain::{is_transport_error, sanitize_messages_for_inference};
 
 pub const COMPACT_TAIL_MESSAGES_TO_KEEP: usize = 2;
 

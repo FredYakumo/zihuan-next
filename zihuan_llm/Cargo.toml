@@ -11,6 +11,7 @@ candle-metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/met
 [dependencies]
 general_wheel_cpp = { path = "../general_wheel_cpp" }
 zihuan_core = { path = "../zihuan_core" }
+zihuan_agent = { path = "../zihuan_agent" }
 zihuan_graph_engine = { path = "../zihuan_graph_engine" }
 ims_bot_adapter = { path = "../ims_bot_adapter" }
 storage_handler = { path = "../storage_handler" }

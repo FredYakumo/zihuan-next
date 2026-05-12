@@ -33,7 +33,7 @@ pub use resource_resolver::{
 };
 pub use rustfs::RustfsNode;
 pub use weaviate::WeaviateNode;
-pub use zihuan_graph_engine::database::weaviate::WeaviateCollectionSchema;
+pub use zihuan_core::weaviate::WeaviateCollectionSchema;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

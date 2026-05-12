@@ -14,6 +14,7 @@ sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "mysql", "chro
 salvo = { version = "0.75", features = ["websocket", "affix-state"] }
 
 zihuan_core = { path = "../zihuan_core" }
+zihuan_agent = { path = "../zihuan_agent" }
 zihuan_graph_engine = { path = "../zihuan_graph_engine" }
 zihuan_llm = { path = "../zihuan_llm" }
 ims_bot_adapter = { path = "../ims_bot_adapter" }

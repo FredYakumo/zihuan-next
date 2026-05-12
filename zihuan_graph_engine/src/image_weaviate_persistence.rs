@@ -38,7 +38,7 @@ impl Node for ImageWeaviatePersistenceNode {
         port! { name = "object_storage_path", ty = String, desc = "对象存储路径（object_key/object_url）" },
         port! { name = "vector", ty = Vector, desc = "图片语义向量" },
         port! { name = "summary", ty = String, desc = "图片总结说明" },
-        port! { name = "weaviate_ref", ty = crate::database::weaviate::WeaviateRef, desc = "Weaviate连接配置引用" },
+        port! { name = "weaviate_ref", ty = zihuan_core::weaviate::WeaviateRef, desc = "Weaviate连接配置引用" },
         port! { name = "source", ty = String, desc = "可选：图片来源（qq/tavily等）", optional },
         port! { name = "message_id", ty = String, desc = "可选：关联消息ID", optional },
         port! { name = "sender_id", ty = String, desc = "可选：发送者ID", optional },

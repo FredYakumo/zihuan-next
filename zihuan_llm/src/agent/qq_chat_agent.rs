@@ -7,7 +7,6 @@ use base64::Engine;
 use log::{info, warn};
 use serde_json::Value;
 
-use crate::agent::brain::{Brain, BrainStopReason, BrainTool};
 use crate::agent_text_similarity::{
     find_best_match, token_overlap_ratio, HybridSimilarityConfig, SimilarityCandidate,
 };
@@ -34,20 +33,22 @@ use ims_bot_adapter::models::message::{
     AtTargetMessage, ForwardMessage, ForwardNodeMessage, ImageMessage, Message, MessageProp,
     PlainTextMessage,
 };
+use zihuan_agent::brain::{sanitize_messages_for_inference, Brain, BrainStopReason, BrainTool};
+use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::InferenceParam;
 use zihuan_core::llm::{ContentPart, OpenAIMessage};
+use zihuan_core::rag::{TavilyImage, TavilyRef};
 use zihuan_core::runtime::block_async;
 use zihuan_core::task_context::{
     scope_task_id, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
 };
+use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::data_value::{
-    MySqlConfig, OpenAIMessageSessionCacheRef, SessionClaim, SessionStateRef, TavilyImage,
-    TavilyRef, SESSION_CLAIM_CONTEXT,
+    OpenAIMessageSessionCacheRef, SessionClaim, SessionStateRef, SESSION_CLAIM_CONTEXT,
 };
-use zihuan_graph_engine::database::weaviate::WeaviateRef;
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::message_mysql_get_group_history::MessageMySQLGetGroupHistoryNode;
 use zihuan_graph_engine::message_mysql_get_user_history::MessageMySQLGetUserHistoryNode;
@@ -63,6 +64,8 @@ const LOG_PREFIX: &str = "[QqChatAgent]";
 const BUSY_REPLY: &str = "我还在思考中，你别急";
 const MAX_REPLY_CHARS: usize = 250;
 const MAX_FORWARD_NODE_CHARS: usize = 800;
+const LOG_TEXT_PREVIEW_CHARS: usize = 1_200;
+const LOG_TOOL_PREVIEW_CHARS: usize = 600;
 const DUPLICATE_COSINE_THRESHOLD: f64 = 0.95;
 const DUPLICATE_HYBRID_THRESHOLD: f64 = 0.90;
 const DUPLICATE_OVERLAP_THRESHOLD: f64 = 0.78;
@@ -210,6 +213,27 @@ fn save_history(
     if let Err(e) = block_async(cache.set_messages(history_key, messages)) {
         warn!("{LOG_PREFIX} Failed to save history for {history_key}: {e}");
     }
+}
+
+fn truncate_for_log(text: &str, max_chars: usize) -> String {
+    let total_chars = text.chars().count();
+    if total_chars <= max_chars {
+        return text.to_string();
+    }
+
+    let truncated: String = text.chars().take(max_chars).collect();
+    format!("{truncated}...(truncated,total_chars={total_chars})")
+}
+
+fn json_for_log<T: serde::Serialize>(value: &T, max_chars: usize) -> String {
+    match serde_json::to_string(value) {
+        Ok(json) => truncate_for_log(&json, max_chars),
+        Err(err) => format!("<serialize failed: {err}>"),
+    }
+}
+
+fn debug_for_log<T: std::fmt::Debug>(value: &T, max_chars: usize) -> String {
+    truncate_for_log(&format!("{value:?}"), max_chars)
 }
 
 /// Try to claim a session slot. Returns `(claimed, claim_token)`.
@@ -791,8 +815,7 @@ fn image_part(image: &ImageMessage, s3_ref: Option<&Arc<S3Ref>>) -> Option<Resol
         (image.url.as_deref(), true),
     ] {
         if let Some(direct_url) = direct_url {
-            if let Some(part) = image_part_from_remote_url(direct_url, image, s3_ref, cache_to_s3)
-            {
+            if let Some(part) = image_part_from_remote_url(direct_url, image, s3_ref, cache_to_s3) {
                 return Some(part);
             }
         }
@@ -1495,6 +1518,12 @@ fn send_direct_text_reply(
         return Ok(None);
     }
 
+    info!(
+        "{LOG_PREFIX} final outgoing qq_message_list(direct) batches={} payload={}",
+        batches.len(),
+        json_for_log(&batches, LOG_TEXT_PREVIEW_CHARS)
+    );
+
     let persistence = outbound_persistence(mysql_ref, group_name, bot_name);
     if is_group {
         send_group_batches_with_persistence(adapter, target_id, &batches, &persistence);
@@ -2031,8 +2060,9 @@ impl BrainTool for WebSearchBrainTool {
 
     fn execute(&self, call_content: &str, arguments: &Value) -> String {
         info!(
-            "{LOG_PREFIX} executing tool 'web_search' call_content='{}' arguments={arguments}",
-            call_content
+            "{LOG_PREFIX} executing tool 'web_search' call_content='{}' arguments={}",
+            truncate_for_log(call_content, LOG_TOOL_PREVIEW_CHARS),
+            truncate_for_log(&arguments.to_string(), LOG_TOOL_PREVIEW_CHARS)
         );
         send_tool_progress_notification(
             self.adapter.as_ref(),
@@ -2060,7 +2090,10 @@ impl BrainTool for WebSearchBrainTool {
 
         if url.is_empty() && query.trim().is_empty() {
             let result = serde_json::json!({"results": []}).to_string();
-            info!("{LOG_PREFIX} tool 'web_search' result: {result}");
+            info!(
+                "{LOG_PREFIX} tool 'web_search' result: {}",
+                truncate_for_log(&result, LOG_TOOL_PREVIEW_CHARS)
+            );
             return result;
         }
 
@@ -2076,7 +2109,10 @@ impl BrainTool for WebSearchBrainTool {
                 serde_json::json!({"results": [], "error": e.to_string()}).to_string()
             }
         };
-        info!("{LOG_PREFIX} tool 'web_search' result: {result}");
+        info!(
+            "{LOG_PREFIX} tool 'web_search' result: {}",
+            truncate_for_log(&result, LOG_TOOL_PREVIEW_CHARS)
+        );
         result
     }
 }
@@ -2154,8 +2190,9 @@ impl BrainTool for GetRecentGroupMessagesBrainTool {
 
     fn execute(&self, call_content: &str, arguments: &Value) -> String {
         info!(
-            "{LOG_PREFIX} executing tool 'get_recent_group_messages' call_content='{}' arguments={arguments}",
-            call_content
+            "{LOG_PREFIX} executing tool 'get_recent_group_messages' call_content='{}' arguments={}",
+            truncate_for_log(call_content, LOG_TOOL_PREVIEW_CHARS),
+            truncate_for_log(&arguments.to_string(), LOG_TOOL_PREVIEW_CHARS)
         );
         send_tool_progress_notification(
             self.adapter.as_ref(),
@@ -2207,7 +2244,10 @@ impl BrainTool for GetRecentGroupMessagesBrainTool {
             Ok(value) => value.to_string(),
             Err(e) => serde_json::json!({"ok": false, "error": e.to_string()}).to_string(),
         };
-        info!("{LOG_PREFIX} tool 'get_recent_group_messages' result: {result_str}");
+        info!(
+            "{LOG_PREFIX} tool 'get_recent_group_messages' result: {}",
+            truncate_for_log(&result_str, LOG_TOOL_PREVIEW_CHARS)
+        );
         result_str
     }
 }
@@ -2239,8 +2279,9 @@ impl BrainTool for GetRecentUserMessagesBrainTool {
 
     fn execute(&self, call_content: &str, arguments: &Value) -> String {
         info!(
-            "{LOG_PREFIX} executing tool 'get_recent_user_messages' call_content='{}' arguments={arguments}",
-            call_content
+            "{LOG_PREFIX} executing tool 'get_recent_user_messages' call_content='{}' arguments={}",
+            truncate_for_log(call_content, LOG_TOOL_PREVIEW_CHARS),
+            truncate_for_log(&arguments.to_string(), LOG_TOOL_PREVIEW_CHARS)
         );
         send_tool_progress_notification(
             self.adapter.as_ref(),
@@ -2289,7 +2330,10 @@ impl BrainTool for GetRecentUserMessagesBrainTool {
             Ok(value) => value.to_string(),
             Err(e) => serde_json::json!({"ok": false, "error": e.to_string()}).to_string(),
         };
-        info!("{LOG_PREFIX} tool 'get_recent_user_messages' result: {result_str}");
+        info!(
+            "{LOG_PREFIX} tool 'get_recent_user_messages' result: {}",
+            truncate_for_log(&result_str, LOG_TOOL_PREVIEW_CHARS)
+        );
         result_str
     }
 }
@@ -2324,8 +2368,9 @@ impl BrainTool for SearchSimilarImagesBrainTool {
 
     fn execute(&self, call_content: &str, arguments: &Value) -> String {
         info!(
-            "{LOG_PREFIX} executing tool 'search_similar_images' call_content='{}' arguments={arguments}",
-            call_content
+            "{LOG_PREFIX} executing tool 'search_similar_images' call_content='{}' arguments={}",
+            truncate_for_log(call_content, LOG_TOOL_PREVIEW_CHARS),
+            truncate_for_log(&arguments.to_string(), LOG_TOOL_PREVIEW_CHARS)
         );
         send_tool_progress_notification(
             self.adapter.as_ref(),
@@ -2498,7 +2543,10 @@ impl BrainTool for SearchSimilarImagesBrainTool {
             Ok(value) => value.to_string(),
             Err(e) => serde_json::json!({"ok": false, "error": e.to_string()}).to_string(),
         };
-        info!("{LOG_PREFIX} tool 'search_similar_images' result: {result_str}");
+        info!(
+            "{LOG_PREFIX} tool 'search_similar_images' result: {}",
+            truncate_for_log(&result_str, LOG_TOOL_PREVIEW_CHARS)
+        );
         result_str
     }
 }
@@ -2520,7 +2568,10 @@ impl BrainTool for GetFunctionListBrainTool {
 
     fn execute(&self, _call_content: &str, _arguments: &Value) -> String {
         let result = FUNCTION_LIST_TEXT;
-        info!("{LOG_PREFIX} tool 'get_function_list' result: {result}");
+        info!(
+            "{LOG_PREFIX} tool 'get_function_list' result: {}",
+            truncate_for_log(&result, LOG_TOOL_PREVIEW_CHARS)
+        );
         result.to_string()
     }
 }
@@ -2551,7 +2602,10 @@ impl BrainTool for GetAgentPublicInfoBrainTool {
             "message": self.message,
         })
         .to_string();
-        info!("{LOG_PREFIX} tool 'get_agent_public_info' result: {result}");
+        info!(
+            "{LOG_PREFIX} tool 'get_agent_public_info' result: {}",
+            truncate_for_log(&result, LOG_TOOL_PREVIEW_CHARS)
+        );
         result
     }
 }
@@ -2567,14 +2621,17 @@ impl BrainTool for EditableQqAgentTool {
 
     fn execute(&self, call_content: &str, arguments: &Value) -> String {
         info!(
-            "{LOG_PREFIX} executing editable tool '{}' call_content='{}' arguments={arguments}",
-            self.runner.definition.name, call_content
+            "{LOG_PREFIX} executing editable tool '{}' call_content='{}' arguments={}",
+            self.runner.definition.name,
+            truncate_for_log(call_content, LOG_TOOL_PREVIEW_CHARS),
+            truncate_for_log(&arguments.to_string(), LOG_TOOL_PREVIEW_CHARS)
         );
         send_editable_tool_progress_notification(&self.runner.shared_runtime_values, call_content);
         let result = self.runner.execute_to_string(call_content, arguments);
         info!(
-            "{LOG_PREFIX} editable tool '{}' result: {result}",
-            self.runner.definition.name
+            "{LOG_PREFIX} editable tool '{}' result: {}",
+            self.runner.definition.name,
+            truncate_for_log(&result, LOG_TOOL_PREVIEW_CHARS)
         );
         result
     }
@@ -2935,6 +2992,16 @@ impl QqChatAgent {
     ) -> Result<QqChatHandleReport> {
         let bot_id = get_bot_id(adapter);
         let inference_event = expand_event_for_inference(event);
+        let raw_message_prop = MessageProp::from_messages_with_bot_name(
+            &event.message_list,
+            Some(&bot_id),
+            Some(bot_name),
+        );
+        let expanded_message_prop = MessageProp::from_messages_with_bot_name(
+            &inference_event.message_list,
+            Some(&bot_id),
+            Some(bot_name),
+        );
         let raw_user_message = extract_user_message_text(event, &bot_id, bot_name);
         let current_message = extract_user_message_text(&inference_event, &bot_id, bot_name);
         let intent = classify_intent(intent_llm, embedding_model, &current_message);
@@ -2953,13 +3020,36 @@ impl QqChatAgent {
         let history_key =
             conversation_history_key(&bot_id, sender_id, is_group, inference_event.group_id);
         let legacy_history_key = sender_id.to_string();
-        let mut history = crate::agent::brain::sanitize_messages_for_inference(load_history(
-            cache,
-            &history_key,
-            &legacy_history_key,
-        ));
+        let mut history =
+            sanitize_messages_for_inference(load_history(cache, &history_key, &legacy_history_key));
+        info!(
+            "{LOG_PREFIX} current message qq_message_list(raw)={}",
+            json_for_log(&event.message_list, LOG_TEXT_PREVIEW_CHARS)
+        );
+        info!(
+            "{LOG_PREFIX} current message qq_message_list(expanded)={}",
+            json_for_log(&inference_event.message_list, LOG_TEXT_PREVIEW_CHARS)
+        );
+        info!(
+            "{LOG_PREFIX} current message message_ref(raw)={}",
+            debug_for_log(&raw_message_prop, LOG_TEXT_PREVIEW_CHARS)
+        );
+        info!(
+            "{LOG_PREFIX} current message message_ref(expanded)={}",
+            debug_for_log(&expanded_message_prop, LOG_TEXT_PREVIEW_CHARS)
+        );
         info!("{LOG_PREFIX} user message(raw)={raw_user_message}");
         info!("{LOG_PREFIX} user message(expanded)={current_message}");
+        info!(
+            "{LOG_PREFIX} current message openai_message={}",
+            json_for_log(&user_msg, LOG_TEXT_PREVIEW_CHARS)
+        );
+        info!(
+            "{LOG_PREFIX} history snapshot key={} messages={} payload={}",
+            history_key,
+            history.len(),
+            json_for_log(&history, LOG_TEXT_PREVIEW_CHARS)
+        );
         info!(
             "{LOG_PREFIX} selected model={} intent={intent:?} history_messages={} context_tokens_estimated={}",
             selected_llm.get_model_name(),
@@ -3067,12 +3157,20 @@ impl QqChatAgent {
         let mut shared_runtime_values = shared_runtime_values;
         shared_runtime_values.insert(
             QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
-            DataValue::MessageEvent(inference_event.clone()),
+            DataValue::MessageEvent(event.clone()),
         );
         let adapter_handle: zihuan_core::ims_bot_adapter::BotAdapterHandle = adapter.clone();
         shared_runtime_values.insert(
             QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT.to_string(),
             DataValue::BotAdapterRef(adapter_handle),
+        );
+        info!(
+            "{LOG_PREFIX} tool subgraph message_event(raw)={}",
+            json_for_log(&event.message_list, LOG_TEXT_PREVIEW_CHARS)
+        );
+        info!(
+            "{LOG_PREFIX} tool subgraph message_event(expanded_for_main_brain)={}",
+            json_for_log(&inference_event.message_list, LOG_TEXT_PREVIEW_CHARS)
         );
 
         let mut conversation: Vec<OpenAIMessage> = Vec::with_capacity(history.len() + 3);
@@ -3081,6 +3179,11 @@ impl QqChatAgent {
         conversation.extend(history.iter().cloned());
         conversation.push(user_msg.clone());
         let prompt_tokens_estimated = estimate_messages_tokens(&conversation);
+        info!(
+            "{LOG_PREFIX} llm conversation messages={} payload={}",
+            conversation.len(),
+            json_for_log(&conversation, LOG_TEXT_PREVIEW_CHARS)
+        );
         info!(
             "{LOG_PREFIX} prompt tokens estimated={} exact_usage=unavailable",
             prompt_tokens_estimated
@@ -3170,6 +3273,11 @@ impl QqChatAgent {
             });
         }
         let (brain_output, stop_reason) = brain.run(conversation);
+        info!(
+            "{LOG_PREFIX} brain output stop_reason={stop_reason:?} messages={} payload={}",
+            brain_output.len(),
+            json_for_log(&brain_output, LOG_TEXT_PREVIEW_CHARS)
+        );
         let completion_tokens_estimated = estimate_messages_tokens(&brain_output);
         info!(
             "{LOG_PREFIX} token usage exact=unavailable prompt_tokens=unavailable completion_tokens=unavailable total_tokens=unavailable estimated_prompt_tokens={} estimated_completion_tokens={} estimated_total_tokens={}",
@@ -3190,6 +3298,19 @@ impl QqChatAgent {
             BrainStopReason::TransportError(_) => None,
             _ => final_assistant_text,
         };
+        info!(
+            "{LOG_PREFIX} brain final assistant message={}",
+            last_assistant
+                .map(|message| json_for_log(message, LOG_TEXT_PREVIEW_CHARS))
+                .unwrap_or_else(|| "<none>".to_string())
+        );
+        info!(
+            "{LOG_PREFIX} brain final assistant text={}",
+            final_assistant_text
+                .as_deref()
+                .map(|content| truncate_for_log(content, LOG_TEXT_PREVIEW_CHARS))
+                .unwrap_or_else(|| "<none>".to_string())
+        );
         let mut visible_assistant_history_text = None;
 
         if let Some(content) = final_assistant_text {
@@ -3205,6 +3326,12 @@ impl QqChatAgent {
                 Some(inference_event.message_id),
                 reply_batch_builder,
             )?;
+            info!(
+                "{LOG_PREFIX} final outgoing qq_message_list suppress_send={} batches={} payload={}",
+                reply_result.suppress_send,
+                reply_result.batches.len(),
+                json_for_log(&reply_result.batches, LOG_TEXT_PREVIEW_CHARS)
+            );
 
             if reply_result.suppress_send {
                 info!("{LOG_PREFIX} reply send suppressed by explicit model output");

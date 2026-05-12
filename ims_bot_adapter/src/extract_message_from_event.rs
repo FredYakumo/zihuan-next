@@ -1,6 +1,6 @@
 use crate::models::message::MessageProp;
 use base64::Engine;
-use log::warn;
+use log::{info, warn};
 use std::collections::HashMap;
 use std::path::Path;
 use tokio::task::block_in_place;
@@ -108,9 +108,8 @@ impl ExtractMessageFromEventNode {
         let key = object_key.to_string();
         let result = if tokio::runtime::Handle::try_current().is_ok() {
             block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(async move {
-                    s3_ref.get_object_bytes(&key).await
-                })
+                tokio::runtime::Handle::current()
+                    .block_on(async move { s3_ref.get_object_bytes(&key).await })
             })
         } else {
             tokio::runtime::Builder::new_current_thread()
@@ -130,7 +129,15 @@ impl ExtractMessageFromEventNode {
         };
 
         match result {
-            Ok(bytes) => Some(Self::image_part_from_bytes(image, bytes)),
+            Ok(bytes) => {
+                info!(
+                    "{} resolved image via object storage object_key={} bytes={}",
+                    Self::LOG_PREFIX,
+                    object_key,
+                    bytes.len()
+                );
+                Some(Self::image_part_from_bytes(image, bytes))
+            }
             Err(error) => {
                 warn!(
                     "{} failed to read object storage image for multimodal input object_key={}: {}",
@@ -397,8 +404,22 @@ impl ExtractMessageFromEventNode {
 
         if has_media {
             if parts.is_empty() {
+                warn!(
+                    "{} build_user_message detected media but produced no parts; falling back to text",
+                    Self::LOG_PREFIX
+                );
                 OpenAIMessage::user("(无可用文本内容)")
             } else {
+                let image_part_count = parts
+                    .iter()
+                    .filter(|part| matches!(part, ContentPart::ImageUrl { .. }))
+                    .count();
+                info!(
+                    "{} build_user_message produced multimodal parts total_parts={} image_parts={}",
+                    Self::LOG_PREFIX,
+                    parts.len(),
+                    image_part_count
+                );
                 OpenAIMessage::user_with_parts(parts)
             }
         } else {
@@ -415,6 +436,10 @@ impl ExtractMessageFromEventNode {
                 })
                 .unwrap_or_else(|| "(无文本内容，可能是仅@或回复)".to_string());
 
+            info!(
+                "{} build_user_message produced text-only message because no media part was resolved",
+                Self::LOG_PREFIX
+            );
             OpenAIMessage::user(user_text)
         }
     }
@@ -435,7 +460,8 @@ impl Node for ExtractMessageFromEventNode {
 
     node_input![
         port! { name = "message_event", ty = MessageEvent, desc = "MessageEvent containing message data" },
-        port! { name = "ims_bot_adapter", ty = BotAdapterRef, desc = "BotAdapter reference for context-aware system message", required = true }
+        port! { name = "ims_bot_adapter", ty = BotAdapterRef, desc = "BotAdapter reference for context-aware system message", required = true },
+        port! { name = "s3_ref", ty = S3Ref, desc = "可选：显式传入对象存储引用，优先用于多模态图片提取", optional }
     ];
 
     node_output![
@@ -468,7 +494,13 @@ impl Node for ExtractMessageFromEventNode {
 
             // This node still has a sync execute() API, so if we're already on a Tokio
             // worker thread we must move the blocking lock into block_in_place.
-            let (bot_id, object_storage) = if tokio::runtime::Handle::try_current().is_ok() {
+            let explicit_s3_ref = inputs.get("s3_ref").and_then(|value| match value {
+                DataValue::S3Ref(s3_ref) => Some(s3_ref.clone()),
+                _ => None,
+            });
+
+            let (bot_id, adapter_object_storage) = if tokio::runtime::Handle::try_current().is_ok()
+            {
                 block_in_place(|| {
                     let adapter = ims_bot_adapter_ref.blocking_lock();
                     (
@@ -483,11 +515,24 @@ impl Node for ExtractMessageFromEventNode {
                     adapter.get_object_storage(),
                 )
             };
+            let object_storage = explicit_s3_ref.or(adapter_object_storage);
+            info!(
+                "{} object storage availability: explicit_s3_ref_present={} resolved_object_storage_present={}",
+                Self::LOG_PREFIX,
+                inputs.contains_key("s3_ref"),
+                object_storage.is_some()
+            );
 
             let msg_prop = MessageProp::from_messages(&event.message_list, Some(&bot_id));
 
             let user_msg =
                 Self::build_user_message(&event.message_list, &msg_prop, object_storage.as_deref());
+            info!(
+                "{} output user message={}",
+                Self::LOG_PREFIX,
+                serde_json::to_string(&user_msg)
+                    .unwrap_or_else(|err| format!("<serialize failed: {err}>"))
+            );
 
             let messages = vec![user_msg];
             outputs.insert(

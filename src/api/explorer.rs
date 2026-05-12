@@ -559,7 +559,7 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
 }
 
 fn list_weaviate_class_properties(
-    weaviate_ref: &zihuan_graph_engine::database::weaviate::WeaviateRef,
+    weaviate_ref: &zihuan_core::weaviate::WeaviateRef,
 ) -> zihuan_core::error::Result<Vec<String>> {
     let schema = weaviate_ref.schema()?;
     Ok(schema

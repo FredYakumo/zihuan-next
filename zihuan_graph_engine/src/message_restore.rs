@@ -1,10 +1,10 @@
-use crate::data_value::MySqlConfig;
 use crate::message_mysql_history_common::run_mysql_query;
 use log::{debug, warn};
 use once_cell::sync::Lazy;
 use sqlx::Row;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::Result;
 use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
 use zihuan_core::ims_bot_adapter::models::message::{

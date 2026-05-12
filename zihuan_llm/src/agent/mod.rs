@@ -1,4 +1,3 @@
-pub mod brain;
 pub mod qq_chat_agent;
 pub use qq_chat_agent as qq_message_agent_node;
 

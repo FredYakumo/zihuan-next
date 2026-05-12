@@ -6,7 +6,7 @@ use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Po
 
 /// LLMInferNode — Perform a single round of LLM inference.
 ///
-/// Accepts an `LLModel` reference (from `LLMApiNode`) and a message list,
+/// Accepts an `LLModel` reference (from `LlmNode`) and a message list,
 /// calls the model's `inference()` method, and outputs the response as a
 /// `Vec<OpenAIMessage>`.
 pub struct LLMInferNode {
@@ -37,7 +37,7 @@ impl Node for LLMInferNode {
     }
 
     node_input![
-        port! { name = "llm_model", ty = LLModel,                  desc = "LLM模型引用，由LLMApiNode提供" },
+        port! { name = "llm_model", ty = LLModel, desc = "LLM模型引用，由LlmNode提供" },
         port! { name = "messages",  ty = Vec(OpenAIMessage), desc = "输入消息列表，包含系统消息和用户消息" },
     ];
 

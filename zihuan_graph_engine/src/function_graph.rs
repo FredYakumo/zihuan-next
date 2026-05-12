@@ -23,10 +23,17 @@ const DEFAULT_FUNCTION_HEIGHT: f32 = 120.0;
 pub struct FunctionPortDef {
     pub name: String,
     pub data_type: DataType,
+    #[serde(default)]
+    pub description: String,
 }
 
 impl FunctionPortDef {
     pub fn to_port(&self, description: impl Into<String>) -> Port {
+        let description = if self.description.trim().is_empty() {
+            description.into()
+        } else {
+            self.description.clone()
+        };
         Port::new(self.name.clone(), self.data_type.clone()).with_description(description)
     }
 }

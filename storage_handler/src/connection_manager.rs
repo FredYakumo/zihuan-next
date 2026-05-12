@@ -14,9 +14,10 @@ use zihuan_core::connection_manager::{
     ConnectionManager as ConnectionManagerTrait, RuntimeConnectionInstanceSummary,
     RuntimeConnectionStatus,
 };
+use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
-use zihuan_graph_engine::data_value::{MySqlConfig, RedisConfig};
-use zihuan_graph_engine::database::weaviate::WeaviateRef;
+use zihuan_core::weaviate::WeaviateRef;
+use zihuan_graph_engine::data_value::RedisConfig;
 use zihuan_graph_engine::object_storage::S3Ref;
 
 use crate::resource_resolver::find_connection;
