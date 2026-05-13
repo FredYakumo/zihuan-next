@@ -10,9 +10,9 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::{MessageRole, OpenAIMessage};
-use zihuan_llm::brain_tool::BrainToolDefinition;
+use zihuan_core_nodes::brain::brain_tool::BrainToolDefinition;
 use zihuan_llm::system_config::{AgentConfig, AgentType, LlmRefConfig};
-use zihuan_llm::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
+use zihuan_core_nodes::brain::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 
 use crate::resource_resolver::{build_llm_model, resolve_llm_service_config};
 

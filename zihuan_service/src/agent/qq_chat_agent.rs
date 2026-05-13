@@ -35,13 +35,14 @@ use zihuan_core::worker_pool::WorkerPool;
 use zihuan_graph_engine::data_value::{OpenAIMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::message_restore::register_mysql_ref;
-use zihuan_llm::agent::qq_chat_agent::{
+use super::qq_chat_agent_core::{
     build_info_brain_tools, QqAgentReplyBatchBuilder, QqAgentReplyBuildRequest,
     QqAgentReplyBuildResult, QqChatAgentService, QqChatAgentServiceConfig,
 };
-use zihuan_llm::brain_tool::BrainToolDefinition;
+use zihuan_core_nodes::brain::brain_tool::BrainToolDefinition;
 use zihuan_llm::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
-use zihuan_llm::system_config::{load_llm_refs, AgentConfig, LlmRefConfig, QqChatAgentConfig};
+use zihuan_core::agent_config::QqChatAgentConfig;
+use zihuan_llm::system_config::{load_llm_refs, AgentConfig, LlmRefConfig};
 
 const FORWARD_SPLIT_PREFERRED_SEPARATORS: [char; 14] = [
     '\n', '。', '！', '？', '；', '：', '.', '!', '?', ';', ':', '，', ',', ' ',

@@ -1,8 +1,10 @@
 pub mod agents {
     #[allow(unused_imports)]
+    pub use zihuan_core::agent_config::{EmbeddingServiceConfig, QqChatAgentConfig};
+    #[allow(unused_imports)]
     pub use zihuan_llm::system_config::{
-        AgentConfig, AgentToolConfig, AgentToolType, AgentType, EmbeddingServiceConfig,
-        HttpStreamAgentConfig, LlmServiceConfig, NodeGraphToolConfig, QqChatAgentConfig,
+        AgentConfig, AgentToolConfig, AgentToolType, AgentType, HttpStreamAgentConfig,
+        LlmServiceConfig, NodeGraphToolConfig,
     };
 }
 

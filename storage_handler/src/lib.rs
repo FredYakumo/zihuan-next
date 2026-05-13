@@ -1,3 +1,6 @@
+mod agent_image_db_ref;
+mod agent_mysql_ref;
+mod agent_rustfs_ref;
 mod connection_manager;
 mod message_store;
 pub mod mysql;
@@ -328,6 +331,9 @@ pub fn infer_weaviate_collection_schema(
 }
 
 pub fn init_node_registry() -> Result<()> {
+    use agent_image_db_ref::AgentImageDbRefNode;
+    use agent_mysql_ref::AgentMySqlRefNode;
+    use agent_rustfs_ref::AgentRustfsRefNode;
     use zihuan_graph_engine::image_weaviate_persistence::ImageWeaviatePersistenceNode;
     use zihuan_graph_engine::message_mysql_get_group_history::MessageMySQLGetGroupHistoryNode;
     use zihuan_graph_engine::message_mysql_get_user_history::MessageMySQLGetUserHistoryNode;
@@ -363,6 +369,27 @@ pub fn init_node_registry() -> Result<()> {
         "数据库",
         "从系统连接配置中选择 Weaviate 并输出 WeaviateRef 引用",
         WeaviateNode
+    );
+    register_node!(
+        "agent_mysql_ref",
+        "读取Agent MySQL连接",
+        "Agent",
+        "从当前 Agent 工具调用上下文中读取 MySQL 连接并输出 MySqlRef",
+        AgentMySqlRefNode
+    );
+    register_node!(
+        "agent_rustfs_ref",
+        "读取Agent RustFS连接",
+        "Agent",
+        "从当前 Agent 工具调用上下文中读取 RustFS 连接并输出 S3Ref",
+        AgentRustfsRefNode
+    );
+    register_node!(
+        "agent_image_db_ref",
+        "读取Agent图片库连接",
+        "Agent",
+        "从当前 Agent 工具调用上下文中读取图片向量库连接并输出 WeaviateRef",
+        AgentImageDbRefNode
     );
     register_node!(
         "qq_message_list_mysql_persistence",

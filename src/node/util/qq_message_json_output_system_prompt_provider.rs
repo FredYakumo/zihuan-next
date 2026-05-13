@@ -1,5 +1,5 @@
 use crate::error::Result;
-use zihuan_llm::natural_language_reply::qq_message_json_output_system_prompt;
+use zihuan_graph_engine::util::qq_message_json_output_system_prompt_provider::qq_message_json_output_system_prompt;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 

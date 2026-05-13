@@ -4,7 +4,7 @@ use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::graph_boundary::{root_graph_to_tool_subgraph, sync_root_graph_io};
 use zihuan_graph_engine::DataType;
-use zihuan_llm::brain_tool::{
+use zihuan_core_nodes::brain::brain_tool::{
     fixed_tool_runtime_inputs, BrainToolDefinition, ToolParamDef, QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use zihuan_llm::system_config::{AgentToolConfig, AgentToolType, NodeGraphToolConfig};

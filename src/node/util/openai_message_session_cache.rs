@@ -1,5 +1,5 @@
 use crate::error::Result;
-use zihuan_llm::OpenAIMessage;
+use zihuan_core::llm::OpenAIMessage;
 use crate::node::data_value::OpenAIMessageSessionCacheRef;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::info;

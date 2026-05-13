@@ -18,7 +18,8 @@ use uuid::Uuid;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::ToolCalls;
 use zihuan_core::llm::{MessageRole, OpenAIMessage};
-use zihuan_llm::system_config::{AgentConfig, AgentType, QqChatAgentConfig};
+use zihuan_core::agent_config::QqChatAgentConfig;
+use zihuan_llm::system_config::{AgentConfig, AgentType};
 
 const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
 const APP_DIR_NAME: &str = "zihuan-next_aibot";

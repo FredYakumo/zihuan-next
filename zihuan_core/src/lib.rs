@@ -1,3 +1,4 @@
+pub mod agent_config;
 pub mod config;
 pub mod connection_manager;
 pub mod data_refs;

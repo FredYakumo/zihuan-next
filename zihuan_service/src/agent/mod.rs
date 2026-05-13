@@ -3,6 +3,10 @@ pub mod inference;
 pub mod qq_chat_agent;
 pub mod tool_definitions;
 
+mod agent_text_similarity;
+mod classify_intent;
+mod qq_chat_agent_core;
+
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 

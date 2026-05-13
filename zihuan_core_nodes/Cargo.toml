@@ -1,0 +1,23 @@
+[package]
+name = "zihuan_core_nodes"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+candle-cuda = ["zihuan_llm/candle-cuda"]
+candle-metal = ["zihuan_llm/candle-metal"]
+
+[dependencies]
+general_wheel_cpp = { path = "../general_wheel_cpp" }
+zihuan_core = { path = "../zihuan_core" }
+zihuan_agent = { path = "../zihuan_agent" }
+zihuan_graph_engine = { path = "../zihuan_graph_engine" }
+zihuan_llm = { path = "../zihuan_llm" }
+ims_bot_adapter = { path = "../ims_bot_adapter" }
+storage_handler = { path = "../storage_handler" }
+node_macros = { path = "../node_macros" }
+
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
