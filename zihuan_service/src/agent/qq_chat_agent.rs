@@ -174,11 +174,12 @@ fn resolve_reply_his_message_aliases(text: &str, trigger_message_id: i64) -> Str
 fn ensure_space_after_at(batches: &mut [Vec<Message>]) {
     for batch in batches {
         for i in 0..batch.len().saturating_sub(1) {
-            if matches!(batch[i], Message::At(_))
-                && let Message::PlainText(pt) = &mut batch[i + 1]
-                && !pt.text.starts_with(' ')
-            {
-                pt.text.insert(0, ' ');
+            if matches!(batch[i], Message::At(_)) {
+                if let Message::PlainText(pt) = &mut batch[i + 1] {
+                    if !pt.text.starts_with(' ') {
+                        pt.text.insert(0, ' ');
+                    }
+                }
             }
         }
     }
