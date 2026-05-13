@@ -52,9 +52,10 @@ Typical locations:
 
 - `zihuan_graph_engine/src/util/` for general runtime/utility nodes
 - `zihuan_graph_engine/src/` for engine-owned feature modules
-- `zihuan_llm/src/` for AI and agent-related nodes
+- `zihuan_llm/src/nodes/` for AI and agent-related nodes
 - `storage_handler/src/` for storage/connection nodes
 - `ims_bot_adapter/src/` for adapter-facing nodes
+- `zihuan_service/src/nodes/` for Brain and agent nodes
 
 ### Registration
 
@@ -65,11 +66,12 @@ After adding a node:
 
 Current registry entry points:
 
-- `zihuan_graph_engine::registry::init_node_registry()`
+- `zihuan_graph_engine::registry::init_node_registry()` — built-in utility nodes
 - `storage_handler::init_node_registry()`
 - `ims_bot_adapter::init_node_registry()`
 - `zihuan_llm::init_node_registry()`
-- combined bootstrap: `src/init_registry.rs`
+- `zihuan_service::init_node_registry()`
+- combined via `init_node_registry_with_extensions()` in `src/init_registry.rs`
 
 ## High-Level Package Roles
 
@@ -77,10 +79,10 @@ Current registry entry points:
 |---|---|
 | `zihuan_core` | Core types |
 | `zihuan_graph_engine` | Node-graph runtime |
-| `zihuan_llm` | LLM, Brain, embeddings, agent config models |
+| `zihuan_llm` | LLM, embeddings, agent config models, AI nodes |
 | `storage_handler` | Connection-backed nodes and storage helpers |
 | `ims_bot_adapter` | IMS adapter integration |
-| `zihuan_service` | Long-lived service and task hosting |
+| `zihuan_service` | Long-lived service, task hosting, Brain/agent nodes |
 | `src/api` | Web API and task orchestration |
 | `webui/` | Web UI |
 

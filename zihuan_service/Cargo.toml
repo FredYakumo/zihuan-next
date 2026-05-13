@@ -17,7 +17,6 @@ zihuan_core = { path = "../zihuan_core" }
 zihuan_agent = { path = "../zihuan_agent" }
 zihuan_graph_engine = { path = "../zihuan_graph_engine" }
 zihuan_llm = { path = "../zihuan_llm" }
-zihuan_core_nodes = { path = "../zihuan_core_nodes" }
 ims_bot_adapter = { path = "../ims_bot_adapter" }
 storage_handler = { path = "../storage_handler" }
 general_wheel_cpp = { path = "../general_wheel_cpp" }

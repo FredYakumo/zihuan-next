@@ -10,7 +10,7 @@ use serde_json::Value;
 use super::agent_text_similarity::{
     find_best_match, token_overlap_ratio, HybridSimilarityConfig, SimilarityCandidate,
 };
-use zihuan_core_nodes::brain::brain_tool::{
+use zihuan_graph_engine::brain_tool_spec::{
     BrainToolDefinition, QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
     QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
 };
@@ -18,7 +18,7 @@ use super::classify_intent::{classify_intent, IntentCategory};
 use zihuan_llm::inference_function::compact_message::{
     compact_message_history, estimate_messages_tokens,
 };
-use zihuan_core_nodes::brain::tool_subgraph::{
+use crate::nodes::tool_subgraph::{
     validate_shared_inputs, validate_tool_definitions, ToolResultMode, ToolSubgraphRunner,
 };
 use ims_bot_adapter::adapter::shared_from_handle;

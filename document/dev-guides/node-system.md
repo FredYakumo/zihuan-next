@@ -111,11 +111,12 @@ Those concerns belong to `zihuan_service` and the main server API/runtime layer.
 
 Current registry bootstrap path:
 
-- `zihuan_graph_engine::registry::init_node_registry()`
+- `zihuan_graph_engine::registry::init_node_registry()` — built-in utility nodes
 - extended by `storage_handler::init_node_registry()`
 - extended by `ims_bot_adapter::init_node_registry()`
 - extended by `zihuan_llm::init_node_registry()`
-- combined in `src/init_registry.rs`
+- extended by `zihuan_service::init_node_registry()`
+- combined via `init_node_registry_with_extensions()` in `src/init_registry.rs`
 
 ## Design Rule
 

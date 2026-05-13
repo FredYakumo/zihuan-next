@@ -37,8 +37,10 @@ Typical placement:
 |---|---|
 | Utility / transform | `zihuan_graph_engine/src/util/` |
 | Database / storage helpers | matching module under `zihuan_graph_engine/src/` |
+| Storage / connection / search | `storage_handler/src/` |
 | Bot-related synchronous helpers | `ims_bot_adapter/src/` |
-| LLM / Brain / RAG | `zihuan_llm/src/` |
+| LLM / embedding / agent-config | `zihuan_llm/src/nodes/` |
+| Brain / agent | `zihuan_service/src/nodes/` |
 
 ### 3. Expose a constructor
 
@@ -81,7 +83,7 @@ Add it to the parent `mod.rs`.
 ### 7. Register the node
 
 - `zihuan_graph_engine` nodes → `zihuan_graph_engine/src/registry.rs`
-- `ims_bot_adapter` / `zihuan_llm` nodes → `src/init_registry.rs`
+- `storage_handler` / `ims_bot_adapter` / `zihuan_llm` / `zihuan_service` nodes → add `register_node!` to the owning crate's `init_node_registry()`, which is called from `src/init_registry.rs`
 
 ### 8. Validate behavior
 

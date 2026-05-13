@@ -3,11 +3,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use crate::brain::brain_tool::{
-    brain_shared_inputs_from_value, BrainToolDefinition, BRAIN_SHARED_INPUTS_PORT,
-    BRAIN_TOOLS_CONFIG_PORT,
-};
-use crate::brain::tool_subgraph::{
+use crate::nodes::tool_subgraph::{
     shared_inputs_ports, validate_shared_inputs, validate_tool_definitions, SubgraphFunctionTool,
     ToolResultMode, ToolSubgraphRunner,
 };
@@ -15,6 +11,10 @@ use zihuan_agent::brain::{Brain, BrainStopReason, BrainTool, MAX_TOOL_ITERATIONS
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::OpenAIMessage;
+use zihuan_graph_engine::brain_tool_spec::{
+    brain_shared_inputs_from_value, BrainToolDefinition, BRAIN_SHARED_INPUTS_PORT,
+    BRAIN_TOOLS_CONFIG_PORT,
+};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::{DataType, DataValue, Node, Port};
 
@@ -31,10 +31,6 @@ impl BrainTool for SubgraphBrainTool {
         self.runner.execute_to_string(call_content, arguments)
     }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// BrainNode
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 pub struct BrainNode {
@@ -150,6 +146,8 @@ impl Node for BrainNode {
                 .with_description("LLM 模型引用，由 LLM API 节点提供"),
             Port::new("messages", DataType::Vec(Box::new(DataType::OpenAIMessage)))
                 .with_description("消息列表（包含 system/user/assistant/tool 等角色）"),
+
+                
             // Hidden ports: managed via "管理工具" button dialog
             Port::new(BRAIN_TOOLS_CONFIG_PORT, DataType::Json)
                 .with_description("Tools 配置，由工具编辑器维护")

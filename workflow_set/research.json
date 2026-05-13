@@ -166,8 +166,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 440.0,
-        "y": 40.0
+        "x": 540.0,
+        "y": 0.0
       },
       "size": {
         "width": 200.0,
@@ -793,8 +793,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 760.0,
-        "y": 170.0
+        "x": 740.0,
+        "y": 130.0
       },
       "size": {
         "width": 200.0,
@@ -932,8 +932,100 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1040.0,
-        "y": 90.0
+        "x": 1080.0,
+        "y": 100.0
+      },
+      "size": {
+        "width": 200.0,
+        "height": 120.0
+      },
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false,
+      "disabled": false
+    },
+    {
+      "id": "da83a730-ee8f-44e2-a382-4bb9879266d9",
+      "name": "and then",
+      "description": null,
+      "node_type": "and_then",
+      "input_ports": [
+        {
+          "name": "first",
+          "data_type": "Any",
+          "description": "用于串联依赖的前置输入，仅用于等待其到齐",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "second",
+          "data_type": "Any",
+          "description": "在两个输入都到齐后原样透传的值",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "output",
+          "data_type": "Any",
+          "description": "second 的原样输出",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 1840.0,
+        "y": 390.0
+      },
+      "size": {
+        "width": 200.0,
+        "height": 120.0
+      },
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false,
+      "disabled": false
+    },
+    {
+      "id": "3ebb936c-8f14-49e3-aa3c-6eebf68e8838",
+      "name": "and then",
+      "description": null,
+      "node_type": "and_then",
+      "input_ports": [
+        {
+          "name": "first",
+          "data_type": "Any",
+          "description": "用于串联依赖的前置输入，仅用于等待其到齐",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "second",
+          "data_type": "Any",
+          "description": "在两个输入都到齐后原样透传的值",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "output",
+          "data_type": "Any",
+          "description": "second 的原样输出",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 1924.4307,
+        "y": 652.5732
       },
       "size": {
         "width": 200.0,
@@ -1044,12 +1136,6 @@
       "to_port": "llm_model"
     },
     {
-      "from_node_id": "__graph_inputs__",
-      "from_port": "question",
-      "to_node_id": "19b88ffe-1f19-45b0-89c0-5c473e6c2c59",
-      "to_port": "content"
-    },
-    {
       "from_node_id": "581d92ed-5485-481e-b060-81ce34a7bbc2",
       "from_port": "response",
       "to_node_id": "f3fce5f5-63ed-4b20-a9ee-2e993b3439cc",
@@ -1084,6 +1170,36 @@
       "from_port": "result",
       "to_node_id": "581d92ed-5485-481e-b060-81ce34a7bbc2",
       "to_port": "messages"
+    },
+    {
+      "from_node_id": "8d6790b0-ea1f-47c8-a716-315b31016229",
+      "from_port": "success",
+      "to_node_id": "da83a730-ee8f-44e2-a382-4bb9879266d9",
+      "to_port": "first"
+    },
+    {
+      "from_node_id": "ef66cdbf-722d-4036-b30a-447bafc1afa0",
+      "from_port": "success",
+      "to_node_id": "3ebb936c-8f14-49e3-aa3c-6eebf68e8838",
+      "to_port": "first"
+    },
+    {
+      "from_node_id": "__graph_inputs__",
+      "from_port": "question",
+      "to_node_id": "da83a730-ee8f-44e2-a382-4bb9879266d9",
+      "to_port": "second"
+    },
+    {
+      "from_node_id": "__graph_inputs__",
+      "from_port": "question",
+      "to_node_id": "3ebb936c-8f14-49e3-aa3c-6eebf68e8838",
+      "to_port": "second"
+    },
+    {
+      "from_node_id": "__graph_inputs__",
+      "from_port": "question",
+      "to_node_id": "19b88ffe-1f19-45b0-89c0-5c473e6c2c59",
+      "to_port": "content"
     }
   ],
   "graph_inputs": [

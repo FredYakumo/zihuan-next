@@ -1,16 +1,18 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use zihuan_llm::system_config::{load_llm_refs, LlmApiStyle, LlmServiceConfig, ModelRefSpec};
+use crate::system_config::{load_llm_refs, LlmApiStyle, LlmServiceConfig, ModelRefSpec};
+use crate::llm_api::LLMAPI;
 use zihuan_core::error::Result;
+use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_graph_engine::{
     node_output, DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port,
 };
 
-pub fn build_llm(config: LlmServiceConfig) -> Result<Arc<dyn zihuan_core::llm::llm_base::LLMBase>> {
+pub fn build_llm(config: LlmServiceConfig) -> Result<Arc<dyn LLMBase>> {
     match config.api_style {
         LlmApiStyle::OpenAiChatCompletions | LlmApiStyle::OpenAiResponses => {
-            let api = zihuan_llm::llm_api::LLMAPI::new(
+            let api = LLMAPI::new(
                 config.model_name,
                 config.api_endpoint,
                 config.api_key,

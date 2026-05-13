@@ -1,6 +1,3 @@
-mod agent_image_db_ref;
-mod agent_mysql_ref;
-mod agent_rustfs_ref;
 mod connection_manager;
 mod message_store;
 pub mod mysql;
@@ -8,7 +5,10 @@ pub mod object_storage;
 pub mod redis;
 pub mod resource_resolver;
 pub mod rustfs;
+mod tavily_provider_node;
+mod tavily_search_node;
 pub mod weaviate;
+mod weaviate_image_search_node;
 
 use log::info;
 use serde::{Deserialize, Serialize};
@@ -331,9 +331,6 @@ pub fn infer_weaviate_collection_schema(
 }
 
 pub fn init_node_registry() -> Result<()> {
-    use agent_image_db_ref::AgentImageDbRefNode;
-    use agent_mysql_ref::AgentMySqlRefNode;
-    use agent_rustfs_ref::AgentRustfsRefNode;
     use zihuan_graph_engine::image_weaviate_persistence::ImageWeaviatePersistenceNode;
     use zihuan_graph_engine::message_mysql_get_group_history::MessageMySQLGetGroupHistoryNode;
     use zihuan_graph_engine::message_mysql_get_user_history::MessageMySQLGetUserHistoryNode;
@@ -369,27 +366,6 @@ pub fn init_node_registry() -> Result<()> {
         "数据库",
         "从系统连接配置中选择 Weaviate 并输出 WeaviateRef 引用",
         WeaviateNode
-    );
-    register_node!(
-        "agent_mysql_ref",
-        "读取Agent MySQL连接",
-        "Agent",
-        "从当前 Agent 工具调用上下文中读取 MySQL 连接并输出 MySqlRef",
-        AgentMySqlRefNode
-    );
-    register_node!(
-        "agent_rustfs_ref",
-        "读取Agent RustFS连接",
-        "Agent",
-        "从当前 Agent 工具调用上下文中读取 RustFS 连接并输出 S3Ref",
-        AgentRustfsRefNode
-    );
-    register_node!(
-        "agent_image_db_ref",
-        "读取Agent图片库连接",
-        "Agent",
-        "从当前 Agent 工具调用上下文中读取图片向量库连接并输出 WeaviateRef",
-        AgentImageDbRefNode
     );
     register_node!(
         "qq_message_list_mysql_persistence",
@@ -432,6 +408,27 @@ pub fn init_node_registry() -> Result<()> {
         "消息存储",
         "在消息记录中搜索，支持发送者、群组、内容关键词、时间范围过滤",
         MessageMySQLSearchNode
+    );
+    register_node!(
+        "tavily_provider",
+        "Tavily Provider",
+        "AI",
+        "从系统连接中选择 Tavily 配置，输出 TavilyRef 引用",
+        tavily_provider_node::TavilyProviderNode
+    );
+    register_node!(
+        "tavily_search",
+        "Tavily 搜索",
+        "AI",
+        "使用 TavilyRef 执行 Tavily 搜索并输出包含标题、链接和内容的 Vec<String>",
+        tavily_search_node::TavilySearchNode
+    );
+    register_node!(
+        "weaviate_image_search",
+        "Weaviate 图片检索",
+        "AI",
+        "使用本地 Weaviate 图片库做语义检索，输出标准化图片结果 JSON",
+        weaviate_image_search_node::WeaviateImageSearchNode
     );
 
     Ok(())

@@ -39,7 +39,7 @@ use super::qq_chat_agent_core::{
     build_info_brain_tools, QqAgentReplyBatchBuilder, QqAgentReplyBuildRequest,
     QqAgentReplyBuildResult, QqChatAgentService, QqChatAgentServiceConfig,
 };
-use zihuan_core_nodes::brain::brain_tool::BrainToolDefinition;
+use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
 use zihuan_llm::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use zihuan_core::agent_config::QqChatAgentConfig;
 use zihuan_llm::system_config::{load_llm_refs, AgentConfig, LlmRefConfig};
@@ -110,7 +110,15 @@ fn build_reply_batches_from_model_text(
                 let text_chars = text.chars().count();
                 if text_chars > request.max_message_length {
                     flush_batch(&mut batches, &mut current_batch);
-                    if let Some(forward) = build_forward_from_text(
+                    if pending_reply.is_some() {
+                        let text_batches =
+                            build_plain_text_batches_from_text(&text, request.max_message_length);
+                        if let Some(reply) = pending_reply.take() {
+                            append_reply_to_text_batches(&mut batches, text_batches, reply);
+                        } else {
+                            batches.extend(text_batches);
+                        }
+                    } else if let Some(forward) = build_forward_from_text(
                         &text,
                         request.max_message_length,
                         &request.bot_id,
@@ -191,11 +199,34 @@ fn flush_batch(batches: &mut Vec<Vec<Message>>, current_batch: &mut Vec<Message>
     }
 }
 
+fn build_plain_text_batches_from_text(text: &str, max_chars: usize) -> Vec<Vec<Message>> {
+    split_plain_text_for_forward(text, max_chars)
+        .into_iter()
+        .map(|chunk| vec![Message::PlainText(PlainTextMessage { text: chunk })])
+        .collect()
+}
+
+fn append_reply_to_text_batches(
+    batches: &mut Vec<Vec<Message>>,
+    mut text_batches: Vec<Vec<Message>>,
+    reply: ReplyMessage,
+) {
+    if let Some(first_batch) = text_batches.first_mut() {
+        first_batch.insert(0, Message::Reply(reply));
+    }
+    batches.extend(text_batches);
+}
+
 fn attach_reply_to_first_batch(batches: &mut Vec<Vec<Message>>, reply: ReplyMessage) {
-    if let Some(first_batch) = batches.first_mut() {
+    if let Some(first_batch) = batches
+        .iter_mut()
+        .find(|batch| !matches!(batch.as_slice(), [Message::Forward(_)]))
+    {
         first_batch.insert(0, Message::Reply(reply));
     } else {
-        batches.push(vec![Message::Reply(reply)]);
+        warn!(
+            "dropping reply marker because all outbound batches are forward messages and QQ does not support reply+forward in one batch"
+        );
     }
 }
 

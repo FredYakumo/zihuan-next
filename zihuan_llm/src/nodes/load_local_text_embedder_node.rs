@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use zihuan_llm::nn::queued_embedding_model::QueuedEmbeddingModel;
+use crate::nn::queued_embedding_model::QueuedEmbeddingModel;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};

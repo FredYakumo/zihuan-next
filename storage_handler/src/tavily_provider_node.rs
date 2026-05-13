@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use storage_handler::build_tavily_ref;
+use crate::resource_resolver::build_tavily_ref;
+use crate::load_connections;
 use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::{
     node_output, DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port,
@@ -82,7 +83,7 @@ impl Node for TavilyProviderNode {
         _inputs: HashMap<String, DataValue>,
     ) -> Result<HashMap<String, DataValue>> {
         let config_id = self.selected_config_id()?;
-        let tavily_ref = build_tavily_ref(Some(config_id), &storage_handler::load_connections()?)?
+        let tavily_ref = build_tavily_ref(Some(config_id), &load_connections()?)?
             .ok_or_else(|| Error::ValidationError("config_id is required".to_string()))?;
 
         Ok(HashMap::from([(

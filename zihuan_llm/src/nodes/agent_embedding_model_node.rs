@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 
+use crate::agent_config_support::build_embedding_from_ref_id;
 use zihuan_core::agent_config::current_qq_chat_agent_config;
 use zihuan_core::error::Result;
 use zihuan_graph_engine::{node_output, DataType, DataValue, Node, Port};
-
-use zihuan_llm::agent_config_support::build_embedding_from_ref_id;
 
 pub struct AgentEmbeddingModelNode {
     id: String,

@@ -9,7 +9,7 @@ Entry point: `src/main.rs`
 Startup order:
 
 1. Initialize the global logger through `src/log_forwarder.rs`
-2. Initialize the combined node registry through `src/init_registry.rs`
+2. Initialize the node registry via `init_node_registry_with_extensions()` in `src/init_registry.rs`
 3. Parse `--host` and `--port`
 4. Create `AppState`
 5. Create the WebSocket broadcast channel

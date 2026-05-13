@@ -11,14 +11,14 @@ use ims_bot_adapter::message_helpers::{
 };
 use ims_bot_adapter::models::MessageType;
 
-use crate::brain::brain_tool::{
+use zihuan_core::error::{Error, Result};
+use zihuan_core::llm::tooling::FunctionTool;
+use zihuan_graph_engine::brain_tool_spec::{
     brain_tool_input_signature, fixed_tool_runtime_inputs, BrainToolDefinition, ToolParamDef,
     BRAIN_TOOL_FIXED_CONTENT_INPUT, QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
     QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
     QQ_AGENT_TOOL_OWNER_TYPE_LEGACY,
 };
-use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_graph_engine::function_graph::{
     sync_function_subgraph_signature, FunctionPortDef, FUNCTION_INPUTS_NODE_ID,
     FUNCTION_OUTPUTS_NODE_ID,

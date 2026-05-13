@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use zihuan_llm::linalg::embedding_api::EmbeddingAPI;
+use crate::linalg::embedding_api::EmbeddingAPI;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};

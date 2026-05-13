@@ -12,6 +12,7 @@ candle-metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/met
 zihuan_core = { path = "../zihuan_core" }
 zihuan_agent = { path = "../zihuan_agent" }
 zihuan_graph_engine = { path = "../zihuan_graph_engine" }
+general_wheel_cpp = { path = "../general_wheel_cpp" }
 
 candle-core = "0.10.2"
 candle-nn = "0.10.2"

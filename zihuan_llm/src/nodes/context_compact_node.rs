@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 
+use crate::inference_function::compact_message::compact_context_messages;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::OpenAIMessage;
 use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
-
-use zihuan_llm::inference_function::compact_message::compact_context_messages;
 
 pub struct ContextCompactNode {
     id: String,
@@ -13,16 +12,25 @@ pub struct ContextCompactNode {
 
 impl ContextCompactNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
-        Self { id: id.into(), name: name.into() }
+        Self {
+            id: id.into(),
+            name: name.into(),
+        }
     }
 
-    fn parse_messages_input(&self, inputs: &HashMap<String, DataValue>) -> Result<Vec<OpenAIMessage>> {
+    fn parse_messages_input(
+        &self,
+        inputs: &HashMap<String, DataValue>,
+    ) -> Result<Vec<OpenAIMessage>> {
         match inputs.get("messages") {
             Some(DataValue::Vec(inner_type, items)) if **inner_type == DataType::OpenAIMessage => {
-                items.iter().map(|item| match item {
-                    DataValue::OpenAIMessage(message) => Ok(message.clone()),
-                    _ => Err(self.wrap_error("messages must contain OpenAIMessage items")),
-                }).collect()
+                items
+                    .iter()
+                    .map(|item| match item {
+                        DataValue::OpenAIMessage(message) => Ok(message.clone()),
+                        _ => Err(self.wrap_error("messages must contain OpenAIMessage items")),
+                    })
+                    .collect()
             }
             _ => Err(self.wrap_error("messages is required")),
         }
@@ -34,8 +42,14 @@ impl ContextCompactNode {
 }
 
 impl Node for ContextCompactNode {
-    fn id(&self) -> &str { &self.id }
-    fn name(&self) -> &str { &self.name }
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
     fn description(&self) -> Option<&str> {
         Some("压缩 OpenAIMessage 历史为摘要对加最近 2 条非 tool 消息")
     }
@@ -54,7 +68,10 @@ impl Node for ContextCompactNode {
         port! { name = "estimated_tokens_after", ty = Integer, desc = "压缩后的估算 token 数" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let llm = match inputs.get("llm_model") {
@@ -69,16 +86,33 @@ impl Node for ContextCompactNode {
         };
         let force_compact = matches!(inputs.get("force_compact"), Some(DataValue::Boolean(true)));
 
-        let result = compact_context_messages(&llm, messages, compact_context_length, &[], force_compact);
+        let result =
+            compact_context_messages(&llm, messages, compact_context_length, &[], force_compact);
 
         let mut outputs = HashMap::new();
-        outputs.insert("messages".to_string(), DataValue::Vec(
-            Box::new(DataType::OpenAIMessage),
-            result.messages.into_iter().map(DataValue::OpenAIMessage).collect(),
-        ));
-        outputs.insert("did_compact".to_string(), DataValue::Boolean(result.did_compact));
-        outputs.insert("estimated_tokens_before".to_string(), DataValue::Integer(result.estimated_tokens_before as i64));
-        outputs.insert("estimated_tokens_after".to_string(), DataValue::Integer(result.estimated_tokens_after as i64));
+        outputs.insert(
+            "messages".to_string(),
+            DataValue::Vec(
+                Box::new(DataType::OpenAIMessage),
+                result
+                    .messages
+                    .into_iter()
+                    .map(DataValue::OpenAIMessage)
+                    .collect(),
+            ),
+        );
+        outputs.insert(
+            "did_compact".to_string(),
+            DataValue::Boolean(result.did_compact),
+        );
+        outputs.insert(
+            "estimated_tokens_before".to_string(),
+            DataValue::Integer(result.estimated_tokens_before as i64),
+        );
+        outputs.insert(
+            "estimated_tokens_after".to_string(),
+            DataValue::Integer(result.estimated_tokens_after as i64),
+        );
 
         self.validate_outputs(&outputs)?;
         Ok(outputs)

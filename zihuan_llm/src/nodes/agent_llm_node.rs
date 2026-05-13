@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 
-use zihuan_core::agent_config::{current_qq_chat_agent_config, normalize_llm_kind, llm_ref_id_for_kind, LLM_KIND_MAIN};
+use crate::agent_config_support::{build_llm_from_ref_id, LLM_KIND_FIELD};
+use zihuan_core::agent_config::{current_qq_chat_agent_config, llm_ref_id_for_kind, normalize_llm_kind, LLM_KIND_MAIN};
 use zihuan_core::error::Result;
 use zihuan_graph_engine::{node_output, DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port};
-
-use zihuan_llm::agent_config_support::{build_llm_from_ref_id, LLM_KIND_FIELD};
 
 pub struct AgentLlmNode {
     id: String,
