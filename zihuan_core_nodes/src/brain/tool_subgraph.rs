@@ -381,8 +381,13 @@ impl ToolSubgraphRunner {
         };
 
         let mut runtime_values = self.shared_runtime_values.clone();
+        runtime_values.insert(
+            BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(),
+            DataValue::String(tool_call_content),
+        );
         if self.owner_node_type == QQ_AGENT_TOOL_OWNER_TYPE {
             for fixed_name in [
+                BRAIN_TOOL_FIXED_CONTENT_INPUT,
                 QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
                 QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
             ] {
@@ -393,11 +398,6 @@ impl ToolSubgraphRunner {
                     )));
                 }
             }
-        } else {
-            runtime_values.insert(
-                BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(),
-                DataValue::String(tool_call_content),
-            );
         }
         for (key, value) in tool_runtime_values {
             if runtime_values.contains_key(&key) {

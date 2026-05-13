@@ -74,6 +74,11 @@ pub fn fixed_tool_runtime_inputs(owner_node_type: &str) -> Vec<FunctionPortDef> 
     match owner_node_type {
         QQ_AGENT_TOOL_OWNER_TYPE | QQ_AGENT_TOOL_OWNER_TYPE_LEGACY => vec![
             FunctionPortDef {
+                name: BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(),
+                data_type: DataType::String,
+                description: "触发此次工具调用的上下文文本内容".to_string(),
+            },
+            FunctionPortDef {
                 name: QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
                 data_type: DataType::MessageEvent,
                 description: "当前触发此次工具调用的消息事件".to_string(),
