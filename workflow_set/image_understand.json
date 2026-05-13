@@ -51,10 +51,12 @@
         "signature": [
           {
             "data_type": "MessageEvent",
+            "description": "",
             "name": "message_event"
           },
           {
             "data_type": "BotAdapterRef",
+            "description": "",
             "name": "qq_ims_bot_adapter"
           }
         ]
@@ -100,6 +102,7 @@
         "signature": [
           {
             "data_type": "String",
+            "description": "",
             "name": "image_description"
           }
         ]
@@ -317,7 +320,7 @@
       "inline_values": {
         "messages": [
           {
-            "content": "你是一个图片理解专家，请将消息中的所有图片总结成文字",
+            "content": "你是一个图片理解专家，请将消息中的所有图片总结成文字。如果图片中内含复杂的问题，只需要描述那个问题，不需要输出你的任何理解。",
             "role": "system"
           }
         ]
@@ -565,17 +568,20 @@
   "graph_inputs": [
     {
       "name": "message_event",
-      "data_type": "MessageEvent"
+      "data_type": "MessageEvent",
+      "description": ""
     },
     {
       "name": "qq_ims_bot_adapter",
-      "data_type": "BotAdapterRef"
+      "data_type": "BotAdapterRef",
+      "description": ""
     }
   ],
   "graph_outputs": [
     {
       "name": "image_description",
-      "data_type": "String"
+      "data_type": "String",
+      "description": ""
     }
   ],
   "hyperparameter_groups": [],
