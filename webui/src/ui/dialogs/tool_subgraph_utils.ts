@@ -69,6 +69,11 @@ export function getToolInputSignature(
 ): FunctionPortDef[] {
   return [
     ...sharedInputs.map(clonePortDef),
+    {
+      name: BRAIN_TOOL_FIXED_CONTENT_INPUT,
+      data_type: "String" as DataTypeMetaData,
+      description: "触发此次工具调用的上下文文本内容",
+    },
     ...(isQqAgentOwnerType(ownerNodeType)
       ? [
           {
@@ -82,11 +87,7 @@ export function getToolInputSignature(
             description: "当前消息事件对应的 Bot Adapter 连接引用",
           },
         ]
-      : [{
-          name: BRAIN_TOOL_FIXED_CONTENT_INPUT,
-          data_type: "String" as DataTypeMetaData,
-          description: "触发此次工具调用的上下文文本内容",
-        }]),
+      : []),
     ...tool.parameters.map((param) => ({
       name: param.name,
       data_type: cloneDataType(param.data_type),
