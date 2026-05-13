@@ -4,7 +4,7 @@ use salvo::writing::Json;
 use serde::Serialize;
 use serde_json::{Map, Value};
 use sqlx::Row as SqlxRow;
-use zihuan_llm::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
+use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 
 use crate::system_config::load_connections;
 use storage_handler::resource_resolver;

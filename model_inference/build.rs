@@ -8,7 +8,7 @@ fn main() {
     let repo_root = crate_dir
         .parent()
         .and_then(Path::parent)
-        .expect("zihuan_llm crate should live under workspace/packages");
+        .expect("model_inference crate should live under workspace/packages");
 
     emit_git_rerun_hints(repo_root);
 

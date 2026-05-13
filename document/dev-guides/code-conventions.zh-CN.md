@@ -37,7 +37,7 @@
 
 - `zihuan_graph_engine/src/util/`：通用运行时/工具节点
 - `zihuan_graph_engine/src/`：引擎自有功能模块
-- `zihuan_llm/src/nodes/`：AI 与 Agent 相关节点
+- `model_inference/src/nodes/`：AI 与 Agent 相关节点
 - `storage_handler/src/`：存储/连接相关节点
 - `ims_bot_adapter/src/`：适配器相关节点
 - `zihuan_service/src/nodes/`：Brain 与 Agent 节点
@@ -54,7 +54,7 @@
 - `zihuan_graph_engine::registry::init_node_registry()` — 内置工具节点
 - `storage_handler::init_node_registry()`
 - `ims_bot_adapter::init_node_registry()`
-- `zihuan_llm::init_node_registry()`
+- `model_inference::init_node_registry()`
 - `zihuan_service::init_node_registry()`
 - 合并引导：通过 `init_node_registry_with_extensions()` 在 `src/init_registry.rs` 中统一注册
 
@@ -64,7 +64,7 @@
 |---|---|
 | `zihuan_core` | 核心类型 |
 | `zihuan_graph_engine` | 节点图运行时 |
-| `zihuan_llm` | LLM、Embedding、Agent 配置模型、AI 节点 |
+| `model_inference` | LLM、Embedding、Agent 配置模型、AI 节点 |
 | `storage_handler` | 连接型节点与存储辅助 |
 | `ims_bot_adapter` | IMS 适配集成 |
 | `zihuan_service` | 长生命周期服务与任务托管、Brain/Agent 节点 |

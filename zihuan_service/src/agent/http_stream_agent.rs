@@ -9,7 +9,7 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::task_context::{
     AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
 };
-use zihuan_llm::system_config::{
+use model_inference::system_config::{
     load_agents, load_llm_refs, AgentConfig, AgentType, HttpStreamAgentConfig,
 };
 

@@ -16,7 +16,7 @@ salvo = { version = "0.75", features = ["websocket", "affix-state"] }
 zihuan_core = { path = "../zihuan_core" }
 zihuan_agent = { path = "../zihuan_agent" }
 zihuan_graph_engine = { path = "../zihuan_graph_engine" }
-zihuan_llm = { path = "../zihuan_llm" }
+model_inference = { path = "../model_inference" }
 ims_bot_adapter = { path = "../ims_bot_adapter" }
 storage_handler = { path = "../storage_handler" }
 general_wheel_cpp = { path = "../general_wheel_cpp" }

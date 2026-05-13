@@ -10,12 +10,28 @@ use zihuan_core::error::Result;
 pub fn init_node_registry() -> Result<()> {
     use zihuan_graph_engine::register_node;
 
+    use nodes::agent_embedding_model_node::AgentEmbeddingModelNode;
     use nodes::agent_image_db_ref::AgentImageDbRefNode;
+    use nodes::agent_llm_node::AgentLlmNode;
     use nodes::agent_mysql_ref::AgentMySqlRefNode;
     use nodes::agent_rustfs_ref::AgentRustfsRefNode;
     use nodes::agent_tavily_ref::AgentTavilyRefNode;
     use nodes::brain_node::BrainNode;
 
+    register_node!(
+        "agent_llm",
+        "读取Agent LLM",
+        "Agent",
+        "从当前 Agent 工具调用上下文中读取主模型、意图分类模型或数学编程模型，并输出 LLModel 引用",
+        AgentLlmNode
+    );
+    register_node!(
+        "agent_embedding_model",
+        "读取Agent文本向量模型",
+        "Agent",
+        "从当前 Agent 工具调用上下文中读取文本向量模型并输出 EmbeddingModel 引用",
+        AgentEmbeddingModelNode
+    );
     register_node!(
         "brain",
         "Brain",

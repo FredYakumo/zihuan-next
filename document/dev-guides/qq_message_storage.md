@@ -6,7 +6,7 @@ Relevant implementation:
 
 - `storage_handler/src/message_store.rs`
 - `database/models/message_record.py`
-- `zihuan_llm/src/agent/qq_chat_agent.rs`
+- `model_inference/src/agent/qq_chat_agent.rs`
 - `zihuan_graph_engine/src/message_restore.rs`
 
 ## Stored Object

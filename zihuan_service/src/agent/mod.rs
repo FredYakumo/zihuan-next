@@ -20,7 +20,7 @@ use uuid::Uuid;
 use zihuan_core::error::Result;
 use zihuan_core::llm::OpenAIMessage;
 use zihuan_core::task_context::AgentTaskRuntime;
-use zihuan_llm::system_config::{load_agents, AgentConfig, AgentType};
+use model_inference::system_config::{load_agents, AgentConfig, AgentType};
 
 use self::inference::{InferenceToolProvider, LoadedInferenceAgent, StaticInferenceToolProvider};
 use self::tool_definitions::build_enabled_tool_definitions;
@@ -158,7 +158,7 @@ impl AgentManager {
         task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
     ) -> Result<()> {
         self.stop_agent(&agent.id).await?;
-        let llm_refs = zihuan_llm::system_config::load_llm_refs()?;
+        let llm_refs = model_inference::system_config::load_llm_refs()?;
         let tool_provider = build_inference_tool_provider(&agent, &connections)?;
         let loaded_agent = Arc::new(LoadedInferenceAgent::load_with_tools(
             &agent,

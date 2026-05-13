@@ -16,7 +16,7 @@ use storage_handler::{
     list_runtime_storage_instances, ConnectionConfig, ConnectionKind,
 };
 use zihuan_core::weaviate::{WeaviateEnsureCollectionResult, WeaviateRef};
-use zihuan_llm::nn::embedding::embedding_runtime_manager::{
+use model_inference::nn::embedding::embedding_runtime_manager::{
     close_runtime_embedding_instance, list_runtime_embedding_instances,
 };
 

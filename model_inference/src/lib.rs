@@ -11,8 +11,6 @@ use zihuan_core::error::Result;
 pub fn init_node_registry() -> Result<()> {
     use zihuan_graph_engine::register_node;
 
-    use nodes::agent_embedding_model_node::AgentEmbeddingModelNode;
-    use nodes::agent_llm_node::AgentLlmNode;
     use nodes::batch_text_embedding_node::BatchTextEmbeddingNode;
     use nodes::context_compact_node::ContextCompactNode;
     use nodes::llm_infer_node::LLMInferNode;
@@ -23,20 +21,6 @@ pub fn init_node_registry() -> Result<()> {
     use nodes::top_k_similarity_node::TopKSimilarityNode;
     use nodes::vector_cosine_similarity_node::VectorCosineSimilarityNode;
 
-    register_node!(
-        "agent_llm",
-        "读取Agent LLM",
-        "Agent",
-        "从当前 Agent 工具调用上下文中读取主模型、意图分类模型或数学编程模型，并输出 LLModel 引用",
-        AgentLlmNode
-    );
-    register_node!(
-        "agent_embedding_model",
-        "读取Agent文本向量模型",
-        "Agent",
-        "从当前 Agent 工具调用上下文中读取文本向量模型并输出 EmbeddingModel 引用",
-        AgentEmbeddingModelNode
-    );
     register_node!(
         "llm_api",
         "llm配置",

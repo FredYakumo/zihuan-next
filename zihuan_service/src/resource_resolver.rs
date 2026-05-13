@@ -4,11 +4,11 @@ use std::time::Duration;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;
-use zihuan_llm::linalg::embedding_api::EmbeddingAPI;
-use zihuan_llm::nodes::llm_node::build_llm;
-use zihuan_llm::nn::queued_embedding_model::QueuedEmbeddingModel;
+use model_inference::linalg::embedding_api::EmbeddingAPI;
+use model_inference::nodes::llm_node::build_llm;
+use model_inference::nn::queued_embedding_model::QueuedEmbeddingModel;
 use zihuan_core::agent_config::EmbeddingServiceConfig;
-use zihuan_llm::system_config::{LlmRefConfig, LlmServiceConfig, ModelRefSpec};
+use model_inference::system_config::{LlmRefConfig, LlmServiceConfig, ModelRefSpec};
 
 pub fn resolve_llm_service_config(
     llm_ref_id: Option<&str>,

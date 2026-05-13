@@ -86,7 +86,7 @@ At process startup, the web app loads agent definitions from system config and a
 
 Agent start/stop can also be triggered through `/api/system/agents/<id>/start` and `/api/system/agents/<id>/stop`.
 
-Current long-lived agent types are defined in `zihuan_llm::system_config::AgentType`:
+Current long-lived agent types are defined in `model_inference::system_config::AgentType`:
 
 - `qq_chat`
 - `http_stream`

@@ -15,7 +15,7 @@ use zihuan_graph_engine::brain_tool_spec::{
     QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use super::classify_intent::{classify_intent, IntentCategory};
-use zihuan_llm::inference_function::compact_message::{
+use model_inference::inference_function::compact_message::{
     compact_message_history, estimate_messages_tokens,
 };
 use crate::nodes::tool_subgraph::{

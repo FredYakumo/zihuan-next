@@ -7,7 +7,7 @@ use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
 use storage_handler::{load_connections, ObjectStorageConfig};
-use zihuan_llm::system_config::{load_agents, AgentConfig, AgentToolType, NodeGraphToolConfig};
+use model_inference::system_config::{load_agents, AgentConfig, AgentToolType, NodeGraphToolConfig};
 
 use super::state::AppState;
 use super::ws::WsBroadcast;

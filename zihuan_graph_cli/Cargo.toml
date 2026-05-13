@@ -8,7 +8,7 @@ clap = { version = "4.5", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 zihuan_core = { path = "../zihuan_core" }
 zihuan_graph_engine = { path = "../zihuan_graph_engine" }
-zihuan_llm = { path = "../zihuan_llm" }
+model_inference = { path = "../model_inference" }
 zihuan_service = { path = "../zihuan_service" }
 ims_bot_adapter = { path = "../ims_bot_adapter" }
 storage_handler = { path = "../storage_handler" }

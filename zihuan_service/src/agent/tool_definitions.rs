@@ -7,7 +7,7 @@ use zihuan_graph_engine::DataType;
 use zihuan_graph_engine::brain_tool_spec::{
     fixed_tool_runtime_inputs, BrainToolDefinition, ToolParamDef, QQ_AGENT_TOOL_OWNER_TYPE,
 };
-use zihuan_llm::system_config::{AgentToolConfig, AgentToolType, NodeGraphToolConfig};
+use model_inference::system_config::{AgentToolConfig, AgentToolType, NodeGraphToolConfig};
 
 const LEGACY_QQ_AGENT_TOOL_OWNER_TYPE: &str = "qq_message_agent";
 

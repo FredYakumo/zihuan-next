@@ -114,7 +114,7 @@ Current registry bootstrap path:
 - `zihuan_graph_engine::registry::init_node_registry()` — built-in utility nodes
 - extended by `storage_handler::init_node_registry()`
 - extended by `ims_bot_adapter::init_node_registry()`
-- extended by `zihuan_llm::init_node_registry()`
+- extended by `model_inference::init_node_registry()`
 - extended by `zihuan_service::init_node_registry()`
 - combined via `init_node_registry_with_extensions()` in `src/init_registry.rs`
 

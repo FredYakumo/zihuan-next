@@ -40,9 +40,9 @@ use super::qq_chat_agent_core::{
     QqAgentReplyBuildResult, QqChatAgentService, QqChatAgentServiceConfig,
 };
 use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
-use zihuan_llm::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
+use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use zihuan_core::agent_config::QqChatAgentConfig;
-use zihuan_llm::system_config::{load_llm_refs, AgentConfig, LlmRefConfig};
+use model_inference::system_config::{load_llm_refs, AgentConfig, LlmRefConfig};
 
 const FORWARD_SPLIT_PREFERRED_SEPARATORS: [char; 14] = [
     '\n', '。', '！', '？', '；', '：', '.', '!', '?', ';', ':', '，', ',', ' ',
@@ -633,7 +633,7 @@ fn load_qq_resources(
     });
 
     let embedding_model = if let Some(model_ref_id) = config.embedding_model_ref_id.as_deref() {
-        let llm_refs = zihuan_llm::system_config::load_llm_refs().unwrap_or_default();
+        let llm_refs = model_inference::system_config::load_llm_refs().unwrap_or_default();
         match resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, &agent.name) {
             Ok(Some(_)) => block_async(
                 RuntimeEmbeddingModelManager::shared().get_or_create_embedding_model(model_ref_id),

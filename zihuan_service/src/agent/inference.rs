@@ -11,7 +11,7 @@ use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::{MessageRole, OpenAIMessage};
 use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
-use zihuan_llm::system_config::{AgentConfig, AgentType, LlmRefConfig};
+use model_inference::system_config::{AgentConfig, AgentType, LlmRefConfig};
 use crate::nodes::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 
 use crate::resource_resolver::{build_llm_model, resolve_llm_service_config};
@@ -89,7 +89,7 @@ impl BrainTool for DynBrainToolWrapper {
 
 impl LoadedInferenceAgent {
     pub fn load(agent: &AgentConfig, connections: &[ConnectionConfig]) -> Result<Self> {
-        let llm_refs = zihuan_llm::system_config::load_llm_refs()?;
+        let llm_refs = model_inference::system_config::load_llm_refs()?;
         Self::load_with_refs(agent, &llm_refs, connections)
     }
 

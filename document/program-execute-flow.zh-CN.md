@@ -86,7 +86,7 @@
 
 也可以通过 `/api/system/agents/<id>/start` 和 `/api/system/agents/<id>/stop` 手动控制。
 
-当前长期运行的 Agent 类型定义在 `zihuan_llm::system_config::AgentType` 中：
+当前长期运行的 Agent 类型定义在 `model_inference::system_config::AgentType` 中：
 
 - `qq_chat`
 - `http_stream`
