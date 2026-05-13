@@ -673,6 +673,7 @@ impl LLMAPI {
                             "name": tool.name(),
                             "description": tool.description(),
                             "parameters": tool.parameters(),
+                            "strict": false,
                         })
                     })
                     .collect::<Vec<_>>()
