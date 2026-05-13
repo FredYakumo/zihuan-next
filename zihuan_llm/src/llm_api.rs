@@ -50,7 +50,7 @@ struct RequestContext {
 enum RequestFormat {
     DefaultOpenAI,
     TencentMultimodalCompat,
-    OpenAiResponsesMultimodalCompat,
+    OpenAiResponsesMessageCompat,
     OpenAiResponsesImageUrlObjectCompat,
 }
 
@@ -59,7 +59,7 @@ impl RequestFormat {
         match self {
             RequestFormat::DefaultOpenAI => "default",
             RequestFormat::TencentMultimodalCompat => "tencent_multimodal_compat",
-            RequestFormat::OpenAiResponsesMultimodalCompat => "openai_responses_multimodal_compat",
+            RequestFormat::OpenAiResponsesMessageCompat => "openai_responses_message_compat",
             RequestFormat::OpenAiResponsesImageUrlObjectCompat => {
                 "openai_responses_image_url_object_compat"
             }
@@ -233,7 +233,20 @@ impl LLMAPI {
                     }
                 }
                 Some("function_call") => {
-                    let name = item.get("name").and_then(|value| value.as_str())?;
+                    let Some(name) = item
+                        .get("name")
+                        .and_then(|value| value.as_str())
+                        .filter(|value| !value.trim().is_empty())
+                    else {
+                        warn!(
+                            "Dropping incomplete Responses function call without name from completed response: id={}",
+                            item.get("call_id")
+                                .and_then(|value| value.as_str())
+                                .or_else(|| item.get("id").and_then(|value| value.as_str()))
+                                .unwrap_or("responses_function_call")
+                        );
+                        continue;
+                    };
                     let arguments_raw = item
                         .get("arguments")
                         .and_then(|value| value.as_str())
@@ -278,6 +291,85 @@ impl LLMAPI {
             tool_calls,
             tool_call_id: None,
         })
+    }
+
+    fn merge_stream_tool_call_delta(target: &mut StreamToolCallDelta, source: StreamToolCallDelta) {
+        if target.id.is_none() {
+            target.id = source.id;
+        }
+        if target.type_name.is_none() {
+            target.type_name = source.type_name;
+        }
+        if target.function_name.is_none() {
+            target.function_name = source.function_name;
+        }
+        if target.function_arguments.is_empty() {
+            target.function_arguments = source.function_arguments;
+        }
+    }
+
+    fn canonical_responses_tool_key(
+        streamed_tool_calls: &mut BTreeMap<String, StreamToolCallDelta>,
+        tool_call_aliases: &mut BTreeMap<String, String>,
+        item_id: Option<&str>,
+        call_id: Option<&str>,
+    ) -> String {
+        let item_id = item_id.filter(|value| !value.trim().is_empty());
+        let call_id = call_id.filter(|value| !value.trim().is_empty());
+
+        if let Some(call_id) = call_id {
+            let key = call_id.to_string();
+            if let Some(item_id) = item_id {
+                if item_id != call_id {
+                    tool_call_aliases.insert(item_id.to_string(), key.clone());
+                    if let Some(existing) = streamed_tool_calls.remove(item_id) {
+                        let target = streamed_tool_calls.entry(key.clone()).or_default();
+                        Self::merge_stream_tool_call_delta(target, existing);
+                    }
+                }
+            }
+            return key;
+        }
+
+        if let Some(item_id) = item_id {
+            return tool_call_aliases
+                .get(item_id)
+                .cloned()
+                .unwrap_or_else(|| item_id.to_string());
+        }
+
+        "responses_function_call".to_string()
+    }
+
+    fn collect_responses_stream_tool_calls(
+        streamed_tool_calls: BTreeMap<String, StreamToolCallDelta>,
+    ) -> Vec<ToolCalls> {
+        streamed_tool_calls
+            .into_iter()
+            .filter_map(|(index, call)| {
+                let name = call.function_name.unwrap_or_default();
+                if name.trim().is_empty() {
+                    warn!(
+                        "Dropping incomplete Responses function call without name: id={}",
+                        call.id.as_deref().unwrap_or(&index)
+                    );
+                    return None;
+                }
+
+                let arguments = if call.function_arguments.trim().is_empty() {
+                    Value::Null
+                } else {
+                    serde_json::from_str::<Value>(&call.function_arguments)
+                        .unwrap_or_else(|_| Value::String(call.function_arguments.clone()))
+                };
+
+                Some(ToolCalls {
+                    id: call.id.unwrap_or(index),
+                    type_name: call.type_name.unwrap_or_else(|| "function".to_string()),
+                    function: ToolCallsFuncSpec { name, arguments },
+                })
+            })
+            .collect()
     }
 
     fn parse_sse_message(response_text: &str) -> Option<OpenAIMessage> {
@@ -583,7 +675,7 @@ impl LLMAPI {
             (RequestFormat::TencentMultimodalCompat, Some(MessageContent::Text(text))) => {
                 json!([{ "type": "text", "text": text }])
             }
-            (RequestFormat::OpenAiResponsesMultimodalCompat, Some(MessageContent::Text(text))) => {
+            (RequestFormat::OpenAiResponsesMessageCompat, Some(MessageContent::Text(text))) => {
                 Value::String(text.clone())
             }
             (
@@ -593,10 +685,9 @@ impl LLMAPI {
             (RequestFormat::TencentMultimodalCompat, Some(MessageContent::Parts(parts))) => {
                 serialize_content_parts(parts)
             }
-            (
-                RequestFormat::OpenAiResponsesMultimodalCompat,
-                Some(MessageContent::Parts(parts)),
-            ) => serialize_content_parts(parts),
+            (RequestFormat::OpenAiResponsesMessageCompat, Some(MessageContent::Parts(parts))) => {
+                serialize_content_parts(parts)
+            }
             (
                 RequestFormat::OpenAiResponsesImageUrlObjectCompat,
                 Some(MessageContent::Parts(parts)),
@@ -762,7 +853,7 @@ impl LLMAPI {
                 });
                 if !matches!(
                     request_format,
-                    RequestFormat::OpenAiResponsesMultimodalCompat
+                    RequestFormat::OpenAiResponsesMessageCompat
                         | RequestFormat::OpenAiResponsesImageUrlObjectCompat
                 ) {
                     item["type"] = json!("message");
@@ -859,19 +950,20 @@ impl LLMAPI {
             || response_body_lower.contains("invalid params")
     }
 
-    fn is_openai_responses_multimodal_compat_retry_candidate(
-        request_context: &RequestContext,
-        err: &RequestError,
-    ) -> bool {
-        if !request_context.has_multimodal_input {
-            return false;
-        }
-
+    fn is_openai_responses_message_compat_retry_candidate(err: &RequestError) -> bool {
         let RequestError::NonRetryable { status, .. } = err else {
             return false;
         };
 
         *status == Some(StatusCode::BAD_REQUEST)
+    }
+
+    fn is_openai_responses_image_url_object_compat_retry_candidate(
+        request_context: &RequestContext,
+        err: &RequestError,
+    ) -> bool {
+        request_context.has_multimodal_input
+            && Self::is_openai_responses_message_compat_retry_candidate(err)
     }
 
     fn log_compat_success(
@@ -1003,7 +1095,9 @@ impl LLMAPI {
 
     fn parse_responses_sse_message(response_text: &str) -> Option<OpenAIMessage> {
         let mut content = String::new();
-        let mut final_message = None;
+        let mut streamed_tool_calls: BTreeMap<String, StreamToolCallDelta> = BTreeMap::new();
+        let mut tool_call_aliases: BTreeMap<String, String> = BTreeMap::new();
+        let mut completed_message = None;
 
         for line in response_text.lines() {
             let line = line.trim();
@@ -1026,22 +1120,120 @@ impl LLMAPI {
                         content.push_str(delta);
                     }
                 }
+                Some("response.output_item.added") | Some("response.output_item.done") => {
+                    if let Some(item) = chunk.get("item") {
+                        if item.get("type").and_then(|value| value.as_str())
+                            == Some("function_call")
+                        {
+                            let item_id = item.get("id").and_then(|value| value.as_str());
+                            let call_id = item.get("call_id").and_then(|value| value.as_str());
+                            let key = Self::canonical_responses_tool_key(
+                                &mut streamed_tool_calls,
+                                &mut tool_call_aliases,
+                                item_id,
+                                call_id,
+                            );
+                            let entry = streamed_tool_calls.entry(key.clone()).or_default();
+                            entry.id = Some(
+                                call_id
+                                    .filter(|value| !value.trim().is_empty())
+                                    .unwrap_or(&key)
+                                    .to_string(),
+                            );
+                            entry.type_name = Some("function".to_string());
+                            if let Some(name) = item
+                                .get("name")
+                                .and_then(|value| value.as_str())
+                                .filter(|value| !value.trim().is_empty())
+                            {
+                                entry.function_name = Some(name.to_string());
+                            }
+                            if entry.function_arguments.is_empty() {
+                                if let Some(arguments) =
+                                    item.get("arguments").and_then(|value| value.as_str())
+                                {
+                                    entry.function_arguments.push_str(arguments);
+                                }
+                            }
+                        }
+                    }
+                }
+                Some("response.function_call_arguments.delta") => {
+                    let item_id = chunk.get("item_id").and_then(|value| value.as_str());
+                    let call_id = chunk.get("call_id").and_then(|value| value.as_str());
+                    let key = Self::canonical_responses_tool_key(
+                        &mut streamed_tool_calls,
+                        &mut tool_call_aliases,
+                        item_id,
+                        call_id,
+                    );
+                    let entry = streamed_tool_calls.entry(key.clone()).or_default();
+                    entry.id = Some(
+                        call_id
+                            .filter(|value| !value.trim().is_empty())
+                            .unwrap_or(&key)
+                            .to_string(),
+                    );
+                    entry.type_name = Some("function".to_string());
+                    if let Some(delta) = chunk.get("delta").and_then(|value| value.as_str()) {
+                        entry.function_arguments.push_str(delta);
+                    }
+                }
+                Some("response.function_call_arguments.done") => {
+                    let item_id = chunk.get("item_id").and_then(|value| value.as_str());
+                    let call_id = chunk.get("call_id").and_then(|value| value.as_str());
+                    let key = Self::canonical_responses_tool_key(
+                        &mut streamed_tool_calls,
+                        &mut tool_call_aliases,
+                        item_id,
+                        call_id,
+                    );
+                    let entry = streamed_tool_calls.entry(key.clone()).or_default();
+                    entry.id = Some(
+                        call_id
+                            .filter(|value| !value.trim().is_empty())
+                            .unwrap_or(&key)
+                            .to_string(),
+                    );
+                    entry.type_name = Some("function".to_string());
+                    if entry.function_arguments.is_empty() {
+                        if let Some(arguments) =
+                            chunk.get("arguments").and_then(|value| value.as_str())
+                        {
+                            entry.function_arguments.push_str(arguments);
+                        }
+                    }
+                }
                 Some("response.completed") => {
                     if let Some(response) = chunk.get("response") {
-                        final_message = Self::parse_responses_api_message(response);
+                        completed_message = Self::parse_responses_api_message(response);
                     }
                 }
                 _ => {}
             }
         }
 
-        final_message.or_else(|| {
-            if content.is_empty() {
-                None
-            } else {
-                Some(OpenAIMessage::assistant_text(content))
-            }
-        })
+        if let Some(message) = completed_message {
+            return Some(message);
+        }
+
+        let tool_calls = Self::collect_responses_stream_tool_calls(streamed_tool_calls);
+
+        if content.is_empty() && tool_calls.is_empty() {
+            None
+        } else {
+            Some(OpenAIMessage {
+                role: str_to_role("assistant"),
+                content: if content.is_empty() {
+                    None
+                } else {
+                    Some(MessageContent::Text(content))
+                },
+                reasoning_content: None,
+                tool_calls,
+                tool_call_id: None,
+            })
+        }
     }
 }
 
@@ -1079,17 +1271,15 @@ impl LLMBase for LLMAPI {
         let tencent_compat_request_body = request_context.has_multimodal_input.then(|| {
             self.build_request_body(param, self.stream, RequestFormat::TencentMultimodalCompat)
         });
-        let responses_compat_request_body = (request_context.has_multimodal_input
-            && matches!(self.api_style, LlmApiStyle::OpenAiResponses))
-        .then(|| {
-            self.build_request_body(
-                param,
-                self.stream,
-                RequestFormat::OpenAiResponsesMultimodalCompat,
-            )
-        });
-        let responses_image_url_object_compat_request_body = (request_context
-            .has_multimodal_input
+        let responses_compat_request_body = matches!(self.api_style, LlmApiStyle::OpenAiResponses)
+            .then(|| {
+                self.build_request_body(
+                    param,
+                    self.stream,
+                    RequestFormat::OpenAiResponsesMessageCompat,
+                )
+            });
+        let responses_image_url_object_compat_request_body = (request_context.has_multimodal_input
             && matches!(self.api_style, LlmApiStyle::OpenAiResponses))
         .then(|| {
             self.build_request_body(
@@ -1109,7 +1299,7 @@ impl LLMBase for LLMAPI {
                     RequestFormat::TencentMultimodalCompat => tencent_compat_request_body
                         .as_ref()
                         .unwrap_or(&default_request_body),
-                    RequestFormat::OpenAiResponsesMultimodalCompat => responses_compat_request_body
+                    RequestFormat::OpenAiResponsesMessageCompat => responses_compat_request_body
                         .as_ref()
                         .unwrap_or(&default_request_body),
                     RequestFormat::OpenAiResponsesImageUrlObjectCompat => {
@@ -1171,28 +1361,25 @@ impl LLMBase for LLMAPI {
                     Err(err)
                         if request_format == RequestFormat::DefaultOpenAI
                             && responses_compat_request_body.is_some()
-                            && Self::is_openai_responses_multimodal_compat_retry_candidate(
-                                &request_context,
-                                &err,
-                            ) =>
+                            && Self::is_openai_responses_message_compat_retry_candidate(&err) =>
                     {
                         warn!(
-                            "LLM API request hit OpenAI Responses multimodal compatibility issue; retrying with alternate image payload format: {}",
+                            "LLM API request hit OpenAI Responses message compatibility issue; retrying without message item type: {}",
                             err.message()
                         );
-                        request_format = RequestFormat::OpenAiResponsesMultimodalCompat;
+                        request_format = RequestFormat::OpenAiResponsesMessageCompat;
                         continue;
                     }
                     Err(err)
-                        if request_format == RequestFormat::OpenAiResponsesMultimodalCompat
+                        if request_format == RequestFormat::OpenAiResponsesMessageCompat
                             && responses_image_url_object_compat_request_body.is_some()
-                            && Self::is_openai_responses_multimodal_compat_retry_candidate(
+                            && Self::is_openai_responses_image_url_object_compat_retry_candidate(
                                 &request_context,
                                 &err,
                             ) =>
                     {
                         warn!(
-                            "LLM API request still failed with OpenAI Responses multimodal compatibility format; retrying with image_url object format: {}",
+                            "LLM API request still failed with OpenAI Responses message compatibility format; retrying with image_url object format: {}",
                             err.message()
                         );
                         request_format = RequestFormat::OpenAiResponsesImageUrlObjectCompat;
@@ -1261,13 +1448,11 @@ impl LLMAPI {
         let tencent_compat_request_body = request_context
             .has_multimodal_input
             .then(|| self.build_request_body(param, true, RequestFormat::TencentMultimodalCompat));
-        let responses_compat_request_body = (request_context.has_multimodal_input
-            && matches!(self.api_style, LlmApiStyle::OpenAiResponses))
-        .then(|| {
-            self.build_request_body(param, true, RequestFormat::OpenAiResponsesMultimodalCompat)
-        });
-        let responses_image_url_object_compat_request_body = (request_context
-            .has_multimodal_input
+        let responses_compat_request_body = matches!(self.api_style, LlmApiStyle::OpenAiResponses)
+            .then(|| {
+                self.build_request_body(param, true, RequestFormat::OpenAiResponsesMessageCompat)
+            });
+        let responses_image_url_object_compat_request_body = (request_context.has_multimodal_input
             && matches!(self.api_style, LlmApiStyle::OpenAiResponses))
         .then(|| {
             self.build_request_body(
@@ -1289,7 +1474,7 @@ impl LLMAPI {
                 RequestFormat::TencentMultimodalCompat => tencent_compat_request_body
                     .as_ref()
                     .unwrap_or(&default_request_body),
-                RequestFormat::OpenAiResponsesMultimodalCompat => responses_compat_request_body
+                RequestFormat::OpenAiResponsesMessageCompat => responses_compat_request_body
                     .as_ref()
                     .unwrap_or(&default_request_body),
                 RequestFormat::OpenAiResponsesImageUrlObjectCompat => {
@@ -1345,28 +1530,25 @@ impl LLMAPI {
 
                 if request_format == RequestFormat::DefaultOpenAI
                     && responses_compat_request_body.is_some()
-                    && Self::is_openai_responses_multimodal_compat_retry_candidate(
-                        &request_context,
-                        &err,
-                    )
+                    && Self::is_openai_responses_message_compat_retry_candidate(&err)
                 {
                     warn!(
-                        "Streaming LLM API request hit OpenAI Responses multimodal compatibility issue; retrying with alternate image payload format: {}",
+                        "Streaming LLM API request hit OpenAI Responses message compatibility issue; retrying without message item type: {}",
                         err.message()
                     );
-                    request_format = RequestFormat::OpenAiResponsesMultimodalCompat;
+                    request_format = RequestFormat::OpenAiResponsesMessageCompat;
                     continue;
                 }
 
-                if request_format == RequestFormat::OpenAiResponsesMultimodalCompat
+                if request_format == RequestFormat::OpenAiResponsesMessageCompat
                     && responses_image_url_object_compat_request_body.is_some()
-                    && Self::is_openai_responses_multimodal_compat_retry_candidate(
+                    && Self::is_openai_responses_image_url_object_compat_retry_candidate(
                         &request_context,
                         &err,
                     )
                 {
                     warn!(
-                        "Streaming LLM API request still failed with OpenAI Responses multimodal compatibility format; retrying with image_url object format: {}",
+                        "Streaming LLM API request still failed with OpenAI Responses message compatibility format; retrying with image_url object format: {}",
                         err.message()
                     );
                     request_format = RequestFormat::OpenAiResponsesImageUrlObjectCompat;
@@ -1564,6 +1746,7 @@ impl LLMAPI {
 
         let mut content = String::new();
         let mut streamed_tool_calls: BTreeMap<String, StreamToolCallDelta> = BTreeMap::new();
+        let mut tool_call_aliases: BTreeMap<String, String> = BTreeMap::new();
         let mut completed_message = None;
 
         let mut stream = response.bytes_stream();
@@ -1608,47 +1791,90 @@ impl LLMAPI {
                             }
                         }
                     }
-                    Some("response.output_item.added") => {
+                    Some("response.output_item.added") | Some("response.output_item.done") => {
                         if let Some(item) = chunk_data.get("item") {
                             if item.get("type").and_then(|value| value.as_str())
                                 == Some("function_call")
                             {
-                                let key = item
-                                    .get("call_id")
-                                    .and_then(|value| value.as_str())
-                                    .or_else(|| item.get("id").and_then(|value| value.as_str()))
-                                    .unwrap_or("responses_function_call")
-                                    .to_string();
+                                let item_id = item.get("id").and_then(|value| value.as_str());
+                                let call_id = item.get("call_id").and_then(|value| value.as_str());
+                                let key = Self::canonical_responses_tool_key(
+                                    &mut streamed_tool_calls,
+                                    &mut tool_call_aliases,
+                                    item_id,
+                                    call_id,
+                                );
                                 let entry = streamed_tool_calls.entry(key.clone()).or_default();
-                                entry.id = Some(key);
+                                entry.id = Some(
+                                    call_id
+                                        .filter(|value| !value.trim().is_empty())
+                                        .unwrap_or(&key)
+                                        .to_string(),
+                                );
                                 entry.type_name = Some("function".to_string());
-                                if let Some(name) =
-                                    item.get("name").and_then(|value| value.as_str())
+                                if let Some(name) = item
+                                    .get("name")
+                                    .and_then(|value| value.as_str())
+                                    .filter(|value| !value.trim().is_empty())
                                 {
                                     entry.function_name = Some(name.to_string());
                                 }
-                                if let Some(arguments) =
-                                    item.get("arguments").and_then(|value| value.as_str())
-                                {
-                                    entry.function_arguments.push_str(arguments);
+                                if entry.function_arguments.is_empty() {
+                                    if let Some(arguments) =
+                                        item.get("arguments").and_then(|value| value.as_str())
+                                    {
+                                        entry.function_arguments.push_str(arguments);
+                                    }
                                 }
                             }
                         }
                     }
                     Some("response.function_call_arguments.delta") => {
-                        let key = chunk_data
-                            .get("call_id")
-                            .and_then(|value| value.as_str())
-                            .or_else(|| chunk_data.get("item_id").and_then(|value| value.as_str()))
-                            .unwrap_or("responses_function_call")
-                            .to_string();
+                        let item_id = chunk_data.get("item_id").and_then(|value| value.as_str());
+                        let call_id = chunk_data.get("call_id").and_then(|value| value.as_str());
+                        let key = Self::canonical_responses_tool_key(
+                            &mut streamed_tool_calls,
+                            &mut tool_call_aliases,
+                            item_id,
+                            call_id,
+                        );
                         let entry = streamed_tool_calls.entry(key.clone()).or_default();
-                        entry.id = Some(key);
+                        entry.id = Some(
+                            call_id
+                                .filter(|value| !value.trim().is_empty())
+                                .unwrap_or(&key)
+                                .to_string(),
+                        );
                         entry.type_name = Some("function".to_string());
                         if let Some(delta) =
                             chunk_data.get("delta").and_then(|value| value.as_str())
                         {
                             entry.function_arguments.push_str(delta);
+                        }
+                    }
+                    Some("response.function_call_arguments.done") => {
+                        let item_id = chunk_data.get("item_id").and_then(|value| value.as_str());
+                        let call_id = chunk_data.get("call_id").and_then(|value| value.as_str());
+                        let key = Self::canonical_responses_tool_key(
+                            &mut streamed_tool_calls,
+                            &mut tool_call_aliases,
+                            item_id,
+                            call_id,
+                        );
+                        let entry = streamed_tool_calls.entry(key.clone()).or_default();
+                        entry.id = Some(
+                            call_id
+                                .filter(|value| !value.trim().is_empty())
+                                .unwrap_or(&key)
+                                .to_string(),
+                        );
+                        entry.type_name = Some("function".to_string());
+                        if entry.function_arguments.is_empty() {
+                            if let Some(arguments) =
+                                chunk_data.get("arguments").and_then(|value| value.as_str())
+                            {
+                                entry.function_arguments.push_str(arguments);
+                            }
                         }
                     }
                     Some("response.completed") => {
@@ -1665,26 +1891,7 @@ impl LLMAPI {
             return message;
         }
 
-        let tool_calls = streamed_tool_calls
-            .into_iter()
-            .map(|(index, call)| {
-                let arguments = if call.function_arguments.trim().is_empty() {
-                    Value::Null
-                } else {
-                    serde_json::from_str::<Value>(&call.function_arguments)
-                        .unwrap_or_else(|_| Value::String(call.function_arguments.clone()))
-                };
-
-                ToolCalls {
-                    id: call.id.unwrap_or(index),
-                    type_name: call.type_name.unwrap_or_else(|| "function".to_string()),
-                    function: ToolCallsFuncSpec {
-                        name: call.function_name.unwrap_or_default(),
-                        arguments,
-                    },
-                }
-            })
-            .collect::<Vec<_>>();
+        let tool_calls = Self::collect_responses_stream_tool_calls(streamed_tool_calls);
 
         OpenAIMessage {
             role: str_to_role("assistant"),
