@@ -13,7 +13,8 @@ use crate::ws_action::{
 use log::{info, warn};
 use std::sync::Arc;
 use tokio::task::block_in_place;
-use zihuan_graph_engine::data_value::{MySqlConfig, RedisConfig};
+use zihuan_core::data_refs::MySqlConfig;
+use zihuan_graph_engine::data_value::RedisConfig;
 use zihuan_graph_engine::message_persistence::persist_message_event;
 
 const LOG_PREFIX: &str = "[message_helpers]";

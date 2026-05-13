@@ -5,8 +5,10 @@ pub mod object_storage;
 pub mod redis;
 pub mod resource_resolver;
 pub mod rustfs;
+mod tavily_provider_node;
+mod tavily_search_node;
 pub mod weaviate;
-pub mod weaviate_client;
+mod weaviate_image_search_node;
 
 use log::info;
 use serde::{Deserialize, Serialize};
@@ -34,7 +36,7 @@ pub use resource_resolver::{
 };
 pub use rustfs::RustfsNode;
 pub use weaviate::WeaviateNode;
-pub use zihuan_graph_engine::database::weaviate::WeaviateCollectionSchema;
+pub use zihuan_core::weaviate::WeaviateCollectionSchema;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -406,6 +408,27 @@ pub fn init_node_registry() -> Result<()> {
         "消息存储",
         "在消息记录中搜索，支持发送者、群组、内容关键词、时间范围过滤",
         MessageMySQLSearchNode
+    );
+    register_node!(
+        "tavily_provider",
+        "Tavily Provider",
+        "AI",
+        "从系统连接中选择 Tavily 配置，输出 TavilyRef 引用",
+        tavily_provider_node::TavilyProviderNode
+    );
+    register_node!(
+        "tavily_search",
+        "Tavily 搜索",
+        "AI",
+        "使用 TavilyRef 执行 Tavily 搜索并输出包含标题、链接和内容的 Vec<String>",
+        tavily_search_node::TavilySearchNode
+    );
+    register_node!(
+        "weaviate_image_search",
+        "Weaviate 图片检索",
+        "AI",
+        "使用本地 Weaviate 图片库做语义检索，输出标准化图片结果 JSON",
+        weaviate_image_search_node::WeaviateImageSearchNode
     );
 
     Ok(())

@@ -16,7 +16,8 @@ use crate::api::state::{AppState, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
 use crate::service::AgentRuntimeInfo;
 use crate::system_config;
-use zihuan_llm::system_config::{AgentConfig, AgentToolConfig, AgentType, QqChatAgentConfig};
+use zihuan_core::agent_config::QqChatAgentConfig;
+use model_inference::system_config::{AgentConfig, AgentToolConfig, AgentType};
 
 use super::{
     now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found,

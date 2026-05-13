@@ -39,7 +39,7 @@ pub fn apply_hyperparameter_bindings(
 
         if let Some(tools_value) = node.inline_values.get("tools_config").cloned() {
             if let Ok(mut tools) = serde_json::from_value::<
-                Vec<zihuan_llm::brain_tool::BrainToolDefinition>,
+                Vec<zihuan_graph_engine::brain_tool_spec::BrainToolDefinition>,
             >(tools_value)
             {
                 for tool in &mut tools {

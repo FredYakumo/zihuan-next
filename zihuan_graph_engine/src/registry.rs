@@ -75,6 +75,7 @@ impl NodeRegistry {
     }
 
     /// Return the canonical input and output ports for a registered node type.
+    ///
     /// Returns `None` if the type is not registered.
     pub fn get_node_ports(&self, type_id: &str) -> Option<(Vec<crate::Port>, Vec<crate::Port>)> {
         let factories = self.factories.read().unwrap();
@@ -158,7 +159,6 @@ macro_rules! register_node {
     };
 }
 
-/// Build a NodeGraph from a NodeGraphDefinition
 pub fn build_node_graph_from_definition(
     definition: &crate::graph_io::NodeGraphDefinition,
 ) -> Result<crate::NodeGraph> {
@@ -169,7 +169,6 @@ pub fn build_node_graph_from_definition(
         graph.set_edges(definition.edges.clone());
     }
 
-    // Create all nodes
     for node_def in &definition.nodes {
         let node = NODE_REGISTRY.create_node(
             &node_def.node_type,

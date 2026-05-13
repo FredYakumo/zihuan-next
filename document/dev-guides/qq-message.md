@@ -10,7 +10,7 @@ Related runtime paths:
 
 - `ims_bot_adapter/src/adapter.rs`
 - `ims_bot_adapter/src/extract_message_from_event.rs`
-- `zihuan_llm/src/agent/qq_chat_agent.rs`
+- `model_inference/src/agent/qq_chat_agent.rs`
 
 ## Role In The System
 
@@ -382,7 +382,7 @@ This readable rendering is the basis for:
 
 ### QQ-agent inference expansion
 
-`zihuan_llm/src/agent/qq_chat_agent.rs` adds a further agent-only step:
+`model_inference/src/agent/qq_chat_agent.rs` adds a further agent-only step:
 
 - `expand_event_for_inference()` clones the incoming `MessageEvent`
 - `expand_messages_for_inference()` recursively replaces reply/forward shells with explicit text boundaries and inner content
@@ -398,7 +398,7 @@ This is important because the agent should reason over the fully expanded refere
 Both of these paths now understand hydrated forwards:
 
 - `ims_bot_adapter/src/extract_message_from_event.rs`
-- `zihuan_llm/src/agent/qq_chat_agent.rs`
+- `model_inference/src/agent/qq_chat_agent.rs`
 
 In both files:
 
@@ -486,7 +486,7 @@ If upstream input starts including those types, you should first define:
 - `zihuan_core/src/ims_bot_adapter/models/event_model.rs`
 - `ims_bot_adapter/src/adapter.rs`
 - `ims_bot_adapter/src/extract_message_from_event.rs`
-- `zihuan_llm/src/agent/qq_chat_agent.rs`
+- `model_inference/src/agent/qq_chat_agent.rs`
 - `zihuan_graph_engine/src/message_restore.rs`
 
 ## Programmatic Sending Helpers

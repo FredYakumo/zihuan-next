@@ -9,7 +9,7 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::task_context::{
     AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
 };
-use zihuan_llm::system_config::{
+use model_inference::system_config::{
     load_agents, load_llm_refs, AgentConfig, AgentType, HttpStreamAgentConfig,
 };
 
@@ -403,12 +403,9 @@ fn validate_http_stream_config(config: &HttpStreamAgentConfig) -> Result<()> {
         .as_deref()
         .map(str::trim)
         .is_some_and(|value| !value.is_empty());
-    let has_legacy_llm = config.llm.as_ref().is_some_and(|llm| {
-        !llm.model_name.trim().is_empty() && !llm.api_endpoint.trim().is_empty()
-    });
-    if !has_llm_ref && !has_legacy_llm {
+    if !has_llm_ref {
         return Err(Error::ValidationError(
-            "http_stream must define llm_ref_id or legacy llm config".to_string(),
+            "http_stream must define llm_ref_id".to_string(),
         ));
     }
     Ok(())

@@ -12,6 +12,7 @@ export type ConnectionType = "mysql" | "redis" | "weaviate" | "rustfs" | "bot_ad
 export type WeaviateCollectionSchema = "message_record_semantic" | "image_semantic";
 export type AgentTypeName = "qq_chat" | "http_stream";
 export type ModelRefType = "chat_llm" | "text_embedding_local";
+export type LlmApiStyle = "candle" | "open_ai_chat_completions" | "open_ai_responses";
 export type ToolTargetType = "workflow_set" | "file_path" | "inline_graph";
 
 export interface ConnectionFormState {
@@ -120,6 +121,7 @@ export function defaultLlmConfig(): LlmServiceConfig {
     model_name: "",
     api_endpoint: "",
     api_key: "",
+    api_style: "open_ai_chat_completions",
     stream: false,
     supports_multimodal_input: false,
     timeout_secs: 30,
@@ -363,6 +365,7 @@ export function llmFormFromConfig(config: LlmConfig): LlmFormState {
       model_name: config.model.llm.model_name,
       api_endpoint: config.model.llm.api_endpoint,
       api_key: config.model.llm.api_key ?? "",
+      api_style: (config.model.llm.api_style ?? "open_ai_chat_completions") as LlmApiStyle,
       stream: Boolean(config.model.llm.stream ?? false),
       supports_multimodal_input: Boolean(config.model.llm.supports_multimodal_input ?? false),
       timeout_secs: config.model.llm.timeout_secs,

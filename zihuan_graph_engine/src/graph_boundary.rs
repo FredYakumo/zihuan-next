@@ -46,18 +46,28 @@ pub fn graph_outputs_ports(signature: &[FunctionPortDef]) -> Vec<Port> {
 }
 
 pub fn sync_root_graph_io(graph: &mut NodeGraphDefinition) -> bool {
-    let inputs_signature = graph
-        .nodes
-        .iter()
-        .find(|node| node.id == GRAPH_INPUTS_NODE_ID)
-        .and_then(|node| function_signature_from_inline_values(&node.inline_values))
-        .unwrap_or_else(|| graph.graph_inputs.clone());
-    let outputs_signature = graph
-        .nodes
-        .iter()
-        .find(|node| node.id == GRAPH_OUTPUTS_NODE_ID)
-        .and_then(|node| function_signature_from_inline_values(&node.inline_values))
-        .unwrap_or_else(|| graph.graph_outputs.clone());
+    // Prefer top-level graph_inputs/graph_outputs when present so an explicit graph
+    // signature can repair stale boundary-node inline signatures from older saves.
+    let inputs_signature = if !graph.graph_inputs.is_empty() {
+        graph.graph_inputs.clone()
+    } else {
+        graph
+            .nodes
+            .iter()
+            .find(|node| node.id == GRAPH_INPUTS_NODE_ID)
+            .and_then(|node| function_signature_from_inline_values(&node.inline_values))
+            .unwrap_or_default()
+    };
+    let outputs_signature = if !graph.graph_outputs.is_empty() {
+        graph.graph_outputs.clone()
+    } else {
+        graph
+            .nodes
+            .iter()
+            .find(|node| node.id == GRAPH_OUTPUTS_NODE_ID)
+            .and_then(|node| function_signature_from_inline_values(&node.inline_values))
+            .unwrap_or_default()
+    };
 
     sync_root_graph_io_signature(graph, &inputs_signature, &outputs_signature)
 }

@@ -1,4 +1,3 @@
-use crate::data_value::MySqlConfig;
 use crate::message_persistence::register_mysql_persistence_ref;
 use crate::message_restore::register_mysql_ref;
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
@@ -8,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::block_in_place;
+use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::Result;
 use zihuan_core::url_utils::pct_encode;
 

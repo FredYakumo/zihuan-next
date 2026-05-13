@@ -1,8 +1,9 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 
+use super::inference::{InferenceToolContext, InferenceToolProvider};
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
+use crate::agent::tool_definitions::build_enabled_tool_definitions;
 use crate::resource_resolver::{
     build_embedding_model, build_llm_model, resolve_llm_service_config,
     resolve_local_embedding_model_name,
@@ -15,37 +16,37 @@ use ims_bot_adapter::models::message::{
     ReplyMessage,
 };
 use ims_bot_adapter::{build_ims_bot_adapter, parse_ims_bot_adapter_connection};
-use log::{error, info};
+use log::{error, info, warn};
 use storage_handler::{
     build_mysql_ref, build_s3_ref, build_tavily_ref, build_weaviate_ref, find_connection,
     ConnectionConfig, ConnectionKind,
 };
 use tokio::task::JoinHandle;
+use zihuan_agent::brain::BrainTool;
+use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
+use zihuan_core::llm::embedding_base::EmbeddingBase;
+use zihuan_core::llm::OpenAIMessage;
+use zihuan_core::rag::TavilyRef;
+use zihuan_core::runtime::block_async;
 use zihuan_core::task_context::AgentTaskRuntime;
+use zihuan_core::weaviate::WeaviateRef;
 use zihuan_core::worker_pool::WorkerPool;
 use zihuan_graph_engine::data_value::{OpenAIMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
-use zihuan_graph_engine::graph_boundary::{root_graph_to_tool_subgraph, sync_root_graph_io};
 use zihuan_graph_engine::message_restore::register_mysql_ref;
-use zihuan_graph_engine::DataType;
-use zihuan_llm::agent::qq_chat_agent::{
-    QqAgentReplyBatchBuilder, QqAgentReplyBuildRequest, QqAgentReplyBuildResult,
-    QqChatAgentService, QqChatAgentServiceConfig,
+use super::qq_chat_agent_core::{
+    build_info_brain_tools, QqAgentReplyBatchBuilder, QqAgentReplyBuildRequest,
+    QqAgentReplyBuildResult, QqChatAgentService, QqChatAgentServiceConfig,
 };
-use zihuan_llm::brain_tool::{
-    fixed_tool_runtime_inputs, BrainToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE,
-};
-use zihuan_llm::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
-use zihuan_llm::system_config::{
-    load_llm_refs, AgentConfig, AgentToolConfig, AgentToolType, LlmRefConfig, NodeGraphToolConfig,
-    QqChatAgentConfig,
-};
+use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
+use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
+use zihuan_core::agent_config::QqChatAgentConfig;
+use model_inference::system_config::{load_llm_refs, AgentConfig, LlmRefConfig};
 
 const FORWARD_SPLIT_PREFERRED_SEPARATORS: [char; 14] = [
     '\n', '。', '！', '？', '；', '：', '.', '!', '?', ';', ':', '，', ',', ' ',
 ];
-const LEGACY_QQ_AGENT_TOOL_OWNER_TYPE: &str = "qq_message_agent";
 
 #[derive(Debug, Clone)]
 enum ReplySegment {
@@ -109,7 +110,15 @@ fn build_reply_batches_from_model_text(
                 let text_chars = text.chars().count();
                 if text_chars > request.max_message_length {
                     flush_batch(&mut batches, &mut current_batch);
-                    if let Some(forward) = build_forward_from_text(
+                    if pending_reply.is_some() {
+                        let text_batches =
+                            build_plain_text_batches_from_text(&text, request.max_message_length);
+                        if let Some(reply) = pending_reply.take() {
+                            append_reply_to_text_batches(&mut batches, text_batches, reply);
+                        } else {
+                            batches.extend(text_batches);
+                        }
+                    } else if let Some(forward) = build_forward_from_text(
                         &text,
                         request.max_message_length,
                         &request.bot_id,
@@ -174,9 +183,9 @@ fn ensure_space_after_at(batches: &mut [Vec<Message>]) {
     for batch in batches {
         for i in 0..batch.len().saturating_sub(1) {
             if matches!(batch[i], Message::At(_)) {
-                if let Message::PlainText(ref mut pt) = batch[i + 1] {
+                if let Message::PlainText(pt) = &mut batch[i + 1] {
                     if !pt.text.starts_with(' ') {
-                        pt.text = format!(" {}", pt.text);
+                        pt.text.insert(0, ' ');
                     }
                 }
             }
@@ -190,11 +199,34 @@ fn flush_batch(batches: &mut Vec<Vec<Message>>, current_batch: &mut Vec<Message>
     }
 }
 
+fn build_plain_text_batches_from_text(text: &str, max_chars: usize) -> Vec<Vec<Message>> {
+    split_plain_text_for_forward(text, max_chars)
+        .into_iter()
+        .map(|chunk| vec![Message::PlainText(PlainTextMessage { text: chunk })])
+        .collect()
+}
+
+fn append_reply_to_text_batches(
+    batches: &mut Vec<Vec<Message>>,
+    mut text_batches: Vec<Vec<Message>>,
+    reply: ReplyMessage,
+) {
+    if let Some(first_batch) = text_batches.first_mut() {
+        first_batch.insert(0, Message::Reply(reply));
+    }
+    batches.extend(text_batches);
+}
+
 fn attach_reply_to_first_batch(batches: &mut Vec<Vec<Message>>, reply: ReplyMessage) {
-    if let Some(first_batch) = batches.first_mut() {
+    if let Some(first_batch) = batches
+        .iter_mut()
+        .find(|batch| !matches!(batch.as_slice(), [Message::Forward(_)]))
+    {
         first_batch.insert(0, Message::Reply(reply));
     } else {
-        batches.push(vec![Message::Reply(reply)]);
+        warn!(
+            "dropping reply marker because all outbound batches are forward messages and QQ does not support reply+forward in one batch"
+        );
     }
 }
 
@@ -488,6 +520,164 @@ fn parse_tag_value(value: &str) -> Option<String> {
     Some(trimmed.to_string())
 }
 
+#[derive(Clone)]
+struct QqLoadedInferenceResources {
+    bot_name: String,
+    default_tools_enabled: HashMap<String, bool>,
+    tavily_ref: Option<Arc<TavilyRef>>,
+    mysql_ref: Option<Arc<MySqlConfig>>,
+    weaviate_image_ref: Option<Arc<WeaviateRef>>,
+    embedding_model: Option<Arc<dyn EmbeddingBase>>,
+}
+
+pub struct QqInferenceToolProvider {
+    resources: QqLoadedInferenceResources,
+    tool_definitions: Vec<BrainToolDefinition>,
+}
+
+impl InferenceToolProvider for QqInferenceToolProvider {
+    fn augment_messages(&self, messages: &mut Vec<OpenAIMessage>, _context: &InferenceToolContext) {
+        messages.insert(
+            0,
+            OpenAIMessage::system(format!(
+                "你是 {}。请保持回答简洁、友好、准确；当可调用工具时优先使用工具获取事实。",
+                self.resources.bot_name
+            )),
+        );
+    }
+
+    fn build_default_tools(&self, context: &InferenceToolContext) -> Vec<Box<dyn BrainTool>> {
+        build_info_brain_tools(
+            &self.resources.default_tools_enabled,
+            self.resources.tavily_ref.clone(),
+            self.resources.mysql_ref.clone(),
+            self.resources.weaviate_image_ref.clone(),
+            self.resources.embedding_model.clone(),
+            context.last_user_text.clone(),
+        )
+    }
+
+    fn tool_definitions(&self) -> Vec<BrainToolDefinition> {
+        self.tool_definitions.clone()
+    }
+}
+
+pub fn load_inference_tool_provider(
+    agent: &AgentConfig,
+    config: &QqChatAgentConfig,
+    connections: &[ConnectionConfig],
+) -> Result<Arc<dyn InferenceToolProvider>> {
+    Ok(Arc::new(QqInferenceToolProvider {
+        resources: load_qq_resources(agent, config, connections),
+        tool_definitions: build_enabled_tool_definitions(&agent.tools)?,
+    }))
+}
+
+fn load_qq_resources(
+    agent: &AgentConfig,
+    config: &QqChatAgentConfig,
+    connections: &[ConnectionConfig],
+) -> QqLoadedInferenceResources {
+    let tavily_ref = build_tavily_ref(
+        if config.tavily_connection_id.trim().is_empty() {
+            None
+        } else {
+            Some(config.tavily_connection_id.as_str())
+        },
+        connections,
+    )
+    .unwrap_or_else(|e| {
+        warn!("[inference][qq_agent] tavily connection unavailable: {e}");
+        None
+    });
+
+    let mysql_ref = block_async(build_mysql_ref(
+        if config
+            .mysql_connection_id
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or("")
+            .is_empty()
+        {
+            None
+        } else {
+            config.mysql_connection_id.as_deref()
+        },
+        connections,
+    ))
+    .unwrap_or_else(|e| {
+        warn!("[inference][qq_agent] mysql connection unavailable: {e}");
+        None
+    });
+
+    let weaviate_image_ref = tokio::task::block_in_place(|| {
+        build_weaviate_ref(
+            if config
+                .weaviate_image_connection_id
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or("")
+                .is_empty()
+            {
+                None
+            } else {
+                config.weaviate_image_connection_id.as_deref()
+            },
+            connections,
+            true,
+        )
+    })
+    .unwrap_or_else(|e| {
+        warn!("[inference][qq_agent] weaviate image connection unavailable: {e}");
+        None
+    });
+
+    let embedding_model = if let Some(model_ref_id) = config.embedding_model_ref_id.as_deref() {
+        let llm_refs = model_inference::system_config::load_llm_refs().unwrap_or_default();
+        match resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, &agent.name) {
+            Ok(Some(_)) => block_async(
+                RuntimeEmbeddingModelManager::shared().get_or_create_embedding_model(model_ref_id),
+            )
+            .ok(),
+            Ok(None) => None,
+            Err(err) => {
+                warn!("[inference][qq_agent] embedding model ref unavailable: {err}");
+                None
+            }
+        }
+    } else {
+        config.embedding.as_ref().map(build_embedding_model)
+    };
+
+    QqLoadedInferenceResources {
+        bot_name: if config.bot_name.trim().is_empty() {
+            agent.name.clone()
+        } else {
+            config.bot_name.clone()
+        },
+        default_tools_enabled: config.default_tools_enabled.clone(),
+        tavily_ref,
+        mysql_ref,
+        weaviate_image_ref,
+        embedding_model,
+    }
+}
+
+/// Purpose: Bootstrap and launch a long-running QQ chat agent instance.
+///
+/// Resolves all runtime dependencies (`llm`, `embedding_model`, `tavily`, `s3_ref`,
+/// `mysql_ref`, `weaviate_image_ref`), wires the IMS bot adapter event handler
+/// through a `WorkerPool`, then spawns a background task that runs the
+/// `BotAdapter::start` loop until exit.
+///
+/// Called when the service layer starts an agent whose type is QQ chat —
+/// typically from `AgentManager::start_agent` after validating the agent config.
+///
+/// Call chain:
+///   `AgentManager::start_agent` → `QqChatAgent::spawn`
+///     → build deps → register `EventHandler` on bot adapter
+///     → `tokio::spawn`(`BotAdapter::start`) → `handle_event` per incoming message
+///     → `on_finish` callback on exit
 pub async fn spawn(
     manager: &AgentManager,
     agent: AgentConfig,
@@ -506,33 +696,27 @@ pub async fn spawn(
     };
     let ims_bot_adapter_connection = parse_ims_bot_adapter_connection(ims_bot_adapter_connection)?;
 
-    let llm_config = resolve_llm_service_config(
-        config.llm_ref_id.as_deref(),
-        config.llm.as_ref(),
-        &llm_refs,
-        &agent.name,
-    )?;
-    let llm = build_llm_model(&llm_config);
+    let llm_config =
+        resolve_llm_service_config(config.llm_ref_id.as_deref(), &llm_refs, &agent.name)?;
+    let llm = build_llm_model(&llm_config)?;
     let intent_llm_config = resolve_llm_service_config(
         config
             .intent_llm_ref_id
             .as_deref()
             .or(config.llm_ref_id.as_deref()),
-        config.llm.as_ref(),
         &llm_refs,
         &agent.name,
     )?;
-    let intent_llm = build_llm_model(&intent_llm_config);
+    let intent_llm = build_llm_model(&intent_llm_config)?;
     let math_programming_llm_config = resolve_llm_service_config(
         config
             .math_programming_llm_ref_id
             .as_deref()
             .or(config.llm_ref_id.as_deref()),
-        config.llm.as_ref(),
         &llm_refs,
         &agent.name,
     )?;
-    let math_programming_llm = build_llm_model(&math_programming_llm_config);
+    let math_programming_llm = build_llm_model(&math_programming_llm_config)?;
     let embedding_model = if let Some(model_ref_id) = config.embedding_model_ref_id.as_deref() {
         let model_name =
             resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, &agent.name)?;
@@ -699,183 +883,4 @@ fn resolve_llm_ref_display_name(
         .and_then(|id| llm_refs.iter().find(|item| item.id == id))
         .map(|item| item.name.clone())
         .unwrap_or_else(|| fallback_model_name.to_string())
-}
-
-pub fn build_enabled_tool_definitions(
-    tools: &[AgentToolConfig],
-) -> Result<Vec<BrainToolDefinition>> {
-    let mut definitions = Vec::new();
-    for tool in tools.iter().filter(|tool| tool.enabled) {
-        match &tool.tool_type {
-            AgentToolType::NodeGraph(config) => {
-                definitions.push(build_node_graph_tool_definition(tool, config)?);
-            }
-        }
-    }
-    Ok(definitions)
-}
-
-fn build_node_graph_tool_definition(
-    tool: &AgentToolConfig,
-    config: &NodeGraphToolConfig,
-) -> Result<BrainToolDefinition> {
-    let (mut graph, parameters, outputs) = match config {
-        NodeGraphToolConfig::FilePath {
-            path,
-            parameters,
-            outputs,
-        } => (
-            load_graph_from_path(PathBuf::from(path))?,
-            parameters.clone(),
-            outputs.clone(),
-        ),
-        NodeGraphToolConfig::WorkflowSet {
-            name,
-            parameters,
-            outputs,
-        } => (
-            load_graph_from_path(PathBuf::from("workflow_set").join(format!("{name}.json")))?,
-            parameters.clone(),
-            outputs.clone(),
-        ),
-        NodeGraphToolConfig::InlineGraph {
-            graph,
-            parameters,
-            outputs,
-        } => (graph.clone(), parameters.clone(), outputs.clone()),
-    };
-
-    sync_root_graph_io(&mut graph);
-    validate_tool_graph_contract(tool, &graph, &parameters, &outputs)?;
-    let subgraph = root_graph_to_tool_subgraph(&graph);
-
-    Ok(BrainToolDefinition {
-        id: tool.id.clone(),
-        name: tool.name.clone(),
-        description: tool.description.clone(),
-        parameters,
-        outputs,
-        subgraph,
-    })
-}
-
-fn load_graph_from_path(
-    path: PathBuf,
-) -> Result<zihuan_graph_engine::graph_io::NodeGraphDefinition> {
-    if !path.exists() {
-        return Err(Error::ValidationError(format!(
-            "tool graph file not found: {}",
-            path.display()
-        )));
-    }
-    let loaded = zihuan_graph_engine::load_graph_definition_from_json_with_migration(&path)?;
-    Ok(loaded.graph)
-}
-
-fn validate_tool_graph_contract(
-    tool: &AgentToolConfig,
-    graph: &zihuan_graph_engine::graph_io::NodeGraphDefinition,
-    parameters: &[zihuan_llm::brain_tool::ToolParamDef],
-    outputs: &[FunctionPortDef],
-) -> Result<()> {
-    if graph.graph_inputs.is_empty() {
-        return Err(Error::ValidationError(format!(
-            "agent tool '{}' 引用的节点图未定义输入列表",
-            tool.name
-        )));
-    }
-    if graph.graph_outputs.is_empty() {
-        return Err(Error::ValidationError(format!(
-            "agent tool '{}' 引用的节点图未定义输出列表",
-            tool.name
-        )));
-    }
-    if outputs.is_empty() {
-        return Err(Error::ValidationError(format!(
-            "agent tool '{}' 未定义 outputs，必须与节点图输出匹配",
-            tool.name
-        )));
-    }
-
-    for port in &graph.graph_inputs {
-        validate_tool_graph_input_port(tool, port)?;
-    }
-
-    if !same_param_signature(parameters, &graph.graph_inputs) {
-        return Err(Error::ValidationError(format!(
-            "agent tool '{}' 的 parameters 与节点图输入定义不匹配",
-            tool.name
-        )));
-    }
-    if !same_port_signature(outputs, &graph.graph_outputs) {
-        return Err(Error::ValidationError(format!(
-            "agent tool '{}' 的 outputs 与节点图输出定义不匹配",
-            tool.name
-        )));
-    }
-
-    Ok(())
-}
-
-fn validate_tool_graph_input_port(tool: &AgentToolConfig, port: &FunctionPortDef) -> Result<()> {
-    if let Some(expected_type) = reserved_tool_graph_input_type(&port.name) {
-        if port.data_type != expected_type {
-            return Err(Error::ValidationError(format!(
-                "agent tool '{}' 的保留输入 '{}' 类型不匹配：期望 {}，实际为 {}",
-                tool.name, port.name, expected_type, port.data_type
-            )));
-        }
-        return Ok(());
-    }
-
-    if matches!(
-        port.data_type,
-        DataType::Integer | DataType::Float | DataType::String | DataType::Boolean
-    ) {
-        return Ok(());
-    }
-
-    Err(Error::ValidationError(format!(
-        "agent tool '{}' 的节点图输入 '{}' 类型必须是基础类型 int/float/string/boolean，或受支持的保留运行时输入；实际为 {}",
-        tool.name, port.name, port.data_type
-    )))
-}
-
-fn reserved_tool_graph_input_type(name: &str) -> Option<DataType> {
-    let trimmed = name.trim();
-    for owner_type in [
-        "brain",
-        QQ_AGENT_TOOL_OWNER_TYPE,
-        LEGACY_QQ_AGENT_TOOL_OWNER_TYPE,
-    ] {
-        for port in fixed_tool_runtime_inputs(owner_type) {
-            if port.name == trimmed {
-                return Some(port.data_type);
-            }
-        }
-    }
-    None
-}
-
-fn same_param_signature(
-    parameters: &[zihuan_llm::brain_tool::ToolParamDef],
-    inputs: &[FunctionPortDef],
-) -> bool {
-    let exposed_inputs = inputs
-        .iter()
-        .filter(|input| reserved_tool_graph_input_type(&input.name).is_none())
-        .collect::<Vec<_>>();
-
-    parameters.len() == exposed_inputs.len()
-        && parameters.iter().zip(exposed_inputs).all(|(param, input)| {
-            param.name.trim() == input.name.trim() && param.data_type == input.data_type
-        })
-}
-
-fn same_port_signature(left: &[FunctionPortDef], right: &[FunctionPortDef]) -> bool {
-    left.len() == right.len()
-        && left
-            .iter()
-            .zip(right)
-            .all(|(a, b)| a.name.trim() == b.name.trim() && a.data_type == b.data_type)
 }

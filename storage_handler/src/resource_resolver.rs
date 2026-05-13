@@ -1,9 +1,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
-use zihuan_graph_engine::data_value::{MySqlConfig, RedisConfig, TavilyRef};
-use zihuan_graph_engine::database::weaviate::WeaviateRef;
+use zihuan_core::rag::TavilyRef;
+use zihuan_core::weaviate::WeaviateRef;
+use zihuan_graph_engine::data_value::RedisConfig;
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
 

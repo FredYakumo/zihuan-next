@@ -6,7 +6,7 @@
 
 The backend is a single Rust binary (Salvo HTTP server) that serves a browser-based editor (Vite + TypeScript + Litegraph.js) and exposes REST + WebSocket APIs.
 
-For crate layout, build/run/test commands, and module-specific rules, see [document/dev-guides/README.md](../document/dev-guides/README.md). Always consult `document/` before writing or modifying code that touches an unfamiliar area — do not infer file paths or APIs from this file.
+For crate layout, build/run/test commands, and module-specific rules, see [document/dev-guides/node-system.md](../document/dev-guides/node-system.md), [document/dev-guides/code-conventions.md](../document/dev-guides/code-conventions.md), and [document/dev-guides/ui-architecture.md](../document/dev-guides/ui-architecture.md). Always consult `document/` before writing or modifying code that touches an unfamiliar area — do not infer file paths or APIs from this file.
 
 ## High-Level Rules
 
@@ -19,8 +19,10 @@ For crate layout, build/run/test commands, and module-specific rules, see [docum
 - Do not write unit tests by default. Only add tests when the user explicitly indicates a feature is complex enough to warrant them, and place them in the dedicated test location for that crate/module.
 - Do not add useless comments. Skip comments when the code is already self-explanatory; only write a comment when the *why* is non-obvious (hidden constraint, subtle invariant, deliberate workaround).
 - Reuse existing functionality whenever possible. Shared utility functions must live in their dedicated location — search before writing a new helper; do not duplicate logic. Refer to `document/dev-guides/` for the canonical location of utilities and node placement.
+- Common/shared type definitions, and type definitions that may cause circular references, must be placed in `zihuan_core`.
+- Otherwise, code and types must stay in the package that owns the functional responsibility, with high cohesion and low coupling.
 
-For node file placement, node registration, naming conventions, and other code-level details, look up [document/dev-guides/code-conventions.md](../document/dev-guides/code-conventions.md) and [document/dev-guides/README.md](../document/dev-guides/README.md).
+For node file placement, node registration, naming conventions, and other code-level details, look up [document/dev-guides/code-conventions.md](../document/dev-guides/code-conventions.md) and [document/dev-guides/node-system.md](../document/dev-guides/node-system.md).
 
 ## Code Search
 
@@ -33,4 +35,4 @@ These provide accurate symbol search, goto-definition, and find-references witho
 
 ## Detailed References
 
-All architecture, crate layout, command reference, and module rules live under `document/`. Start at [document/dev-guides/README.md](../document/dev-guides/README.md).
+All architecture, crate layout, command reference, and module rules live under `document/`. Start with [document/dev-guides/node-system.md](../document/dev-guides/node-system.md), [document/dev-guides/code-conventions.md](../document/dev-guides/code-conventions.md), and [document/dev-guides/ui-architecture.md](../document/dev-guides/ui-architecture.md).

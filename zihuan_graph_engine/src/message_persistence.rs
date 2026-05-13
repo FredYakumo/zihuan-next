@@ -1,4 +1,4 @@
-use crate::data_value::{MySqlConfig, RedisConfig};
+use crate::data_value::RedisConfig;
 use crate::message_mysql_chunking::{
     split_content_chunks, truncate_field_if_needed, truncate_optional_field_if_needed,
     AT_TARGET_LIST_MAX_CHARS, CONTENT_MAX_CHARS, GROUP_ID_MAX_CHARS, GROUP_NAME_MAX_CHARS,
@@ -10,6 +10,7 @@ use once_cell::sync::Lazy;
 use redis::AsyncCommands;
 use std::sync::{Arc, RwLock};
 use tokio::task::block_in_place;
+use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::Result;
 use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
 use zihuan_core::ims_bot_adapter::models::message::{collect_media_records, Message};

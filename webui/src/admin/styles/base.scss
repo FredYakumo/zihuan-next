@@ -603,6 +603,28 @@ code {
 
 @media (max-width: 1180px) {
   .admin-shell {
+    grid-template-columns: 240px minmax(0, 1fr);
+    background:
+      linear-gradient(90deg, color-mix(in srgb, var(--toolbar-bg) 52%, transparent 48%) 0, color-mix(in srgb, var(--toolbar-bg) 10%, transparent 90%) 240px, transparent 240px),
+      radial-gradient(circle at 24% 10%, var(--admin-surface-glow), transparent 24%);
+  }
+
+  .admin-sidebar {
+    padding: 22px 16px;
+  }
+
+  .admin-brand h1 {
+    font-size: 26px;
+  }
+
+  .admin-main {
+    min-width: 0;
+    padding: 22px;
+  }
+}
+
+@media (max-width: 900px) {
+  .admin-shell {
     grid-template-columns: 1fr;
     background:
       linear-gradient(180deg, color-mix(in srgb, var(--toolbar-bg) 48%, transparent 52%) 0, transparent 220px),
@@ -612,8 +634,31 @@ code {
   .admin-sidebar {
     position: static;
     min-height: auto;
+    padding: 20px 16px;
     border-right: none;
     border-bottom: 1px solid var(--admin-border);
+  }
+
+  .admin-brand {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 14px;
+    row-gap: 0;
+  }
+
+  .admin-brand h1 {
+    font-size: 24px;
+  }
+
+  .admin-nav {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+
+  .admin-main {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+    padding: 18px 16px 24px;
   }
 
   .page-hero {

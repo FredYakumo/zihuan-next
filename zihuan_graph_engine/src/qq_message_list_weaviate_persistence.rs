@@ -42,7 +42,7 @@ impl Node for QQMessageListWeaviatePersistenceNode {
         port! { name = "sender_name", ty = String, desc = "发送者名称" },
         port! { name = "group_id", ty = String, desc = "群ID（可选）", optional },
         port! { name = "group_name", ty = String, desc = "群名称（可选）", optional },
-        port! { name = "weaviate_ref", ty = crate::database::weaviate::WeaviateRef, desc = "Weaviate连接配置引用" },
+        port! { name = "weaviate_ref", ty = zihuan_core::weaviate::WeaviateRef, desc = "Weaviate连接配置引用" },
         port! { name = "embedding_model", ty = EmbeddingModel, desc = "Embedding模型引用" },
     ];
 

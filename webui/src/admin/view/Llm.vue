@@ -7,7 +7,7 @@
       </div>
     </div>
 
-    <div v-if="showCreatePicker" class="connection-picker-backdrop" @click="closeCreatePicker">
+    <div v-if="showCreatePicker" class="connection-picker-backdrop">
       <div class="connection-picker-dialog" @click.stop>
         <div class="connection-picker-header">
           <h3>新建模型配置</h3>
@@ -41,6 +41,14 @@
               <div class="field-full field-check">
                 <input id="llm-stream-enabled" v-model="form.llm.stream" type="checkbox" />
                 <label for="llm-stream-enabled">默认启用 stream 请求参数</label>
+              </div>
+              <div class="field">
+                <label>后端格式</label>
+                <select v-model="form.llm.api_style">
+                  <option value="candle">Candle推理引擎(待实现)</option>
+                  <option value="open_ai_chat_completions">OpenAI Chat Completions API</option>
+                  <option value="open_ai_responses">OpenAI Responses API</option>
+                </select>
               </div>
               <div class="field"><label>Model Name</label><input v-model="form.llm.model_name" /></div>
               <div class="field"><label>API Endpoint</label><input v-model="form.llm.api_endpoint" /></div>
@@ -136,6 +144,14 @@
                   </label>
                 </div>
                 <div class="key-value connection-card-edit-row">
+                  <strong>后端格式</strong>
+                  <select v-model="form.llm.api_style" class="connection-card-inline-input">
+                    <option value="candle">Candle（待实现）</option>
+                    <option value="open_ai_chat_completions">OpenAI Chat Completions</option>
+                    <option value="open_ai_responses">OpenAI Responses</option>
+                  </select>
+                </div>
+                <div class="key-value connection-card-edit-row">
                   <strong>Model</strong>
                   <input v-model="form.llm.model_name" class="connection-card-inline-input" />
                 </div>
@@ -188,6 +204,7 @@
               <div class="key-value"><strong>Config ID</strong><span class="mono">{{ compactId(item.config_id) }}</span></div>
               <template v-if="item.model.type === 'chat_llm'">
                 <div class="key-value"><strong>Model</strong><span>{{ item.model.llm.model_name }}</span></div>
+                <div class="key-value"><strong>后端格式</strong><span>{{ item.model.llm.api_style }}</span></div>
                 <div class="key-value"><strong>Endpoint</strong><span class="mono">{{ item.model.llm.api_endpoint }}</span></div>
                 <div class="key-value"><strong>Stream</strong><span>{{ item.model.llm.stream ? "是" : "否" }}</span></div>
                 <div class="key-value"><strong>多模态</strong><span>{{ item.model.llm.supports_multimodal_input ? "是" : "否" }}</span></div>

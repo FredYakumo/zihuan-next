@@ -18,7 +18,7 @@ At the architecture level:
 
 - `zihuan_graph_engine` executes graphs **synchronously** in DAG order.
 - `zihuan_service` hosts long-lived agents such as QQ chat agents and HTTP stream agents.
-- `zihuan_llm` provides LLM, Brain/tool, embedding, and retrieval-related nodes and agent helpers.
+- `model_inference` provides LLM, Brain/tool, embedding, and retrieval-related nodes and agent helpers.
 - `storage_handler` provides connection-backed nodes for MySQL, Redis, RustFS, Weaviate, and related persistence utilities.
 - `webui/` contains the browser UI: Vue 3 admin pages at `/` and the LiteGraph-based editor at `/editor`.
 
@@ -55,7 +55,7 @@ At the architecture level:
 |---|---|
 | `zihuan_core` | Shared error types, system config, adapter models, LLM model types |
 | `zihuan_graph_engine` | Graph runtime, node registry, graph JSON loading, base nodes |
-| `zihuan_llm` | LLM nodes, Brain/tool runtime, embeddings, RAG helpers, agent config models |
+| `model_inference` | LLM nodes, Brain/tool runtime, embeddings, RAG helpers, agent config models |
 | `storage_handler` | Connection configs plus Redis/MySQL/RustFS/Weaviate nodes and helpers |
 | `ims_bot_adapter` | QQ/IMS adapter client and adapter-facing nodes |
 | `zihuan_service` | Long-lived agent runtime and scheduling support |
@@ -155,7 +155,7 @@ Graph structure, inline values, variables, metadata, and subgraphs are stored in
 
 ## Optional GPU Build For Local Embeddings
 
-Root features forward to `zihuan_llm`:
+Root features forward to `model_inference`:
 
 ```bash
 cargo build --release --features candle-cuda
@@ -204,7 +204,8 @@ uv run alembic upgrade head
 
 - [User Guide](document/user-guide.md)
 - [Program Execution Flow](document/program-execute-flow.md)
-- [Developer Guide Index](document/dev-guides/README.md)
+- [Node System](document/dev-guides/node-system.md)
+- [Code Conventions](document/dev-guides/code-conventions.md)
 - [UI Architecture](document/dev-guides/ui-architecture.md)
 - [Node Lifecycle](document/node/node-lifecycle.md)
 - [Function Subgraphs](document/node/function-subgraphs.md)

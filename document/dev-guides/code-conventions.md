@@ -52,9 +52,10 @@ Typical locations:
 
 - `zihuan_graph_engine/src/util/` for general runtime/utility nodes
 - `zihuan_graph_engine/src/` for engine-owned feature modules
-- `zihuan_llm/src/` for AI and agent-related nodes
+- `model_inference/src/nodes/` for AI and agent-related nodes
 - `storage_handler/src/` for storage/connection nodes
 - `ims_bot_adapter/src/` for adapter-facing nodes
+- `zihuan_service/src/nodes/` for Brain and agent nodes
 
 ### Registration
 
@@ -65,24 +66,31 @@ After adding a node:
 
 Current registry entry points:
 
-- `zihuan_graph_engine::registry::init_node_registry()`
+- `zihuan_graph_engine::registry::init_node_registry()` — built-in utility nodes
 - `storage_handler::init_node_registry()`
 - `ims_bot_adapter::init_node_registry()`
-- `zihuan_llm::init_node_registry()`
-- combined bootstrap: `src/init_registry.rs`
+- `model_inference::init_node_registry()`
+- `zihuan_service::init_node_registry()`
+- combined via `init_node_registry_with_extensions()` in `src/init_registry.rs`
 
 ## High-Level Package Roles
 
 | Package | Role |
 |---|---|
-| `zihuan_core` | Shared core types and helpers |
-| `zihuan_graph_engine` | Synchronous graph runtime |
-| `zihuan_llm` | LLM, Brain, embeddings, agent config models |
+| `zihuan_core` | Core types |
+| `zihuan_graph_engine` | Node-graph runtime |
+| `model_inference` | LLM, embeddings, agent config models, AI nodes |
 | `storage_handler` | Connection-backed nodes and storage helpers |
-| `ims_bot_adapter` | QQ/IMS adapter integration |
-| `zihuan_service` | Long-lived agent hosting |
+| `ims_bot_adapter` | IMS adapter integration |
+| `zihuan_service` | Long-lived service, task hosting, Brain/agent nodes |
 | `src/api` | Web API and task orchestration |
-| `webui/` | Browser UI |
+| `webui/` | Web UI |
+
+## Type Placement
+
+- Common/shared type definitions, and type definitions that may introduce circular references, should be placed in `zihuan_core`.
+- Otherwise, keep code and type definitions in the package that owns the functional responsibility.
+- Prefer high cohesion and low coupling across package boundaries.
 
 ## Error Handling
 

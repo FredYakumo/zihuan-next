@@ -121,11 +121,17 @@ export interface GraphMetadata {
   version: string | null;
 }
 
+export interface GraphPortDef {
+  name: string;
+  data_type: DataTypeMetaData;
+  description?: string;
+}
+
 export interface NodeGraphDefinition {
   nodes: NodeDefinition[];
   edges: EdgeDefinition[];
-  graph_inputs: Array<{ name: string; data_type: DataTypeMetaData }>;
-  graph_outputs: Array<{ name: string; data_type: DataTypeMetaData }>;
+  graph_inputs: GraphPortDef[];
+  graph_outputs: GraphPortDef[];
   hyperparameter_groups: string[];
   hyperparameters: HyperParameter[];
   variables: GraphVariable[];

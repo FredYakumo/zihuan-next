@@ -1,4 +1,3 @@
-use crate::data_value::MySqlConfig;
 use chrono::{Duration, NaiveDateTime};
 use sqlx::{
     mysql::{MySqlPool, MySqlRow},
@@ -9,6 +8,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::task::block_in_place;
+use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::Result;
 
 const HISTORY_TIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S";

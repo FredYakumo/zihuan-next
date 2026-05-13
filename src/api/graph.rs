@@ -6,8 +6,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 use zihuan_graph_engine::function_graph::embedded_function_config_from_value;
 use zihuan_graph_engine::graph_boundary::{
-    sync_root_graph_io, sync_root_graph_io_signature, GRAPH_INPUTS_NODE_ID,
-    GRAPH_OUTPUTS_NODE_ID,
+    sync_root_graph_io, sync_root_graph_io_signature, GRAPH_INPUTS_NODE_ID, GRAPH_OUTPUTS_NODE_ID,
 };
 use zihuan_graph_engine::graph_io::{
     refresh_node_dynamic_ports, GraphMetadata, GraphPosition, GraphSize, NodeDefinition,
@@ -33,7 +32,6 @@ pub async fn list_graphs(_req: &mut Request, res: &mut Response, depot: &mut Dep
         .collect();
     res.render(Json(tabs));
 }
-
 
 #[handler]
 pub async fn create_graph(_req: &mut Request, res: &mut Response, depot: &mut Depot) {
@@ -485,7 +483,6 @@ pub async fn delete_edge(req: &mut Request, res: &mut Response, depot: &mut Depo
     }
 }
 
-
 #[handler]
 pub async fn validate_graph(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
@@ -515,7 +512,6 @@ pub async fn validate_graph(req: &mut Request, res: &mut Response, depot: &mut D
         "has_errors": has_errors,
     })));
 }
-
 
 #[handler]
 pub async fn get_metadata(req: &mut Request, res: &mut Response, depot: &mut Depot) {
@@ -567,7 +563,6 @@ pub async fn update_metadata(req: &mut Request, res: &mut Response, depot: &mut 
         }
     }
 }
-
 
 fn session_display_name(s: &GraphSession) -> String {
     if let Some(path) = &s.file_path {

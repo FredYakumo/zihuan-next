@@ -1,12 +1,16 @@
+use std::path::Path;
 use std::sync::Arc;
 
 use chrono::{Datelike, Utc};
+use log::{info, warn};
 use salvo::prelude::*;
 use salvo::writing::Json;
 use serde::{Deserialize, Serialize};
-use storage_handler::ObjectStorageConfig;
+use storage_handler::{load_connections, ObjectStorageConfig};
+use model_inference::system_config::{load_agents, AgentConfig, AgentToolType, NodeGraphToolConfig};
 
 use super::state::AppState;
+use super::ws::WsBroadcast;
 
 const IMAGE_UPLOAD_MAX_BYTES: usize = 16 * 1024 * 1024;
 const LOCAL_IMAGE_UPLOAD_DIR: &str = "uploaded_images";
@@ -193,10 +197,95 @@ pub struct SaveToWorkflowsRequest {
     pub name: String,
 }
 
+async fn hot_reload_agents_for_saved_graph(
+    state: Arc<AppState>,
+    broadcast_tx: WsBroadcast,
+    saved_path: &str,
+) {
+    let agents = match load_agents() {
+        Ok(agents) => agents,
+        Err(err) => {
+            warn!(
+                "[workflow_save] saved graph '{}' but failed to load agents for hot reload: {}",
+                saved_path, err
+            );
+            return;
+        }
+    };
+
+    let connections = match load_connections() {
+        Ok(connections) => connections,
+        Err(err) => {
+            warn!(
+                "[workflow_save] saved graph '{}' but failed to load connections for hot reload: {}",
+                saved_path, err
+            );
+            return;
+        }
+    };
+
+    let normalized_saved_path = normalize_graph_path(saved_path);
+    let saved_workflow_name = workflow_set_name_from_path(&normalized_saved_path);
+
+    for agent in agents
+        .into_iter()
+        .filter(|agent| agent_uses_saved_graph(agent, &normalized_saved_path, saved_workflow_name))
+    {
+        let runtime = state.agent_manager.runtime_info(&agent.id);
+        if runtime.status != zihuan_service::AgentRuntimeStatus::Running {
+            continue;
+        }
+
+        info!(
+            "[workflow_save] hot reloading running agent '{}' after graph save: {}",
+            agent.name, saved_path
+        );
+        crate::api::config::agents::start_agent_runtime(
+            state.clone(),
+            broadcast_tx.clone(),
+            agent,
+            connections.clone(),
+        )
+        .await;
+    }
+}
+
+fn agent_uses_saved_graph(
+    agent: &AgentConfig,
+    normalized_saved_path: &str,
+    saved_workflow_name: Option<&str>,
+) -> bool {
+    agent.tools.iter().filter(|tool| tool.enabled).any(|tool| {
+        let AgentToolType::NodeGraph(config) = &tool.tool_type;
+        match config {
+            NodeGraphToolConfig::FilePath { path, .. } => {
+                normalize_graph_path(path) == normalized_saved_path
+            }
+            NodeGraphToolConfig::WorkflowSet { name, .. } => {
+                saved_workflow_name.is_some_and(|workflow_name| workflow_name == name.trim())
+            }
+            NodeGraphToolConfig::InlineGraph { .. } => false,
+        }
+    })
+}
+
+fn normalize_graph_path(path: &str) -> String {
+    path.trim()
+        .replace('\\', "/")
+        .trim_start_matches("./")
+        .to_string()
+}
+
+fn workflow_set_name_from_path(path: &str) -> Option<&str> {
+    let normalized = path.strip_prefix("workflow_set/")?;
+    Path::new(normalized).file_stem()?.to_str()
+}
+
 /// Save a session's graph into the `workflow_set/` directory.
 #[handler]
 pub async fn save_to_workflows(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
+    let broadcast_tx = depot.obtain::<WsBroadcast>().unwrap().clone();
     let body: SaveToWorkflowsRequest = match req.parse_json().await {
         Ok(v) => v,
         Err(e) => {
@@ -241,11 +330,14 @@ pub async fn save_to_workflows(req: &mut Request, res: &mut Response, depot: &mu
 
     match std::fs::write(&path, json_str) {
         Ok(()) => {
-            let mut sessions = state.sessions.write().unwrap();
-            if let Some(s) = sessions.get_mut(&body.graph_id) {
-                s.file_path = Some(path.clone());
-                s.dirty = false;
+            {
+                let mut sessions = state.sessions.write().unwrap();
+                if let Some(s) = sessions.get_mut(&body.graph_id) {
+                    s.file_path = Some(path.clone());
+                    s.dirty = false;
+                }
             }
+            hot_reload_agents_for_saved_graph(state.clone(), broadcast_tx, &path).await;
             res.render(Json(serde_json::json!({ "ok": true, "path": path })));
         }
         Err(e) => {
@@ -306,6 +398,7 @@ pub struct SaveFileRequest {
 #[handler]
 pub async fn save_file(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
+    let broadcast_tx = depot.obtain::<WsBroadcast>().unwrap().clone();
     let graph_id = req.param::<String>("id").unwrap_or_default();
     let body: SaveFileRequest = match req.parse_json().await {
         Ok(v) => v,
@@ -316,41 +409,54 @@ pub async fn save_file(req: &mut Request, res: &mut Response, depot: &mut Depot)
         }
     };
 
-    let mut sessions = state.sessions.write().unwrap();
-    let session = match sessions.get_mut(&graph_id) {
-        Some(s) => s,
-        None => {
-            res.status_code(StatusCode::NOT_FOUND);
-            res.render(Json(serde_json::json!({"error": "Graph not found"})));
-            return;
-        }
-    };
-
-    let save_path = body.path.clone().or_else(|| session.file_path.clone());
-
-    let save_path = match save_path {
-        Some(p) => p,
-        None => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(serde_json::json!({
-                "error": "No file path provided and graph has no saved path"
-            })));
-            return;
-        }
-    };
-
-    match serde_json::to_string_pretty(&session.graph) {
-        Ok(json_str) => match std::fs::write(&save_path, json_str) {
-            Ok(()) => {
-                session.file_path = Some(save_path.clone());
-                session.dirty = false;
-                res.render(Json(serde_json::json!({"ok": true, "path": save_path})));
+    let (save_path, json_str) = {
+        let mut sessions = state.sessions.write().unwrap();
+        let session = match sessions.get_mut(&graph_id) {
+            Some(s) => s,
+            None => {
+                res.status_code(StatusCode::NOT_FOUND);
+                res.render(Json(serde_json::json!({"error": "Graph not found"})));
+                return;
             }
+        };
+
+        let save_path = body.path.clone().or_else(|| session.file_path.clone());
+
+        let save_path = match save_path {
+            Some(p) => p,
+            None => {
+                res.status_code(StatusCode::BAD_REQUEST);
+                res.render(Json(serde_json::json!({
+                    "error": "No file path provided and graph has no saved path"
+                })));
+                return;
+            }
+        };
+
+        let json_str = match serde_json::to_string_pretty(&session.graph) {
+            Ok(json_str) => json_str,
             Err(e) => {
                 res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
                 res.render(Json(serde_json::json!({"error": e.to_string()})));
+                return;
             }
-        },
+        };
+
+        (save_path, json_str)
+    };
+
+    match std::fs::write(&save_path, json_str) {
+        Ok(()) => {
+            {
+                let mut sessions = state.sessions.write().unwrap();
+                if let Some(session) = sessions.get_mut(&graph_id) {
+                    session.file_path = Some(save_path.clone());
+                    session.dirty = false;
+                }
+            }
+            hot_reload_agents_for_saved_graph(state.clone(), broadcast_tx, &save_path).await;
+            res.render(Json(serde_json::json!({"ok": true, "path": save_path})));
+        }
         Err(e) => {
             res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
             res.render(Json(serde_json::json!({"error": e.to_string()})));

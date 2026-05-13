@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use crate::error::{Error, Result};
-use zihuan_llm::{str_to_role, OpenAIMessage};
+use zihuan_core::llm::OpenAIMessage;
+use zihuan_core::llm::util::str_to_role::str_to_role;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 
 /// Converts a plain string into an `OpenAIMessage` with the selected role.

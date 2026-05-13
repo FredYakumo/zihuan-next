@@ -4,8 +4,9 @@ use sqlx::Row;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
-use zihuan_graph_engine::data_value::{MySqlConfig, RedisConfig};
+use zihuan_graph_engine::data_value::RedisConfig;
 
 use crate::MessageStoreConnectionAccess;
 

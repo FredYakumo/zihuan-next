@@ -286,26 +286,26 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
 
         // Single OpenAIMessage from a JSON object: {"role": "user", "content": "..."}
         (Value::Object(map), DataType::OpenAIMessage) => {
-            fn parse_role(v: &Value) -> zihuan_llm::MessageRole {
+            fn parse_role(v: &Value) -> zihuan_core::llm::MessageRole {
                 let s = v.as_str().unwrap_or("user").to_ascii_lowercase();
                 match s.as_str() {
-                    "system" => zihuan_llm::MessageRole::System,
-                    "assistant" => zihuan_llm::MessageRole::Assistant,
-                    "tool" => zihuan_llm::MessageRole::Tool,
-                    _ => zihuan_llm::MessageRole::User,
+                    "system" => zihuan_core::llm::MessageRole::System,
+                    "assistant" => zihuan_core::llm::MessageRole::Assistant,
+                    "tool" => zihuan_core::llm::MessageRole::Tool,
+                    _ => zihuan_core::llm::MessageRole::User,
                 }
             }
 
             let role = map
                 .get("role")
                 .map(|v| parse_role(v))
-                .unwrap_or(zihuan_llm::MessageRole::User);
+                .unwrap_or(zihuan_core::llm::MessageRole::User);
             let content = match map.get("content") {
                 Some(Value::String(s)) => Some(s.clone()),
                 Some(Value::Null) | None => None,
                 Some(other) => Some(other.to_string()),
             };
-            Some(DataValue::OpenAIMessage(zihuan_llm::OpenAIMessage {
+            Some(DataValue::OpenAIMessage(zihuan_core::llm::OpenAIMessage {
                 role,
                 content,
                 reasoning_content: None,

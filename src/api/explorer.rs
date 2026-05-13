@@ -4,7 +4,7 @@ use salvo::writing::Json;
 use serde::Serialize;
 use serde_json::{Map, Value};
 use sqlx::Row as SqlxRow;
-use zihuan_llm::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
+use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 
 use crate::system_config::load_connections;
 use storage_handler::resource_resolver;
@@ -559,7 +559,7 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
 }
 
 fn list_weaviate_class_properties(
-    weaviate_ref: &zihuan_graph_engine::database::weaviate::WeaviateRef,
+    weaviate_ref: &zihuan_core::weaviate::WeaviateRef,
 ) -> zihuan_core::error::Result<Vec<String>> {
     let schema = weaviate_ref.schema()?;
     Ok(schema

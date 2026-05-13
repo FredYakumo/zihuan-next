@@ -209,7 +209,7 @@ export async function openGraphIODialog(
   inputsLabel.textContent = "输入列表";
   inputsSection.appendChild(inputsLabel);
   dialog.appendChild(inputsSection);
-  const readInputs = buildPortListEditor(inputsSection, graph.graph_inputs ?? []);
+  const readInputs = buildPortListEditor(inputsSection, graph.graph_inputs ?? [], true);
 
   const outputsSection = document.createElement("div");
   outputsSection.style.marginTop = "12px";
@@ -218,7 +218,7 @@ export async function openGraphIODialog(
   outputsLabel.textContent = "输出列表";
   outputsSection.appendChild(outputsLabel);
   dialog.appendChild(outputsSection);
-  const readOutputs = buildPortListEditor(outputsSection, graph.graph_outputs ?? []);
+  const readOutputs = buildPortListEditor(outputsSection, graph.graph_outputs ?? [], true);
 
   const btns = document.createElement("div");
   btns.className = "zh-buttons";

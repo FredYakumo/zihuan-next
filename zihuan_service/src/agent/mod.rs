@@ -1,6 +1,11 @@
 pub mod http_stream_agent;
 pub mod inference;
 pub mod qq_chat_agent;
+pub mod tool_definitions;
+
+mod agent_text_similarity;
+mod classify_intent;
+mod qq_chat_agent_core;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -15,9 +20,10 @@ use uuid::Uuid;
 use zihuan_core::error::Result;
 use zihuan_core::llm::OpenAIMessage;
 use zihuan_core::task_context::AgentTaskRuntime;
-use zihuan_llm::system_config::{load_agents, AgentConfig, AgentType};
+use model_inference::system_config::{load_agents, AgentConfig, AgentType};
 
-use self::inference::LoadedInferenceAgent;
+use self::inference::{InferenceToolProvider, LoadedInferenceAgent, StaticInferenceToolProvider};
+use self::tool_definitions::build_enabled_tool_definitions;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -152,7 +158,13 @@ impl AgentManager {
         task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
     ) -> Result<()> {
         self.stop_agent(&agent.id).await?;
-        let loaded_agent = Arc::new(LoadedInferenceAgent::load(&agent, &connections)?);
+        let llm_refs = model_inference::system_config::load_llm_refs()?;
+        let tool_provider = build_inference_tool_provider(&agent, &connections)?;
+        let loaded_agent = Arc::new(LoadedInferenceAgent::load_with_tools(
+            &agent,
+            &llm_refs,
+            tool_provider,
+        )?);
 
         self.update_state(
             &agent.id,
@@ -283,5 +295,19 @@ impl AgentManager {
             entry.loaded_agent = None;
             entry.task = None;
         }
+    }
+}
+
+pub fn build_inference_tool_provider(
+    agent: &AgentConfig,
+    connections: &[ConnectionConfig],
+) -> Result<Arc<dyn InferenceToolProvider>> {
+    match &agent.agent_type {
+        AgentType::QqChat(config) => {
+            qq_chat_agent::load_inference_tool_provider(agent, config, connections)
+        }
+        AgentType::HttpStream(_) => Ok(Arc::new(StaticInferenceToolProvider::new(
+            build_enabled_tool_definitions(&agent.tools)?,
+        ))),
     }
 }

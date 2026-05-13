@@ -24,6 +24,7 @@ function clonePortDef(port: FunctionPortDef): FunctionPortDef {
   return {
     name: port.name,
     data_type: cloneDataType(port.data_type),
+    description: port.description ?? "",
   };
 }
 
@@ -56,7 +57,7 @@ function defaultGraphMetadata() {
 
 function getToolOutputs(ownerNodeType: string, tool: BrainToolDefinition): FunctionPortDef[] {
   if (isQqAgentOwnerType(ownerNodeType)) {
-    return [{ name: QQ_AGENT_TOOL_OUTPUT_NAME, data_type: "String" }];
+    return [{ name: QQ_AGENT_TOOL_OUTPUT_NAME, data_type: "String", description: "工具返回给 Agent 的文本结果" }];
   }
   return tool.outputs.map(clonePortDef);
 }
@@ -68,15 +69,29 @@ export function getToolInputSignature(
 ): FunctionPortDef[] {
   return [
     ...sharedInputs.map(clonePortDef),
+    {
+      name: BRAIN_TOOL_FIXED_CONTENT_INPUT,
+      data_type: "String" as DataTypeMetaData,
+      description: "触发此次工具调用的上下文文本内容",
+    },
     ...(isQqAgentOwnerType(ownerNodeType)
       ? [
-          { name: QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, data_type: "MessageEvent" as DataTypeMetaData },
-          { name: QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, data_type: "BotAdapterRef" as DataTypeMetaData },
+          {
+            name: QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
+            data_type: "MessageEvent" as DataTypeMetaData,
+            description: "当前触发此次工具调用的消息事件",
+          },
+          {
+            name: QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
+            data_type: "BotAdapterRef" as DataTypeMetaData,
+            description: "当前消息事件对应的 Bot Adapter 连接引用",
+          },
         ]
-      : [{ name: BRAIN_TOOL_FIXED_CONTENT_INPUT, data_type: "String" as DataTypeMetaData }]),
+      : []),
     ...tool.parameters.map((param) => ({
       name: param.name,
       data_type: cloneDataType(param.data_type),
+      description: param.desc,
     })),
   ];
 }
@@ -123,7 +138,7 @@ function buildFunctionInputsNode(
       buildPort("runtime_values", "Json", "运行时注入的函数输入 JSON", { hidden: true }),
     ],
     output_ports: signature.map((port) =>
-      buildPort(port.name, port.data_type, `函数输入 '${port.name}'`),
+      buildPort(port.name, port.data_type, port.description?.trim() || `函数输入 '${port.name}'`),
     ),
     dynamic_input_ports: false,
     dynamic_output_ports: true,
@@ -153,7 +168,9 @@ function buildFunctionOutputsNode(
     node_type: FUNCTION_OUTPUTS_NODE_TYPE,
     input_ports: [
       buildPort("signature", "Json", "隐藏的函数签名 JSON", { hidden: true }),
-      ...signature.map((port) => buildPort(port.name, port.data_type, `函数输出 '${port.name}'`)),
+      ...signature.map((port) =>
+        buildPort(port.name, port.data_type, port.description?.trim() || `函数输出 '${port.name}'`),
+      ),
     ],
     output_ports: [],
     dynamic_input_ports: true,

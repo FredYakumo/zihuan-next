@@ -51,10 +51,12 @@
         "signature": [
           {
             "data_type": "MessageEvent",
+            "description": "",
             "name": "message_event"
           },
           {
             "data_type": "BotAdapterRef",
+            "description": "",
             "name": "qq_ims_bot_adapter"
           }
         ]
@@ -100,6 +102,7 @@
         "signature": [
           {
             "data_type": "String",
+            "description": "",
             "name": "image_description"
           }
         ]
@@ -127,6 +130,13 @@
           "data_type": "BotAdapterRef",
           "description": "BotAdapter reference for context-aware system message",
           "required": true,
+          "hidden": false
+        },
+        {
+          "name": "s3_ref",
+          "data_type": "S3Ref",
+          "description": "可选：显式传入对象存储引用，优先用于多模态图片提取",
+          "required": false,
           "hidden": false
         }
       ],
@@ -255,15 +265,15 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1270.0,
-        "y": 110.0
+        "x": 1220.0,
+        "y": 70.0
       },
       "size": {
-        "width": 200.0,
-        "height": 120.0
+        "width": 277.0,
+        "height": 136.0
       },
       "inline_values": {
-        "llm_ref_id": "llm-multimodal-default"
+        "llm_ref_id": "ab51e8b0-99f8-4a2d-95b7-e15c9713d2fa"
       },
       "port_bindings": {},
       "has_error": false,
@@ -310,7 +320,7 @@
       "inline_values": {
         "messages": [
           {
-            "content": "你是一个图片理解专家，请将消息中的所有图片总结成文字",
+            "content": "你是一个图片理解专家，请将消息中的所有图片总结成文字。如果图片中内含复杂的问题，只需要描述那个问题，不需要输出你的任何理解。",
             "role": "system"
           }
         ]
@@ -460,6 +470,37 @@
       "has_error": false,
       "has_cycle": false,
       "disabled": false
+    },
+    {
+      "id": "59b81fe6-42c4-4b49-80a2-f3724c2f27d8",
+      "name": "agent rustfs ref",
+      "description": null,
+      "node_type": "agent_rustfs_ref",
+      "input_ports": [],
+      "output_ports": [
+        {
+          "name": "s3_ref",
+          "data_type": "S3Ref",
+          "description": "Agent RustFS 对象存储引用",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 80.0,
+        "y": 370.0
+      },
+      "size": {
+        "width": 200.0,
+        "height": 120.0
+      },
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false,
+      "disabled": false
     }
   ],
   "edges": [
@@ -516,22 +557,31 @@
       "from_port": "qq_ims_bot_adapter",
       "to_node_id": "1429dd06-0384-4761-ac60-1a8282c9b739",
       "to_port": "ims_bot_adapter"
+    },
+    {
+      "from_node_id": "59b81fe6-42c4-4b49-80a2-f3724c2f27d8",
+      "from_port": "s3_ref",
+      "to_node_id": "1429dd06-0384-4761-ac60-1a8282c9b739",
+      "to_port": "s3_ref"
     }
   ],
   "graph_inputs": [
     {
       "name": "message_event",
-      "data_type": "MessageEvent"
+      "data_type": "MessageEvent",
+      "description": ""
     },
     {
       "name": "qq_ims_bot_adapter",
-      "data_type": "BotAdapterRef"
+      "data_type": "BotAdapterRef",
+      "description": ""
     }
   ],
   "graph_outputs": [
     {
       "name": "image_description",
-      "data_type": "String"
+      "data_type": "String",
+      "description": ""
     }
   ],
   "hyperparameter_groups": [],

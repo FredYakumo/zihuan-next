@@ -1,16 +1,15 @@
 use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
-use zihuan_llm::tooling::FunctionTool;
-use reqwest::blocking::Client;
+use zihuan_core::llm::tooling::FunctionTool;
 use redis::{aio::ConnectionManager, AsyncCommands};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value;
-use sqlx::mysql::MySqlPool;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use tokio::sync::Mutex as TokioMutex;
+pub use zihuan_core::data_refs::MySqlConfig;
+pub use zihuan_core::rag::TavilyRef;
 
 tokio::task_local! {
     pub static SESSION_CLAIM_CONTEXT: Arc<SessionClaimContext>;
@@ -52,112 +51,6 @@ impl fmt::Debug for RedisConfig {
             .field("reconnect_interval_secs", &self.reconnect_interval_secs)
             .field("redis_cm", &"<TokioMutex<Option<ConnectionManager>>>")
             .field("cached_redis_url", &"<TokioMutex<Option<String>>>")
-            .finish()
-    }
-}
-
-/// MySQL connection configuration, passed between nodes as a reference.
-/// The `pool` field carries the live connection pool created by `MySqlNode`;
-/// downstream nodes should use it directly instead of reconnecting.
-/// The `runtime_handle` points at the tokio runtime that owns the pool's
-/// background tasks, so downstream nodes can execute queries on the same
-/// runtime instead of creating throwaway runtimes.
-#[derive(Clone)]
-pub struct MySqlConfig {
-    pub url: Option<String>,
-    pub reconnect_max_attempts: Option<u32>,
-    pub reconnect_interval_secs: Option<u64>,
-    /// Live connection pool maintained by the MySqlNode.
-    pub pool: Option<MySqlPool>,
-    /// Handle to the tokio runtime that owns the pool and its background tasks.
-    pub runtime_handle: Option<tokio::runtime::Handle>,
-}
-
-impl fmt::Debug for MySqlConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("MySqlConfig")
-            .field("url", &self.url)
-            .field("reconnect_max_attempts", &self.reconnect_max_attempts)
-            .field("reconnect_interval_secs", &self.reconnect_interval_secs)
-            .field("pool", &self.pool.as_ref().map(|_| "<MySqlPool>"))
-            .field(
-                "runtime_handle",
-                &self.runtime_handle.as_ref().map(|_| "<Handle>"),
-            )
-            .finish()
-    }
-}
-
-#[derive(Clone)]
-pub struct TavilyRef {
-    pub api_token: String,
-    pub timeout: Duration,
-}
-
-#[derive(Debug, Deserialize)]
-struct TavilySearchResponse {
-    results: Vec<TavilySearchItem>,
-}
-
-#[derive(Debug, Deserialize)]
-struct TavilySearchItem {
-    title: String,
-    url: String,
-    content: String,
-}
-
-impl TavilyRef {
-    pub fn new(api_token: impl Into<String>, timeout: Duration) -> Self {
-        Self {
-            api_token: api_token.into(),
-            timeout,
-        }
-    }
-
-    pub fn search(&self, query: &str, search_count: i64) -> crate::error::Result<Vec<String>> {
-        let client = Client::builder().timeout(self.timeout).build()?;
-        let response = client
-            .post("https://api.tavily.com/search")
-            .bearer_auth(&self.api_token)
-            .json(&serde_json::json!({
-                "query": query,
-                "max_results": search_count,
-                "search_depth": "advanced",
-                "include_answer": false,
-                "include_images": false,
-                "include_raw_content": false,
-            }))
-            .send()?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().unwrap_or_default();
-            return Err(crate::error::Error::StringError(format!(
-                "Tavily search request failed with status {}: {}",
-                status, body
-            )));
-        }
-
-        let body = response.text()?;
-        let parsed: TavilySearchResponse = serde_json::from_str(&body).map_err(|err| {
-            crate::error::Error::StringError(format!(
-                "Failed to parse Tavily search response: {err}"
-            ))
-        })?;
-
-        Ok(parsed
-            .results
-            .into_iter()
-            .map(|item| format!("标题: {}\n链接: {}\n内容: {}", item.title, item.url, item.content))
-            .collect())
-    }
-}
-
-impl fmt::Debug for TavilyRef {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TavilyRef")
-            .field("api_token", &"<redacted>")
-            .field("timeout", &self.timeout)
             .finish()
     }
 }
@@ -310,7 +203,7 @@ impl fmt::Debug for SessionStateRef {
 #[derive(Clone)]
 pub struct OpenAIMessageSessionCacheRef {
     pub node_id: String,
-    pub memory_cache: Arc<TokioMutex<HashMap<String, Vec<zihuan_llm::OpenAIMessage>>>>,
+    pub memory_cache: Arc<TokioMutex<HashMap<String, Vec<zihuan_core::llm::OpenAIMessage>>>>,
     pub redis_cm: Arc<TokioMutex<Option<ConnectionManager>>>,
     pub cached_redis_url: Arc<TokioMutex<Option<String>>>,
     pub sender_bucket_map: Arc<TokioMutex<HashMap<String, String>>>,
@@ -357,7 +250,7 @@ impl OpenAIMessageSessionCacheRef {
     pub async fn get_messages(
         &self,
         sender_id: &str,
-    ) -> crate::error::Result<Vec<zihuan_llm::OpenAIMessage>> {
+    ) -> crate::error::Result<Vec<zihuan_core::llm::OpenAIMessage>> {
         let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
             let sender_bucket_map = self.sender_bucket_map.lock().await;
@@ -395,7 +288,7 @@ impl OpenAIMessageSessionCacheRef {
             if let Some(cm) = cm_guard.as_mut() {
                 let existing_json: Option<String> = cm.get(&key).await?;
                 if let Some(raw) = existing_json {
-                    let messages: Vec<zihuan_llm::OpenAIMessage> = serde_json::from_str(&raw)?;
+                    let messages: Vec<zihuan_core::llm::OpenAIMessage> = serde_json::from_str(&raw)?;
                     return Ok(messages);
                 }
             }
@@ -460,7 +353,7 @@ impl OpenAIMessageSessionCacheRef {
     pub async fn set_messages(
         &self,
         sender_id: &str,
-        messages: Vec<zihuan_llm::OpenAIMessage>,
+        messages: Vec<zihuan_core::llm::OpenAIMessage>,
     ) -> crate::error::Result<()> {
         let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
@@ -520,7 +413,7 @@ impl OpenAIMessageSessionCacheRef {
     pub async fn append_messages(
         &self,
         sender_id: &str,
-        incoming_messages: Vec<zihuan_llm::OpenAIMessage>,
+        incoming_messages: Vec<zihuan_core::llm::OpenAIMessage>,
     ) -> crate::error::Result<()> {
         let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
@@ -558,7 +451,7 @@ impl OpenAIMessageSessionCacheRef {
 
             if let Some(cm) = cm_guard.as_mut() {
                 let existing_json: Option<String> = cm.get(&key).await?;
-                let mut existing_messages: Vec<zihuan_llm::OpenAIMessage> = existing_json
+                let mut existing_messages: Vec<zihuan_core::llm::OpenAIMessage> = existing_json
                     .as_deref()
                     .map(serde_json::from_str)
                     .transpose()?
@@ -825,7 +718,7 @@ pub enum DataValue {
     Binary(Vec<u8>),
     Vec(Box<DataType>, std::vec::Vec<DataValue>),
     MessageEvent(MessageEvent),
-    OpenAIMessage(zihuan_llm::OpenAIMessage),
+    OpenAIMessage(zihuan_core::llm::OpenAIMessage),
     QQMessage(zihuan_core::ims_bot_adapter::models::message::Message),
     FunctionTools(Vec<Arc<dyn FunctionTool>>),
     BotAdapterRef(zihuan_core::ims_bot_adapter::BotAdapterHandle),
@@ -835,7 +728,7 @@ pub enum DataValue {
     SessionStateRef(Arc<SessionStateRef>),
     OpenAIMessageSessionCacheRef(Arc<OpenAIMessageSessionCacheRef>),
     Password(String),
-    LLModel(Arc<dyn zihuan_llm::llm_base::LLMBase>),
+    LLModel(Arc<dyn zihuan_core::llm::llm_base::LLMBase>),
     LoopControlRef(Arc<LoopControl>),
 }
 
@@ -895,7 +788,7 @@ impl DataValue {
             }
             DataValue::OpenAIMessage(m) => {
                 serde_json::json!({
-                    "role": zihuan_llm::role_to_str(&m.role),
+                    "role": zihuan_core::llm::util::role_to_str::role_to_str(&m.role),
                     "content": m.content,
                     "tool_calls": m.tool_calls,
                 })

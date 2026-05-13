@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use zihuan_llm::natural_language_reply::json_value_to_qq_message_vec as parse_json_to_qq_messages;
+use zihuan_graph_engine::util::json_to_qq_message_vec::json_value_to_qq_message_vec as parse_json_to_qq_messages;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::{info, warn};
 use std::collections::HashMap;
