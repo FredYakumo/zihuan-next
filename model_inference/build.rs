@@ -5,10 +5,8 @@ use std::process::Command;
 fn main() {
     let crate_dir =
         PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("missing manifest dir"));
-    let repo_root = crate_dir
-        .parent()
-        .and_then(Path::parent)
-        .expect("model_inference crate should live under workspace/packages");
+    let repo_root =
+        find_repo_root(&crate_dir).expect("failed to locate repository root from crate dir");
 
     emit_git_rerun_hints(repo_root);
 
@@ -40,8 +38,33 @@ fn git_commit_id(repo_root: &Path) -> Option<String> {
     }
 }
 
+fn find_repo_root(crate_dir: &Path) -> Option<&Path> {
+    crate_dir
+        .ancestors()
+        .find(|ancestor| ancestor.join(".git").exists())
+}
+
+fn resolve_git_dir(repo_root: &Path) -> Option<PathBuf> {
+    let git_path = repo_root.join(".git");
+    if git_path.is_dir() {
+        return Some(git_path);
+    }
+
+    let git_dir = fs::read_to_string(&git_path).ok()?;
+    let git_dir = git_dir.trim().strip_prefix("gitdir: ")?;
+    let git_dir = Path::new(git_dir);
+
+    Some(if git_dir.is_absolute() {
+        git_dir.to_path_buf()
+    } else {
+        repo_root.join(git_dir)
+    })
+}
+
 fn emit_git_rerun_hints(repo_root: &Path) {
-    let git_dir = repo_root.join(".git");
+    let Some(git_dir) = resolve_git_dir(repo_root) else {
+        return;
+    };
     let head_path = git_dir.join("HEAD");
 
     println!("cargo:rerun-if-changed={}", head_path.display());
