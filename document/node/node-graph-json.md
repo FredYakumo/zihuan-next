@@ -238,6 +238,7 @@ Serialized as a JSON object with key `"Vec"`:
 | JSON value | Description |
 |-----------|-------------|
 | `"MessageEvent"` | Bot platform message event |
+| `"Sender"` | QQ reply target containing friend/group routing information |
 | `"OpenAIMessage"` | LLM chat message `{role, content, tool_calls}` |
 | `"QQMessage"` | QQ platform message segment |
 | `"FunctionTools"` | LLM function-calling tool definitions |

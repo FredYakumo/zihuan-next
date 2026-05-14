@@ -4,6 +4,7 @@ pub mod event;
 pub mod extract_group_id_from_event;
 pub mod extract_message_from_event;
 pub mod extract_qq_message_list_from_event;
+pub mod extract_sender_from_event;
 pub mod extract_sender_id_from_event;
 pub mod ims_bot_adapter_provider;
 pub mod login_info;
@@ -11,10 +12,9 @@ pub mod message_event_type_filter;
 pub mod message_helpers;
 pub mod message_sender;
 pub mod models;
-pub mod send_friend_message;
 pub mod send_friend_message_batches;
-pub mod send_group_message;
 pub mod send_group_message_batches;
+pub mod send_message;
 pub mod send_qq_message_batches;
 pub mod system_config;
 pub mod ws_action;
@@ -29,15 +29,15 @@ pub use active_adapter_manager::{
     register_active_bot_adapter, stop_active_bot_adapter, sync_enabled_bot_adapters,
 };
 pub use extract_qq_message_list_from_event::ExtractQQMessageListFromEventNode;
+pub use extract_sender_from_event::ExtractSenderFromEventNode;
 pub use extract_sender_id_from_event::ExtractSenderIdFromEventNode;
 pub use ims_bot_adapter_provider::ImsBotAdapterProviderNode;
 pub use login_info::{fetch_login_info, qq_avatar_url};
 pub use message_event_type_filter::MessageEventTypeFilterNode;
 pub use message_sender::MessageSenderNode;
-pub use send_friend_message::SendFriendMessageNode;
 pub use send_friend_message_batches::SendFriendMessageBatchesNode;
-pub use send_group_message::SendGroupMessageNode;
 pub use send_group_message_batches::SendGroupMessageBatchesNode;
+pub use send_message::SendMessageNode;
 pub use send_qq_message_batches::SendQQMessageBatchesNode;
 pub use system_config::{
     build_ims_bot_adapter, load_ims_bot_adapter_connections, parse_ims_bot_adapter_connection,
@@ -59,18 +59,11 @@ pub fn init_node_registry() -> Result<()> {
         ImsBotAdapterProviderNode
     );
     register_node!(
-        "send_friend_message",
-        "发送好友消息",
+        "send_message",
+        "发送消息",
         "Bot适配器",
-        "向QQ好友发送消息",
-        SendFriendMessageNode
-    );
-    register_node!(
-        "send_group_message",
-        "发送群组消息",
-        "Bot适配器",
-        "向QQ群组发送消息",
-        SendGroupMessageNode
+        "根据 Sender 向 QQ 好友或群组发送消息",
+        SendMessageNode
     );
     register_node!(
         "send_friend_message_batches",
@@ -106,6 +99,13 @@ pub fn init_node_registry() -> Result<()> {
         "Bot适配器",
         "从消息事件中提取原始 QQ 消息列表 (Vec<QQMessage>)",
         ExtractQQMessageListFromEventNode
+    );
+    register_node!(
+        "extract_sender_from_event",
+        "提取发送者",
+        "Bot适配器",
+        "从消息事件中提取可用于回发的 Sender",
+        ExtractSenderFromEventNode
     );
     register_node!(
         "message_event_type_filter",

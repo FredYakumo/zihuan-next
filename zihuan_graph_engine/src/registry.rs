@@ -340,6 +340,12 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
             }))
         }
 
+        (_, DataType::Sender) => serde_json::from_value::<
+            zihuan_core::ims_bot_adapter::models::sender_model::Sender,
+        >(json.clone())
+        .ok()
+        .map(DataValue::Sender),
+
         // Single QQ Message from a JSON object: {"type": "text", "data": {"text": "..."}}
         (_, DataType::QQMessage) => serde_json::from_value::<
             zihuan_core::ims_bot_adapter::models::message::Message,

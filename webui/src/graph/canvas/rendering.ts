@@ -36,7 +36,7 @@ export function applyLiteGraphTheme(canvas: CanvasFacade): void {
 
   const tc = c.linkTypeColors;
   const primitives = ["String", "Integer", "Float", "Boolean", "Binary", "Password"];
-  const complexTypes = ["Json", "MessageEvent", "OpenAIMessage", "QQMessage", "FunctionTools", "LLModel"];
+  const complexTypes = ["Json", "MessageEvent", "Sender", "OpenAIMessage", "QQMessage", "FunctionTools", "LLModel"];
   const refs = [
     "BotAdapterRef",
     "S3Ref",

@@ -241,6 +241,7 @@ let has_errors = issues.iter().any(|i| i.severity == "error") || !cycles.is_empt
 | JSON 值 | 描述 |
 |-----------|-------------|
 | `"MessageEvent"` | 机器人平台消息事件 |
+| `"Sender"` | 包含好友/群聊路由信息的 QQ 回复目标 |
 | `"OpenAIMessage"` | LLM 聊天消息 `{role, content, tool_calls}` |
 | `"QQMessage"` | QQ 平台消息段 |
 | `"FunctionTools"` | LLM 函数调用工具定义 |
