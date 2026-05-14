@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use ims_bot_adapter::{parse_ims_bot_adapter_connection, qq_avatar_url};
+use model_inference::system_config::{AgentConfig, AgentType};
 use salvo::http::body::BodySender;
 use salvo::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use salvo::http::HeaderValue;
@@ -15,11 +16,10 @@ use serde_json::json;
 use storage_handler::{ConnectionConfig, ConnectionKind};
 use tokio::sync::mpsc;
 use uuid::Uuid;
+use zihuan_core::agent_config::QqChatAgentConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::ToolCalls;
 use zihuan_core::llm::{MessageRole, OpenAIMessage};
-use zihuan_core::agent_config::QqChatAgentConfig;
-use model_inference::system_config::{AgentConfig, AgentType};
 
 const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
 const APP_DIR_NAME: &str = "zihuan-next_aibot";

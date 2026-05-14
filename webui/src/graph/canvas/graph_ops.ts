@@ -188,6 +188,24 @@ export class CanvasGraphOps {
     }
   }
 
+  async flushPendingGraphMutations(): Promise<void> {
+    while (this.canvas._graphMutationTimer !== null || this.canvas._pendingGraphMutations.size > 0) {
+      if (this.canvas._graphMutationTimer !== null) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        continue;
+      }
+      const pendingNow = Array.from(this.canvas._pendingGraphMutations);
+      await Promise.allSettled(pendingNow);
+    }
+  }
+
+  private trackGraphMutation(pending: Promise<unknown>): void {
+    this.canvas._pendingGraphMutations.add(pending);
+    pending.finally(() => {
+      this.canvas._pendingGraphMutations.delete(pending);
+    });
+  }
+
   onWidgetMutated(pending?: Promise<unknown>): void {
     this.trackWidgetMutation(pending);
     if (this.canvas._widgetMutationTimer !== null) {
@@ -511,23 +529,54 @@ export class CanvasGraphOps {
     if (!sessionId || !nodeId) return;
     if (PROTECTED_BOUNDARY_NODE_IDS.has(nodeId)) return;
     this.canvas.nodeMap.delete(nodeId);
-    graphs.deleteNode(sessionId, nodeId)
+    if (this.canvas.state.graph) {
+      const updatedGraph = {
+        ...this.canvas.state.graph,
+        nodes: this.canvas.state.graph.nodes.filter((item) => item.id !== nodeId),
+        edges: this.canvas.state.graph.edges.filter(
+          (edge) => edge.from_node_id !== nodeId && edge.to_node_id !== nodeId,
+        ),
+      };
+      this.canvas.state.graph = updatedGraph;
+      this.canvas.state.dirty = true;
+      this.canvas.history.push(updatedGraph);
+      this.canvas.onGraphDirty?.();
+      this.canvas.onHistoryChange?.();
+    }
+    const pending = graphs.deleteNode(sessionId, nodeId)
       .then(async () => {
+        if (this.canvas.state.sessionId !== sessionId) return;
         this.canvas.state.dirty = true;
         try {
           const updated = await graphs.get(sessionId);
+          if (this.canvas.state.sessionId !== sessionId) return;
           this.canvas.state.graph = updated;
           this.canvas.history.push(updated);
           this.canvas.onHistoryChange?.();
         } catch {}
       })
       .catch((e) => console.error("[Canvas] deleteNode failed:", e));
+    this.trackGraphMutation(pending);
   }
 
   private onConnectionChanged(_node: any): void {
     if (this.canvas._rebuilding) return;
     const sessionId = this.canvas.state.sessionId;
     if (!sessionId) return;
+    if (this.canvas._graphMutationTimer !== null) {
+      clearTimeout(this.canvas._graphMutationTimer);
+    }
+    this.canvas._graphMutationTimer = setTimeout(() => {
+      this.canvas._graphMutationTimer = null;
+      this.syncEdgesFromLiteGraph(sessionId);
+    }, 0);
+  }
+
+  private syncEdgesFromLiteGraph(sessionId: string): void {
+    if (this.canvas.state.sessionId !== sessionId) return;
+    const graph = this.canvas.state.graph;
+    if (!graph) return;
+    const existingNodeIds = new Set(graph.nodes.map((node) => node.id));
     const edgeList: any[] = this.canvas.lGraph.links ? Object.values(this.canvas.lGraph.links) : [];
     const edgeDefs: EdgeDefinition[] = [];
     for (const link of edgeList) {
@@ -535,8 +584,9 @@ export class CanvasGraphOps {
       const originNode = this.canvas.lGraph.getNodeById(link.origin_id) as any;
       const targetNode = this.canvas.lGraph.getNodeById(link.target_id) as any;
       if (!originNode?.zihuanId || !targetNode?.zihuanId) continue;
-      const fromDef = this.canvas.state.graph?.nodes.find((node) => node.id === originNode.zihuanId);
-      const toDef = this.canvas.state.graph?.nodes.find((node) => node.id === targetNode.zihuanId);
+      if (!existingNodeIds.has(originNode.zihuanId) || !existingNodeIds.has(targetNode.zihuanId)) continue;
+      const fromDef = graph.nodes.find((node) => node.id === originNode.zihuanId);
+      const toDef = graph.nodes.find((node) => node.id === targetNode.zihuanId);
       if (!fromDef || !toDef) continue;
       const fromPort = fromDef.output_ports[link.origin_slot];
       const toPort = visibleInputPorts(toDef.input_ports)[link.target_slot];
@@ -549,15 +599,15 @@ export class CanvasGraphOps {
       });
     }
 
-    if (!this.canvas.state.graph) return;
-    const updatedGraph = { ...this.canvas.state.graph, edges: edgeDefs };
+    const updatedGraph = { ...graph, edges: edgeDefs };
     this.canvas.state.graph = updatedGraph;
-    graphs.put(sessionId, updatedGraph)
+    const pending = graphs.put(sessionId, updatedGraph)
       .then(() => {
         this.canvas.history.push(updatedGraph);
         this.canvas.onHistoryChange?.();
       })
       .catch((e) => console.error("[Canvas] put graph (edges) failed:", e));
+    this.trackGraphMutation(pending);
     this.canvas.state.dirty = true;
     this.canvas.onGraphDirty?.();
     this.colorizeAllLinks();

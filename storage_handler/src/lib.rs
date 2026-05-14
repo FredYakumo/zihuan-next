@@ -10,7 +10,7 @@ mod tavily_search_node;
 pub mod weaviate;
 mod weaviate_image_search_node;
 
-use log::info;
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use zihuan_core::config::{
@@ -199,7 +199,7 @@ pub fn load_connections() -> Result<Vec<ConnectionConfig>> {
         );
     }
     for connection in &connections {
-        info!(
+        debug!(
             "[config_center] loaded connection config_id={} kind={:?} name='{}'",
             connection.canonical_config_id(),
             connection.kind(),

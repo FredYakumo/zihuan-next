@@ -10,15 +10,7 @@ use serde_json::Value;
 use super::agent_text_similarity::{
     find_best_match, token_overlap_ratio, HybridSimilarityConfig, SimilarityCandidate,
 };
-use zihuan_graph_engine::brain_tool_spec::{
-    BrainToolDefinition, QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
-    QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
-};
 use super::classify_intent::{classify_intent, IntentCategory};
-use model_inference::inference_function::compact_message::{
-    compact_message_history, estimate_messages_tokens,
-};
-use model_inference::message_content_utils::downgrade_messages_for_model;
 use crate::nodes::tool_subgraph::{
     validate_shared_inputs, validate_tool_definitions, ToolResultMode, ToolSubgraphRunner,
 };
@@ -34,6 +26,10 @@ use ims_bot_adapter::models::message::{
     AtTargetMessage, ForwardMessage, ForwardNodeMessage, ImageMessage, Message, MessageProp,
     PlainTextMessage,
 };
+use model_inference::inference_function::compact_message::{
+    compact_message_history, estimate_messages_tokens,
+};
+use model_inference::message_content_utils::downgrade_messages_for_model;
 use zihuan_agent::brain::{sanitize_messages_for_inference, Brain, BrainStopReason, BrainTool};
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
@@ -47,6 +43,10 @@ use zihuan_core::task_context::{
     scope_task_id, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
 };
 use zihuan_core::weaviate::WeaviateRef;
+use zihuan_graph_engine::brain_tool_spec::{
+    BrainToolDefinition, QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
+    QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
+};
 use zihuan_graph_engine::data_value::{
     OpenAIMessageSessionCacheRef, SessionClaim, SessionStateRef, SESSION_CLAIM_CONTEXT,
 };
@@ -3179,10 +3179,8 @@ impl QqChatAgent {
         conversation.push(priming_msg);
         conversation.extend(history.iter().cloned());
         conversation.push(user_msg.clone());
-        let conversation = downgrade_messages_for_model(
-            conversation,
-            selected_llm.supports_multimodal_input(),
-        );
+        let conversation =
+            downgrade_messages_for_model(conversation, selected_llm.supports_multimodal_input());
         let prompt_tokens_estimated = estimate_messages_tokens(&conversation);
         info!(
             "{LOG_PREFIX} llm conversation messages={} payload={}",

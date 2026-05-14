@@ -47,7 +47,10 @@
                 <select v-model="form.llm.api_style">
                   <option value="candle">Candle推理引擎(待实现)</option>
                   <option value="open_ai_chat_completions">OpenAI Chat Completions API</option>
+                  <option value="open_ai_chat_completions_tencent_multimodal_compat">OpenAI Chat Completions API（腾讯多模态兼容）</option>
                   <option value="open_ai_responses">OpenAI Responses API</option>
+                  <option value="open_ai_responses_message_compat">OpenAI Responses API（message兼容）</option>
+                  <option value="open_ai_responses_image_url_object_compat">OpenAI Responses API（image_url对象兼容）</option>
                 </select>
               </div>
               <div class="field"><label>Model Name</label><input v-model="form.llm.model_name" /></div>
@@ -148,7 +151,10 @@
                   <select v-model="form.llm.api_style" class="connection-card-inline-input">
                     <option value="candle">Candle（待实现）</option>
                     <option value="open_ai_chat_completions">OpenAI Chat Completions</option>
+                    <option value="open_ai_chat_completions_tencent_multimodal_compat">OpenAI Chat Completions（腾讯多模态兼容）</option>
                     <option value="open_ai_responses">OpenAI Responses</option>
+                    <option value="open_ai_responses_message_compat">OpenAI Responses（message兼容）</option>
+                    <option value="open_ai_responses_image_url_object_compat">OpenAI Responses（image_url对象兼容）</option>
                   </select>
                 </div>
                 <div class="key-value connection-card-edit-row">

@@ -2,6 +2,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::inference::{InferenceToolContext, InferenceToolProvider};
+use super::qq_chat_agent_core::{
+    build_info_brain_tools, QqAgentReplyBatchBuilder, QqAgentReplyBuildRequest,
+    QqAgentReplyBuildResult, QqChatAgentService, QqChatAgentServiceConfig,
+};
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
 use crate::agent::tool_definitions::build_enabled_tool_definitions;
 use crate::resource_resolver::{
@@ -17,12 +21,15 @@ use ims_bot_adapter::models::message::{
 };
 use ims_bot_adapter::{build_ims_bot_adapter, parse_ims_bot_adapter_connection};
 use log::{error, info, warn};
+use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
+use model_inference::system_config::{load_llm_refs, AgentConfig, LlmRefConfig};
 use storage_handler::{
     build_mysql_ref, build_s3_ref, build_tavily_ref, build_weaviate_ref, find_connection,
     ConnectionConfig, ConnectionKind,
 };
 use tokio::task::JoinHandle;
 use zihuan_agent::brain::BrainTool;
+use zihuan_core::agent_config::QqChatAgentConfig;
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
@@ -32,17 +39,10 @@ use zihuan_core::runtime::block_async;
 use zihuan_core::task_context::AgentTaskRuntime;
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_core::worker_pool::WorkerPool;
+use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
 use zihuan_graph_engine::data_value::{OpenAIMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::message_restore::register_mysql_ref;
-use super::qq_chat_agent_core::{
-    build_info_brain_tools, QqAgentReplyBatchBuilder, QqAgentReplyBuildRequest,
-    QqAgentReplyBuildResult, QqChatAgentService, QqChatAgentServiceConfig,
-};
-use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
-use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
-use zihuan_core::agent_config::QqChatAgentConfig;
-use model_inference::system_config::{load_llm_refs, AgentConfig, LlmRefConfig};
 
 const FORWARD_SPLIT_PREFERRED_SEPARATORS: [char; 14] = [
     '\n', '。', '！', '？', '；', '：', '.', '!', '?', ';', ':', '，', ',', ' ',

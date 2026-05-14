@@ -12,7 +12,13 @@ export type ConnectionType = "mysql" | "redis" | "weaviate" | "rustfs" | "bot_ad
 export type WeaviateCollectionSchema = "message_record_semantic" | "image_semantic";
 export type AgentTypeName = "qq_chat" | "http_stream";
 export type ModelRefType = "chat_llm" | "text_embedding_local";
-export type LlmApiStyle = "candle" | "open_ai_chat_completions" | "open_ai_responses";
+export type LlmApiStyle =
+  | "candle"
+  | "open_ai_chat_completions"
+  | "open_ai_chat_completions_tencent_multimodal_compat"
+  | "open_ai_responses"
+  | "open_ai_responses_message_compat"
+  | "open_ai_responses_image_url_object_compat";
 export type ToolTargetType = "workflow_set" | "file_path" | "inline_graph";
 
 export interface ConnectionFormState {
