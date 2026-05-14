@@ -18,6 +18,7 @@ use super::classify_intent::{classify_intent, IntentCategory};
 use model_inference::inference_function::compact_message::{
     compact_message_history, estimate_messages_tokens,
 };
+use model_inference::message_content_utils::downgrade_messages_for_model;
 use crate::nodes::tool_subgraph::{
     validate_shared_inputs, validate_tool_definitions, ToolResultMode, ToolSubgraphRunner,
 };
@@ -3178,6 +3179,10 @@ impl QqChatAgent {
         conversation.push(priming_msg);
         conversation.extend(history.iter().cloned());
         conversation.push(user_msg.clone());
+        let conversation = downgrade_messages_for_model(
+            conversation,
+            selected_llm.supports_multimodal_input(),
+        );
         let prompt_tokens_estimated = estimate_messages_tokens(&conversation);
         info!(
             "{LOG_PREFIX} llm conversation messages={} payload={}",
