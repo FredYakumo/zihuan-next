@@ -6,6 +6,7 @@ pub mod message_content_utils;
 pub mod nn;
 pub mod nodes;
 pub mod system_config;
+pub mod utils;
 
 use zihuan_core::error::Result;
 

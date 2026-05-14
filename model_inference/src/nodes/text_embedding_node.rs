@@ -51,7 +51,7 @@ impl Node for TextEmbeddingNode {
             _ => {
                 return Err(Error::ValidationError(
                     "Missing required input: embedding_model".to_string(),
-                ))
+                ));
             }
         };
 
@@ -60,7 +60,7 @@ impl Node for TextEmbeddingNode {
             _ => {
                 return Err(Error::ValidationError(
                     "Missing required input: text".to_string(),
-                ))
+                ));
             }
         };
 

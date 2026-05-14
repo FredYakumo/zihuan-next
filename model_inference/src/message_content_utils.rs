@@ -29,11 +29,9 @@ pub fn downgrade_message_for_model(
 }
 
 fn downgrade_message_for_text_only_model(mut message: OpenAIMessage) -> OpenAIMessage {
-    let Some(MessageContent::Parts(parts)) = message.content.take() else {
-        return message;
-    };
-
-    message.content = Some(MessageContent::Text(parts_to_text(parts)));
+    if let Some(MessageContent::Parts(parts)) = message.content {
+        message.content = Some(MessageContent::Text(parts_to_text(parts)));
+    }
     message
 }
 
@@ -44,10 +42,16 @@ fn parts_to_text(parts: Vec<ContentPart>) -> String {
         match part {
             ContentPart::Text { text } => segments.push(text),
             ContentPart::ImageUrl { image_url } => {
-                segments.push(media_placeholder(IMAGE_OMITTED_PLACEHOLDER, image_url.as_url()));
+                segments.push(media_placeholder(
+                    IMAGE_OMITTED_PLACEHOLDER,
+                    image_url.as_url(),
+                ));
             }
             ContentPart::VideoUrl { video_url } => {
-                segments.push(media_placeholder(VIDEO_OMITTED_PLACEHOLDER, video_url.as_url()));
+                segments.push(media_placeholder(
+                    VIDEO_OMITTED_PLACEHOLDER,
+                    video_url.as_url(),
+                ));
             }
         }
     }
