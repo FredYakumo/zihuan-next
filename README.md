@@ -61,16 +61,6 @@ Custom bind:
 ./target/release/zihuan_next --host 0.0.0.0 --port 9000
 ```
 
-### First-time usage flow
-
-After startup, the usual order is:
-
-1. Open `/` and create `connections`.
-2. Create `llm_refs`.
-3. Create or import workflow graphs in `/editor`.
-4. Mount graph-backed tools into an Agent.
-5. Start the Agent or run the graph as a task.
-
 ## Highlights
 
 - Simple Agent capabilities are available out of the box.
