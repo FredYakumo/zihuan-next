@@ -36,6 +36,8 @@ Follow these practical Rust style preferences unless an existing local module al
 - Include concrete context in errors and logs, especially field names, node inputs, database columns, and source values.
 - Avoid abstraction for its own sake. Add generic helpers, traits, or macros only when they remove clear duplication without hiding business meaning.
 
+- **Error handling:** Avoid using `if let Err(` or similar verbose error handling patterns. Prefer the `?` operator for propagating errors whenever possible, to keep code concise and idiomatic. Excessive manual error unwrapping makes code resemble Go and should be minimized.
+
 For node file placement, node registration, naming conventions, and other code-level details, look up [document/dev-guides/code-conventions.md](../document/dev-guides/code-conventions.md) and [document/dev-guides/node-system.md](../document/dev-guides/node-system.md).
 
 ## Code Search

@@ -31,6 +31,8 @@ When writing Rust in this repository, follow these style preferences unless the 
 - Error messages should carry concrete business context such as field names, node inputs, external column names, or source values. Avoid vague failure text when adding new parsing or integration code.
 - Prefer pragmatic readability over abstraction. Do not introduce a generic helper, trait, or macro unless it removes real duplication that appears in more than one place.
 
+- **Error handling:** Avoid using `if let Err(` or similar verbose error handling patterns. Prefer the `?` operator for propagating errors whenever possible, to keep code concise and idiomatic. Excessive manual error unwrapping makes code resemble Go and should be minimized.
+
 ## Core Rules
 
 - One node per file.

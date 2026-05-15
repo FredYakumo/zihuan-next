@@ -43,7 +43,7 @@ pub struct Sender {
 }
 
 /// Message event containing the full message information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageEvent {
     pub message_id: i64,
     pub message_type: MessageType,
@@ -51,6 +51,7 @@ pub struct MessageEvent {
     pub message_list: Vec<Message>,
     pub group_id: Option<i64>,
     pub group_name: Option<String>,
+    #[serde(default)]
     pub is_group_message: bool,
 }
 

@@ -6,6 +6,7 @@ pub mod tool_definitions;
 mod agent_text_similarity;
 mod classify_intent;
 mod qq_chat_agent_core;
+mod qq_chat_agent_inbox;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

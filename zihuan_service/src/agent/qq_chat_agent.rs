@@ -7,6 +7,7 @@ use super::qq_chat_agent_core::{
     QqAgentReplyBuildResult, QqChatAgentService, QqChatAgentServiceConfig,
 };
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
+use crate::agent::qq_chat_agent_inbox::{QqChatAgentInbox, QqChatAgentSupervisorEvent};
 use crate::agent::tool_definitions::build_enabled_tool_definitions;
 use crate::resource_resolver::{
     build_embedding_model, build_llm_model, resolve_llm_service_config,
@@ -38,7 +39,6 @@ use zihuan_core::rag::TavilyRef;
 use zihuan_core::runtime::block_async;
 use zihuan_core::task_context::AgentTaskRuntime;
 use zihuan_core::weaviate::WeaviateRef;
-use zihuan_core::worker_pool::WorkerPool;
 use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
 use zihuan_graph_engine::data_value::{OpenAIMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
@@ -667,7 +667,7 @@ fn load_qq_resources(
 ///
 /// Resolves all runtime dependencies (`llm`, `embedding_model`, `tavily`, `s3_ref`,
 /// `mysql_ref`, `weaviate_image_ref`), wires the IMS bot adapter event handler
-/// through a `WorkerPool`, then spawns a background task that runs the
+/// through an inbox queue, then spawns a background task that runs the
 /// `BotAdapter::start` loop until exit.
 ///
 /// Called when the service layer starts an agent whose type is QQ chat —
@@ -735,6 +735,7 @@ pub async fn spawn(
         .ok_or_else(|| Error::ValidationError("missing tavily connection".to_string()))?;
     let object_storage = build_s3_ref(config.rustfs_connection_id.as_deref(), &connections).await?;
     let mysql_ref = build_mysql_ref(config.mysql_connection_id.as_deref(), &connections).await?;
+    let redis_ref = resolve_inbox_redis_ref(&connections)?;
     let weaviate_image_ref = tokio::task::block_in_place(|| {
         build_weaviate_ref(
             config.weaviate_image_connection_id.as_deref(),
@@ -807,30 +808,23 @@ pub async fn spawn(
 
     let adapter = build_ims_bot_adapter(&ims_bot_adapter_connection, object_storage).await;
 
-    let pool = WorkerPool::new(config.event_handler_threads.unwrap_or(8), 256);
+    let inbox = QqChatAgentInbox::new(
+        Arc::clone(&service),
+        adapter.clone(),
+        redis_ref,
+        &agent.id,
+        config.event_handler_threads,
+    );
 
     {
-        let service = Arc::clone(&service);
-        let adapter_for_handler = adapter.clone();
-        let pool_for_handler = pool.clone();
+        let inbox = inbox.clone();
         let handler: EventHandler = Arc::new(move |event| {
-            let service = Arc::clone(&service);
-            let adapter = adapter_for_handler.clone();
             let event = event.clone();
-            let pool = pool_for_handler.clone();
+            let inbox = inbox.clone();
             Box::pin(async move {
                 let time = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-                let submit_result = tokio::task::spawn_blocking(move || {
-                    pool.submit(move || {
-                        if let Err(err) = service.handle_event(&event, &adapter, &time) {
-                            error!("[service][qq_agent] failed to handle message event: {err}");
-                        }
-                    });
-                })
-                .await;
-                if let Err(err) = submit_result {
-                    error!("[service][qq_agent] failed to submit message event task: {err}");
-                }
+                inbox.enqueue(event, time).await?;
+                Ok(())
             })
         });
         adapter.lock().await.register_event_handler(handler);
@@ -841,39 +835,79 @@ pub async fn spawn(
     let agent_name = agent.name.clone();
     Ok(tokio::spawn(async move {
         info!("[service] starting QQ chat agent '{}'", agent_name);
-        let (success, error_msg) = match BotAdapter::start(adapter).await {
-            Ok(()) => {
-                info!("[service] QQ chat agent '{}' stopped", agent_name);
-                manager.update_state(
-                    &agent_id,
-                    AgentRuntimeState {
-                        instance_id: None,
-                        status: AgentRuntimeStatus::Stopped,
-                        started_at: None,
-                        last_error: None,
-                    },
-                );
-                (true, None)
+        let mut tasks = tokio::task::JoinSet::new();
+        inbox.spawn_consumers(&mut tasks);
+        tasks.spawn(async move {
+            match BotAdapter::start(adapter).await {
+                Ok(()) => QqChatAgentSupervisorEvent::AdapterFinished {
+                    success: true,
+                    error_msg: None,
+                },
+                Err(err) => QqChatAgentSupervisorEvent::AdapterFinished {
+                    success: false,
+                    error_msg: Some(err.to_string()),
+                },
             }
-            Err(err) => {
-                error!(
-                    "[service] QQ chat agent '{}' exited with error: {}",
-                    agent_name, err
-                );
-                let msg = err.to_string();
-                manager.update_state(
-                    &agent_id,
-                    AgentRuntimeState {
-                        instance_id: None,
-                        status: AgentRuntimeStatus::Error,
-                        started_at: None,
-                        last_error: Some(msg.clone()),
-                    },
-                );
-                (false, Some(msg))
+        });
+
+        let mut adapter_result: Option<(bool, Option<String>)> = None;
+        while let Some(result) = tasks.join_next().await {
+            match result {
+                Ok(QqChatAgentSupervisorEvent::AdapterFinished { success, error_msg }) => {
+                    adapter_result = Some((success, error_msg));
+                    inbox.request_shutdown();
+                }
+                Ok(QqChatAgentSupervisorEvent::RedisConsumerFinished) => {
+                    if adapter_result.is_none() {
+                        warn!("[service][qq_agent] a Redis inbox consumer exited unexpectedly");
+                    }
+                }
+                Ok(QqChatAgentSupervisorEvent::MemoryConsumerFinished) => {
+                    if adapter_result.is_none() {
+                        warn!("[service][qq_agent] a memory inbox consumer exited unexpectedly");
+                    }
+                }
+                Err(err) => {
+                    error!("[service][qq_agent] inbox task join failed: {err}");
+                }
             }
-        };
-        pool.wait_idle();
+        }
+        let (success, error_msg) = adapter_result.unwrap_or_else(|| {
+            (
+                false,
+                Some("QQ chat agent task set ended unexpectedly".to_string()),
+            )
+        });
+
+        if success {
+            info!("[service] QQ chat agent '{}' stopped", agent_name);
+            manager.update_state(
+                &agent_id,
+                AgentRuntimeState {
+                    instance_id: None,
+                    status: AgentRuntimeStatus::Stopped,
+                    started_at: None,
+                    last_error: None,
+                },
+            );
+        } else {
+            let msg = error_msg
+                .clone()
+                .unwrap_or_else(|| "QQ chat agent exited unexpectedly".to_string());
+            error!(
+                "[service] QQ chat agent '{}' exited with error: {}",
+                agent_name, msg
+            );
+            manager.update_state(
+                &agent_id,
+                AgentRuntimeState {
+                    instance_id: None,
+                    status: AgentRuntimeStatus::Error,
+                    started_at: None,
+                    last_error: Some(msg.clone()),
+                },
+            );
+        }
         if let Some(cb) = on_finish.lock().unwrap().take() {
             cb(success, error_msg);
         }
@@ -889,4 +923,17 @@ fn resolve_llm_ref_display_name(
         .and_then(|id| llm_refs.iter().find(|item| item.id == id))
         .map(|item| item.name.clone())
         .unwrap_or_else(|| fallback_model_name.to_string())
+}
+
+fn resolve_inbox_redis_ref(
+    connections: &[ConnectionConfig],
+) -> Result<Option<Arc<zihuan_graph_engine::data_value::RedisConfig>>> {
+    let redis_connection_id = connections.iter().find_map(|connection| {
+        if connection.enabled && matches!(connection.kind, ConnectionKind::Redis(_)) {
+            Some(connection.id.as_str())
+        } else {
+            None
+        }
+    });
+    storage_handler::build_redis_ref(redis_connection_id, connections)
 }
