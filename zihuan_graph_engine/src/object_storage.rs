@@ -8,10 +8,13 @@ use aws_types::region::Region;
 use reqwest::Url;
 use std::fmt;
 use zihuan_core::error::{Error, Result};
+use zihuan_core::url_utils::pct_encode;
 
 #[derive(Clone)]
 pub struct S3Ref {
     pub endpoint: String,
+    pub endpoint_username: Option<String>,
+    pub endpoint_password: Option<String>,
     pub bucket: String,
     pub access_key: String,
     pub secret_key: String,
@@ -150,7 +153,7 @@ impl S3Ref {
         let shared_config = aws_config::defaults(BehaviorVersion::latest())
             .region(Region::new(self.region.clone()))
             .credentials_provider(credentials)
-            .endpoint_url(self.endpoint.clone())
+            .endpoint_url(self.endpoint_url_with_auth()?)
             .load()
             .await;
         let config = S3ConfigBuilder::from(&shared_config)
@@ -167,12 +170,56 @@ impl S3Ref {
             region
         }
     }
+
+    fn endpoint_url_with_auth(&self) -> Result<String> {
+        let username = self
+            .endpoint_username
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let password = self
+            .endpoint_password
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+
+        if username.is_none() && password.is_none() {
+            return Ok(self.endpoint.clone());
+        }
+
+        let mut url = Url::parse(&self.endpoint).map_err(|err| {
+            Error::ValidationError(format!(
+                "invalid object storage endpoint '{}': {}",
+                self.endpoint, err
+            ))
+        })?;
+        let encoded_username = username.map(pct_encode).unwrap_or_default();
+        url.set_username(&encoded_username).map_err(|_| {
+            Error::ValidationError(format!(
+                "failed to apply username to object storage endpoint '{}'",
+                self.endpoint
+            ))
+        })?;
+        url.set_password(password.map(pct_encode).as_deref())
+            .map_err(|_| {
+                Error::ValidationError(format!(
+                    "failed to apply password to object storage endpoint '{}'",
+                    self.endpoint
+                ))
+            })?;
+        Ok(url.to_string())
+    }
 }
 
 impl fmt::Debug for S3Ref {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("S3Ref")
             .field("endpoint", &self.endpoint)
+            .field("endpoint_username", &self.endpoint_username)
+            .field(
+                "endpoint_password",
+                &self.endpoint_password.as_ref().map(|_| "<redacted>"),
+            )
             .field("bucket", &self.bucket)
             .field("access_key", &"<redacted>")
             .field("secret_key", &"<redacted>")

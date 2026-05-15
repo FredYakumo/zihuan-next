@@ -72,6 +72,14 @@
                 <label>URL</label>
                 <input v-model="form.redis_url" placeholder="redis://127.0.0.1:6379" />
               </div>
+              <div class="field">
+                <label>用户名</label>
+                <input v-model="form.redis_username" placeholder="default" />
+              </div>
+              <div class="field">
+                <label>密码</label>
+                <input v-model="form.redis_password" type="password" placeholder="可选" />
+              </div>
             </template>
 
             <template v-else-if="form.type === 'weaviate'">
@@ -82,6 +90,14 @@
               <div class="field">
                 <label>Class Name</label>
                 <input v-model="form.weaviate_class_name" />
+              </div>
+              <div class="field">
+                <label>用户名</label>
+                <input v-model="form.weaviate_username" placeholder="可选" />
+              </div>
+              <div class="field">
+                <label>密码</label>
+                <input v-model="form.weaviate_password" type="password" placeholder="可选" />
               </div>
               <div class="field-full">
                 <label>Collection Schema</label>
@@ -94,6 +110,8 @@
 
             <template v-else-if="form.type === 'rustfs'">
               <div class="field"><label>Endpoint</label><input v-model="form.rustfs_endpoint" /></div>
+              <div class="field"><label>用户名</label><input v-model="form.rustfs_username" placeholder="可选" /></div>
+              <div class="field"><label>密码</label><input v-model="form.rustfs_password" type="password" placeholder="可选" /></div>
               <div class="field"><label>Bucket</label><input v-model="form.rustfs_bucket" /></div>
               <div class="field"><label>Region</label><input v-model="form.rustfs_region" /></div>
               <div class="field"><label>Access Key</label><input v-model="form.rustfs_access_key" /></div>
@@ -216,6 +234,14 @@
                   <strong>URL</strong>
                   <input v-model="form.redis_url" class="connection-card-inline-input" placeholder="redis://127.0.0.1:6379" />
                 </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>用户名</strong>
+                  <input v-model="form.redis_username" class="connection-card-inline-input" placeholder="default" />
+                </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>密码</strong>
+                  <input v-model="form.redis_password" class="connection-card-inline-input" type="password" />
+                </div>
               </template>
 
               <template v-else-if="form.type === 'weaviate'">
@@ -226,6 +252,14 @@
                 <div class="key-value connection-card-edit-row">
                   <strong>Class</strong>
                   <input v-model="form.weaviate_class_name" class="connection-card-inline-input" />
+                </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>用户名</strong>
+                  <input v-model="form.weaviate_username" class="connection-card-inline-input" />
+                </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>密码</strong>
+                  <input v-model="form.weaviate_password" class="connection-card-inline-input" type="password" />
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>Schema</strong>
@@ -240,6 +274,14 @@
                 <div class="key-value connection-card-edit-row">
                   <strong>Endpoint</strong>
                   <input v-model="form.rustfs_endpoint" class="connection-card-inline-input" />
+                </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>用户名</strong>
+                  <input v-model="form.rustfs_username" class="connection-card-inline-input" />
+                </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>密码</strong>
+                  <input v-model="form.rustfs_password" class="connection-card-inline-input" type="password" />
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>Bucket</strong>

@@ -12,6 +12,8 @@ const LEGACY_CONNECTION_ID_FIELD: &str = "connection_id";
 
 pub async fn build_s3_ref(
     endpoint: &str,
+    endpoint_username: Option<String>,
+    endpoint_password: Option<String>,
     bucket: &str,
     access_key: &str,
     secret_key: &str,
@@ -21,6 +23,8 @@ pub async fn build_s3_ref(
 ) -> Result<Arc<S3Ref>> {
     let s3_ref = Arc::new(S3Ref {
         endpoint: endpoint.to_string(),
+        endpoint_username,
+        endpoint_password,
         bucket: bucket.to_string(),
         access_key: access_key.to_string(),
         secret_key: secret_key.to_string(),

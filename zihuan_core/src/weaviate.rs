@@ -29,6 +29,8 @@ pub enum WeaviateEnsureCollectionResult {
 pub struct WeaviateRef {
     pub base_url: String,
     pub class_name: String,
+    pub username: Option<String>,
+    pub password: Option<String>,
     pub api_key: Option<String>,
     pub timeout: Duration,
     client: Client,
@@ -71,6 +73,8 @@ impl WeaviateRef {
     pub fn new(
         base_url: impl Into<String>,
         class_name: impl Into<String>,
+        username: Option<String>,
+        password: Option<String>,
         api_key: Option<String>,
         timeout: Duration,
     ) -> Result<Self> {
@@ -81,6 +85,8 @@ impl WeaviateRef {
         Ok(Self {
             base_url,
             class_name,
+            username: normalize_owned_optional_string(username),
+            password: normalize_owned_optional_string(password),
             api_key: api_key.filter(|value| !value.trim().is_empty()),
             timeout,
             client,
@@ -389,6 +395,11 @@ impl WeaviateRef {
     fn authorized(&self, builder: RequestBuilder) -> RequestBuilder {
         if let Some(api_key) = &self.api_key {
             builder.bearer_auth(api_key)
+        } else if self.username.is_some() || self.password.is_some() {
+            builder.basic_auth(
+                self.username.clone().unwrap_or_default(),
+                self.password.clone(),
+            )
         } else {
             builder
         }
@@ -479,6 +490,8 @@ impl fmt::Debug for WeaviateRef {
         f.debug_struct("WeaviateRef")
             .field("base_url", &self.base_url)
             .field("class_name", &self.class_name)
+            .field("username", &self.username)
+            .field("password", &self.password.as_ref().map(|_| "<redacted>"))
             .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
             .field("timeout", &self.timeout)
             .finish()
@@ -529,6 +542,12 @@ fn normalize_optional_string(value: Option<&str>) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
+}
+
+fn normalize_owned_optional_string(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn deterministic_message_object_id(class_name: &str, message_id: &str) -> String {

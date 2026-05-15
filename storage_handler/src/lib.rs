@@ -78,18 +78,30 @@ pub struct MysqlConnection {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RedisConnection {
     pub url: String,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WeaviateConnection {
     pub base_url: String,
     pub class_name: String,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
     pub collection_schema: WeaviateCollectionSchema,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RustfsConnection {
     pub endpoint: String,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
     pub bucket: String,
     pub region: String,
     pub access_key: String,

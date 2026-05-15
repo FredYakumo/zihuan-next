@@ -38,10 +38,16 @@ export interface ConnectionFormState {
   mysql_max_connections: number;
   mysql_acquire_timeout_secs: number;
   redis_url: string;
+  redis_username: string;
+  redis_password: string;
   weaviate_base_url: string;
   weaviate_class_name: string;
+  weaviate_username: string;
+  weaviate_password: string;
   weaviate_collection_schema: WeaviateCollectionSchema;
   rustfs_endpoint: string;
+  rustfs_username: string;
+  rustfs_password: string;
   rustfs_bucket: string;
   rustfs_region: string;
   rustfs_access_key: string;
@@ -155,10 +161,16 @@ export function defaultConnectionForm(): ConnectionFormState {
     mysql_max_connections: DEFAULT_MYSQL_MAX_CONNECTIONS,
     mysql_acquire_timeout_secs: DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS,
     redis_url: "",
+    redis_username: "",
+    redis_password: "",
     weaviate_base_url: "",
     weaviate_class_name: "",
+    weaviate_username: "",
+    weaviate_password: "",
     weaviate_collection_schema: "message_record_semantic",
     rustfs_endpoint: "",
+    rustfs_username: "",
+    rustfs_password: "",
     rustfs_bucket: "",
     rustfs_region: "",
     rustfs_access_key: "",
@@ -249,16 +261,22 @@ export function connectionFormFromConfig(connection: ConnectionConfig): Connecti
       break;
     case "redis":
       form.redis_url = String(connection.kind.url ?? "");
+      form.redis_username = String(connection.kind.username ?? "");
+      form.redis_password = String(connection.kind.password ?? "");
       break;
     case "weaviate":
       form.weaviate_base_url = String(connection.kind.base_url ?? "");
       form.weaviate_class_name = String(connection.kind.class_name ?? "");
+      form.weaviate_username = String(connection.kind.username ?? "");
+      form.weaviate_password = String(connection.kind.password ?? "");
       form.weaviate_collection_schema = String(
         connection.kind.collection_schema ?? "message_record_semantic",
       ) as WeaviateCollectionSchema;
       break;
     case "rustfs":
       form.rustfs_endpoint = String(connection.kind.endpoint ?? "");
+      form.rustfs_username = String(connection.kind.username ?? "");
+      form.rustfs_password = String(connection.kind.password ?? "");
       form.rustfs_bucket = String(connection.kind.bucket ?? "");
       form.rustfs_region = String(connection.kind.region ?? "");
       form.rustfs_access_key = String(connection.kind.access_key ?? "");
@@ -329,13 +347,20 @@ export function buildConnectionPayload(form: ConnectionFormState): {
       };
       break;
     case "redis":
-      payload.kind = { type: "redis", url: form.redis_url.trim() };
+      payload.kind = {
+        type: "redis",
+        url: form.redis_url.trim(),
+        username: form.redis_username.trim() || null,
+        password: form.redis_password.trim() || null,
+      };
       break;
     case "weaviate":
       payload.kind = {
         type: "weaviate",
         base_url: form.weaviate_base_url.trim(),
         class_name: form.weaviate_class_name.trim(),
+        username: form.weaviate_username.trim() || null,
+        password: form.weaviate_password.trim() || null,
         collection_schema: form.weaviate_collection_schema,
       };
       break;
@@ -343,6 +368,8 @@ export function buildConnectionPayload(form: ConnectionFormState): {
       payload.kind = {
         type: "rustfs",
         endpoint: form.rustfs_endpoint.trim(),
+        username: form.rustfs_username.trim() || null,
+        password: form.rustfs_password.trim() || null,
         bucket: form.rustfs_bucket.trim(),
         region: form.rustfs_region.trim(),
         access_key: form.rustfs_access_key.trim(),

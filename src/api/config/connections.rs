@@ -111,6 +111,8 @@ fn validate_connection(
     let weaviate_ref = WeaviateRef::new(
         weaviate.base_url.clone(),
         weaviate.class_name.clone(),
+        weaviate.username.clone(),
+        weaviate.password.clone(),
         None,
         Duration::from_secs(30),
     )

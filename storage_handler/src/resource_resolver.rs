@@ -53,6 +53,8 @@ pub fn build_redis_ref(
     };
     Ok(Some(Arc::new(RedisConfig::new(
         Some(redis.url.clone()),
+        redis.username.clone(),
+        redis.password.clone(),
         None,
         None,
     ))))

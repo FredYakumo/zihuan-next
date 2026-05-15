@@ -104,6 +104,8 @@ impl Node for WeaviateNode {
         let weaviate_ref = Arc::new(WeaviateRef::new(
             base_url,
             class_name.clone(),
+            None,
+            None,
             api_key,
             Duration::from_secs(timeout_secs),
         )?);

@@ -30,6 +30,8 @@ tokio::task_local! {
 #[derive(Clone)]
 pub struct RedisConfig {
     pub url: Option<String>,
+    pub username: Option<String>,
+    pub password: Option<String>,
     pub reconnect_max_attempts: Option<u32>,
     pub reconnect_interval_secs: Option<u64>,
     /// Shared Redis connection pool maintained by the RedisNode.
@@ -41,11 +43,15 @@ pub struct RedisConfig {
 impl RedisConfig {
     pub fn new(
         url: Option<String>,
+        username: Option<String>,
+        password: Option<String>,
         reconnect_max_attempts: Option<u32>,
         reconnect_interval_secs: Option<u64>,
     ) -> Self {
         Self {
             url,
+            username,
+            password,
             reconnect_max_attempts,
             reconnect_interval_secs,
             redis_cm: Arc::new(TokioMutex::new(None)),
@@ -58,6 +64,8 @@ impl fmt::Debug for RedisConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RedisConfig")
             .field("url", &self.url)
+            .field("username", &self.username)
+            .field("password", &self.password.as_ref().map(|_| "<redacted>"))
             .field("reconnect_max_attempts", &self.reconnect_max_attempts)
             .field("reconnect_interval_secs", &self.reconnect_interval_secs)
             .field("redis_cm", &"<TokioMutex<Option<Connection>>>")
