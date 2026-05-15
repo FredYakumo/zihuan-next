@@ -1,20 +1,25 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::message_restore::register_mysql_ref;
 use zihuan_graph_engine::{DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port};
 
-use crate::RuntimeStorageConnectionManager;
+use crate::{
+    RuntimeStorageConnectionManager, DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS,
+    DEFAULT_MYSQL_MAX_CONNECTIONS,
+};
 
 const CONFIG_ID_FIELD: &str = "config_id";
 const LEGACY_CONNECTION_ID_FIELD: &str = "connection_id";
 
 pub async fn build_mysql_ref(url: &str) -> Result<Arc<MySqlConfig>> {
     let pool = sqlx::mysql::MySqlPoolOptions::new()
-        .max_connections(10)
+        .max_connections(DEFAULT_MYSQL_MAX_CONNECTIONS)
         .min_connections(1)
+        .acquire_timeout(Duration::from_secs(DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS))
         .connect(url)
         .await?;
 

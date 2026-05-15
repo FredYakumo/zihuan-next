@@ -21,6 +21,9 @@ export type LlmApiStyle =
   | "open_ai_responses_image_url_object_compat";
 export type ToolTargetType = "workflow_set" | "file_path" | "inline_graph";
 
+export const DEFAULT_MYSQL_MAX_CONNECTIONS = 32;
+export const DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS = 30;
+
 export interface ConnectionFormState {
   id: string | null;
   name: string;
@@ -32,6 +35,8 @@ export interface ConnectionFormState {
   mysql_user: string;
   mysql_password: string;
   mysql_database: string;
+  mysql_max_connections: number;
+  mysql_acquire_timeout_secs: number;
   redis_url: string;
   weaviate_base_url: string;
   weaviate_class_name: string;
@@ -147,6 +152,8 @@ export function defaultConnectionForm(): ConnectionFormState {
     mysql_user: "",
     mysql_password: "",
     mysql_database: "",
+    mysql_max_connections: DEFAULT_MYSQL_MAX_CONNECTIONS,
+    mysql_acquire_timeout_secs: DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS,
     redis_url: "",
     weaviate_base_url: "",
     weaviate_class_name: "",
@@ -232,6 +239,12 @@ export function connectionFormFromConfig(connection: ConnectionConfig): Connecti
   switch (connection.kind.type) {
     case "mysql":
       form.mysql_url = String(connection.kind.url ?? "");
+      form.mysql_max_connections = Number(
+        connection.kind.max_connections ?? DEFAULT_MYSQL_MAX_CONNECTIONS,
+      );
+      form.mysql_acquire_timeout_secs = Number(
+        connection.kind.acquire_timeout_secs ?? DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS,
+      );
       applyMysqlUrlToForm(form, form.mysql_url);
       break;
     case "redis":
@@ -308,7 +321,12 @@ export function buildConnectionPayload(form: ConnectionFormState): {
   };
   switch (form.type) {
     case "mysql":
-      payload.kind = { type: "mysql", url: buildMysqlUrl(form) };
+      payload.kind = {
+        type: "mysql",
+        url: buildMysqlUrl(form),
+        max_connections: form.mysql_max_connections,
+        acquire_timeout_secs: form.mysql_acquire_timeout_secs,
+      };
       break;
     case "redis":
       payload.kind = { type: "redis", url: form.redis_url.trim() };

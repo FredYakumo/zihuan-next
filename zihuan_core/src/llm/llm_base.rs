@@ -4,6 +4,10 @@ use tokio::sync::mpsc;
 pub trait LLMBase: std::fmt::Debug + Send + Sync {
     fn get_model_name(&self) -> &str;
 
+    fn api_style(&self) -> Option<&str> {
+        None
+    }
+
     fn supports_multimodal_input(&self) -> bool {
         false
     }

@@ -57,6 +57,14 @@
                 <label>数据库名</label>
                 <input v-model="form.mysql_database" placeholder="zihuan" />
               </div>
+              <div class="field">
+                <label>最大连接数</label>
+                <input v-model.number="form.mysql_max_connections" type="number" min="1" step="1" />
+              </div>
+              <div class="field">
+                <label>获取连接超时（秒）</label>
+                <input v-model.number="form.mysql_acquire_timeout_secs" type="number" min="1" step="1" />
+              </div>
             </template>
 
             <template v-else-if="form.type === 'redis'">
@@ -193,6 +201,14 @@
                   <strong>数据库</strong>
                   <input v-model="form.mysql_database" class="connection-card-inline-input" placeholder="zihuan" />
                 </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>最大连接数</strong>
+                  <input v-model.number="form.mysql_max_connections" class="connection-card-inline-input" type="number" min="1" step="1" />
+                </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>获取超时</strong>
+                  <input v-model.number="form.mysql_acquire_timeout_secs" class="connection-card-inline-input" type="number" min="1" step="1" />
+                </div>
               </template>
 
               <template v-else-if="form.type === 'redis'">
@@ -326,6 +342,8 @@ import {
   buildConnectionPayload,
   compactId,
   connectionFormFromConfig,
+  DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS,
+  DEFAULT_MYSQL_MAX_CONNECTIONS,
   defaultConnectionForm,
   formatTime,
   isBotAdapterConnectionType,
@@ -403,8 +421,7 @@ function editConnection(connection: ConnectionConfig) {
 }
 
 async function submitForm() {
-  const payload = buildConnectionPayload(form);
-  if (!payload.name) {
+  if (!form.name.trim()) {
     alert("请填写连接名称");
     return;
   }
@@ -425,6 +442,17 @@ async function submitForm() {
       alert("请填写 MySQL 数据库名");
       return;
     }
+    if (!Number.isInteger(form.mysql_max_connections) || form.mysql_max_connections <= 0) {
+      alert("请填写大于 0 的 MySQL 最大连接数");
+      return;
+    }
+    if (
+      !Number.isInteger(form.mysql_acquire_timeout_secs) ||
+      form.mysql_acquire_timeout_secs <= 0
+    ) {
+      alert("请填写大于 0 的 MySQL 获取连接超时秒数");
+      return;
+    }
   }
   if (form.type === "tavily" && !form.tavily_api_token.trim()) {
     alert("请填写 Tavily API Token");
@@ -440,6 +468,7 @@ async function submitForm() {
       return;
     }
   }
+  const payload = buildConnectionPayload(form);
   const result = await saveConnection(payload, false);
   if (!result) return;
   if (result.collection_created) {
@@ -493,7 +522,18 @@ function summarizeConnection(connection: ConnectionConfig): Array<{ label: strin
   const kind = connection.kind as Record<string, unknown>;
   switch (kind.type) {
     case "mysql":
-      return [...base, ...summarizeMysqlUrl(String(kind.url ?? ""))];
+      return [
+        ...base,
+        ...summarizeMysqlUrl(String(kind.url ?? "")),
+        {
+          label: "最大连接数",
+          value: String(kind.max_connections ?? DEFAULT_MYSQL_MAX_CONNECTIONS),
+        },
+        {
+          label: "获取超时",
+          value: `${String(kind.acquire_timeout_secs ?? DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS)}s`,
+        },
+      ];
     case "redis":
       return [...base, { label: "URL", value: String(kind.url ?? "") }];
     case "weaviate":

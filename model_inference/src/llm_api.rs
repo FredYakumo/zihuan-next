@@ -172,6 +172,26 @@ impl LLMAPI {
         }
     }
 
+    fn api_style_label(&self) -> &'static str {
+        match self.api_style {
+            LlmApiStyle::Candle => "candle",
+            LlmApiStyle::OpenAiChatCompletions => "open_ai_chat_completions",
+            LlmApiStyle::OpenAiChatCompletionsTencentMultimodalCompat => {
+                "open_ai_chat_completions_tencent_multimodal_compat"
+            }
+            LlmApiStyle::OpenAiResponses => "open_ai_responses",
+            LlmApiStyle::OpenAiResponsesMessageCompat => "open_ai_responses_message_compat",
+            LlmApiStyle::OpenAiResponsesImageUrlObjectCompat => {
+                "open_ai_responses_image_url_object_compat"
+            }
+        }
+    }
+
+    fn tag_response_api_style(&self, mut message: OpenAIMessage) -> OpenAIMessage {
+        message.api_style = Some(self.api_style_label().to_string());
+        message
+    }
+
     fn uses_responses_api(&self) -> bool {
         matches!(
             self.api_style,
@@ -226,7 +246,7 @@ impl LLMAPI {
                 true => parse_responses_sse_message(&response_text),
                 _ => parse_chat_completions_sse_message(&response_text),
             } {
-                return Ok(message);
+                return Ok(self.tag_response_api_style(message));
             }
         }
         if !status.is_success() {
@@ -266,24 +286,30 @@ impl LLMAPI {
             true => parse_responses_api_message(&api_resp),
             _ => parse_chat_completions_api_message(&api_resp),
         };
-        parsed_message.ok_or_else(|| RequestError::NonRetryable {
-            message: format!(
-                "{} invalid_response choices_present={} body={}",
-                self.format_request_context(
-                    request_context,
-                    Some((attempt, max_attempts)),
-                    request_format,
+        parsed_message
+            .map(|message| self.tag_response_api_style(message))
+            .ok_or_else(|| RequestError::NonRetryable {
+                message: format!(
+                    "{} invalid_response choices_present={} body={}",
+                    self.format_request_context(
+                        request_context,
+                        Some((attempt, max_attempts)),
+                        request_format,
+                    ),
+                    api_resp.get("choices").is_some() || api_resp.get("output").is_some(),
+                    string_utils::shorten_text(&response_text, 800)
                 ),
-                api_resp.get("choices").is_some() || api_resp.get("output").is_some(),
-                string_utils::shorten_text(&response_text, 800)
-            ),
-        })
+            })
     }
 }
 
 impl LLMBase for LLMAPI {
     fn get_model_name(&self) -> &str {
         &self.model_name
+    }
+
+    fn api_style(&self) -> Option<&str> {
+        Some(self.api_style_label())
     }
 
     fn supports_multimodal_input(&self) -> bool {
@@ -450,10 +476,11 @@ impl LLMAPI {
             return OpenAIMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR);
         }
 
-        match self.uses_responses_api() {
+        let message = match self.uses_responses_api() {
             true => parse_responses_sse_stream(response, token_tx).await,
             _ => parse_chat_completions_sse_stream(response, token_tx).await,
-        }
+        };
+        self.tag_response_api_style(message)
     }
 }
 

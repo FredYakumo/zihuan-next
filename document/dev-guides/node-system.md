@@ -116,7 +116,15 @@ Current registry bootstrap path:
 - extended by `ims_bot_adapter::init_node_registry()`
 - extended by `model_inference::init_node_registry()`
 - extended by `zihuan_service::init_node_registry()`
-- combined via `init_node_registry_with_extensions()` in `src/init_registry.rs`
+- combined via `src/init_registry.rs` which calls `init_node_registry_with_extensions()`
+
+Storage-backed nodes such as `mysql`, `qq_message_list_mysql_persistence`,
+`message_mysql_get_user_history`, `message_mysql_get_group_history`, and
+`message_mysql_search` are registered from `storage_handler`. Their runtime
+connection handles are `DataValue` references, such as `MySqlRef`, produced by
+connection provider nodes and consumed by storage/search nodes. For the current
+MySQL message storage and retrieval chain, see
+[`qq_message_storage.md`](qq_message_storage.md).
 
 ## Design Rule
 

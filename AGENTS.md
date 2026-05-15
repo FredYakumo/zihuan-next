@@ -6,7 +6,7 @@ This file provides project-level instructions for Codex and other coding agents 
 
 `zihuan-next` is a Rust node-graph workflow engine for event-driven bot pipelines. The graph describes **data flow** between processing steps — complexity (algorithms, agentic loops, control flow) is encapsulated inside individual nodes, keeping the graph topology simple. When a new complex problem arises, build a new node rather than adding complexity to the graph canvas.
 
-The backend is a single Rust binary (Salvo HTTP server) that serves a browser-based editor (Vite + TypeScript + Litegraph.js) and exposes REST + WebSocket APIs.
+The backend is a single Rust binary (Salvo HTTP server) that serves a browser-based editor (Vite + TypeScript + Litegraph.js) and exposes REST + WebSocket APIs. The Brain tool-call loop engine (`zihuan_agent`) is shared by both graph nodes and service-hosted agents.
 
 For crate layout, build/run/test commands, infra setup, schema migration, and module-specific rules, see [document/dev-guides/node-system.md](document/dev-guides/node-system.md), [document/dev-guides/code-conventions.md](document/dev-guides/code-conventions.md), and [document/dev-guides/ui-architecture.md](document/dev-guides/ui-architecture.md). Always consult `document/` before writing or modifying code that touches an unfamiliar area — do not infer file paths or APIs from this file.
 

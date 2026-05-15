@@ -23,11 +23,12 @@ use zihuan_graph_engine::object_storage::S3Ref;
 use crate::resource_resolver::find_connection;
 use crate::rustfs::build_s3_ref as build_s3_direct_ref;
 use crate::weaviate::build_weaviate_ref as build_weaviate_direct_ref;
-use crate::{load_connections, ConnectionKind};
+use crate::{
+    load_connections, ConnectionKind, DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS,
+    DEFAULT_MYSQL_MAX_CONNECTIONS,
+};
 
 const STORAGE_INSTANCE_IDLE_TIMEOUT_SECS: i64 = 15 * 60;
-const DEFAULT_MYSQL_MAX_CONNECTIONS: u32 = 10;
-const DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_WEAVIATE_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Clone)]
@@ -50,6 +51,13 @@ impl StorageRuntimePayload {
             Self::MySql(value) => StorageRuntimeHandle::MySql(value.clone()),
             Self::S3(value) => StorageRuntimeHandle::S3(value.clone()),
             Self::Weaviate(value) => StorageRuntimeHandle::Weaviate(value.clone()),
+        }
+    }
+
+    fn has_external_mysql_refs(&self) -> bool {
+        match self {
+            Self::MySql(value) => Arc::strong_count(value) > 1,
+            Self::S3(_) | Self::Weaviate(_) => false,
         }
     }
 }
@@ -125,12 +133,28 @@ impl RuntimeStorageConnectionManager {
         let started_at = Utc::now();
         let (payload, kind, runtime) = match &connection.kind {
             ConnectionKind::Mysql(mysql) => {
+                let max_connections = if mysql.max_connections == 0 {
+                    DEFAULT_MYSQL_MAX_CONNECTIONS
+                } else {
+                    mysql.max_connections
+                };
+                let acquire_timeout_secs = if mysql.acquire_timeout_secs == 0 {
+                    DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS
+                } else {
+                    mysql.acquire_timeout_secs
+                };
+                info!(
+                    "[storage_instance_manager] creating mysql pool config_id={} max_connections={} acquire_timeout={}s",
+                    connection.canonical_config_id(),
+                    max_connections,
+                    acquire_timeout_secs
+                );
                 let runtime = Arc::new(tokio::runtime::Runtime::new()?);
                 let handle = runtime.handle().clone();
                 let pool_options = MySqlPoolOptions::new()
-                    .max_connections(DEFAULT_MYSQL_MAX_CONNECTIONS)
+                    .max_connections(max_connections)
                     .min_connections(1)
-                    .acquire_timeout(Duration::from_secs(DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS));
+                    .acquire_timeout(Duration::from_secs(acquire_timeout_secs));
                 let pool = if tokio::runtime::Handle::try_current().is_ok() {
                     tokio::task::block_in_place(|| {
                         handle.block_on(pool_options.connect(&mysql.url))
@@ -306,17 +330,19 @@ impl ConnectionManagerTrait for RuntimeStorageConnectionManager {
             for item in bucket.drain(..) {
                 let stale = (now - item.summary.last_used_at).num_seconds()
                     >= STORAGE_INSTANCE_IDLE_TIMEOUT_SECS;
-                if enabled && !stale {
+                let externally_held_mysql = item.payload.has_external_mysql_refs();
+                if enabled && (!stale || externally_held_mysql) {
                     retained.push(item);
                 } else {
                     info!(
-                        "[storage_instance_manager] destroying idle runtime instance_id={} config_id={} kind={} name='{}' enabled={} stale={}",
+                        "[storage_instance_manager] destroying idle runtime instance_id={} config_id={} kind={} name='{}' enabled={} stale={} externally_held_mysql={}",
                         item.summary.instance_id,
                         item.summary.config_id,
                         item.summary.kind,
                         item.summary.name,
                         enabled,
-                        stale
+                        stale,
+                        externally_held_mysql
                     );
                     removed += 1;
                 }

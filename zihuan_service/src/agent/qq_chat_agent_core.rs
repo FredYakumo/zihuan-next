@@ -3010,13 +3010,16 @@ impl QqChatAgent {
             IntentCategory::SolveComplexProblem | IntentCategory::WriteCode => math_programming_llm,
             _ => llm,
         };
-        let user_msg = build_user_message(
+        let mut user_msg = build_user_message(
             &inference_event,
             &bot_id,
             bot_name,
             selected_llm.supports_multimodal_input(),
             s3_ref,
         );
+        if let Some(api_style) = selected_llm.api_style() {
+            user_msg.api_style = Some(api_style.to_string());
+        }
 
         let history_key =
             conversation_history_key(&bot_id, sender_id, is_group, inference_event.group_id);
@@ -3082,7 +3085,11 @@ impl QqChatAgent {
             )?;
             history.push(user_msg);
             if let Some(assistant_text) = visible_assistant_history_text {
-                history.push(OpenAIMessage::assistant_text(assistant_text));
+                let mut assistant_msg = OpenAIMessage::assistant_text(assistant_text);
+                if let Some(api_style) = selected_llm.api_style() {
+                    assistant_msg.api_style = Some(api_style.to_string());
+                }
+                history.push(assistant_msg);
             }
             save_history(cache, &history_key, history);
             info!("{LOG_PREFIX} direct reply path hit=true");
@@ -3376,7 +3383,11 @@ impl QqChatAgent {
 
         history.push(user_msg);
         if let Some(ref assistant_text) = visible_assistant_history_text {
-            history.push(OpenAIMessage::assistant_text(assistant_text.clone()));
+            let mut assistant_msg = OpenAIMessage::assistant_text(assistant_text.clone());
+            if let Some(api_style) = selected_llm.api_style() {
+                assistant_msg.api_style = Some(api_style.to_string());
+            }
+            history.push(assistant_msg);
         }
         save_history(cache, &history_key, history);
 

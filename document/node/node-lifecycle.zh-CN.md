@@ -152,7 +152,7 @@ on_graph_start -> apply_inline_config -> execute
 
 这些职责位于 Rust 服务运行时，尤其是：
 
-- `src/service/agent_manager.rs`
+- `zihuan_service/src/agent/mod.rs`（`AgentManager`）
 
 服务运行时可以反过来调用图引擎，执行同步工具子图或工作流子图。
 

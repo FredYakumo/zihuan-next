@@ -9,7 +9,7 @@
 启动顺序：
 
 1. 通过 `src/log_forwarder.rs` 初始化全局日志
-2. 通过 `src/init_registry.rs` 中的 `init_node_registry_with_extensions()` 初始化节点注册表
+2. 通过 `src/init_registry.rs` 中的 `init_node_registry()` 初始化节点注册表
 3. 解析 `--host` 和 `--port`
 4. 创建 `AppState`
 5. 创建 WebSocket 广播通道

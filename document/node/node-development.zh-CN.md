@@ -83,7 +83,7 @@ pub fn new(id: String, name: String) -> Self
 ### 7. 注册节点
 
 - `zihuan_graph_engine` 中的节点 → `zihuan_graph_engine/src/registry.rs`
-- `storage_handler` / `ims_bot_adapter` / `model_inference` / `zihuan_service` 中的节点 → 在所属 crate 的 `init_node_registry()` 中调用 `register_node!`，该函数由 `src/init_registry.rs` 统一引入
+- `storage_handler` / `ims_bot_adapter` / `model_inference` / `zihuan_service` 中的节点 → 在所属 crate 的 `init_node_registry()` 中调用 `register_node!`，该函数由 `src/init_registry.rs` 通过 `init_node_registry_with_extensions()` 统一引入
 
 ### 8. 验证行为
 

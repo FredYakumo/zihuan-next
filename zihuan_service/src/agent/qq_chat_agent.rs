@@ -820,11 +820,17 @@ pub async fn spawn(
             let pool = pool_for_handler.clone();
             Box::pin(async move {
                 let time = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-                pool.submit(move || {
-                    if let Err(err) = service.handle_event(&event, &adapter, &time) {
-                        error!("[service][qq_agent] failed to handle message event: {err}");
-                    }
-                });
+                let submit_result = tokio::task::spawn_blocking(move || {
+                    pool.submit(move || {
+                        if let Err(err) = service.handle_event(&event, &adapter, &time) {
+                            error!("[service][qq_agent] failed to handle message event: {err}");
+                        }
+                    });
+                })
+                .await;
+                if let Err(err) = submit_result {
+                    error!("[service][qq_agent] failed to submit message event task: {err}");
+                }
             })
         });
         adapter.lock().await.register_event_handler(handler);

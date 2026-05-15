@@ -11,7 +11,7 @@ use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::Result;
 use zihuan_core::url_utils::pct_encode;
 
-const DEFAULT_MAX_CONNECTIONS: u32 = 10;
+const DEFAULT_MAX_CONNECTIONS: u32 = 32;
 const DEFAULT_ACQUIRE_TIMEOUT_SECS: u64 = 30;
 
 /// MySQL node - builds a persistent connection pool from input ports and
@@ -174,7 +174,7 @@ impl Node for MySqlNode {
         port! { name = "mysql_user", ty = String, desc = "MySQL用户名" },
         port! { name = "mysql_password", ty = String, desc = "MySQL密码" },
         port! { name = "mysql_database", ty = String, desc = "MySQL数据库名" },
-        port! { name = "max_connections", ty = Integer, desc = "连接池最大连接数 (默认: 10)", optional },
+        port! { name = "max_connections", ty = Integer, desc = "连接池最大连接数 (默认: 32)", optional },
         port! { name = "acquire_timeout_secs", ty = Integer, desc = "获取连接超时秒数 (默认: 30)", optional },
         port! { name = "reconnect_max_attempts", ty = Integer, desc = "最大重连次数 (默认: 3)", optional },
         port! { name = "reconnect_interval_secs", ty = Integer, desc = "重连间隔秒数 (默认: 60)", optional },

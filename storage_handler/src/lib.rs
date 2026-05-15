@@ -63,9 +63,16 @@ pub enum ConnectionKind {
     Tavily(TavilyConnection),
 }
 
+pub const DEFAULT_MYSQL_MAX_CONNECTIONS: u32 = 32;
+pub const DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS: u64 = 30;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MysqlConnection {
     pub url: String,
+    #[serde(default = "default_mysql_max_connections")]
+    pub max_connections: u32,
+    #[serde(default = "default_mysql_acquire_timeout_secs")]
+    pub acquire_timeout_secs: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,6 +111,14 @@ fn default_tavily_timeout_secs() -> u64 {
     30
 }
 
+fn default_mysql_max_connections() -> u32 {
+    DEFAULT_MYSQL_MAX_CONNECTIONS
+}
+
+fn default_mysql_acquire_timeout_secs() -> u64 {
+    DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS
+}
+
 impl ConnectionConfig {
     pub fn canonical_config_id(&self) -> &str {
         if self.config_id.trim().is_empty() {
@@ -115,6 +130,11 @@ impl ConnectionConfig {
 
     pub fn is_valid(&self) -> bool {
         match &self.kind {
+            ConnectionKind::Mysql(mysql) => {
+                !mysql.url.trim().is_empty()
+                    && mysql.max_connections > 0
+                    && mysql.acquire_timeout_secs > 0
+            }
             ConnectionKind::Tavily(tavily) => !tavily.api_token.trim().is_empty(),
             _ => true,
         }
@@ -159,6 +179,21 @@ impl ConfigRecord for ConnectionConfig {
             return Err(zihuan_core::string_error!(
                 "connection name must not be empty"
             ));
+        }
+        if let ConnectionKind::Mysql(mysql) = &self.kind {
+            if mysql.url.trim().is_empty() {
+                return Err(zihuan_core::string_error!("mysql.url must not be empty"));
+            }
+            if mysql.max_connections == 0 {
+                return Err(zihuan_core::string_error!(
+                    "mysql.max_connections must be greater than 0"
+                ));
+            }
+            if mysql.acquire_timeout_secs == 0 {
+                return Err(zihuan_core::string_error!(
+                    "mysql.acquire_timeout_secs must be greater than 0"
+                ));
+            }
         }
         Ok(())
     }

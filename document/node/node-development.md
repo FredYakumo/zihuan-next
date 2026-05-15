@@ -83,7 +83,7 @@ Add it to the parent `mod.rs`.
 ### 7. Register the node
 
 - `zihuan_graph_engine` nodes → `zihuan_graph_engine/src/registry.rs`
-- `storage_handler` / `ims_bot_adapter` / `model_inference` / `zihuan_service` nodes → add `register_node!` to the owning crate's `init_node_registry()`, which is called from `src/init_registry.rs`
+- `storage_handler` / `ims_bot_adapter` / `model_inference` / `zihuan_service` nodes → add `register_node!` to the owning crate's `init_node_registry()`, which is called from `src/init_registry.rs` via `init_node_registry_with_extensions()`
 
 ### 8. Validate behavior
 

@@ -43,25 +43,6 @@ Typical examples:
 - database/object-storage reference nodes
 - persistence nodes
 
----
-
-## Removed Execution Model
-
-The graph runtime no longer supports `EventProducer`.
-
-Removed concepts:
-
-- `on_start`
-- `on_update`
-- `on_cleanup`
-- `set_stop_flag` on nodes
-- graph-owned message/event subscription loops
-- graph-owned timers/pollers as a first-class execution model
-
-Historical docs or compatibility helpers may still mention them. New code should not rely on them.
-
----
-
 ## Where Long-Lived Behavior Moved
 
 If you need any of the following:
@@ -76,7 +57,7 @@ that now belongs to the **service runtime**, not the node graph.
 
 Relevant code:
 
-- `src/service/agent_manager.rs`
+- `zihuan_service/src/agent/mod.rs` (`AgentManager`)
 - `src/system_config/`
 - `src/api/system_config.rs`
 

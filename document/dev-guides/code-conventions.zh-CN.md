@@ -56,18 +56,20 @@
 - `ims_bot_adapter::init_node_registry()`
 - `model_inference::init_node_registry()`
 - `zihuan_service::init_node_registry()`
-- 合并引导：通过 `init_node_registry_with_extensions()` 在 `src/init_registry.rs` 中统一注册
+- 合并引导：`src/init_registry.rs` 调用 `init_node_registry_with_extensions()` 统一注册
 
 ## 包职责（高层）
 
 | 包 | 职责 |
 |---|---|
 | `zihuan_core` | 核心类型 |
+| `zihuan_agent` | Brain 工具调用循环引擎 |
 | `zihuan_graph_engine` | 节点图运行时 |
-| `model_inference` | LLM、Embedding、Agent 配置模型、AI 节点 |
+| `model_inference` | LLM、Embedding、AI 节点 |
 | `storage_handler` | 连接型节点与存储辅助 |
 | `ims_bot_adapter` | IMS 适配集成 |
 | `zihuan_service` | 长生命周期服务与任务托管、Brain/Agent 节点 |
+| `node_macros` | 端口定义的过程宏 |
 | `src/api` | Web API 与任务编排 |
 | `webui/` | Web UI |
 

@@ -99,6 +99,7 @@ pub fn parse_chat_completions_api_message(api_resp: &Value) -> Option<OpenAIMess
 
     Some(OpenAIMessage {
         role,
+        api_style: None,
         content,
         reasoning_content,
         tool_calls,
@@ -187,6 +188,7 @@ pub fn parse_responses_api_message(api_resp: &Value) -> Option<OpenAIMessage> {
 
     Some(OpenAIMessage {
         role,
+        api_style: None,
         content: if content.is_empty() {
             None
         } else {
@@ -414,6 +416,7 @@ pub fn parse_chat_completions_sse_message(response_text: &str) -> Option<OpenAIM
 
     Some(OpenAIMessage {
         role: role.unwrap_or_else(|| str_to_role("assistant")),
+        api_style: None,
         content: if content.is_empty() {
             None
         } else {
@@ -710,10 +713,7 @@ fn serialize_responses_message_content(
     content: Option<&MessageContent>,
     request_format: OpenAIRequestFormat,
 ) -> Vec<Value> {
-    let text_type = match role {
-        MessageRole::Assistant => "output_text",
-        MessageRole::System | MessageRole::User | MessageRole::Tool => "input_text",
-    };
+    let text_type = "input_text";
 
     match content {
         None => Vec::new(),
@@ -731,7 +731,7 @@ fn serialize_responses_message_content(
                 ContentPart::ImageUrl { image_url } => {
                     if matches!(role, MessageRole::Assistant) {
                         json!({
-                            "type": "output_text",
+                            "type": text_type,
                             "text": format!("[image omitted] {}", image_url.as_url()),
                         })
                     } else if request_format
@@ -889,6 +889,7 @@ pub fn parse_responses_sse_message(response_text: &str) -> Option<OpenAIMessage>
     } else {
         Some(OpenAIMessage {
             role: str_to_role("assistant"),
+            api_style: None,
             content: if content.is_empty() {
                 None
             } else {
@@ -1053,6 +1054,7 @@ pub async fn parse_chat_completions_sse_stream(
 
     OpenAIMessage {
         role: role.unwrap_or_else(|| str_to_role("assistant")),
+        api_style: None,
         content: if content.is_empty() {
             None
         } else {
@@ -1221,6 +1223,7 @@ pub async fn parse_responses_sse_stream(
 
     OpenAIMessage {
         role: str_to_role("assistant"),
+        api_style: None,
         content: if content.is_empty() {
             None
         } else {

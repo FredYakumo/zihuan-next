@@ -10,7 +10,8 @@ Related runtime paths:
 
 - `ims_bot_adapter/src/adapter.rs`
 - `ims_bot_adapter/src/extract_message_from_event.rs`
-- `model_inference/src/agent/qq_chat_agent.rs`
+- `zihuan_service/src/agent/qq_chat_agent.rs`
+- `zihuan_service/src/agent/qq_chat_agent_core.rs`
 
 ## Role In The System
 
@@ -382,7 +383,7 @@ This readable rendering is the basis for:
 
 ### QQ-agent inference expansion
 
-`model_inference/src/agent/qq_chat_agent.rs` adds a further agent-only step:
+`zihuan_service/src/agent/qq_chat_agent_core.rs` adds a further agent-only step:
 
 - `expand_event_for_inference()` clones the incoming `MessageEvent`
 - `expand_messages_for_inference()` recursively replaces reply/forward shells with explicit text boundaries and inner content
@@ -398,7 +399,7 @@ This is important because the agent should reason over the fully expanded refere
 Both of these paths now understand hydrated forwards:
 
 - `ims_bot_adapter/src/extract_message_from_event.rs`
-- `model_inference/src/agent/qq_chat_agent.rs`
+- `zihuan_service/src/agent/qq_chat_agent_core.rs`
 
 In both files:
 
@@ -410,13 +411,13 @@ If the selected LLM reports `supports_multimodal_input = false`, the agent still
 
 ## Nested Forward Support
 
-Nested forward messages are supported end-to-end for new incoming messages:
+Nested forward messages are supported end-to-end in the runtime message handling path:
 
 - CQ-code parsing can produce inner `Message::Forward` segments
 - adapter hydration recursively expands nested forwards
 - image caching recurses into nested forward nodes
 - agent inference expansion recurses into nested forwards before calling the brain/LLM
-- MySQL persistence stores the fully hydrated tree in `raw_message_json`
+- MySQL `MessageEvent` persistence stores the fully hydrated tree in `raw_message_json` when that persistence path is explicitly used
 
 The practical limitation is not recursion depth in the current implementation, but whether upstream NapCat payloads remain parseable by the adapter's lenient value-level parser.
 
@@ -486,7 +487,8 @@ If upstream input starts including those types, you should first define:
 - `zihuan_core/src/ims_bot_adapter/models/event_model.rs`
 - `ims_bot_adapter/src/adapter.rs`
 - `ims_bot_adapter/src/extract_message_from_event.rs`
-- `model_inference/src/agent/qq_chat_agent.rs`
+- `zihuan_service/src/agent/qq_chat_agent.rs`
+- `zihuan_service/src/agent/qq_chat_agent_core.rs`
 - `zihuan_graph_engine/src/message_restore.rs`
 
 ## Programmatic Sending Helpers

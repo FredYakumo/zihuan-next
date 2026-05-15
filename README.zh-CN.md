@@ -18,9 +18,10 @@
 当前架构分层如下：
 
 - `zihuan_graph_engine`：按 DAG 顺序执行**同步**节点图。
+- `zihuan_agent`：提供 Brain 工具调用循环引擎，供图节点和服务化 Agent 共用。
 - `zihuan_service`：托管 QQ Chat Agent、HTTP Stream Agent 等长期运行服务。
-- `model_inference`：提供 LLM、Brain/tool、embedding、检索相关节点与 Agent 辅助逻辑。
-- `storage_handler`：提供 MySQL、Redis、RustFS、Weaviate 等连接配置与持久化节点。
+- `model_inference`：提供 LLM、Brain/tool、embedding、检索相关节点。
+- `storage_handler`：提供 MySQL、Redis、RustFS、Weaviate、Tavily 等连接配置与持久化节点。
 - `webui/`：浏览器端 UI，`/` 为 Vue 3 管理界面，`/editor` 为基于 LiteGraph 的节点图编辑器。
 
 ## 当前能力
@@ -54,13 +55,16 @@
 
 | 包 | 职责 |
 |---|---|
-| `zihuan_core` | 通用错误类型、系统配置、适配器模型、LLM 模型类型 |
+| `zihuan_core` | 通用错误类型、LLM 模型类型、适配器模型、系统配置、Agent 配置 |
+| `zihuan_agent` | Brain 工具调用循环引擎（`Brain`、`BrainTool`） |
 | `zihuan_graph_engine` | 图运行时、节点注册表、图 JSON 加载、基础节点 |
-| `model_inference` | LLM 节点、Brain/tool 运行时、embedding、RAG、Agent 配置模型 |
-| `storage_handler` | 连接配置，以及 Redis/MySQL/RustFS/Weaviate 节点与辅助逻辑 |
+| `model_inference` | LLM 节点、Brain/tool 运行时、embedding、RAG |
+| `storage_handler` | 连接配置，以及 Redis/MySQL/RustFS/Weaviate/Tavily 节点与辅助逻辑 |
 | `ims_bot_adapter` | QQ/IMS 适配器客户端与相关节点 |
-| `zihuan_service` | 长期运行 Agent 的服务运行时与定时任务支持 |
+| `zihuan_service` | 长期运行 Agent 的服务运行时、Agent 节点与定时任务支持 |
 | `zihuan_graph_cli` | 终端图执行器 |
+| `node_macros` | `node_input!` / `node_output!` 端口定义的过程宏 |
+| `general_wheel_cpp` | 向量相似度计算的 C++ FFI |
 | `webui/` | Vue 3 管理界面与 `/editor` 图编辑器 |
 | `src/` | 主 Salvo 服务二进制与 HTTP/WebSocket API |
 

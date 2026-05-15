@@ -17,9 +17,10 @@ The graph focuses on **typed data flow**. Long-lived agent behavior is hosted by
 At the architecture level:
 
 - `zihuan_graph_engine` executes graphs **synchronously** in DAG order.
+- `zihuan_agent` provides the Brain tool-call loop engine shared by graph nodes and service-hosted agents.
 - `zihuan_service` hosts long-lived agents such as QQ chat agents and HTTP stream agents.
-- `model_inference` provides LLM, Brain/tool, embedding, and retrieval-related nodes and agent helpers.
-- `storage_handler` provides connection-backed nodes for MySQL, Redis, RustFS, Weaviate, and related persistence utilities.
+- `model_inference` provides LLM, Brain/tool, embedding, and retrieval-related nodes.
+- `storage_handler` provides connection-backed nodes for MySQL, Redis, RustFS, Weaviate, Tavily, and related persistence utilities.
 - `webui/` contains the browser UI: Vue 3 admin pages at `/` and the LiteGraph-based editor at `/editor`.
 
 ## Current Capabilities
@@ -53,13 +54,16 @@ At the architecture level:
 
 | Package | Responsibility |
 |---|---|
-| `zihuan_core` | Shared error types, system config, adapter models, LLM model types |
+| `zihuan_core` | Shared error types, LLM model types, adapter models, system config, agent config |
+| `zihuan_agent` | Brain tool-call loop engine (`Brain`, `BrainTool`) |
 | `zihuan_graph_engine` | Graph runtime, node registry, graph JSON loading, base nodes |
-| `model_inference` | LLM nodes, Brain/tool runtime, embeddings, RAG helpers, agent config models |
-| `storage_handler` | Connection configs plus Redis/MySQL/RustFS/Weaviate nodes and helpers |
+| `model_inference` | LLM nodes, Brain/tool runtime, embeddings, RAG helpers |
+| `storage_handler` | Connection configs plus Redis/MySQL/RustFS/Weaviate/Tavily nodes and helpers |
 | `ims_bot_adapter` | QQ/IMS adapter client and adapter-facing nodes |
-| `zihuan_service` | Long-lived agent runtime and scheduling support |
+| `zihuan_service` | Long-lived agent runtime, agent nodes, and scheduling support |
 | `zihuan_graph_cli` | Terminal graph executor |
+| `node_macros` | Procedural macros for `node_input!` / `node_output!` port definitions |
+| `general_wheel_cpp` | C++ FFI for vector similarity operations |
 | `webui/` | Vue 3 admin UI and `/editor` graph editor |
 | `src/` | Main Salvo server binary and HTTP/WebSocket API |
 

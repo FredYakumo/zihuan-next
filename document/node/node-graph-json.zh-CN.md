@@ -244,14 +244,24 @@ let has_errors = issues.iter().any(|i| i.severity == "error") || !cycles.is_empt
 | `"Sender"` | 包含好友/群聊路由信息的 QQ 回复目标 |
 | `"OpenAIMessage"` | LLM 聊天消息 `{role, content, tool_calls}` |
 | `"QQMessage"` | QQ 平台消息段 |
+| `"Image"` | 图片数据，包含 URL/文件定位符 |
+| `"ContentPart"` | 多模态内容片段（文本或图片） |
 | `"FunctionTools"` | LLM 函数调用工具定义 |
 | `"BotAdapterRef"` | 共享机器人 WebSocket 连接 |
 | `"S3Ref"` | 对象存储配置 + 上传客户端 |
 | `"RedisRef"` | Redis 配置 + 连接管理器 |
 | `"MySqlRef"` | MySQL 配置 + 连接池 |
+| `"WeaviateRef"` | Weaviate 向量数据库配置 + 客户端 |
+| `"TavilyRef"` | Tavily 搜索配置 + 客户端 |
+| `"SessionStateRef"` | 会话状态引用 |
 | `"OpenAIMessageSessionCacheRef"` | 每发送者消息历史缓存 |
 | `"LLModel"` | 语言模型配置 |
+| `"EmbeddingModel"` | Embedding 模型配置 |
 | `"LoopControlRef"` | 循环中断信号 |
+
+### 自定义类型
+
+任意字符串值都会被接受并生成 `DataType::Custom(String)`。这些类型不经过已知集合校验，用于前向兼容或用户自定义扩展。
 
 ### 向后兼容别名
 
