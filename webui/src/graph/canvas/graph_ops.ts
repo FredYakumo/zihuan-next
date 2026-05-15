@@ -555,7 +555,15 @@ export class CanvasGraphOps {
           this.canvas.onHistoryChange?.();
         } catch {}
       })
-      .catch((e) => console.error("[Canvas] deleteNode failed:", e));
+      .catch(async (e) => {
+        console.error("[Canvas] deleteNode failed:", e);
+        if (this.canvas.state.sessionId !== sessionId) return;
+        try {
+          await this.loadSession(sessionId);
+        } catch (reloadError) {
+          console.error("[Canvas] reload after deleteNode failure failed:", reloadError);
+        }
+      });
     this.trackGraphMutation(pending);
   }
 
