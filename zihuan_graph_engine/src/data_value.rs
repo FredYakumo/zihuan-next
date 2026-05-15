@@ -12,6 +12,7 @@ use tokio::task::block_in_place;
 pub use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
 use zihuan_core::ims_bot_adapter::models::message::ImageMessage;
+use zihuan_core::ims_bot_adapter::models::sender_model::Sender as GraphSender;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::ContentPart;
 pub use zihuan_core::rag::{TavilyImage, TavilyRef};
@@ -650,6 +651,7 @@ pub enum DataType {
     Vec(Box<DataType>),
     Vector,
     MessageEvent,
+    Sender,
     OpenAIMessage,
     QQMessage,
     Image,
@@ -694,6 +696,7 @@ impl fmt::Display for DataType {
             DataType::Vec(inner) => write!(f, "Vec<{}>", inner),
             DataType::Vector => write!(f, "Vector"),
             DataType::MessageEvent => write!(f, "MessageEvent"),
+            DataType::Sender => write!(f, "Sender"),
             DataType::OpenAIMessage => write!(f, "OpenAIMessage"),
             DataType::QQMessage => write!(f, "QQMessage"),
             DataType::Image => write!(f, "Image"),
@@ -740,6 +743,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "Binary" => Ok(DataType::Binary),
                     "Vector" => Ok(DataType::Vector),
                     "MessageEvent" => Ok(DataType::MessageEvent),
+                    "Sender" => Ok(DataType::Sender),
                     "OpenAIMessage" => Ok(DataType::OpenAIMessage),
                     "Message" => Ok(DataType::OpenAIMessage),
                     "QQMessage" => Ok(DataType::QQMessage),
@@ -771,6 +775,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                             "Vector",
                             "Vec",
                             "MessageEvent",
+                            "Sender",
                             "OpenAIMessage",
                             "Message",
                             "QQMessage",
@@ -841,6 +846,7 @@ pub enum DataValue {
     Vec(Box<DataType>, std::vec::Vec<DataValue>),
     Vector(Vec<f32>),
     MessageEvent(MessageEvent),
+    Sender(GraphSender),
     OpenAIMessage(zihuan_core::llm::OpenAIMessage),
     QQMessage(zihuan_core::ims_bot_adapter::models::message::Message),
     Image(ImageData),
@@ -871,6 +877,7 @@ impl DataValue {
             DataValue::Binary(_) => DataType::Binary,
             DataValue::Vec(ty, _) => DataType::Vec(ty.clone()),
             DataValue::Vector(_) => DataType::Vector,
+            DataValue::Sender(_) => DataType::Sender,
             DataValue::OpenAIMessage(_) => DataType::OpenAIMessage,
             DataValue::QQMessage(_) => DataType::QQMessage,
             DataValue::Image(_) => DataType::Image,
@@ -949,6 +956,7 @@ impl DataValue {
                     "is_group_message": event.is_group_message,
                 })
             }
+            DataValue::Sender(sender) => serde_json::to_value(sender).unwrap_or(Value::Null),
             DataValue::FunctionTools(tools) => {
                 let tool_defs: Vec<Value> = tools.iter().map(|t| t.get_json()).collect();
                 Value::Array(tool_defs)
@@ -1022,6 +1030,7 @@ impl fmt::Debug for DataValue {
             DataValue::Image(value) => f.debug_tuple("Image").field(value).finish(),
             DataValue::ContentPart(value) => f.debug_tuple("ContentPart").field(value).finish(),
             DataValue::MessageEvent(value) => f.debug_tuple("MessageEvent").field(value).finish(),
+            DataValue::Sender(value) => f.debug_tuple("Sender").field(value).finish(),
             DataValue::FunctionTools(value) => f.debug_tuple("FunctionTools").field(value).finish(),
             DataValue::BotAdapterRef(_) => f.debug_tuple("BotAdapterRef").finish(),
             DataValue::S3Ref(config) => f.debug_tuple("S3Ref").field(config).finish(),

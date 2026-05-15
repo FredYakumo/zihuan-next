@@ -87,6 +87,7 @@ pub fn data_type_to_json_schema_type(data_type: &DataType) -> &'static str {
         DataType::Vec(_) | DataType::Vector => "array",
         DataType::Json
         | DataType::MessageEvent
+        | DataType::Sender
         | DataType::OpenAIMessage
         | DataType::QQMessage
         | DataType::Image

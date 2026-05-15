@@ -331,14 +331,25 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
                     serde_json::from_value::<zihuan_core::llm::MessageContent>(other.clone()).ok()
                 }
             };
+            let api_style = map
+                .get("api_style")
+                .and_then(|value| value.as_str())
+                .map(ToOwned::to_owned);
             Some(DataValue::OpenAIMessage(zihuan_core::llm::OpenAIMessage {
                 role,
+                api_style,
                 content,
                 reasoning_content: None,
                 tool_calls: Vec::new(),
                 tool_call_id: None,
             }))
         }
+
+        (_, DataType::Sender) => serde_json::from_value::<
+            zihuan_core::ims_bot_adapter::models::sender_model::Sender,
+        >(json.clone())
+        .ok()
+        .map(DataValue::Sender),
 
         // Single QQ Message from a JSON object: {"type": "text", "data": {"text": "..."}}
         (_, DataType::QQMessage) => serde_json::from_value::<

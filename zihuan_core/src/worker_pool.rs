@@ -2,7 +2,7 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
-use log::warn;
+use log::error;
 
 type Task = Box<dyn FnOnce() + Send + 'static>;
 
@@ -12,8 +12,8 @@ struct WorkerPoolInner {
 }
 
 /// A fixed-size OS thread pool. Tasks submitted via [`WorkerPool::submit`] are executed
-/// concurrently up to `num_threads`. When the queue is full the task is dropped with a
-/// warning instead of blocking the caller.
+/// concurrently up to `num_threads`. When the queue is full, submit waits until
+/// there is capacity.
 ///
 /// Cheap to clone — all clones share the same underlying pool.
 #[derive(Clone)]
@@ -43,19 +43,25 @@ impl WorkerPool {
         }
     }
 
-    /// Submit a task. Returns immediately. If the queue is full the task is dropped.
+    /// Submit a task, blocking when the queue is full.
     pub fn submit<F: FnOnce() + Send + 'static>(&self, task: F) {
         {
             let (lock, _) = &*self.inner.active;
             *lock.lock().unwrap() += 1;
         }
-        if self.inner.sender.try_send(Box::new(task)).is_err() {
-            warn!("[worker_pool] queue full or disconnected, dropping task");
-            let (lock, cvar) = &*self.inner.active;
-            let mut count = lock.lock().unwrap();
-            *count = count.saturating_sub(1);
-            if *count == 0 {
-                cvar.notify_all();
+
+        match self.inner.sender.send(Box::new(task)) {
+            Ok(()) => {}
+            Err(mpsc::SendError(task)) => {
+                error!("[worker_pool] queue disconnected, running task inline");
+                task();
+
+                let (lock, cvar) = &*self.inner.active;
+                let mut count = lock.lock().unwrap();
+                *count = count.saturating_sub(1);
+                if *count == 0 {
+                    cvar.notify_all();
+                }
             }
         }
     }

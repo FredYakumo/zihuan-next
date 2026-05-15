@@ -478,7 +478,7 @@ export function getDisabledNodeColors(): { header: string; bg: string } {
 // ─── Per-type port/link colour helpers ────────────────────────────────────────
 
 const COMPLEX_TYPES = new Set([
-  "Json", "MessageEvent", "OpenAIMessage", "QQMessage", "FunctionTools", "LLModel",
+  "Json", "MessageEvent", "Sender", "OpenAIMessage", "QQMessage", "FunctionTools", "LLModel",
 ]);
 
 export function getPortColor(typeStr: string): string {

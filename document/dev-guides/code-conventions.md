@@ -71,18 +71,20 @@ Current registry entry points:
 - `ims_bot_adapter::init_node_registry()`
 - `model_inference::init_node_registry()`
 - `zihuan_service::init_node_registry()`
-- combined via `init_node_registry_with_extensions()` in `src/init_registry.rs`
+- combined via `src/init_registry.rs` which calls `init_node_registry_with_extensions()`
 
 ## High-Level Package Roles
 
 | Package | Role |
 |---|---|
 | `zihuan_core` | Core types |
+| `zihuan_agent` | Brain tool-call loop engine |
 | `zihuan_graph_engine` | Node-graph runtime |
-| `model_inference` | LLM, embeddings, agent config models, AI nodes |
+| `model_inference` | LLM, embeddings, AI nodes |
 | `storage_handler` | Connection-backed nodes and storage helpers |
 | `ims_bot_adapter` | IMS adapter integration |
 | `zihuan_service` | Long-lived service, task hosting, Brain/agent nodes |
+| `node_macros` | Procedural macros for port definitions |
 | `src/api` | Web API and task orchestration |
 | `webui/` | Web UI |
 
@@ -103,7 +105,7 @@ use zihuan_core::error::{Error, Result};
 Prefer:
 
 - `ValidationError` for invalid graph inputs, missing bindings, or type mismatches
-- `ExecutionError` for runtime failures during work
+- `InvalidNodeInput` for node-specific input validation failures
 - regular `?` propagation for I/O and integration errors
 
 When the graph runtime wraps node failures, it already adds node ID and stage context. Avoid duplicating noisy prefixes unless they add real value.

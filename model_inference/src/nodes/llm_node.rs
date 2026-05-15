@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::system_config::{load_llm_refs, LlmApiStyle, LlmServiceConfig, ModelRefSpec};
 use crate::llm_api::LLMAPI;
+use crate::system_config::{load_llm_refs, LlmApiStyle, LlmServiceConfig, ModelRefSpec};
 use zihuan_core::error::Result;
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_graph_engine::{
@@ -11,7 +11,11 @@ use zihuan_graph_engine::{
 
 pub fn build_llm(config: LlmServiceConfig) -> Result<Arc<dyn LLMBase>> {
     match config.api_style {
-        LlmApiStyle::OpenAiChatCompletions | LlmApiStyle::OpenAiResponses => {
+        LlmApiStyle::OpenAiChatCompletions
+        | LlmApiStyle::OpenAiChatCompletionsTencentMultimodalCompat
+        | LlmApiStyle::OpenAiResponses
+        | LlmApiStyle::OpenAiResponsesMessageCompat
+        | LlmApiStyle::OpenAiResponsesImageUrlObjectCompat => {
             let api = LLMAPI::new(
                 config.model_name,
                 config.api_endpoint,
@@ -96,12 +100,18 @@ impl LlmNode {
 }
 
 impl Node for LlmNode {
-    fn id(&self) -> &str { &self.id }
-    fn name(&self) -> &str { &self.name }
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn name(&self) -> &str {
+        &self.name
+    }
     fn description(&self) -> Option<&str> {
         Some("选择LLM配置，输出LLModel引用供下游节点使用")
     }
-    fn input_ports(&self) -> Vec<Port> { Vec::new() }
+    fn input_ports(&self) -> Vec<Port> {
+        Vec::new()
+    }
 
     node_output![
         port! { name = "llm_model", ty = LLModel, desc = "LLM模型引用，传递给推理节点使用" },
@@ -121,7 +131,10 @@ impl Node for LlmNode {
         Ok(())
     }
 
-    fn execute(&mut self, _inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        _inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         let llm_config = self.resolve_llm_config()?;
         let llm = build_llm(llm_config)?;
         let mut outputs = HashMap::new();

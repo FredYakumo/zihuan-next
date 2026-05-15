@@ -6,12 +6,14 @@ pub mod tool_definitions;
 mod agent_text_similarity;
 mod classify_intent;
 mod qq_chat_agent_core;
+mod qq_chat_agent_inbox;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use chrono::Local;
 use log::error;
+use model_inference::system_config::{load_agents, AgentConfig, AgentType};
 use serde::Serialize;
 use storage_handler::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
@@ -20,7 +22,6 @@ use uuid::Uuid;
 use zihuan_core::error::Result;
 use zihuan_core::llm::OpenAIMessage;
 use zihuan_core::task_context::AgentTaskRuntime;
-use model_inference::system_config::{load_agents, AgentConfig, AgentType};
 
 use self::inference::{InferenceToolProvider, LoadedInferenceAgent, StaticInferenceToolProvider};
 use self::tool_definitions::build_enabled_tool_definitions;

@@ -54,8 +54,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": true,
       "position": {
-        "x": 60.0,
-        "y": 120.0
+        "x": 20.0,
+        "y": 70.0
       },
       "size": {
         "width": 220.0,
@@ -115,8 +115,8 @@
       "dynamic_input_ports": true,
       "dynamic_output_ports": false,
       "position": {
-        "x": 2240.0,
-        "y": 160.0
+        "x": 1840.0,
+        "y": 640.0
       },
       "size": {
         "width": 220.0,
@@ -166,8 +166,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 540.0,
-        "y": 0.0
+        "x": 140.0,
+        "y": 480.0
       },
       "size": {
         "width": 200.0,
@@ -219,8 +219,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 200.0,
-        "y": 370.0
+        "x": 410.0,
+        "y": 20.0
       },
       "size": {
         "width": 200.0,
@@ -281,139 +281,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 300.0,
-        "y": 620.0
-      },
-      "size": {
-        "width": 200.0,
-        "height": 120.0
-      },
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
-      "id": "3c485026-663f-416c-8c72-192b1a421304",
-      "name": "extract sender id from event",
-      "description": null,
-      "node_type": "extract_sender_id_from_event",
-      "input_ports": [
-        {
-          "name": "message_event",
-          "data_type": "MessageEvent",
-          "description": "输入的消息事件",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "result",
-          "data_type": "String",
-          "description": "发送者的QQ号字符串",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 840.0,
-        "y": 510.0
-      },
-      "size": {
-        "width": 200.0,
-        "height": 120.0
-      },
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
-      "id": "3f656de1-8cf3-4b3b-bce5-f7826ae5f9fe",
-      "name": "extract group id from event",
-      "description": null,
-      "node_type": "extract_group_id_from_event",
-      "input_ports": [
-        {
-          "name": "message_event",
-          "data_type": "MessageEvent",
-          "description": "输入的消息事件",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "result",
-          "data_type": "String",
-          "description": "群号字符串",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 850.0,
-        "y": 700.0
-      },
-      "size": {
-        "width": 200.0,
-        "height": 120.0
-      },
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
-      "id": "50f8d8e7-b70c-441b-86f6-c878deebe66b",
-      "name": "message event type filter",
-      "description": null,
-      "node_type": "message_event_type_filter",
-      "input_ports": [
-        {
-          "name": "message_event",
-          "data_type": "MessageEvent",
-          "description": "输入的消息事件",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "filter_type",
-          "data_type": "String",
-          "description": "过滤类型：private（好友消息）或 group（群组消息）",
-          "required": false,
-          "hidden": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "true_event",
-          "data_type": "MessageEvent",
-          "description": "消息类型匹配时的输出",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "false_event",
-          "data_type": "MessageEvent",
-          "description": "消息类型不匹配时的输出",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 580.0,
-        "y": 610.0
+        "x": 800.0,
+        "y": 70.0
       },
       "size": {
         "width": 200.0,
@@ -451,132 +320,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1010.0,
-        "y": 350.0
-      },
-      "size": {
-        "width": 200.0,
-        "height": 120.0
-      },
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
-      "id": "8d6790b0-ea1f-47c8-a716-315b31016229",
-      "name": "send friend message",
-      "description": null,
-      "node_type": "send_friend_message",
-      "input_ports": [
-        {
-          "name": "ims_bot_adapter",
-          "data_type": "BotAdapterRef",
-          "description": "Bot适配器引用",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "target_id",
-          "data_type": "String",
-          "description": "目标好友的QQ号",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "message",
-          "data_type": {
-            "Vec": "QQMessage"
-          },
-          "description": "要发送的QQ消息段列表",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "success",
-          "data_type": "Boolean",
-          "description": "是否发送成功",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "message_id",
-          "data_type": "Integer",
-          "description": "服务器返回的消息ID",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1560.0,
-        "y": 550.0
-      },
-      "size": {
-        "width": 200.0,
-        "height": 120.0
-      },
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
-      "id": "ef66cdbf-722d-4036-b30a-447bafc1afa0",
-      "name": "send group message",
-      "description": null,
-      "node_type": "send_group_message",
-      "input_ports": [
-        {
-          "name": "ims_bot_adapter",
-          "data_type": "BotAdapterRef",
-          "description": "Bot适配器引用",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "target_id",
-          "data_type": "String",
-          "description": "目标群的群号",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "message",
-          "data_type": {
-            "Vec": "QQMessage"
-          },
-          "description": "要发送的QQ消息段列表",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "success",
-          "data_type": "Boolean",
-          "description": "是否发送成功",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "message_id",
-          "data_type": "Integer",
-          "description": "服务器返回的消息ID",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1540.0,
-        "y": 730.0
+        "x": 930.0,
+        "y": -190.0
       },
       "size": {
         "width": 200.0,
@@ -616,8 +361,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1270.0,
-        "y": 370.0
+        "x": 1200.0,
+        "y": -200.0
       },
       "size": {
         "width": 200.0,
@@ -662,8 +407,8 @@
       "dynamic_input_ports": true,
       "dynamic_output_ports": false,
       "position": {
-        "x": 740.0,
-        "y": 340.0
+        "x": 630.0,
+        "y": -190.0
       },
       "size": {
         "width": 200.0,
@@ -714,8 +459,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1330.0,
-        "y": 0.0
+        "x": 930.0,
+        "y": 480.0
       },
       "size": {
         "width": 200.0,
@@ -745,8 +490,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 800.0,
-        "y": -90.0
+        "x": 400.0,
+        "y": 390.0
       },
       "size": {
         "width": 200.0,
@@ -793,8 +538,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 740.0,
-        "y": 130.0
+        "x": 430.0,
+        "y": 640.0
       },
       "size": {
         "width": 200.0,
@@ -843,8 +588,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1720.0,
-        "y": 140.0
+        "x": 1320.0,
+        "y": 620.0
       },
       "size": {
         "width": 200.0,
@@ -884,8 +629,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1980.0,
-        "y": 140.0
+        "x": 1580.0,
+        "y": 620.0
       },
       "size": {
         "width": 200.0,
@@ -932,54 +677,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1080.0,
-        "y": 100.0
-      },
-      "size": {
-        "width": 200.0,
-        "height": 120.0
-      },
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
-      "id": "da83a730-ee8f-44e2-a382-4bb9879266d9",
-      "name": "and then",
-      "description": null,
-      "node_type": "and_then",
-      "input_ports": [
-        {
-          "name": "first",
-          "data_type": "Any",
-          "description": "用于串联依赖的前置输入，仅用于等待其到齐",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "second",
-          "data_type": "Any",
-          "description": "在两个输入都到齐后原样透传的值",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "output",
-          "data_type": "Any",
-          "description": "second 的原样输出",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1840.0,
-        "y": 390.0
+        "x": 680.0,
+        "y": 580.0
       },
       "size": {
         "width": 200.0,
@@ -1024,8 +723,109 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1924.4307,
-        "y": 652.5732
+        "x": 1950.0,
+        "y": 90.0
+      },
+      "size": {
+        "width": 200.0,
+        "height": 120.0
+      },
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false,
+      "disabled": false
+    },
+    {
+      "id": "25ffc278-425f-4ca2-a479-2e6745476fd7",
+      "name": "extract sender from event",
+      "description": null,
+      "node_type": "extract_sender_from_event",
+      "input_ports": [
+        {
+          "name": "message_event",
+          "data_type": "MessageEvent",
+          "description": "输入的消息事件",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "result",
+          "data_type": "Sender",
+          "description": "可用于发送消息的 Sender",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 1080.0,
+        "y": 70.0
+      },
+      "size": {
+        "width": 200.0,
+        "height": 120.0
+      },
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false,
+      "disabled": false
+    },
+    {
+      "id": "651470a4-d56c-4673-bd0c-8d1a5441f823",
+      "name": "send message",
+      "description": null,
+      "node_type": "send_message",
+      "input_ports": [
+        {
+          "name": "ims_bot_adapter",
+          "data_type": "BotAdapterRef",
+          "description": "Bot适配器引用",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "sender",
+          "data_type": "Sender",
+          "description": "消息目标 Sender",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "message",
+          "data_type": {
+            "Vec": "QQMessage"
+          },
+          "description": "要发送的QQ消息段列表",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "success",
+          "data_type": "Boolean",
+          "description": "是否发送成功",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "message_id",
+          "data_type": "Integer",
+          "description": "服务器返回的消息ID",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 1680.0,
+        "y": 90.0
       },
       "size": {
         "width": 200.0,
@@ -1052,70 +852,16 @@
       "to_port": "condition"
     },
     {
-      "from_node_id": "50f8d8e7-b70c-441b-86f6-c878deebe66b",
-      "from_port": "true_event",
-      "to_node_id": "3c485026-663f-416c-8c72-192b1a421304",
-      "to_port": "message_event"
-    },
-    {
-      "from_node_id": "50f8d8e7-b70c-441b-86f6-c878deebe66b",
-      "from_port": "false_event",
-      "to_node_id": "3f656de1-8cf3-4b3b-bce5-f7826ae5f9fe",
-      "to_port": "message_event"
-    },
-    {
       "from_node_id": "__graph_inputs__",
       "from_port": "message_event",
       "to_node_id": "310e58e7-b875-4a00-9fad-caccf531757e",
       "to_port": "input"
     },
     {
-      "from_node_id": "__graph_inputs__",
-      "from_port": "qq_ims_bot_adapter",
-      "to_node_id": "ef66cdbf-722d-4036-b30a-447bafc1afa0",
-      "to_port": "ims_bot_adapter"
-    },
-    {
-      "from_node_id": "__graph_inputs__",
-      "from_port": "qq_ims_bot_adapter",
-      "to_node_id": "8d6790b0-ea1f-47c8-a716-315b31016229",
-      "to_port": "ims_bot_adapter"
-    },
-    {
       "from_node_id": "2622129c-bc6c-453b-9d1a-877235578728",
       "from_port": "result",
       "to_node_id": "53230963-8bd1-4a9f-b597-a2710247d5e6",
       "to_port": "element"
-    },
-    {
-      "from_node_id": "53230963-8bd1-4a9f-b597-a2710247d5e6",
-      "from_port": "array",
-      "to_node_id": "8d6790b0-ea1f-47c8-a716-315b31016229",
-      "to_port": "message"
-    },
-    {
-      "from_node_id": "53230963-8bd1-4a9f-b597-a2710247d5e6",
-      "from_port": "array",
-      "to_node_id": "ef66cdbf-722d-4036-b30a-447bafc1afa0",
-      "to_port": "message"
-    },
-    {
-      "from_node_id": "310e58e7-b875-4a00-9fad-caccf531757e",
-      "from_port": "false_output",
-      "to_node_id": "50f8d8e7-b70c-441b-86f6-c878deebe66b",
-      "to_port": "message_event"
-    },
-    {
-      "from_node_id": "3c485026-663f-416c-8c72-192b1a421304",
-      "from_port": "result",
-      "to_node_id": "8d6790b0-ea1f-47c8-a716-315b31016229",
-      "to_port": "target_id"
-    },
-    {
-      "from_node_id": "3f656de1-8cf3-4b3b-bce5-f7826ae5f9fe",
-      "from_port": "result",
-      "to_node_id": "ef66cdbf-722d-4036-b30a-447bafc1afa0",
-      "to_port": "target_id"
     },
     {
       "from_node_id": "__graph_inputs__",
@@ -1172,32 +918,44 @@
       "to_port": "messages"
     },
     {
-      "from_node_id": "8d6790b0-ea1f-47c8-a716-315b31016229",
-      "from_port": "success",
-      "to_node_id": "da83a730-ee8f-44e2-a382-4bb9879266d9",
-      "to_port": "first"
-    },
-    {
-      "from_node_id": "ef66cdbf-722d-4036-b30a-447bafc1afa0",
-      "from_port": "success",
-      "to_node_id": "3ebb936c-8f14-49e3-aa3c-6eebf68e8838",
-      "to_port": "first"
-    },
-    {
-      "from_node_id": "__graph_inputs__",
-      "from_port": "question",
-      "to_node_id": "da83a730-ee8f-44e2-a382-4bb9879266d9",
-      "to_port": "second"
-    },
-    {
       "from_node_id": "__graph_inputs__",
       "from_port": "question",
       "to_node_id": "3ebb936c-8f14-49e3-aa3c-6eebf68e8838",
       "to_port": "second"
     },
     {
+      "from_node_id": "310e58e7-b875-4a00-9fad-caccf531757e",
+      "from_port": "false_output",
+      "to_node_id": "25ffc278-425f-4ca2-a479-2e6745476fd7",
+      "to_port": "message_event"
+    },
+    {
+      "from_node_id": "25ffc278-425f-4ca2-a479-2e6745476fd7",
+      "from_port": "result",
+      "to_node_id": "651470a4-d56c-4673-bd0c-8d1a5441f823",
+      "to_port": "sender"
+    },
+    {
+      "from_node_id": "53230963-8bd1-4a9f-b597-a2710247d5e6",
+      "from_port": "array",
+      "to_node_id": "651470a4-d56c-4673-bd0c-8d1a5441f823",
+      "to_port": "message"
+    },
+    {
       "from_node_id": "__graph_inputs__",
-      "from_port": "question",
+      "from_port": "qq_ims_bot_adapter",
+      "to_node_id": "651470a4-d56c-4673-bd0c-8d1a5441f823",
+      "to_port": "ims_bot_adapter"
+    },
+    {
+      "from_node_id": "651470a4-d56c-4673-bd0c-8d1a5441f823",
+      "from_port": "success",
+      "to_node_id": "3ebb936c-8f14-49e3-aa3c-6eebf68e8838",
+      "to_port": "first"
+    },
+    {
+      "from_node_id": "3ebb936c-8f14-49e3-aa3c-6eebf68e8838",
+      "from_port": "output",
       "to_node_id": "19b88ffe-1f19-45b0-89c0-5c473e6c2c59",
       "to_port": "content"
     }

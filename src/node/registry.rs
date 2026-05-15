@@ -305,8 +305,13 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
                 Some(Value::Null) | None => None,
                 Some(other) => Some(other.to_string()),
             };
+            let api_style = map
+                .get("api_style")
+                .and_then(|value| value.as_str())
+                .map(ToOwned::to_owned);
             Some(DataValue::OpenAIMessage(zihuan_core::llm::OpenAIMessage {
                 role,
+                api_style,
                 content,
                 reasoning_content: None,
                 tool_calls: Vec::new(),

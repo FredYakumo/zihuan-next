@@ -54,8 +54,11 @@ pub enum LlmApiStyle {
     Candle,
     #[serde(alias = "open_ai_chat_completions_api")]
     OpenAiChatCompletions,
+    OpenAiChatCompletionsTencentMultimodalCompat,
     #[serde(alias = "open_ai_responses_api")]
     OpenAiResponses,
+    OpenAiResponsesMessageCompat,
+    OpenAiResponsesImageUrlObjectCompat,
 }
 
 fn default_llm_api_style() -> LlmApiStyle {

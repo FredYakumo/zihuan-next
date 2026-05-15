@@ -89,6 +89,7 @@ impl Node for BuildMultimodalUserMessageNode {
 
         let message = OpenAIMessage {
             role,
+            api_style: None,
             content,
             reasoning_content: None,
             tool_calls: Vec::new(),

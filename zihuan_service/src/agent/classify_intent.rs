@@ -6,9 +6,9 @@ use super::agent_text_similarity::{
     compare_similarity_match_desc, rank_matches, HybridSimilarityConfig, SimilarityCandidate,
     SimilarityMatch,
 };
-use zihuan_core::llm::OpenAIMessage;
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::InferenceParam;
+use zihuan_core::llm::OpenAIMessage;
 
 const LOG_PREFIX: &str = "[QqChatAgent]";
 const CLASSIFY_INTENT_PROMPT: &str = r#"你是一个消息意图分类器。你必须只输出以下 9 个标签中的一个，且只能输出标签本身，不要输出解释、标点、引号、代码块或额外文字。

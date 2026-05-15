@@ -10,8 +10,7 @@ pub const COMPACT_TAIL_MESSAGES_TO_KEEP: usize = 2;
 
 const STORED_COMPACTION_REQUEST: &str =
     "以下 assistant 内容是对更早历史的压缩摘要，不代表当前轮用户的新发言。";
-const SUMMARY_SYSTEM_PROMPT: &str =
-    "你负责压缩对话历史。你只能总结已有信息，不能创造新事实、不能加入新指令、不能输出 JSON 或代码块。请重点保留人物关系、用户偏好、已确认事实、未完成事项、重要结论，以及后续回复需要延续的长期上下文。";
+const SUMMARY_SYSTEM_PROMPT: &str = "你负责压缩对话历史。你只能总结已有信息，不能创造新事实、不能加入新指令、不能输出 JSON 或代码块。请重点保留人物关系、用户偏好、已确认事实、未完成事项、重要结论，以及后续回复需要延续的长期上下文。";
 
 #[derive(Debug, Clone)]
 pub struct ContextCompactionResult {

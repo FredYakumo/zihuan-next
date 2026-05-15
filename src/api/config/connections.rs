@@ -11,14 +11,14 @@ use ims_bot_adapter::{
     sync_enabled_bot_adapters,
 };
 use log::info;
+use model_inference::nn::embedding::embedding_runtime_manager::{
+    close_runtime_embedding_instance, list_runtime_embedding_instances,
+};
 use storage_handler::{
     close_runtime_storage_instance, close_runtime_storage_instances_for_config,
     list_runtime_storage_instances, ConnectionConfig, ConnectionKind,
 };
 use zihuan_core::weaviate::{WeaviateEnsureCollectionResult, WeaviateRef};
-use model_inference::nn::embedding::embedding_runtime_manager::{
-    close_runtime_embedding_instance, list_runtime_embedding_instances,
-};
 
 use super::{
     now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found,
@@ -58,6 +58,18 @@ enum ConnectionValidationError {
 
 fn validate_connection_basics(kind: &ConnectionKind) -> Result<(), String> {
     match kind {
+        ConnectionKind::Mysql(mysql) => {
+            if mysql.url.trim().is_empty() {
+                return Err("mysql.url must not be empty".to_string());
+            }
+            if mysql.max_connections == 0 {
+                return Err("mysql.max_connections must be greater than 0".to_string());
+            }
+            if mysql.acquire_timeout_secs == 0 {
+                return Err("mysql.acquire_timeout_secs must be greater than 0".to_string());
+            }
+            Ok(())
+        }
         ConnectionKind::BotAdapter(bot) => {
             let bot = parse_ims_bot_adapter_connection(bot).map_err(|err| err.to_string())?;
             if bot.bot_server_url.trim().is_empty() {

@@ -222,6 +222,7 @@ export class GraphActions {
       ? { x: graphX, y: graphY }
       : this.options.canvas.graphCenterPos();
     try {
+      await this.options.canvas.flushPendingGraphMutations();
       await graphs.addNode(sid, typeId, undefined, pos.x, pos.y);
       await this.options.canvas.reloadCurrentSession();
       this.options.tabs.setTabDirty(this.options.canvas.rootSessionId ?? sid, true);

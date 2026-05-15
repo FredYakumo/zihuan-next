@@ -56,12 +56,12 @@ impl Node for TopKSimilarityNode {
             Some(DataValue::Integer(_)) => {
                 return Err(Error::ValidationError(
                     "top_k must be greater than 0".to_string(),
-                ))
+                ));
             }
             _ => {
                 return Err(Error::ValidationError(
                     "Missing required input: top_k".to_string(),
-                ))
+                ));
             }
         };
 
@@ -119,7 +119,7 @@ fn parse_vector_list(value: Option<&DataValue>) -> Result<Vec<Vec<f32>>> {
         _ => {
             return Err(Error::ValidationError(
                 "vectors input must be Vec<Vector>".to_string(),
-            ))
+            ));
         }
     };
 

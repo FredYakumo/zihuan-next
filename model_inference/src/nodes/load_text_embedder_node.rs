@@ -16,13 +16,20 @@ pub struct LoadTextEmbedderNode {
 
 impl LoadTextEmbedderNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
-        Self { id: id.into(), name: name.into() }
+        Self {
+            id: id.into(),
+            name: name.into(),
+        }
     }
 }
 
 impl Node for LoadTextEmbedderNode {
-    fn id(&self) -> &str { &self.id }
-    fn name(&self) -> &str { &self.name }
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn name(&self) -> &str {
+        &self.name
+    }
     fn description(&self) -> Option<&str> {
         Some("加载文本 embedding 模型配置，输出 EmbeddingModel 引用供下游文本向量化节点使用")
     }
@@ -39,17 +46,28 @@ impl Node for LoadTextEmbedderNode {
         port! { name = "embedding_model", ty = EmbeddingModel, desc = "Embedding 模型引用" },
     ];
 
-    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+    fn execute(
+        &mut self,
+        inputs: HashMap<String, DataValue>,
+    ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
         let model_name = match inputs.get("model_name") {
             Some(DataValue::String(value)) if !value.trim().is_empty() => value.trim().to_string(),
-            _ => return Err(Error::ValidationError("Missing required input: model_name".to_string())),
+            _ => {
+                return Err(Error::ValidationError(
+                    "Missing required input: model_name".to_string(),
+                ));
+            }
         };
 
         let api_endpoint = match inputs.get("api_endpoint") {
             Some(DataValue::String(value)) if !value.trim().is_empty() => value.trim().to_string(),
-            _ => return Err(Error::ValidationError("Missing required input: api_endpoint".to_string())),
+            _ => {
+                return Err(Error::ValidationError(
+                    "Missing required input: api_endpoint".to_string(),
+                ));
+            }
         };
 
         let api_key = inputs.get("api_key").and_then(|value| match value {
@@ -74,11 +92,19 @@ impl Node for LoadTextEmbedderNode {
             .unwrap_or(DEFAULT_RETRY_COUNT);
 
         let model: Arc<dyn EmbeddingBase> = Arc::new(
-            EmbeddingAPI::new(model_name, api_endpoint, api_key, Duration::from_secs(timeout_secs))
-                .with_retry_count(retry_count),
+            EmbeddingAPI::new(
+                model_name,
+                api_endpoint,
+                api_key,
+                Duration::from_secs(timeout_secs),
+            )
+            .with_retry_count(retry_count),
         );
 
-        let outputs = HashMap::from([("embedding_model".to_string(), DataValue::EmbeddingModel(model))]);
+        let outputs = HashMap::from([(
+            "embedding_model".to_string(),
+            DataValue::EmbeddingModel(model),
+        )]);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }

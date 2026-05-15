@@ -12,6 +12,7 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "mysql", "chrono"] }
 salvo = { version = "0.75", features = ["websocket", "affix-state"] }
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
 
 zihuan_core = { path = "../zihuan_core" }
 zihuan_agent = { path = "../zihuan_agent" }

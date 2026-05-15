@@ -1,67 +1,15 @@
 # zihuan-next
-> 🌐 English | [简体中文](README.zh-CN.md)
 
-**A Rust-based node-graph workflow platform for AI agents, synchronous graph execution, and service-hosted runtimes such as QQ chat agents and HTTP stream agents.**
+> English | [简体中文](README.zh-CN.md)
 
-The graph focuses on **typed data flow**. Long-lived agent behavior is hosted by services, while reusable workflow logic stays in nodes and subgraphs.
+`zihuan-next` is a Rust-based Agent service platform built around two ideas:
 
-<img width="1248" height="880" alt="image" src="https://github.com/user-attachments/assets/3b781e53-1fcf-4b77-91ba-2d63299181c4" />
+- Agents run as persistent services.
+- Node graphs define reusable workflows and tools.
 
-## Overview
+The graph stays focused on data flow. Long-lived behavior such as chat agents, HTTP-facing agents, task hosting, connection reuse, and runtime orchestration is hosted by the service layer.
 
-`zihuan-next` is now a multi-crate Rust workspace with two primary ways to use it:
-
-- `zihuan_next`: the main web application. It serves the admin UI and graph editor, exposes REST/WebSocket APIs, manages system configuration, runs graphs as tasks, and hosts long-lived agents.
-- `zihuan_graph_cli`: a CLI runner for executing a graph JSON file or a workflow-set graph directly from the terminal.
-
-At the architecture level:
-
-- `zihuan_graph_engine` executes graphs **synchronously** in DAG order.
-- `zihuan_service` hosts long-lived agents such as QQ chat agents and HTTP stream agents.
-- `model_inference` provides LLM, Brain/tool, embedding, and retrieval-related nodes and agent helpers.
-- `storage_handler` provides connection-backed nodes for MySQL, Redis, RustFS, Weaviate, and related persistence utilities.
-- `webui/` contains the browser UI: Vue 3 admin pages at `/` and the LiteGraph-based editor at `/editor`.
-
-## Current Capabilities
-
-- Visual node-graph editor in the browser
-- Synchronous DAG execution with typed ports
-- Function subgraphs and Brain tool subgraphs
-- Service-hosted agents with start/stop/auto-start lifecycle
-- System-managed connections, LLM refs, and agent definitions
-- Task execution, task logs, and WebSocket log streaming
-- Local and remote embedding support
-- QQ message storage and vector persistence helpers
-
-## Screenshots
-
-<img width="1248" height="880" alt="image" src="https://github.com/user-attachments/assets/01fae35b-3284-4081-b7f6-f5be5881dc1f" />
-<img width="1248" height="880" alt="image" src="https://github.com/user-attachments/assets/d407db1c-2d5c-472e-8689-0ab636dbd7b8" />
-<img width="1248" height="880" alt="image" src="https://github.com/user-attachments/assets/40e9d5dc-7383-4f7f-aded-52640edeed8e" />
-<img width="1248" height="880" alt="QQ_1774525136280" src="https://github.com/user-attachments/assets/7cc1f27d-9556-4bd7-8741-05904c536490" />
-<img width="1248" height="880" alt="6e9a6276770f6a190161b14577ebeb7f" src="https://github.com/user-attachments/assets/6d56ffd6-846f-4ced-9d98-0f57bb8f7d31" />
-<img width="2382" height="1647" alt="c5872ca13db7d67512a625e9dae1a601" src="https://github.com/user-attachments/assets/2409f7a6-94a9-46a1-aca8-d21c0fa4347c" />
-<img width=600 src="https://github.com/user-attachments/assets/0d25ce93-0f97-4d8c-8375-63b99f6dcd14" />
-<img width="1080" src="https://github.com/user-attachments/assets/60b3b145-7ce7-4a76-9742-b975578a9556" />
-<img width="1080" src="https://github.com/user-attachments/assets/137e4808-5ce3-4714-a0e3-6f5ddaf9f9cb" />
-<img width="1440" src="https://github.com/user-attachments/assets/994472eb-2d37-4160-811d-c5b4856e3239" />
-<img width=600 src="https://github.com/user-attachments/assets/12c27199-2b1e-41ab-8215-0baced40dff9" />
-<img width=600 src="https://github.com/user-attachments/assets/b30bcef5-cb81-4173-8aa9-cefa5da9e690" />
-<img width=600 src="https://github.com/user-attachments/assets/91da8e34-6feb-4c7b-be45-efd8bf599d1f" />
-
-## Workspace Layout
-
-| Package | Responsibility |
-|---|---|
-| `zihuan_core` | Shared error types, system config, adapter models, LLM model types |
-| `zihuan_graph_engine` | Graph runtime, node registry, graph JSON loading, base nodes |
-| `model_inference` | LLM nodes, Brain/tool runtime, embeddings, RAG helpers, agent config models |
-| `storage_handler` | Connection configs plus Redis/MySQL/RustFS/Weaviate nodes and helpers |
-| `ims_bot_adapter` | QQ/IMS adapter client and adapter-facing nodes |
-| `zihuan_service` | Long-lived agent runtime and scheduling support |
-| `zihuan_graph_cli` | Terminal graph executor |
-| `webui/` | Vue 3 admin UI and `/editor` graph editor |
-| `src/` | Main Salvo server binary and HTTP/WebSocket API |
+<img width="1248" height="880" alt="zihuan-next" src="https://github.com/user-attachments/assets/3b781e53-1fcf-4b77-91ba-2d63299181c4" />
 
 ## Quick Start
 
@@ -71,14 +19,14 @@ At the architecture level:
 - Node.js 18+
 - `pnpm`
 
-Optional, depending on what you use:
+Optional services, depending on your setup:
 
-- Redis
-- RustFS
-- Weaviate
 - MySQL
+- Redis
+- Weaviate
+- RustFS
 
-### Build the web application
+### Build
 
 ```bash
 git clone https://github.com/FredYakumo/zihuan-next.git
@@ -92,15 +40,19 @@ cd ..
 cargo build --release
 ```
 
-`build.rs` embeds `webui/dist/` into the main binary, so the frontend build must succeed for `zihuan_next`.
+The main binary embeds the frontend bundle from `webui/dist/`.
 
-### Run the web application
+### Run
 
 ```bash
 docker compose -f docker/docker-compose.yaml up -d
-
 ./target/release/zihuan_next
-# serves http://127.0.0.1:9951 by default
+```
+
+Default address:
+
+```text
+http://127.0.0.1:9951
 ```
 
 Custom bind:
@@ -109,15 +61,14 @@ Custom bind:
 ./target/release/zihuan_next --host 0.0.0.0 --port 9000
 ```
 
-The bundled compose file starts:
+## Highlights
 
-- Redis on `127.0.0.1:6379`
-- RustFS on `127.0.0.1:9000` with console on `127.0.0.1:9001`
-- Weaviate on `127.0.0.1:8080`
+- Simple Agent capabilities are available out of the box.
+- Node graphs are used to design and reuse more complex workflows.
+- The same workflow can run directly as a task or be exposed as an Agent tool.
+- Connections and model refs are configured once and reused across Agents and graphs.
 
-It does **not** start MySQL.
-
-### Build and run the CLI
+### CLI graph runner
 
 ```bash
 cargo build -p zihuan_graph_cli --release
@@ -126,90 +77,217 @@ cargo build -p zihuan_graph_cli --release
 ./target/release/zihuan_graph_cli --workflow qq_agent_example
 ```
 
-The CLI initializes the same node registry extensions as the web app's graph runtime, then loads the graph and executes it once.
+## How You Use It
 
-## Configuration Model
+### 1. Configure shared resources
 
-The project currently has three distinct configuration layers:
-
-### 1. System configuration
-
-Managed by the web app and stored as JSON under the user config directory:
-
-- Windows: `%APPDATA%/zihuan-next_aibot/system_config/system_config.json`
-- Linux/macOS: `$XDG_CONFIG_HOME` or `$HOME/.config/zihuan-next_aibot/system_config/system_config.json`
-
-Stored sections:
+In the admin UI, create:
 
 - `connections`
 - `llm_refs`
 - `agents`
 
-### 2. Graph definition and graph-local values
+These are stored in the system config file under a unified config center.
 
-Graph structure, inline values, variables, metadata, and subgraphs are stored in graph JSON files. Workflow-set files live under `workflow_set/`.
+### 2. Build a workflow graph
 
-### 3. Alembic migration config
+Use `/editor` to define:
 
-`config.yaml` is only used by the Python migration toolchain for MySQL schema setup. The Rust runtime does **not** read `config.yaml`.
+- workflow steps
+- node parameters
+- function subgraphs
+- tool subgraphs
+- graph-local variables and inline values
 
-## Optional GPU Build For Local Embeddings
+### 3. Attach the workflow to an Agent
 
-Root features forward to `model_inference`:
+Use graph-backed tools in an Agent definition so the Agent can call them during inference. Simple Agent behavior can stay lightweight, while more complex multi-step logic can be moved into reusable graph workflows.
 
-```bash
-cargo build --release --features candle-cuda
-cargo build --release --features candle-metal
+### 4. Operate the runtime
+
+From the admin UI you can:
+
+- inspect tasks
+- watch logs
+- manage saved connections
+- inspect runtime connection instances
+- start or stop agents
+
+## Screenshots
+
+<img width="1248" height="880" alt="main-ui" src="https://github.com/user-attachments/assets/01fae35b-3284-4081-b7f6-f5be5881dc1f" />
+<img width="1248" height="880" alt="graph-editor" src="https://github.com/user-attachments/assets/d407db1c-2d5c-472e-8689-0ab636dbd7b8" />
+<img width="1248" height="880" alt="workflow" src="https://github.com/user-attachments/assets/40e9d5dc-7383-4f7f-aded-52640edeed8e" />
+<img width="1248" height="880" alt="qq" src="https://github.com/user-attachments/assets/7cc1f27d-9556-4bd7-8741-05904c536490" />
+<img width="1248" height="880" alt="agent" src="https://github.com/user-attachments/assets/6d56ffd6-846f-4ced-9d98-0f57bb8f7d31" />
+<img width="2382" height="1647" alt="editor-large" src="https://github.com/user-attachments/assets/2409f7a6-94a9-46a1-aca8-d21c0fa4347c" />
+<img width="600" alt="shot-1" src="https://github.com/user-attachments/assets/0d25ce93-0f97-4d8c-8375-63b99f6dcd14" />
+<img width="1080" alt="shot-2" src="https://github.com/user-attachments/assets/60b3b145-7ce7-4a76-9742-b975578a9556" />
+<img width="1080" alt="shot-3" src="https://github.com/user-attachments/assets/137e4808-5ce3-4714-a0e3-6f5ddaf9f9cb" />
+<img width="1440" alt="shot-4" src="https://github.com/user-attachments/assets/994472eb-2d37-4160-811d-c5b4856e3239" />
+<img width="600" alt="shot-5" src="https://github.com/user-attachments/assets/12c27199-2b1e-41ab-8215-0baced40dff9" />
+<img width="600" alt="shot-6" src="https://github.com/user-attachments/assets/b30bcef5-cb81-4173-8aa9-cefa5da9e690" />
+<img width="600" alt="shot-7" src="https://github.com/user-attachments/assets/91da8e34-6feb-4c7b-be45-efd8bf599d1f" />
+
+## What This Project Is
+
+`zihuan-next` combines:
+
+- a persistent Agent runtime
+- a browser-based workflow editor
+- a synchronous DAG graph engine
+- a shared tool-call loop for agents and graph tools
+- a unified configuration center for connections, model refs, and agents
+
+In practice, you use it in three connected ways:
+
+1. Run agents as always-on services.
+2. Build workflows with the node graph editor.
+3. Expose those workflows as callable tools for agents.
+
+This keeps graph topology simple while allowing complex behavior to live inside nodes, subgraphs, and agent tool loops.
+
+## Core Model
+
+### 1. Agent service is the primary runtime
+
+The main binary hosts long-lived agents such as:
+
+- `qq_chat`
+- `http_stream`
+
+Agents can be enabled, disabled, started, stopped, and auto-started from the admin UI. They are not one-shot scripts; they are hosted services managed by the server runtime.
+
+### 2. Node graphs are workflows
+
+The graph engine executes a DAG synchronously. A graph run is ideal for:
+
+- data transformation
+- message processing
+- retrieval and storage steps
+- calling models
+- preparing tool results
+- encapsulating business logic in reusable subgraphs
+
+The graph is intentionally not the place for long-lived listeners or service lifecycles.
+
+### 3. Workflows can also become Agent tools
+
+This is a central design point of `zihuan-next`.
+
+The same node-graph logic can be used in two roles:
+
+- run directly as a workflow
+- mounted into an Agent as a callable tool
+
+Agents can call graph-backed tools through the shared Brain/tool loop. This makes workflows reusable across interactive agents, service endpoints, and graph-driven automations without rewriting the same logic twice.
+
+## Unified Connections And Resources
+
+Connections are first-class system configuration, not ad-hoc values hidden inside one workflow.
+
+You define connection configs once in the admin UI, then reuse them from both:
+
+- agents
+- node graphs
+
+Current resource types in the project include:
+
+- MySQL
+- Redis
+- Weaviate
+- RustFS / S3-style object storage
+- IMS Bot Adapter connections
+- Tavily
+
+The runtime distinguishes between:
+
+- persistent connection configuration identified by `config_id`
+- live runtime connection instances identified by `instance_id`
+
+Graphs and agents refer to `config_id`. The runtime creates or reuses live instances as needed. This makes database and service connections easy to manage centrally while still being directly consumable from graph nodes and agent runtimes.
+
+## Model Access
+
+`zihuan-next` supports several ways to use LLM and embedding capabilities:
+
+- local inference with Candle-based models
+- local or self-hosted inference through `llama.cpp`
+- online model APIs
+- OpenAI Chat Completions compatible endpoints
+- OpenAI Responses compatible endpoints
+
+Model endpoints are defined as reusable `llm_refs` in system configuration, then attached where needed by agents or graphs.
+
+This allows one deployment to mix:
+
+- local inference for cost control or privacy
+- self-hosted inference for internal services
+- hosted APIs for general-purpose reasoning
+
+## Main Capabilities
+
+- Browser admin UI at `/`
+- Browser graph editor at `/editor`
+- Persistent agent hosting
+- Graph execution as task runs
+- Graph-backed Agent tools
+- Shared Brain tool-call loop
+- Reusable connection and model configuration
+- REST API and WebSocket event stream
+- Task logs and runtime inspection
+- Workflow-set loading and CLI execution
+
+## Workspace Layout
+
+| Package | Responsibility |
+|---|---|
+| `zihuan_core` | Shared types, config, errors |
+| `zihuan_agent` | Brain tool-call loop engine |
+| `zihuan_graph_engine` | Synchronous DAG graph runtime |
+| `model_inference` | LLM, embedding, and inference-related nodes |
+| `storage_handler` | Connection-backed resource nodes and runtime connection management |
+| `ims_bot_adapter` | IMS / QQ adapter integration |
+| `zihuan_service` | Long-lived agent hosting and agent-facing nodes |
+| `zihuan_graph_cli` | CLI graph runner |
+| `webui/` | Vue admin UI and LiteGraph editor |
+| `src/` | Main Salvo web server, API, and app runtime |
+
+## Configuration Model
+
+System-level configuration is stored in:
+
+- Windows: `%APPDATA%/zihuan-next_aibot/system_config/system_config.json`
+- Linux/macOS: `$XDG_CONFIG_HOME` or `$HOME/.config/zihuan-next_aibot/system_config/system_config.json`
+
+Current shape:
+
+```json
+{
+  "version": 2,
+  "configs": {
+    "connections": [],
+    "llm_refs": [],
+    "agents": []
+  }
+}
 ```
 
-Windows helper:
+Graph structure, inline values, variables, and embedded subgraphs live in graph JSON files or workflow-set files under `workflow_set/`.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\cargo-cuda.ps1 -Release build
-```
-
-The local embedding loader prefers `CUDA -> Metal -> CPU` and falls back automatically if GPU initialization fails.
-
-## Local Embedding Models
-
-Local embedding nodes load from:
-
-```text
-models/text_embedding/<model_name>/
-```
-
-Example:
-
-```bash
-pip install huggingface_hub
-hf download Qwen/Qwen3-Embedding-0.6B \
-  --local-dir models/text_embedding/Qwen3-Embedding-0.6B
-```
-
-The directory name must match the `model_name` configured in the graph or node config.
-
-## MySQL Schema Setup
-
-Only needed if you use the MySQL-backed message store.
-
-```bash
-cp config.yaml.example config.yaml
-uv sync
-uv run alembic upgrade head
-```
-
-`config.yaml.example` documents the required `MYSQL_*` fields.
+`config.yaml` is only used by the Python Alembic migration flow for MySQL schema setup.
 
 ## Documentation
 
 - [User Guide](document/user-guide.md)
 - [Program Execution Flow](document/program-execute-flow.md)
+- [Configuration And Connection Instances](document/config-and-connection-instances.md)
 - [Node System](document/dev-guides/node-system.md)
 - [Code Conventions](document/dev-guides/code-conventions.md)
 - [UI Architecture](document/dev-guides/ui-architecture.md)
-- [Node Lifecycle](document/node/node-lifecycle.md)
 - [Function Subgraphs](document/node/function-subgraphs.md)
 - [Node Development Guide](document/node/node-development.md)
+- [Brain](document/llm/brain.md)
 
 ## License
 

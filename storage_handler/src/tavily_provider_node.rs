@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::resource_resolver::build_tavily_ref;
 use crate::load_connections;
+use crate::resource_resolver::build_tavily_ref;
 use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::{
     node_output, DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port,

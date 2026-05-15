@@ -6,7 +6,7 @@ This file provides project-level instructions for Codex and other coding agents 
 
 `zihuan-next` is a Rust node-graph workflow engine for event-driven bot pipelines. The graph describes **data flow** between processing steps — complexity (algorithms, agentic loops, control flow) is encapsulated inside individual nodes, keeping the graph topology simple. When a new complex problem arises, build a new node rather than adding complexity to the graph canvas.
 
-The backend is a single Rust binary (Salvo HTTP server) that serves a browser-based editor (Vite + TypeScript + Litegraph.js) and exposes REST + WebSocket APIs.
+The backend is a single Rust binary (Salvo HTTP server) that serves a browser-based editor (Vite + TypeScript + Litegraph.js) and exposes REST + WebSocket APIs. The Brain tool-call loop engine (`zihuan_agent`) is shared by both graph nodes and service-hosted agents.
 
 For crate layout, build/run/test commands, infra setup, schema migration, and module-specific rules, see [document/dev-guides/node-system.md](document/dev-guides/node-system.md), [document/dev-guides/code-conventions.md](document/dev-guides/code-conventions.md), and [document/dev-guides/ui-architecture.md](document/dev-guides/ui-architecture.md). Always consult `document/` before writing or modifying code that touches an unfamiliar area — do not infer file paths or APIs from this file.
 
@@ -16,6 +16,22 @@ For crate layout, build/run/test commands, infra setup, schema migration, and mo
 - Preserve existing architecture and naming unless the task requires a deliberate change.
 - Prefer small, local edits over broad rewrites.
 - When instructions conflict, prefer the behavior described by the current code and `document/` over older agent notes.
+
+## Rust Style Preferences
+
+When writing Rust in this repository, follow these style preferences unless the local module already has a stronger convention:
+
+- Group imports in three blocks: `std`, third-party crates, then `crate`/workspace imports. Keep the grouping visually clean with one blank line between blocks.
+- Prefer direct, domain-specific names. Function names should describe the action or conversion being performed, such as `parse_timestamp_field`, `load_records_from_file`, or `build_node_runtime_state`.
+- Prefer explicit control flow over clever chaining for business logic. Use `match`, `if let`, and intermediate local variables freely when handling `Option`, `Result`, row parsing, or multi-branch data conversion.
+- Keep data-loading and transformation code linear and readable. For row-by-row parsing, batched inserts, or graph input normalization, prefer straightforward loops over dense iterator pipelines when the loop carries business meaning.
+- Extract repeated parsing or conversion logic into small helpers close to the call site. Date parsing, row access, schema field conversion, and similar boundary logic should not be duplicated inline.
+- Define module-level constants, type aliases, and static configuration near the top of the file when they shape the module behavior.
+- Build structs with explicit named fields. Use `..Default::default()` only when the defaulted fields are intentional and still leave the constructed value easy to read.
+- Error messages should carry concrete business context such as field names, node inputs, external column names, or source values. Avoid vague failure text when adding new parsing or integration code.
+- Prefer pragmatic readability over abstraction. Do not introduce a generic helper, trait, or macro unless it removes real duplication that appears in more than one place.
+
+- **Error handling:** Avoid using `if let Err(` or similar verbose error handling patterns. Prefer the `?` operator for propagating errors whenever possible, to keep code concise and idiomatic. Excessive manual error unwrapping makes code resemble Go and should be minimized.
 
 ## Core Rules
 

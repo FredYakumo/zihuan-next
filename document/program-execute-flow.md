@@ -9,7 +9,7 @@ Entry point: `src/main.rs`
 Startup order:
 
 1. Initialize the global logger through `src/log_forwarder.rs`
-2. Initialize the node registry via `init_node_registry_with_extensions()` in `src/init_registry.rs`
+2. Initialize the node registry via `init_node_registry()` in `src/init_registry.rs`
 3. Parse `--host` and `--port`
 4. Create `AppState`
 5. Create the WebSocket broadcast channel
@@ -126,6 +126,45 @@ Task logs are persisted per task under:
 - current request token usage information
 
 The current LLM abstraction does not expose a unified exact usage object yet. When exact `prompt_tokens` / `completion_tokens` / `total_tokens` are unavailable, logs explicitly mark them unavailable and include estimates instead.
+
+### Current QQ Chat Agent Message Handling Model
+
+`qq_chat_agent` now uses a hybrid model: asynchronous ingress at the adapter boundary and inbox-driven synchronous execution in the business layer.
+
+The message path is:
+
+1. `ims_bot_adapter::adapter::BotAdapter::start()` keeps reading WebSocket messages.
+2. Each incoming text/binary frame is dispatched via `tokio::spawn(...)` into its own `BotAdapter::process_event(...)` task.
+3. `process_event(...)` parses JSON, enriches images, hydrates reply/forward message segments, then `tokio::spawn(...)` calls `ims_bot_adapter::event::process_message(...)`.
+4. `process_message(...)` clones the registered event handlers and `await`s them one by one for the same event.
+5. The handler registered by `qq_chat_agent` builds an inbox item, tries to enqueue it into Redis first, and falls back to an in-memory queue when Redis is unavailable.
+6. Background inbox consumers dequeue Redis or in-memory items and dispatch them through `tokio::task::spawn_blocking(...)`.
+7. The actual business logic still runs inside `QqChatAgentService::handle_event(...)`.
+
+The concurrency semantics of the current model are:
+
+- **Different inbound messages**: already concurrent at the adapter layer, because each message is spawned into its own task before `process_event(...)` and `process_message(...)`.
+- **Multiple handlers for the same message**: still serial within `process_message(...)`.
+- **Messages from different users**: allowed to run concurrently, and global ordering is not preserved.
+- **Messages from the same user**: serialized by the session claim/release mechanism inside `qq_chat_agent_core`, not by the adapter queue.
+- **Redis unavailable at enqueue time**: the handler falls back to the local in-memory queue and still returns quickly.
+- **Process restart while using the in-memory fallback**: accepted to lose queued in-memory work that has not started yet.
+
+The current single-user serialization points are:
+
+- `try_claim_session(...)`
+- `release_session(...)`
+
+They wrap `SessionStateRef::try_claim(...)` / `release(...)` so one sender does not enter multiple active reply flows at the same time.
+
+The architectural boundary is therefore:
+
+- the adapter layer accepts, parses, and dispatches messages asynchronously
+- the `qq_chat_agent` handler only enqueues work and returns quickly
+- Redis is the preferred inbox backend, with an in-memory fallback when Redis enqueue fails or no Redis connection is configured
+- inbox consumers move queued items into blocking business execution
+- single-user serialization is enforced inside the service layer session lock
+- the graph engine itself remains synchronous and does not own adapter ingress concurrency
 
 ## 6. CLI Execution Flow
 

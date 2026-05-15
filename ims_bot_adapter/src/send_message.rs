@@ -7,12 +7,12 @@ use std::collections::HashMap;
 use zihuan_core::error::Result;
 use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
 
-pub struct SendFriendMessageNode {
+pub struct SendMessageNode {
     id: String,
     name: String,
 }
 
-impl SendFriendMessageNode {
+impl SendMessageNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -21,20 +21,22 @@ impl SendFriendMessageNode {
     }
 }
 
-impl Node for SendFriendMessageNode {
+impl Node for SendMessageNode {
     fn id(&self) -> &str {
         &self.id
     }
+
     fn name(&self) -> &str {
         &self.name
     }
+
     fn description(&self) -> Option<&str> {
-        Some("向QQ好友发送消息")
+        Some("根据 Sender 向 QQ 好友或群组发送消息")
     }
 
     node_input![
         port! { name = "ims_bot_adapter", ty = BotAdapterRef, desc = "Bot适配器引用" },
-        port! { name = "target_id", ty = String, desc = "目标好友的QQ号" },
+        port! { name = "sender", ty = Sender, desc = "消息目标 Sender" },
         port! { name = "message", ty = Vec(QQMessage), desc = "要发送的QQ消息段列表" },
     ];
 
@@ -53,25 +55,44 @@ impl Node for SendFriendMessageNode {
             Some(DataValue::BotAdapterRef(handle)) => crate::adapter::shared_from_handle(handle),
             _ => return Err("ims_bot_adapter input is required".into()),
         };
-        let target_id = match inputs.get("target_id") {
-            Some(DataValue::String(s)) => s.trim().to_string(),
-            _ => return Err("target_id input is required".into()),
+        let sender = match inputs.get("sender") {
+            Some(DataValue::Sender(sender)) => sender,
+            _ => return Err("sender input is required".into()),
         };
-        if target_id.is_empty() {
-            return Err("target_id must not be empty for send_friend_message".into());
-        }
         let messages = qq_messages_from_data_value(inputs.get("message"), "message")?;
         let segment_summary = describe_message_segments(&messages);
 
-        let params = serde_json::json!({
-            "user_id": target_id,
-            "message": qq_message_list_to_send_json(&adapter_ref, &messages)?,
-        });
+        let (action_name, target_id, params, target_label) = match sender {
+            crate::models::sender_model::Sender::Friend(friend) => {
+                let target_id = friend.user_id.to_string();
+                (
+                    "send_private_msg",
+                    target_id.clone(),
+                    serde_json::json!({
+                        "user_id": target_id,
+                        "message": qq_message_list_to_send_json(&adapter_ref, &messages)?,
+                    }),
+                    "private",
+                )
+            }
+            crate::models::sender_model::Sender::Group(group) => {
+                let target_id = group.group_id.to_string();
+                (
+                    "send_group_msg",
+                    target_id.clone(),
+                    serde_json::json!({
+                        "group_id": target_id,
+                        "message": qq_message_list_to_send_json(&adapter_ref, &messages)?,
+                    }),
+                    "group",
+                )
+            }
+        };
+
         info!(
-            "[SendFriendMessageNode] Sending private message to {} with {}",
-            target_id, segment_summary
+            "[SendMessageNode] Sending {target_label} message to {target_id} with {segment_summary}"
         );
-        let response = ws_send_action(&adapter_ref, "send_private_msg", params)?;
+        let response = ws_send_action(&adapter_ref, action_name, params)?;
 
         let success = response_success(&response);
         let message_id = response_message_id(&response).unwrap_or(-1);
@@ -81,22 +102,11 @@ impl Node for SendFriendMessageNode {
 
         if success {
             info!(
-                "[SendFriendMessageNode] Sent private message to {} (message_id={}, retcode={:?}, status={:?}, {})",
-                target_id,
-                message_id,
-                retcode,
-                status,
-                segment_summary
+                "[SendMessageNode] Sent {target_label} message to {target_id} (message_id={message_id}, retcode={retcode:?}, status={status:?}, {segment_summary})"
             );
         } else {
             warn!(
-                "[SendFriendMessageNode] Failed to send private message to {} (retcode={:?}, status={:?}, wording={:?}, {}, response={})",
-                target_id,
-                retcode,
-                status,
-                wording,
-                segment_summary,
-                response
+                "[SendMessageNode] Failed to send {target_label} message to {target_id} (retcode={retcode:?}, status={status:?}, wording={wording:?}, {segment_summary}, response={response})"
             );
         }
 

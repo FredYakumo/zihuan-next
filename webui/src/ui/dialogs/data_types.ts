@@ -52,6 +52,7 @@ export const DATA_TYPES: readonly string[] = [
 
   // Message / Bot types
   "MessageEvent",
+  "Sender",
   "OpenAIMessage",
   "QQMessage",
   "FunctionTools",

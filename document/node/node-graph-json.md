@@ -238,16 +238,27 @@ Serialized as a JSON object with key `"Vec"`:
 | JSON value | Description |
 |-----------|-------------|
 | `"MessageEvent"` | Bot platform message event |
+| `"Sender"` | QQ reply target containing friend/group routing information |
 | `"OpenAIMessage"` | LLM chat message `{role, content, tool_calls}` |
 | `"QQMessage"` | QQ platform message segment |
+| `"Image"` | Image data with URL/file locators |
+| `"ContentPart"` | Multimodal content part (text or image) |
 | `"FunctionTools"` | LLM function-calling tool definitions |
 | `"BotAdapterRef"` | Shared bot WebSocket connection |
 | `"S3Ref"` | Object storage configuration + upload client |
 | `"RedisRef"` | Redis configuration + connection manager |
 | `"MySqlRef"` | MySQL configuration + connection pool |
+| `"WeaviateRef"` | Weaviate vector DB configuration + client |
+| `"TavilyRef"` | Tavily search configuration + client |
+| `"SessionStateRef"` | Session state reference |
 | `"OpenAIMessageSessionCacheRef"` | Per-sender message history cache |
 | `"LLModel"` | Language model configuration |
+| `"EmbeddingModel"` | Embedding model configuration |
 | `"LoopControlRef"` | Loop break signal |
+
+### Custom types
+
+Arbitrary string values are accepted and produce `DataType::Custom(String)`. These are not validated against a known set and are intended for forward compatibility or user-defined extensions.
 
 ### Backward-compatible aliases
 

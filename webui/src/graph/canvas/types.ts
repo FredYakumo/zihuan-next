@@ -26,7 +26,9 @@ export interface CanvasFacade {
   history: HistoryManager<NodeGraphDefinition>;
   _widgetMutationTimer: ReturnType<typeof setTimeout> | null;
   _nodeMoveTimer: ReturnType<typeof setTimeout> | null;
+  _graphMutationTimer: ReturnType<typeof setTimeout> | null;
   _pendingWidgetMutations: Set<Promise<unknown>>;
+  _pendingGraphMutations: Set<Promise<unknown>>;
   nodeTypes: NodeTypeInfo[];
   onNavigationChange?: (labels: string[]) => void;
   onGraphDirty?: () => void;
@@ -39,6 +41,7 @@ export interface CanvasFacade {
   reloadCurrentSession(): Promise<void>;
   syncInlineWidgetValues(): Promise<void>;
   flushPendingWidgetMutations(): Promise<void>;
+  flushPendingGraphMutations(): Promise<void>;
   rebuildCanvas(def: NodeGraphDefinition): void;
   enterSubgraph(
     parentNodeDef: NodeDefinition,

@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
 use log::info;
+use model_inference::system_config::{
+    load_agents, load_llm_refs, AgentConfig, AgentType, HttpStreamAgentConfig,
+};
 use salvo::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use salvo::http::{HeaderValue, StatusCode};
 use salvo::prelude::*;
@@ -8,9 +11,6 @@ use tokio::task::JoinHandle;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::task_context::{
     AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
-};
-use model_inference::system_config::{
-    load_agents, load_llm_refs, AgentConfig, AgentType, HttpStreamAgentConfig,
 };
 
 use zihuan_graph_engine::data_value::EXECUTION_TASK_ID;

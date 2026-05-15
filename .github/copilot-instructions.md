@@ -22,6 +22,22 @@ For crate layout, build/run/test commands, and module-specific rules, see [docum
 - Common/shared type definitions, and type definitions that may cause circular references, must be placed in `zihuan_core`.
 - Otherwise, code and types must stay in the package that owns the functional responsibility, with high cohesion and low coupling.
 
+## Rust Style Preferences
+
+Follow these practical Rust style preferences unless an existing local module already uses a different established pattern:
+
+- Organize imports in three groups: `std`, external crates, then `crate`/workspace imports.
+- Use explicit, domain-driven names for functions, helpers, constants, and temporary variables. Prefer names that describe the data or action directly.
+- For parsing, validation, and business branching, prefer readable `match`/`if let` code and intermediate variables over compressed combinator-heavy expressions.
+- Keep row parsing, graph input normalization, and other transformation-heavy code linear. Prefer plain loops when they communicate the workflow more clearly than iterator chains.
+- Extract repeated conversion logic into small local helpers instead of duplicating date parsing, row lookup, or field normalization code inline.
+- Keep important constants, aliases, and static regex/configuration near the top of the module.
+- Prefer explicit struct literals with named fields; only use `..Default::default()` when the remaining defaults are intentional and still readable.
+- Include concrete context in errors and logs, especially field names, node inputs, database columns, and source values.
+- Avoid abstraction for its own sake. Add generic helpers, traits, or macros only when they remove clear duplication without hiding business meaning.
+
+- **Error handling:** Avoid using `if let Err(` or similar verbose error handling patterns. Prefer the `?` operator for propagating errors whenever possible, to keep code concise and idiomatic. Excessive manual error unwrapping makes code resemble Go and should be minimized.
+
 For node file placement, node registration, naming conventions, and other code-level details, look up [document/dev-guides/code-conventions.md](../document/dev-guides/code-conventions.md) and [document/dev-guides/node-system.md](../document/dev-guides/node-system.md).
 
 ## Code Search

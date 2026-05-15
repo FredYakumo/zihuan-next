@@ -2,6 +2,7 @@ use log::{error, info};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use zihuan_core::error::Result;
 
 use super::models::{MessageEvent, MessageType};
 use crate::adapter::SharedBotAdapter;
@@ -36,7 +37,9 @@ pub async fn process_message(ims_bot_adapter: SharedBotAdapter, event: MessageEv
     };
 
     for handler in handlers {
-        (handler)(&event).await;
+        if let Err(err) = (handler)(&event).await {
+            error!("[Bot Adapter] Error processing event handler: {}", err);
+        }
     }
 
     let brain_agent = {
@@ -57,5 +60,7 @@ pub async fn process_message(ims_bot_adapter: SharedBotAdapter, event: MessageEv
 
 /// Event handler type alias
 pub type EventHandler = Arc<
-    dyn for<'a> Fn(&'a MessageEvent) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> + Send + Sync,
+    dyn for<'a> Fn(&'a MessageEvent) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>
+        + Send
+        + Sync,
 >;

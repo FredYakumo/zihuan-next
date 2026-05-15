@@ -1,305 +1,6 @@
 {
   "nodes": [
     {
-      "id": "system_prompt",
-      "name": "System Prompt",
-      "description": "构建内层 brain 的系统提示",
-      "node_type": "format_string",
-      "input_ports": [
-        {
-          "name": "template",
-          "data_type": "String",
-          "description": "格式化模板字符串，使用 ${变量名} 语法引用输入变量",
-          "required": false,
-          "hidden": true
-        },
-        {
-          "name": "current_time",
-          "data_type": "Any",
-          "description": "变量 current_time",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "query",
-          "data_type": "Any",
-          "description": "变量 query",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "group_id",
-          "data_type": "Any",
-          "description": "变量 group_id",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "sender_id",
-          "data_type": "Any",
-          "description": "变量 sender_id",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "output",
-          "data_type": "String",
-          "description": "格式化后的字符串",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": true,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 830.0,
-        "y": 570.0
-      },
-      "size": {
-        "width": 420.0,
-        "height": 230.0
-      },
-      "inline_values": {
-        "template": "当前时间是: ${current_time}。你是一个 QQ 消息记录深度搜索助手。\n你需要搜索：\n${query}\n\n当前消息上下文：\n- 当前群号：${group_id}\n- 当前发送者 QQ：${sender_id}\n\n规则：\n- 你的任务是优先调用工具查证，再给出简洁、事实化的结论。\n- 如果用户的问题明显指向当前群（如“这群”“刚才群里”），优先使用上面的当前群号作为 search_messages 的 group_id 过滤条件。\n- 如果用户的问题明显指向当前发言者，可使用上面的当前发送者 QQ 作为 search_messages 的 sender_id。\n- search_messages 必须总是传入 sender_id、group_id、contain、start_time、end_time、limit、sort_by_time_desc 这 7 个字段；未使用的文本过滤字段填空字符串 \"\"，limit 建议 100，如果没有找到可以加大范围。sort_by_time_desc 建议 true。\n- search_images 只搜索本地图片数据库，绝对不要改成联网搜图。若返回 has_results=false，就表示数据库里没有找到相似图片。\n- 工具返回后直接整理结论；如果没有查到结果，要明确说明是消息库或图片库里未命中。"
-      },
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
-      "id": "system_message",
-      "name": "System Message",
-      "description": "将系统提示封装成 OpenAIMessage",
-      "node_type": "string_to_openai_message",
-      "input_ports": [
-        {
-          "name": "content",
-          "data_type": "String",
-          "description": "消息内容",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "role",
-          "data_type": "String",
-          "description": "OpenAIMessage 角色，可选 system / user / assistant / tool",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "message",
-          "data_type": "OpenAIMessage",
-          "description": "封装后的 OpenAIMessage",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1300.0,
-        "y": 760.0
-      },
-      "size": {
-        "width": 220.0,
-        "height": 110.0
-      },
-      "inline_values": {
-        "role": "system"
-      },
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
-      "id": "system_array",
-      "name": "System Array",
-      "description": "将单个 system message 封装成数组",
-      "node_type": "stack",
-      "input_ports": [
-        {
-          "name": "element",
-          "data_type": "Any",
-          "description": "要封装到数组中的元素",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "array",
-          "data_type": {
-            "Vec": "Any"
-          },
-          "description": "包含单个元素的 List",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1580.0,
-        "y": 760.0
-      },
-      "size": {
-        "width": 180.0,
-        "height": 90.0
-      },
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
-      "id": "user_message",
-      "name": "User Message",
-      "description": "将查询参数封装成 user message",
-      "node_type": "string_to_openai_message",
-      "input_ports": [
-        {
-          "name": "content",
-          "data_type": "String",
-          "description": "消息内容",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "role",
-          "data_type": "String",
-          "description": "OpenAIMessage 角色，可选 system / user / assistant / tool",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "message",
-          "data_type": "OpenAIMessage",
-          "description": "封装后的 OpenAIMessage",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1300.0,
-        "y": 940.0
-      },
-      "size": {
-        "width": 220.0,
-        "height": 110.0
-      },
-      "inline_values": {
-        "role": "user"
-      },
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
-      "id": "user_array",
-      "name": "User Array",
-      "description": "将单个 user message 封装成数组",
-      "node_type": "stack",
-      "input_ports": [
-        {
-          "name": "element",
-          "data_type": "Any",
-          "description": "要封装到数组中的元素",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "array",
-          "data_type": {
-            "Vec": "Any"
-          },
-          "description": "包含单个元素的 List",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1580.0,
-        "y": 940.0
-      },
-      "size": {
-        "width": 180.0,
-        "height": 90.0
-      },
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
-      "id": "conversation",
-      "name": "Conversation",
-      "description": "拼接 system/user 消息列表",
-      "node_type": "concat_vec",
-      "input_ports": [
-        {
-          "name": "vec1",
-          "data_type": {
-            "Vec": "Any"
-          },
-          "description": "前半部分列表",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "vec2",
-          "data_type": {
-            "Vec": "Any"
-          },
-          "description": "后半部分列表，将拼接到 vec1 后面",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "vec",
-          "data_type": {
-            "Vec": "Any"
-          },
-          "description": "拼接后的列表，元素类型与输入列表一致",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1840.0,
-        "y": 850.0
-      },
-      "size": {
-        "width": 220.0,
-        "height": 100.0
-      },
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
       "id": "deep_search_brain",
       "name": "Deep Search Brain",
       "description": "使用内层 brain 在消息库和图片库中做深搜",
@@ -385,36 +86,14 @@
       "dynamic_input_ports": true,
       "dynamic_output_ports": false,
       "position": {
-        "x": 2140.0,
-        "y": 820.0
+        "x": 1430.0,
+        "y": 260.0
       },
       "size": {
         "width": 420.0,
         "height": 220.0
       },
       "inline_values": {
-        "shared_inputs": [
-          {
-            "data_type": "MySqlRef",
-            "name": "mysql_ref"
-          },
-          {
-            "data_type": "WeaviateRef",
-            "name": "weaviate_ref"
-          },
-          {
-            "data_type": "EmbeddingModel",
-            "name": "embedding_model"
-          },
-          {
-            "data_type": "MessageEvent",
-            "name": "message_event"
-          },
-          {
-            "data_type": "BotAdapterRef",
-            "name": "qq_ims_bot_adapter"
-          }
-        ],
         "tools_config": [
           {
             "description": "在 MySQL 消息记录中搜索聊天消息；未使用的文本过滤条件传空字符串",
@@ -425,6 +104,7 @@
                 "data_type": {
                   "Vec": "String"
                 },
+                "description": "",
                 "name": "messages"
               }
             ],
@@ -544,54 +224,67 @@
                     "signature": [
                       {
                         "data_type": "MySqlRef",
+                        "description": "",
                         "name": "mysql_ref"
                       },
                       {
                         "data_type": "WeaviateRef",
+                        "description": "",
                         "name": "weaviate_ref"
                       },
                       {
                         "data_type": "EmbeddingModel",
+                        "description": "",
                         "name": "embedding_model"
                       },
                       {
                         "data_type": "MessageEvent",
+                        "description": "",
                         "name": "message_event"
                       },
                       {
                         "data_type": "BotAdapterRef",
+                        "description": "",
                         "name": "qq_ims_bot_adapter"
                       },
                       {
                         "data_type": "String",
+                        "description": "触发此次工具调用的上下文文本内容",
                         "name": "content"
                       },
                       {
                         "data_type": "String",
+                        "description": "按发送者 QQ 号过滤；未使用时传空字符串",
                         "name": "sender_id"
                       },
                       {
                         "data_type": "String",
+                        "description": "按群号过滤；未使用时传空字符串",
                         "name": "group_id"
                       },
                       {
                         "data_type": "String",
+                        "description": "消息内容包含的关键词；未使用时传空字符串",
                         "name": "contain"
                       },
                       {
                         "data_type": "String",
+                        "description": "时间范围起始（YYYY-MM-DD HH:MM:SS）；未使用时传空字符串",
                         "name": "start_time"
                       },
                       {
                         "data_type": "String",
+                        "description": "时间范围结束（YYYY-MM-DD HH:MM:SS）；未使用时传空字符串",
                         "name": "end_time"
                       },
                       {
                         "data_type": "Integer",
+                        "description": "返回消息数量，建议 10",
                         "name": "limit"
                       },
                       {
                         "data_type": "Boolean",
+                        "description": "是否按时间倒序，建议 true",
                         "name": "sort_by_time_desc"
                       }
                     ]
@@ -620,91 +313,91 @@
                       "description": "函数输入 'mysql_ref'",
                       "hidden": false,
                       "name": "mysql_ref",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "WeaviateRef",
                       "description": "函数输入 'weaviate_ref'",
                       "hidden": false,
                       "name": "weaviate_ref",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "EmbeddingModel",
                       "description": "函数输入 'embedding_model'",
                       "hidden": false,
                       "name": "embedding_model",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "MessageEvent",
                       "description": "函数输入 'message_event'",
                       "hidden": false,
                       "name": "message_event",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "BotAdapterRef",
                       "description": "函数输入 'qq_ims_bot_adapter'",
                       "hidden": false,
                       "name": "qq_ims_bot_adapter",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "String",
-                      "description": "函数输入 'content'",
+                      "description": "触发此次工具调用的上下文文本内容",
                       "hidden": false,
                       "name": "content",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "String",
-                      "description": "函数输入 'sender_id'",
+                      "description": "按发送者 QQ 号过滤；未使用时传空字符串",
                       "hidden": false,
                       "name": "sender_id",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "String",
-                      "description": "函数输入 'group_id'",
+                      "description": "按群号过滤；未使用时传空字符串",
                       "hidden": false,
                       "name": "group_id",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "String",
-                      "description": "函数输入 'contain'",
+                      "description": "消息内容包含的关键词；未使用时传空字符串",
                       "hidden": false,
                       "name": "contain",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "String",
-                      "description": "函数输入 'start_time'",
+                      "description": "时间范围起始（YYYY-MM-DD HH:MM:SS）；未使用时传空字符串",
                       "hidden": false,
                       "name": "start_time",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "String",
-                      "description": "函数输入 'end_time'",
+                      "description": "时间范围结束（YYYY-MM-DD HH:MM:SS）；未使用时传空字符串",
                       "hidden": false,
                       "name": "end_time",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "Integer",
-                      "description": "函数输入 'limit'",
+                      "description": "返回消息数量，建议 10",
                       "hidden": false,
                       "name": "limit",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "Boolean",
-                      "description": "函数输入 'sort_by_time_desc'",
+                      "description": "是否按时间倒序，建议 true",
                       "hidden": false,
                       "name": "sort_by_time_desc",
-                      "required": true
+                      "required": false
                     }
                   ],
                   "port_bindings": {},
@@ -713,8 +406,8 @@
                     "y": 120
                   },
                   "size": {
-                    "height": 279.1146545410156,
-                    "width": 236.243408203125
+                    "height": 279.11465,
+                    "width": 236.24341
                   }
                 },
                 {
@@ -731,6 +424,7 @@
                         "data_type": {
                           "Vec": "String"
                         },
+                        "description": "",
                         "name": "messages"
                       }
                     ]
@@ -750,7 +444,7 @@
                       "description": "函数输出 'messages'",
                       "hidden": false,
                       "name": "messages",
-                      "required": true
+                      "required": false
                     }
                   ],
                   "name": "函数输出",
@@ -867,10 +561,12 @@
             "outputs": [
               {
                 "data_type": "Json",
+                "description": "",
                 "name": "images"
               },
               {
                 "data_type": "Boolean",
+                "description": "",
                 "name": "has_results"
               }
             ],
@@ -947,34 +643,42 @@
                     "signature": [
                       {
                         "data_type": "MySqlRef",
+                        "description": "",
                         "name": "mysql_ref"
                       },
                       {
                         "data_type": "WeaviateRef",
+                        "description": "",
                         "name": "weaviate_ref"
                       },
                       {
                         "data_type": "EmbeddingModel",
+                        "description": "",
                         "name": "embedding_model"
                       },
                       {
                         "data_type": "MessageEvent",
+                        "description": "",
                         "name": "message_event"
                       },
                       {
                         "data_type": "BotAdapterRef",
+                        "description": "",
                         "name": "qq_ims_bot_adapter"
                       },
                       {
                         "data_type": "String",
+                        "description": "触发此次工具调用的上下文文本内容",
                         "name": "content"
                       },
                       {
                         "data_type": "String",
+                        "description": "要搜索的图片语义描述",
                         "name": "query"
                       },
                       {
                         "data_type": "Integer",
+                        "description": "返回数量，建议 5",
                         "name": "limit"
                       }
                     ]
@@ -1003,56 +707,56 @@
                       "description": "函数输入 'mysql_ref'",
                       "hidden": false,
                       "name": "mysql_ref",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "WeaviateRef",
                       "description": "函数输入 'weaviate_ref'",
                       "hidden": false,
                       "name": "weaviate_ref",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "EmbeddingModel",
                       "description": "函数输入 'embedding_model'",
                       "hidden": false,
                       "name": "embedding_model",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "MessageEvent",
                       "description": "函数输入 'message_event'",
                       "hidden": false,
                       "name": "message_event",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "BotAdapterRef",
                       "description": "函数输入 'qq_ims_bot_adapter'",
                       "hidden": false,
                       "name": "qq_ims_bot_adapter",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "String",
-                      "description": "函数输入 'content'",
+                      "description": "触发此次工具调用的上下文文本内容",
                       "hidden": false,
                       "name": "content",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "String",
-                      "description": "函数输入 'query'",
+                      "description": "要搜索的图片语义描述",
                       "hidden": false,
                       "name": "query",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "Integer",
-                      "description": "函数输入 'limit'",
+                      "description": "返回数量，建议 5",
                       "hidden": false,
                       "name": "limit",
-                      "required": true
+                      "required": false
                     }
                   ],
                   "port_bindings": {},
@@ -1077,10 +781,12 @@
                     "signature": [
                       {
                         "data_type": "Json",
+                        "description": "",
                         "name": "images"
                       },
                       {
                         "data_type": "Boolean",
+                        "description": "",
                         "name": "has_results"
                       }
                     ]
@@ -1098,14 +804,14 @@
                       "description": "函数输出 'images'",
                       "hidden": false,
                       "name": "images",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "Boolean",
                       "description": "函数输出 'has_results'",
                       "hidden": false,
                       "name": "has_results",
-                      "required": true
+                      "required": false
                     }
                   ],
                   "name": "函数输出",
@@ -1199,6 +905,28 @@
               "variables": []
             }
           }
+        ],
+        "shared_inputs": [
+          {
+            "data_type": "MySqlRef",
+            "name": "mysql_ref"
+          },
+          {
+            "data_type": "WeaviateRef",
+            "name": "weaviate_ref"
+          },
+          {
+            "data_type": "EmbeddingModel",
+            "name": "embedding_model"
+          },
+          {
+            "data_type": "MessageEvent",
+            "name": "message_event"
+          },
+          {
+            "data_type": "BotAdapterRef",
+            "name": "qq_ims_bot_adapter"
+          }
         ]
       },
       "port_bindings": {},
@@ -1241,8 +969,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 2640.0,
-        "y": 850.0
+        "x": 1940.0,
+        "y": 280.0
       },
       "size": {
         "width": 220.0,
@@ -1282,8 +1010,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 2910.0,
-        "y": 850.0
+        "x": 1990.0,
+        "y": 500.0
       },
       "size": {
         "width": 240.0,
@@ -1353,14 +1081,17 @@
         "signature": [
           {
             "data_type": "MessageEvent",
+            "description": "",
             "name": "message_event"
           },
           {
             "data_type": "BotAdapterRef",
+            "description": "",
             "name": "qq_ims_bot_adapter"
           },
           {
             "data_type": "String",
+            "description": "",
             "name": "query"
           }
         ]
@@ -1395,8 +1126,8 @@
       "dynamic_input_ports": true,
       "dynamic_output_ports": false,
       "position": {
-        "x": 3250.0,
-        "y": 850.0
+        "x": 1990.0,
+        "y": 700.0
       },
       "size": {
         "width": 220.0,
@@ -1406,6 +1137,7 @@
         "signature": [
           {
             "data_type": "String",
+            "description": "",
             "name": "result"
           }
         ]
@@ -1433,8 +1165,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 830.0,
-        "y": 1260.0
+        "x": 660.0,
+        "y": 1060.0
       },
       "size": {
         "width": 200.0,
@@ -1464,8 +1196,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 850.0,
-        "y": 850.0
+        "x": 680.0,
+        "y": 650.0
       },
       "size": {
         "width": 200.0,
@@ -1495,8 +1227,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 830.0,
-        "y": 1050.0
+        "x": 660.0,
+        "y": 850.0
       },
       "size": {
         "width": 200.0,
@@ -1526,8 +1258,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 840.0,
-        "y": 1440.0
+        "x": 670.0,
+        "y": 1240.0
       },
       "size": {
         "width": 200.0,
@@ -1540,215 +1272,462 @@
       "disabled": false
     },
     {
-      "id": "84b6150e-fb38-4876-84c6-5b1ba034f210",
-      "name": "extract group id from event",
+      "id": "171574da-3af0-4d07-b677-2f79d8257729",
+      "name": "发送提示信息给用户",
       "description": null,
-      "node_type": "extract_group_id_from_event",
+      "node_type": "function",
       "input_ports": [
         {
           "name": "message_event",
           "data_type": "MessageEvent",
-          "description": "输入的消息事件",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "result",
-          "data_type": "String",
-          "description": "群号字符串",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 530.0,
-        "y": 490.0
-      },
-      "size": {
-        "width": 200.0,
-        "height": 120.0
-      },
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
-      "id": "82e0f16b-a78e-4a57-a76b-c3606f9b13cf",
-      "name": "extract sender id from event",
-      "description": null,
-      "node_type": "extract_sender_id_from_event",
-      "input_ports": [
-        {
-          "name": "message_event",
-          "data_type": "MessageEvent",
-          "description": "输入的消息事件",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "result",
-          "data_type": "String",
-          "description": "发送者的QQ号字符串",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 540.0,
-        "y": 700.0
-      },
-      "size": {
-        "width": 200.0,
-        "height": 120.0
-      },
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
-      "id": "fbe0e231-4392-4c13-b6ad-8915a2091807",
-      "name": "current time",
-      "description": null,
-      "node_type": "current_time",
-      "input_ports": [],
-      "output_ports": [
-        {
-          "name": "time",
-          "data_type": "String",
-          "description": "当前本地时间字符串，格式为 YYYY-MM-DD HH:MM:SS",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 190.0,
-        "y": 680.0
-      },
-      "size": {
-        "width": 200.0,
-        "height": 120.0
-      },
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
-      "id": "0ae28055-3568-4bd5-966a-33f0e7e0d9ad",
-      "name": "message event type filter",
-      "description": null,
-      "node_type": "message_event_type_filter",
-      "input_ports": [
-        {
-          "name": "message_event",
-          "data_type": "MessageEvent",
-          "description": "输入的消息事件",
+          "description": "函数输入 'message_event'",
           "required": true,
           "hidden": false
         },
         {
-          "name": "filter_type",
-          "data_type": "String",
-          "description": "过滤类型：private（好友消息）或 group（群组消息）",
-          "required": false,
-          "hidden": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "true_event",
-          "data_type": "MessageEvent",
-          "description": "消息类型匹配时的输出",
+          "name": "ims_bot_adapter",
+          "data_type": "BotAdapterRef",
+          "description": "函数输入 'ims_bot_adapter'",
           "required": true,
           "hidden": false
         },
         {
-          "name": "false_event",
+          "name": "second",
           "data_type": "MessageEvent",
-          "description": "消息类型不匹配时的输出",
+          "description": "函数输入 'second'",
           "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 820.0,
-        "y": 240.0
-      },
-      "size": {
-        "width": 200.0,
-        "height": 120.0
-      },
-      "inline_values": {
-        "filter_type": "private"
-      },
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
-      "id": "e331569f-0a0e-4f9d-810e-7cf7dd483d1e",
-      "name": "qq message list data",
-      "description": null,
-      "node_type": "qq_message_list_data",
-      "input_ports": [
-        {
-          "name": "messages",
-          "data_type": {
-            "Vec": "QQMessage"
-          },
-          "description": "Vec<QQMessage> provided by UI inline editor",
-          "required": false,
           "hidden": false
         }
       ],
       "output_ports": [
         {
-          "name": "messages",
-          "data_type": {
-            "Vec": "QQMessage"
-          },
-          "description": "Output Vec<QQMessage> from UI data source",
+          "name": "output",
+          "data_type": "Any",
+          "description": "函数输出 'output'",
           "required": true,
           "hidden": false
         }
       ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
+      "dynamic_input_ports": true,
+      "dynamic_output_ports": true,
       "position": {
-        "x": 820.0,
-        "y": 70.0
+        "x": 710.0,
+        "y": 260.0
       },
       "size": {
-        "width": 200.0,
-        "height": 120.0
+        "width": 220.0,
+        "height": 140.0
       },
       "inline_values": {
-        "messages": [
-          {
-            "data": {
-              "text": "我将开始深度查找群消息，这可能需要一点时间，请稍后"
+        "function_config": {
+          "description": "",
+          "inputs": [
+            {
+              "data_type": "MessageEvent",
+              "description": "",
+              "name": "message_event"
             },
-            "type": "text"
+            {
+              "data_type": "BotAdapterRef",
+              "description": "",
+              "name": "ims_bot_adapter"
+            },
+            {
+              "data_type": "MessageEvent",
+              "description": "",
+              "name": "second"
+            }
+          ],
+          "name": "发送提示信息给用户",
+          "outputs": [
+            {
+              "data_type": "Any",
+              "description": "",
+              "name": "output"
+            }
+          ],
+          "subgraph": {
+            "edges": [
+              {
+                "from_node_id": "e331569f-0a0e-4f9d-810e-7cf7dd483d1e",
+                "from_port": "messages",
+                "to_node_id": "64ae75c8-289f-4f63-bc1f-6a091ec53166",
+                "to_port": "message"
+              },
+              {
+                "from_node_id": "8ba6469a-d28d-4e00-8b8b-0f9f3b689f40",
+                "from_port": "result",
+                "to_node_id": "64ae75c8-289f-4f63-bc1f-6a091ec53166",
+                "to_port": "sender"
+              },
+              {
+                "from_node_id": "64ae75c8-289f-4f63-bc1f-6a091ec53166",
+                "from_port": "success",
+                "to_node_id": "2d6347f6-f0cb-49ae-9cc1-9a63db37f36d",
+                "to_port": "first"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "message_event",
+                "to_node_id": "8ba6469a-d28d-4e00-8b8b-0f9f3b689f40",
+                "to_port": "message_event"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "ims_bot_adapter",
+                "to_node_id": "64ae75c8-289f-4f63-bc1f-6a091ec53166",
+                "to_port": "ims_bot_adapter"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "second",
+                "to_node_id": "2d6347f6-f0cb-49ae-9cc1-9a63db37f36d",
+                "to_port": "second"
+              },
+              {
+                "from_node_id": "2d6347f6-f0cb-49ae-9cc1-9a63db37f36d",
+                "from_port": "output",
+                "to_node_id": "__function_outputs__",
+                "to_port": "output"
+              }
+            ],
+            "graph_inputs": [],
+            "graph_outputs": [],
+            "hyperparameter_groups": [],
+            "hyperparameters": [],
+            "metadata": {
+              "description": null,
+              "name": null,
+              "version": null
+            },
+            "nodes": [
+              {
+                "description": null,
+                "disabled": false,
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "e331569f-0a0e-4f9d-810e-7cf7dd483d1e",
+                "inline_values": {
+                  "messages": [
+                    {
+                      "data": {
+                        "text": "我将开始深度查找群消息，这可能需要一点时间，请稍后"
+                      },
+                      "type": "text"
+                    }
+                  ]
+                },
+                "input_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "QQMessage"
+                    },
+                    "description": "Vec<QQMessage> provided by UI inline editor",
+                    "hidden": false,
+                    "name": "messages",
+                    "required": false
+                  }
+                ],
+                "name": "qq message list data",
+                "node_type": "qq_message_list_data",
+                "output_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "QQMessage"
+                    },
+                    "description": "Output Vec<QQMessage> from UI data source",
+                    "hidden": false,
+                    "name": "messages",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 620,
+                  "y": 140
+                },
+                "size": {
+                  "height": 120,
+                  "width": 200
+                }
+              },
+              {
+                "description": null,
+                "disabled": false,
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "8ba6469a-d28d-4e00-8b8b-0f9f3b689f40",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "MessageEvent",
+                    "description": "输入的消息事件",
+                    "hidden": false,
+                    "name": "message_event",
+                    "required": true
+                  }
+                ],
+                "name": "extract sender from event",
+                "node_type": "extract_sender_from_event",
+                "output_ports": [
+                  {
+                    "data_type": "Sender",
+                    "description": "可用于发送消息的 Sender",
+                    "hidden": false,
+                    "name": "result",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 410,
+                  "y": 260
+                },
+                "size": {
+                  "height": 120,
+                  "width": 200
+                }
+              },
+              {
+                "description": null,
+                "disabled": false,
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "64ae75c8-289f-4f63-bc1f-6a091ec53166",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "BotAdapterRef",
+                    "description": "Bot适配器引用",
+                    "hidden": false,
+                    "name": "ims_bot_adapter",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Sender",
+                    "description": "消息目标 Sender",
+                    "hidden": false,
+                    "name": "sender",
+                    "required": true
+                  },
+                  {
+                    "data_type": {
+                      "Vec": "QQMessage"
+                    },
+                    "description": "要发送的QQ消息段列表",
+                    "hidden": false,
+                    "name": "message",
+                    "required": true
+                  }
+                ],
+                "name": "send message",
+                "node_type": "send_message",
+                "output_ports": [
+                  {
+                    "data_type": "Boolean",
+                    "description": "是否发送成功",
+                    "hidden": false,
+                    "name": "success",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Integer",
+                    "description": "服务器返回的消息ID",
+                    "hidden": false,
+                    "name": "message_id",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 790,
+                  "y": 290
+                },
+                "size": {
+                  "height": 120,
+                  "width": 200
+                }
+              },
+              {
+                "description": null,
+                "disabled": false,
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "2d6347f6-f0cb-49ae-9cc1-9a63db37f36d",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "用于串联依赖的前置输入，仅用于等待其到齐",
+                    "hidden": false,
+                    "name": "first",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "在两个输入都到齐后原样透传的值",
+                    "hidden": false,
+                    "name": "second",
+                    "required": true
+                  }
+                ],
+                "name": "and then",
+                "node_type": "and_then",
+                "output_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "second 的原样输出",
+                    "hidden": false,
+                    "name": "output",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 1100,
+                  "y": 270
+                },
+                "size": {
+                  "height": 120,
+                  "width": 200
+                }
+              },
+              {
+                "description": "函数子图的输入边界节点",
+                "disabled": false,
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": true,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "__function_inputs__",
+                "inline_values": {
+                  "signature": [
+                    {
+                      "data_type": "MessageEvent",
+                      "description": "",
+                      "name": "message_event"
+                    },
+                    {
+                      "data_type": "BotAdapterRef",
+                      "description": "",
+                      "name": "ims_bot_adapter"
+                    },
+                    {
+                      "data_type": "MessageEvent",
+                      "description": "",
+                      "name": "second"
+                    }
+                  ]
+                },
+                "input_ports": [
+                  {
+                    "data_type": "Json",
+                    "description": "隐藏的函数签名 JSON",
+                    "hidden": true,
+                    "name": "signature",
+                    "required": false
+                  },
+                  {
+                    "data_type": "Json",
+                    "description": "运行时注入的函数输入 JSON",
+                    "hidden": true,
+                    "name": "runtime_values",
+                    "required": false
+                  }
+                ],
+                "name": "函数输入",
+                "node_type": "function_inputs",
+                "output_ports": [
+                  {
+                    "data_type": "MessageEvent",
+                    "description": "函数输入 'message_event'",
+                    "hidden": false,
+                    "name": "message_event",
+                    "required": true
+                  },
+                  {
+                    "data_type": "BotAdapterRef",
+                    "description": "函数输入 'ims_bot_adapter'",
+                    "hidden": false,
+                    "name": "ims_bot_adapter",
+                    "required": true
+                  },
+                  {
+                    "data_type": "MessageEvent",
+                    "description": "函数输入 'second'",
+                    "hidden": false,
+                    "name": "second",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 110,
+                  "y": 240
+                },
+                "size": {
+                  "height": 120,
+                  "width": 220
+                }
+              },
+              {
+                "description": "函数子图的输出边界节点",
+                "disabled": false,
+                "dynamic_input_ports": true,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "__function_outputs__",
+                "inline_values": {
+                  "signature": [
+                    {
+                      "data_type": "Any",
+                      "description": "",
+                      "name": "output"
+                    }
+                  ]
+                },
+                "input_ports": [
+                  {
+                    "data_type": "Json",
+                    "description": "隐藏的函数签名 JSON",
+                    "hidden": true,
+                    "name": "signature",
+                    "required": false
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "函数输出 'output'",
+                    "hidden": false,
+                    "name": "output",
+                    "required": true
+                  }
+                ],
+                "name": "函数输出",
+                "node_type": "function_outputs",
+                "output_ports": [],
+                "port_bindings": {},
+                "position": {
+                  "x": 1400,
+                  "y": 240
+                },
+                "size": {
+                  "height": 120,
+                  "width": 220
+                }
+              }
+            ],
+            "variables": []
           }
-        ]
+        }
       },
       "port_bindings": {},
       "has_error": false,
@@ -1756,216 +1735,740 @@
       "disabled": false
     },
     {
-      "id": "d2cf4f05-3050-4c4c-a62e-e0d5637b2811",
-      "name": "send friend message",
+      "id": "e2e1823e-2765-4c5c-86d6-0c8e8f68e270",
+      "name": "组合OpenAIMessage",
       "description": null,
-      "node_type": "send_friend_message",
+      "node_type": "function",
       "input_ports": [
         {
-          "name": "ims_bot_adapter",
-          "data_type": "BotAdapterRef",
-          "description": "Bot适配器引用",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "target_id",
+          "name": "query",
           "data_type": "String",
-          "description": "目标好友的QQ号",
+          "description": "函数输入 'query'",
           "required": true,
           "hidden": false
         },
         {
-          "name": "message",
-          "data_type": {
-            "Vec": "QQMessage"
-          },
-          "description": "要发送的QQ消息段列表",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "success",
-          "data_type": "Boolean",
-          "description": "是否发送成功",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "message_id",
-          "data_type": "Integer",
-          "description": "服务器返回的消息ID",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1490.0,
-        "y": 240.0
-      },
-      "size": {
-        "width": 200.0,
-        "height": 120.0
-      },
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
-      "id": "8e86ed64-b015-4841-933e-bce3374b4d6d",
-      "name": "send group message",
-      "description": null,
-      "node_type": "send_group_message",
-      "input_ports": [
-        {
-          "name": "ims_bot_adapter",
-          "data_type": "BotAdapterRef",
-          "description": "Bot适配器引用",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "target_id",
+          "name": "content",
           "data_type": "String",
-          "description": "目标群的群号",
+          "description": "函数输入 'content'",
           "required": true,
           "hidden": false
         },
         {
-          "name": "message",
+          "name": "message_event",
+          "data_type": "Any",
+          "description": "函数输入 'message_event'",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "extract_sender_id_from_event_message_event",
+          "data_type": "Any",
+          "description": "函数输入 'extract_sender_id_from_event_message_event'",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "vec",
           "data_type": {
-            "Vec": "QQMessage"
+            "Vec": "Any"
           },
-          "description": "要发送的QQ消息段列表",
+          "description": "函数输出 'vec'",
           "required": true,
           "hidden": false
         }
       ],
-      "output_ports": [
-        {
-          "name": "success",
-          "data_type": "Boolean",
-          "description": "是否发送成功",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "message_id",
-          "data_type": "Integer",
-          "description": "服务器返回的消息ID",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
+      "dynamic_input_ports": true,
+      "dynamic_output_ports": true,
       "position": {
-        "x": 1490.0,
-        "y": 420.0
+        "x": 1090.0,
+        "y": 260.0
       },
       "size": {
-        "width": 200.0,
-        "height": 120.0
+        "width": 220.0,
+        "height": 160.0
       },
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
-      "id": "a0488112-1960-4d15-aa79-94442e32ea56",
-      "name": "and then",
-      "description": null,
-      "node_type": "and_then",
-      "input_ports": [
-        {
-          "name": "first",
-          "data_type": "Any",
-          "description": "用于串联依赖的前置输入，仅用于等待其到齐",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "second",
-          "data_type": "Any",
-          "description": "在两个输入都到齐后原样透传的值",
-          "required": true,
-          "hidden": false
+      "inline_values": {
+        "function_config": {
+          "description": "",
+          "inputs": [
+            {
+              "data_type": "String",
+              "description": "",
+              "name": "query"
+            },
+            {
+              "data_type": "String",
+              "description": "",
+              "name": "content"
+            },
+            {
+              "data_type": "Any",
+              "description": "",
+              "name": "message_event"
+            },
+            {
+              "data_type": "Any",
+              "description": "",
+              "name": "extract_sender_id_from_event_message_event"
+            }
+          ],
+          "name": "组合OpenAIMessage",
+          "outputs": [
+            {
+              "data_type": {
+                "Vec": "Any"
+              },
+              "description": "",
+              "name": "vec"
+            }
+          ],
+          "subgraph": {
+            "edges": [
+              {
+                "from_node_id": "system_prompt",
+                "from_port": "output",
+                "to_node_id": "system_message",
+                "to_port": "content"
+              },
+              {
+                "from_node_id": "system_message",
+                "from_port": "message",
+                "to_node_id": "system_array",
+                "to_port": "element"
+              },
+              {
+                "from_node_id": "user_message",
+                "from_port": "message",
+                "to_node_id": "user_array",
+                "to_port": "element"
+              },
+              {
+                "from_node_id": "system_array",
+                "from_port": "array",
+                "to_node_id": "conversation",
+                "to_port": "vec1"
+              },
+              {
+                "from_node_id": "user_array",
+                "from_port": "array",
+                "to_node_id": "conversation",
+                "to_port": "vec2"
+              },
+              {
+                "from_node_id": "84b6150e-fb38-4876-84c6-5b1ba034f210",
+                "from_port": "result",
+                "to_node_id": "system_prompt",
+                "to_port": "group_id"
+              },
+              {
+                "from_node_id": "fbe0e231-4392-4c13-b6ad-8915a2091807",
+                "from_port": "time",
+                "to_node_id": "system_prompt",
+                "to_port": "current_time"
+              },
+              {
+                "from_node_id": "3b99aed6-aa72-4ed6-beb4-301ce6b82007",
+                "from_port": "result",
+                "to_node_id": "system_prompt",
+                "to_port": "sender_id"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "query",
+                "to_node_id": "system_prompt",
+                "to_port": "query"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "content",
+                "to_node_id": "user_message",
+                "to_port": "content"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "message_event",
+                "to_node_id": "84b6150e-fb38-4876-84c6-5b1ba034f210",
+                "to_port": "message_event"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "extract_sender_id_from_event_message_event",
+                "to_node_id": "3b99aed6-aa72-4ed6-beb4-301ce6b82007",
+                "to_port": "message_event"
+              },
+              {
+                "from_node_id": "conversation",
+                "from_port": "vec",
+                "to_node_id": "__function_outputs__",
+                "to_port": "vec"
+              }
+            ],
+            "graph_inputs": [],
+            "graph_outputs": [],
+            "hyperparameter_groups": [],
+            "hyperparameters": [],
+            "metadata": {
+              "description": null,
+              "name": null,
+              "version": null
+            },
+            "nodes": [
+              {
+                "description": "构建内层 brain 的系统提示",
+                "disabled": false,
+                "dynamic_input_ports": true,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "system_prompt",
+                "inline_values": {
+                  "template": "当前时间是: ${current_time}。你是一个 QQ 消息记录深度搜索助手。\n你需要搜索：\n${query}\n\n当前消息上下文：\n- 当前群号：${group_id}\n- 当前发送者 QQ：${sender_id}\n\n规则：\n- 你的任务是优先调用工具查证，再给出简洁、事实化的结论。\n- 如果用户的问题明显指向当前群（如“这群”“刚才群里”），优先使用上面的当前群号作为 search_messages 的 group_id 过滤条件。\n- 如果用户的问题明显指向当前发言者，可使用上面的当前发送者 QQ 作为 search_messages 的 sender_id。\n- search_messages 必须总是传入 sender_id、group_id、contain、start_time、end_time、limit、sort_by_time_desc 这 7 个字段；未使用的文本过滤字段填空字符串 \"\"，limit 建议 100，如果没有找到可以加大范围。sort_by_time_desc 建议 true。\n- search_images 只搜索本地图片数据库，绝对不要改成联网搜图。若返回 has_results=false，就表示数据库里没有找到相似图片。\n- 工具返回后直接整理结论；如果没有查到结果，要明确说明是消息库或图片库里未命中。"
+                },
+                "input_ports": [
+                  {
+                    "data_type": "String",
+                    "description": "格式化模板字符串，使用 ${变量名} 语法引用输入变量",
+                    "hidden": true,
+                    "name": "template",
+                    "required": false
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "变量 current_time",
+                    "hidden": false,
+                    "name": "current_time",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "变量 query",
+                    "hidden": false,
+                    "name": "query",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "变量 group_id",
+                    "hidden": false,
+                    "name": "group_id",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "变量 sender_id",
+                    "hidden": false,
+                    "name": "sender_id",
+                    "required": true
+                  }
+                ],
+                "name": "System Prompt",
+                "node_type": "format_string",
+                "output_ports": [
+                  {
+                    "data_type": "String",
+                    "description": "格式化后的字符串",
+                    "hidden": false,
+                    "name": "output",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 2020,
+                  "y": 200
+                },
+                "size": {
+                  "height": 230,
+                  "width": 420
+                }
+              },
+              {
+                "description": "将系统提示封装成 OpenAIMessage",
+                "disabled": false,
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "system_message",
+                "inline_values": {
+                  "role": "system"
+                },
+                "input_ports": [
+                  {
+                    "data_type": "String",
+                    "description": "消息内容",
+                    "hidden": false,
+                    "name": "content",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "OpenAIMessage 角色，可选 system / user / assistant / tool",
+                    "hidden": false,
+                    "name": "role",
+                    "required": true
+                  }
+                ],
+                "name": "System Message",
+                "node_type": "string_to_openai_message",
+                "output_ports": [
+                  {
+                    "data_type": "OpenAIMessage",
+                    "description": "封装后的 OpenAIMessage",
+                    "hidden": false,
+                    "name": "message",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 2600,
+                  "y": 260
+                },
+                "size": {
+                  "height": 110,
+                  "width": 220
+                }
+              },
+              {
+                "description": "将单个 system message 封装成数组",
+                "disabled": false,
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "system_array",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "要封装到数组中的元素",
+                    "hidden": false,
+                    "name": "element",
+                    "required": true
+                  }
+                ],
+                "name": "System Array",
+                "node_type": "stack",
+                "output_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "Any"
+                    },
+                    "description": "包含单个元素的 List",
+                    "hidden": false,
+                    "name": "array",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 3090,
+                  "y": 280
+                },
+                "size": {
+                  "height": 90,
+                  "width": 180
+                }
+              },
+              {
+                "description": "将查询参数封装成 user message",
+                "disabled": false,
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "user_message",
+                "inline_values": {
+                  "role": "user"
+                },
+                "input_ports": [
+                  {
+                    "data_type": "String",
+                    "description": "消息内容",
+                    "hidden": false,
+                    "name": "content",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "OpenAIMessage 角色，可选 system / user / assistant / tool",
+                    "hidden": false,
+                    "name": "role",
+                    "required": true
+                  }
+                ],
+                "name": "User Message",
+                "node_type": "string_to_openai_message",
+                "output_ports": [
+                  {
+                    "data_type": "OpenAIMessage",
+                    "description": "封装后的 OpenAIMessage",
+                    "hidden": false,
+                    "name": "message",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 2070,
+                  "y": 550
+                },
+                "size": {
+                  "height": 110,
+                  "width": 220
+                }
+              },
+              {
+                "description": "将单个 user message 封装成数组",
+                "disabled": false,
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "user_array",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "要封装到数组中的元素",
+                    "hidden": false,
+                    "name": "element",
+                    "required": true
+                  }
+                ],
+                "name": "User Array",
+                "node_type": "stack",
+                "output_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "Any"
+                    },
+                    "description": "包含单个元素的 List",
+                    "hidden": false,
+                    "name": "array",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 2530,
+                  "y": 510
+                },
+                "size": {
+                  "height": 90,
+                  "width": 180
+                }
+              },
+              {
+                "description": "拼接 system/user 消息列表",
+                "disabled": false,
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "conversation",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "Any"
+                    },
+                    "description": "前半部分列表",
+                    "hidden": false,
+                    "name": "vec1",
+                    "required": true
+                  },
+                  {
+                    "data_type": {
+                      "Vec": "Any"
+                    },
+                    "description": "后半部分列表，将拼接到 vec1 后面",
+                    "hidden": false,
+                    "name": "vec2",
+                    "required": true
+                  }
+                ],
+                "name": "Conversation",
+                "node_type": "concat_vec",
+                "output_ports": [
+                  {
+                    "data_type": {
+                      "Vec": "Any"
+                    },
+                    "description": "拼接后的列表，元素类型与输入列表一致",
+                    "hidden": false,
+                    "name": "vec",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 2940,
+                  "y": 500
+                },
+                "size": {
+                  "height": 100,
+                  "width": 220
+                }
+              },
+              {
+                "description": null,
+                "disabled": false,
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "84b6150e-fb38-4876-84c6-5b1ba034f210",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "MessageEvent",
+                    "description": "输入的消息事件",
+                    "hidden": false,
+                    "name": "message_event",
+                    "required": true
+                  }
+                ],
+                "name": "extract group id from event",
+                "node_type": "extract_group_id_from_event",
+                "output_ports": [
+                  {
+                    "data_type": "String",
+                    "description": "群号字符串",
+                    "hidden": false,
+                    "name": "result",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 1440,
+                  "y": 350
+                },
+                "size": {
+                  "height": 120,
+                  "width": 200
+                }
+              },
+              {
+                "description": null,
+                "disabled": false,
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "fbe0e231-4392-4c13-b6ad-8915a2091807",
+                "inline_values": {},
+                "input_ports": [],
+                "name": "current time",
+                "node_type": "current_time",
+                "output_ports": [
+                  {
+                    "data_type": "String",
+                    "description": "当前本地时间字符串，格式为 YYYY-MM-DD HH:MM:SS",
+                    "hidden": false,
+                    "name": "time",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 1730,
+                  "y": 170
+                },
+                "size": {
+                  "height": 120,
+                  "width": 200
+                }
+              },
+              {
+                "description": null,
+                "disabled": false,
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "3b99aed6-aa72-4ed6-beb4-301ce6b82007",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "MessageEvent",
+                    "description": "输入的消息事件",
+                    "hidden": false,
+                    "name": "message_event",
+                    "required": true
+                  }
+                ],
+                "name": "extract sender id from event",
+                "node_type": "extract_sender_id_from_event",
+                "output_ports": [
+                  {
+                    "data_type": "String",
+                    "description": "发送者的QQ号字符串",
+                    "hidden": false,
+                    "name": "result",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 1430,
+                  "y": 540
+                },
+                "size": {
+                  "height": 120,
+                  "width": 200
+                }
+              },
+              {
+                "description": "函数子图的输入边界节点",
+                "disabled": false,
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": true,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "__function_inputs__",
+                "inline_values": {
+                  "signature": [
+                    {
+                      "data_type": "String",
+                      "description": "",
+                      "name": "query"
+                    },
+                    {
+                      "data_type": "String",
+                      "description": "",
+                      "name": "content"
+                    },
+                    {
+                      "data_type": "Any",
+                      "description": "",
+                      "name": "message_event"
+                    },
+                    {
+                      "data_type": "Any",
+                      "description": "",
+                      "name": "extract_sender_id_from_event_message_event"
+                    }
+                  ]
+                },
+                "input_ports": [
+                  {
+                    "data_type": "Json",
+                    "description": "隐藏的函数签名 JSON",
+                    "hidden": true,
+                    "name": "signature",
+                    "required": false
+                  },
+                  {
+                    "data_type": "Json",
+                    "description": "运行时注入的函数输入 JSON",
+                    "hidden": true,
+                    "name": "runtime_values",
+                    "required": false
+                  }
+                ],
+                "name": "函数输入",
+                "node_type": "function_inputs",
+                "output_ports": [
+                  {
+                    "data_type": "String",
+                    "description": "函数输入 'query'",
+                    "hidden": false,
+                    "name": "query",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "函数输入 'content'",
+                    "hidden": false,
+                    "name": "content",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "函数输入 'message_event'",
+                    "hidden": false,
+                    "name": "message_event",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "函数输入 'extract_sender_id_from_event_message_event'",
+                    "hidden": false,
+                    "name": "extract_sender_id_from_event_message_event",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 1130,
+                  "y": 373.3333435058594
+                },
+                "size": {
+                  "height": 120,
+                  "width": 220
+                }
+              },
+              {
+                "description": "函数子图的输出边界节点",
+                "disabled": false,
+                "dynamic_input_ports": true,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "__function_outputs__",
+                "inline_values": {
+                  "signature": [
+                    {
+                      "data_type": {
+                        "Vec": "Any"
+                      },
+                      "description": "",
+                      "name": "vec"
+                    }
+                  ]
+                },
+                "input_ports": [
+                  {
+                    "data_type": "Json",
+                    "description": "隐藏的函数签名 JSON",
+                    "hidden": true,
+                    "name": "signature",
+                    "required": false
+                  },
+                  {
+                    "data_type": {
+                      "Vec": "Any"
+                    },
+                    "description": "函数输出 'vec'",
+                    "hidden": false,
+                    "name": "vec",
+                    "required": true
+                  }
+                ],
+                "name": "函数输出",
+                "node_type": "function_outputs",
+                "output_ports": [],
+                "port_bindings": {},
+                "position": {
+                  "x": 3390,
+                  "y": 373.3333435058594
+                },
+                "size": {
+                  "height": 120,
+                  "width": 220
+                }
+              }
+            ],
+            "variables": []
+          }
         }
-      ],
-      "output_ports": [
-        {
-          "name": "output",
-          "data_type": "Any",
-          "description": "second 的原样输出",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1120.0,
-        "y": 180.0
       },
-      "size": {
-        "width": 200.0,
-        "height": 120.0
-      },
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
-      "id": "416e8a32-6af4-4f8a-a145-4b11b9116a82",
-      "name": "and then",
-      "description": null,
-      "node_type": "and_then",
-      "input_ports": [
-        {
-          "name": "first",
-          "data_type": "Any",
-          "description": "用于串联依赖的前置输入，仅用于等待其到齐",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "second",
-          "data_type": "Any",
-          "description": "在两个输入都到齐后原样透传的值",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "output",
-          "data_type": "Any",
-          "description": "second 的原样输出",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1120.0,
-        "y": 380.0
-      },
-      "size": {
-        "width": 200.0,
-        "height": 120.0
-      },
-      "inline_values": {},
       "port_bindings": {},
       "has_error": false,
       "has_cycle": false,
@@ -1973,42 +2476,6 @@
     }
   ],
   "edges": [
-    {
-      "from_node_id": "system_prompt",
-      "from_port": "output",
-      "to_node_id": "system_message",
-      "to_port": "content"
-    },
-    {
-      "from_node_id": "system_message",
-      "from_port": "message",
-      "to_node_id": "system_array",
-      "to_port": "element"
-    },
-    {
-      "from_node_id": "user_message",
-      "from_port": "message",
-      "to_node_id": "user_array",
-      "to_port": "element"
-    },
-    {
-      "from_node_id": "system_array",
-      "from_port": "array",
-      "to_node_id": "conversation",
-      "to_port": "vec1"
-    },
-    {
-      "from_node_id": "user_array",
-      "from_port": "array",
-      "to_node_id": "conversation",
-      "to_port": "vec2"
-    },
-    {
-      "from_node_id": "conversation",
-      "from_port": "vec",
-      "to_node_id": "deep_search_brain",
-      "to_port": "messages"
-    },
     {
       "from_node_id": "deep_search_brain",
       "from_port": "output",
@@ -2020,30 +2487,6 @@
       "from_port": "element",
       "to_node_id": "final_result",
       "to_port": "message"
-    },
-    {
-      "from_node_id": "__graph_inputs__",
-      "from_port": "query",
-      "to_node_id": "system_prompt",
-      "to_port": "query"
-    },
-    {
-      "from_node_id": "__graph_inputs__",
-      "from_port": "query",
-      "to_node_id": "user_message",
-      "to_port": "content"
-    },
-    {
-      "from_node_id": "84b6150e-fb38-4876-84c6-5b1ba034f210",
-      "from_port": "result",
-      "to_node_id": "system_prompt",
-      "to_port": "group_id"
-    },
-    {
-      "from_node_id": "82e0f16b-a78e-4a57-a76b-c3606f9b13cf",
-      "from_port": "result",
-      "to_node_id": "system_prompt",
-      "to_port": "sender_id"
     },
     {
       "from_node_id": "3c8eed6f-1604-4864-add8-cee252a22637",
@@ -2090,106 +2533,74 @@
     {
       "from_node_id": "__graph_inputs__",
       "from_port": "message_event",
-      "to_node_id": "84b6150e-fb38-4876-84c6-5b1ba034f210",
-      "to_port": "message_event"
-    },
-    {
-      "from_node_id": "__graph_inputs__",
-      "from_port": "message_event",
-      "to_node_id": "82e0f16b-a78e-4a57-a76b-c3606f9b13cf",
-      "to_port": "message_event"
-    },
-    {
-      "from_node_id": "fbe0e231-4392-4c13-b6ad-8915a2091807",
-      "from_port": "time",
-      "to_node_id": "system_prompt",
-      "to_port": "current_time"
-    },
-    {
-      "from_node_id": "__graph_inputs__",
-      "from_port": "message_event",
-      "to_node_id": "0ae28055-3568-4bd5-966a-33f0e7e0d9ad",
+      "to_node_id": "171574da-3af0-4d07-b677-2f79d8257729",
       "to_port": "message_event"
     },
     {
       "from_node_id": "__graph_inputs__",
       "from_port": "qq_ims_bot_adapter",
-      "to_node_id": "d2cf4f05-3050-4c4c-a62e-e0d5637b2811",
+      "to_node_id": "171574da-3af0-4d07-b677-2f79d8257729",
       "to_port": "ims_bot_adapter"
     },
     {
       "from_node_id": "__graph_inputs__",
-      "from_port": "qq_ims_bot_adapter",
-      "to_node_id": "8e86ed64-b015-4841-933e-bce3374b4d6d",
-      "to_port": "ims_bot_adapter"
-    },
-    {
-      "from_node_id": "e331569f-0a0e-4f9d-810e-7cf7dd483d1e",
-      "from_port": "messages",
-      "to_node_id": "a0488112-1960-4d15-aa79-94442e32ea56",
+      "from_port": "message_event",
+      "to_node_id": "171574da-3af0-4d07-b677-2f79d8257729",
       "to_port": "second"
     },
     {
-      "from_node_id": "e331569f-0a0e-4f9d-810e-7cf7dd483d1e",
-      "from_port": "messages",
-      "to_node_id": "416e8a32-6af4-4f8a-a145-4b11b9116a82",
-      "to_port": "second"
+      "from_node_id": "__graph_inputs__",
+      "from_port": "query",
+      "to_node_id": "e2e1823e-2765-4c5c-86d6-0c8e8f68e270",
+      "to_port": "query"
     },
     {
-      "from_node_id": "0ae28055-3568-4bd5-966a-33f0e7e0d9ad",
-      "from_port": "true_event",
-      "to_node_id": "a0488112-1960-4d15-aa79-94442e32ea56",
-      "to_port": "first"
+      "from_node_id": "__graph_inputs__",
+      "from_port": "query",
+      "to_node_id": "e2e1823e-2765-4c5c-86d6-0c8e8f68e270",
+      "to_port": "content"
     },
     {
-      "from_node_id": "0ae28055-3568-4bd5-966a-33f0e7e0d9ad",
-      "from_port": "false_event",
-      "to_node_id": "416e8a32-6af4-4f8a-a145-4b11b9116a82",
-      "to_port": "first"
-    },
-    {
-      "from_node_id": "a0488112-1960-4d15-aa79-94442e32ea56",
+      "from_node_id": "171574da-3af0-4d07-b677-2f79d8257729",
       "from_port": "output",
-      "to_node_id": "d2cf4f05-3050-4c4c-a62e-e0d5637b2811",
-      "to_port": "message"
+      "to_node_id": "e2e1823e-2765-4c5c-86d6-0c8e8f68e270",
+      "to_port": "message_event"
     },
     {
-      "from_node_id": "416e8a32-6af4-4f8a-a145-4b11b9116a82",
+      "from_node_id": "171574da-3af0-4d07-b677-2f79d8257729",
       "from_port": "output",
-      "to_node_id": "8e86ed64-b015-4841-933e-bce3374b4d6d",
-      "to_port": "message"
+      "to_node_id": "e2e1823e-2765-4c5c-86d6-0c8e8f68e270",
+      "to_port": "extract_sender_id_from_event_message_event"
     },
     {
-      "from_node_id": "82e0f16b-a78e-4a57-a76b-c3606f9b13cf",
-      "from_port": "result",
-      "to_node_id": "d2cf4f05-3050-4c4c-a62e-e0d5637b2811",
-      "to_port": "target_id"
-    },
-    {
-      "from_node_id": "84b6150e-fb38-4876-84c6-5b1ba034f210",
-      "from_port": "result",
-      "to_node_id": "8e86ed64-b015-4841-933e-bce3374b4d6d",
-      "to_port": "target_id"
+      "from_node_id": "e2e1823e-2765-4c5c-86d6-0c8e8f68e270",
+      "from_port": "vec",
+      "to_node_id": "deep_search_brain",
+      "to_port": "messages"
     }
   ],
   "graph_inputs": [
     {
       "name": "message_event",
-      "data_type": "MessageEvent"
+      "data_type": "MessageEvent",
+      "description": ""
     },
     {
       "name": "qq_ims_bot_adapter",
-      "data_type": "BotAdapterRef"
+      "data_type": "BotAdapterRef",
+      "description": ""
     },
     {
       "name": "query",
-      "data_type": "String"
+      "data_type": "String",
+      "description": ""
     }
   ],
   "graph_outputs": [
     {
       "name": "result",
-      "data_type": "String"
+      "data_type": "String",
+      "description": ""
     }
   ],
   "hyperparameter_groups": [

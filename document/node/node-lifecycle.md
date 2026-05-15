@@ -152,7 +152,7 @@ Anything that must remain alive independently of one graph run now lives outside
 
 These are handled in the Rust service runtime, especially:
 
-- `src/service/agent_manager.rs`
+- `zihuan_service/src/agent/mod.rs` (`AgentManager`)
 
 The service runtime may call back into the graph engine to execute synchronous subgraphs or tools.
 

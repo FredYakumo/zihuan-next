@@ -77,6 +77,8 @@ impl ContentPart {
 pub struct OpenAIMessage {
     pub role: MessageRole,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_style: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<MessageContent>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
@@ -90,6 +92,7 @@ impl OpenAIMessage {
     pub fn system<S: Into<String>>(content: S) -> Self {
         Self {
             role: MessageRole::System,
+            api_style: None,
             content: Some(MessageContent::Text(content.into())),
             reasoning_content: None,
             tool_calls: Vec::new(),
@@ -100,6 +103,7 @@ impl OpenAIMessage {
     pub fn user<S: Into<String>>(content: S) -> Self {
         Self {
             role: MessageRole::User,
+            api_style: None,
             content: Some(MessageContent::Text(content.into())),
             reasoning_content: None,
             tool_calls: Vec::new(),
@@ -110,6 +114,7 @@ impl OpenAIMessage {
     pub fn user_with_parts(parts: Vec<ContentPart>) -> Self {
         Self {
             role: MessageRole::User,
+            api_style: None,
             content: Some(MessageContent::Parts(parts)),
             reasoning_content: None,
             tool_calls: Vec::new(),
@@ -120,6 +125,7 @@ impl OpenAIMessage {
     pub fn assistant_text<S: Into<String>>(content: S) -> Self {
         Self {
             role: MessageRole::Assistant,
+            api_style: None,
             content: Some(MessageContent::Text(content.into())),
             reasoning_content: None,
             tool_calls: Vec::new(),
@@ -130,6 +136,7 @@ impl OpenAIMessage {
     pub fn tool_result<S: Into<String>>(tool_call_id: S, content: S) -> Self {
         Self {
             role: MessageRole::Tool,
+            api_style: None,
             content: Some(MessageContent::Text(content.into())),
             reasoning_content: None,
             tool_calls: Vec::new(),
@@ -142,6 +149,11 @@ impl OpenAIMessage {
             MessageContent::Text(s) => Some(s.as_str()),
             MessageContent::Parts(_) => None,
         }
+    }
+
+    pub fn with_api_style<S: Into<String>>(mut self, api_style: S) -> Self {
+        self.api_style = Some(api_style.into());
+        self
     }
 
     pub fn content_text_owned(&self) -> Option<String> {

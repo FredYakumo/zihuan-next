@@ -225,7 +225,10 @@ impl Brain {
                     tc.function.name,
                     truncate_for_log(&result, LOG_PREVIEW_CHARS)
                 );
-                let msg = OpenAIMessage::tool_result(tc.id.clone(), result);
+                let mut msg = OpenAIMessage::tool_result(tc.id.clone(), result);
+                if let Some(api_style) = self.llm.api_style() {
+                    msg.api_style = Some(api_style.to_string());
+                }
                 conversation.push(msg.clone());
                 output.push(msg);
             }
@@ -347,7 +350,10 @@ impl Brain {
                     tc.function.name,
                     truncate_for_log(&result, LOG_PREVIEW_CHARS)
                 );
-                let msg = OpenAIMessage::tool_result(tc.id.clone(), result);
+                let mut msg = OpenAIMessage::tool_result(tc.id.clone(), result);
+                if let Some(api_style) = self.llm.api_style() {
+                    msg.api_style = Some(api_style.to_string());
+                }
                 conversation.push(msg.clone());
                 output.push(msg);
             }

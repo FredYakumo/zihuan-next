@@ -52,7 +52,7 @@ impl Node for BatchTextEmbeddingNode {
             _ => {
                 return Err(Error::ValidationError(
                     "Missing required input: embedding_model".to_string(),
-                ))
+                ));
             }
         };
 
@@ -88,7 +88,7 @@ fn parse_string_list(value: Option<&DataValue>) -> Result<Vec<String>> {
         _ => {
             return Err(Error::ValidationError(
                 "texts input must be Vec<String>".to_string(),
-            ))
+            ));
         }
     };
 
