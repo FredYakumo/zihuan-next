@@ -7,6 +7,7 @@ use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration as StdDuration;
 use tokio::task::block_in_place;
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::Result;
@@ -14,6 +15,7 @@ use zihuan_core::error::Result;
 const HISTORY_TIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 const GAP_THRESHOLD_MINUTES: i64 = 3;
 const HISTORY_CHUNK_FETCH_MULTIPLIER: u32 = 8;
+const MYSQL_QUERY_TIMEOUT_SECS: u64 = 30;
 
 const USER_HISTORY_SQL: &str = r#"
     SELECT id, message_id, sender_id, sender_name, send_time, content
@@ -156,7 +158,20 @@ where
         )
     })?;
 
-    let query_future = query_fn(&pool);
+    let query_future = async {
+        match tokio::time::timeout(
+            StdDuration::from_secs(MYSQL_QUERY_TIMEOUT_SECS),
+            query_fn(&pool),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(sqlx::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("MySQL query timed out after {MYSQL_QUERY_TIMEOUT_SECS}s"),
+            ))),
+        }
+    };
     let result = if let Some(handle) = mysql_config.runtime_handle.clone() {
         if tokio::runtime::Handle::try_current().is_ok() {
             block_in_place(|| handle.block_on(query_future))

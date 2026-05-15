@@ -11,12 +11,12 @@ use reqwest::StatusCode;
 use serde_json::Value;
 use std::error::Error as _;
 use std::fmt::Write as _;
-use zihuan_core::utils::string_utils;
 use std::thread;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use zihuan_core::llm::llm_base::{LLMBase, StreamingLLMBase};
 use zihuan_core::llm::{InferenceParam, OpenAIMessage};
+use zihuan_core::utils::string_utils;
 
 const DEFAULT_RETRY_COUNT: u32 = 2;
 const RETRY_DELAY_MS: u64 = 1_000;
@@ -156,8 +156,6 @@ impl LLMAPI {
 
         description
     }
-
-
 
     fn request_format(&self) -> RequestFormat {
         match self.api_style {
@@ -447,7 +445,7 @@ impl LLMAPI {
                 "Streaming LLM API request failed: {} status={} body={}",
                 self.format_request_context(&request_context, None, request_format),
                 status,
-                Self::shorten_text(&body, 800)
+                string_utils::shorten_text(&body, 800)
             );
             return OpenAIMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR);
         }

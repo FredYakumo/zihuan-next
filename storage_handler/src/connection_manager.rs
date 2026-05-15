@@ -58,6 +58,7 @@ impl StorageRuntimePayload {
 struct StorageRuntimeInstance {
     summary: RuntimeConnectionInstanceSummary,
     payload: StorageRuntimePayload,
+    _runtime: Option<Arc<tokio::runtime::Runtime>>,
 }
 
 pub struct RuntimeStorageConnectionManager {
@@ -122,23 +123,33 @@ impl RuntimeStorageConnectionManager {
         }
 
         let started_at = Utc::now();
-        let (payload, kind) = match &connection.kind {
+        let (payload, kind, runtime) = match &connection.kind {
             ConnectionKind::Mysql(mysql) => {
-                let pool = zihuan_core::runtime::block_async(
-                    MySqlPoolOptions::new()
-                        .max_connections(DEFAULT_MYSQL_MAX_CONNECTIONS)
-                        .min_connections(1)
-                        .acquire_timeout(Duration::from_secs(DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS))
-                        .connect(&mysql.url),
-                )?;
+                let runtime = Arc::new(tokio::runtime::Runtime::new()?);
+                let handle = runtime.handle().clone();
+                let pool_options = MySqlPoolOptions::new()
+                    .max_connections(DEFAULT_MYSQL_MAX_CONNECTIONS)
+                    .min_connections(1)
+                    .acquire_timeout(Duration::from_secs(DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS));
+                let pool = if tokio::runtime::Handle::try_current().is_ok() {
+                    tokio::task::block_in_place(|| {
+                        handle.block_on(pool_options.connect(&mysql.url))
+                    })
+                } else {
+                    handle.block_on(pool_options.connect(&mysql.url))
+                }?;
                 let config = Arc::new(MySqlConfig {
                     url: Some(mysql.url.clone()),
                     reconnect_max_attempts: None,
                     reconnect_interval_secs: None,
                     pool: Some(pool),
-                    runtime_handle: tokio::runtime::Handle::try_current().ok(),
+                    runtime_handle: Some(handle),
                 });
-                (StorageRuntimePayload::MySql(config), "mysql".to_string())
+                (
+                    StorageRuntimePayload::MySql(config),
+                    "mysql".to_string(),
+                    Some(runtime),
+                )
             }
             ConnectionKind::Rustfs(rustfs) => {
                 let s3_ref = zihuan_core::runtime::block_async(build_s3_direct_ref(
@@ -150,7 +161,11 @@ impl RuntimeStorageConnectionManager {
                     rustfs.public_base_url.clone(),
                     rustfs.path_style,
                 ))?;
-                (StorageRuntimePayload::S3(s3_ref), "rustfs".to_string())
+                (
+                    StorageRuntimePayload::S3(s3_ref),
+                    "rustfs".to_string(),
+                    None,
+                )
             }
             ConnectionKind::Weaviate(weaviate) => {
                 let weaviate_ref = build_weaviate_direct_ref(
@@ -161,6 +176,7 @@ impl RuntimeStorageConnectionManager {
                 (
                     StorageRuntimePayload::Weaviate(weaviate_ref),
                     "weaviate".to_string(),
+                    None,
                 )
             }
             other => {
@@ -191,7 +207,14 @@ impl RuntimeStorageConnectionManager {
             summary.name
         );
         let handle = payload.clone_handle();
-        Ok((StorageRuntimeInstance { summary, payload }, handle))
+        Ok((
+            StorageRuntimeInstance {
+                summary,
+                payload,
+                _runtime: runtime,
+            },
+            handle,
+        ))
     }
 
     async fn mark_used_and_clone(
@@ -434,6 +457,7 @@ mod tests {
                             status: RuntimeConnectionStatus::Running,
                         },
                         payload: StorageRuntimePayload::MySql(Arc::clone(&mysql_ref)),
+                        _runtime: None,
                     }],
                 );
             }
