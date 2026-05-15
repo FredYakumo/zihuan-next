@@ -51,8 +51,6 @@ RuntimeStorageConnectionManager::shared().get_or_create_mysql_ref(config_id)
 6. `MySqlNode` 输出 `DataValue::MySqlRef(config)`。
 7. 下游存储/搜索节点读取 `mysql_ref` 输入，并通过 pool 查询。
 
-`zihuan_graph_engine/src/database/mysql.rs` 中仍保留一个较旧的直接输入版 MySQL 节点，它从 host、port、user、password、database 输入构建 URL。当前注册的 `mysql` 节点来自 `storage_handler::init_node_registry()`。
-
 ## 存储对象
 
 存储层不会直接持久化单个 `QQMessage` segment。它存储规范化消息元数据、渲染后的内容，以及可选的序列化消息树：

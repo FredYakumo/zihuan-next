@@ -51,8 +51,6 @@ RuntimeStorageConnectionManager::shared().get_or_create_mysql_ref(config_id)
 6. `MySqlNode` outputs `DataValue::MySqlRef(config)`.
 7. Downstream storage/search nodes read the `mysql_ref` input and query through the pool.
 
-`zihuan_graph_engine/src/database/mysql.rs` still contains an older direct-input MySQL node that builds a URL from host, port, user, password, and database inputs. The current registered `mysql` node comes from `storage_handler::init_node_registry()`.
-
 ## Stored Object
 
 The storage layer does not persist one `QQMessage` segment directly. It stores normalized message metadata plus rendered content and optional serialized message trees:
