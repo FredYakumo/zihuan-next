@@ -199,6 +199,7 @@ impl RuntimeStorageConnectionManager {
                     &weaviate.class_name,
                     weaviate.username.clone(),
                     weaviate.password.clone(),
+                    weaviate.api_key.clone(),
                     weaviate.collection_schema,
                 )?;
                 (

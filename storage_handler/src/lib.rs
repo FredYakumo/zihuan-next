@@ -92,6 +92,8 @@ pub struct WeaviateConnection {
     pub username: Option<String>,
     #[serde(default)]
     pub password: Option<String>,
+    #[serde(default)]
+    pub api_key: Option<String>,
     pub collection_schema: WeaviateCollectionSchema,
 }
 
@@ -114,7 +116,8 @@ pub struct RustfsConnection {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TavilyConnection {
-    pub api_token: String,
+    #[serde(default)]
+    pub api_token: Option<String>,
     #[serde(default = "default_tavily_timeout_secs")]
     pub timeout_secs: u64,
 }
@@ -147,7 +150,6 @@ impl ConnectionConfig {
                     && mysql.max_connections > 0
                     && mysql.acquire_timeout_secs > 0
             }
-            ConnectionKind::Tavily(tavily) => !tavily.api_token.trim().is_empty(),
             _ => true,
         }
     }

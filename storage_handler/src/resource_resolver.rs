@@ -121,13 +121,14 @@ pub fn build_tavily_ref(
             connection.name
         )));
     };
-    if tavily.api_token.trim().is_empty() {
-        return Err(Error::ValidationError(
-            "tavily.api_token must not be empty".to_string(),
-        ));
-    }
+    let api_token = tavily
+        .api_token
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| Error::ValidationError("tavily.api_token must not be empty".to_string()))?;
     Ok(Some(Arc::new(TavilyRef::new(
-        tavily.api_token.clone(),
+        api_token.to_string(),
         Duration::from_secs(tavily.timeout_secs),
     ))))
 }

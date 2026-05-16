@@ -46,11 +46,11 @@
                 <input v-model="form.mysql_port" placeholder="3306" />
               </div>
               <div class="field">
-                <label>账号</label>
-                <input v-model="form.mysql_user" placeholder="root" />
+                <label>账号（可选）</label>
+                <input v-model="form.mysql_user" placeholder="可选" />
               </div>
               <div class="field">
-                <label>密码</label>
+                <label>密码（可选）</label>
                 <input v-model="form.mysql_password" type="password" placeholder="请输入密码" />
               </div>
               <div class="field-full">
@@ -73,11 +73,11 @@
                 <input v-model="form.redis_url" placeholder="redis://127.0.0.1:6379" />
               </div>
               <div class="field">
-                <label>用户名</label>
+                <label>用户名（可选）</label>
                 <input v-model="form.redis_username" placeholder="default" />
               </div>
               <div class="field">
-                <label>密码</label>
+                <label>密码（可选）</label>
                 <input v-model="form.redis_password" type="password" placeholder="可选" />
               </div>
             </template>
@@ -92,12 +92,16 @@
                 <input v-model="form.weaviate_class_name" />
               </div>
               <div class="field">
-                <label>用户名</label>
+                <label>用户名（可选）</label>
                 <input v-model="form.weaviate_username" placeholder="可选" />
               </div>
               <div class="field">
-                <label>密码</label>
+                <label>密码（可选）</label>
                 <input v-model="form.weaviate_password" type="password" placeholder="可选" />
+              </div>
+              <div class="field-full">
+                <label>API Key（可选）</label>
+                <input v-model="form.weaviate_api_key" type="password" placeholder="可选" />
               </div>
               <div class="field-full">
                 <label>Collection Schema</label>
@@ -110,8 +114,6 @@
 
             <template v-else-if="form.type === 'rustfs'">
               <div class="field"><label>Endpoint</label><input v-model="form.rustfs_endpoint" /></div>
-              <div class="field"><label>用户名</label><input v-model="form.rustfs_username" placeholder="可选" /></div>
-              <div class="field"><label>密码</label><input v-model="form.rustfs_password" type="password" placeholder="可选" /></div>
               <div class="field"><label>Bucket</label><input v-model="form.rustfs_bucket" /></div>
               <div class="field"><label>Region</label><input v-model="form.rustfs_region" /></div>
               <div class="field"><label>Access Key</label><input v-model="form.rustfs_access_key" /></div>
@@ -131,7 +133,7 @@
             </template>
 
             <template v-else-if="form.type === 'tavily'">
-              <div class="field-full"><label>API Token</label><input v-model="form.tavily_api_token" type="password" /></div>
+              <div class="field-full"><label>API Token（可选）</label><input v-model="form.tavily_api_token" type="password" placeholder="可选" /></div>
               <div class="field"><label>Timeout</label><input v-model.number="form.tavily_timeout_secs" type="number" min="1" /></div>
             </template>
           </div>
@@ -208,11 +210,11 @@
                   <input v-model="form.mysql_port" class="connection-card-inline-input" placeholder="3306" />
                 </div>
                 <div class="key-value connection-card-edit-row">
-                  <strong>账号</strong>
-                  <input v-model="form.mysql_user" class="connection-card-inline-input" placeholder="root" />
+                  <strong>账号（可选）</strong>
+                  <input v-model="form.mysql_user" class="connection-card-inline-input" placeholder="可选" />
                 </div>
                 <div class="key-value connection-card-edit-row">
-                  <strong>密码</strong>
+                  <strong>密码（可选）</strong>
                   <input v-model="form.mysql_password" class="connection-card-inline-input" type="password" placeholder="请输入密码" />
                 </div>
                 <div class="key-value connection-card-edit-row">
@@ -235,11 +237,11 @@
                   <input v-model="form.redis_url" class="connection-card-inline-input" placeholder="redis://127.0.0.1:6379" />
                 </div>
                 <div class="key-value connection-card-edit-row">
-                  <strong>用户名</strong>
+                  <strong>用户名（可选）</strong>
                   <input v-model="form.redis_username" class="connection-card-inline-input" placeholder="default" />
                 </div>
                 <div class="key-value connection-card-edit-row">
-                  <strong>密码</strong>
+                  <strong>密码（可选）</strong>
                   <input v-model="form.redis_password" class="connection-card-inline-input" type="password" />
                 </div>
               </template>
@@ -254,12 +256,16 @@
                   <input v-model="form.weaviate_class_name" class="connection-card-inline-input" />
                 </div>
                 <div class="key-value connection-card-edit-row">
-                  <strong>用户名</strong>
+                  <strong>用户名（可选）</strong>
                   <input v-model="form.weaviate_username" class="connection-card-inline-input" />
                 </div>
                 <div class="key-value connection-card-edit-row">
-                  <strong>密码</strong>
+                  <strong>密码（可选）</strong>
                   <input v-model="form.weaviate_password" class="connection-card-inline-input" type="password" />
+                </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>API Key（可选）</strong>
+                  <input v-model="form.weaviate_api_key" class="connection-card-inline-input" type="password" placeholder="可选" />
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>Schema</strong>
@@ -274,14 +280,6 @@
                 <div class="key-value connection-card-edit-row">
                   <strong>Endpoint</strong>
                   <input v-model="form.rustfs_endpoint" class="connection-card-inline-input" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>用户名</strong>
-                  <input v-model="form.rustfs_username" class="connection-card-inline-input" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>密码</strong>
-                  <input v-model="form.rustfs_password" class="connection-card-inline-input" type="password" />
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>Bucket</strong>
@@ -333,8 +331,8 @@
 
               <template v-else-if="form.type === 'tavily'">
                 <div class="key-value connection-card-edit-row">
-                  <strong>API Token</strong>
-                  <input v-model="form.tavily_api_token" class="connection-card-inline-input" type="password" />
+                  <strong>API Token（可选）</strong>
+                  <input v-model="form.tavily_api_token" class="connection-card-inline-input" type="password" placeholder="可选" />
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>Timeout</strong>
@@ -476,10 +474,6 @@ async function submitForm() {
       alert("请填写 MySQL 端口");
       return;
     }
-    if (!form.mysql_user.trim()) {
-      alert("请填写 MySQL 账号");
-      return;
-    }
     if (!form.mysql_database.trim()) {
       alert("请填写 MySQL 数据库名");
       return;
@@ -496,10 +490,6 @@ async function submitForm() {
       return;
     }
   }
-  if (form.type === "tavily" && !form.tavily_api_token.trim()) {
-    alert("请填写 Tavily API Token");
-    return;
-  }
   if (form.type === "weaviate") {
     if (!form.weaviate_base_url.trim()) {
       alert("请填写 Weaviate Base URL");
@@ -510,14 +500,19 @@ async function submitForm() {
       return;
     }
   }
-  const payload = buildConnectionPayload(form);
-  const result = await saveConnection(payload, false);
-  if (!result) return;
-  if (result.collection_created) {
-    alert(`已自动创建 Weaviate collection: ${form.weaviate_class_name.trim()}`);
+  try {
+    const payload = buildConnectionPayload(form);
+    const result = await saveConnection(payload, false);
+    if (!result) return;
+    if (result.collection_created) {
+      alert(`已自动创建 Weaviate collection: ${form.weaviate_class_name.trim()}`);
+    }
+    closeEditor();
+    await load();
+  } catch (error) {
+    console.error("连接保存失败", error);
+    alert(`连接保存失败：${formatSaveErrorMessage(error)}`);
   }
-  closeEditor();
-  await load();
 }
 
 async function saveConnection(
@@ -543,6 +538,32 @@ async function saveConnection(
     }
     throw error;
   }
+}
+
+function formatSaveErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    const rawMessage = String(error.message || "").trim();
+    const lowerMessage = rawMessage.toLowerCase();
+
+    if (
+      error.status === 401 ||
+      lowerMessage.includes("anonymous access not enabled") ||
+      lowerMessage.includes("authenticate through one of the available methods")
+    ) {
+      return "Weaviate 鉴权失败：请检查用户名/密码或 API Key 是否正确；如果实例允许匿名访问，也可以在 Weaviate 端开启匿名访问。";
+    }
+
+    if (rawMessage) {
+      return rawMessage;
+    }
+    return `请求失败（HTTP ${error.status}）`;
+  }
+
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  return "未知错误，请查看浏览器控制台日志。";
 }
 
 async function removeConnection(id: string) {
@@ -583,6 +604,7 @@ function summarizeConnection(connection: ConnectionConfig): Array<{ label: strin
         ...base,
         { label: "Base URL", value: String(kind.base_url ?? "") },
         { label: "Class", value: String(kind.class_name ?? "") },
+        { label: "API Key", value: String(kind.api_key ?? "") ? "已配置" : "未设置" },
         { label: "Schema", value: formatWeaviateSchema(String(kind.collection_schema ?? "")) },
       ];
     case "rustfs":

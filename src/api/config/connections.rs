@@ -80,12 +80,7 @@ fn validate_connection_basics(kind: &ConnectionKind) -> Result<(), String> {
             }
             Ok(())
         }
-        ConnectionKind::Tavily(tavily) => {
-            if tavily.api_token.trim().is_empty() {
-                return Err("tavily.api_token must not be empty".to_string());
-            }
-            Ok(())
-        }
+        ConnectionKind::Tavily(_) => Ok(()),
         _ => Ok(()),
     }
 }
@@ -113,7 +108,7 @@ fn validate_connection(
         weaviate.class_name.clone(),
         weaviate.username.clone(),
         weaviate.password.clone(),
-        None,
+        weaviate.api_key.clone(),
         Duration::from_secs(30),
     )
     .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;

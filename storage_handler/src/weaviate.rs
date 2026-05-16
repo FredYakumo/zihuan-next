@@ -15,6 +15,7 @@ pub fn build_weaviate_ref(
     class_name: &str,
     username: Option<String>,
     password: Option<String>,
+    api_key: Option<String>,
     collection_schema: WeaviateCollectionSchema,
 ) -> Result<Arc<WeaviateRef>> {
     let weaviate_ref = Arc::new(WeaviateRef::new(
@@ -22,7 +23,7 @@ pub fn build_weaviate_ref(
         class_name,
         username,
         password,
-        None,
+        api_key,
         std::time::Duration::from_secs(30),
     )?);
     if !weaviate_ref.ready()? {

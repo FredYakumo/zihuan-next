@@ -44,6 +44,7 @@ export interface ConnectionFormState {
   weaviate_class_name: string;
   weaviate_username: string;
   weaviate_password: string;
+  weaviate_api_key: string;
   weaviate_collection_schema: WeaviateCollectionSchema;
   rustfs_endpoint: string;
   rustfs_username: string;
@@ -167,6 +168,7 @@ export function defaultConnectionForm(): ConnectionFormState {
     weaviate_class_name: "",
     weaviate_username: "",
     weaviate_password: "",
+    weaviate_api_key: "",
     weaviate_collection_schema: "message_record_semantic",
     rustfs_endpoint: "",
     rustfs_username: "",
@@ -269,6 +271,7 @@ export function connectionFormFromConfig(connection: ConnectionConfig): Connecti
       form.weaviate_class_name = String(connection.kind.class_name ?? "");
       form.weaviate_username = String(connection.kind.username ?? "");
       form.weaviate_password = String(connection.kind.password ?? "");
+      form.weaviate_api_key = String(connection.kind.api_key ?? "");
       form.weaviate_collection_schema = String(
         connection.kind.collection_schema ?? "message_record_semantic",
       ) as WeaviateCollectionSchema;
@@ -361,6 +364,7 @@ export function buildConnectionPayload(form: ConnectionFormState): {
         class_name: form.weaviate_class_name.trim(),
         username: form.weaviate_username.trim() || null,
         password: form.weaviate_password.trim() || null,
+        api_key: form.weaviate_api_key.trim() || null,
         collection_schema: form.weaviate_collection_schema,
       };
       break;
@@ -391,7 +395,7 @@ export function buildConnectionPayload(form: ConnectionFormState): {
     case "tavily":
       payload.kind = {
         type: "tavily",
-        api_token: form.tavily_api_token.trim(),
+        api_token: form.tavily_api_token.trim() || null,
         timeout_secs: form.tavily_timeout_secs,
       };
       break;
