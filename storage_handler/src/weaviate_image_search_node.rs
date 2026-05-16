@@ -40,6 +40,7 @@ impl Node for WeaviateImageSearchNode {
         port! { name = "query", ty = String, desc = "图片语义查询文本" },
         port! { name = "limit", ty = Integer, desc = "返回结果数量，必须大于 0" },
         port! { name = "max_distance", ty = Float, desc = "可选：最大允许距离，超过则过滤", optional },
+        port! { name = "target_vector", ty = String, desc = "可选：查询目标向量名称，默认 description_vector", optional },
     ];
 
     node_output![
@@ -102,6 +103,13 @@ impl Node for WeaviateImageSearchNode {
                 ))
             }
         };
+        let target_vector = inputs
+            .get("target_vector")
+            .and_then(|v| match v {
+                DataValue::String(s) if !s.trim().is_empty() => Some(s.trim()),
+                _ => None,
+            })
+            .unwrap_or("description_vector");
 
         let query_vector = embedding_model.inference(&query)?;
         if query_vector.is_empty() {
@@ -122,6 +130,7 @@ impl Node for WeaviateImageSearchNode {
         let response = weaviate_ref.query_near_vector(
             &weaviate_ref.class_name,
             &query_vector,
+            Some(target_vector),
             limit,
             &property_names,
             true,

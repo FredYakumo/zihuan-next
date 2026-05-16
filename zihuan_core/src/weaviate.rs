@@ -1,18 +1,11 @@
-use chrono::Local;
-use log::info;
 use reqwest::{Client, RequestBuilder};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::fmt;
-use std::hash::{Hash, Hasher};
 use std::time::Duration;
-use uuid::Uuid;
 
 use crate::error::{Error, Result};
-use crate::ims_bot_adapter::models::event_model::MessageEvent;
-use crate::ims_bot_adapter::models::message::{collect_media_records, Message, PersistedMedia};
-use crate::llm::embedding_base::EmbeddingBase;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -48,6 +41,13 @@ pub struct WeaviatePropertyConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WeaviateVectorConfigEntry {
+    #[serde(rename = "vectorIndexType")]
+    pub vector_index_type: String,
+    pub vectorizer: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WeaviateCollectionConfig {
     #[serde(rename = "class")]
     pub class_name: String,
@@ -57,6 +57,8 @@ pub struct WeaviateCollectionConfig {
     pub properties: Vec<WeaviatePropertyConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vectorizer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "vectorConfig")]
+    pub vector_config: Option<HashMap<String, WeaviateVectorConfigEntry>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,6 +71,8 @@ pub struct WeaviateObjectInput {
     pub properties: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vector: Option<Vec<f32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vectors: Option<HashMap<String, Vec<f32>>>,
 }
 
 impl WeaviateRef {
@@ -150,28 +154,6 @@ impl WeaviateRef {
         Ok(())
     }
 
-    pub fn ensure_collection_schema(
-        &self,
-        schema: WeaviateCollectionSchema,
-        create_missing: bool,
-    ) -> Result<WeaviateEnsureCollectionResult> {
-        let collection = collection_config_for_schema(schema, self.class_name.clone());
-        match self.find_collection_schema(&collection.class_name)? {
-            Some(existing) => {
-                validate_collection_schema(&existing, &collection)?;
-                Ok(WeaviateEnsureCollectionResult::Existing)
-            }
-            None if create_missing => {
-                self.create_collection(&collection)?;
-                Ok(WeaviateEnsureCollectionResult::Created)
-            }
-            None => Err(Error::ValidationError(format!(
-                "Weaviate collection '{}' does not exist",
-                collection.class_name
-            ))),
-        }
-    }
-
     pub fn find_collection_schema(&self, class_name: &str) -> Result<Option<Value>> {
         let schema = self.schema()?;
         let classes = schema
@@ -213,114 +195,24 @@ impl WeaviateRef {
         self.post_json("/v1/objects", payload)
     }
 
-    pub fn upsert_message_event(
+    pub fn upsert_object_with_vectors(
         &self,
-        event: &MessageEvent,
-        embedding_model: &dyn EmbeddingBase,
+        class_name: &str,
+        properties: Value,
+        vectors: HashMap<String, Vec<f32>>,
+        id: Option<&str>,
     ) -> Result<Value> {
-        let sender_name = if event.sender.card.trim().is_empty() {
-            event.sender.nickname.as_str()
-        } else {
-            event.sender.card.as_str()
-        };
-        let group_id = event.group_id.map(|value| value.to_string());
-        self.upsert_qq_message_list(
-            &event.message_list,
-            &event.message_id.to_string(),
-            &event.sender.user_id.to_string(),
-            sender_name,
-            group_id.as_deref(),
-            event.group_name.as_deref(),
-            embedding_model,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn upsert_qq_message_list(
-        &self,
-        messages: &[Message],
-        message_id: &str,
-        sender_id: &str,
-        sender_name: &str,
-        group_id: Option<&str>,
-        group_name: Option<&str>,
-        embedding_model: &dyn EmbeddingBase,
-    ) -> Result<Value> {
-        let message_id = required_non_empty_string(message_id, "message_id")?;
-        let sender_id = required_non_empty_string(sender_id, "sender_id")?;
-        let sender_name = required_non_empty_string(sender_name, "sender_name")?;
-        let group_id = normalize_optional_string(group_id);
-        let group_name = normalize_optional_string(group_name);
-        let content = messages
-            .iter()
-            .map(|message| message.to_string())
-            .collect::<Vec<_>>()
-            .join("");
-        if content.trim().is_empty() {
-            return Err(Error::ValidationError(
-                "qq_message_list content must not be empty".to_string(),
-            ));
-        }
-
-        let at_targets: Vec<String> = messages
-            .iter()
-            .filter_map(|message| match message {
-                Message::At(at) => Some(at.target_id()),
-                _ => None,
-            })
-            .collect();
-        let at_target_list = (!at_targets.is_empty()).then(|| at_targets.join(","));
-        let media_json = {
-            let records = collect_media_records(messages);
-            (!records.is_empty())
-                .then(|| serde_json::to_string(&records))
-                .transpose()?
-        };
-        let properties = json!({
-            "message_id": message_id,
-            "sender_id": sender_id,
-            "sender_name": sender_name,
-            "send_time": Local::now().to_rfc3339(),
-            "group_id": group_id,
-            "group_name": group_name,
-            "content": content,
-            "at_target_list": at_target_list,
-            "media_json": media_json,
+        let mut payload = json!({
+            "class": class_name,
+            "properties": properties,
         });
-        let vector = embedding_model.inference(
-            properties
-                .get("content")
-                .and_then(Value::as_str)
-                .unwrap_or_default(),
-        )?;
-        let object_id = deterministic_message_object_id(&self.class_name, &message_id);
-
-        info!(
-            "[WeaviateRef] Upserting message {} into class {}",
-            message_id, self.class_name
-        );
-
-        self.upsert_object(&self.class_name, properties, Some(vector), Some(&object_id))
-    }
-
-    pub fn upsert_image_record(
-        &self,
-        media: &PersistedMedia,
-        vector: &[f32],
-    ) -> Result<Value> {
-        if vector.is_empty() {
-            return Err(Error::ValidationError(
-                "vector must not be empty".to_string(),
-            ));
+        if let Some(id) = id.filter(|value| !value.trim().is_empty()) {
+            payload["id"] = Value::String(id.to_string());
         }
-        let properties = build_image_record_properties(media)?;
-        let object_id = deterministic_media_object_id(&self.class_name, &media.media_id);
-        self.upsert_object(
-            &self.class_name,
-            properties,
-            Some(vector.to_vec()),
-            Some(&object_id),
-        )
+        if !vectors.is_empty() {
+            payload["vectors"] = serde_json::to_value(vectors)?;
+        }
+        self.post_json("/v1/objects", payload)
     }
 
     pub fn batch_upsert_objects(&self, objects: &[WeaviateObjectInput]) -> Result<Value> {
@@ -339,6 +231,7 @@ impl WeaviateRef {
         &self,
         class_name: &str,
         vector: &[f32],
+        target_vector: Option<&str>,
         limit: usize,
         property_names: &[String],
         include_distance: bool,
@@ -369,8 +262,11 @@ impl WeaviateRef {
             .collect::<Vec<_>>()
             .join(", ");
         let fields = requested_fields.join(" ");
+        let target_clause = target_vector
+            .map(|tv| format!(r#", targetVectors: ["{}"]"#, tv))
+            .unwrap_or_default();
         let graphql = format!(
-            "{{ Get {{ {class_name}(nearVector: {{ vector: [{vector_body}] }}, limit: {limit}) {{ {fields} }} }} }}"
+            "{{ Get {{ {class_name}(nearVector: {{ vector: [{vector_body}]{target_clause} }}, limit: {limit}) {{ {fields} }} }} }}"
         );
         self.execute_graphql_query(&graphql)
     }
@@ -514,231 +410,8 @@ fn normalize_class_name(raw: String) -> Result<String> {
     Ok(trimmed)
 }
 
-fn required_non_empty_string(value: &str, field_name: &str) -> Result<String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Err(Error::ValidationError(format!(
-            "{field_name} must not be empty"
-        )));
-    }
-    Ok(trimmed.to_string())
-}
-
-fn normalize_optional_string(value: Option<&str>) -> Option<String> {
-    value
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-}
-
 fn normalize_owned_optional_string(value: Option<String>) -> Option<String> {
     value
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-}
-
-fn deterministic_message_object_id(class_name: &str, message_id: &str) -> String {
-    let _ = (class_name, message_id);
-    Uuid::new_v4().to_string()
-}
-
-pub fn collection_config_for_schema(
-    schema: WeaviateCollectionSchema,
-    class_name: String,
-) -> WeaviateCollectionConfig {
-    match schema {
-        WeaviateCollectionSchema::MessageRecordSemantic => {
-            message_vector_collection_config(class_name)
-        }
-        WeaviateCollectionSchema::ImageSemantic => image_vector_collection_config(class_name),
-    }
-}
-
-pub fn validate_collection_schema(
-    existing: &Value,
-    expected: &WeaviateCollectionConfig,
-) -> Result<()> {
-    let existing_name = existing
-        .get("class")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    if existing_name != expected.class_name {
-        return Err(Error::ValidationError(format!(
-            "Weaviate collection name mismatch: expected '{}', got '{}'",
-            expected.class_name, existing_name
-        )));
-    }
-    let expected_vectorizer = expected.vectorizer.as_deref().unwrap_or_default();
-    let existing_vectorizer = existing
-        .get("vectorizer")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    if existing_vectorizer != expected_vectorizer {
-        return Err(Error::ValidationError(format!(
-            "Weaviate collection '{}' vectorizer mismatch: expected '{}', got '{}'",
-            expected.class_name, expected_vectorizer, existing_vectorizer
-        )));
-    }
-    let existing_properties = existing
-        .get("properties")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    for expected_property in &expected.properties {
-        let Some(existing_property) = existing_properties.iter().find(|property| {
-            property
-                .get("name")
-                .and_then(Value::as_str)
-                .map(|name| name == expected_property.name)
-                .unwrap_or(false)
-        }) else {
-            return Err(Error::ValidationError(format!(
-                "Weaviate collection '{}' missing property '{}'",
-                expected.class_name, expected_property.name
-            )));
-        };
-        let existing_data_type = existing_property
-            .get("dataType")
-            .and_then(Value::as_array)
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(ToOwned::to_owned)
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        if existing_data_type != expected_property.data_type {
-            return Err(Error::ValidationError(format!(
-                "Weaviate collection '{}' property '{}' dataType mismatch: expected {:?}, got {:?}",
-                expected.class_name,
-                expected_property.name,
-                expected_property.data_type,
-                existing_data_type
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn message_vector_collection_config(class_name: String) -> WeaviateCollectionConfig {
-    WeaviateCollectionConfig {
-        class_name,
-        description: Some("QQ message vector storage".to_string()),
-        properties: vec![
-            text_property("message_id", "QQ 平台消息 ID"),
-            text_property("sender_id", "发送者 ID"),
-            text_property("sender_name", "发送者名称"),
-            date_property("send_time", "消息发送时间"),
-            text_property("group_id", "群 ID，可为空"),
-            text_property("group_name", "群名称，可为空"),
-            text_property("content", "聚合后的消息文本"),
-            text_property("at_target_list", "@ 提及目标列表"),
-            text_property("media_json", "消息媒体元数据 JSON"),
-        ],
-        vectorizer: Some("none".to_string()),
-    }
-}
-
-fn text_property(name: &str, description: &str) -> WeaviatePropertyConfig {
-    WeaviatePropertyConfig {
-        name: name.to_string(),
-        data_type: vec!["text".to_string()],
-        description: Some(description.to_string()),
-    }
-}
-
-fn date_property(name: &str, description: &str) -> WeaviatePropertyConfig {
-    WeaviatePropertyConfig {
-        name: name.to_string(),
-        data_type: vec!["date".to_string()],
-        description: Some(description.to_string()),
-    }
-}
-
-fn image_vector_collection_config(class_name: String) -> WeaviateCollectionConfig {
-    WeaviateCollectionConfig {
-        class_name,
-        description: Some("Image vector storage".to_string()),
-        properties: vec![
-            text_property("media_id", "持久化媒体ID"),
-            text_property("original_source", "原始来源字符串"),
-            text_property("rustfs_path", "RustFS对象路径"),
-            text_property("name", "媒体名称"),
-            text_property("description", "图片总结说明"),
-            text_property("mime_type", "媒体MIME类型"),
-            text_property("source", "来源标记，如 upload/qq_chat/web_search"),
-        ],
-        vectorizer: Some("none".to_string()),
-    }
-}
-
-fn deterministic_media_object_id(class_name: &str, media_id: &str) -> String {
-    let seed = format!("{class_name}:{media_id}");
-    let mut hasher = DefaultHasher::new();
-    seed.hash(&mut hasher);
-    format!("media-object-{:016x}", hasher.finish())
-}
-
-fn build_image_record_properties(media: &PersistedMedia) -> Result<Value> {
-    let media_id = required_non_empty_string(&media.media_id, "media_id")?;
-    let original_source = required_non_empty_string(&media.original_source, "original_source")?;
-    let rustfs_path = required_non_empty_string(&media.rustfs_path, "rustfs_path")?;
-
-    Ok(json!({
-        "media_id": media_id,
-        "original_source": original_source,
-        "rustfs_path": rustfs_path,
-        "name": normalize_optional_string(media.name.as_deref()),
-        "description": normalize_optional_string(media.description.as_deref()),
-        "mime_type": normalize_optional_string(media.mime_type.as_deref()),
-        "source": media.source.to_string(),
-    }))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
-
-    #[test]
-    fn image_collection_schema_matches_persisted_media_fields() {
-        let config = image_vector_collection_config("ImageCollection".to_string());
-        let fields = config
-            .properties
-            .iter()
-            .map(|property| property.name.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            fields,
-            vec![
-                "media_id",
-                "original_source",
-                "rustfs_path",
-                "name",
-                "description",
-                "mime_type",
-                "source"
-            ]
-        );
-    }
-
-    #[test]
-    fn image_record_properties_map_from_persisted_media() {
-        let media = PersistedMedia::new(
-            PersistedMediaSource::QqChat,
-            "https://multimedia.nt.qq.com.cn/download?fileid=1",
-            "qq-images/2026/05/16/1.jpg",
-            Some("download".to_string()),
-            Some("图片描述".to_string()),
-            Some("image/jpeg".to_string()),
-        );
-        let properties = build_image_record_properties(&media).expect("build image properties");
-        assert_eq!(properties["media_id"], media.media_id);
-        assert_eq!(properties["original_source"], media.original_source);
-        assert_eq!(properties["rustfs_path"], media.rustfs_path);
-        assert_eq!(properties["description"], "图片描述");
-        assert_eq!(properties["mime_type"], "image/jpeg");
-        assert_eq!(properties["source"], "qq_chat");
-    }
 }

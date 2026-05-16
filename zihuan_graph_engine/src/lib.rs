@@ -107,7 +107,6 @@ pub mod function_graph;
 pub mod graph_boundary;
 pub mod graph_io;
 pub mod hyperparam_store;
-pub mod image_weaviate_persistence;
 pub mod message_mysql_chunking;
 pub mod message_mysql_get_group_history;
 pub mod message_mysql_get_user_history;
@@ -117,7 +116,6 @@ pub mod message_persistence;
 pub mod message_restore;
 pub mod object_storage;
 pub mod qq_message_list_mysql_persistence;
-pub mod qq_message_list_weaviate_persistence;
 pub mod registry;
 pub mod util;
 

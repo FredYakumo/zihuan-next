@@ -1,8 +1,9 @@
-use crate::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
+use crate::weaviate_persistence::upsert_qq_message_list;
 use log::error;
 use std::collections::HashMap;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::models::message::Message;
+use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 
 pub struct QQMessageListWeaviatePersistenceNode {
     id: String,
@@ -32,23 +33,23 @@ impl Node for QQMessageListWeaviatePersistenceNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("QQMessage列表向量持久化 - 将Vec<QQMessage>及元数据向量化后存储到Weaviate数据库")
+        Some("QQMessage list vector persistence - vectorizes Vec<QQMessage> and metadata into Weaviate")
     }
 
     node_input![
-        port! { name = "qq_message_list", ty = Vec(QQMessage), desc = "要持久化的QQ消息列表" },
-        port! { name = "message_id", ty = String, desc = "消息ID" },
-        port! { name = "sender_id", ty = String, desc = "发送者ID" },
-        port! { name = "sender_name", ty = String, desc = "发送者名称" },
-        port! { name = "group_id", ty = String, desc = "群ID（可选）", optional },
-        port! { name = "group_name", ty = String, desc = "群名称（可选）", optional },
-        port! { name = "weaviate_ref", ty = zihuan_core::weaviate::WeaviateRef, desc = "Weaviate连接配置引用" },
-        port! { name = "embedding_model", ty = EmbeddingModel, desc = "Embedding模型引用" },
+        port! { name = "qq_message_list", ty = Vec(QQMessage), desc = "QQ message list to persist" },
+        port! { name = "message_id", ty = String, desc = "Message ID" },
+        port! { name = "sender_id", ty = String, desc = "Sender ID" },
+        port! { name = "sender_name", ty = String, desc = "Sender name" },
+        port! { name = "group_id", ty = String, desc = "Group ID (optional)", optional },
+        port! { name = "group_name", ty = String, desc = "Group name (optional)", optional },
+        port! { name = "weaviate_ref", ty = zihuan_core::weaviate::WeaviateRef, desc = "Weaviate connection reference" },
+        port! { name = "embedding_model", ty = EmbeddingModel, desc = "Embedding model reference" },
     ];
 
     node_output![
-        port! { name = "success", ty = Boolean, desc = "是否存储成功" },
-        port! { name = "qq_message_list", ty = Vec(QQMessage), desc = "透传输入的消息列表" },
+        port! { name = "success", ty = Boolean, desc = "Whether storage succeeded" },
+        port! { name = "qq_message_list", ty = Vec(QQMessage), desc = "Pass-through input message list" },
     ];
 
     fn execute(
@@ -95,7 +96,8 @@ impl Node for QQMessageListWeaviatePersistenceNode {
             })
             .collect();
 
-        let success = match weaviate_ref.upsert_qq_message_list(
+        let success = match upsert_qq_message_list(
+            &weaviate_ref,
             &messages,
             &message_id,
             &sender_id,

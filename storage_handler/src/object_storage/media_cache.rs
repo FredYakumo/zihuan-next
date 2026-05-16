@@ -404,6 +404,7 @@ fn remote_image_source(image: &ImageMessage) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zihuan_core::ims_bot_adapter::models::message::PersistedMediaSource;
 
     #[test]
     fn infer_persisted_media_from_qq_image_input() {

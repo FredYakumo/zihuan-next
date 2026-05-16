@@ -29,8 +29,8 @@ use ims_bot_adapter::models::message::{
 use model_inference::inference_function::compact_message::{
     compact_message_history, estimate_messages_tokens,
 };
-use model_inference::message_content_utils::downgrade_messages_for_model;
-use zihuan_agent::brain::{sanitize_messages_for_inference, Brain, BrainStopReason, BrainTool};
+use model_inference::message_content_utils::{downgrade_messages_for_model, sanitize_messages_for_inference};
+use zihuan_agent::brain::{Brain, BrainStopReason, BrainTool};
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
@@ -42,6 +42,7 @@ use zihuan_core::runtime::block_async;
 use zihuan_core::task_context::{
     scope_task_id, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
 };
+use storage_handler::upsert_image_record;
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::brain_tool_spec::{
     BrainToolDefinition, QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
@@ -2508,11 +2509,16 @@ impl BrainTool for SearchSimilarImagesBrainTool {
                     self.weaviate_image_ref.as_ref(),
                     self.embedding_model.as_ref(),
                 ) {
-                    let vector = embedding_model
+                    let description_vector = embedding_model
                         .inference(description)
                         .unwrap_or_else(|_| embedding_model.inference(&query).unwrap_or_default());
-                    if !vector.is_empty() {
-                        if let Err(err) = weaviate_image_ref.upsert_image_record(&media, &vector) {
+                    if !description_vector.is_empty() {
+                        if let Err(err) = upsert_image_record(
+                            weaviate_image_ref,
+                            &media,
+                            &description_vector,
+                            None,
+                        ) {
                             warn!(
                                 "{LOG_PREFIX} Failed to persist tavily image fallback result into weaviate: {}",
                                 err

@@ -5,6 +5,7 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::weaviate::{WeaviateCollectionSchema, WeaviateRef};
 use zihuan_graph_engine::{DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port};
 
+use crate::weaviate_schema::ensure_collection_schema;
 use crate::RuntimeStorageConnectionManager;
 
 const CONFIG_ID_FIELD: &str = "config_id";
@@ -31,7 +32,7 @@ pub fn build_weaviate_ref(
             "Weaviate is reachable but not ready yet".to_string(),
         ));
     }
-    weaviate_ref.ensure_collection_schema(collection_schema, true)?;
+    ensure_collection_schema(&weaviate_ref, collection_schema, true)?;
     Ok(weaviate_ref)
 }
 

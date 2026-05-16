@@ -1,7 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use log::{info, warn};
+use model_inference::message_content_utils::{is_transport_error, sanitize_messages_for_inference};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
@@ -20,74 +21,6 @@ fn truncate_for_log(text: &str, max_chars: usize) -> String {
 
     let truncated: String = text.chars().take(max_chars).collect();
     format!("{truncated}...(truncated,total_chars={total_chars})")
-}
-
-/// Remove dangling / unresolved tool-call sequences from a message history so
-/// that the sequence passed to the LLM is always well-formed.
-///
-/// Mirrors the logic that was duplicated in `BrainNode::sanitize_messages_for_inference`
-/// and in `qq_message_agent_node::sanitize_messages`.
-pub fn sanitize_messages_for_inference(messages: Vec<OpenAIMessage>) -> Vec<OpenAIMessage> {
-    let mut sanitized: Vec<OpenAIMessage> = Vec::with_capacity(messages.len());
-    let mut pending: Option<(usize, HashSet<String>)> = None;
-
-    for message in messages {
-        if !message.tool_calls.is_empty() {
-            if let Some((start, ids)) = pending.take() {
-                warn!(
-                    "[brain] Dropping incomplete tool-call segment before new assistant tool-call: unresolved_ids={:?}",
-                    ids
-                );
-                sanitized.truncate(start);
-            }
-            let ids: HashSet<String> = message.tool_calls.iter().map(|tc| tc.id.clone()).collect();
-            let start = sanitized.len();
-            sanitized.push(message);
-            if !ids.is_empty() {
-                pending = Some((start, ids));
-            }
-            continue;
-        }
-
-        if matches!(message.role, MessageRole::Tool) {
-            let mut keep = false;
-            if let Some((_, unresolved)) = pending.as_mut() {
-                if let Some(id) = &message.tool_call_id {
-                    if unresolved.remove(id) {
-                        keep = true;
-                    }
-                }
-            }
-            if keep {
-                sanitized.push(message);
-                if pending.as_ref().is_some_and(|(_, ids)| ids.is_empty()) {
-                    pending = None;
-                }
-            } else {
-                warn!("[brain] Dropping orphan tool message");
-            }
-            continue;
-        }
-
-        if let Some((start, ids)) = pending.take() {
-            warn!(
-                "[brain] Dropping dangling tool-call segment before non-tool message: unresolved_ids={:?}",
-                ids
-            );
-            sanitized.truncate(start);
-        }
-        sanitized.push(message);
-    }
-
-    if let Some((start, ids)) = pending {
-        warn!(
-            "[brain] Dropping dangling segment at end of history: unresolved_ids={:?}",
-            ids
-        );
-        sanitized.truncate(start);
-    }
-
-    sanitized
 }
 
 /// A tool that [`Brain`] can invoke during an inference loop.
@@ -418,7 +351,3 @@ fn append_tool_summary_to_system(
     messages.push(OpenAIMessage::system(summary));
 }
 
-/// Returns `true` if `content` looks like a transport-level LLM error string.
-pub fn is_transport_error(content: &str) -> bool {
-    content.starts_with("Error:")
-}

@@ -1,8 +1,8 @@
-use crate::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
-use log::error;
+use crate::weaviate_persistence::upsert_image_record;
 use std::collections::HashMap;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
+use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 
 pub struct ImageWeaviatePersistenceNode {
     id: String,
@@ -32,24 +32,25 @@ impl Node for ImageWeaviatePersistenceNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("图片向量持久化 - 将对象存储路径 + 向量 + 总结写入 Weaviate")
+        Some("Image vector persistence - writes object storage path + vector + summary to Weaviate")
     }
 
     node_input![
-        port! { name = "object_storage_path", ty = String, desc = "对象存储路径（object_key/object_url）" },
-        port! { name = "vector", ty = Vector, desc = "图片语义向量" },
-        port! { name = "description", ty = String, desc = "图片总结说明" },
-        port! { name = "weaviate_ref", ty = zihuan_core::weaviate::WeaviateRef, desc = "Weaviate连接配置引用" },
-        port! { name = "source", ty = String, desc = "可选：图片来源（qq/tavily等）", optional },
-        port! { name = "media_id", ty = String, desc = "可选：持久化媒体ID", optional },
-        port! { name = "original_source", ty = String, desc = "可选：原始来源字符串", optional },
-        port! { name = "name", ty = String, desc = "可选：媒体名称", optional },
-        port! { name = "mime_type", ty = String, desc = "可选：媒体MIME类型", optional },
+        port! { name = "object_storage_path", ty = String, desc = "Object storage path (object_key/object_url)" },
+        port! { name = "description", ty = String, desc = "Image summary description" },
+        port! { name = "weaviate_ref", ty = zihuan_core::weaviate::WeaviateRef, desc = "Weaviate connection reference" },
+        port! { name = "embedding_model", ty = zihuan_core::llm::embedding_base::EmbeddingModel, desc = "Embedding model for generating name and description vectors", optional },
+        port! { name = "vector", ty = Vector, desc = "Image semantic vector (deprecated, prefer embedding_model)", optional },
+        port! { name = "source", ty = String, desc = "Optional: image source (qq/tavily/etc)", optional },
+        port! { name = "media_id", ty = String, desc = "Optional: persisted media ID", optional },
+        port! { name = "original_source", ty = String, desc = "Optional: original source string", optional },
+        port! { name = "name", ty = String, desc = "Optional: media name", optional },
+        port! { name = "mime_type", ty = String, desc = "Optional: media MIME type", optional },
     ];
 
     node_output![
-        port! { name = "success", ty = Boolean, desc = "是否存储成功" },
-        port! { name = "object_storage_path", ty = String, desc = "透传对象存储路径" },
+        port! { name = "success", ty = Boolean, desc = "Whether storage succeeded" },
+        port! { name = "object_storage_path", ty = String, desc = "Pass-through object storage path" },
     ];
 
     fn execute(
@@ -60,19 +61,6 @@ impl Node for ImageWeaviatePersistenceNode {
 
         let object_storage_path = required_string(&inputs, "object_storage_path")?;
         let description = required_string(&inputs, "description")?;
-        let vector = inputs
-            .get("vector")
-            .and_then(|v| match v {
-                DataValue::Vector(value) => Some(value.clone()),
-                _ => None,
-            })
-            .ok_or_else(|| Error::InvalidNodeInput("vector is required".to_string()))?;
-
-        if vector.is_empty() {
-            return Err(Error::ValidationError(
-                "vector must not be empty".to_string(),
-            ));
-        }
 
         let weaviate_ref = inputs
             .get("weaviate_ref")
@@ -81,6 +69,27 @@ impl Node for ImageWeaviatePersistenceNode {
                 _ => None,
             })
             .ok_or_else(|| Error::InvalidNodeInput("weaviate_ref is required".to_string()))?;
+
+        let embedding_model = inputs.get("embedding_model").and_then(|v| match v {
+            DataValue::EmbeddingModel(m) => Some(m.clone()),
+            _ => None,
+        });
+
+        let description_vector = if let Some(model) = embedding_model.as_ref() {
+            model.inference(&description)?
+        } else if let Some(DataValue::Vector(v)) = inputs.get("vector") {
+            v.clone()
+        } else {
+            return Err(Error::InvalidNodeInput(
+                "either embedding_model or vector is required".to_string(),
+            ));
+        };
+
+        if description_vector.is_empty() {
+            return Err(Error::ValidationError(
+                "description_vector must not be empty".to_string(),
+            ));
+        }
 
         let source = parse_media_source(optional_non_empty_string(&inputs, "source").as_deref());
         let media_id = optional_non_empty_string(&inputs, "media_id");
@@ -94,7 +103,7 @@ impl Node for ImageWeaviatePersistenceNode {
                 source,
                 original_source,
                 rustfs_path: object_storage_path.clone(),
-                name,
+                name: name.clone(),
                 description: Some(description.clone()),
                 mime_type,
             }
@@ -103,16 +112,26 @@ impl Node for ImageWeaviatePersistenceNode {
                 source,
                 original_source,
                 object_storage_path.clone(),
-                name,
+                name.clone(),
                 Some(description.clone()),
                 mime_type,
             )
         };
 
-        let success = match weaviate_ref.upsert_image_record(&media, &vector) {
+        let name_vector = name
+            .as_ref()
+            .and_then(|n| embedding_model.as_ref()?.inference(n).ok())
+            .filter(|v| !v.is_empty());
+
+        let success = match upsert_image_record(
+            &weaviate_ref,
+            &media,
+            &description_vector,
+            name_vector.as_deref(),
+        ) {
             Ok(_) => true,
             Err(err) => {
-                error!(
+                log::error!(
                     "[ImageWeaviatePersistenceNode] Failed to persist image vector: {}",
                     err
                 );

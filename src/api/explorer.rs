@@ -527,9 +527,22 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
         Err(err) => return render_internal_error(res, err),
     };
 
+    let target_vector = weaviate_ref
+        .find_collection_schema(&weaviate_ref.class_name)
+        .ok()
+        .flatten()
+        .and_then(|schema| {
+            schema
+                .get("vectorConfig")
+                .and_then(Value::as_object)
+                .and_then(|config| config.keys().next().cloned())
+        })
+        .map(|s| s.to_string());
+
     let response = match weaviate_ref.query_near_vector(
         &weaviate_ref.class_name,
         &vector,
+        target_vector.as_deref(),
         limit,
         &property_names,
         true,

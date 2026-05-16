@@ -120,9 +120,12 @@ fn validate_connection(
             class_name: weaviate_ref.class_name.clone(),
         });
     }
-    let result = weaviate_ref
-        .ensure_collection_schema(weaviate.collection_schema, allow_create_collection)
-        .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
+    let result = storage_handler::ensure_collection_schema(
+        &weaviate_ref,
+        weaviate.collection_schema,
+        allow_create_collection,
+    )
+    .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
     Ok(matches!(result, WeaviateEnsureCollectionResult::Created))
 }
 

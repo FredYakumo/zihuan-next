@@ -63,7 +63,11 @@ impl Node for AgentImageDbRefNode {
                 "weaviate_image_connection_id is required".to_string(),
             )
         })?;
-        weaviate_ref.ensure_collection_schema(WeaviateCollectionSchema::ImageSemantic, false)?;
+        storage_handler::ensure_collection_schema(
+            &weaviate_ref,
+            WeaviateCollectionSchema::ImageSemantic,
+            false,
+        )?;
         Ok(HashMap::from([(
             "weaviate_ref".to_string(),
             DataValue::WeaviateRef(weaviate_ref),
