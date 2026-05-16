@@ -597,6 +597,7 @@ export interface WeaviateExploreResponse {
   total: number;
   limit: number;
   class_name: string;
+  collection_schema: "message_record_semantic" | "image_semantic";
 }
 
 function buildQueryString(params: Record<string, unknown>): string {

@@ -195,6 +195,9 @@
 
       <div v-if="selectedWeaviateConnection" class="explorer-meta muted">
         Class: {{ selectedWeaviateClassName }}
+        <template v-if="selectedWeaviateSchema">
+          · Schema: {{ selectedWeaviateSchema }}
+        </template>
       </div>
 
       <div v-if="weaviate.loading" class="empty-state">检索中…</div>
@@ -207,15 +210,29 @@
             <span v-if="item.object_id" class="td-mono explorer-weaviate-object-id">{{ item.object_id }}</span>
           </div>
           <div class="explorer-weaviate-card-body">
-            <div v-if="readStringProperty(item.properties, 'content')" class="explorer-weaviate-content">
+            <div v-if="isMessageWeaviateSchema && readStringProperty(item.properties, 'content')" class="explorer-weaviate-content">
               {{ readStringProperty(item.properties, 'content') }}
             </div>
+            <div v-if="isImageWeaviateSchema && readStringProperty(item.properties, 'description')" class="explorer-weaviate-content">
+              {{ readStringProperty(item.properties, 'description') }}
+            </div>
             <div class="explorer-weaviate-grid">
-              <div v-if="readStringProperty(item.properties, 'sender_name')" class="key-value"><strong>Sender</strong><span>{{ readStringProperty(item.properties, 'sender_name') }}</span></div>
-              <div v-if="readStringProperty(item.properties, 'sender_id')" class="key-value"><strong>Sender ID</strong><span class="mono">{{ readStringProperty(item.properties, 'sender_id') }}</span></div>
-              <div v-if="readStringProperty(item.properties, 'group_name')" class="key-value"><strong>Group</strong><span>{{ readStringProperty(item.properties, 'group_name') }}</span></div>
-              <div v-if="readStringProperty(item.properties, 'group_id')" class="key-value"><strong>Group ID</strong><span class="mono">{{ readStringProperty(item.properties, 'group_id') }}</span></div>
-              <div v-if="readStringProperty(item.properties, 'send_time')" class="key-value"><strong>Send Time</strong><span>{{ readStringProperty(item.properties, 'send_time') }}</span></div>
+              <template v-if="isMessageWeaviateSchema">
+                <div v-if="readStringProperty(item.properties, 'sender_name')" class="key-value"><strong>Sender</strong><span>{{ readStringProperty(item.properties, 'sender_name') }}</span></div>
+                <div v-if="readStringProperty(item.properties, 'sender_id')" class="key-value"><strong>Sender ID</strong><span class="mono">{{ readStringProperty(item.properties, 'sender_id') }}</span></div>
+                <div v-if="readStringProperty(item.properties, 'group_name')" class="key-value"><strong>Group</strong><span>{{ readStringProperty(item.properties, 'group_name') }}</span></div>
+                <div v-if="readStringProperty(item.properties, 'group_id')" class="key-value"><strong>Group ID</strong><span class="mono">{{ readStringProperty(item.properties, 'group_id') }}</span></div>
+                <div v-if="readStringProperty(item.properties, 'send_time')" class="key-value"><strong>Send Time</strong><span>{{ readStringProperty(item.properties, 'send_time') }}</span></div>
+                <div v-if="readStringProperty(item.properties, 'message_id')" class="key-value"><strong>Message ID</strong><span class="mono">{{ readStringProperty(item.properties, 'message_id') }}</span></div>
+              </template>
+              <template v-else-if="isImageWeaviateSchema">
+                <div v-if="readStringProperty(item.properties, 'name')" class="key-value"><strong>Name</strong><span>{{ readStringProperty(item.properties, 'name') }}</span></div>
+                <div v-if="readStringProperty(item.properties, 'media_id')" class="key-value"><strong>Media ID</strong><span class="mono">{{ readStringProperty(item.properties, 'media_id') }}</span></div>
+                <div v-if="readStringProperty(item.properties, 'source')" class="key-value"><strong>Source</strong><span>{{ readStringProperty(item.properties, 'source') }}</span></div>
+                <div v-if="readStringProperty(item.properties, 'mime_type')" class="key-value"><strong>MIME</strong><span>{{ readStringProperty(item.properties, 'mime_type') }}</span></div>
+                <div v-if="readStringProperty(item.properties, 'rustfs_path')" class="key-value"><strong>RustFS Path</strong><span class="mono">{{ readStringProperty(item.properties, 'rustfs_path') }}</span></div>
+                <div v-if="readStringProperty(item.properties, 'original_source')" class="key-value"><strong>Original Source</strong><span class="mono">{{ readStringProperty(item.properties, 'original_source') }}</span></div>
+              </template>
             </div>
             <details class="explorer-weaviate-details">
               <summary>查看原始字段</summary>
@@ -315,6 +332,7 @@ import {
   type RustfsObject,
   type WeaviateSearchResult,
 } from "../../api/client";
+import type { WeaviateCollectionSchema } from "../model";
 
 const tabs = [
   { id: "mysql" as const, label: "MySQL" },
@@ -348,6 +366,12 @@ const selectedWeaviateClassName = computed(() =>
     ? selectedWeaviateConnection.value.kind.class_name
     : weaviate.value.className
 );
+const selectedWeaviateSchema = computed(() => {
+  const schema = selectedWeaviateConnection.value?.kind.collection_schema;
+  return typeof schema === "string" ? schema as WeaviateCollectionSchema : weaviate.value.collectionSchema;
+});
+const isMessageWeaviateSchema = computed(() => selectedWeaviateSchema.value === "message_record_semantic");
+const isImageWeaviateSchema = computed(() => selectedWeaviateSchema.value === "image_semantic");
 const rustfsConnections = computed(() =>
   connections.value.filter((c) => c.kind.type === "rustfs" && c.enabled)
 );
@@ -498,12 +522,14 @@ const weaviate = ref({
   query: "",
   limit: 10,
   className: "",
+  collectionSchema: "message_record_semantic" as WeaviateCollectionSchema,
   items: [] as WeaviateSearchResult[],
 });
 
 function onWeaviateConnectionChange() {
   weaviate.value.items = [];
   weaviate.value.className = "";
+  weaviate.value.collectionSchema = "message_record_semantic";
   weaviate.value.searched = false;
 }
 
@@ -535,6 +561,7 @@ async function searchWeaviate() {
     });
     weaviate.value.items = res.items;
     weaviate.value.className = res.class_name;
+    weaviate.value.collectionSchema = res.collection_schema;
   } catch (e: unknown) {
     alert((e as Error).message);
   } finally {
