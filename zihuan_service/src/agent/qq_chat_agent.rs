@@ -17,8 +17,8 @@ use chrono::Local;
 use ims_bot_adapter::adapter::BotAdapter;
 use ims_bot_adapter::event::EventHandler;
 use ims_bot_adapter::models::message::{
-    AtTargetMessage, ForwardMessage, ForwardNodeMessage, ImageMessage, Message, PlainTextMessage,
-    ReplyMessage,
+    AtTargetMessage, ForwardMessage, ForwardNodeMessage, ImageMessage, Message, PersistedMedia,
+    PersistedMediaSource, PlainTextMessage, ReplyMessage,
 };
 use ims_bot_adapter::{build_ims_bot_adapter, parse_ims_bot_adapter_connection};
 use log::{error, info, warn};
@@ -470,18 +470,26 @@ fn parse_bracket_message(inner: &str) -> Option<Message> {
 
     if let Some(value) = inner.strip_prefix("Image path=") {
         let path = parse_tag_value(value)?;
-        return Some(Message::Image(ImageMessage {
-            path: Some(path),
-            ..ImageMessage::default()
-        }));
+        return Some(Message::Image(ImageMessage::new(PersistedMedia::new(
+            PersistedMediaSource::Upload,
+            path,
+            String::new(),
+            None,
+            None,
+            None,
+        ))));
     }
 
     if let Some(value) = inner.strip_prefix("Image url=") {
         let url = parse_tag_value(value)?;
-        return Some(Message::Image(ImageMessage {
-            url: Some(url),
-            ..ImageMessage::default()
-        }));
+        return Some(Message::Image(ImageMessage::new(PersistedMedia::new(
+            PersistedMediaSource::Upload,
+            url,
+            String::new(),
+            None,
+            None,
+            None,
+        ))));
     }
 
     None

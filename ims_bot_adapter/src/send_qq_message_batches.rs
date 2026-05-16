@@ -129,14 +129,9 @@ pub fn describe_message_segments(messages: &[Message]) -> String {
             Message::Image(image) => format!(
                 "image:{}",
                 image
-                    .name
-                    .as_deref()
-                    .or(image.object_key.as_deref())
-                    .or(image.object_url.as_deref())
-                    .or(image.url.as_deref())
-                    .or(image.local_path.as_deref())
-                    .or(image.path.as_deref())
-                    .or(image.file.as_deref())
+                    .name()
+                    .or(image.rustfs_path())
+                    .or(image.original_source())
                     .unwrap_or("unknown")
             ),
             Message::Forward(forward) => format!("forward:{}nodes", forward.content.len()),

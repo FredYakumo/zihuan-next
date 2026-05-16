@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use zihuan_graph_engine::graph_io::NodeGraphDefinition;
 
-use crate::service::AgentManager;
+use zihuan_service::AgentManager;
 
 pub struct AppState {
     pub sessions: RwLock<HashMap<String, GraphSession>>,

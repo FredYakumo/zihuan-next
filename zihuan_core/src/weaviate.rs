@@ -3,13 +3,15 @@ use log::info;
 use reqwest::{Client, RequestBuilder};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::hash_map::DefaultHasher;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::time::Duration;
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
 use crate::ims_bot_adapter::models::event_model::MessageEvent;
-use crate::ims_bot_adapter::models::message::{collect_media_records, Message};
+use crate::ims_bot_adapter::models::message::{collect_media_records, Message, PersistedMedia};
 use crate::llm::embedding_base::EmbeddingBase;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -301,33 +303,18 @@ impl WeaviateRef {
         self.upsert_object(&self.class_name, properties, Some(vector), Some(&object_id))
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn upsert_image_record(
         &self,
-        object_storage_path: &str,
-        summary: &str,
+        media: &PersistedMedia,
         vector: &[f32],
-        source: Option<&str>,
-        message_id: Option<&str>,
-        sender_id: Option<&str>,
     ) -> Result<Value> {
-        let object_storage_path =
-            required_non_empty_string(object_storage_path, "object_storage_path")?;
-        let summary = required_non_empty_string(summary, "summary")?;
         if vector.is_empty() {
             return Err(Error::ValidationError(
                 "vector must not be empty".to_string(),
             ));
         }
-        let properties = json!({
-            "object_storage_path": object_storage_path,
-            "summary": summary,
-            "source": normalize_optional_string(source),
-            "message_id": normalize_optional_string(message_id),
-            "sender_id": normalize_optional_string(sender_id),
-            "send_time": Local::now().to_rfc3339(),
-        });
-        let object_id = Uuid::new_v4().to_string();
+        let properties = build_image_record_properties(media)?;
+        let object_id = deterministic_media_object_id(&self.class_name, &media.media_id);
         self.upsert_object(
             &self.class_name,
             properties,
@@ -674,16 +661,84 @@ fn image_vector_collection_config(class_name: String) -> WeaviateCollectionConfi
         class_name,
         description: Some("Image vector storage".to_string()),
         properties: vec![
-            text_property(
-                "object_storage_path",
-                "对象存储路径（object_key/object_url）",
-            ),
-            text_property("summary", "图片总结说明"),
-            text_property("source", "来源标记，如 qq 或 tavily"),
-            text_property("message_id", "关联消息ID"),
-            text_property("sender_id", "关联发送者ID"),
-            date_property("send_time", "记录时间"),
+            text_property("media_id", "持久化媒体ID"),
+            text_property("original_source", "原始来源字符串"),
+            text_property("rustfs_path", "RustFS对象路径"),
+            text_property("name", "媒体名称"),
+            text_property("description", "图片总结说明"),
+            text_property("mime_type", "媒体MIME类型"),
+            text_property("source", "来源标记，如 upload/qq_chat/web_search"),
         ],
         vectorizer: Some("none".to_string()),
+    }
+}
+
+fn deterministic_media_object_id(class_name: &str, media_id: &str) -> String {
+    let seed = format!("{class_name}:{media_id}");
+    let mut hasher = DefaultHasher::new();
+    seed.hash(&mut hasher);
+    format!("media-object-{:016x}", hasher.finish())
+}
+
+fn build_image_record_properties(media: &PersistedMedia) -> Result<Value> {
+    let media_id = required_non_empty_string(&media.media_id, "media_id")?;
+    let original_source = required_non_empty_string(&media.original_source, "original_source")?;
+    let rustfs_path = required_non_empty_string(&media.rustfs_path, "rustfs_path")?;
+
+    Ok(json!({
+        "media_id": media_id,
+        "original_source": original_source,
+        "rustfs_path": rustfs_path,
+        "name": normalize_optional_string(media.name.as_deref()),
+        "description": normalize_optional_string(media.description.as_deref()),
+        "mime_type": normalize_optional_string(media.mime_type.as_deref()),
+        "source": media.source.to_string(),
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
+
+    #[test]
+    fn image_collection_schema_matches_persisted_media_fields() {
+        let config = image_vector_collection_config("ImageCollection".to_string());
+        let fields = config
+            .properties
+            .iter()
+            .map(|property| property.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            fields,
+            vec![
+                "media_id",
+                "original_source",
+                "rustfs_path",
+                "name",
+                "description",
+                "mime_type",
+                "source"
+            ]
+        );
+    }
+
+    #[test]
+    fn image_record_properties_map_from_persisted_media() {
+        let media = PersistedMedia::new(
+            PersistedMediaSource::QqChat,
+            "https://multimedia.nt.qq.com.cn/download?fileid=1",
+            "qq-images/2026/05/16/1.jpg",
+            Some("download".to_string()),
+            Some("图片描述".to_string()),
+            Some("image/jpeg".to_string()),
+        );
+        let properties = build_image_record_properties(&media).expect("build image properties");
+        assert_eq!(properties["media_id"], media.media_id);
+        assert_eq!(properties["original_source"], media.original_source);
+        assert_eq!(properties["rustfs_path"], media.rustfs_path);
+        assert_eq!(properties["description"], "图片描述");
+        assert_eq!(properties["mime_type"], "image/jpeg");
+        assert_eq!(properties["source"], "qq_chat");
     }
 }

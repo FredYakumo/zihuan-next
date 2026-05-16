@@ -14,7 +14,7 @@ use log::{info, warn};
 
 use crate::api::state::{AppState, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
-use crate::service::AgentRuntimeInfo;
+use zihuan_service::AgentRuntimeInfo;
 use crate::system_config;
 use model_inference::system_config::{AgentConfig, AgentToolConfig, AgentType};
 use zihuan_core::agent_config::QqChatAgentConfig;

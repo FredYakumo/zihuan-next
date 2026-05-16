@@ -441,20 +441,22 @@ fn parse_cq_string_to_messages(content: &str) -> Vec<Message> {
 
         match segment_type {
             "image" => {
+                let original_source = params
+                    .get("url")
+                    .cloned()
+                    .or_else(|| params.get("file").cloned())
+                    .unwrap_or_default();
                 messages.push(Message::Image(
-                    zihuan_core::ims_bot_adapter::models::message::ImageMessage {
-                        file: params.get("file").cloned(),
-                        path: None,
-                        url: params.get("url").cloned(),
-                        name: params.get("file").cloned(),
-                        thumb: None,
-                        summary: None,
-                        sub_type: None,
-                        object_key: None,
-                        object_url: None,
-                        local_path: None,
-                        cache_status: None,
-                    },
+                    zihuan_core::ims_bot_adapter::models::message::ImageMessage::new(
+                        zihuan_core::ims_bot_adapter::models::message::PersistedMedia::new(
+                            zihuan_core::ims_bot_adapter::models::message::PersistedMediaSource::QqChat,
+                            original_source,
+                            String::new(),
+                            params.get("file").cloned(),
+                            None,
+                            None,
+                        ),
+                    ),
                 ));
             }
             "at" => {

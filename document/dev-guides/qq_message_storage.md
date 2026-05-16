@@ -118,7 +118,7 @@ Important constraints:
 It does the following:
 
 1. Stores the event in the in-process restore cache through `cache_message_snapshot(event)`.
-2. Optionally writes `message_id -> content` to Redis if a Redis ref is provided or globally registered.
+2. Optionally writes a structured Redis snapshot if a Redis ref is provided or globally registered.
 3. Optionally writes the event to MySQL if a MySQL ref is provided or globally registered.
 
 The MySQL insert path is `persist_message_to_mysql(...)`.
@@ -187,8 +187,9 @@ Query patterns:
 `restore_message_snapshot(message_id)` restores referenced messages in this order:
 
 1. in-process runtime cache
-2. MySQL `raw_message_json`
-3. fallback reconstruction from concatenated `content` plus `media_json`
+2. Redis structured snapshot cache
+3. MySQL `raw_message_json`
+4. fallback reconstruction from concatenated `content` plus `media_json`
 
 `ims_bot_adapter/src/adapter.rs` uses this when hydrating `reply.message_source`.
 
@@ -202,6 +203,15 @@ ORDER BY id ASC
 ```
 
 This is why chunk order and first-chunk metadata matter.
+
+The Redis snapshot payload now contains:
+
+- `message_id`
+- `content`
+- `media_json`
+- `raw_message_json`
+
+This allows Redis cache hits to preserve `PersistedMedia.media_id` and image reconstruction rather than degrading to plain text.
 
 ### Admin Resource Explorer
 
@@ -223,7 +233,7 @@ The response is paginated and truncates displayed content to a preview.
 
 `storage_handler::MessageStore` is a helper around:
 
-- Redis string cache
+- Redis cache
 - MySQL `message_record`
 - in-memory fallback maps
 
@@ -258,4 +268,4 @@ Storage-related nodes are registered from `storage_handler::init_node_registry()
 - For reply/forward reconstruction, prefer write paths that persist `raw_message_json`.
 - `QQMessageListMySQLPersistenceNode` is useful for simple graph-level persistence, but it cannot restore full nested structures as accurately as `MessageEvent` persistence.
 - The current schema allows duplicate `message_id` rows and also uses duplicate `message_id` for chunks. Do not add deduplication logic without first deciding how chunked messages should be represented.
-- Redis is a text cache, not the source of truth for full QQ message reconstruction.
+- Redis now stores structured message snapshots for the main `MessageEvent` persistence path, but MySQL `raw_message_json` remains the preferred durable source of truth.

@@ -1,6 +1,9 @@
+use log::error;
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 
 fn deserialize_i64_from_string_or_number<'de, D>(deserializer: D) -> Result<i64, D::Error>
 where
@@ -33,26 +36,6 @@ where
         Some(serde_json::Value::Number(n)) => Ok(Some(n.to_string())),
         Some(other) => Err(de::Error::custom(format!(
             "expected null/string/number for Option<String>, got {other}"
-        ))),
-    }
-}
-
-fn deserialize_option_i32_from_string_or_number<'de, D>(
-    deserializer: D,
-) -> Result<Option<i32>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let opt = Option::<serde_json::Value>::deserialize(deserializer)?;
-    match opt {
-        None | Some(serde_json::Value::Null) => Ok(None),
-        Some(serde_json::Value::Number(n)) => Ok(n.as_i64().map(|value| value as i32)),
-        Some(serde_json::Value::String(s)) => s
-            .parse::<i32>()
-            .map(Some)
-            .map_err(|e| de::Error::custom(format!("failed to parse i32 from string: {e}"))),
-        Some(other) => Err(de::Error::custom(format!(
-            "expected null/string/number for Option<i32>, got {other}"
         ))),
     }
 }
@@ -170,60 +153,147 @@ impl MessageBase for ReplyMessage {
 }
 
 /// Image message segment.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PersistedMediaSource {
+    #[default]
+    Upload,
+    QqChat,
+    WebSearch,
+}
+
+impl fmt::Display for PersistedMediaSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let value = match self {
+            PersistedMediaSource::Upload => "upload",
+            PersistedMediaSource::QqChat => "qq_chat",
+            PersistedMediaSource::WebSearch => "web_search",
+        };
+        write!(f, "{value}")
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ImageMessage {
-    #[serde(default)]
-    pub file: Option<String>,
-    #[serde(default)]
-    pub path: Option<String>,
-    #[serde(default)]
-    pub url: Option<String>,
+pub struct PersistedMedia {
+    pub media_id: String,
+    pub source: PersistedMediaSource,
+    pub original_source: String,
+    pub rustfs_path: String,
     #[serde(default)]
     pub name: Option<String>,
     #[serde(default)]
-    pub thumb: Option<String>,
+    pub description: Option<String>,
     #[serde(default)]
-    pub summary: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_option_i32_from_string_or_number"
-    )]
-    pub sub_type: Option<i32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub object_key: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub object_url: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub local_path: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cache_status: Option<String>,
+    pub mime_type: Option<String>,
+}
+
+impl PersistedMedia {
+    pub fn new(
+        source: PersistedMediaSource,
+        original_source: impl Into<String>,
+        rustfs_path: impl Into<String>,
+        name: Option<String>,
+        description: Option<String>,
+        mime_type: Option<String>,
+    ) -> Self {
+        let original_source = original_source.into();
+        let rustfs_path = rustfs_path.into();
+        let media_id = build_persisted_media_id(&source, &original_source, &rustfs_path);
+
+        Self {
+            media_id,
+            source,
+            original_source,
+            rustfs_path,
+            name,
+            description,
+            mime_type,
+        }
+    }
+
+    pub fn with_rustfs_path(&self, rustfs_path: impl Into<String>) -> Self {
+        let rustfs_path = rustfs_path.into();
+        Self {
+            media_id: build_persisted_media_id(&self.source, &self.original_source, &rustfs_path),
+            source: self.source.clone(),
+            original_source: self.original_source.clone(),
+            rustfs_path,
+            name: self.name.clone(),
+            description: self.description.clone(),
+            mime_type: self.mime_type.clone(),
+        }
+    }
+
+    pub fn primary_locator(&self) -> Option<&str> {
+        if !self.rustfs_path.trim().is_empty() {
+            Some(self.rustfs_path.as_str())
+        } else if !self.original_source.trim().is_empty() {
+            Some(self.original_source.as_str())
+        } else {
+            None
+        }
+    }
+}
+
+fn build_persisted_media_id(
+    source: &PersistedMediaSource,
+    original_source: &str,
+    rustfs_path: &str,
+) -> String {
+    let seed = format!("{source}|{original_source}|{rustfs_path}");
+    let mut hasher = DefaultHasher::new();
+    seed.hash(&mut hasher);
+    format!("media-{:016x}", hasher.finish())
+}
+
+/// Image message segment.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct ImageMessage {
+    pub media: PersistedMedia,
 }
 
 impl ImageMessage {
+    pub fn new(media: PersistedMedia) -> Self {
+        Self { media }
+    }
+
     pub fn source_locator(&self) -> Option<&str> {
-        self.object_key
-            .as_deref()
-            .or(self.local_path.as_deref())
-            .or(self.path.as_deref())
-            .or(self.object_url.as_deref())
-            .or(self.url.as_deref())
-            .or(self.file.as_deref())
+        self.media.primary_locator()
+    }
+
+    pub fn rustfs_path(&self) -> Option<&str> {
+        (!self.media.rustfs_path.trim().is_empty()).then_some(self.media.rustfs_path.as_str())
+    }
+
+    pub fn original_source(&self) -> Option<&str> {
+        (!self.media.original_source.trim().is_empty())
+            .then_some(self.media.original_source.as_str())
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        self.media.name.as_deref()
+    }
+
+    pub fn description(&self) -> Option<&str> {
+        self.media.description.as_deref()
+    }
+
+    pub fn mime_type(&self) -> Option<&str> {
+        self.media.mime_type.as_deref()
     }
 }
 
 impl fmt::Display for ImageMessage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[Image")?;
-        if let Some(ref name) = self.name {
+        if let Some(ref name) = self.media.name {
             write!(f, ": name={name}")?;
         }
-        if let Some(ref object_key) = self.object_key {
-            write!(f, ", object_key={object_key}")?;
+        write!(f, ", source={}", self.media.source)?;
+        if !self.media.rustfs_path.trim().is_empty() {
+            write!(f, ", rustfs_path={}", self.media.rustfs_path)?;
         } else if let Some(locator) = self.source_locator() {
             write!(f, ", source={locator}")?;
-        }
-        if let Some(ref status) = self.cache_status {
-            write!(f, ", cache_status={status}")?;
         }
         write!(f, "]")
     }
@@ -232,6 +302,34 @@ impl fmt::Display for ImageMessage {
 impl MessageBase for ImageMessage {
     fn get_type(&self) -> &'static str {
         "image"
+    }
+}
+
+impl<'de> Deserialize<'de> for ImageMessage {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        let Some(media_value) = value.get("media") else {
+            error!(
+                "[ImageMessage] incompatible legacy image JSON encountered; expected {{ media: PersistedMedia }}, payload={}",
+                value
+            );
+            return Err(de::Error::custom(
+                "incompatible legacy image JSON: missing media field",
+            ));
+        };
+
+        let media = PersistedMedia::deserialize(media_value.clone()).map_err(|error| {
+            error!(
+                "[ImageMessage] failed to deserialize PersistedMedia from image JSON: {} payload={}",
+                error, value
+            );
+            de::Error::custom(format!("invalid media field: {error}"))
+        })?;
+
+        Ok(ImageMessage::new(media))
     }
 }
 
@@ -354,16 +452,13 @@ pub struct MessageProp {
 pub struct MessageMediaRecord {
     pub segment_index: usize,
     pub r#type: String,
+    pub media_id: String,
+    pub source: PersistedMediaSource,
+    pub original_source: String,
+    pub rustfs_path: String,
     pub name: Option<String>,
-    pub file: Option<String>,
-    pub path: Option<String>,
-    pub url: Option<String>,
-    pub thumb: Option<String>,
-    pub summary: Option<String>,
-    pub sub_type: Option<i32>,
-    pub object_key: Option<String>,
-    pub object_url: Option<String>,
-    pub cache_status: Option<String>,
+    pub description: Option<String>,
+    pub mime_type: Option<String>,
 }
 
 pub fn collect_media_records(messages: &[Message]) -> Vec<MessageMediaRecord> {
@@ -374,20 +469,75 @@ pub fn collect_media_records(messages: &[Message]) -> Vec<MessageMediaRecord> {
             Message::Image(image) => Some(MessageMediaRecord {
                 segment_index,
                 r#type: "image".to_string(),
-                name: image.name.clone(),
-                file: image.file.clone(),
-                path: image.local_path.clone().or_else(|| image.path.clone()),
-                url: image.url.clone(),
-                thumb: image.thumb.clone(),
-                summary: image.summary.clone(),
-                sub_type: image.sub_type,
-                object_key: image.object_key.clone(),
-                object_url: image.object_url.clone(),
-                cache_status: image.cache_status.clone(),
+                media_id: image.media.media_id.clone(),
+                source: image.media.source.clone(),
+                original_source: image.media.original_source.clone(),
+                rustfs_path: image.media.rustfs_path.clone(),
+                name: image.media.name.clone(),
+                description: image.media.description.clone(),
+                mime_type: image.media.mime_type.clone(),
             }),
             _ => None,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn persisted_media_source_serde_and_display() {
+        let source = PersistedMediaSource::QqChat;
+        assert_eq!(source.to_string(), "qq_chat");
+        assert_eq!(
+            serde_json::to_string(&source).expect("serialize source"),
+            "\"qq_chat\""
+        );
+        let parsed: PersistedMediaSource =
+            serde_json::from_str("\"web_search\"").expect("deserialize source");
+        assert!(matches!(parsed, PersistedMediaSource::WebSearch));
+    }
+
+    #[test]
+    fn image_message_roundtrip_uses_new_media_structure() {
+        let message = ImageMessage::new(PersistedMedia::new(
+            PersistedMediaSource::QqChat,
+            "https://multimedia.nt.qq.com.cn/download?id=1",
+            "qq-images/2026/05/16/sample.jpg",
+            Some("download".to_string()),
+            Some("图片描述".to_string()),
+            Some("image/jpeg".to_string()),
+        ));
+
+        let json = serde_json::to_string(&message).expect("serialize image");
+        assert!(json.contains("\"media\""));
+        assert!(!json.contains("\"object_key\""));
+
+        let restored: ImageMessage = serde_json::from_str(&json).expect("deserialize image");
+        assert_eq!(restored.media.source.to_string(), "qq_chat");
+        assert_eq!(restored.media.mime_type.as_deref(), Some("image/jpeg"));
+        assert_eq!(
+            restored.media.rustfs_path,
+            "qq-images/2026/05/16/sample.jpg"
+        );
+    }
+
+    #[test]
+    fn message_display_contains_media_information() {
+        let message = Message::Image(ImageMessage::new(PersistedMedia::new(
+            PersistedMediaSource::Upload,
+            "upload://manual/demo",
+            "uploads/demo.png",
+            Some("demo.png".to_string()),
+            None,
+            Some("image/png".to_string()),
+        )));
+
+        let rendered = render_messages_readable(&[message]);
+        assert!(rendered.contains("demo.png"));
+        assert!(rendered.contains("uploads/demo.png"));
+    }
 }
 
 impl MessageProp {

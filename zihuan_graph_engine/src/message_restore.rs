@@ -1,19 +1,23 @@
 use crate::message_mysql_history_common::run_mysql_query;
+use crate::data_value::RedisConfig;
 use log::{debug, warn};
 use once_cell::sync::Lazy;
+use redis::AsyncCommands;
 use sqlx::Row;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+use tokio::task::block_in_place;
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::Result;
 use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
 use zihuan_core::ims_bot_adapter::models::message::{
-    ImageMessage, Message, MessageMediaRecord, PlainTextMessage,
+    ImageMessage, Message, MessageMediaRecord, PersistedMedia, PlainTextMessage,
 };
 
 static RUNTIME_MESSAGE_INDEX: Lazy<RwLock<HashMap<String, Vec<Message>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 static LATEST_MYSQL_REF: Lazy<RwLock<Option<Arc<MySqlConfig>>>> = Lazy::new(|| RwLock::new(None));
+static LATEST_REDIS_REF: Lazy<RwLock<Option<Arc<RedisConfig>>>> = Lazy::new(|| RwLock::new(None));
 
 const LOOKUP_SQL: &str = r#"
     SELECT content, media_json, raw_message_json
@@ -25,6 +29,7 @@ const LOOKUP_SQL: &str = r#"
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessageRestoreSource {
     RuntimeCache,
+    Redis,
     MySql,
 }
 
@@ -32,6 +37,7 @@ impl MessageRestoreSource {
     pub fn as_str(self) -> &'static str {
         match self {
             MessageRestoreSource::RuntimeCache => "cache",
+            MessageRestoreSource::Redis => "redis",
             MessageRestoreSource::MySql => "mysql",
         }
     }
@@ -43,6 +49,14 @@ pub struct RestoredMessageSnapshot {
     pub source: MessageRestoreSource,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CachedMessageSnapshotPayload {
+    pub message_id: String,
+    pub content: String,
+    pub media_json: Option<String>,
+    pub raw_message_json: Option<String>,
+}
+
 pub fn cache_message_snapshot(event: &MessageEvent) {
     if let Ok(mut guard) = RUNTIME_MESSAGE_INDEX.write() {
         guard.insert(event.message_id.to_string(), event.message_list.clone());
@@ -51,6 +65,12 @@ pub fn cache_message_snapshot(event: &MessageEvent) {
 
 pub fn register_mysql_ref(config: Arc<MySqlConfig>) {
     if let Ok(mut guard) = LATEST_MYSQL_REF.write() {
+        *guard = Some(config);
+    }
+}
+
+pub fn register_redis_ref(config: Arc<RedisConfig>) {
+    if let Ok(mut guard) = LATEST_REDIS_REF.write() {
         *guard = Some(config);
     }
 }
@@ -71,6 +91,19 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
         Ok(guard) => guard.clone(),
         Err(_) => None,
     };
+    let redis_config = match LATEST_REDIS_REF.read() {
+        Ok(guard) => guard.clone(),
+        Err(_) => None,
+    };
+
+    if let Some(redis_config) = redis_config {
+        if let Some(snapshot) = restore_message_snapshot_from_redis(&redis_config, &message_id_str)? {
+            if let Ok(mut guard) = RUNTIME_MESSAGE_INDEX.write() {
+                guard.insert(message_id_str.clone(), snapshot.messages.clone());
+            }
+            return Ok(Some(snapshot));
+        }
+    }
 
     let Some(mysql_config) = mysql_config else {
         return Ok(None);
@@ -128,6 +161,76 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
     }))
 }
 
+fn restore_message_snapshot_from_redis(
+    redis_ref: &Arc<RedisConfig>,
+    message_id: &str,
+) -> Result<Option<RestoredMessageSnapshot>> {
+    let Some(url) = redis_ref.url.clone() else {
+        return Ok(None);
+    };
+
+    let redis_ref = Arc::clone(redis_ref);
+    let message_id = message_id.to_string();
+    let message_id_for_get = message_id.clone();
+    let run = async move {
+        let mut cm_guard = redis_ref.redis_cm.lock().await;
+        let mut url_guard = redis_ref.cached_redis_url.lock().await;
+
+        if url_guard.as_deref() != Some(url.as_str()) {
+            *cm_guard = None;
+            *url_guard = Some(url.clone());
+        }
+
+        if cm_guard.is_none() {
+            let client = redis::Client::open(url.as_str())?;
+            *cm_guard = Some(client.get_tokio_connection().await?);
+        }
+
+        let Some(cm) = cm_guard.as_mut() else {
+            return Ok::<Option<String>, zihuan_core::error::Error>(None);
+        };
+
+        let payload: Option<String> = cm.get(&message_id_for_get).await?;
+        Ok::<Option<String>, zihuan_core::error::Error>(payload)
+    };
+
+    let payload = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        block_in_place(|| handle.block_on(run))
+    } else {
+        tokio::runtime::Runtime::new()?.block_on(run)
+    }?;
+
+    let Some(payload) = payload else {
+        return Ok(None);
+    };
+
+    let snapshot: CachedMessageSnapshotPayload = match serde_json::from_str(&payload) {
+        Ok(value) => value,
+        Err(error) => {
+            warn!(
+                "[message_restore] failed to parse Redis cached snapshot for message {}: {}",
+                message_id, error
+            );
+            return Ok(None);
+        }
+    };
+
+    let messages = snapshot
+        .raw_message_json
+        .as_deref()
+        .and_then(rebuild_message_list_from_raw_json)
+        .unwrap_or_else(|| rebuild_message_list(&snapshot.content, snapshot.media_json.as_deref()));
+
+    if messages.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(RestoredMessageSnapshot {
+        messages,
+        source: MessageRestoreSource::Redis,
+    }))
+}
+
 fn rebuild_message_list(content: &str, media_json: Option<&str>) -> Vec<Message> {
     let mut messages = Vec::new();
     let trimmed_content = content.trim();
@@ -155,19 +258,15 @@ fn rebuild_message_list(content: &str, media_json: Option<&str>) -> Vec<Message>
     for record in records {
         match record.r#type.as_str() {
             "image" => {
-                let image = Message::Image(ImageMessage {
-                    file: record.file.clone(),
-                    path: record.path.clone(),
-                    url: record.url.clone(),
+                let image = Message::Image(ImageMessage::new(PersistedMedia {
+                    media_id: record.media_id.clone(),
+                    source: record.source.clone(),
+                    original_source: record.original_source.clone(),
+                    rustfs_path: record.rustfs_path.clone(),
                     name: record.name.clone(),
-                    thumb: record.thumb.clone(),
-                    summary: record.summary.clone(),
-                    sub_type: record.sub_type,
-                    object_key: record.object_key.clone(),
-                    object_url: record.object_url.clone(),
-                    local_path: record.path.clone(),
-                    cache_status: record.cache_status.clone(),
-                });
+                    description: record.description.clone(),
+                    mime_type: record.mime_type.clone(),
+                }));
                 let insert_at = record.segment_index.min(messages.len());
                 messages.insert(insert_at, image);
             }
@@ -197,6 +296,95 @@ fn rebuild_message_list_from_raw_json(raw_message_json: &str) -> Option<Vec<Mess
                 error
             );
             None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
+    use zihuan_core::ims_bot_adapter::models::message::collect_media_records;
+
+    #[test]
+    fn rebuild_message_list_from_media_json_restores_persisted_media_image() {
+        let media_json = serde_json::to_string(&vec![MessageMediaRecord {
+            segment_index: 0,
+            r#type: "image".to_string(),
+            media_id: "media-1".to_string(),
+            source: PersistedMediaSource::QqChat,
+            original_source: "https://multimedia.nt.qq.com.cn/download?fileid=1".to_string(),
+            rustfs_path: "qq-images/2026/05/16/1.jpg".to_string(),
+            name: Some("download".to_string()),
+            description: Some("图片描述".to_string()),
+            mime_type: Some("image/jpeg".to_string()),
+        }])
+        .expect("serialize media json");
+
+        let messages = rebuild_message_list("", Some(&media_json));
+        match &messages[0] {
+            Message::Image(image) => {
+                assert_eq!(image.media.media_id, "media-1");
+                assert_eq!(image.media.rustfs_path, "qq-images/2026/05/16/1.jpg");
+                assert_eq!(image.media.mime_type.as_deref(), Some("image/jpeg"));
+            }
+            other => panic!("expected image message, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rebuild_message_list_from_raw_json_restores_nested_media() {
+        let messages = vec![Message::Image(ImageMessage::new(PersistedMedia::new(
+            PersistedMediaSource::Upload,
+            "upload://manual/demo",
+            "uploads/demo.png",
+            Some("demo.png".to_string()),
+            None,
+            Some("image/png".to_string()),
+        )))];
+        let raw_json = serde_json::to_string(&messages).expect("serialize messages");
+        let restored = rebuild_message_list_from_raw_json(&raw_json).expect("restore raw json");
+        assert_eq!(restored.len(), 1);
+        match &restored[0] {
+            Message::Image(image) => {
+                assert_eq!(image.media.rustfs_path, "uploads/demo.png");
+            }
+            other => panic!("expected image message, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn redis_snapshot_payload_roundtrip_restores_media_ids() {
+        let messages = vec![Message::Image(ImageMessage::new(PersistedMedia::new(
+            PersistedMediaSource::QqChat,
+            "https://multimedia.nt.qq.com.cn/download?fileid=1",
+            "qq-images/2026/05/16/1.jpg",
+            Some("download".to_string()),
+            Some("图片描述".to_string()),
+            Some("image/jpeg".to_string()),
+        )))];
+        let payload = CachedMessageSnapshotPayload {
+            message_id: "1".to_string(),
+            content: String::new(),
+            media_json: Some(
+                serde_json::to_string(&collect_media_records(&messages)).expect("serialize media"),
+            ),
+            raw_message_json: Some(
+                serde_json::to_string(&messages).expect("serialize raw message json"),
+            ),
+        };
+
+        let restored = payload
+            .raw_message_json
+            .as_deref()
+            .and_then(rebuild_message_list_from_raw_json)
+            .expect("restore raw json");
+        match &restored[0] {
+            Message::Image(image) => {
+                assert!(image.media.media_id.starts_with("media-"));
+                assert_eq!(image.media.rustfs_path, "qq-images/2026/05/16/1.jpg");
+            }
+            other => panic!("expected image message, got {other:?}"),
         }
     }
 }

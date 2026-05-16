@@ -2,6 +2,7 @@ use crate::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 use log::error;
 use std::collections::HashMap;
 use zihuan_core::error::{Error, Result};
+use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
 
 pub struct ImageWeaviatePersistenceNode {
     id: String,
@@ -37,11 +38,13 @@ impl Node for ImageWeaviatePersistenceNode {
     node_input![
         port! { name = "object_storage_path", ty = String, desc = "对象存储路径（object_key/object_url）" },
         port! { name = "vector", ty = Vector, desc = "图片语义向量" },
-        port! { name = "summary", ty = String, desc = "图片总结说明" },
+        port! { name = "description", ty = String, desc = "图片总结说明" },
         port! { name = "weaviate_ref", ty = zihuan_core::weaviate::WeaviateRef, desc = "Weaviate连接配置引用" },
         port! { name = "source", ty = String, desc = "可选：图片来源（qq/tavily等）", optional },
-        port! { name = "message_id", ty = String, desc = "可选：关联消息ID", optional },
-        port! { name = "sender_id", ty = String, desc = "可选：发送者ID", optional },
+        port! { name = "media_id", ty = String, desc = "可选：持久化媒体ID", optional },
+        port! { name = "original_source", ty = String, desc = "可选：原始来源字符串", optional },
+        port! { name = "name", ty = String, desc = "可选：媒体名称", optional },
+        port! { name = "mime_type", ty = String, desc = "可选：媒体MIME类型", optional },
     ];
 
     node_output![
@@ -56,7 +59,7 @@ impl Node for ImageWeaviatePersistenceNode {
         self.validate_inputs(&inputs)?;
 
         let object_storage_path = required_string(&inputs, "object_storage_path")?;
-        let summary = required_string(&inputs, "summary")?;
+        let description = required_string(&inputs, "description")?;
         let vector = inputs
             .get("vector")
             .and_then(|v| match v {
@@ -79,18 +82,34 @@ impl Node for ImageWeaviatePersistenceNode {
             })
             .ok_or_else(|| Error::InvalidNodeInput("weaviate_ref is required".to_string()))?;
 
-        let source = optional_non_empty_string(&inputs, "source");
-        let message_id = optional_non_empty_string(&inputs, "message_id");
-        let sender_id = optional_non_empty_string(&inputs, "sender_id");
+        let source = parse_media_source(optional_non_empty_string(&inputs, "source").as_deref());
+        let media_id = optional_non_empty_string(&inputs, "media_id");
+        let original_source = optional_non_empty_string(&inputs, "original_source")
+            .unwrap_or_else(|| object_storage_path.clone());
+        let name = optional_non_empty_string(&inputs, "name");
+        let mime_type = optional_non_empty_string(&inputs, "mime_type");
+        let media = if let Some(media_id) = media_id {
+            PersistedMedia {
+                media_id,
+                source,
+                original_source,
+                rustfs_path: object_storage_path.clone(),
+                name,
+                description: Some(description.clone()),
+                mime_type,
+            }
+        } else {
+            PersistedMedia::new(
+                source,
+                original_source,
+                object_storage_path.clone(),
+                name,
+                Some(description.clone()),
+                mime_type,
+            )
+        };
 
-        let success = match weaviate_ref.upsert_image_record(
-            &object_storage_path,
-            &summary,
-            &vector,
-            source.as_deref(),
-            message_id.as_deref(),
-            sender_id.as_deref(),
-        ) {
+        let success = match weaviate_ref.upsert_image_record(&media, &vector) {
             Ok(_) => true,
             Err(err) => {
                 error!(
@@ -133,4 +152,12 @@ fn optional_non_empty_string(inputs: &HashMap<String, DataValue>, key: &str) -> 
         DataValue::String(s) if !s.trim().is_empty() => Some(s.trim().to_string()),
         _ => None,
     })
+}
+
+fn parse_media_source(value: Option<&str>) -> PersistedMediaSource {
+    match value.unwrap_or("upload").trim() {
+        "qq_chat" | "qq" => PersistedMediaSource::QqChat,
+        "tavily" | "web_search" => PersistedMediaSource::WebSearch,
+        _ => PersistedMediaSource::Upload,
+    }
 }

@@ -24,7 +24,7 @@ use ims_bot_adapter::message_helpers::{
 use ims_bot_adapter::models::event_model::MessageType;
 use ims_bot_adapter::models::message::{
     AtTargetMessage, ForwardMessage, ForwardNodeMessage, ImageMessage, Message, MessageProp,
-    PlainTextMessage,
+    PersistedMedia, PersistedMediaSource, PlainTextMessage,
 };
 use model_inference::inference_function::compact_message::{
     compact_message_history, estimate_messages_tokens,
@@ -543,19 +543,11 @@ fn infer_content_type(file_name: &str) -> &'static str {
 
 fn image_name(image: &ImageMessage) -> &str {
     image
-        .name
-        .as_deref()
+        .name()
         .or_else(|| {
             image
-                .local_path
-                .as_deref()
-                .and_then(|path| Path::new(path).file_name())
-                .and_then(|name| name.to_str())
-        })
-        .or_else(|| {
-            image
-                .path
-                .as_deref()
+                .original_source()
+                .and_then(|path| path.strip_prefix("file://").or(Some(path)))
                 .and_then(|path| Path::new(path).file_name())
                 .and_then(|name| name.to_str())
         })
@@ -564,7 +556,12 @@ fn image_name(image: &ImageMessage) -> &str {
 
 fn image_part_from_bytes(image: &ImageMessage, bytes: Vec<u8>) -> ContentPart {
     let base64_payload = base64::engine::general_purpose::STANDARD.encode(bytes);
-    ContentPart::image_data_url(infer_content_type(image_name(image)), base64_payload)
+    ContentPart::image_data_url(
+        image
+            .mime_type()
+            .unwrap_or_else(|| infer_content_type(image_name(image))),
+        base64_payload,
+    )
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -715,7 +712,10 @@ fn image_part_from_remote_url(
     if cache_to_s3 {
         if let Some(s3_ref) = s3_ref {
             let object_key = derive_multimodal_cache_key(direct_url, image);
-            let content_type = infer_content_type(image_name(image)).to_string();
+            let content_type = image
+                .mime_type()
+                .unwrap_or_else(|| infer_content_type(image_name(image)))
+                .to_string();
             let bytes_for_upload = bytes.clone();
             let s3_ref = s3_ref.as_ref().clone();
             match block_async(async move {
@@ -783,16 +783,9 @@ async fn download_remote_bytes(url: &str) -> Option<Vec<u8>> {
 }
 
 fn image_part(image: &ImageMessage, s3_ref: Option<&Arc<S3Ref>>) -> Option<ResolvedImagePart> {
-    for local_path in [
-        image.local_path.as_deref(),
-        image.path.as_deref(),
-        image
-            .file
-            .as_deref()
-            .and_then(|value| value.strip_prefix("file://")),
-    ]
-    .into_iter()
-    .flatten()
+    if let Some(local_path) = image
+        .original_source()
+        .and_then(|value| value.strip_prefix("file://").or(Some(value)))
     {
         if let Some(part) = image_part_from_local_file(local_path, image) {
             return Some(ResolvedImagePart {
@@ -802,7 +795,7 @@ fn image_part(image: &ImageMessage, s3_ref: Option<&Arc<S3Ref>>) -> Option<Resol
         }
     }
 
-    if let (Some(s3_ref), Some(object_key)) = (s3_ref, image.object_key.as_deref()) {
+    if let (Some(s3_ref), Some(object_key)) = (s3_ref, image.rustfs_path()) {
         if let Some(part) = image_part_from_object_storage(s3_ref.as_ref(), object_key, image) {
             return Some(ResolvedImagePart {
                 part,
@@ -811,20 +804,11 @@ fn image_part(image: &ImageMessage, s3_ref: Option<&Arc<S3Ref>>) -> Option<Resol
         }
     }
 
-    for (direct_url, cache_to_s3) in [
-        (image.object_url.as_deref(), false),
-        (image.url.as_deref(), true),
-    ] {
-        if let Some(direct_url) = direct_url {
-            if let Some(part) = image_part_from_remote_url(direct_url, image, s3_ref, cache_to_s3) {
-                return Some(part);
-            }
+    if let Some(direct_url) = image.original_source() {
+        let cache_to_s3 = image.rustfs_path().is_none();
+        if let Some(part) = image_part_from_remote_url(direct_url, image, s3_ref, cache_to_s3) {
+            return Some(part);
         }
-    }
-
-    let file_value = image.file.as_deref()?;
-    if let Some(part) = image_part_from_remote_url(file_value, image, s3_ref, true) {
-        return Some(part);
     }
 
     warn!(
@@ -1837,7 +1821,7 @@ fn extract_distance(value: &Value) -> Option<f64> {
 }
 
 fn format_weaviate_image_candidate_for_log(value: &Value) -> String {
-    let path = extract_string_field(value, "object_storage_path")
+    let path = extract_string_field(value, "rustfs_path")
         .unwrap_or_else(|| "<missing-path>".to_string());
     let distance = extract_distance(value)
         .map(|d| format!("{d:.4}"))
@@ -1851,12 +1835,13 @@ fn format_image_lookup_results(items: &[Value]) -> Value {
             .iter()
             .map(|item| {
                 serde_json::json!({
-                    "object_storage_path": extract_string_field(item, "object_storage_path"),
-                    "summary": extract_string_field(item, "summary"),
+                    "media_id": extract_string_field(item, "media_id"),
+                    "original_source": extract_string_field(item, "original_source"),
+                    "rustfs_path": extract_string_field(item, "rustfs_path"),
+                    "name": extract_string_field(item, "name"),
+                    "description": extract_string_field(item, "description"),
+                    "mime_type": extract_string_field(item, "mime_type"),
                     "source": extract_string_field(item, "source"),
-                    "message_id": extract_string_field(item, "message_id"),
-                    "sender_id": extract_string_field(item, "sender_id"),
-                    "send_time": extract_string_field(item, "send_time"),
                     "distance": extract_distance(item),
                 })
             })
@@ -1874,12 +1859,13 @@ fn run_weaviate_image_get_query(
 ) -> Result<Vec<Value>> {
     let arguments = build_get_query_arguments(limit, near_vector, where_filter, sort);
     let mut fields = vec![
-        "object_storage_path",
-        "summary",
+        "media_id",
+        "original_source",
+        "rustfs_path",
+        "name",
+        "description",
+        "mime_type",
         "source",
-        "message_id",
-        "sender_id",
-        "send_time",
     ]
     .join(" ");
     if include_distance {
@@ -2408,9 +2394,8 @@ impl BrainTool for SearchSimilarImagesBrainTool {
                     )?;
                     items.sort_by(semantic_result_order);
                     items.retain(|item| {
-                        extract_string_field(item, "object_storage_path")
-                            .as_deref()
-                            .map(is_direct_image_url)
+                        extract_string_field(item, "rustfs_path")
+                            .map(|value| !value.trim().is_empty())
                             .unwrap_or(false)
                     });
                     // If we have local S3 storage, further filter to only paths that the
@@ -2420,7 +2405,7 @@ impl BrainTool for SearchSimilarImagesBrainTool {
                     if let Some(s3) = self.s3_ref.as_ref() {
                         let local_base = s3_local_base(s3);
                         items.retain(|item| {
-                            extract_string_field(item, "object_storage_path")
+                            extract_string_field(item, "rustfs_path")
                                 .as_deref()
                                 .map(|p| is_local_s3_path(p, &local_base))
                                 .unwrap_or(false)
@@ -2490,8 +2475,8 @@ impl BrainTool for SearchSimilarImagesBrainTool {
 
             let mut stored_images = Vec::new();
             for image in &tavily_images {
-                let summary = image.description.as_deref().unwrap_or(&image.url);
-                let object_storage_path = match upload_remote_image_to_s3(s3_ref, &image.url) {
+                let description = image.description.as_deref().unwrap_or(&image.url);
+                let rustfs_path = match upload_remote_image_to_s3(s3_ref, &image.url) {
                     Ok(path) => path,
                     Err(err) => {
                         warn!(
@@ -2501,11 +2486,22 @@ impl BrainTool for SearchSimilarImagesBrainTool {
                         continue;
                     }
                 };
+                let media = PersistedMedia::new(
+                    PersistedMediaSource::WebSearch,
+                    image.url.clone(),
+                    rustfs_path.clone(),
+                    None,
+                    image.description.clone(),
+                    Some(content_type_from_url(&image.url).to_string()),
+                );
 
                 stored_images.push(serde_json::json!({
-                    "object_storage_path": object_storage_path,
-                    "summary": image.description,
-                    "source": "tavily",
+                    "media_id": media.media_id,
+                    "original_source": media.original_source,
+                    "rustfs_path": media.rustfs_path,
+                    "description": media.description,
+                    "mime_type": media.mime_type,
+                    "source": media.source.to_string(),
                 }));
 
                 if let (Some(weaviate_image_ref), Some(embedding_model)) = (
@@ -2513,17 +2509,10 @@ impl BrainTool for SearchSimilarImagesBrainTool {
                     self.embedding_model.as_ref(),
                 ) {
                     let vector = embedding_model
-                        .inference(summary)
+                        .inference(description)
                         .unwrap_or_else(|_| embedding_model.inference(&query).unwrap_or_default());
                     if !vector.is_empty() {
-                        if let Err(err) = weaviate_image_ref.upsert_image_record(
-                            &object_storage_path,
-                            summary,
-                            &vector,
-                            Some("tavily"),
-                            None,
-                            None,
-                        ) {
+                        if let Err(err) = weaviate_image_ref.upsert_image_record(&media, &vector) {
                             warn!(
                                 "{LOG_PREFIX} Failed to persist tavily image fallback result into weaviate: {}",
                                 err

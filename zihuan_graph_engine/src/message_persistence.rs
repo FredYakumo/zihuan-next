@@ -4,7 +4,7 @@ use crate::message_mysql_chunking::{
     AT_TARGET_LIST_MAX_CHARS, CONTENT_MAX_CHARS, GROUP_ID_MAX_CHARS, GROUP_NAME_MAX_CHARS,
     MEDIA_JSON_MAX_CHARS, MESSAGE_ID_MAX_CHARS, SENDER_ID_MAX_CHARS, SENDER_NAME_MAX_CHARS,
 };
-use crate::message_restore::cache_message_snapshot;
+use crate::message_restore::{cache_message_snapshot, register_redis_ref, CachedMessageSnapshotPayload};
 use log::{info, warn};
 use once_cell::sync::Lazy;
 use redis::AsyncCommands;
@@ -26,8 +26,9 @@ pub fn register_mysql_persistence_ref(config: Arc<MySqlConfig>) {
 
 pub fn register_redis_persistence_ref(config: Arc<RedisConfig>) {
     if let Ok(mut guard) = LATEST_REDIS_REF.write() {
-        *guard = Some(config);
+        *guard = Some(config.clone());
     }
+    register_redis_ref(config);
 }
 
 fn latest_mysql_ref() -> Option<Arc<MySqlConfig>> {
@@ -51,7 +52,7 @@ fn render_content(messages: &[Message]) -> String {
 
 fn persist_message_to_redis(
     message_id: &str,
-    content: &str,
+    payload: &CachedMessageSnapshotPayload,
     redis_ref: &Arc<RedisConfig>,
 ) -> Result<()> {
     let Some(url) = redis_ref.url.clone() else {
@@ -60,7 +61,7 @@ fn persist_message_to_redis(
 
     let redis_ref = Arc::clone(redis_ref);
     let message_id = message_id.to_string();
-    let content = content.to_string();
+    let payload = serde_json::to_string(payload)?;
 
     let run = async move {
         let mut cm_guard = redis_ref.redis_cm.lock().await;
@@ -77,7 +78,7 @@ fn persist_message_to_redis(
         }
 
         if let Some(cm) = cm_guard.as_mut() {
-            let _: () = cm.set(&message_id, &content).await?;
+            let _: () = cm.set(&message_id, &payload).await?;
         }
 
         Ok::<(), zihuan_core::error::Error>(())
@@ -271,9 +272,25 @@ pub fn persist_message_event(
 
     let message_id = event.message_id.to_string();
     let content = render_content(&event.message_list);
+    let media_json = {
+        let records = collect_media_records(&event.message_list);
+        if records.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(&records)?)
+        }
+    };
+    let raw_message_json = Some(serde_json::to_string(&event.message_list)?);
+    let redis_payload = CachedMessageSnapshotPayload {
+        message_id: message_id.clone(),
+        content: content.clone(),
+        media_json,
+        raw_message_json,
+    };
 
     if let Some(redis_ref) = redis_ref.cloned().or_else(latest_redis_ref) {
-        if let Err(error) = persist_message_to_redis(&message_id, &content, &redis_ref) {
+        register_redis_ref(redis_ref.clone());
+        if let Err(error) = persist_message_to_redis(&message_id, &redis_payload, &redis_ref) {
             warn!(
                 "[message_persistence] Redis cache write failed for message {}: {}",
                 message_id, error

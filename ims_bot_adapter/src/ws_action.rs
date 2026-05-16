@@ -55,19 +55,30 @@ pub fn qq_message_list_to_json(messages: &[crate::models::message::Message]) -> 
                 crate::models::message::Message::Image(image) => serde_json::json!({
                     "type": "image",
                     "data": {
-                        "file": image.file.clone(),
+                        "file": image
+                            .original_source()
+                            .filter(|value| {
+                                value.starts_with("base64://")
+                                    || value.starts_with("file://")
+                                    || (!value.starts_with("http://")
+                                        && !value.starts_with("https://"))
+                            })
+                            .map(ToOwned::to_owned),
                         "path": image
-                            .path
-                            .clone()
-                            .or_else(|| image.local_path.clone()),
+                            .original_source()
+                            .filter(|value| {
+                                !value.starts_with("http://")
+                                    && !value.starts_with("https://")
+                                    && !value.starts_with("base64://")
+                            })
+                            .map(ToOwned::to_owned),
                         "url": image
-                            .url
-                            .clone()
-                            .or_else(|| image.object_url.clone()),
-                        "name": image.name.clone(),
-                        "thumb": image.thumb.clone(),
-                        "summary": image.summary.clone(),
-                        "sub_type": image.sub_type,
+                            .original_source()
+                            .filter(|value| {
+                                value.starts_with("http://") || value.starts_with("https://")
+                            })
+                            .map(ToOwned::to_owned),
+                        "name": image.name().map(ToOwned::to_owned),
                     }
                 }),
                 _ => serde_json::to_value(m).unwrap_or(serde_json::Value::Null),
@@ -120,12 +131,7 @@ fn normalize_image_for_send(
 ) -> Result<ImageMessage> {
     if let Some(base64_file) = outbound_base64_file(adapter_ref, image)? {
         let mut normalized = image.clone();
-        normalized.file = Some(base64_file);
-        normalized.path = None;
-        normalized.url = None;
-        normalized.object_url = None;
-        normalized.object_key = None;
-        normalized.local_path = None;
+        normalized.media.original_source = base64_file;
         return Ok(normalized);
     }
 
@@ -136,16 +142,9 @@ fn normalize_image_for_send(
 }
 
 fn outbound_local_image_path(image: &ImageMessage) -> Option<String> {
-    for path in [
-        image.local_path.as_deref(),
-        image.path.as_deref(),
-        image
-            .file
-            .as_deref()
-            .and_then(|value| value.strip_prefix("file://")),
-    ]
-    .into_iter()
-    .flatten()
+    if let Some(path) = image
+        .original_source()
+        .and_then(|value| value.strip_prefix("file://").or(Some(value)))
     {
         if let Some(normalized) = normalize_existing_local_path(path) {
             return Some(normalized);
@@ -180,27 +179,13 @@ fn outbound_object_storage_key(
     adapter_ref: &SharedBotAdapter,
     image: &ImageMessage,
 ) -> Option<String> {
-    if let Some(key) = image
-        .object_key
-        .as_deref()
-        .map(str::trim)
-        .filter(|key| !key.is_empty())
-    {
+    if let Some(key) = image.rustfs_path().map(str::trim).filter(|key| !key.is_empty()) {
         return Some(key.to_string());
     }
 
     let object_storage = block_on_async(async { adapter_ref.lock().await.object_storage.clone() })?;
 
-    for locator in [
-        image.object_url.as_deref(),
-        image.url.as_deref(),
-        image.file.as_deref(),
-        image.path.as_deref(),
-        image.local_path.as_deref(),
-    ]
-    .into_iter()
-    .flatten()
-    {
+    if let Some(locator) = image.original_source() {
         if let Some(key) = object_key_from_locator(&object_storage, locator) {
             return Some(key);
         }
@@ -213,7 +198,7 @@ fn outbound_base64_file(
     adapter_ref: &SharedBotAdapter,
     image: &ImageMessage,
 ) -> Result<Option<String>> {
-    if let Some(file) = image.file.as_deref() {
+    if let Some(file) = image.original_source() {
         if file.starts_with("base64://") {
             return Ok(Some(file.to_string()));
         }
@@ -222,10 +207,7 @@ fn outbound_base64_file(
         }
     }
 
-    for data_url in [image.object_url.as_deref(), image.url.as_deref()]
-        .into_iter()
-        .flatten()
-    {
+    if let Some(data_url) = image.original_source() {
         if let Some(base64_payload) = data_url
             .strip_prefix("data:")
             .and_then(data_url_base64_payload)
@@ -259,19 +241,12 @@ fn outbound_base64_file(
         }
     }
 
-    for url in [
-        image.object_url.as_deref(),
-        image.url.as_deref(),
-        image
-            .file
-            .as_deref()
-            .filter(|value| value.starts_with("http://") || value.starts_with("https://")),
-    ]
-    .into_iter()
-    .flatten()
+    if let Some(url) = image
+        .original_source()
+        .filter(|value| value.starts_with("http://") || value.starts_with("https://"))
     {
         let Some(bytes) = block_on_async(download_remote_bytes(url))? else {
-            continue;
+            return Ok(None);
         };
         block_on_async(store_remote_image_bytes(adapter_ref, url, &bytes))?;
         return Ok(Some(bytes_to_base64_file(bytes)));

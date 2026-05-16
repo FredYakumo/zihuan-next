@@ -139,19 +139,11 @@ impl ExtractMessageFromEventNode {
 
     fn image_name(image: &ImageMessage) -> &str {
         image
-            .name
-            .as_deref()
+            .name()
             .or_else(|| {
                 image
-                    .local_path
-                    .as_deref()
-                    .and_then(|path| Path::new(path).file_name())
-                    .and_then(|name| name.to_str())
-            })
-            .or_else(|| {
-                image
-                    .path
-                    .as_deref()
+                    .original_source()
+                    .and_then(|path| path.strip_prefix("file://").or(Some(path)))
                     .and_then(|path| Path::new(path).file_name())
                     .and_then(|name| name.to_str())
             })
@@ -161,7 +153,9 @@ impl ExtractMessageFromEventNode {
     fn image_part_from_bytes(image: &ImageMessage, bytes: Vec<u8>) -> ContentPart {
         let base64_payload = base64::engine::general_purpose::STANDARD.encode(bytes);
         ContentPart::image_data_url(
-            Self::infer_content_type(Self::image_name(image)),
+            image
+                .mime_type()
+                .unwrap_or_else(|| Self::infer_content_type(Self::image_name(image))),
             base64_payload,
         )
     }
@@ -292,47 +286,27 @@ impl ExtractMessageFromEventNode {
     }
 
     fn image_part(image: &ImageMessage, s3_ref: Option<&S3Ref>) -> Option<ContentPart> {
-        for local_path in [
-            image.local_path.as_deref(),
-            image.path.as_deref(),
-            image
-                .file
-                .as_deref()
-                .and_then(|value| value.strip_prefix("file://")),
-        ]
-        .into_iter()
-        .flatten()
+        if let Some(local_path) = image
+            .original_source()
+            .and_then(|value| value.strip_prefix("file://").or(Some(value)))
         {
             if let Some(part) = Self::image_part_from_local_file(local_path, image) {
                 return Some(part);
             }
         }
 
-        if let (Some(s3_ref), Some(object_key)) = (s3_ref, image.object_key.as_deref()) {
+        if let (Some(s3_ref), Some(object_key)) = (s3_ref, image.rustfs_path()) {
             if let Some(part) = Self::image_part_from_object_storage(s3_ref, object_key, image) {
                 return Some(part);
             }
         }
 
-        for direct_url in [image.object_url.as_deref(), image.url.as_deref()]
-            .into_iter()
-            .flatten()
-        {
+        if let Some(direct_url) = image.original_source() {
             if direct_url.starts_with("data:") {
                 return Some(ContentPart::image_url_string(direct_url.to_string()));
             }
 
             if let Some(part) = Self::image_part_from_remote_url(direct_url, image) {
-                return Some(part);
-            }
-        }
-
-        let file_value = image.file.as_deref()?;
-        if file_value.starts_with("data:") {
-            return Some(ContentPart::image_url_string(file_value.to_string()));
-        }
-        if file_value.starts_with("https://") {
-            if let Some(part) = Self::image_part_from_remote_url(file_value, image) {
                 return Some(part);
             }
         }
@@ -509,6 +483,27 @@ impl ExtractMessageFromEventNode {
             );
             OpenAIMessage::user(user_text)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ExtractMessageFromEventNode;
+    use crate::models::message::{ImageMessage, PersistedMedia, PersistedMediaSource};
+
+    #[test]
+    fn image_part_uses_known_mime_type_even_without_filename_extension() {
+        let image = ImageMessage::new(PersistedMedia::new(
+            PersistedMediaSource::QqChat,
+            "file://dummy",
+            "qq-images/test",
+            Some("download".to_string()),
+            None,
+            Some("image/jpeg".to_string()),
+        ));
+        let part = ExtractMessageFromEventNode::image_part_from_bytes(&image, vec![0xFF, 0xD8]);
+        let serialized = serde_json::to_string(&part).expect("serialize part");
+        assert!(serialized.contains("data:image/jpeg;base64,"));
     }
 }
 

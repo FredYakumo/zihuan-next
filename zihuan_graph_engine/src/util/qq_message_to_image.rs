@@ -65,12 +65,9 @@ impl Node for QQMessageToImageNode {
         };
 
         let object_storage_path = image
-            .object_key
-            .clone()
-            .or_else(|| image.object_url.clone())
-            .or_else(|| image.path.clone())
-            .or_else(|| image.url.clone())
-            .or_else(|| image.file.clone())
+            .rustfs_path()
+            .map(ToOwned::to_owned)
+            .or_else(|| image.original_source().map(ToOwned::to_owned))
             .ok_or_else(|| {
                 Error::ValidationError("image has no resolvable object_storage_path".to_string())
             })?;

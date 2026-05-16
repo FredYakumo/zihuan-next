@@ -7,6 +7,7 @@ pub const GROUP_ID_MAX_CHARS: usize = 64;
 pub const GROUP_NAME_MAX_CHARS: usize = 128;
 pub const CONTENT_MAX_CHARS: usize = 2048;
 pub const AT_TARGET_LIST_MAX_CHARS: usize = 512;
+pub const MEDIA_ID_LIST_MAX_CHARS: usize = 1024;
 pub const MEDIA_JSON_MAX_CHARS: usize = 4096;
 
 fn truncate_to_char_limit(value: &str, max_chars: usize) -> Option<String> {
