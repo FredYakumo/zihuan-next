@@ -41,10 +41,24 @@ pub struct WeaviatePropertyConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct WeaviateNamedVectorizerConfig {
+    pub modules: HashMap<String, Value>,
+}
+
+impl WeaviateNamedVectorizerConfig {
+    pub fn self_provided() -> Self {
+        Self {
+            modules: HashMap::from([("none".to_string(), json!({}))]),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WeaviateVectorConfigEntry {
     #[serde(rename = "vectorIndexType")]
     pub vector_index_type: String,
-    pub vectorizer: String,
+    pub vectorizer: WeaviateNamedVectorizerConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

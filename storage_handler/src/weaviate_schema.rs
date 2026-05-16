@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::weaviate::{
     WeaviateCollectionConfig, WeaviateCollectionSchema, WeaviateEnsureCollectionResult,
-    WeaviatePropertyConfig, WeaviateRef, WeaviateVectorConfigEntry,
+    WeaviateNamedVectorizerConfig, WeaviatePropertyConfig, WeaviateRef,
+    WeaviateVectorConfigEntry,
 };
 
 pub fn collection_config_for_schema(
@@ -70,12 +71,15 @@ pub fn validate_collection_schema(
             }
             let existing_vectorizer = existing_entry
                 .get("vectorizer")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            if existing_vectorizer != expected_entry.vectorizer {
+                .cloned()
+                .unwrap_or(Value::Null);
+            if !named_vectorizer_matches(&existing_vectorizer, &expected_entry.vectorizer) {
                 return Err(Error::ValidationError(format!(
-                    "Weaviate collection '{}' vector '{}' vectorizer mismatch: expected '{}', got '{}'",
-                    expected.class_name, vector_name, expected_entry.vectorizer, existing_vectorizer
+                    "Weaviate collection '{}' vector '{}' vectorizer mismatch: expected {}, got {}",
+                    expected.class_name,
+                    vector_name,
+                    serde_json::to_string(&expected_entry.vectorizer)?,
+                    serde_json::to_string(&existing_vectorizer)?
                 )));
             }
         }
@@ -186,14 +190,14 @@ fn image_vector_collection_config(class_name: String) -> WeaviateCollectionConfi
         "description_vector".to_string(),
         WeaviateVectorConfigEntry {
             vector_index_type: "hnsw".to_string(),
-            vectorizer: "none".to_string(),
+            vectorizer: WeaviateNamedVectorizerConfig::self_provided(),
         },
     );
     vector_config.insert(
         "name_vector".to_string(),
         WeaviateVectorConfigEntry {
             vector_index_type: "hnsw".to_string(),
-            vectorizer: "none".to_string(),
+            vectorizer: WeaviateNamedVectorizerConfig::self_provided(),
         },
     );
     WeaviateCollectionConfig {
@@ -211,6 +215,26 @@ fn image_vector_collection_config(class_name: String) -> WeaviateCollectionConfi
         vectorizer: None,
         vector_config: Some(vector_config),
     }
+}
+
+fn named_vectorizer_matches(
+    existing: &Value,
+    expected: &WeaviateNamedVectorizerConfig,
+) -> bool {
+    if let Value::Object(existing_object) = existing {
+        let Ok(expected_value) = serde_json::to_value(expected) else {
+            return false;
+        };
+        return expected_value.as_object() == Some(existing_object);
+    }
+
+    if let Value::String(existing_name) = existing {
+        return existing_name == "none"
+            && expected.modules.len() == 1
+            && expected.modules.get("none").is_some_and(Value::is_object);
+    }
+
+    false
 }
 
 #[cfg(test)]
