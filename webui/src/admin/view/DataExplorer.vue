@@ -546,10 +546,6 @@ async function searchWeaviate() {
     alert("请选择 Text Embedding 模型");
     return;
   }
-  if (!weaviate.value.query.trim()) {
-    alert("请输入查询文本");
-    return;
-  }
   weaviate.value.loading = true;
   weaviate.value.searched = true;
   try {

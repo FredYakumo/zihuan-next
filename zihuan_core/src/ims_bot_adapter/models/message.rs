@@ -252,6 +252,14 @@ pub struct ImageMessage {
     pub media: PersistedMedia,
 }
 
+#[derive(Debug, Deserialize)]
+struct NapCatImagePayload {
+    #[serde(default)]
+    file: Option<String>,
+    #[serde(default)]
+    url: Option<String>,
+}
+
 impl ImageMessage {
     pub fn new(media: PersistedMedia) -> Self {
         Self { media }
@@ -311,25 +319,47 @@ impl<'de> Deserialize<'de> for ImageMessage {
         D: Deserializer<'de>,
     {
         let value = serde_json::Value::deserialize(deserializer)?;
-        let Some(media_value) = value.get("media") else {
-            error!(
-                "[ImageMessage] incompatible legacy image JSON encountered; expected {{ media: PersistedMedia }}, payload={}",
-                value
-            );
-            return Err(de::Error::custom(
-                "incompatible legacy image JSON: missing media field",
-            ));
-        };
+        if let Some(media_value) = value.get("media") {
+            let media = PersistedMedia::deserialize(media_value.clone()).map_err(|error| {
+                error!(
+                    "[ImageMessage] failed to deserialize PersistedMedia from image JSON: {} payload={}",
+                    error, value
+                );
+                de::Error::custom(format!("invalid media field: {error}"))
+            })?;
 
-        let media = PersistedMedia::deserialize(media_value.clone()).map_err(|error| {
+            return Ok(ImageMessage::new(media));
+        }
+
+        let payload = NapCatImagePayload::deserialize(value.clone()).map_err(|error| {
             error!(
-                "[ImageMessage] failed to deserialize PersistedMedia from image JSON: {} payload={}",
+                "[ImageMessage] failed to deserialize NapCat image payload: {} payload={}",
                 error, value
             );
-            de::Error::custom(format!("invalid media field: {error}"))
+            de::Error::custom(format!("invalid napcat image payload: {error}"))
         })?;
 
-        Ok(ImageMessage::new(media))
+        let original_source = payload
+            .url
+            .clone()
+            .or_else(|| payload.file.clone())
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                error!(
+                    "[ImageMessage] image payload missing both media and napcat locators: payload={}",
+                    value
+                );
+                de::Error::custom("image payload missing both media and napcat locators")
+            })?;
+
+        Ok(ImageMessage::new(PersistedMedia::new(
+            PersistedMediaSource::QqChat,
+            original_source,
+            String::new(),
+            payload.file.filter(|value| !value.trim().is_empty()),
+            None,
+            None,
+        )))
     }
 }
 
@@ -521,6 +551,30 @@ mod tests {
             restored.media.rustfs_path,
             "qq-images/2026/05/16/sample.jpg"
         );
+    }
+
+    #[test]
+    fn image_message_deserializes_napcat_payload() {
+        let json = r#"{
+            "file":"580FDE1876D6C29E5F2AF42CC83D6E62.png",
+            "file_size":"3168359",
+            "sub_type":0,
+            "summary":"",
+            "url":"https://multimedia.nt.qq.com.cn/download?appid=1406&fileid=test"
+        }"#;
+
+        let restored: ImageMessage = serde_json::from_str(json).expect("deserialize napcat image");
+        assert_eq!(restored.media.source, PersistedMediaSource::QqChat);
+        assert_eq!(
+            restored.media.original_source,
+            "https://multimedia.nt.qq.com.cn/download?appid=1406&fileid=test"
+        );
+        assert_eq!(
+            restored.media.name.as_deref(),
+            Some("580FDE1876D6C29E5F2AF42CC83D6E62.png")
+        );
+        assert_eq!(restored.media.rustfs_path, "");
+        assert_eq!(restored.media.mime_type, None);
     }
 
     #[test]

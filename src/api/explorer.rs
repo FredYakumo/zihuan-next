@@ -489,14 +489,10 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
         Some(id) => id,
         None => return render_bad_request(res, "embedding_model_ref_id is required".into()),
     };
-    let query = match req
+    let query = req
         .query::<String>("query")
         .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-    {
-        Some(query) => query,
-        None => return render_bad_request(res, "query is required".into()),
-    };
+        .filter(|value| !value.is_empty());
     let limit = req.query::<usize>("limit").unwrap_or(10).clamp(1, 50);
 
     let connections = match load_connections() {
@@ -525,42 +521,53 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
         Err(err) => return render_internal_error(res, err),
     };
 
-    let embedding_model = match RuntimeEmbeddingModelManager::shared()
-        .get_or_create_embedding_model(&embedding_model_ref_id)
-        .await
-    {
-        Ok(model) => model,
-        Err(err) => return render_internal_error(res, err),
-    };
-
-    let vector = match tokio::task::block_in_place(|| embedding_model.inference(&query)) {
-        Ok(vector) if !vector.is_empty() => vector,
-        Ok(_) => return render_internal_error(res, "embedding model returned an empty vector"),
-        Err(err) => return render_internal_error(res, err),
-    };
-
     let property_names = match list_weaviate_class_properties(&weaviate_ref) {
         Ok(properties) if !properties.is_empty() => properties,
         Ok(_) => return render_internal_error(res, "weaviate class has no readable properties"),
         Err(err) => return render_internal_error(res, err),
     };
 
-    let target_vector = match collection_schema {
-        WeaviateCollectionSchema::MessageRecordSemantic => None,
-        WeaviateCollectionSchema::ImageSemantic => Some("description_vector".to_string()),
-    };
+    let response = if let Some(query) = query {
+        let embedding_model = match RuntimeEmbeddingModelManager::shared()
+            .get_or_create_embedding_model(&embedding_model_ref_id)
+            .await
+        {
+            Ok(model) => model,
+            Err(err) => return render_internal_error(res, err),
+        };
 
-    let response = match weaviate_ref.query_near_vector(
-        &weaviate_ref.class_name,
-        &vector,
-        target_vector.as_deref(),
-        limit,
-        &property_names,
-        true,
-        false,
-    ) {
-        Ok(value) => value,
-        Err(err) => return render_internal_error(res, err),
+        let vector = match tokio::task::block_in_place(|| embedding_model.inference(&query)) {
+            Ok(vector) if !vector.is_empty() => vector,
+            Ok(_) => return render_internal_error(res, "embedding model returned an empty vector"),
+            Err(err) => return render_internal_error(res, err),
+        };
+
+        let target_vector = match collection_schema {
+            WeaviateCollectionSchema::MessageRecordSemantic => None,
+            WeaviateCollectionSchema::ImageSemantic => Some("description_vector".to_string()),
+        };
+
+        match weaviate_ref.query_near_vector(
+            &weaviate_ref.class_name,
+            &vector,
+            target_vector.as_deref(),
+            limit,
+            &property_names,
+            true,
+            false,
+        ) {
+            Ok(value) => value,
+            Err(err) => return render_internal_error(res, err),
+        }
+    } else {
+        match weaviate_ref.query_all(
+            &weaviate_ref.class_name,
+            limit,
+            &property_names,
+        ) {
+            Ok(value) => value,
+            Err(err) => return render_internal_error(res, err),
+        }
     };
 
     let items = response

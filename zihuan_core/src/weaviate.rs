@@ -241,6 +241,25 @@ impl WeaviateRef {
         self.delete_empty(&format!("/v1/objects/{class_name}/{id}"))
     }
 
+    pub fn query_all(
+        &self,
+        class_name: &str,
+        limit: usize,
+        property_names: &[String],
+    ) -> Result<Value> {
+        let mut requested_fields = property_names
+            .iter()
+            .filter(|value| !value.trim().is_empty())
+            .cloned()
+            .collect::<Vec<_>>();
+        requested_fields.push("_additional { id }".to_string());
+        let fields = requested_fields.join(" ");
+        let graphql = format!(
+            "{{ Get {{ {class_name}(limit: {limit}) {{ {fields} }} }} }}"
+        );
+        self.execute_graphql_query(&graphql)
+    }
+
     pub fn query_near_vector(
         &self,
         class_name: &str,
