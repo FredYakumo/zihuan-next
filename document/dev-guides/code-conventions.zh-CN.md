@@ -99,3 +99,9 @@
 - 自动启动生命周期
 
 应放入 `zihuan_service` 及其 API/配置配套，而不是新增图执行模式。
+
+## 连接职责归属
+
+- 运行时连接的创建、健康检查、重连与失效淘汰，应集中放在拥有该连接职责的连接/存储包中。
+- 对 Redis 来说，共享重连行为应放在 `storage_handler` 的 helper 中，例如 `storage_handler::redis`，而不是散落在 `zihuan_service::agent` 这类业务模块里。
+- service 层可以决定上层 fallback 策略，例如从 Redis 切到内存队列，但不应复制底层 `redis_cm` 生命周期管理逻辑。

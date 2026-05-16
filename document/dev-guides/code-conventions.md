@@ -163,3 +163,9 @@ If behavior needs:
 - auto-start lifecycle
 
 it belongs in `zihuan_service` plus API/config plumbing, not in a new graph execution mode.
+
+## Connection Ownership
+
+- Runtime connection creation, health checks, reconnect, and invalidation should be centralized in the owning connection/storage package.
+- For Redis, shared reconnect behavior belongs in `storage_handler` helpers such as `storage_handler::redis`, not in service/business modules like `zihuan_service::agent`.
+- Service-layer code may choose fallback behavior such as switching from Redis to in-memory queues, but it should not duplicate low-level `redis_cm` lifecycle management.
