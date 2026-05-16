@@ -3,9 +3,9 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 
 use log::{info, warn};
-use reqwest::Url;
 use redis::aio::Connection;
 use redis::AsyncCommands;
+use reqwest::Url;
 use tokio::sync::Mutex as TokioMutex;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::url_utils::pct_encode;
@@ -238,7 +238,11 @@ impl RedisNode {
                 connection.name
             )));
         }
-        build_redis_connection_url(&redis.url, redis.username.as_deref(), redis.password.as_deref())
+        build_redis_connection_url(
+            &redis.url,
+            redis.username.as_deref(),
+            redis.password.as_deref(),
+        )
     }
 }
 
@@ -304,7 +308,7 @@ impl Node for RedisNode {
     }
 }
 
-fn build_redis_connection_url(
+pub fn build_redis_connection_url(
     base_url: &str,
     username: Option<&str>,
     password: Option<&str>,
@@ -325,11 +329,13 @@ fn build_redis_connection_url(
             base_url
         ))
     })?;
-    parsed.set_password(password.map(pct_encode).as_deref()).map_err(|_| {
-        Error::ValidationError(format!(
-            "failed to apply password to redis url '{}'",
-            base_url
-        ))
-    })?;
+    parsed
+        .set_password(password.map(pct_encode).as_deref())
+        .map_err(|_| {
+            Error::ValidationError(format!(
+                "failed to apply password to redis url '{}'",
+                base_url
+            ))
+        })?;
     Ok(parsed.to_string())
 }

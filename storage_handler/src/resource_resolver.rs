@@ -10,7 +10,10 @@ use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
 
 use crate::WeaviateCollectionSchema;
-use crate::{ConnectionConfig, ConnectionKind, RuntimeStorageConnectionManager};
+use crate::{
+    redis::build_redis_connection_url, ConnectionConfig, ConnectionKind,
+    RuntimeStorageConnectionManager,
+};
 
 pub fn find_connection<'a>(
     connections: &'a [ConnectionConfig],
@@ -51,8 +54,13 @@ pub fn build_redis_ref(
             connection.name
         )));
     };
+    let url = build_redis_connection_url(
+        &redis.url,
+        redis.username.as_deref(),
+        redis.password.as_deref(),
+    )?;
     Ok(Some(Arc::new(RedisConfig::new(
-        Some(redis.url.clone()),
+        Some(url),
         redis.username.clone(),
         redis.password.clone(),
         None,

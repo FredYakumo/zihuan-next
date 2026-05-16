@@ -100,10 +100,6 @@ pub struct WeaviateConnection {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RustfsConnection {
     pub endpoint: String,
-    #[serde(default)]
-    pub username: Option<String>,
-    #[serde(default)]
-    pub password: Option<String>,
     pub bucket: String,
     pub region: String,
     pub access_key: String,

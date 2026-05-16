@@ -35,8 +35,6 @@ impl ObjectStorageConfig {
         Some(Self {
             inner: Arc::new(S3Ref {
                 endpoint,
-                endpoint_username: env::var("OBJECT_STORAGE_USERNAME").ok(),
-                endpoint_password: env::var("OBJECT_STORAGE_PASSWORD").ok(),
                 bucket,
                 access_key,
                 secret_key,

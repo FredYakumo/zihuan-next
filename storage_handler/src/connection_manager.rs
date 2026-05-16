@@ -204,8 +204,6 @@ impl RuntimeStorageConnectionManager {
             ConnectionKind::Rustfs(rustfs) => {
                 let s3_ref = zihuan_core::runtime::block_async(build_s3_direct_ref(
                     &rustfs.endpoint,
-                    rustfs.username.clone(),
-                    rustfs.password.clone(),
                     &rustfs.bucket,
                     &rustfs.access_key,
                     &rustfs.secret_key,

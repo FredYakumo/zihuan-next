@@ -78,8 +78,6 @@ impl Node for RustfsNode {
 
         let s3_ref = Arc::new(S3Ref {
             endpoint,
-            endpoint_username: None,
-            endpoint_password: None,
             bucket,
             access_key,
             secret_key,
