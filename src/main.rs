@@ -59,13 +59,19 @@ async fn main() {
             Vec::new()
         });
         for agent in agents.into_iter().filter(|a| a.enabled && a.auto_start) {
-            api::config::agents::start_agent_runtime(
+            if let Err(err) = api::config::agents::start_agent_runtime(
                 Arc::clone(&state),
                 broadcast.clone(),
-                agent,
+                agent.clone(),
                 connections.clone(),
             )
-            .await;
+            .await
+            {
+                error!(
+                    "Failed to auto start agent '{}' (id={}): {}",
+                    agent.name, agent.id, err
+                );
+            }
         }
     }
 

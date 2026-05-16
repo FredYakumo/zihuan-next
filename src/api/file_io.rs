@@ -242,13 +242,21 @@ async fn hot_reload_agents_for_saved_graph(
             "[workflow_save] hot reloading running agent '{}' after graph save: {}",
             agent.name, saved_path
         );
-        crate::api::config::agents::start_agent_runtime(
+        if let Err(err) = crate::api::config::agents::start_agent_runtime(
             state.clone(),
             broadcast_tx.clone(),
-            agent,
+            agent.clone(),
             connections.clone(),
         )
-        .await;
+        .await
+        {
+            log::error!(
+                "[workflow_save] failed to hot reload agent '{}' (id={}): {}",
+                agent.name,
+                agent.id,
+                err
+            );
+        }
     }
 }
 

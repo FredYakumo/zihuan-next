@@ -159,77 +159,94 @@ impl AgentManager {
         task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
     ) -> Result<()> {
         self.stop_agent(&agent.id).await?;
-        let llm_refs = model_inference::system_config::load_llm_refs()?;
-        let tool_provider = build_inference_tool_provider(&agent, &connections)?;
-        let loaded_agent = Arc::new(LoadedInferenceAgent::load_with_tools(
-            &agent,
-            &llm_refs,
-            tool_provider,
-        )?);
+        let start_result: Result<()> = async {
+            let llm_refs = model_inference::system_config::load_llm_refs()?;
+            let tool_provider = build_inference_tool_provider(&agent, &connections)?;
+            let loaded_agent = Arc::new(LoadedInferenceAgent::load_with_tools(
+                &agent,
+                &llm_refs,
+                tool_provider,
+            )?);
 
-        self.update_state(
-            &agent.id,
-            AgentRuntimeState {
-                instance_id: None,
-                status: AgentRuntimeStatus::Starting,
-                started_at: None,
-                last_error: None,
-            },
-        );
-
-        let runtime_instance_id = Uuid::new_v4().to_string();
-
-        match &agent.agent_type {
-            AgentType::QqChat(config) => {
-                let on_finish_shared: OnFinishShared = Arc::new(Mutex::new(on_finish));
-                let task = qq_chat_agent::spawn(
-                    self,
-                    agent.clone(),
-                    config.clone(),
-                    connections,
-                    Arc::clone(&on_finish_shared),
-                    task_runtime.clone(),
-                )
-                .await?;
-                let started_at = Local::now().to_rfc3339();
-                let mut guard = self.inner.lock().unwrap();
-                let entry = guard.entry(agent.id.clone()).or_default();
-                entry.loaded_agent = Some(Arc::clone(&loaded_agent));
-                entry.state = AgentRuntimeState {
-                    instance_id: Some(runtime_instance_id),
-                    status: AgentRuntimeStatus::Running,
-                    started_at: Some(started_at),
+            self.update_state(
+                &agent.id,
+                AgentRuntimeState {
+                    instance_id: None,
+                    status: AgentRuntimeStatus::Starting,
+                    started_at: None,
                     last_error: None,
-                };
-                entry.task = Some(task);
-                entry.on_finish = on_finish_shared;
-                Ok(())
-            }
-            AgentType::HttpStream(config) => {
-                let on_finish_shared: OnFinishShared = Arc::new(Mutex::new(on_finish));
-                let task = http_stream_agent::spawn(
-                    self,
-                    agent.clone(),
-                    config.clone(),
-                    Arc::clone(&on_finish_shared),
-                    task_runtime.clone(),
-                )
-                .await?;
-                let started_at = Local::now().to_rfc3339();
-                let mut guard = self.inner.lock().unwrap();
-                let entry = guard.entry(agent.id.clone()).or_default();
-                entry.loaded_agent = Some(Arc::clone(&loaded_agent));
-                entry.state = AgentRuntimeState {
-                    instance_id: Some(runtime_instance_id),
-                    status: AgentRuntimeStatus::Running,
-                    started_at: Some(started_at),
-                    last_error: None,
-                };
-                entry.task = Some(task);
-                entry.on_finish = on_finish_shared;
-                Ok(())
+                },
+            );
+
+            let runtime_instance_id = Uuid::new_v4().to_string();
+
+            match &agent.agent_type {
+                AgentType::QqChat(config) => {
+                    let on_finish_shared: OnFinishShared = Arc::new(Mutex::new(on_finish));
+                    let task = qq_chat_agent::spawn(
+                        self,
+                        agent.clone(),
+                        config.clone(),
+                        connections,
+                        Arc::clone(&on_finish_shared),
+                        task_runtime.clone(),
+                    )
+                    .await?;
+                    let started_at = Local::now().to_rfc3339();
+                    let mut guard = self.inner.lock().unwrap();
+                    let entry = guard.entry(agent.id.clone()).or_default();
+                    entry.loaded_agent = Some(Arc::clone(&loaded_agent));
+                    entry.state = AgentRuntimeState {
+                        instance_id: Some(runtime_instance_id),
+                        status: AgentRuntimeStatus::Running,
+                        started_at: Some(started_at),
+                        last_error: None,
+                    };
+                    entry.task = Some(task);
+                    entry.on_finish = on_finish_shared;
+                    Ok(())
+                }
+                AgentType::HttpStream(config) => {
+                    let on_finish_shared: OnFinishShared = Arc::new(Mutex::new(on_finish));
+                    let task = http_stream_agent::spawn(
+                        self,
+                        agent.clone(),
+                        config.clone(),
+                        Arc::clone(&on_finish_shared),
+                        task_runtime.clone(),
+                    )
+                    .await?;
+                    let started_at = Local::now().to_rfc3339();
+                    let mut guard = self.inner.lock().unwrap();
+                    let entry = guard.entry(agent.id.clone()).or_default();
+                    entry.loaded_agent = Some(Arc::clone(&loaded_agent));
+                    entry.state = AgentRuntimeState {
+                        instance_id: Some(runtime_instance_id),
+                        status: AgentRuntimeStatus::Running,
+                        started_at: Some(started_at),
+                        last_error: None,
+                    };
+                    entry.task = Some(task);
+                    entry.on_finish = on_finish_shared;
+                    Ok(())
+                }
             }
         }
+        .await;
+
+        if let Err(err) = &start_result {
+            self.update_state(
+                &agent.id,
+                AgentRuntimeState {
+                    instance_id: None,
+                    status: AgentRuntimeStatus::Error,
+                    started_at: None,
+                    last_error: Some(err.to_string()),
+                },
+            );
+        }
+
+        start_result
     }
 
     pub async fn stop_agent(&self, agent_id: &str) -> Result<()> {

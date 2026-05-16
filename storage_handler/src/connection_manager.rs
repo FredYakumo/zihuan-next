@@ -117,7 +117,7 @@ impl RuntimeStorageConnectionManager {
         }
     }
 
-    fn build_runtime_instance(
+    async fn build_runtime_instance(
         &self,
         config_id: &str,
     ) -> Result<(StorageRuntimeInstance, StorageRuntimeHandle)> {
@@ -149,19 +149,45 @@ impl RuntimeStorageConnectionManager {
                     max_connections,
                     acquire_timeout_secs
                 );
-                let runtime = Arc::new(tokio::runtime::Runtime::new()?);
-                let handle = runtime.handle().clone();
                 let pool_options = MySqlPoolOptions::new()
                     .max_connections(max_connections)
                     .min_connections(1)
                     .acquire_timeout(Duration::from_secs(acquire_timeout_secs));
-                let pool = if tokio::runtime::Handle::try_current().is_ok() {
-                    tokio::task::block_in_place(|| {
-                        handle.block_on(pool_options.connect(&mysql.url))
-                    })
-                } else {
-                    handle.block_on(pool_options.connect(&mysql.url))
-                }?;
+                let masked_url = mask_url_credentials(&mysql.url);
+                let (pool, handle, runtime) =
+                    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                        let pool = pool_options.connect(&mysql.url).await.map_err(|err| {
+                            Error::Database(sqlx::Error::Configuration(Box::new(std::io::Error::other(
+                                format!(
+                                    "failed to create mysql pool for connection '{}' (config_id={}, url={}, max_connections={}, acquire_timeout={}s): {}",
+                                    connection.name,
+                                    connection.canonical_config_id(),
+                                    masked_url,
+                                    max_connections,
+                                    acquire_timeout_secs,
+                                    err
+                                ),
+                            ))))
+                        })?;
+                        (pool, handle, None)
+                    } else {
+                        let runtime = Arc::new(tokio::runtime::Runtime::new()?);
+                        let handle = runtime.handle().clone();
+                        let pool = handle.block_on(pool_options.connect(&mysql.url)).map_err(|err| {
+                            Error::Database(sqlx::Error::Configuration(Box::new(std::io::Error::other(
+                                format!(
+                                    "failed to create mysql pool for connection '{}' (config_id={}, url={}, max_connections={}, acquire_timeout={}s): {}",
+                                    connection.name,
+                                    connection.canonical_config_id(),
+                                    masked_url,
+                                    max_connections,
+                                    acquire_timeout_secs,
+                                    err
+                                ),
+                            ))))
+                        })?;
+                        (pool, handle, Some(runtime))
+                    };
                 let config = Arc::new(MySqlConfig {
                     url: Some(mysql.url.clone()),
                     reconnect_max_attempts: None,
@@ -172,7 +198,7 @@ impl RuntimeStorageConnectionManager {
                 (
                     StorageRuntimePayload::MySql(config),
                     "mysql".to_string(),
-                    Some(runtime),
+                    runtime,
                 )
             }
             ConnectionKind::Rustfs(rustfs) => {
@@ -258,6 +284,29 @@ impl RuntimeStorageConnectionManager {
     }
 }
 
+fn mask_url_credentials(url: &str) -> String {
+    if let Some(scheme_end) = url.find("://") {
+        let (scheme_part, rest) = url.split_at(scheme_end + 3);
+        if let Some(at_pos) = rest.find('@') {
+            let (userinfo, remainder) = rest.split_at(at_pos);
+            let masked_userinfo = if let Some(colon_pos) = userinfo.find(':') {
+                let username = &userinfo[..colon_pos];
+                if username.is_empty() {
+                    ":****".to_string()
+                } else {
+                    format!("{username}:****")
+                }
+            } else {
+                "****".to_string()
+            };
+            let remainder_no_at = remainder.strip_prefix('@').unwrap_or(remainder);
+            return format!("{}{}@{}", scheme_part, masked_userinfo, remainder_no_at);
+        }
+    }
+
+    url.to_string()
+}
+
 #[async_trait]
 impl ConnectionManagerTrait for RuntimeStorageConnectionManager {
     type Handle = StorageRuntimeHandle;
@@ -271,7 +320,7 @@ impl ConnectionManagerTrait for RuntimeStorageConnectionManager {
             }
         }
 
-        let (instance, handle) = self.build_runtime_instance(config_id)?;
+        let (instance, handle) = self.build_runtime_instance(config_id).await?;
         let mut instances = self.instances.write().await;
         instances
             .entry(config_id.to_string())

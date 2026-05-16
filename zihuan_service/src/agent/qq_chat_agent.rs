@@ -568,7 +568,7 @@ pub fn load_inference_tool_provider(
     connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
     Ok(Arc::new(QqInferenceToolProvider {
-        resources: load_qq_resources(agent, config, connections),
+        resources: load_qq_resources(agent, config, connections)?,
         tool_definitions: build_enabled_tool_definitions(&agent.tools)?,
     }))
 }
@@ -577,7 +577,7 @@ fn load_qq_resources(
     agent: &AgentConfig,
     config: &QqChatAgentConfig,
     connections: &[ConnectionConfig],
-) -> QqLoadedInferenceResources {
+) -> Result<QqLoadedInferenceResources> {
     let tavily_ref = build_tavily_ref(
         if config.tavily_connection_id.trim().is_empty() {
             None
@@ -591,24 +591,18 @@ fn load_qq_resources(
         None
     });
 
-    let mysql_ref = block_async(build_mysql_ref(
-        if config
-            .mysql_connection_id
-            .as_deref()
-            .map(str::trim)
-            .unwrap_or("")
-            .is_empty()
-        {
-            None
-        } else {
-            config.mysql_connection_id.as_deref()
-        },
-        connections,
-    ))
-    .unwrap_or_else(|e| {
-        warn!("[inference][qq_agent] mysql connection unavailable: {e}");
-        None
-    });
+    let mysql_connection_id = config
+        .mysql_connection_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let mysql_ref = block_async(build_mysql_ref(mysql_connection_id, connections)).map_err(|err| {
+        let connection_label = mysql_connection_id.unwrap_or("<none>");
+        Error::ValidationError(format!(
+            "agent '{}' failed to initialize mysql dependency from mysql_connection_id='{}': {}",
+            agent.name, connection_label, err
+        ))
+    })?;
 
     let weaviate_image_ref = tokio::task::block_in_place(|| {
         build_weaviate_ref(
@@ -649,7 +643,7 @@ fn load_qq_resources(
         config.embedding.as_ref().map(build_embedding_model)
     };
 
-    QqLoadedInferenceResources {
+    Ok(QqLoadedInferenceResources {
         bot_name: if config.bot_name.trim().is_empty() {
             agent.name.clone()
         } else {
@@ -660,7 +654,7 @@ fn load_qq_resources(
         mysql_ref,
         weaviate_image_ref,
         embedding_model,
-    }
+    })
 }
 
 /// Purpose: Bootstrap and launch a long-running QQ chat agent instance.

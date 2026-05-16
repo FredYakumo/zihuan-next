@@ -18,6 +18,7 @@ use crate::service::AgentRuntimeInfo;
 use crate::system_config;
 use model_inference::system_config::{AgentConfig, AgentToolConfig, AgentType};
 use zihuan_core::agent_config::QqChatAgentConfig;
+use zihuan_core::error::Result as CoreResult;
 
 use super::{
     now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found,
@@ -122,7 +123,7 @@ pub async fn start_agent_runtime(
     broadcast_tx: WsBroadcast,
     agent: AgentConfig,
     connections: Vec<ConnectionConfig>,
-) {
+) -> CoreResult<()> {
     let agent_name = agent.name.clone();
     let on_finish: Box<dyn FnOnce(bool, Option<String>) + Send + 'static> =
         Box::new(move |success, error_message| {
@@ -136,13 +137,10 @@ pub async fn start_agent_runtime(
         });
 
     let task_runtime = build_agent_task_runtime(state.clone(), broadcast_tx.clone());
-    if let Err(err) = state
+    state
         .agent_manager
         .start_agent(agent, connections, Some(on_finish), Some(task_runtime))
         .await
-    {
-        log::error!("[agents] failed to start agent: {}", err);
-    }
 }
 
 #[derive(Deserialize)]
@@ -366,7 +364,16 @@ pub async fn start_agent(req: &mut Request, res: &mut Response, depot: &mut Depo
     }
 
     info!("[agents] starting agent '{}' (id={})", agent.name, id,);
-    start_agent_runtime(state.clone(), broadcast_tx, agent, connections).await;
+    if let Err(err) = start_agent_runtime(state.clone(), broadcast_tx, agent.clone(), connections).await
+    {
+        log::error!(
+            "[agents] failed to start agent '{}' (id={}): {}",
+            agent.name,
+            id,
+            err
+        );
+        return render_internal_error(res, err);
+    }
     res.render(Json(serde_json::json!({
         "ok": true,
         "runtime": state.agent_manager.runtime_info(&id),
