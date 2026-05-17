@@ -977,7 +977,7 @@ fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message> {
     expanded
 }
 
-fn expand_event_for_inference(
+pub(crate) fn expand_event_for_inference(
     event: &ims_bot_adapter::models::MessageEvent,
 ) -> ims_bot_adapter::models::MessageEvent {
     let mut expanded_event = event.clone();
@@ -3117,7 +3117,7 @@ impl QqChatAgent {
             let mut shared_runtime_values = shared_runtime_values;
             shared_runtime_values.insert(
                 QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
-                DataValue::MessageEvent(event.clone()),
+                DataValue::MessageEvent(inference_event.clone()),
             );
             let adapter_handle: zihuan_core::ims_bot_adapter::BotAdapterHandle = adapter.clone();
             shared_runtime_values.insert(

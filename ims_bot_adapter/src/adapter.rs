@@ -385,6 +385,17 @@ struct NapCatForwardResponse {
     data: Option<serde_json::Value>,
 }
 
+#[derive(Debug, serde::Deserialize)]
+struct NapCatMessageResponse {
+    data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ResolvedMessageList {
+    pub messages: Vec<Message>,
+    pub source_label: String,
+}
+
 fn json_value_to_string(value: Option<&serde_json::Value>) -> Option<String> {
     match value? {
         serde_json::Value::String(text) => Some(text.clone()),
@@ -512,6 +523,76 @@ fn parse_forward_content_value(value: Option<&serde_json::Value>) -> Vec<Message
     }
 }
 
+pub fn parse_reply_source_messages_from_get_msg_response(
+    response: &serde_json::Value,
+) -> Vec<Message> {
+    let payload: NapCatMessageResponse = match serde_json::from_value(response.clone()) {
+        Ok(payload) => payload,
+        Err(error) => {
+            warn!(
+                "[adapter] failed to parse get_msg response envelope while hydrating reply source: {}",
+                error
+            );
+            return Vec::new();
+        }
+    };
+
+    let Some(data) = payload.data else {
+        return Vec::new();
+    };
+
+    parse_forward_content_value(
+        data.get("message")
+            .or_else(|| data.get("messages"))
+            .or_else(|| data.get("raw_message")),
+    )
+}
+
+async fn fetch_reply_source_messages(
+    adapter: &SharedBotAdapter,
+    message_id: i64,
+) -> Result<Vec<Message>> {
+    let response = ws_send_action_async(
+        adapter,
+        "get_msg",
+        serde_json::json!({ "message_id": message_id }),
+    )
+    .await?;
+
+    Ok(parse_reply_source_messages_from_get_msg_response(&response))
+}
+
+pub(crate) async fn restore_message_list_for_message_id(
+    adapter: &SharedBotAdapter,
+    message_id: i64,
+) -> Result<Option<ResolvedMessageList>> {
+    let image_cache_handle = BotAdapterImageCacheHandle(adapter.clone());
+
+    if let Some(snapshot) = restore_message_snapshot(message_id)? {
+        let mut restored_messages = snapshot.messages;
+        hydrate_message_segments(adapter, &image_cache_handle, message_id, &mut restored_messages)
+            .await;
+        enrich_message_images(&image_cache_handle, message_id, &mut restored_messages).await;
+        return Ok(Some(ResolvedMessageList {
+            messages: restored_messages,
+            source_label: snapshot.source.as_str().to_string(),
+        }));
+    }
+
+    let mut restored_messages = fetch_reply_source_messages(adapter, message_id).await?;
+    if restored_messages.is_empty() {
+        return Ok(None);
+    }
+
+    hydrate_message_segments(adapter, &image_cache_handle, message_id, &mut restored_messages)
+        .await;
+    enrich_message_images(&image_cache_handle, message_id, &mut restored_messages).await;
+    Ok(Some(ResolvedMessageList {
+        messages: restored_messages,
+        source_label: "get_msg".to_string(),
+    }))
+}
+
 fn parse_forward_node_value(value: &serde_json::Value) -> Option<ForwardNodeMessage> {
     let node = value.get("data").unwrap_or(value);
     let sender = node.get("sender").and_then(|value| value.as_object());
@@ -556,35 +637,26 @@ async fn hydrate_message_segments(
 ) {
     for message in messages {
         match message {
-            Message::Reply(reply) => match restore_message_snapshot(reply.id) {
-                Ok(Some(snapshot)) => {
-                    let mut restored_messages = snapshot.messages;
-                    hydrate_message_segments(
-                        adapter,
-                        image_cache_handle,
-                        reply.id,
-                        &mut restored_messages,
-                    )
-                    .await;
-                    enrich_message_images(image_cache_handle, reply.id, &mut restored_messages)
-                        .await;
-
-                    let image_count = restored_messages
+            Message::Reply(reply) => match restore_message_list_for_message_id(adapter, reply.id).await
+            {
+                Ok(Some(resolved)) => {
+                    let image_count = resolved
+                        .messages
                         .iter()
                         .filter(|message| matches!(message, Message::Image(_)))
                         .count();
                     info!(
                         "[adapter] hydrated reply source for message_id={} via {} (segments={}, images={})",
                         reply.id,
-                        snapshot.source.as_str(),
-                        restored_messages.len(),
+                        resolved.source_label,
+                        resolved.messages.len(),
                         image_count
                     );
-                    reply.message_source = Some(restored_messages);
+                    reply.message_source = Some(resolved.messages);
                 }
                 Ok(None) => {
                     debug!(
-                        "[adapter] reply source miss for message_id={} (no cache/mysql snapshot)",
+                        "[adapter] reply source unavailable for message_id={} after cache/mysql/get_msg lookup",
                         reply.id
                     );
                 }

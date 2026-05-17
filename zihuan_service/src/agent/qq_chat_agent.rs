@@ -66,6 +66,13 @@ fn build_reply_batch_builder() -> QqAgentReplyBatchBuilder {
     Arc::new(build_reply_batches_from_model_text)
 }
 
+#[doc(hidden)]
+pub fn expand_message_event_for_tool_input(
+    event: &ims_bot_adapter::models::event_model::MessageEvent,
+) -> ims_bot_adapter::models::event_model::MessageEvent {
+    super::qq_chat_agent_core::expand_event_for_inference(event)
+}
+
 fn build_reply_batches_from_model_text(
     request: &QqAgentReplyBuildRequest,
 ) -> Result<QqAgentReplyBuildResult> {

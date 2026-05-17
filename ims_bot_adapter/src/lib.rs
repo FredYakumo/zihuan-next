@@ -2,6 +2,7 @@ pub mod active_adapter_manager;
 pub mod adapter;
 pub mod event;
 pub mod extract_group_id_from_event;
+pub mod extract_message_by_id_from_event;
 pub mod extract_message_from_event;
 pub mod extract_qq_message_list_from_event;
 pub mod extract_sender_from_event;
@@ -29,6 +30,7 @@ pub use active_adapter_manager::{
     register_active_bot_adapter, stop_active_bot_adapter, sync_enabled_bot_adapters,
 };
 pub use extract_qq_message_list_from_event::ExtractQQMessageListFromEventNode;
+pub use extract_message_by_id_from_event::ExtractMessageByIdFromEventNode;
 pub use extract_sender_from_event::ExtractSenderFromEventNode;
 pub use extract_sender_id_from_event::ExtractSenderIdFromEventNode;
 pub use ims_bot_adapter_provider::ImsBotAdapterProviderNode;
@@ -47,6 +49,7 @@ pub use system_config::{
 
 pub fn init_node_registry() -> Result<()> {
     use extract_group_id_from_event::ExtractGroupIdFromEventNode;
+    use extract_message_by_id_from_event::ExtractMessageByIdFromEventNode;
     use extract_message_from_event::ExtractMessageFromEventNode;
     use extract_qq_message_list_from_event::ExtractQQMessageListFromEventNode;
     use ims_bot_adapter_provider::ImsBotAdapterProviderNode;
@@ -92,6 +95,13 @@ pub fn init_node_registry() -> Result<()> {
         "Bot适配器",
         "从消息事件中提取 OpenAIMessage 列表",
         ExtractMessageFromEventNode
+    );
+    register_node!(
+        "extract_message_by_id_from_event",
+        "按消息ID提取 OpenAIMessage 列表",
+        "Bot适配器",
+        "从当前消息事件或指定消息ID恢复消息，并提取 OpenAIMessage 列表",
+        ExtractMessageByIdFromEventNode
     );
     register_node!(
         "extract_qq_message_list_from_event",

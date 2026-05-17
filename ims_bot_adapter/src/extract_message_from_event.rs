@@ -28,6 +28,14 @@ pub struct ExtractMessageFromEventNode {
     name: String,
 }
 
+pub(crate) struct ExtractedMessageOutputs {
+    pub user_message: OpenAIMessage,
+    pub content: String,
+    pub ref_content: String,
+    pub is_at_me: bool,
+    pub at_target_list: Vec<String>,
+}
+
 impl ExtractMessageFromEventNode {
     const LOG_PREFIX: &str = "[ExtractMessageFromEventNode]";
 
@@ -124,7 +132,7 @@ impl ExtractMessageFromEventNode {
         }
     }
 
-    fn json_for_log<T: serde::Serialize>(value: &T) -> String {
+    pub(crate) fn json_for_log<T: serde::Serialize>(value: &T) -> String {
         let mut json_value = match serde_json::to_value(value) {
             Ok(value) => value,
             Err(err) => return format!("<serialize failed: {err}>"),
@@ -484,6 +492,23 @@ impl ExtractMessageFromEventNode {
             OpenAIMessage::user(user_text)
         }
     }
+
+    pub(crate) fn build_extracted_message_outputs(
+        messages: &[Message],
+        bot_id: &str,
+        s3_ref: Option<&S3Ref>,
+    ) -> ExtractedMessageOutputs {
+        let msg_prop = MessageProp::from_messages(messages, Some(bot_id));
+        let user_message = Self::build_user_message(messages, &msg_prop, s3_ref);
+
+        ExtractedMessageOutputs {
+            user_message,
+            content: msg_prop.content.unwrap_or_default(),
+            ref_content: msg_prop.ref_content.unwrap_or_default(),
+            is_at_me: msg_prop.is_at_me,
+            at_target_list: msg_prop.at_target_list,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -585,17 +610,18 @@ impl Node for ExtractMessageFromEventNode {
                 object_storage.is_some()
             );
 
-            let msg_prop = MessageProp::from_messages(&event.message_list, Some(&bot_id));
-
-            let user_msg =
-                Self::build_user_message(&event.message_list, &msg_prop, object_storage.as_deref());
+            let extracted = Self::build_extracted_message_outputs(
+                &event.message_list,
+                &bot_id,
+                object_storage.as_deref(),
+            );
             info!(
                 "{} output user message={}",
                 Self::LOG_PREFIX,
-                Self::json_for_log(&user_msg)
+                Self::json_for_log(&extracted.user_message)
             );
 
-            let messages = vec![user_msg];
+            let messages = vec![extracted.user_message];
             outputs.insert(
                 "messages".to_string(),
                 DataValue::Vec(
@@ -605,21 +631,21 @@ impl Node for ExtractMessageFromEventNode {
             );
             outputs.insert(
                 "content".to_string(),
-                DataValue::String(msg_prop.content.unwrap_or_default()),
+                DataValue::String(extracted.content),
             );
             outputs.insert(
                 "ref_content".to_string(),
-                DataValue::String(msg_prop.ref_content.unwrap_or_default()),
+                DataValue::String(extracted.ref_content),
             );
             outputs.insert(
                 "is_at_me".to_string(),
-                DataValue::Boolean(msg_prop.is_at_me),
+                DataValue::Boolean(extracted.is_at_me),
             );
             outputs.insert(
                 "at_target_list".to_string(),
                 DataValue::Vec(
                     Box::new(DataType::String),
-                    msg_prop
+                    extracted
                         .at_target_list
                         .into_iter()
                         .map(DataValue::String)
