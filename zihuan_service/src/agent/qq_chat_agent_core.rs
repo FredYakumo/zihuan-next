@@ -16,6 +16,12 @@ use super::qq_chat_agent_logging::{QqChatBrainObserver, QqChatTaskTrace};
 use crate::nodes::tool_subgraph::{
     validate_shared_inputs, validate_tool_definitions, ToolResultMode, ToolSubgraphRunner,
 };
+use crate::storage::qq_chat_history_store::{
+    conversation_history_key, load_history, save_history,
+};
+use crate::storage::qq_chat_session_store::{
+    build_outbound_persistence, release_session, try_claim_session,
+};
 use ims_bot_adapter::adapter::shared_from_handle;
 use ims_bot_adapter::message_helpers::{
     get_bot_id, send_friend_batches_with_persistence,
@@ -52,9 +58,7 @@ use zihuan_graph_engine::brain_tool_spec::{
     BrainToolDefinition, QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
     QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
 };
-use zihuan_graph_engine::data_value::{
-    OpenAIMessageSessionCacheRef, SessionClaim, SessionStateRef, SESSION_CLAIM_CONTEXT,
-};
+use zihuan_graph_engine::data_value::{OpenAIMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::message_mysql_get_group_history::MessageMySQLGetGroupHistoryNode;
 use zihuan_graph_engine::message_mysql_get_user_history::MessageMySQLGetUserHistoryNode;
@@ -182,45 +186,6 @@ fn build_group_system_prompt(
     )
 }
 
-fn conversation_history_key(
-    bot_id: &str,
-    sender_id: &str,
-    is_group: bool,
-    group_id: Option<i64>,
-) -> String {
-    if is_group {
-        format!(
-            "group:{bot_id}:{}:{sender_id}",
-            group_id.unwrap_or_default()
-        )
-    } else {
-        format!("private:{bot_id}:{sender_id}")
-    }
-}
-
-fn load_history(
-    cache: &Arc<OpenAIMessageSessionCacheRef>,
-    history_key: &str,
-    legacy_key: &str,
-) -> Vec<OpenAIMessage> {
-    let history = block_async(cache.get_messages(history_key)).unwrap_or_default();
-    if history.is_empty() && history_key != legacy_key {
-        block_async(cache.get_messages(legacy_key)).unwrap_or_default()
-    } else {
-        history
-    }
-}
-
-fn save_history(
-    cache: &Arc<OpenAIMessageSessionCacheRef>,
-    history_key: &str,
-    messages: Vec<OpenAIMessage>,
-) {
-    if let Err(e) = block_async(cache.set_messages(history_key, messages)) {
-        warn!("{LOG_PREFIX} Failed to save history for {history_key}: {e}");
-    }
-}
-
 fn truncate_for_log(text: &str, max_chars: usize) -> String {
     let total_chars = text.chars().count();
     if total_chars <= max_chars {
@@ -242,52 +207,12 @@ fn debug_for_log<T: std::fmt::Debug>(value: &T, max_chars: usize) -> String {
     truncate_for_log(&format!("{value:?}"), max_chars)
 }
 
-/// Try to claim a session slot. Returns `(claimed, claim_token)`.
-fn try_claim_session(session: &Arc<SessionStateRef>, sender_id: &str) -> (bool, Option<u64>) {
-    let (state, claimed) = block_async(session.try_claim(sender_id, None));
-
-    if claimed {
-        let claim_token = state.claim_token();
-        if let (Ok(ctx), Some(token)) = (SESSION_CLAIM_CONTEXT.try_with(Arc::clone), claim_token) {
-            ctx.register_claim(SessionClaim {
-                session_ref: session.clone(),
-                sender_id: sender_id.to_string(),
-                claim_token: token,
-            });
-        }
-        (true, claim_token)
-    } else {
-        (false, None)
-    }
-}
-
-fn release_session(session: &Arc<SessionStateRef>, sender_id: &str, claim_token: Option<u64>) {
-    if let Ok(ctx) = SESSION_CLAIM_CONTEXT.try_with(Arc::clone) {
-        ctx.unregister_claim(&session.node_id, sender_id);
-    }
-    let released = block_async(session.release(sender_id, claim_token));
-    info!("{LOG_PREFIX} Released session for {sender_id}: released={released}");
-}
-
 fn sender_display_name(sender_name: &str, sender_card: &str) -> String {
     let card = sender_card.trim();
     if card.is_empty() {
         sender_name.to_string()
     } else {
         card.to_string()
-    }
-}
-
-fn outbound_persistence(
-    mysql_ref: Option<&Arc<MySqlConfig>>,
-    group_name: Option<&str>,
-    sender_name: &str,
-) -> OutboundMessagePersistence {
-    OutboundMessagePersistence {
-        mysql_ref: mysql_ref.cloned(),
-        redis_ref: None,
-        group_name: group_name.map(ToOwned::to_owned),
-        sender_name: Some(sender_name.to_string()),
     }
 }
 
@@ -1565,7 +1490,7 @@ fn send_direct_text_reply(
         return Ok(None);
     }
 
-    let persistence = outbound_persistence(mysql_ref, group_name, bot_name);
+    let persistence = build_outbound_persistence(mysql_ref, group_name, bot_name);
     trace.mark_reply_send_started();
     if is_group {
         send_group_batches_with_persistence(adapter, target_id, &batches, &persistence);
@@ -2849,7 +2774,7 @@ impl QqChatAgent {
                             "{LOG_PREFIX} responding busy reply: sender={} target={}",
                             sender_id, target_id
                         );
-                        let persistence = outbound_persistence(mysql_ref, None, bot_name);
+                        let persistence = build_outbound_persistence(mysql_ref, None, bot_name);
                         send_friend_text_with_persistence(
                             adapter,
                             &target_id,
@@ -2863,7 +2788,7 @@ impl QqChatAgent {
                         error_message: None,
                     });
                 } else {
-                    let persistence = outbound_persistence(mysql_ref, None, bot_name);
+                    let persistence = build_outbound_persistence(mysql_ref, None, bot_name);
                     send_friend_text_with_persistence(
                         adapter,
                         &target_id,
@@ -3270,8 +3195,11 @@ impl QqChatAgent {
                 if reply_result.suppress_send {
                     trace.record_reply_send(true, false, &reply_result.batches);
                 } else if !reply_result.batches.is_empty() {
-                    let persistence =
-                        outbound_persistence(mysql_ref, event.group_name.as_deref(), bot_name);
+                    let persistence = build_outbound_persistence(
+                        mysql_ref,
+                        event.group_name.as_deref(),
+                        bot_name,
+                    );
                     if is_group {
                         send_group_batches_with_persistence(
                             adapter,
