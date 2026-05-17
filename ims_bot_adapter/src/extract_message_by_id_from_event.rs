@@ -37,7 +37,9 @@ impl ExtractMessageByIdFromEventNode {
                     None
                 }
             })
-            .ok_or_else(|| Error::InvalidNodeInput("ims_bot_adapter input is required".to_string()))?;
+            .ok_or_else(|| {
+                Error::InvalidNodeInput("ims_bot_adapter input is required".to_string())
+            })?;
 
         let explicit_s3_ref = inputs.get("s3_ref").and_then(|value| match value {
             DataValue::S3Ref(s3_ref) => Some(s3_ref.clone()),
@@ -60,15 +62,17 @@ impl ExtractMessageByIdFromEventNode {
             )
         };
 
-        Ok((bot_id, explicit_s3_ref.or(adapter_object_storage), ims_bot_adapter_ref))
+        Ok((
+            bot_id,
+            explicit_s3_ref.or(adapter_object_storage),
+            ims_bot_adapter_ref,
+        ))
     }
 
     fn extract_target_message_id(inputs: &HashMap<String, DataValue>) -> Result<Option<i64>> {
         match inputs.get("message_id") {
             Some(DataValue::Integer(value)) if *value > 0 => Ok(Some(*value)),
-            Some(DataValue::Integer(_)) => Err(Error::ValidationError(
-                "message_id must be greater than 0".to_string(),
-            )),
+            Some(DataValue::Integer(_)) => Ok(None),
             None => Ok(None),
             Some(other) => Err(Error::ValidationError(format!(
                 "message_id must be Integer when provided, got {}",
@@ -77,9 +81,7 @@ impl ExtractMessageByIdFromEventNode {
         }
     }
 
-    fn build_outputs_map(
-        extracted: ExtractedMessageOutputs,
-    ) -> HashMap<String, DataValue> {
+    fn build_outputs_map(extracted: ExtractedMessageOutputs) -> HashMap<String, DataValue> {
         let mut outputs = HashMap::new();
         outputs.insert(
             "messages".to_string(),
@@ -93,7 +95,10 @@ impl ExtractMessageByIdFromEventNode {
             "ref_content".to_string(),
             DataValue::String(extracted.ref_content),
         );
-        outputs.insert("is_at_me".to_string(), DataValue::Boolean(extracted.is_at_me));
+        outputs.insert(
+            "is_at_me".to_string(),
+            DataValue::Boolean(extracted.is_at_me),
+        );
         outputs.insert(
             "at_target_list".to_string(),
             DataValue::Vec(
@@ -171,8 +176,10 @@ impl Node for ExtractMessageByIdFromEventNode {
         let message_list = if let Some(message_id) = target_message_id {
             let resolved = if tokio::runtime::Handle::try_current().is_ok() {
                 block_in_place(|| {
-                    tokio::runtime::Handle::current()
-                        .block_on(restore_message_list_for_message_id(&adapter_ref, message_id))
+                    tokio::runtime::Handle::current().block_on(restore_message_list_for_message_id(
+                        &adapter_ref,
+                        message_id,
+                    ))
                 })
             } else {
                 tokio::runtime::Runtime::new()?.block_on(restore_message_list_for_message_id(
@@ -213,5 +220,50 @@ impl Node for ExtractMessageByIdFromEventNode {
         let outputs = Self::build_outputs_map(extracted);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use zihuan_graph_engine::DataValue;
+
+    use super::ExtractMessageByIdFromEventNode;
+
+    #[test]
+    fn zero_message_id_is_treated_as_unspecified() {
+        let result =
+            ExtractMessageByIdFromEventNode::extract_target_message_id(&HashMap::from([(
+                "message_id".to_string(),
+                DataValue::Integer(0),
+            )]))
+            .expect("message_id=0 should be accepted as unspecified");
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn negative_message_id_is_treated_as_unspecified() {
+        let result =
+            ExtractMessageByIdFromEventNode::extract_target_message_id(&HashMap::from([(
+                "message_id".to_string(),
+                DataValue::Integer(-1),
+            )]))
+            .expect("negative message ids should be accepted as unspecified");
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn positive_message_id_is_used_as_target() {
+        let result =
+            ExtractMessageByIdFromEventNode::extract_target_message_id(&HashMap::from([(
+                "message_id".to_string(),
+                DataValue::Integer(123),
+            )]))
+            .expect("positive message ids should be accepted");
+
+        assert_eq!(result, Some(123));
     }
 }

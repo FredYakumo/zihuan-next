@@ -26,7 +26,10 @@ fn get_msg_reply_source_parser_extracts_image_segments() {
     assert_eq!(messages.len(), 1);
     match &messages[0] {
         Message::Image(image) => {
-            assert_eq!(image.original_source(), Some("https://example.com/demo.jpg"));
+            assert_eq!(
+                image.original_source(),
+                Some("https://example.com/demo.jpg")
+            );
             assert_eq!(image.name(), Some("demo.jpg"));
         }
         other => panic!("expected image message, got {other:?}"),

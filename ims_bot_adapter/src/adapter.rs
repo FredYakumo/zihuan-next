@@ -570,8 +570,13 @@ pub(crate) async fn restore_message_list_for_message_id(
 
     if let Some(snapshot) = restore_message_snapshot(message_id)? {
         let mut restored_messages = snapshot.messages;
-        hydrate_message_segments(adapter, &image_cache_handle, message_id, &mut restored_messages)
-            .await;
+        hydrate_message_segments(
+            adapter,
+            &image_cache_handle,
+            message_id,
+            &mut restored_messages,
+        )
+        .await;
         enrich_message_images(&image_cache_handle, message_id, &mut restored_messages).await;
         return Ok(Some(ResolvedMessageList {
             messages: restored_messages,
@@ -584,8 +589,13 @@ pub(crate) async fn restore_message_list_for_message_id(
         return Ok(None);
     }
 
-    hydrate_message_segments(adapter, &image_cache_handle, message_id, &mut restored_messages)
-        .await;
+    hydrate_message_segments(
+        adapter,
+        &image_cache_handle,
+        message_id,
+        &mut restored_messages,
+    )
+    .await;
     enrich_message_images(&image_cache_handle, message_id, &mut restored_messages).await;
     Ok(Some(ResolvedMessageList {
         messages: restored_messages,
@@ -637,36 +647,37 @@ async fn hydrate_message_segments(
 ) {
     for message in messages {
         match message {
-            Message::Reply(reply) => match restore_message_list_for_message_id(adapter, reply.id).await
-            {
-                Ok(Some(resolved)) => {
-                    let image_count = resolved
-                        .messages
-                        .iter()
-                        .filter(|message| matches!(message, Message::Image(_)))
-                        .count();
-                    info!(
+            Message::Reply(reply) => {
+                match restore_message_list_for_message_id(adapter, reply.id).await {
+                    Ok(Some(resolved)) => {
+                        let image_count = resolved
+                            .messages
+                            .iter()
+                            .filter(|message| matches!(message, Message::Image(_)))
+                            .count();
+                        info!(
                         "[adapter] hydrated reply source for message_id={} via {} (segments={}, images={})",
                         reply.id,
                         resolved.source_label,
                         resolved.messages.len(),
                         image_count
                     );
-                    reply.message_source = Some(resolved.messages);
-                }
-                Ok(None) => {
-                    debug!(
+                        reply.message_source = Some(resolved.messages);
+                    }
+                    Ok(None) => {
+                        debug!(
                         "[adapter] reply source unavailable for message_id={} after cache/mysql/get_msg lookup",
                         reply.id
                     );
+                    }
+                    Err(error) => {
+                        debug!(
+                            "[adapter] failed to hydrate reply source for message_id={}: {}",
+                            reply.id, error
+                        );
+                    }
                 }
-                Err(error) => {
-                    debug!(
-                        "[adapter] failed to hydrate reply source for message_id={}: {}",
-                        reply.id, error
-                    );
-                }
-            },
+            }
             Message::Forward(forward) => {
                 if forward.content.is_empty() {
                     if let Some(forward_id) = forward.id.clone() {

@@ -629,10 +629,7 @@ impl Node for ExtractMessageFromEventNode {
                     messages.into_iter().map(DataValue::OpenAIMessage).collect(),
                 ),
             );
-            outputs.insert(
-                "content".to_string(),
-                DataValue::String(extracted.content),
-            );
+            outputs.insert("content".to_string(), DataValue::String(extracted.content));
             outputs.insert(
                 "ref_content".to_string(),
                 DataValue::String(extracted.ref_content),

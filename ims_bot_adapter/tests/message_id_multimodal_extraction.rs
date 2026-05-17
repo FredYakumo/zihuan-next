@@ -15,9 +15,13 @@ use zihuan_graph_engine::{DataType, DataValue, Node};
 fn build_adapter_handle() -> zihuan_core::ims_bot_adapter::BotAdapterHandle {
     let runtime = tokio::runtime::Runtime::new().expect("create runtime");
     let shared = runtime.block_on(async {
-        BotAdapter::new(BotAdapterConfig::new("ws://localhost", "token", "2496875785"))
-            .await
-            .into_shared()
+        BotAdapter::new(BotAdapterConfig::new(
+            "ws://localhost",
+            "token",
+            "2496875785",
+        ))
+        .await
+        .into_shared()
     });
     shared
 }
@@ -99,7 +103,9 @@ fn extract_message_by_id_node_builds_multimodal_parts_from_cached_message() {
     match user_message.content.as_ref() {
         Some(MessageContent::Parts(parts)) => {
             assert!(
-                parts.iter().any(|part| matches!(part, ContentPart::ImageUrl { .. })),
+                parts
+                    .iter()
+                    .any(|part| matches!(part, ContentPart::ImageUrl { .. })),
                 "expected multimodal image part, got {parts:?}"
             );
         }
