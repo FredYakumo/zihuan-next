@@ -160,21 +160,15 @@
 
 它们围绕 `SessionStateRef::try_claim(...)` / `release(...)` 建立会话占用语义，确保同一发送者不会同时进入多个实际回复流程。
 
-### QQ Chat Agent 当前的插嘴（steer）机制
+### QQ Chat Agent 当前的 Steer 模型
 
 当某个发送者已经有一个正在进行中的 QQ Chat 回复流程时，同一发送者后续继续发来的消息，不再被视为“忙碌冲突”，而是会被当作 **插嘴 / steer**。
 
-当前 steer 行为如下：
+关于 steer 的详细运行时行为、合并规则、历史写入方式，以及 `QqChatAgentConfig.max_steer_count`
+上限，统一见
+[`dev-guides/qq-chat-agent-steer.zh-CN.md`](dev-guides/qq-chat-agent-steer.zh-CN.md)。
 
-- 这条重叠消息会先进入该发送者对应的 QQ Agent 私有 pending-steer 队列。
-- 如果当前 Brain 在 tool call 之后还会继续进入下一轮推理，队列里的 steer 会在下一次推理前被一次性取出；当存在多条 steer 时，它们会按到达顺序合并成一条显式 `user` 消息注入当前对话，而不是逐条分别注入。
-- 如果 steer 到达得太晚，没赶上当前 Brain 轮次，它会在当前回复流程结束后，自动成为下一轮 follow-up 对话的第一条输入。
-- 被实际消费掉的 steer 会写入会话历史；当多条 steer 在同一轮被合并注入时，历史中会追加这条合并后的显式用户消息。
-- 单次活跃回复流程里最多接受多少条 steer，由 `QqChatAgentConfig.max_steer_count` 控制；当前默认值为 `4`。超过上限的 steer 会被丢弃。
-
-这里有一个重要边界：当前实现没有在首条消息前额外增加等待窗口，也不会为了“再等等用户是否继续发”而延迟首次推理。多条 steer 只会在“当前回复流程尚未结束，且 Brain 还来得及进入下一次 inference”时发生合并；如果已经错过这一边界，它们仍会按现有 follow-up 机制进入下一轮。
-
-这意味着：同一用户的重叠输入，当前不再被建模成“Agent 忙”，而是被建模成“用户正在对尚未完成的回复插嘴调整方向”。
+在执行流程层面，只需要把握一点：同一用户的重叠输入会优先附着到当前活跃回复流上，随后要么被注入后续 Brain 轮次，要么在当前流程结束后转成下一轮自动 follow-up 的输入。
 
 因此，当前模型的关键边界是：
 

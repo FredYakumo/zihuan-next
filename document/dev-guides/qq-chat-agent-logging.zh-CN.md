@@ -124,29 +124,31 @@ QQ Chat 任务日志只应保留高信号内容：
 
 ## Steer 日志
 
-当前 QQ Chat Agent 也会显式记录 steer 路径。
+steer 机制本身的运行时规则统一见
+[`qq-chat-agent-steer.zh-CN.md`](qq-chat-agent-steer.zh-CN.md)。
+
+从日志角度看，QQ Chat Agent 需要把这套运行时行为暴露成任务 trace 事件与 service 级队列管理日志。
 
 任务 trace 中会出现这些事件：
 
 - `收到插嘴消息`：同一发送者的重叠消息被实际消费为 steer
-- `插嘴已注入当前对话`：一条或多条 steer 在下一轮推理前被追加进当前 Brain 对话；如果同一轮里存在多条 steer，这里记录的是合并后的单条注入消息
+- `插嘴已注入当前对话`：steer 在下一轮推理前被追加进当前 Brain 对话
 - `插嘴触发下一轮`：排队中的 steer 成为下一轮自动 follow-up 对话的主输入
 
-除此之外，`qq_chat_agent_core.rs` 还会输出一些 service 级日志，用来描述不完全属于单个 task-trace 片段的队列决策，例如：
+service 级队列管理日志应覆盖：
 
 - 发送者 session 忙时，steer 已入队
 - 当前活跃回复流达到 `max_steer_count` 上限后，新的 steer 被丢弃
 - 用于下一轮 follow-up 的 steer 已从队列取出
 
-这些日志在有意义时应包含明确的队列状态，例如：
+相关 steer 日志字段包括：
 
 - `message_id`
 - `steer_count` 与 `injected_messages`
 - 已接受 steer 次数与配置的 `max_steer_count`
 - 剩余队列长度
 - 截断后的 steer 消息摘要
-
-当前实现中，`插嘴已注入当前对话` 还会显式记录 `merged=true/false`。当多条 steer 在同一个注入窗口被折叠成一条显式用户消息时，`steer_count` 会大于 `injected_messages`，并且 `payload` 展示的是合并后的最终注入内容。
+- 当多条 steer 折叠成一次注入时记录 `merged=true/false`
 
 ## 如何扩展
 

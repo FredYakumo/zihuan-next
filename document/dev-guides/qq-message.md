@@ -387,23 +387,19 @@ This is important because the agent should reason over the fully expanded refere
 
 ## QQ Chat Agent Steer User Behavior
 
-From the user’s point of view, the live QQ chat agent now supports “steer” style interruptions.
+From the user’s point of view, the live QQ chat agent supports “steer” style interruptions:
+when a same-sender follow-up arrives before the current reply finishes, the runtime treats it as
+an attempt to redirect that unfinished reply instead of producing a busy conflict.
 
-What this means:
+The detailed steer lifecycle, merge rules, follow-up behavior, and `QqChatAgentConfig.max_steer_count`
+limit are documented in
+[`qq-chat-agent-steer.md`](qq-chat-agent-steer.md).
 
-- If the agent has not sent its final reply yet, and the same sender sends another message, that new message is treated as a steer message instead of a busy conflict.
-- If the agent is about to enter another Brain inference round after tool calls, steer input can be absorbed into that unfinished reasoning process. When several steer messages accumulate in that same window, they are merged in arrival order into one explicit user message instead of being passed to the model one by one.
-- If the unfinished reply is already too late to absorb the new message, the steer message automatically starts the next follow-up turn as soon as the current reply flow finishes.
-- The steer message is visible to the model as a new explicit user-side interruption, not as a hidden system directive.
-- One active reply flow only accepts a limited number of steer messages. The limit is configured by `QqChatAgentConfig.max_steer_count` and currently defaults to `4`.
+For this document, the important user-visible boundaries are:
 
-Practical usage guidance:
-
-- If a user wants to correct, narrow, or redirect an unfinished answer, they can simply send another message.
-- If the user rapidly sends several short follow-up messages while the agent is still busy, and the current Brain run still has another inference round ahead, that next round will usually see one merged interruption containing the whole sequence.
-- This is not a pre-reply waiting window. The first message still starts the current reply flow immediately.
-- If the user keeps sending many overlapping messages in the same unfinished flow, later steer messages beyond the configured limit may be dropped.
-- Group-chat gating is unchanged: the initial QQ chat flow still only starts when the bot is actually addressed according to current group rules.
+- the first message still starts the current reply flow immediately
+- later overlapping same-sender messages can influence that unfinished flow
+- group-chat gating for the initial QQ chat trigger is unchanged
 
 ## Multimodal Extraction
 

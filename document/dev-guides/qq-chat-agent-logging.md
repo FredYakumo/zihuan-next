@@ -121,29 +121,32 @@ If a new log line does not help answer “what did the agent receive, decide, ca
 
 ## Steer Logging
 
-The current QQ chat agent also records the steer path explicitly.
+The steer runtime itself is documented in
+[`qq-chat-agent-steer.md`](qq-chat-agent-steer.md).
+
+From the logging perspective, the QQ chat agent must expose that runtime through task-trace and
+service-level queue-management events.
 
 Task-trace events include:
 
 - `收到插嘴消息` — a same-sender overlapping message was consumed as steer
-- `插嘴已注入当前对话` — one or more steer messages were appended into the in-flight Brain conversation before the next inference round; when several steer messages are present in the same injection window, this event records the single merged injected message
-- `插嘴触发下一轮` — a queued steer message became the primary input of the next automatic follow-up turn
+- `插嘴已注入当前对话` — steer was appended into the in-flight Brain conversation before the next inference round
+- `插嘴触发下一轮` — queued steer became the primary input of the next automatic follow-up turn
 
-In addition, `qq_chat_agent_core.rs` writes service-level logs for queue-management decisions that are not tied to one active task trace segment, such as:
+Service-level queue-management logs should cover:
 
 - steer enqueued while the sender session is busy
 - steer dropped because `max_steer_count` for the active reply flow was reached
 - follow-up steer dequeued for the next turn
 
-Those logs should include concrete queue state when relevant, such as:
+Relevant steer log fields include:
 
 - `message_id`
 - `steer_count` and `injected_messages`
 - accepted steer count versus configured `max_steer_count`
 - remaining queue length
 - truncated steer message preview
-
-In the current implementation, `插嘴已注入当前对话` also records `merged=true/false`. When several steer messages collapse into one explicit user interruption for the next inference round, `steer_count` is greater than `injected_messages`, and `payload` shows the final merged injected content.
+- `merged=true/false` when injection collapses several steer messages into one explicit interruption
 
 ## How To Extend
 
