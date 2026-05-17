@@ -189,6 +189,7 @@ impl QqChatTaskTrace {
     pub(crate) fn record_steer_follow_up(
         &self,
         message_id: i64,
+        steer_count: usize,
         accepted_steer_count: usize,
         max_steer_count: usize,
         current_message: &str,
@@ -197,8 +198,9 @@ impl QqChatTaskTrace {
             "插嘴触发下一轮",
             0,
             format!(
-                "message_id={} accepted_steer_count={}/{} message={}",
+                "message_id={} steer_count={} accepted_steer_count={}/{} message={}",
                 message_id,
+                steer_count,
                 accepted_steer_count,
                 max_steer_count,
                 truncate_for_log(current_message, LOG_TEXT_PREVIEW_CHARS)

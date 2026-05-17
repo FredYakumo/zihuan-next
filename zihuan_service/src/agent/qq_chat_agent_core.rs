@@ -1151,6 +1151,29 @@ fn build_merged_steer_user_message(
     steer_message
 }
 
+fn build_merged_follow_up_event(
+    pending_events: &[PendingSteerEvent],
+    bot_id: &str,
+    bot_name: &str,
+) -> ims_bot_adapter::models::MessageEvent {
+    let first_event = pending_events
+        .first()
+        .expect("merged follow-up requires at least one pending steer event");
+    let mut merged_event = first_event.event.clone();
+    let merged_text = pending_events
+        .iter()
+        .map(|pending| {
+            let inference_event = expand_event_for_inference(&pending.event);
+            extract_user_message_text(&inference_event, bot_id, bot_name)
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    merged_event.message_list = vec![Message::PlainText(PlainTextMessage {
+        text: merged_text,
+    })];
+    merged_event
+}
+
 fn extract_user_message_text(
     event: &ims_bot_adapter::models::MessageEvent,
     bot_id: &str,
@@ -3162,32 +3185,39 @@ impl QqChatAgent {
                     &bot_id,
                 )?;
 
-                let Some((next_event, remaining_queue_len, accepted_steer_count)) =
-                    pending_steer.pop_oldest(sender_id)
-                else {
+                let (pending, remaining_queue_len, accepted_steer_count) =
+                    pending_steer.drain_all(sender_id);
+                if pending.is_empty() {
                     break turn_result.result_summary;
-                };
+                }
 
-                let next_inference_event = expand_event_for_inference(&next_event.event);
+                let steer_count = pending.len();
+                let next_event = build_merged_follow_up_event(&pending, &bot_id, bot_name);
+                let next_inference_event = expand_event_for_inference(&next_event);
                 let next_message =
                     extract_user_message_text(&next_inference_event, &bot_id, bot_name);
                 trace.record_steer_follow_up(
-                    next_event.event.message_id,
+                    next_event.message_id,
+                    steer_count,
                     accepted_steer_count,
                     max_steer_count,
                     &next_message,
                 );
                 info!(
-                    "{LOG_PREFIX} steer follow-up picked for sender={} message_id={} remaining_queue_len={} accepted_steer_count={}/{} message={}",
+                    "{LOG_PREFIX} steer follow-up picked for sender={} message_id={} steer_count={} remaining_queue_len={} accepted_steer_count={}/{} message={}",
                     sender_id,
-                    next_event.event.message_id,
+                    next_event.message_id,
+                    steer_count,
                     remaining_queue_len,
                     accepted_steer_count,
                     max_steer_count,
                     truncate_for_log(&next_message, LOG_TEXT_PREVIEW_CHARS)
                 );
-                current_event = next_event.event;
-                current_time = next_event.time;
+                current_event = next_event;
+                current_time = pending
+                    .last()
+                    .map(|event| event.time.clone())
+                    .unwrap_or_else(|| current_time.clone());
             };
 
             Ok(QqChatHandleReport { result_summary })
@@ -3673,8 +3703,9 @@ mod tests {
     use chrono::Local;
 
     use super::{
-        build_merged_steer_user_message, build_steer_user_message, content_type_from_url,
-        derive_tavily_s3_key, PendingSteerEvent, PendingSteerStore, QqChatSteerHook,
+        build_merged_follow_up_event, build_merged_steer_user_message, build_steer_user_message,
+        content_type_from_url, derive_tavily_s3_key, extract_user_message_text,
+        PendingSteerEvent, PendingSteerStore, QqChatSteerHook,
         STEER_PREFIX,
     };
     use crate::agent::qq_chat_agent_logging::QqChatTaskTrace;
@@ -3852,6 +3883,30 @@ mod tests {
             }
             other => panic!("unexpected injected steer content: {other:?}"),
         }
+    }
+
+    #[test]
+    fn merged_follow_up_event_combines_pending_messages_into_single_text_input() {
+        let pending = vec![
+            PendingSteerEvent {
+                event: build_plain_text_event(1, "1231"),
+                time: "t-1".to_string(),
+            },
+            PendingSteerEvent {
+                event: build_plain_text_event(2, "53443"),
+                time: "t-2".to_string(),
+            },
+            PendingSteerEvent {
+                event: build_plain_text_event(3, "312375"),
+                time: "t-3".to_string(),
+            },
+        ];
+
+        let merged_event = build_merged_follow_up_event(&pending, "bot", "bot");
+        let merged_text = extract_user_message_text(&merged_event, "bot", "bot");
+
+        assert_eq!(merged_event.message_id, 1);
+        assert_eq!(merged_text, "1231 53443 312375");
     }
 
     fn build_plain_text_event(message_id: i64, text: &str) -> MessageEvent {

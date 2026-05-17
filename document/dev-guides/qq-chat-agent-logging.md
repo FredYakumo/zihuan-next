@@ -126,7 +126,7 @@ The current QQ chat agent also records the steer path explicitly.
 Task-trace events include:
 
 - `收到插嘴消息` — a same-sender overlapping message was consumed as steer
-- `插嘴已注入当前对话` — one or more steer messages were appended into the in-flight Brain conversation before the next inference round
+- `插嘴已注入当前对话` — one or more steer messages were appended into the in-flight Brain conversation before the next inference round; when several steer messages are present in the same injection window, this event records the single merged injected message
 - `插嘴触发下一轮` — a queued steer message became the primary input of the next automatic follow-up turn
 
 In addition, `qq_chat_agent_core.rs` writes service-level logs for queue-management decisions that are not tied to one active task trace segment, such as:
@@ -138,9 +138,12 @@ In addition, `qq_chat_agent_core.rs` writes service-level logs for queue-managem
 Those logs should include concrete queue state when relevant, such as:
 
 - `message_id`
+- `steer_count` and `injected_messages`
 - accepted steer count versus configured `max_steer_count`
 - remaining queue length
 - truncated steer message preview
+
+In the current implementation, `插嘴已注入当前对话` also records `merged=true/false`. When several steer messages collapse into one explicit user interruption for the next inference round, `steer_count` is greater than `injected_messages`, and `payload` shows the final merged injected content.
 
 ## How To Extend
 

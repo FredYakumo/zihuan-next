@@ -168,10 +168,12 @@ are treated as **steer** messages instead of causing a busy reply.
 The current steer behavior is:
 
 - The overlapping message is queued in a QQ-agent-owned pending-steer buffer for that sender.
-- If the current Brain run reaches another inference round after tool calls, queued steer messages are injected into the in-flight conversation as explicit `user` messages that tell the model the user has interrupted with new guidance.
+- If the current Brain run reaches another inference round after tool calls, queued steer messages are drained before that next inference. When more than one steer message is pending, they are merged in arrival order into one explicit `user` message instead of being injected one by one.
 - If a steer message arrives too late to be injected into the current Brain round, it becomes the first input of the next automatic follow-up turn after the current reply flow finishes.
-- Each consumed steer message is appended to saved conversation history in arrival order.
+- Consumed steer input is appended to saved conversation history. When multiple steer messages are merged into one injected interruption, the saved history records that merged explicit user message.
 - The number of steer messages accepted during one active reply flow is limited by `QqChatAgentConfig.max_steer_count`, which currently defaults to `4`. Additional steer messages beyond that limit are dropped.
+
+One important boundary remains: the implementation does not add a debounce or waiting window before the first reply attempt. It does not delay the initial inference just to see whether the user will send more. Multi-message steer merging only happens while the current reply flow is still active and the Brain is about to enter another inference round; once that boundary is missed, the existing follow-up-turn behavior still applies.
 
 This means same-user overlap is no longer modeled as “agent busy”; it is modeled as “the user is steering the unfinished reply”.
 
