@@ -166,31 +166,22 @@ pub struct ReplyMessage {
 
 ```rust
 pub struct ImageMessage {
-    pub file: Option<String>,
-    pub path: Option<String>,
-    pub url: Option<String>,
-    pub name: Option<String>,
-    pub thumb: Option<String>,
-    pub summary: Option<String>,
-    pub sub_type: Option<i32>,
-    pub object_key: Option<String>,
-    pub object_url: Option<String>,
-    pub local_path: Option<String>,
-    pub cache_status: Option<String>,
+    pub media: PersistedMedia,
 }
 ```
 
 用途：
 
 - 表示图片 segment
-- 存储上游 locator，如 `file`、`path`、`url`
-- 后续可能被对象存储缓存字段 enriched
+- 引用一个规范化后的持久化媒体对象，而不是一组松散 locator
 
 运行时行为：
 
-- 图片 segment 会在可能时递归缓存到对象存储
-- 该 enrichment 同时作用于顶层消息和转发消息中的图片
-- 多模态 builder 优先使用已解析 locator，如 `object_url`、`object_key`、`local_path`
+- 图片 segment 会递归归一化成 `PersistedMedia`
+- 该归一化同时作用于顶层消息和转发消息中的图片
+- 多模态 builder 优先使用 `PersistedMedia.rustfs_path` 与 `PersistedMedia.mime_type`
+
+完整多媒体模型请见 `persisted-media.zh-CN.md`。
 
 ### `forward`
 
@@ -436,7 +427,7 @@ at_target_list = ["42"]
 
 建议约束：
 
-- 保持 serde 输入兼容宽松
+- 对仍保留兼容性的消息类型，保持 serde 输入兼容宽松；图片 segment 现在是刻意严格的
 - 不要让一个不支持的字段导致整条消息不可用
 - 明确定义 `Display` 语义
 - 决定新 segment 是否影响 `content`、`ref_content`、@ 提取、多模态提取或持久化

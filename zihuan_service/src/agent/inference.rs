@@ -2,12 +2,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::nodes::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
+use model_inference::message_content_utils::sanitize_messages_for_inference;
 use model_inference::system_config::{AgentConfig, AgentType, LlmRefConfig};
 use storage_handler::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
-use zihuan_agent::brain::{
-    sanitize_messages_for_inference, Brain, BrainStopReason, BrainTool, MAX_TOOL_ITERATIONS,
-};
+use zihuan_agent::brain::{Brain, BrainStopReason, BrainTool, MAX_TOOL_ITERATIONS};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;

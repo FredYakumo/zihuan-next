@@ -7,7 +7,10 @@ use serde_json::{Map, Value};
 use sqlx::Row as SqlxRow;
 
 use crate::system_config::load_connections;
-use storage_handler::resource_resolver;
+use storage_handler::{
+    resource_resolver, weaviate::build_weaviate_ref as build_storage_weaviate_ref, ConnectionKind,
+    WeaviateCollectionSchema,
+};
 
 use super::config::{render_bad_request, render_internal_error};
 
@@ -466,6 +469,7 @@ struct WeaviateExploreResponse {
     total: usize,
     limit: usize,
     class_name: String,
+    collection_schema: WeaviateCollectionSchema,
 }
 
 #[derive(Serialize)]
@@ -485,14 +489,10 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
         Some(id) => id,
         None => return render_bad_request(res, "embedding_model_ref_id is required".into()),
     };
-    let query = match req
+    let query = req
         .query::<String>("query")
         .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-    {
-        Some(query) => query,
-        None => return render_bad_request(res, "query is required".into()),
-    };
+        .filter(|value| !value.is_empty());
     let limit = req.query::<usize>("limit").unwrap_or(10).clamp(1, 50);
 
     let connections = match load_connections() {
@@ -500,24 +500,24 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
         Err(e) => return render_internal_error(res, e),
     };
 
-    let weaviate_ref =
-        match resource_resolver::build_weaviate_ref(Some(&connection_id), &connections, false) {
-            Ok(Some(r)) => r,
-            Ok(None) => return render_bad_request(res, "connection not found".into()),
-            Err(e) => return render_internal_error(res, e),
-        };
-
-    let embedding_model = match RuntimeEmbeddingModelManager::shared()
-        .get_or_create_embedding_model(&embedding_model_ref_id)
-        .await
-    {
-        Ok(model) => model,
+    let connection = match resource_resolver::find_connection(&connections, &connection_id) {
+        Ok(connection) => connection,
         Err(err) => return render_internal_error(res, err),
     };
+    let ConnectionKind::Weaviate(weaviate) = &connection.kind else {
+        return render_bad_request(res, "connection is not a weaviate connection".into());
+    };
+    let collection_schema = weaviate.collection_schema;
 
-    let vector = match tokio::task::block_in_place(|| embedding_model.inference(&query)) {
-        Ok(vector) if !vector.is_empty() => vector,
-        Ok(_) => return render_internal_error(res, "embedding model returned an empty vector"),
+    let weaviate_ref = match build_storage_weaviate_ref(
+        &weaviate.base_url,
+        &weaviate.class_name,
+        weaviate.username.clone(),
+        weaviate.password.clone(),
+        weaviate.api_key.clone(),
+        collection_schema,
+    ) {
+        Ok(weaviate_ref) => weaviate_ref,
         Err(err) => return render_internal_error(res, err),
     };
 
@@ -527,16 +527,43 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
         Err(err) => return render_internal_error(res, err),
     };
 
-    let response = match weaviate_ref.query_near_vector(
-        &weaviate_ref.class_name,
-        &vector,
-        limit,
-        &property_names,
-        true,
-        false,
-    ) {
-        Ok(value) => value,
-        Err(err) => return render_internal_error(res, err),
+    let response = if let Some(query) = query {
+        let embedding_model = match RuntimeEmbeddingModelManager::shared()
+            .get_or_create_embedding_model(&embedding_model_ref_id)
+            .await
+        {
+            Ok(model) => model,
+            Err(err) => return render_internal_error(res, err),
+        };
+
+        let vector = match tokio::task::block_in_place(|| embedding_model.inference(&query)) {
+            Ok(vector) if !vector.is_empty() => vector,
+            Ok(_) => return render_internal_error(res, "embedding model returned an empty vector"),
+            Err(err) => return render_internal_error(res, err),
+        };
+
+        let target_vector = match collection_schema {
+            WeaviateCollectionSchema::MessageRecordSemantic => None,
+            WeaviateCollectionSchema::ImageSemantic => Some("description_vector".to_string()),
+        };
+
+        match weaviate_ref.query_near_vector(
+            &weaviate_ref.class_name,
+            &vector,
+            target_vector.as_deref(),
+            limit,
+            &property_names,
+            true,
+            false,
+        ) {
+            Ok(value) => value,
+            Err(err) => return render_internal_error(res, err),
+        }
+    } else {
+        match weaviate_ref.query_all(&weaviate_ref.class_name, limit, &property_names) {
+            Ok(value) => value,
+            Err(err) => return render_internal_error(res, err),
+        }
     };
 
     let items = response
@@ -554,6 +581,7 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
         total: items.len(),
         limit,
         class_name: weaviate_ref.class_name.clone(),
+        collection_schema,
         items,
     }));
 }

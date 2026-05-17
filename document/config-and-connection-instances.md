@@ -136,7 +136,89 @@ During graph loading, it is migrated to:
 
 - `config_id`
 
-## 5. Connection Manager UI
+## 5. Connection Management And Auto-Reconnect
+
+Not every connection type is managed in exactly the same way.
+
+### RuntimeStorageConnectionManager
+
+For storage-backed runtime instances such as:
+
+- MySQL
+- RustFS / S3
+- Weaviate
+
+the main runtime owner is:
+
+- `storage_handler::RuntimeStorageConnectionManager`
+
+Its job is to:
+
+- load enabled connection definitions from system config
+- create live runtime handles on demand
+- reuse existing healthy handles for the same `config_id`
+- destroy idle or disabled instances during cleanup
+- expose active instances to the connection manager UI
+
+For MySQL specifically, this means:
+
+- creating and caching a `sqlx::MySqlPool`
+- keeping a Tokio runtime handle when one is needed for pool background work
+- returning `Arc<MySqlConfig>` to graph nodes, services, or APIs
+
+This is instance-level lifecycle management, not per-query retry logic.
+
+### Redis Connection Ownership
+
+Redis currently uses a different pattern.
+
+The saved Redis configuration is still a normal connection config, but the live connection used by callers is stored inside:
+
+- `zihuan_graph_engine::data_value::RedisConfig`
+
+That runtime ref carries:
+
+- the resolved Redis URL
+- `redis_cm`, the cached live Redis connection
+- `cached_redis_url`, the URL used to build the cached connection
+
+Shared Redis operations are centralized in:
+
+- `storage_handler::redis`
+
+Current helper behavior is:
+
+1. ensure a cached connection exists
+2. run the Redis command
+3. if the command fails, mark the cached connection invalid
+4. reconnect once
+5. retry the command once
+
+This is the current auto-reconnect behavior used by service/business code such as the QQ agent inbox path.
+
+The important boundary is:
+
+- connection creation, invalidation, and reconnect belong to `storage_handler`
+- service/business modules may decide fallback behavior, such as degrading from Redis to memory
+- service/business modules should not duplicate low-level `redis_cm` lifecycle logic
+
+### What "Auto-Reconnect" Means Today
+
+In the current codebase, auto-reconnect does not mean a universal background self-healing loop for every backend.
+
+Instead, it means:
+
+- MySQL / RustFS / Weaviate: runtime instance reuse and recreation are owned by `RuntimeStorageConnectionManager`
+- Redis: reconnect is attempted by shared Redis helpers when an operation detects a failed connection
+- higher-level modules may still choose fallback behavior after reconnect fails
+
+So the system separates:
+
+- runtime instance ownership
+- low-level reconnect policy
+- business-level degradation policy
+
+## 6. Connection Manager UI
 
 The admin UI now has a dedicated page:
 
@@ -165,7 +247,9 @@ Use this page when you want to inspect or terminate live connections.
 
 Use `连接配置` when you want to create, edit, enable, or disable configurations.
 
-## 6. Keep-Alive And Heartbeat
+At the moment, this UI is primarily driven by runtime managers such as `RuntimeStorageConnectionManager` and long-lived adapter managers. Redis helper-managed cached connections are not surfaced there as first-class rows.
+
+## 7. Keep-Alive And Heartbeat
 
 Runtime instances may expose two runtime-only behaviors:
 
@@ -186,7 +270,7 @@ If `keep_alive = true`, the instance is not automatically closed by idle cleanup
 
 If `heartbeat_interval_secs` is set, the manager periodically sends a lightweight action to verify the connection is still responsive.
 
-## 7. Force Close Behavior
+## 8. Force Close Behavior
 
 Force closing a runtime instance:
 
@@ -203,7 +287,7 @@ You will typically also see logs for:
 - idle instance cleanup with `instance_id` and `config_id`
 - user-triggered force close with `instance_id` and `config_id`
 
-## 8. Practical Example
+## 9. Practical Example
 
 Suppose you create one saved configuration:
 

@@ -40,6 +40,7 @@ impl Node for WeaviateImageSearchNode {
         port! { name = "query", ty = String, desc = "图片语义查询文本" },
         port! { name = "limit", ty = Integer, desc = "返回结果数量，必须大于 0" },
         port! { name = "max_distance", ty = Float, desc = "可选：最大允许距离，超过则过滤", optional },
+        port! { name = "target_vector", ty = String, desc = "可选：查询目标向量名称，默认 description_vector", optional },
     ];
 
     node_output![
@@ -102,6 +103,13 @@ impl Node for WeaviateImageSearchNode {
                 ))
             }
         };
+        let target_vector = inputs
+            .get("target_vector")
+            .and_then(|v| match v {
+                DataValue::String(s) if !s.trim().is_empty() => Some(s.trim()),
+                _ => None,
+            })
+            .unwrap_or("description_vector");
 
         let query_vector = embedding_model.inference(&query)?;
         if query_vector.is_empty() {
@@ -111,13 +119,18 @@ impl Node for WeaviateImageSearchNode {
         }
 
         let property_names = vec![
-            "object_storage_path".to_string(),
-            "summary".to_string(),
+            "media_id".to_string(),
+            "original_source".to_string(),
+            "rustfs_path".to_string(),
+            "name".to_string(),
+            "description".to_string(),
+            "mime_type".to_string(),
             "source".to_string(),
         ];
         let response = weaviate_ref.query_near_vector(
             &weaviate_ref.class_name,
             &query_vector,
+            Some(target_vector),
             limit,
             &property_names,
             true,
@@ -155,7 +168,7 @@ impl Node for WeaviateImageSearchNode {
 }
 
 fn normalized_image_item(item: &Value, max_distance: Option<f64>) -> Option<Value> {
-    let object_storage_path = string_field(item, "object_storage_path")?;
+    let rustfs_path = string_field(item, "rustfs_path")?;
     let distance = distance_field(item);
     if max_distance.is_some_and(|threshold| distance.is_some_and(|value| value > threshold)) {
         return None;
@@ -163,12 +176,33 @@ fn normalized_image_item(item: &Value, max_distance: Option<f64>) -> Option<Valu
 
     let mut object = Map::new();
     object.insert(
-        "object_storage_path".to_string(),
-        Value::String(object_storage_path),
+        "media_id".to_string(),
+        string_field(item, "media_id")
+            .map(Value::String)
+            .unwrap_or(Value::Null),
     );
     object.insert(
-        "summary".to_string(),
-        string_field(item, "summary")
+        "original_source".to_string(),
+        string_field(item, "original_source")
+            .map(Value::String)
+            .unwrap_or(Value::Null),
+    );
+    object.insert("rustfs_path".to_string(), Value::String(rustfs_path));
+    object.insert(
+        "name".to_string(),
+        string_field(item, "name")
+            .map(Value::String)
+            .unwrap_or(Value::Null),
+    );
+    object.insert(
+        "description".to_string(),
+        string_field(item, "description")
+            .map(Value::String)
+            .unwrap_or(Value::Null),
+    );
+    object.insert(
+        "mime_type".to_string(),
+        string_field(item, "mime_type")
             .map(Value::String)
             .unwrap_or(Value::Null),
     );

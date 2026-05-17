@@ -125,6 +125,9 @@
 - 历史压缩前后 token
 - 当前请求 token 消耗信息
 
+相关日志模式的独立说明文档见
+[`dev-guides/qq-chat-agent-logging.zh-CN.md`](dev-guides/qq-chat-agent-logging.zh-CN.md)。
+
 当前底层并没有统一的精确 usage 结构，因此 `prompt_tokens` / `completion_tokens` / `total_tokens` 在不可用时会明确记录为 unavailable，并补充估算值，而不是伪造精确数字。
 
 ### QQ Chat Agent 当前消息处理模型
@@ -137,7 +140,7 @@
 2. 每条入站文本/二进制消息都会 `tokio::spawn(...)` 一个独立任务执行 `BotAdapter::process_event(...)`。
 3. `process_event(...)` 完成 JSON 解析、图片补全、reply/forward message hydration 后，再 `tokio::spawn(...)` 调用 `ims_bot_adapter::event::process_message(...)`。
 4. `process_message(...)` 会先复制当前注册的 event handlers，然后对**同一条消息**按注册顺序逐个 `await` handler。
-5. `qq_chat_agent` 注册的 handler 会构造 inbox item，优先尝试写入 Redis；当 Redis 不可用时回退到进程内内存队列。
+5. `qq_chat_agent` 注册的 handler 会构造 inbox item，并通过共享的 `storage_handler::redis` helper 优先尝试写入 Redis；当 Redis 不可用时回退到进程内内存队列。
 6. 后台 inbox consumers 会持续从 Redis 或内存队列取出消息，并通过 `tokio::task::spawn_blocking(...)` 分发执行。
 7. 真正的业务处理仍然最终在 `QqChatAgentService::handle_event(...)` 中执行。
 
@@ -147,7 +150,7 @@
 - **同一条消息的多个 handlers**：在 `process_message(...)` 内部仍然是串行 `await`。
 - **不同用户的消息**：允许并发执行，也允许全局乱序；当前实现并不尝试做跨用户顺序保证。
 - **同一用户的消息**：顺序性由 `qq_chat_agent_core` 内部的 session claim/release 机制保证，而不是由 adapter 层队列保证。
-- **enqueue 阶段 Redis 不可用**：handler 会回退到本地内存队列，并尽快返回。
+- **enqueue 阶段 Redis 不可用**：handler 会先依赖 `storage_handler` 将失败的 Redis 连接标记失效并尝试重连一次；若 Redis 仍不可用，再回退到本地内存队列，并尽快返回。
 - **使用内存 fallback 时发生进程重启**：允许丢失尚未开始处理的内存排队消息。
 
 当前单用户串行控制点在：
@@ -162,9 +165,12 @@
 - adapter 层负责接入、解析、异步分发消息；
 - `qq_chat_agent` handler 只负责入队并尽快返回；
 - Redis 是首选 inbox 后端；没有 Redis 连接或 Redis 入队失败时回退到进程内内存队列；
+- inbox 路径中的 Redis 连接生命周期由 `storage_handler` 负责，`zihuan_service` 只负责决定继续使用 Redis 还是降级到内存；
 - inbox consumer 负责把队列中的消息转入阻塞式业务执行；
 - 单用户串行由 service 层 session 锁控制；
 - 图引擎本身仍然保持同步执行，不直接参与 adapter 接入层并发。
+
+关于“运行时实例归属”“Redis helper 管理的重连”“业务层 fallback”三者的区别，见 [`config-and-connection-instances.zh-CN.md`](config-and-connection-instances.zh-CN.md)。
 
 ## 6. CLI 执行流程
 

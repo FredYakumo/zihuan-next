@@ -131,7 +131,6 @@ pub fn build_router(
                         ),
                 ),
         )
-        // Tasks
         .push(
             Router::with_path("tasks")
                 .get(execution::list_tasks)
@@ -183,7 +182,6 @@ pub fn build_router(
                 .push(Router::with_path("rustfs").get(explorer::query_rustfs)),
         );
 
-    // Inject state into depot for all API handlers (REST + WebSocket)
     let mut router = Router::new();
     if let Some(origin) = canonical_local_origin {
         router = router.hoop(CanonicalLocalRedirect::new(origin));

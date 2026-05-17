@@ -125,6 +125,9 @@ Task logs are persisted per task under:
 - history compaction token before/after
 - current request token usage information
 
+For the dedicated QQ chat agent logging design document, see
+[`dev-guides/qq-chat-agent-logging.md`](dev-guides/qq-chat-agent-logging.md).
+
 The current LLM abstraction does not expose a unified exact usage object yet. When exact `prompt_tokens` / `completion_tokens` / `total_tokens` are unavailable, logs explicitly mark them unavailable and include estimates instead.
 
 ### Current QQ Chat Agent Message Handling Model
@@ -137,7 +140,7 @@ The message path is:
 2. Each incoming text/binary frame is dispatched via `tokio::spawn(...)` into its own `BotAdapter::process_event(...)` task.
 3. `process_event(...)` parses JSON, enriches images, hydrates reply/forward message segments, then `tokio::spawn(...)` calls `ims_bot_adapter::event::process_message(...)`.
 4. `process_message(...)` clones the registered event handlers and `await`s them one by one for the same event.
-5. The handler registered by `qq_chat_agent` builds an inbox item, tries to enqueue it into Redis first, and falls back to an in-memory queue when Redis is unavailable.
+5. The handler registered by `qq_chat_agent` builds an inbox item, tries to enqueue it into Redis first through shared `storage_handler::redis` helpers, and falls back to an in-memory queue when Redis is unavailable.
 6. Background inbox consumers dequeue Redis or in-memory items and dispatch them through `tokio::task::spawn_blocking(...)`.
 7. The actual business logic still runs inside `QqChatAgentService::handle_event(...)`.
 
@@ -147,7 +150,7 @@ The concurrency semantics of the current model are:
 - **Multiple handlers for the same message**: still serial within `process_message(...)`.
 - **Messages from different users**: allowed to run concurrently, and global ordering is not preserved.
 - **Messages from the same user**: serialized by the session claim/release mechanism inside `qq_chat_agent_core`, not by the adapter queue.
-- **Redis unavailable at enqueue time**: the handler falls back to the local in-memory queue and still returns quickly.
+- **Redis unavailable at enqueue time**: the handler first relies on `storage_handler` to invalidate the failed Redis connection and reconnect once, then falls back to the local in-memory queue and still returns quickly if Redis remains unavailable.
 - **Process restart while using the in-memory fallback**: accepted to lose queued in-memory work that has not started yet.
 
 The current single-user serialization points are:
@@ -162,9 +165,12 @@ The architectural boundary is therefore:
 - the adapter layer accepts, parses, and dispatches messages asynchronously
 - the `qq_chat_agent` handler only enqueues work and returns quickly
 - Redis is the preferred inbox backend, with an in-memory fallback when Redis enqueue fails or no Redis connection is configured
+- Redis connection lifecycle for the inbox path is owned by `storage_handler`, while `zihuan_service` only decides whether to keep using Redis or degrade to memory
 - inbox consumers move queued items into blocking business execution
 - single-user serialization is enforced inside the service layer session lock
 - the graph engine itself remains synchronous and does not own adapter ingress concurrency
+
+For the distinction between runtime instance ownership, Redis helper-managed reconnect, and business-level fallback, see [`config-and-connection-instances.md`](config-and-connection-instances.md).
 
 ## 6. CLI Execution Flow
 

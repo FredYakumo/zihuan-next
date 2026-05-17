@@ -802,7 +802,7 @@ function runtimeBadgeText(agent: AgentWithRuntime): string {
     case "starting":
       return "启动中";
     case "error":
-      return "错误";
+      return "启动失败";
     default:
       return agent.runtime.status;
   }

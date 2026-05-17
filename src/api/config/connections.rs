@@ -80,12 +80,7 @@ fn validate_connection_basics(kind: &ConnectionKind) -> Result<(), String> {
             }
             Ok(())
         }
-        ConnectionKind::Tavily(tavily) => {
-            if tavily.api_token.trim().is_empty() {
-                return Err("tavily.api_token must not be empty".to_string());
-            }
-            Ok(())
-        }
+        ConnectionKind::Tavily(_) => Ok(()),
         _ => Ok(()),
     }
 }
@@ -111,7 +106,9 @@ fn validate_connection(
     let weaviate_ref = WeaviateRef::new(
         weaviate.base_url.clone(),
         weaviate.class_name.clone(),
-        None,
+        weaviate.username.clone(),
+        weaviate.password.clone(),
+        weaviate.api_key.clone(),
         Duration::from_secs(30),
     )
     .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
@@ -123,9 +120,12 @@ fn validate_connection(
             class_name: weaviate_ref.class_name.clone(),
         });
     }
-    let result = weaviate_ref
-        .ensure_collection_schema(weaviate.collection_schema, allow_create_collection)
-        .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
+    let result = storage_handler::ensure_collection_schema(
+        &weaviate_ref,
+        weaviate.collection_schema,
+        allow_create_collection,
+    )
+    .map_err(|err| ConnectionValidationError::BadRequest(err.to_string()))?;
     Ok(matches!(result, WeaviateEnsureCollectionResult::Created))
 }
 

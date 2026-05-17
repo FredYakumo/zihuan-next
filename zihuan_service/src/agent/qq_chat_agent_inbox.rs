@@ -4,12 +4,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use log::{error, info, warn};
-use redis::{aio::Connection, AsyncCommands};
 use serde::{Deserialize, Serialize};
+use storage_handler::redis::{blpop_value, rpush_value};
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
-use zihuan_core::error::{Error, Result};
+use zihuan_core::error::Result;
 use zihuan_core::ims_bot_adapter::models::MessageEvent;
 use zihuan_graph_engine::data_value::RedisConfig;
 
@@ -208,52 +208,16 @@ impl QqChatAgentInbox {
     }
 
     async fn enqueue_to_redis(&self, item: &QqChatAgentInboxItem) -> Result<()> {
+        let Some(redis_ref) = self.inner.redis_ref.as_ref() else {
+            return Ok(());
+        };
         let stored = StoredQqChatAgentInboxItem {
             event: item.event.clone(),
             time: item.time.clone(),
         };
         let payload = serde_json::to_string(&stored)?;
-        let mut redis_cm = self.ensure_redis_connection().await?;
-        let cm = redis_cm
-            .as_mut()
-            .ok_or_else(|| Error::StringError("redis connection unavailable".to_string()))?;
-        cm.rpush::<_, _, ()>(&self.inner.redis_queue_key, payload)
-            .await?;
+        rpush_value(redis_ref, &self.inner.redis_queue_key, &payload).await?;
         Ok(())
-    }
-
-    async fn ensure_redis_connection(
-        &self,
-    ) -> Result<tokio::sync::MutexGuard<'_, Option<Connection>>> {
-        let Some(redis_ref) = self.inner.redis_ref.as_ref() else {
-            return Err(Error::StringError(
-                "redis inbox requested without redis_ref".to_string(),
-            ));
-        };
-
-        let mut redis_cm = redis_ref.redis_cm.lock().await;
-        {
-            let mut cached_redis_url = redis_ref.cached_redis_url.lock().await;
-            if redis_ref.url.is_none() {
-                return Err(Error::StringError("redis_ref missing url".to_string()));
-            }
-            let url = redis_ref.url.as_ref().expect("url checked above");
-            if cached_redis_url.as_deref() != Some(url.as_str()) {
-                *redis_cm = None;
-                *cached_redis_url = Some(url.clone());
-            }
-        }
-
-        if redis_cm.is_none() {
-            let url = redis_ref
-                .url
-                .as_ref()
-                .ok_or_else(|| Error::StringError("redis_ref missing url".to_string()))?;
-            let client = redis::Client::open(url.as_str())?;
-            *redis_cm = Some(client.get_tokio_connection().await?);
-        }
-
-        Ok(redis_cm)
     }
 
     async fn run_redis_consumer(&self, consumer_idx: usize) {
@@ -297,17 +261,15 @@ impl QqChatAgentInbox {
     }
 
     async fn dequeue_from_redis(&self) -> Result<Option<QqChatAgentInboxItem>> {
-        let mut redis_cm = self.ensure_redis_connection().await?;
-        let Some(cm) = redis_cm.as_mut() else {
+        let Some(redis_ref) = self.inner.redis_ref.as_ref() else {
             return Ok(None);
         };
-
-        let result: Option<(String, String)> = cm
-            .blpop(
-                &self.inner.redis_queue_key,
-                REDIS_DEQUEUE_TIMEOUT_SECS as f64,
-            )
-            .await?;
+        let result = blpop_value(
+            redis_ref,
+            &self.inner.redis_queue_key,
+            REDIS_DEQUEUE_TIMEOUT_SECS,
+        )
+        .await?;
         let Some((_, payload)) = result else {
             return Ok(None);
         };

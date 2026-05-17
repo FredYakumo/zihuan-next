@@ -134,7 +134,89 @@
 
 - `config_id`
 
-## 5. 连接管理器页面
+## 5. 连接管理与自动重连
+
+并不是所有连接类型都用完全相同的运行时管理方式。
+
+### RuntimeStorageConnectionManager
+
+对于以下这类存储型运行时实例：
+
+- MySQL
+- RustFS / S3
+- Weaviate
+
+主要运行时所有者是：
+
+- `storage_handler::RuntimeStorageConnectionManager`
+
+它负责：
+
+- 从系统配置中加载已启用的连接定义
+- 按需创建 live 运行时句柄
+- 对同一个 `config_id` 优先复用现有健康句柄
+- 在清理阶段销毁空闲或已禁用的实例
+- 把活动实例暴露给连接管理器页面
+
+对 MySQL 来说，当前具体表现为：
+
+- 创建并缓存 `sqlx::MySqlPool`
+- 在需要时保留一个 Tokio runtime handle 供 pool 后台工作使用
+- 向图节点、service 或 API 返回 `Arc<MySqlConfig>`
+
+这属于“实例级生命周期管理”，而不是“每次查询自动重试”。
+
+### Redis 连接职责归属
+
+Redis 当前采用的是另一种模式。
+
+保存下来的 Redis 配置仍然是普通连接配置，但调用方实际使用的 live 连接缓存放在：
+
+- `zihuan_graph_engine::data_value::RedisConfig`
+
+这个运行时 ref 当前携带：
+
+- 解析后的 Redis URL
+- `redis_cm`，缓存的 live Redis 连接
+- `cached_redis_url`，用于构建当前缓存连接的 URL
+
+共享 Redis 操作统一收敛在：
+
+- `storage_handler::redis`
+
+当前 helper 的行为是：
+
+1. 先确保缓存连接存在
+2. 执行 Redis 命令
+3. 如果命令失败，则把当前缓存连接标记失效
+4. 重连一次
+5. 再重试该命令一次
+
+这就是当前 service/业务代码（例如 QQ agent inbox 路径）使用的自动重连机制。
+
+这里的关键边界是：
+
+- 连接创建、失效淘汰、重连属于 `storage_handler`
+- service/业务模块可以决定上层 fallback 行为，例如从 Redis 降级到内存
+- service/业务模块不应复制底层 `redis_cm` 生命周期管理逻辑
+
+### 当前“自动重连”到底是什么意思
+
+在当前代码库里，自动重连并不表示“所有后端都有一个统一的后台自愈循环”。
+
+它实际表示：
+
+- MySQL / RustFS / Weaviate：运行时实例的复用与重建由 `RuntimeStorageConnectionManager` 负责
+- Redis：当某次操作发现连接失效时，由共享 Redis helper 触发一次失效清理与重连
+- 更高层模块在重连仍失败时，可以继续决定是否降级到 fallback 路径
+
+也就是说，系统刻意把下面三层分开：
+
+- 运行时实例归属
+- 底层重连策略
+- 业务层降级策略
+
+## 6. 连接管理器页面
 
 管理界面新增了一个专门页面：
 
@@ -165,7 +247,9 @@
 
 - `连接配置`
 
-## 6. 维持长连接与心跳
+当前这个页面主要展示的是像 `RuntimeStorageConnectionManager` 这类运行时管理器维护的实例，以及长生命周期适配器实例。像 Redis helper 维护的缓存连接，目前不会作为独立行展示在这个页面里。
+
+## 7. 维持长连接与心跳
 
 运行时实例还可能带两个只存在于运行时的行为字段：
 
@@ -186,7 +270,7 @@
 
 如果设置了 `heartbeat_interval_secs`，管理器会定期发送一个轻量动作来检查连接是否还可用。
 
-## 7. 强制关闭是什么意思
+## 8. 强制关闭是什么意思
 
 强制关闭运行时实例会：
 
@@ -203,7 +287,7 @@
 - 实例空闲被清理：输出 `instance_id` 和 `config_id`
 - 用户手动强制关闭：输出 `instance_id` 和 `config_id`
 
-## 8. 一个实际例子
+## 9. 一个实际例子
 
 假设你创建了一条保存配置：
 

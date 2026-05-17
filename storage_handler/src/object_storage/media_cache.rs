@@ -9,7 +9,9 @@ use reqwest::Client;
 use serde::Deserialize;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
-use zihuan_core::ims_bot_adapter::models::message::{ForwardNodeMessage, ImageMessage, Message};
+use zihuan_core::ims_bot_adapter::models::message::{
+    ForwardNodeMessage, ImageMessage, Message, PersistedMedia,
+};
 use zihuan_graph_engine::object_storage::S3Ref;
 
 use super::{save_image_to_object_storage, ImageObjectStorageInput};
@@ -72,17 +74,17 @@ async fn enrich_message_images_with_storage<A: ImageCacheAdapter>(
     for (segment_index, message) in messages.iter_mut().enumerate() {
         match message {
             Message::Image(image) => {
-                if image.object_key.is_some() {
+                if image.rustfs_path().is_some() {
                     continue;
                 }
 
                 match cache_one_image(adapter, object_storage, message_id, segment_index, image)
                     .await
                 {
-                    Ok(Some(object_url)) => {
+                    Ok(Some(rustfs_path)) => {
                         info!(
                             "{LOG_PREFIX} Cached image for message {} segment {} to {}",
-                            message_id, segment_index, object_url
+                            message_id, segment_index, rustfs_path
                         );
                     }
                     Ok(None) => {
@@ -96,7 +98,6 @@ async fn enrich_message_images_with_storage<A: ImageCacheAdapter>(
                             "{LOG_PREFIX} Failed to cache image for message {} segment {}: {}",
                             message_id, segment_index, error
                         );
-                        image.cache_status = Some("pending_retry".to_string());
                         let should_spawn = adapter
                             .enqueue_pending_image(PendingImageUpload {
                                 message_id,
@@ -189,7 +190,6 @@ async fn cache_one_image<A: ImageCacheAdapter>(
     image: &mut ImageMessage,
 ) -> Result<Option<String>> {
     let Some(resolved) = resolve_image_payload(adapter, image).await? else {
-        image.cache_status = Some("source_unavailable".to_string());
         return Ok(None);
     };
 
@@ -205,44 +205,40 @@ async fn cache_one_image<A: ImageCacheAdapter>(
     )
     .await?;
 
-    image.object_key = Some(saved.object_key);
-    image.object_url = Some(saved.object_url.clone());
-    image.local_path = resolved.local_path;
-    image.cache_status = Some("uploaded".to_string());
-    if image.name.is_none() {
-        image.name = Some(resolved.file_name);
-    }
+    image.media = PersistedMedia::new(
+        image.media.source.clone(),
+        image.media.original_source.clone(),
+        saved.object_key.clone(),
+        image
+            .media
+            .name
+            .clone()
+            .or_else(|| Some(resolved.file_name.clone())),
+        image.media.description.clone(),
+        Some(resolved.content_type.clone()),
+    );
 
-    Ok(Some(saved.object_url))
+    Ok(Some(saved.object_key))
 }
 
 struct ResolvedImagePayload {
     bytes: Vec<u8>,
     file_name: String,
     content_type: String,
-    local_path: Option<String>,
 }
 
 async fn resolve_image_payload<A: ImageCacheAdapter>(
     adapter: &A,
     image: &ImageMessage,
 ) -> Result<Option<ResolvedImagePayload>> {
-    if let Some(ref path) = image.path {
-        if let Some(payload) = read_local_file(path, image.name.as_deref()).await? {
+    if let Some(path) = local_file_source(image) {
+        if let Some(payload) = read_local_file(path, image.name()).await? {
             return Ok(Some(payload));
         }
     }
 
-    if let Some(ref file) = image.file {
-        if let Some(stripped) = file.strip_prefix("file://") {
-            if let Some(payload) = read_local_file(stripped, image.name.as_deref()).await? {
-                return Ok(Some(payload));
-            }
-        }
-    }
-
-    if let Some(ref url) = image.url {
-        if let Some(payload) = download_remote_file(url, image.name.as_deref()).await? {
+    if let Some(url) = remote_image_source(image) {
+        if let Some(payload) = download_remote_file(url, image.name()).await? {
             return Ok(Some(payload));
         }
     }
@@ -255,13 +251,12 @@ async fn resolve_image_payload<A: ImageCacheAdapter>(
             let file_name = detail
                 .file_name
                 .clone()
-                .or_else(|| image.name.clone())
+                .or_else(|| image.media.name.clone())
                 .unwrap_or_else(|| "image.bin".to_string());
             return Ok(Some(ResolvedImagePayload {
                 content_type: infer_content_type(&file_name, None),
                 bytes,
                 file_name,
-                local_path: None,
             }));
         }
 
@@ -304,7 +299,6 @@ async fn read_local_file(
         content_type: infer_content_type(&file_name, None),
         bytes,
         file_name,
-        local_path: Some(path.to_string()),
     }))
 }
 
@@ -339,7 +333,6 @@ async fn download_remote_file(
         content_type: infer_content_type(&file_name, content_type_header.as_deref()),
         bytes,
         file_name,
-        local_path: None,
     }))
 }
 
@@ -349,8 +342,11 @@ async fn fetch_napcat_image_detail<A: ImageCacheAdapter>(
 ) -> Result<Option<NapCatImageDetailData>> {
     let (base_url, token) = adapter.image_detail_request_context().await;
 
-    let file = image.file.clone();
-    if file.is_none() && image.url.is_none() {
+    let file = image
+        .original_source()
+        .filter(|value| !value.starts_with("http://") && !value.starts_with("https://"))
+        .map(ToOwned::to_owned);
+    if file.is_none() && remote_image_source(image).is_none() {
         return Ok(None);
     }
 
@@ -359,7 +355,7 @@ async fn fetch_napcat_image_detail<A: ImageCacheAdapter>(
         .bearer_auth(token)
         .json(&serde_json::json!({
             "file_id": file,
-            "file": image.file,
+            "file": image.original_source(),
         }))
         .send()
         .await?;
@@ -389,5 +385,44 @@ fn infer_content_type(file_name: &str, header_content_type: Option<&str>) -> Str
         Some("bmp") => "image/bmp".to_string(),
         Some("svg") => "image/svg+xml".to_string(),
         _ => "image/png".to_string(),
+    }
+}
+
+fn local_file_source(image: &ImageMessage) -> Option<&str> {
+    image
+        .original_source()
+        .and_then(|value| value.strip_prefix("file://").or(Some(value)))
+        .filter(|value| Path::new(value).exists())
+}
+
+fn remote_image_source(image: &ImageMessage) -> Option<&str> {
+    image
+        .original_source()
+        .filter(|value| value.starts_with("http://") || value.starts_with("https://"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zihuan_core::ims_bot_adapter::models::message::PersistedMediaSource;
+
+    #[test]
+    fn infer_persisted_media_from_qq_image_input() {
+        let image = ImageMessage::new(PersistedMedia::new(
+            PersistedMediaSource::QqChat,
+            "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=test",
+            "qq-images/2026/05/16/test.jpg",
+            Some("download".to_string()),
+            None,
+            Some("image/jpeg".to_string()),
+        ));
+
+        assert_eq!(image.media.source.to_string(), "qq_chat");
+        assert_eq!(
+            image.media.original_source,
+            "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=test"
+        );
+        assert_eq!(image.media.rustfs_path, "qq-images/2026/05/16/test.jpg");
+        assert_eq!(image.media.mime_type.as_deref(), Some("image/jpeg"));
     }
 }

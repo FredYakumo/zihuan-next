@@ -118,7 +118,7 @@ class MessageRecord(Base):
 它会执行：
 
 1. 通过 `cache_message_snapshot(event)` 将事件写入进程内还原缓存。
-2. 如果传入或全局注册了 Redis ref，则可选写入 `message_id -> content` 到 Redis。
+2. 如果传入或全局注册了 Redis ref，则可选写入结构化 Redis 快照。
 3. 如果传入或全局注册了 MySQL ref，则可选写入事件到 MySQL。
 
 MySQL 插入路径是 `persist_message_to_mysql(...)`。
@@ -187,8 +187,9 @@ MySQL 插入路径是 `persist_message_to_mysql(...)`。
 `restore_message_snapshot(message_id)` 按以下顺序还原被引用消息：
 
 1. 进程内运行时缓存
-2. MySQL `raw_message_json`
-3. 从拼接后的 `content` 加 `media_json` fallback 重建
+2. Redis 结构化快照缓存
+3. MySQL `raw_message_json`
+4. 从拼接后的 `content` 加 `media_json` fallback 重建
 
 `ims_bot_adapter/src/adapter.rs` 在填充 `reply.message_source` 时使用它。
 
@@ -202,6 +203,15 @@ ORDER BY id ASC
 ```
 
 这就是分片顺序和首分片元数据重要的原因。
+
+当前 Redis 快照 payload 包含：
+
+- `message_id`
+- `content`
+- `media_json`
+- `raw_message_json`
+
+这使得 Redis 命中时也能保留 `PersistedMedia.media_id` 和图片重建能力，而不是退化成纯文本。
 
 ### 管理端资源浏览器
 
@@ -223,7 +233,7 @@ ORDER BY id ASC
 
 `storage_handler::MessageStore` 是围绕以下存储的辅助封装：
 
-- Redis string cache
+- Redis cache
 - MySQL `message_record`
 - 内存 fallback map
 
@@ -258,4 +268,4 @@ ORDER BY id ASC
 - 如果需要 reply/forward 重建，优先使用会持久化 `raw_message_json` 的写入路径。
 - `QQMessageListMySQLPersistenceNode` 适合简单的图级持久化，但它不能像 `MessageEvent` 持久化那样准确还原完整嵌套结构。
 - 当前 schema 允许重复 `message_id` 行，同时也用重复 `message_id` 表示分片。在决定分片消息如何表示前，不要加入去重逻辑。
-- Redis 是文本缓存，不是完整 QQ 消息重建的事实来源。
+- 在主 `MessageEvent` 持久化路径中，Redis 现在保存结构化消息快照；但从持久化和可恢复性的角度看，MySQL `raw_message_json` 仍然是更推荐的持久事实来源。

@@ -1,7 +1,9 @@
 mod connection_manager;
+mod image_weaviate_persistence;
 mod message_store;
 pub mod mysql;
 pub mod object_storage;
+mod qq_message_list_weaviate_persistence;
 pub mod redis;
 pub mod resource_resolver;
 pub mod rustfs;
@@ -9,6 +11,8 @@ mod tavily_provider_node;
 mod tavily_search_node;
 pub mod weaviate;
 mod weaviate_image_search_node;
+mod weaviate_persistence;
+mod weaviate_schema;
 
 use log::{debug, info};
 use serde::{Deserialize, Serialize};
@@ -36,6 +40,13 @@ pub use resource_resolver::{
 };
 pub use rustfs::RustfsNode;
 pub use weaviate::WeaviateNode;
+pub use weaviate_persistence::{
+    build_image_record_properties, deterministic_media_object_id, deterministic_message_object_id,
+    upsert_image_record, upsert_message_event, upsert_qq_message_list,
+};
+pub use weaviate_schema::{
+    collection_config_for_schema, ensure_collection_schema, validate_collection_schema,
+};
 pub use zihuan_core::weaviate::WeaviateCollectionSchema;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,12 +89,22 @@ pub struct MysqlConnection {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RedisConnection {
     pub url: String,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WeaviateConnection {
     pub base_url: String,
     pub class_name: String,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub api_key: Option<String>,
     pub collection_schema: WeaviateCollectionSchema,
 }
 
@@ -102,7 +123,8 @@ pub struct RustfsConnection {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TavilyConnection {
-    pub api_token: String,
+    #[serde(default)]
+    pub api_token: Option<String>,
     #[serde(default = "default_tavily_timeout_secs")]
     pub timeout_secs: u64,
 }
@@ -135,7 +157,6 @@ impl ConnectionConfig {
                     && mysql.max_connections > 0
                     && mysql.acquire_timeout_secs > 0
             }
-            ConnectionKind::Tavily(tavily) => !tavily.api_token.trim().is_empty(),
             _ => true,
         }
     }
@@ -366,12 +387,12 @@ pub fn infer_weaviate_collection_schema(
 }
 
 pub fn init_node_registry() -> Result<()> {
-    use zihuan_graph_engine::image_weaviate_persistence::ImageWeaviatePersistenceNode;
+    use crate::image_weaviate_persistence::ImageWeaviatePersistenceNode;
+    use crate::qq_message_list_weaviate_persistence::QQMessageListWeaviatePersistenceNode;
     use zihuan_graph_engine::message_mysql_get_group_history::MessageMySQLGetGroupHistoryNode;
     use zihuan_graph_engine::message_mysql_get_user_history::MessageMySQLGetUserHistoryNode;
     use zihuan_graph_engine::message_mysql_search::MessageMySQLSearchNode;
     use zihuan_graph_engine::qq_message_list_mysql_persistence::QQMessageListMySQLPersistenceNode;
-    use zihuan_graph_engine::qq_message_list_weaviate_persistence::QQMessageListWeaviatePersistenceNode;
     use zihuan_graph_engine::register_node;
 
     register_node!(

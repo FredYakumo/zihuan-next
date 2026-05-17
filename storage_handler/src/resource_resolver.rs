@@ -10,7 +10,10 @@ use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
 
 use crate::WeaviateCollectionSchema;
-use crate::{ConnectionConfig, ConnectionKind, RuntimeStorageConnectionManager};
+use crate::{
+    redis::build_redis_connection_url, ConnectionConfig, ConnectionKind,
+    RuntimeStorageConnectionManager,
+};
 
 pub fn find_connection<'a>(
     connections: &'a [ConnectionConfig],
@@ -51,8 +54,15 @@ pub fn build_redis_ref(
             connection.name
         )));
     };
+    let url = build_redis_connection_url(
+        &redis.url,
+        redis.username.as_deref(),
+        redis.password.as_deref(),
+    )?;
     Ok(Some(Arc::new(RedisConfig::new(
-        Some(redis.url.clone()),
+        Some(url),
+        redis.username.clone(),
+        redis.password.clone(),
         None,
         None,
     ))))
@@ -119,13 +129,14 @@ pub fn build_tavily_ref(
             connection.name
         )));
     };
-    if tavily.api_token.trim().is_empty() {
-        return Err(Error::ValidationError(
-            "tavily.api_token must not be empty".to_string(),
-        ));
-    }
+    let api_token = tavily
+        .api_token
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| Error::ValidationError("tavily.api_token must not be empty".to_string()))?;
     Ok(Some(Arc::new(TavilyRef::new(
-        tavily.api_token.clone(),
+        api_token.to_string(),
         Duration::from_secs(tavily.timeout_secs),
     ))))
 }

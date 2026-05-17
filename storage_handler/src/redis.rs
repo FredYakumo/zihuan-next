@@ -5,8 +5,10 @@ use std::sync::Arc;
 use log::{info, warn};
 use redis::aio::Connection;
 use redis::AsyncCommands;
+use reqwest::Url;
 use tokio::sync::Mutex as TokioMutex;
 use zihuan_core::error::{Error, Result};
+use zihuan_core::url_utils::pct_encode;
 use zihuan_graph_engine::data_value::RedisConfig;
 use zihuan_graph_engine::{DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port};
 
@@ -15,7 +17,13 @@ use crate::{find_connection, load_connections, ConnectionKind};
 const CONNECTION_ID_FIELD: &str = "connection_id";
 
 pub async fn build_redis_ref(url: &str) -> Result<Arc<RedisConfig>> {
-    let redis_ref = Arc::new(RedisConfig::new(Some(url.to_string()), None, None));
+    let redis_ref = Arc::new(RedisConfig::new(
+        Some(url.to_string()),
+        None,
+        None,
+        None,
+        None,
+    ));
     {
         let mut redis_cm = redis_ref.redis_cm.lock().await;
         *redis_cm = Some(connect(url).await?);
@@ -26,16 +34,99 @@ pub async fn build_redis_ref(url: &str) -> Result<Arc<RedisConfig>> {
 }
 
 pub async fn set_value(redis_ref: &Arc<RedisConfig>, key: &str, value: &str) -> Result<()> {
+    {
+        let mut redis_cm = redis_ref.redis_cm.lock().await;
+        let conn = ensure_connection(redis_ref, &mut redis_cm).await?;
+        match conn.set::<_, _, ()>(key, value).await {
+            Ok(()) => return Ok(()),
+            Err(err) => {
+                warn!(
+                    "[storage_handler][redis] SET failed, reconnecting once for key '{}': {}",
+                    key, err
+                );
+            }
+        }
+    }
+
+    invalidate_connection(redis_ref).await;
+
     let mut redis_cm = redis_ref.redis_cm.lock().await;
     let conn = ensure_connection(redis_ref, &mut redis_cm).await?;
-    conn.set::<_, _, ()>(key, value).await?;
-    Ok(())
+    conn.set::<_, _, ()>(key, value).await.map_err(Error::from)
 }
 
 pub async fn get_value(redis_ref: &Arc<RedisConfig>, key: &str) -> Result<Option<String>> {
+    {
+        let mut redis_cm = redis_ref.redis_cm.lock().await;
+        let conn = ensure_connection(redis_ref, &mut redis_cm).await?;
+        match conn.get(key).await {
+            Ok(value) => return Ok(value),
+            Err(err) => {
+                warn!(
+                    "[storage_handler][redis] GET failed, reconnecting once for key '{}': {}",
+                    key, err
+                );
+            }
+        }
+    }
+
+    invalidate_connection(redis_ref).await;
+
     let mut redis_cm = redis_ref.redis_cm.lock().await;
     let conn = ensure_connection(redis_ref, &mut redis_cm).await?;
     conn.get(key).await.map_err(Error::from)
+}
+
+pub async fn rpush_value(redis_ref: &Arc<RedisConfig>, key: &str, value: &str) -> Result<()> {
+    {
+        let mut redis_cm = redis_ref.redis_cm.lock().await;
+        let conn = ensure_connection(redis_ref, &mut redis_cm).await?;
+        match conn.rpush::<_, _, ()>(key, value).await {
+            Ok(()) => return Ok(()),
+            Err(err) => {
+                warn!(
+                    "[storage_handler][redis] RPUSH failed, reconnecting once for key '{}': {}",
+                    key, err
+                );
+            }
+        }
+    }
+
+    invalidate_connection(redis_ref).await;
+
+    let mut redis_cm = redis_ref.redis_cm.lock().await;
+    let conn = ensure_connection(redis_ref, &mut redis_cm).await?;
+    conn.rpush::<_, _, ()>(key, value)
+        .await
+        .map_err(Error::from)
+}
+
+pub async fn blpop_value(
+    redis_ref: &Arc<RedisConfig>,
+    key: &str,
+    timeout_secs: usize,
+) -> Result<Option<(String, String)>> {
+    {
+        let mut redis_cm = redis_ref.redis_cm.lock().await;
+        let conn = ensure_connection(redis_ref, &mut redis_cm).await?;
+        match conn.blpop(key, timeout_secs as f64).await {
+            Ok(value) => return Ok(value),
+            Err(err) => {
+                warn!(
+                    "[storage_handler][redis] BLPOP failed, reconnecting once for key '{}': {}",
+                    key, err
+                );
+            }
+        }
+    }
+
+    invalidate_connection(redis_ref).await;
+
+    let mut redis_cm = redis_ref.redis_cm.lock().await;
+    let conn = ensure_connection(redis_ref, &mut redis_cm).await?;
+    conn.blpop(key, timeout_secs as f64)
+        .await
+        .map_err(Error::from)
 }
 
 async fn connect(url: &str) -> Result<Connection> {
@@ -59,6 +150,11 @@ async fn ensure_connection<'a>(
     redis_cm
         .as_mut()
         .ok_or_else(|| zihuan_core::string_error!("redis connection unavailable"))
+}
+
+async fn invalidate_connection(redis_ref: &Arc<RedisConfig>) {
+    let mut redis_cm = redis_ref.redis_cm.lock().await;
+    *redis_cm = None;
 }
 
 pub struct RedisNode {
@@ -230,7 +326,11 @@ impl RedisNode {
                 connection.name
             )));
         }
-        Ok(redis.url.clone())
+        build_redis_connection_url(
+            &redis.url,
+            redis.username.as_deref(),
+            redis.password.as_deref(),
+        )
     }
 }
 
@@ -281,6 +381,8 @@ impl Node for RedisNode {
         let url = self.selected_url()?;
         let config = Arc::new(RedisConfig {
             url: Some(url),
+            username: None,
+            password: None,
             reconnect_max_attempts: None,
             reconnect_interval_secs: None,
             redis_cm: self.redis_cm.clone(),
@@ -292,4 +394,36 @@ impl Node for RedisNode {
             DataValue::RedisRef(config),
         )]))
     }
+}
+
+pub fn build_redis_connection_url(
+    base_url: &str,
+    username: Option<&str>,
+    password: Option<&str>,
+) -> Result<String> {
+    let username = username.map(str::trim).filter(|value| !value.is_empty());
+    let password = password.map(str::trim).filter(|value| !value.is_empty());
+    if username.is_none() && password.is_none() {
+        return Ok(base_url.to_string());
+    }
+
+    let mut parsed = Url::parse(base_url).map_err(|err| {
+        Error::ValidationError(format!("invalid redis url '{}': {}", base_url, err))
+    })?;
+    let encoded_username = username.map(pct_encode).unwrap_or_default();
+    parsed.set_username(&encoded_username).map_err(|_| {
+        Error::ValidationError(format!(
+            "failed to apply username to redis url '{}'",
+            base_url
+        ))
+    })?;
+    parsed
+        .set_password(password.map(pct_encode).as_deref())
+        .map_err(|_| {
+            Error::ValidationError(format!(
+                "failed to apply password to redis url '{}'",
+                base_url
+            ))
+        })?;
+    Ok(parsed.to_string())
 }

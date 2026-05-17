@@ -1,6 +1,7 @@
 use std::sync::Arc;
+use std::time::Instant;
 
-use log::{info, warn};
+use log::warn;
 
 use super::agent_text_similarity::{
     compare_similarity_match_desc, rank_matches, HybridSimilarityConfig, SimilarityCandidate,
@@ -150,6 +151,34 @@ impl IntentCategory {
             Self::Other => "其它",
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntentClassificationPath {
+    LocalGuard,
+    SimilarityGuard,
+    Llm,
+}
+
+impl IntentClassificationPath {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::LocalGuard => "local_guard",
+            Self::SimilarityGuard => "similarity_guard",
+            Self::Llm => "llm",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct IntentClassificationTrace {
+    pub category: IntentCategory,
+    pub used_embedding: bool,
+    pub used_llm: bool,
+    pub embedding_duration_ms: Option<u128>,
+    pub total_duration_ms: u128,
+    pub path: IntentClassificationPath,
+    pub raw_label: Option<String>,
 }
 
 fn normalize_message(message: &str) -> String {
@@ -388,45 +417,67 @@ fn best_match_for_sources<'a>(
         .max_by(|left, right| compare_similarity_match_desc(right, left))
 }
 
+struct SimilarityDetectionTrace {
+    category: Option<IntentCategory>,
+    used_embedding: bool,
+    embedding_duration_ms: Option<u128>,
+}
+
 fn detect_prompt_injection_by_similarity(
     message: &str,
     embedding_model: Option<&Arc<dyn EmbeddingBase>>,
-) -> Option<IntentCategory> {
+) -> SimilarityDetectionTrace {
     let normalized = normalize_message(message);
     if is_prompt_authoring_request(&normalized) {
-        return None;
+        return SimilarityDetectionTrace {
+            category: None,
+            used_embedding: false,
+            embedding_duration_ms: None,
+        };
     }
 
     let candidates = prompt_similarity_candidates();
     let config = HybridSimilarityConfig::default();
+    let used_embedding = embedding_model.is_some();
+    let started_at = used_embedding.then(Instant::now);
     let Ok(matches) = rank_matches(message, &candidates, embedding_model, config) else {
-        return None;
+        return SimilarityDetectionTrace {
+            category: None,
+            used_embedding,
+            embedding_duration_ms: started_at.map(|started| started.elapsed().as_millis()),
+        };
     };
+    let embedding_duration_ms = started_at.map(|started| started.elapsed().as_millis());
     let malicious_sources = [
         PROMPT_DIRECT_DISCLOSURE_SAMPLE_SOURCE,
         PROMPT_OBFUSCATION_BYPASS_SAMPLE_SOURCE,
         PROMPT_INDIRECT_INJECTION_SAMPLE_SOURCE,
     ];
     let Some(best_injection_match) = best_match_for_sources(&matches, &malicious_sources) else {
-        return None;
+        return SimilarityDetectionTrace {
+            category: None,
+            used_embedding,
+            embedding_duration_ms,
+        };
     };
     let Some(best_authoring_match) =
         best_match_for_source(&matches, PROMPT_AUTHORING_SAMPLE_SOURCE)
     else {
-        return None;
+        return SimilarityDetectionTrace {
+            category: None,
+            used_embedding,
+            embedding_duration_ms,
+        };
     };
 
     if best_authoring_match.hybrid_score >= PROMPT_AUTHORING_HYBRID_THRESHOLD
         && best_authoring_match.hybrid_score >= best_injection_match.hybrid_score
     {
-        info!(
-            "{LOG_PREFIX} similarity guard skipped prompt injection classification because authoring matched better authoring_text='{}' authoring_score={:.3} injection_text='{}' injection_score={:.3}",
-            best_authoring_match.text,
-            best_authoring_match.hybrid_score,
-            best_injection_match.text,
-            best_injection_match.hybrid_score
-        );
-        return None;
+        return SimilarityDetectionTrace {
+            category: None,
+            used_embedding,
+            embedding_duration_ms,
+        };
     }
 
     let score_margin = best_injection_match.hybrid_score - best_authoring_match.hybrid_score;
@@ -434,34 +485,50 @@ fn detect_prompt_injection_by_similarity(
     if best_injection_match.hybrid_score >= PROMPT_INJECTION_HYBRID_THRESHOLD
         && score_margin >= PROMPT_INJECTION_MARGIN_THRESHOLD
     {
-        info!(
-            "{LOG_PREFIX} intent short-circuited as {} by similarity guard injection_text='{}' hybrid_score={:.3} authoring_text='{}' authoring_score={:.3}",
-            IntentCategory::AskSystemPrompt.label(),
-            best_injection_match.text,
-            best_injection_match.hybrid_score,
-            best_authoring_match.text,
-            best_authoring_match.hybrid_score
-        );
-        return Some(IntentCategory::AskSystemPrompt);
+        return SimilarityDetectionTrace {
+            category: Some(IntentCategory::AskSystemPrompt),
+            used_embedding,
+            embedding_duration_ms,
+        };
     }
 
-    None
+    SimilarityDetectionTrace {
+        category: None,
+        used_embedding,
+        embedding_duration_ms,
+    }
 }
 
-pub fn classify_intent(
+pub fn classify_intent_with_trace(
     llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
     embedding_model: Option<&Arc<dyn EmbeddingBase>>,
     message: &str,
-) -> IntentCategory {
+) -> IntentClassificationTrace {
+    let started_at = Instant::now();
+
     if let Some(category) = detect_sensitive_prompt_injection(message) {
-        info!(
-            "{LOG_PREFIX} intent short-circuited as {} by local injection guard",
-            category.label()
-        );
-        return category;
+        return IntentClassificationTrace {
+            category,
+            used_embedding: false,
+            used_llm: false,
+            embedding_duration_ms: None,
+            total_duration_ms: started_at.elapsed().as_millis(),
+            path: IntentClassificationPath::LocalGuard,
+            raw_label: None,
+        };
     }
-    if let Some(category) = detect_prompt_injection_by_similarity(message, embedding_model) {
-        return category;
+
+    let similarity_trace = detect_prompt_injection_by_similarity(message, embedding_model);
+    if let Some(category) = similarity_trace.category {
+        return IntentClassificationTrace {
+            category,
+            used_embedding: similarity_trace.used_embedding,
+            used_llm: false,
+            embedding_duration_ms: similarity_trace.embedding_duration_ms,
+            total_duration_ms: started_at.elapsed().as_millis(),
+            path: IntentClassificationPath::SimilarityGuard,
+            raw_label: None,
+        };
     }
 
     let messages = vec![
@@ -482,10 +549,21 @@ pub fn classify_intent(
             IntentCategory::Other.label()
         );
     }
-    info!(
-        "{LOG_PREFIX} intent classified as {} from '{}'",
-        category.label(),
-        trimmed
-    );
-    category
+    IntentClassificationTrace {
+        category,
+        used_embedding: similarity_trace.used_embedding,
+        used_llm: true,
+        embedding_duration_ms: similarity_trace.embedding_duration_ms,
+        total_duration_ms: started_at.elapsed().as_millis(),
+        path: IntentClassificationPath::Llm,
+        raw_label: Some(trimmed.to_string()),
+    }
+}
+
+pub fn classify_intent(
+    llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
+    embedding_model: Option<&Arc<dyn EmbeddingBase>>,
+    message: &str,
+) -> IntentCategory {
+    classify_intent_with_trace(llm, embedding_model, message).category
 }

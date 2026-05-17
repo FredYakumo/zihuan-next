@@ -253,6 +253,8 @@ impl Node for RedisNode {
 
         let config = Arc::new(RedisConfig {
             url: url.clone(),
+            username: None,
+            password: None,
             reconnect_max_attempts: max_attempts,
             reconnect_interval_secs: interval_secs,
             redis_cm: self.redis_cm.clone(),

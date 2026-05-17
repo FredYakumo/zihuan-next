@@ -1,12 +1,14 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use log::{info, warn};
+use model_inference::message_content_utils::{is_transport_error, sanitize_messages_for_inference};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
+use zihuan_core::llm::tooling::ToolCalls;
 use zihuan_core::llm::{ContentPart, InferenceParam, MessageContent, MessageRole, OpenAIMessage};
 
 pub const MAX_TOOL_ITERATIONS: usize = 25;
@@ -22,74 +24,6 @@ fn truncate_for_log(text: &str, max_chars: usize) -> String {
     format!("{truncated}...(truncated,total_chars={total_chars})")
 }
 
-/// Remove dangling / unresolved tool-call sequences from a message history so
-/// that the sequence passed to the LLM is always well-formed.
-///
-/// Mirrors the logic that was duplicated in `BrainNode::sanitize_messages_for_inference`
-/// and in `qq_message_agent_node::sanitize_messages`.
-pub fn sanitize_messages_for_inference(messages: Vec<OpenAIMessage>) -> Vec<OpenAIMessage> {
-    let mut sanitized: Vec<OpenAIMessage> = Vec::with_capacity(messages.len());
-    let mut pending: Option<(usize, HashSet<String>)> = None;
-
-    for message in messages {
-        if !message.tool_calls.is_empty() {
-            if let Some((start, ids)) = pending.take() {
-                warn!(
-                    "[brain] Dropping incomplete tool-call segment before new assistant tool-call: unresolved_ids={:?}",
-                    ids
-                );
-                sanitized.truncate(start);
-            }
-            let ids: HashSet<String> = message.tool_calls.iter().map(|tc| tc.id.clone()).collect();
-            let start = sanitized.len();
-            sanitized.push(message);
-            if !ids.is_empty() {
-                pending = Some((start, ids));
-            }
-            continue;
-        }
-
-        if matches!(message.role, MessageRole::Tool) {
-            let mut keep = false;
-            if let Some((_, unresolved)) = pending.as_mut() {
-                if let Some(id) = &message.tool_call_id {
-                    if unresolved.remove(id) {
-                        keep = true;
-                    }
-                }
-            }
-            if keep {
-                sanitized.push(message);
-                if pending.as_ref().is_some_and(|(_, ids)| ids.is_empty()) {
-                    pending = None;
-                }
-            } else {
-                warn!("[brain] Dropping orphan tool message");
-            }
-            continue;
-        }
-
-        if let Some((start, ids)) = pending.take() {
-            warn!(
-                "[brain] Dropping dangling tool-call segment before non-tool message: unresolved_ids={:?}",
-                ids
-            );
-            sanitized.truncate(start);
-        }
-        sanitized.push(message);
-    }
-
-    if let Some((start, ids)) = pending {
-        warn!(
-            "[brain] Dropping dangling segment at end of history: unresolved_ids={:?}",
-            ids
-        );
-        sanitized.truncate(start);
-    }
-
-    sanitized
-}
-
 /// A tool that [`Brain`] can invoke during an inference loop.
 pub trait BrainTool: Send + Sync + 'static {
     /// Returns the LLM-facing function specification (name, description, parameters).
@@ -97,6 +31,22 @@ pub trait BrainTool: Send + Sync + 'static {
     /// Execute the tool call. `call_content` is the assistant's text for this turn
     /// (used e.g. to send a progress notification before doing the actual work).
     fn execute(&self, call_content: &str, arguments: &Value) -> String;
+}
+
+pub trait BrainObserver: Send + Sync + 'static {
+    fn on_assistant_tool_request(
+        &self,
+        _iteration: usize,
+        _content: &str,
+        _tool_calls: &[ToolCalls],
+    ) {
+    }
+
+    fn on_tool_start(&self, _name: &str, _call_id: &str, _arguments: &Value) {}
+
+    fn on_tool_finish(&self, _name: &str, _call_id: &str, _result: &str) {}
+
+    fn on_final_assistant(&self, _response: &OpenAIMessage, _stop_reason: &BrainStopReason) {}
 }
 
 /// The reason a [`Brain::run`] call returned.
@@ -117,6 +67,7 @@ pub enum BrainStopReason {
 pub struct Brain {
     llm: Arc<dyn LLMBase>,
     tools: Vec<Box<dyn BrainTool>>,
+    observer: Option<Arc<dyn BrainObserver>>,
 }
 
 impl Brain {
@@ -124,6 +75,7 @@ impl Brain {
         Self {
             llm,
             tools: Vec::new(),
+            observer: None,
         }
     }
 
@@ -136,6 +88,15 @@ impl Brain {
     /// Register a tool in-place.
     pub fn add_tool(&mut self, tool: impl BrainTool) {
         self.tools.push(Box::new(tool));
+    }
+
+    pub fn with_observer(mut self, observer: Arc<dyn BrainObserver>) -> Self {
+        self.observer = Some(observer);
+        self
+    }
+
+    pub fn set_observer(&mut self, observer: Arc<dyn BrainObserver>) {
+        self.observer = Some(observer);
     }
 
     /// Run the inference loop and return `(new_messages, stop_reason)`.
@@ -167,17 +128,29 @@ impl Brain {
                 if is_transport_error(content) {
                     warn!("[Brain] Transport error on iteration {iteration}: {content}");
                     let msg = content.to_string();
+                    if let Some(observer) = self.observer.as_ref() {
+                        observer.on_final_assistant(
+                            &response,
+                            &BrainStopReason::TransportError(msg.clone()),
+                        );
+                    }
                     output.push(response);
                     return (output, BrainStopReason::TransportError(msg));
                 }
             }
 
             if response.tool_calls.is_empty() {
+                if let Some(observer) = self.observer.as_ref() {
+                    observer.on_final_assistant(&response, &BrainStopReason::Done);
+                }
                 output.push(response);
                 return (output, BrainStopReason::Done);
             }
 
             if is_last_iteration {
+                if let Some(observer) = self.observer.as_ref() {
+                    observer.on_final_assistant(&response, &BrainStopReason::MaxIterationsReached);
+                }
                 output.push(response);
                 return (output, BrainStopReason::MaxIterationsReached);
             }
@@ -195,6 +168,13 @@ impl Brain {
                 iteration + 1,
                 response.tool_calls.len()
             );
+            if let Some(observer) = self.observer.as_ref() {
+                observer.on_assistant_tool_request(
+                    iteration + 1,
+                    &tool_call_content,
+                    &response.tool_calls,
+                );
+            }
             conversation.push(response.clone());
             output.push(response.clone());
 
@@ -205,6 +185,9 @@ impl Brain {
                     tc.function.name,
                     truncate_for_log(&tc.function.arguments.to_string(), LOG_PREVIEW_CHARS)
                 );
+                if let Some(observer) = self.observer.as_ref() {
+                    observer.on_tool_start(&tc.function.name, &tc.id, &tc.function.arguments);
+                }
                 let result = self
                     .tools
                     .iter()
@@ -225,6 +208,9 @@ impl Brain {
                     tc.function.name,
                     truncate_for_log(&result, LOG_PREVIEW_CHARS)
                 );
+                if let Some(observer) = self.observer.as_ref() {
+                    observer.on_tool_finish(&tc.function.name, &tc.id, &result);
+                }
                 let mut msg = OpenAIMessage::tool_result(tc.id.clone(), result);
                 if let Some(api_style) = self.llm.api_style() {
                     msg.api_style = Some(api_style.to_string());
@@ -285,6 +271,12 @@ impl Brain {
                 if is_transport_error(content) {
                     warn!("[Brain] Transport error on iteration {iteration}: {content}");
                     let msg = content.to_string();
+                    if let Some(observer) = self.observer.as_ref() {
+                        observer.on_final_assistant(
+                            &response,
+                            &BrainStopReason::TransportError(msg.clone()),
+                        );
+                    }
                     output.push(response);
                     return (output, BrainStopReason::TransportError(msg));
                 }
@@ -298,11 +290,17 @@ impl Brain {
                         truncate_for_log(&response_preview, LOG_PREVIEW_CHARS)
                     );
                 }
+                if let Some(observer) = self.observer.as_ref() {
+                    observer.on_final_assistant(&response, &BrainStopReason::Done);
+                }
                 output.push(response);
                 return (output, BrainStopReason::Done);
             }
 
             if is_last_iteration {
+                if let Some(observer) = self.observer.as_ref() {
+                    observer.on_final_assistant(&response, &BrainStopReason::MaxIterationsReached);
+                }
                 output.push(response);
                 return (output, BrainStopReason::MaxIterationsReached);
             }
@@ -320,6 +318,13 @@ impl Brain {
                 iteration + 1,
                 response.tool_calls.len()
             );
+            if let Some(observer) = self.observer.as_ref() {
+                observer.on_assistant_tool_request(
+                    iteration + 1,
+                    &tool_call_content,
+                    &response.tool_calls,
+                );
+            }
             conversation.push(response.clone());
             output.push(response.clone());
 
@@ -330,6 +335,9 @@ impl Brain {
                     tc.function.name,
                     truncate_for_log(&tc.function.arguments.to_string(), LOG_PREVIEW_CHARS)
                 );
+                if let Some(observer) = self.observer.as_ref() {
+                    observer.on_tool_start(&tc.function.name, &tc.id, &tc.function.arguments);
+                }
                 let result = self
                     .tools
                     .iter()
@@ -350,6 +358,9 @@ impl Brain {
                     tc.function.name,
                     truncate_for_log(&result, LOG_PREVIEW_CHARS)
                 );
+                if let Some(observer) = self.observer.as_ref() {
+                    observer.on_tool_finish(&tc.function.name, &tc.id, &result);
+                }
                 let mut msg = OpenAIMessage::tool_result(tc.id.clone(), result);
                 if let Some(api_style) = self.llm.api_style() {
                     msg.api_style = Some(api_style.to_string());
@@ -416,9 +427,4 @@ fn append_tool_summary_to_system(
     }
 
     messages.push(OpenAIMessage::system(summary));
-}
-
-/// Returns `true` if `content` looks like a transport-level LLM error string.
-pub fn is_transport_error(content: &str) -> bool {
-    content.starts_with("Error:")
 }

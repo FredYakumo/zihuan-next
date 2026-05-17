@@ -166,31 +166,22 @@ Example:
 
 ```rust
 pub struct ImageMessage {
-    pub file: Option<String>,
-    pub path: Option<String>,
-    pub url: Option<String>,
-    pub name: Option<String>,
-    pub thumb: Option<String>,
-    pub summary: Option<String>,
-    pub sub_type: Option<i32>,
-    pub object_key: Option<String>,
-    pub object_url: Option<String>,
-    pub local_path: Option<String>,
-    pub cache_status: Option<String>,
+    pub media: PersistedMedia,
 }
 ```
 
 Purpose:
 
 - Represents an image segment
-- stores upstream locators such as `file`, `path`, `url`
-- may later be enriched with object-storage cache fields
+- points at a normalized persisted media object instead of loose locator fields
 
 Runtime behavior:
 
-- image segments are recursively cached into object storage when possible
-- this enrichment applies both to top-level messages and to images inside forwarded messages
-- multimodal builders prefer resolved locators such as `object_url`, `object_key`, and `local_path`
+- image segments are recursively normalized into `PersistedMedia`
+- this normalization applies both to top-level messages and to images inside forwarded messages
+- multimodal builders prefer `PersistedMedia.rustfs_path` and `PersistedMedia.mime_type`
+
+For the full multimedia model, see `persisted-media.md`.
 
 ### `forward`
 
@@ -436,7 +427,7 @@ If you add a new QQ message segment type, do not only extend the enum. At minimu
 
 Recommended constraints:
 
-- keep serde input compatibility lenient
+- keep serde input compatibility lenient for message types that still support compatibility; image segments are now intentionally strict
 - do not let one unsupported field make the entire message unusable
 - define `Display` semantics explicitly
 - decide whether the new segment should affect `content`, `ref_content`, mention extraction, multimodal extraction, or persistence
