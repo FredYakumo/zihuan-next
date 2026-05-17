@@ -105,3 +105,10 @@
 - 运行时连接的创建、健康检查、重连与失效淘汰，应集中放在拥有该连接职责的连接/存储包中。
 - 对 Redis 来说，共享重连行为应放在 `storage_handler` 的 helper 中，例如 `storage_handler::redis`，而不是散落在 `zihuan_service::agent` 这类业务模块里。
 - service 层可以决定上层 fallback 策略，例如从 Redis 切到内存队列，但不应复制底层 `redis_cm` 生命周期管理逻辑。
+
+## 日志与任务 Trace
+
+- 普通日志继续使用 `log` 宏，保持简洁、可搜索。
+- 对于带阶段耗时、时间线汇总、工具调用统计这类复杂任务日志，不要把格式化逻辑散落在业务主流程里。
+- 应优先抽到独立模块，业务层只负责在关键边界打点，日志模块负责统一输出格式。
+- 当前参考实现是 `zihuan_service/src/agent/qq_chat_agent_logging.rs`，对应说明文档见 [`qq-chat-agent-logging.zh-CN.md`](qq-chat-agent-logging.zh-CN.md)。

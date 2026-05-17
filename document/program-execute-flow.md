@@ -125,6 +125,9 @@ Task logs are persisted per task under:
 - history compaction token before/after
 - current request token usage information
 
+For the dedicated QQ chat agent logging design document, see
+[`dev-guides/qq-chat-agent-logging.md`](dev-guides/qq-chat-agent-logging.md).
+
 The current LLM abstraction does not expose a unified exact usage object yet. When exact `prompt_tokens` / `completion_tokens` / `total_tokens` are unavailable, logs explicitly mark them unavailable and include estimates instead.
 
 ### Current QQ Chat Agent Message Handling Model

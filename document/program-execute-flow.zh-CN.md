@@ -125,6 +125,9 @@
 - 历史压缩前后 token
 - 当前请求 token 消耗信息
 
+相关日志模式的独立说明文档见
+[`dev-guides/qq-chat-agent-logging.zh-CN.md`](dev-guides/qq-chat-agent-logging.zh-CN.md)。
+
 当前底层并没有统一的精确 usage 结构，因此 `prompt_tokens` / `completion_tokens` / `total_tokens` 在不可用时会明确记录为 unavailable，并补充估算值，而不是伪造精确数字。
 
 ### QQ Chat Agent 当前消息处理模型

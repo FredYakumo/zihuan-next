@@ -129,6 +129,11 @@ The logger is initialized by the main binary and forwarded to:
 
 Prefer concise, searchable messages.
 
+For complex agent task traces, keep formatting logic in a dedicated module instead of scattering
+stage-specific `info!` calls throughout business orchestration. The current reference design is
+the QQ chat agent trace module in `zihuan_service/src/agent/qq_chat_agent_logging.rs`; see
+[`qq-chat-agent-logging.md`](qq-chat-agent-logging.md).
+
 ## Browser UI Rules
 
 Current UI code lives under `webui/src/`.
