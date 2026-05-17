@@ -1791,7 +1791,10 @@ fn upload_remote_image_to_s3(s3_ref: &S3Ref, url: &str) -> Result<String> {
     let key = derive_tavily_s3_key(url);
     let content_type = content_type_from_url(url);
     let s3_ref_clone = s3_ref.clone();
-    block_async(async move { s3_ref_clone.put_object(&key, content_type, &bytes).await })
+    block_async(async move {
+        s3_ref_clone.put_object(&key, content_type, &bytes).await?;
+        Ok(key)
+    })
 }
 
 fn s3_local_base(s3_ref: &S3Ref) -> String {
@@ -3416,5 +3419,40 @@ impl QqChatAgentService {
                 )
             },
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{content_type_from_url, derive_tavily_s3_key};
+    use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
+
+    #[test]
+    fn tavily_s3_key_is_bare_object_key() {
+        let key = derive_tavily_s3_key("https://example.com/assets/demo/image.jpg?size=large");
+
+        assert_eq!(key, "tavily/assets/demo/image.jpg");
+        assert!(!key.starts_with("http://"));
+        assert!(!key.starts_with("https://"));
+    }
+
+    #[test]
+    fn tavily_persisted_media_keeps_original_url_and_key_path() {
+        let url = "https://example.com/assets/demo/image.webp?size=large";
+        let rustfs_path = derive_tavily_s3_key(url);
+        let media = PersistedMedia::new(
+            PersistedMediaSource::WebSearch,
+            url.to_string(),
+            rustfs_path.clone(),
+            None,
+            Some("demo image".to_string()),
+            Some(content_type_from_url(url).to_string()),
+        );
+
+        assert_eq!(media.original_source, url);
+        assert_eq!(media.rustfs_path, rustfs_path);
+        assert_eq!(media.mime_type.as_deref(), Some("image/webp"));
+        assert!(!media.rustfs_path.starts_with("http://"));
+        assert!(!media.rustfs_path.starts_with("https://"));
     }
 }
