@@ -164,6 +164,7 @@ impl QqChatTaskTrace {
     pub(crate) fn record_steer_injected(
         &self,
         steer_count: usize,
+        injected_messages: usize,
         accepted_steer_count: usize,
         max_steer_count: usize,
         remaining_queue_len: usize,
@@ -173,8 +174,10 @@ impl QqChatTaskTrace {
             "插嘴已注入当前对话",
             0,
             format!(
-                "steer_count={} accepted_steer_count={}/{} remaining_queue_len={} payload={}",
+                "steer_count={} injected_messages={} merged={} accepted_steer_count={}/{} remaining_queue_len={} payload={}",
                 steer_count,
+                injected_messages,
+                steer_count > injected_messages,
                 accepted_steer_count,
                 max_steer_count,
                 remaining_queue_len,

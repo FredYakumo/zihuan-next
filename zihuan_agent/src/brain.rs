@@ -595,6 +595,25 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
+    struct InjectMergedUserHook;
+
+    impl BrainIterationHook for InjectMergedUserHook {
+        fn on_before_inference(
+            &self,
+            iteration: usize,
+            _conversation: &[OpenAIMessage],
+        ) -> Vec<OpenAIMessage> {
+            if iteration == 2 {
+                vec![OpenAIMessage::user(
+                    "【用户插嘴】\n\n1. 124\n2. 5341\n3. 21345",
+                )]
+            } else {
+                Vec::new()
+            }
+        }
+    }
+
     #[test]
     fn iteration_hook_appends_messages_before_next_inference() {
         let state = Arc::new(Mutex::new(RecordingLlmState::default()));
@@ -617,5 +636,31 @@ mod tests {
                 .any(|message| message.content_text() == Some("【用户插嘴】继续回答新的问题")),
             "second inference should include injected steer message"
         );
+    }
+
+    #[test]
+    fn iteration_hook_can_inject_one_merged_message_for_multiple_steers() {
+        let state = Arc::new(Mutex::new(RecordingLlmState::default()));
+        let llm = Arc::new(RecordingLlm {
+            state: Arc::clone(&state),
+        });
+
+        let brain = Brain::new(llm)
+            .with_tool(EchoTool)
+            .with_iteration_hook(Arc::new(InjectMergedUserHook));
+
+        let (_output, _stop_reason) = brain.run(vec![OpenAIMessage::user("原始问题")]);
+
+        let state = state.lock().unwrap();
+        assert_eq!(state.calls, 2);
+        assert_eq!(state.conversations.len(), 2);
+
+        let merged_messages: Vec<_> = state.conversations[1]
+            .iter()
+            .filter(|message| {
+                message.content_text() == Some("【用户插嘴】\n\n1. 124\n2. 5341\n3. 21345")
+            })
+            .collect();
+        assert_eq!(merged_messages.len(), 1);
     }
 }

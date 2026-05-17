@@ -1128,6 +1128,29 @@ fn build_steer_user_message(
     steer_message
 }
 
+fn build_merged_steer_user_message(
+    events: &[ims_bot_adapter::models::MessageEvent],
+    bot_id: &str,
+    bot_name: &str,
+    api_style: Option<&str>,
+) -> OpenAIMessage {
+    let merged_text = events
+        .iter()
+        .enumerate()
+        .map(|(index, event)| {
+            let text = extract_user_message_text(event, bot_id, bot_name);
+            format!("{}. {text}", index + 1)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let mut steer_message = OpenAIMessage::user(format!("{STEER_PREFIX}\n\n{merged_text}"));
+    if let Some(api_style) = api_style {
+        steer_message.api_style = Some(api_style.to_string());
+    }
+    steer_message
+}
+
 fn extract_user_message_text(
     event: &ims_bot_adapter::models::MessageEvent,
     bot_id: &str,
@@ -2785,6 +2808,7 @@ impl BrainIterationHook for QqChatSteerHook {
         if pending.is_empty() {
             return Vec::new();
         }
+        let steer_count = pending.len();
 
         let mut injected = Vec::with_capacity(pending.len());
         let mut consumed_guard = self.consumed_messages.lock().unwrap();
@@ -2794,28 +2818,37 @@ impl BrainIterationHook for QqChatSteerHook {
             let current_message =
                 extract_user_message_text(&inference_event, &self.bot_id, &self.bot_name);
             self.trace.record_steer_received(&current_message);
+            injected.push(inference_event);
+        }
 
-            let steer_message = build_steer_user_message(
-                &inference_event,
+        let steer_message = if injected.len() == 1 {
+            build_steer_user_message(
+                &injected[0],
                 &self.bot_id,
                 &self.bot_name,
                 self.llm_supports_multimodal_input,
                 self.s3_ref.as_ref(),
                 self.llm_api_style.as_deref(),
-            );
-            consumed_guard.push(steer_message.clone());
-            injected.push(steer_message);
-        }
-
+            )
+        } else {
+            build_merged_steer_user_message(
+                &injected,
+                &self.bot_id,
+                &self.bot_name,
+                self.llm_api_style.as_deref(),
+            )
+        };
+        consumed_guard.push(steer_message.clone());
         drop(consumed_guard);
         self.trace.record_steer_injected(
-            injected.len(),
+            steer_count,
+            1,
             accepted_steer_count,
             self.max_steer_count,
             remaining_queue_len,
-            injected.as_slice(),
+            std::slice::from_ref(&steer_message),
         );
-        injected
+        vec![steer_message]
     }
 }
 
@@ -3635,10 +3668,17 @@ impl QqChatAgentService {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use chrono::Local;
+
     use super::{
-        build_steer_user_message, content_type_from_url, derive_tavily_s3_key, PendingSteerEvent,
-        PendingSteerStore, STEER_PREFIX,
+        build_merged_steer_user_message, build_steer_user_message, content_type_from_url,
+        derive_tavily_s3_key, PendingSteerEvent, PendingSteerStore, QqChatSteerHook,
+        STEER_PREFIX,
     };
+    use crate::agent::qq_chat_agent_logging::QqChatTaskTrace;
+    use zihuan_agent::brain::BrainIterationHook;
     use zihuan_core::ims_bot_adapter::models::event_model::{MessageEvent, MessageType, Sender};
     use zihuan_core::ims_bot_adapter::models::message::{Message, PlainTextMessage};
     use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
@@ -3744,6 +3784,73 @@ mod tests {
                 assert!(text.contains("继续刚才那个问题"));
             }
             other => panic!("unexpected steer content: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn merged_steer_user_message_keeps_arrival_order_in_single_message() {
+        let events = vec![
+            build_plain_text_event(1, "124"),
+            build_plain_text_event(2, "5341"),
+            build_plain_text_event(3, "21345"),
+        ];
+        let message = build_merged_steer_user_message(&events, "bot", "bot", None);
+
+        match message.content {
+            Some(MessageContent::Text(text)) => {
+                assert!(text.starts_with(STEER_PREFIX));
+                assert!(text.contains("1. 124"));
+                assert!(text.contains("2. 5341"));
+                assert!(text.contains("3. 21345"));
+
+                let first = text.find("1. 124").expect("first steer text should exist");
+                let second = text.find("2. 5341").expect("second steer text should exist");
+                let third = text.find("3. 21345").expect("third steer text should exist");
+                assert!(first < second);
+                assert!(second < third);
+            }
+            other => panic!("unexpected merged steer content: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn steer_hook_merges_multiple_pending_messages_into_one_injection() {
+        let store = Arc::new(PendingSteerStore::default());
+        for (message_id, text) in [(1, "124"), (2, "5341"), (3, "21345")] {
+            let (accepted, _, _) = store.enqueue_with_limit(
+                "10001",
+                PendingSteerEvent {
+                    event: build_plain_text_event(message_id, text),
+                    time: format!("t-{message_id}"),
+                },
+                4,
+            );
+            assert!(accepted);
+        }
+
+        let hook = QqChatSteerHook {
+            pending_steer: Arc::clone(&store),
+            sender_id: "10001".to_string(),
+            bot_id: "bot".to_string(),
+            bot_name: "bot".to_string(),
+            max_steer_count: 4,
+            llm_supports_multimodal_input: false,
+            llm_api_style: None,
+            s3_ref: None,
+            trace: QqChatTaskTrace::new(Local::now()),
+            consumed_messages: Arc::new(Mutex::new(Vec::new())),
+        };
+
+        let injected = hook.on_before_inference(2, &[]);
+        assert_eq!(injected.len(), 1);
+
+        match &injected[0].content {
+            Some(MessageContent::Text(text)) => {
+                assert!(text.contains("1. 124"));
+                assert!(text.contains("2. 5341"));
+                assert!(text.contains("3. 21345"));
+            }
+            other => panic!("unexpected injected steer content: {other:?}"),
         }
     }
 
