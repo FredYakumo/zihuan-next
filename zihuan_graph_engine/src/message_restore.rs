@@ -1,5 +1,5 @@
-use crate::message_mysql_history_common::run_mysql_query;
 use crate::data_value::RedisConfig;
+use crate::message_mysql_history_common::run_mysql_query;
 use log::{debug, warn};
 use once_cell::sync::Lazy;
 use redis::AsyncCommands;
@@ -24,6 +24,14 @@ const LOOKUP_SQL: &str = r#"
     FROM message_record
     WHERE message_id = ?
     ORDER BY id ASC
+    "#;
+
+const MEDIA_LOOKUP_SQL: &str = r#"
+    SELECT media_json, raw_message_json
+    FROM message_record
+    WHERE media_json LIKE ? OR raw_message_json LIKE ?
+    ORDER BY id DESC
+    LIMIT 50
     "#;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,7 +105,8 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
     };
 
     if let Some(redis_config) = redis_config {
-        if let Some(snapshot) = restore_message_snapshot_from_redis(&redis_config, &message_id_str)? {
+        if let Some(snapshot) = restore_message_snapshot_from_redis(&redis_config, &message_id_str)?
+        {
             if let Ok(mut guard) = RUNTIME_MESSAGE_INDEX.write() {
                 guard.insert(message_id_str.clone(), snapshot.messages.clone());
             }
@@ -159,6 +168,64 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
         messages,
         source: MessageRestoreSource::MySql,
     }))
+}
+
+pub fn restore_media_by_id(media_id: &str) -> Result<Option<PersistedMedia>> {
+    let media_id = media_id.trim();
+    if media_id.is_empty() {
+        return Ok(None);
+    }
+
+    if let Ok(guard) = RUNTIME_MESSAGE_INDEX.read() {
+        for messages in guard.values() {
+            if let Some(media) = find_media_in_messages(messages, media_id) {
+                return Ok(Some(media));
+            }
+        }
+    }
+
+    let mysql_config = match LATEST_MYSQL_REF.read() {
+        Ok(guard) => guard.clone(),
+        Err(_) => None,
+    };
+    let Some(mysql_config) = mysql_config else {
+        return Ok(None);
+    };
+
+    let like_pattern = format!("%{media_id}%");
+    let rows = run_mysql_query(&mysql_config, move |pool| {
+        let like_pattern_media = like_pattern.clone();
+        let like_pattern_raw = like_pattern.clone();
+        Box::pin(async move {
+            sqlx::query(MEDIA_LOOKUP_SQL)
+                .bind(like_pattern_media)
+                .bind(like_pattern_raw)
+                .fetch_all(pool)
+                .await
+        })
+    })?;
+
+    for row in rows {
+        let raw_message_json: Option<String> = row.get("raw_message_json");
+        if let Some(messages) = raw_message_json
+            .as_deref()
+            .and_then(rebuild_message_list_from_raw_json)
+        {
+            if let Some(media) = find_media_in_messages(&messages, media_id) {
+                return Ok(Some(media));
+            }
+        }
+
+        let media_json: Option<String> = row.get("media_json");
+        if let Some(media) = media_json
+            .as_deref()
+            .and_then(|value| find_media_in_media_json(value, media_id))
+        {
+            return Ok(Some(media));
+        }
+    }
+
+    Ok(None)
 }
 
 fn restore_message_snapshot_from_redis(
@@ -300,11 +367,47 @@ fn rebuild_message_list_from_raw_json(raw_message_json: &str) -> Option<Vec<Mess
     }
 }
 
+fn find_media_in_messages(messages: &[Message], media_id: &str) -> Option<PersistedMedia> {
+    for message in messages {
+        match message {
+            Message::Image(image) if image.media.media_id == media_id => {
+                return Some(image.media.clone());
+            }
+            Message::Forward(forward) => {
+                for node in &forward.content {
+                    if let Some(media) = find_media_in_messages(&node.content, media_id) {
+                        return Some(media);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
+fn find_media_in_media_json(media_json: &str, media_id: &str) -> Option<PersistedMedia> {
+    let records: Vec<MessageMediaRecord> = serde_json::from_str(media_json).ok()?;
+    records
+        .into_iter()
+        .find(|record| record.r#type == "image" && record.media_id == media_id)
+        .map(|record| PersistedMedia {
+            media_id: record.media_id,
+            source: record.source,
+            original_source: record.original_source,
+            rustfs_path: record.rustfs_path,
+            name: record.name,
+            description: record.description,
+            mime_type: record.mime_type,
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
     use zihuan_core::ims_bot_adapter::models::message::collect_media_records;
+    use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
 
     #[test]
     fn rebuild_message_list_from_media_json_restores_persisted_media_image() {
@@ -386,5 +489,27 @@ mod tests {
             }
             other => panic!("expected image message, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn find_media_in_media_json_matches_media_id() {
+        let media_json = serde_json::to_string(&vec![MessageMediaRecord {
+            segment_index: 0,
+            r#type: "image".to_string(),
+            media_id: "media-lookup".to_string(),
+            source: PersistedMediaSource::WebSearch,
+            original_source: "https://example.com/demo.jpg".to_string(),
+            rustfs_path: "tavily/demo.jpg".to_string(),
+            name: None,
+            description: Some("demo".to_string()),
+            mime_type: Some("image/jpeg".to_string()),
+        }])
+        .expect("serialize media json");
+
+        let media =
+            find_media_in_media_json(&media_json, "media-lookup").expect("find media by id");
+        assert_eq!(media.media_id, "media-lookup");
+        assert_eq!(media.rustfs_path, "tavily/demo.jpg");
+        assert_eq!(media.mime_type.as_deref(), Some("image/jpeg"));
     }
 }

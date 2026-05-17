@@ -14,11 +14,11 @@ use log::{info, warn};
 
 use crate::api::state::{AppState, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
-use zihuan_service::AgentRuntimeInfo;
 use crate::system_config;
 use model_inference::system_config::{AgentConfig, AgentToolConfig, AgentType};
 use zihuan_core::agent_config::QqChatAgentConfig;
 use zihuan_core::error::Result as CoreResult;
+use zihuan_service::AgentRuntimeInfo;
 
 use super::{
     now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found,
@@ -364,7 +364,8 @@ pub async fn start_agent(req: &mut Request, res: &mut Response, depot: &mut Depo
     }
 
     info!("[agents] starting agent '{}' (id={})", agent.name, id,);
-    if let Err(err) = start_agent_runtime(state.clone(), broadcast_tx, agent.clone(), connections).await
+    if let Err(err) =
+        start_agent_runtime(state.clone(), broadcast_tx, agent.clone(), connections).await
     {
         log::error!(
             "[agents] failed to start agent '{}' (id={}): {}",

@@ -8,8 +8,8 @@ use sqlx::Row as SqlxRow;
 
 use crate::system_config::load_connections;
 use storage_handler::{
-    resource_resolver, weaviate::build_weaviate_ref as build_storage_weaviate_ref,
-    ConnectionKind, WeaviateCollectionSchema,
+    resource_resolver, weaviate::build_weaviate_ref as build_storage_weaviate_ref, ConnectionKind,
+    WeaviateCollectionSchema,
 };
 
 use super::config::{render_bad_request, render_internal_error};
@@ -560,11 +560,7 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
             Err(err) => return render_internal_error(res, err),
         }
     } else {
-        match weaviate_ref.query_all(
-            &weaviate_ref.class_name,
-            limit,
-            &property_names,
-        ) {
+        match weaviate_ref.query_all(&weaviate_ref.class_name, limit, &property_names) {
             Ok(value) => value,
             Err(err) => return render_internal_error(res, err),
         }

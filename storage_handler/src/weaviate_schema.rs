@@ -4,8 +4,7 @@ use std::collections::HashMap;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::weaviate::{
     WeaviateCollectionConfig, WeaviateCollectionSchema, WeaviateEnsureCollectionResult,
-    WeaviateNamedVectorizerConfig, WeaviatePropertyConfig, WeaviateRef,
-    WeaviateVectorConfigEntry,
+    WeaviateNamedVectorizerConfig, WeaviatePropertyConfig, WeaviateRef, WeaviateVectorConfigEntry,
 };
 
 pub fn collection_config_for_schema(
@@ -217,10 +216,7 @@ fn image_vector_collection_config(class_name: String) -> WeaviateCollectionConfi
     }
 }
 
-fn named_vectorizer_matches(
-    existing: &Value,
-    expected: &WeaviateNamedVectorizerConfig,
-) -> bool {
+fn named_vectorizer_matches(existing: &Value, expected: &WeaviateNamedVectorizerConfig) -> bool {
     if let Value::Object(existing_object) = existing {
         let Ok(expected_value) = serde_json::to_value(expected) else {
             return false;

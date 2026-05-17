@@ -96,7 +96,9 @@ pub async fn rpush_value(redis_ref: &Arc<RedisConfig>, key: &str, value: &str) -
 
     let mut redis_cm = redis_ref.redis_cm.lock().await;
     let conn = ensure_connection(redis_ref, &mut redis_cm).await?;
-    conn.rpush::<_, _, ()>(key, value).await.map_err(Error::from)
+    conn.rpush::<_, _, ()>(key, value)
+        .await
+        .map_err(Error::from)
 }
 
 pub async fn blpop_value(
@@ -122,7 +124,9 @@ pub async fn blpop_value(
 
     let mut redis_cm = redis_ref.redis_cm.lock().await;
     let conn = ensure_connection(redis_ref, &mut redis_cm).await?;
-    conn.blpop(key, timeout_secs as f64).await.map_err(Error::from)
+    conn.blpop(key, timeout_secs as f64)
+        .await
+        .map_err(Error::from)
 }
 
 async fn connect(url: &str) -> Result<Connection> {

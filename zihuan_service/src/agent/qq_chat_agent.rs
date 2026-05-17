@@ -42,7 +42,7 @@ use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
 use zihuan_graph_engine::data_value::{OpenAIMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
-use zihuan_graph_engine::message_restore::register_mysql_ref;
+use zihuan_graph_engine::message_restore::{register_mysql_ref, restore_media_by_id};
 
 const FORWARD_SPLIT_PREFERRED_SEPARATORS: [char; 14] = [
     '\n', '。', '！', '？', '；', '：', '.', '!', '?', ';', ':', '，', ',', ' ',
@@ -162,10 +162,67 @@ fn build_reply_batches_from_model_text(
         attach_reply_to_first_batch(&mut batches, reply);
     }
     ensure_space_after_at(&mut batches);
+    resolve_media_references(&mut batches, &request.available_media)?;
     Ok(QqAgentReplyBuildResult {
         batches,
         suppress_send: false,
     })
+}
+
+fn resolve_media_references(
+    batches: &mut [Vec<Message>],
+    available_media: &HashMap<String, PersistedMedia>,
+) -> Result<()> {
+    for batch in batches {
+        for message in batch {
+            resolve_message_media_reference(message, available_media)?;
+        }
+    }
+    Ok(())
+}
+
+fn resolve_message_media_reference(
+    message: &mut Message,
+    available_media: &HashMap<String, PersistedMedia>,
+) -> Result<()> {
+    match message {
+        Message::Image(image) => {
+            if image.rustfs_path().is_some() || image.original_source().is_some() {
+                return Ok(());
+            }
+
+            let media_id = image.media.media_id.trim();
+            if media_id.is_empty() {
+                return Err(Error::ValidationError(
+                    "outbound image marker is missing media_id".to_string(),
+                ));
+            }
+
+            if let Some(media) = available_media.get(media_id) {
+                image.media = media.clone();
+                return Ok(());
+            }
+
+            if let Some(media) = restore_media_by_id(media_id)? {
+                image.media = media;
+                return Ok(());
+            }
+
+            return Err(Error::ValidationError(format!(
+                "failed to resolve outbound image media_id '{}'",
+                media_id
+            )));
+        }
+        Message::Forward(forward) => {
+            for node in &mut forward.content {
+                for nested in &mut node.content {
+                    resolve_message_media_reference(nested, available_media)?;
+                }
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
 }
 
 fn resolve_reply_his_message_aliases(text: &str, trigger_message_id: i64) -> String {
@@ -468,28 +525,20 @@ fn parse_bracket_message(inner: &str) -> Option<Message> {
         }));
     }
 
-    if let Some(value) = inner.strip_prefix("Image path=") {
-        let path = parse_tag_value(value)?;
-        return Some(Message::Image(ImageMessage::new(PersistedMedia::new(
-            PersistedMediaSource::Upload,
-            path,
-            String::new(),
-            None,
-            None,
-            None,
-        ))));
-    }
-
-    if let Some(value) = inner.strip_prefix("Image url=") {
-        let url = parse_tag_value(value)?;
-        return Some(Message::Image(ImageMessage::new(PersistedMedia::new(
-            PersistedMediaSource::Upload,
-            url,
-            String::new(),
-            None,
-            None,
-            None,
-        ))));
+    if let Some(value) = inner
+        .strip_prefix("Image media_id=")
+        .or_else(|| inner.strip_prefix("Image: media_id="))
+    {
+        let media_id = parse_tag_value(value)?;
+        return Some(Message::Image(ImageMessage::new(PersistedMedia {
+            media_id,
+            source: PersistedMediaSource::Upload,
+            original_source: String::new(),
+            rustfs_path: String::new(),
+            name: None,
+            description: None,
+            mime_type: None,
+        })));
     }
 
     None
@@ -526,6 +575,72 @@ fn parse_tag_value(value: &str) -> Option<String> {
     }
 
     Some(trimmed.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_bracket_message_supports_media_id_marker() {
+        let parsed = parse_bracket_message("Image media_id=media-123").expect("parse image tag");
+        match parsed {
+            Message::Image(image) => {
+                assert_eq!(image.media.media_id, "media-123");
+                assert_eq!(image.media.rustfs_path, "");
+                assert_eq!(image.media.original_source, "");
+            }
+            other => panic!("expected image message, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_bracket_message_supports_legacy_colon_media_id_marker() {
+        let parsed =
+            parse_bracket_message("Image: media_id=media-legacy").expect("parse legacy image tag");
+        match parsed {
+            Message::Image(image) => {
+                assert_eq!(image.media.media_id, "media-legacy");
+            }
+            other => panic!("expected image message, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_media_references_prefers_current_turn_media() {
+        let mut batches = vec![vec![Message::Image(ImageMessage::new(PersistedMedia {
+            media_id: "media-123".to_string(),
+            source: PersistedMediaSource::Upload,
+            original_source: String::new(),
+            rustfs_path: String::new(),
+            name: None,
+            description: None,
+            mime_type: None,
+        }))]];
+        let available_media = HashMap::from([(
+            "media-123".to_string(),
+            PersistedMedia {
+                media_id: "media-123".to_string(),
+                source: PersistedMediaSource::WebSearch,
+                original_source: "https://example.com/demo.jpg".to_string(),
+                rustfs_path: "tavily/demo.jpg".to_string(),
+                name: None,
+                description: Some("demo".to_string()),
+                mime_type: Some("image/jpeg".to_string()),
+            },
+        )]);
+
+        resolve_media_references(&mut batches, &available_media).expect("resolve media");
+
+        match &batches[0][0] {
+            Message::Image(image) => {
+                assert_eq!(image.media.media_id, "media-123");
+                assert_eq!(image.media.rustfs_path, "tavily/demo.jpg");
+                assert_eq!(image.media.original_source, "https://example.com/demo.jpg");
+            }
+            other => panic!("expected image message, got {other:?}"),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -604,13 +719,14 @@ fn load_qq_resources(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let mysql_ref = block_async(build_mysql_ref(mysql_connection_id, connections)).map_err(|err| {
-        let connection_label = mysql_connection_id.unwrap_or("<none>");
-        Error::ValidationError(format!(
+    let mysql_ref =
+        block_async(build_mysql_ref(mysql_connection_id, connections)).map_err(|err| {
+            let connection_label = mysql_connection_id.unwrap_or("<none>");
+            Error::ValidationError(format!(
             "agent '{}' failed to initialize mysql dependency from mysql_connection_id='{}': {}",
             agent.name, connection_label, err
         ))
-    })?;
+        })?;
 
     let weaviate_image_ref = tokio::task::block_in_place(|| {
         build_weaviate_ref(

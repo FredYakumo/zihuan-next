@@ -179,7 +179,11 @@ fn outbound_object_storage_key(
     adapter_ref: &SharedBotAdapter,
     image: &ImageMessage,
 ) -> Option<String> {
-    if let Some(key) = image.rustfs_path().map(str::trim).filter(|key| !key.is_empty()) {
+    if let Some(key) = image
+        .rustfs_path()
+        .map(str::trim)
+        .filter(|key| !key.is_empty())
+    {
         return Some(key.to_string());
     }
 

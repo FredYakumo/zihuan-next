@@ -4,7 +4,9 @@ use crate::message_mysql_chunking::{
     AT_TARGET_LIST_MAX_CHARS, CONTENT_MAX_CHARS, GROUP_ID_MAX_CHARS, GROUP_NAME_MAX_CHARS,
     MEDIA_JSON_MAX_CHARS, MESSAGE_ID_MAX_CHARS, SENDER_ID_MAX_CHARS, SENDER_NAME_MAX_CHARS,
 };
-use crate::message_restore::{cache_message_snapshot, register_redis_ref, CachedMessageSnapshotPayload};
+use crate::message_restore::{
+    cache_message_snapshot, register_redis_ref, CachedMessageSnapshotPayload,
+};
 use log::{info, warn};
 use once_cell::sync::Lazy;
 use redis::AsyncCommands;

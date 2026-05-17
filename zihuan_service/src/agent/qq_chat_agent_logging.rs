@@ -101,7 +101,10 @@ impl QqChatTaskTrace {
 
     pub(crate) fn log_user_message(&self, raw_user_message: &str, current_message: &str) {
         let details = if raw_user_message.trim() == current_message.trim() {
-            format!("用户消息: {}", truncate_for_log(current_message, LOG_TEXT_PREVIEW_CHARS))
+            format!(
+                "用户消息: {}",
+                truncate_for_log(current_message, LOG_TEXT_PREVIEW_CHARS)
+            )
         } else {
             format!(
                 "用户消息: raw={} | inference={}",
@@ -235,7 +238,10 @@ impl QqChatTaskTrace {
         self.log_key_event(
             &format!("工具调用结果 {name}"),
             duration_ms,
-            format!("result={}", truncate_for_log(result, LOG_TOOL_PREVIEW_CHARS)),
+            format!(
+                "result={}",
+                truncate_for_log(result, LOG_TOOL_PREVIEW_CHARS)
+            ),
         );
     }
 
@@ -499,7 +505,8 @@ pub(crate) struct QqChatBrainObserver {
 
 impl BrainObserver for QqChatBrainObserver {
     fn on_assistant_tool_request(&self, iteration: usize, content: &str, tool_calls: &[ToolCalls]) {
-        self.trace.record_tool_request(iteration, content, tool_calls);
+        self.trace
+            .record_tool_request(iteration, content, tool_calls);
     }
 
     fn on_tool_start(&self, name: &str, _call_id: &str, arguments: &Value) {
@@ -525,7 +532,11 @@ fn format_timeline_line(
             let duration_ms = previous
                 .map(|previous| point.instant.duration_since(previous.instant).as_millis())
                 .unwrap_or_default();
-            format!("{label} {} [耗时 {} ms]", format_time(&point.at), duration_ms)
+            format!(
+                "{label} {} [耗时 {} ms]",
+                format_time(&point.at),
+                duration_ms
+            )
         }
         None => format!("{label} 未触发"),
     }

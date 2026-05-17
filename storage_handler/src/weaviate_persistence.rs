@@ -8,7 +8,9 @@ use uuid::Uuid;
 
 use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
-use zihuan_core::ims_bot_adapter::models::message::{collect_media_records, Message, PersistedMedia};
+use zihuan_core::ims_bot_adapter::models::message::{
+    collect_media_records, Message, PersistedMedia,
+};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::weaviate::WeaviateRef;
 
@@ -100,7 +102,12 @@ pub fn upsert_qq_message_list(
         message_id, weaviate_ref.class_name
     );
 
-    weaviate_ref.upsert_object(&weaviate_ref.class_name, properties, Some(vector), Some(&object_id))
+    weaviate_ref.upsert_object(
+        &weaviate_ref.class_name,
+        properties,
+        Some(vector),
+        Some(&object_id),
+    )
 }
 
 pub fn upsert_image_record(
@@ -138,9 +145,19 @@ pub fn upsert_image_record(
 
 pub fn deterministic_media_object_id(class_name: &str, media_id: &str) -> String {
     let seed = format!("{class_name}:{media_id}");
-    let mut hasher = DefaultHasher::new();
-    seed.hash(&mut hasher);
-    format!("media-object-{:016x}", hasher.finish())
+    let mut first = DefaultHasher::new();
+    seed.hash(&mut first);
+
+    let mut second = DefaultHasher::new();
+    format!("media:{seed}").hash(&mut second);
+
+    let mut bytes = [0u8; 16];
+    bytes[..8].copy_from_slice(&first.finish().to_be_bytes());
+    bytes[8..].copy_from_slice(&second.finish().to_be_bytes());
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+    Uuid::from_bytes(bytes).to_string()
 }
 
 pub fn deterministic_message_object_id(_class_name: &str, _message_id: &str) -> String {
@@ -202,5 +219,14 @@ mod tests {
         assert_eq!(properties["description"], "Image description");
         assert_eq!(properties["mime_type"], "image/jpeg");
         assert_eq!(properties["source"], "qq_chat");
+    }
+
+    #[test]
+    fn deterministic_media_object_id_is_stable_uuid() {
+        let id1 = deterministic_media_object_id("ImageSemantic", "media-123");
+        let id2 = deterministic_media_object_id("ImageSemantic", "media-123");
+
+        assert_eq!(id1, id2);
+        assert!(Uuid::parse_str(&id1).is_ok());
     }
 }

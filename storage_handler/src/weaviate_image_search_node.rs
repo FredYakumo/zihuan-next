@@ -187,10 +187,7 @@ fn normalized_image_item(item: &Value, max_distance: Option<f64>) -> Option<Valu
             .map(Value::String)
             .unwrap_or(Value::Null),
     );
-    object.insert(
-        "rustfs_path".to_string(),
-        Value::String(rustfs_path),
-    );
+    object.insert("rustfs_path".to_string(), Value::String(rustfs_path));
     object.insert(
         "name".to_string(),
         string_field(item, "name")

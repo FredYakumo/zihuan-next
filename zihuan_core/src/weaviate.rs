@@ -254,9 +254,7 @@ impl WeaviateRef {
             .collect::<Vec<_>>();
         requested_fields.push("_additional { id }".to_string());
         let fields = requested_fields.join(" ");
-        let graphql = format!(
-            "{{ Get {{ {class_name}(limit: {limit}) {{ {fields} }} }} }}"
-        );
+        let graphql = format!("{{ Get {{ {class_name}(limit: {limit}) {{ {fields} }} }} }}");
         self.execute_graphql_query(&graphql)
     }
 

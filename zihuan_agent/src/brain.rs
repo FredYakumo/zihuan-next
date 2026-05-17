@@ -129,7 +129,10 @@ impl Brain {
                     warn!("[Brain] Transport error on iteration {iteration}: {content}");
                     let msg = content.to_string();
                     if let Some(observer) = self.observer.as_ref() {
-                        observer.on_final_assistant(&response, &BrainStopReason::TransportError(msg.clone()));
+                        observer.on_final_assistant(
+                            &response,
+                            &BrainStopReason::TransportError(msg.clone()),
+                        );
                     }
                     output.push(response);
                     return (output, BrainStopReason::TransportError(msg));
@@ -269,7 +272,10 @@ impl Brain {
                     warn!("[Brain] Transport error on iteration {iteration}: {content}");
                     let msg = content.to_string();
                     if let Some(observer) = self.observer.as_ref() {
-                        observer.on_final_assistant(&response, &BrainStopReason::TransportError(msg.clone()));
+                        observer.on_final_assistant(
+                            &response,
+                            &BrainStopReason::TransportError(msg.clone()),
+                        );
                     }
                     output.push(response);
                     return (output, BrainStopReason::TransportError(msg));
@@ -422,4 +428,3 @@ fn append_tool_summary_to_system(
 
     messages.push(OpenAIMessage::system(summary));
 }
-

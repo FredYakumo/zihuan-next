@@ -154,9 +154,10 @@ impl RuntimeStorageConnectionManager {
                     .min_connections(1)
                     .acquire_timeout(Duration::from_secs(acquire_timeout_secs));
                 let masked_url = mask_url_credentials(&mysql.url);
-                let (pool, handle, runtime) =
-                    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                        let pool = pool_options.connect(&mysql.url).await.map_err(|err| {
+                let (pool, handle, runtime) = if let Ok(handle) =
+                    tokio::runtime::Handle::try_current()
+                {
+                    let pool = pool_options.connect(&mysql.url).await.map_err(|err| {
                             Error::Database(sqlx::Error::Configuration(Box::new(std::io::Error::other(
                                 format!(
                                     "failed to create mysql pool for connection '{}' (config_id={}, url={}, max_connections={}, acquire_timeout={}s): {}",
@@ -169,11 +170,11 @@ impl RuntimeStorageConnectionManager {
                                 ),
                             ))))
                         })?;
-                        (pool, handle, None)
-                    } else {
-                        let runtime = Arc::new(tokio::runtime::Runtime::new()?);
-                        let handle = runtime.handle().clone();
-                        let pool = handle.block_on(pool_options.connect(&mysql.url)).map_err(|err| {
+                    (pool, handle, None)
+                } else {
+                    let runtime = Arc::new(tokio::runtime::Runtime::new()?);
+                    let handle = runtime.handle().clone();
+                    let pool = handle.block_on(pool_options.connect(&mysql.url)).map_err(|err| {
                             Error::Database(sqlx::Error::Configuration(Box::new(std::io::Error::other(
                                 format!(
                                     "failed to create mysql pool for connection '{}' (config_id={}, url={}, max_connections={}, acquire_timeout={}s): {}",
@@ -186,8 +187,8 @@ impl RuntimeStorageConnectionManager {
                                 ),
                             ))))
                         })?;
-                        (pool, handle, Some(runtime))
-                    };
+                    (pool, handle, Some(runtime))
+                };
                 let config = Arc::new(MySqlConfig {
                     url: Some(mysql.url.clone()),
                     reconnect_max_attempts: None,
