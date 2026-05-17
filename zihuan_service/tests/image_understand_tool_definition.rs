@@ -1,5 +1,6 @@
 use model_inference::system_config::{AgentToolConfig, AgentToolType, NodeGraphToolConfig};
 use serde_json::Value;
+use zihuan_graph_engine::function_graph::FUNCTION_INPUTS_NODE_ID;
 use zihuan_graph_engine::DataType;
 use zihuan_service::agent::tool_definitions::build_enabled_tool_definitions;
 use zihuan_service::nodes::tool_subgraph::tool_parameters_to_json_schema;
@@ -35,6 +36,22 @@ fn image_understand_workflow_derives_optional_message_id_parameter() {
         .expect("message_id parameter should be derived from workflow graph");
     assert_eq!(message_id.data_type, DataType::Integer);
     assert!(!message_id.required, "message_id should stay optional");
+
+    let function_inputs_node = definition
+        .subgraph
+        .nodes
+        .iter()
+        .find(|node| node.id == FUNCTION_INPUTS_NODE_ID)
+        .expect("tool subgraph should contain function_inputs");
+    let function_message_id = function_inputs_node
+        .output_ports
+        .iter()
+        .find(|port| port.name == "message_id")
+        .expect("function_inputs should expose message_id");
+    assert!(
+        !function_message_id.required,
+        "function_inputs output message_id should stay optional"
+    );
 
     let schema = tool_parameters_to_json_schema(&definition.parameters);
     let required = schema

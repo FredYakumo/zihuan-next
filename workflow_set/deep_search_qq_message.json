@@ -1925,7 +1925,7 @@
                 "has_error": false,
                 "id": "system_prompt",
                 "inline_values": {
-                  "template": "当前时间是: ${current_time}。你是一个 QQ 消息记录深度搜索助手。\n你需要搜索：\n${query}\n\n当前消息上下文：\n- 当前群号：${group_id}\n- 当前发送者 QQ：${sender_id}\n\n规则：\n- 你的任务是优先调用工具查证，再给出简洁、事实化的结论。\n- 如果用户的问题明显指向当前群（如“这群”“刚才群里”），优先使用上面的当前群号作为 search_messages 的 group_id 过滤条件。\n- 如果用户的问题明显指向当前发言者，可使用上面的当前发送者 QQ 作为 search_messages 的 sender_id。\n- search_messages 必须总是传入 sender_id、group_id、contain、start_time、end_time、limit、sort_by_time_desc 这 7 个字段；未使用的文本过滤字段填空字符串 \"\"，limit 建议 100，如果没有找到可以加大范围。sort_by_time_desc 建议 true。\n- search_images 只搜索本地图片数据库，绝对不要改成联网搜图。若返回 has_results=false，就表示数据库里没有找到相似图片。\n- 工具返回后直接整理结论；如果没有查到结果，要明确说明是消息库或图片库里未命中。"
+                  "template": "当前时间是: ${current_time}。你是一个 QQ 消息记录深度搜索助手。\n你需要搜索：\n${query}\n\n当前消息上下文：\n- 当前群号（私聊为空）：${group_id}\n- 当前发送者 QQ：${sender_id}\n\n规则：\n- 你的任务是优先调用工具查证，再给出简洁、事实化的结论。\n- 如果用户的问题明显指向当前群（如“这群”“刚才群里”），且上面的当前群号不为空，优先使用它作为 search_messages 的 group_id 过滤条件。\n- 如果用户的问题明显指向当前发言者，可使用上面的当前发送者 QQ 作为 search_messages 的 sender_id。\n- search_messages 必须总是传入 sender_id、group_id、contain、start_time、end_time、limit、sort_by_time_desc 这 7 个字段；未使用的文本过滤字段填空字符串 \"\"，limit 建议 100，如果没有找到可以加大范围。sort_by_time_desc 建议 true。\n- search_images 只搜索本地图片数据库，绝对不要改成联网搜图。若返回 has_results=false，就表示数据库里没有找到相似图片。\n- 工具返回后直接整理结论；如果没有查到结果，要明确说明是消息库或图片库里未命中。"
                 },
                 "input_ports": [
                   {
@@ -2216,7 +2216,7 @@
                 }
               },
               {
-                "description": null,
+                "description": "从消息事件中提取群号；私聊时返回空字符串",
                 "disabled": false,
                 "dynamic_input_ports": false,
                 "dynamic_output_ports": false,
@@ -2233,12 +2233,12 @@
                     "required": true
                   }
                 ],
-                "name": "extract group id from event",
-                "node_type": "extract_group_id_from_event",
+                "name": "extract optional group id from event",
+                "node_type": "extract_optional_group_id_from_event",
                 "output_ports": [
                   {
                     "data_type": "String",
-                    "description": "群号字符串",
+                    "description": "群号字符串；私聊时为空",
                     "hidden": false,
                     "name": "result",
                     "required": true
