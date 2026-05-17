@@ -160,6 +160,21 @@ The current single-user serialization points are:
 
 They wrap `SessionStateRef::try_claim(...)` / `release(...)` so one sender does not enter multiple active reply flows at the same time.
 
+### Current QQ Chat Agent Steer Behavior
+
+While a sender already has an active QQ chat reply flow, additional messages from the same sender
+are treated as **steer** messages instead of causing a busy reply.
+
+The current steer behavior is:
+
+- The overlapping message is queued in a QQ-agent-owned pending-steer buffer for that sender.
+- If the current Brain run reaches another inference round after tool calls, queued steer messages are injected into the in-flight conversation as explicit `user` messages that tell the model the user has interrupted with new guidance.
+- If a steer message arrives too late to be injected into the current Brain round, it becomes the first input of the next automatic follow-up turn after the current reply flow finishes.
+- Each consumed steer message is appended to saved conversation history in arrival order.
+- The number of steer messages accepted during one active reply flow is limited by `QqChatAgentConfig.max_steer_count`, which currently defaults to `4`. Additional steer messages beyond that limit are dropped.
+
+This means same-user overlap is no longer modeled as “agent busy”; it is modeled as “the user is steering the unfinished reply”.
+
 The architectural boundary is therefore:
 
 - the adapter layer accepts, parses, and dispatches messages asynchronously

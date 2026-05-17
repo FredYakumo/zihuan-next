@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use base64::Engine;
 use chrono::Local;
@@ -16,20 +16,17 @@ use super::qq_chat_agent_logging::{QqChatBrainObserver, QqChatTaskTrace};
 use crate::nodes::tool_subgraph::{
     validate_shared_inputs, validate_tool_definitions, ToolResultMode, ToolSubgraphRunner,
 };
-use crate::storage::qq_chat_history_store::{
-    conversation_history_key, load_history, save_history,
-};
+use crate::storage::qq_chat_history_store::{conversation_history_key, load_history, save_history};
 use crate::storage::qq_chat_session_store::{
     build_outbound_persistence, release_session, try_claim_session,
 };
 use ims_bot_adapter::adapter::shared_from_handle;
 use ims_bot_adapter::message_helpers::{
     get_bot_id, send_friend_batches_with_persistence,
-    send_friend_progress_notification_with_persistence, send_friend_text_with_persistence,
-    send_group_batches_with_persistence, send_group_progress_notification_with_persistence,
-    OutboundMessagePersistence,
+    send_friend_progress_notification_with_persistence, send_group_batches_with_persistence,
+    send_group_progress_notification_with_persistence, OutboundMessagePersistence,
 };
-use ims_bot_adapter::models::event_model::MessageType;
+use ims_bot_adapter::models::event_model::{MessageEvent, MessageType};
 use ims_bot_adapter::models::message::{
     AtTargetMessage, ForwardMessage, ForwardNodeMessage, ImageMessage, Message, MessageProp,
     PersistedMedia, PersistedMediaSource, PlainTextMessage,
@@ -41,13 +38,13 @@ use model_inference::message_content_utils::{
     downgrade_messages_for_model, sanitize_messages_for_inference,
 };
 use storage_handler::upsert_image_record;
-use zihuan_agent::brain::{Brain, BrainStopReason, BrainTool};
+use zihuan_agent::brain::{Brain, BrainIterationHook, BrainStopReason, BrainTool};
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::InferenceParam;
-use zihuan_core::llm::{ContentPart, OpenAIMessage};
+use zihuan_core::llm::{ContentPart, MessageContent, OpenAIMessage};
 use zihuan_core::rag::{TavilyImage, TavilyRef};
 use zihuan_core::runtime::block_async;
 use zihuan_core::task_context::{
@@ -71,7 +68,6 @@ mod build_metadata {
 }
 
 const LOG_PREFIX: &str = "[QqChatAgent]";
-const BUSY_REPLY: &str = "我还在思考中，你别急";
 const MAX_REPLY_CHARS: usize = 250;
 const MAX_FORWARD_NODE_CHARS: usize = 800;
 const LOG_TEXT_PREVIEW_CHARS: usize = 1_200;
@@ -98,10 +94,88 @@ const DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES: &str = "search_similar_images";
 const FUNCTION_LIST_TEXT: &str = "/new 新对话\n/search 联网搜索";
 const DIRECT_REPLY_NO_SYSTEM_PROMPT: &str = "没有系统提示词";
 const MODEL_NAME_REPLY_PREFIX: &str = "我不是模型，不过我会调用: ";
+const STEER_PREFIX: &str =
+    "【用户插入消息】请结合下面这条新消息调整你当前的回复思路，并在后续回复中优先响应它：";
 
 #[derive(Debug, Clone)]
 struct QqChatHandleReport {
     result_summary: String,
+}
+
+#[derive(Debug, Clone)]
+struct PendingSteerEvent {
+    event: MessageEvent,
+    time: String,
+}
+
+#[derive(Debug, Default)]
+struct PendingSteerSession {
+    queue: VecDeque<PendingSteerEvent>,
+    accepted_steer_count: usize,
+}
+
+#[derive(Default)]
+struct PendingSteerStore {
+    by_sender: Mutex<HashMap<String, PendingSteerSession>>,
+}
+
+impl PendingSteerStore {
+    fn enqueue_with_limit(
+        &self,
+        sender_id: &str,
+        pending: PendingSteerEvent,
+        max_steer_count: usize,
+    ) -> (bool, usize, usize) {
+        let mut guard = self.by_sender.lock().unwrap();
+        let session = guard.entry(sender_id.to_string()).or_default();
+        if session.accepted_steer_count >= max_steer_count {
+            return (false, session.queue.len(), session.accepted_steer_count);
+        }
+        session.accepted_steer_count += 1;
+        session.queue.push_back(pending);
+        (true, session.queue.len(), session.accepted_steer_count)
+    }
+
+    fn drain_all(&self, sender_id: &str) -> (Vec<PendingSteerEvent>, usize, usize) {
+        let mut guard = self.by_sender.lock().unwrap();
+        let Some(session) = guard.get_mut(sender_id) else {
+            return (Vec::new(), 0, 0);
+        };
+        let drained: Vec<PendingSteerEvent> = session.queue.drain(..).collect();
+        let remaining_queue_len = session.queue.len();
+        let accepted_steer_count = session.accepted_steer_count;
+        if session.queue.is_empty() && session.accepted_steer_count == 0 {
+            guard.remove(sender_id);
+        }
+        (drained, remaining_queue_len, accepted_steer_count)
+    }
+
+    fn pop_oldest(&self, sender_id: &str) -> Option<(PendingSteerEvent, usize, usize)> {
+        let mut guard = self.by_sender.lock().unwrap();
+        let session = guard.get_mut(sender_id)?;
+        let popped = session.queue.pop_front()?;
+        let remaining_queue_len = session.queue.len();
+        let accepted_steer_count = session.accepted_steer_count;
+        if session.queue.is_empty() && session.accepted_steer_count == 0 {
+            guard.remove(sender_id);
+        }
+        Some((popped, remaining_queue_len, accepted_steer_count))
+    }
+
+    fn finish_session(&self, sender_id: &str) {
+        let mut guard = self.by_sender.lock().unwrap();
+        if let Some(session) = guard.get_mut(sender_id) {
+            session.accepted_steer_count = 0;
+            if session.queue.is_empty() {
+                guard.remove(sender_id);
+            }
+        }
+    }
+
+    fn ensure_session_entry(&self, sender_id: &str) {
+        let mut guard = self.by_sender.lock().unwrap();
+        guard.entry(sender_id.to_string()).or_default();
+    }
 }
 
 fn default_tools_enabled_map() -> HashMap<String, bool> {
@@ -1019,6 +1093,41 @@ fn build_user_message(
     }
 }
 
+fn build_steer_user_message(
+    event: &ims_bot_adapter::models::MessageEvent,
+    bot_id: &str,
+    bot_name: &str,
+    llm_supports_multimodal_input: bool,
+    s3_ref: Option<&Arc<S3Ref>>,
+    api_style: Option<&str>,
+) -> OpenAIMessage {
+    let mut steer_message = build_user_message(
+        event,
+        bot_id,
+        bot_name,
+        llm_supports_multimodal_input,
+        s3_ref,
+    );
+
+    match steer_message.content.as_mut() {
+        Some(MessageContent::Text(text)) => {
+            *text = format!("{STEER_PREFIX}\n\n{text}");
+        }
+        Some(MessageContent::Parts(parts)) => {
+            parts.insert(0, ContentPart::text(format!("{STEER_PREFIX}\n\n")));
+        }
+        None => {
+            steer_message.content = Some(MessageContent::Text(STEER_PREFIX.to_string()));
+        }
+    }
+
+    if let Some(api_style) = api_style {
+        steer_message.api_style = Some(api_style.to_string());
+    }
+
+    steer_message
+}
+
 fn extract_user_message_text(
     event: &ims_bot_adapter::models::MessageEvent,
     bot_id: &str,
@@ -1036,6 +1145,13 @@ fn extract_user_message_text(
     } else {
         trimmed.to_string()
     }
+}
+
+fn message_with_api_style(mut message: OpenAIMessage, api_style: Option<&str>) -> OpenAIMessage {
+    if let Some(api_style) = api_style {
+        message.api_style = Some(api_style.to_string());
+    }
+    message
 }
 
 fn split_text_for_qq(content: &str) -> Vec<String> {
@@ -2641,6 +2757,68 @@ pub struct QqChatAgent {
     tool_definitions: Vec<BrainToolDefinition>,
 }
 
+struct QqChatTurnResult {
+    result_summary: String,
+}
+
+struct QqChatSteerHook {
+    pending_steer: Arc<PendingSteerStore>,
+    sender_id: String,
+    bot_id: String,
+    bot_name: String,
+    max_steer_count: usize,
+    llm_supports_multimodal_input: bool,
+    llm_api_style: Option<String>,
+    s3_ref: Option<Arc<S3Ref>>,
+    trace: QqChatTaskTrace,
+    consumed_messages: Arc<Mutex<Vec<OpenAIMessage>>>,
+}
+
+impl BrainIterationHook for QqChatSteerHook {
+    fn on_before_inference(
+        &self,
+        _iteration: usize,
+        _conversation: &[OpenAIMessage],
+    ) -> Vec<OpenAIMessage> {
+        let (pending, remaining_queue_len, accepted_steer_count) =
+            self.pending_steer.drain_all(&self.sender_id);
+        if pending.is_empty() {
+            return Vec::new();
+        }
+
+        let mut injected = Vec::with_capacity(pending.len());
+        let mut consumed_guard = self.consumed_messages.lock().unwrap();
+
+        for pending_event in pending {
+            let inference_event = expand_event_for_inference(&pending_event.event);
+            let current_message =
+                extract_user_message_text(&inference_event, &self.bot_id, &self.bot_name);
+            self.trace.record_steer_received(&current_message);
+
+            let steer_message = build_steer_user_message(
+                &inference_event,
+                &self.bot_id,
+                &self.bot_name,
+                self.llm_supports_multimodal_input,
+                self.s3_ref.as_ref(),
+                self.llm_api_style.as_deref(),
+            );
+            consumed_guard.push(steer_message.clone());
+            injected.push(steer_message);
+        }
+
+        drop(consumed_guard);
+        self.trace.record_steer_injected(
+            injected.len(),
+            accepted_steer_count,
+            self.max_steer_count,
+            remaining_queue_len,
+            injected.as_slice(),
+        );
+        injected
+    }
+}
+
 impl QqChatAgent {
     pub fn new(id: impl Into<String>) -> Self {
         Self {
@@ -2716,8 +2894,10 @@ impl QqChatAgent {
         s3_ref: Option<&Arc<S3Ref>>,
         max_message_length: usize,
         compact_context_length: usize,
+        max_steer_count: usize,
         reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
         shared_runtime_values: HashMap<String, DataValue>,
+        pending_steer: &Arc<PendingSteerStore>,
         task_runtime: Option<&Arc<dyn AgentTaskRuntime>>,
         user_ip: Option<String>,
     ) -> Result<()> {
@@ -2758,47 +2938,40 @@ impl QqChatAgent {
 
         let (claimed, claim_token) = try_claim_session(session, &sender_id);
         if !claimed {
-            info!("{LOG_PREFIX} Session busy for {sender_id}");
-            if !is_group {
-                let task_handle = task_runtime.map(|runtime| {
-                    runtime.start_task(AgentTaskRequest {
-                        task_name: format!("回复[{sender_id}]的消息"),
-                        agent_id: agent_id.to_string(),
-                        agent_name: bot_name.to_string(),
-                        user_ip: user_ip.clone(),
-                    })
-                });
-                if let Some(task_handle) = task_handle.as_ref() {
-                    scope_task_id(task_handle.task_id.clone(), || {
-                        info!(
-                            "{LOG_PREFIX} responding busy reply: sender={} target={}",
-                            sender_id, target_id
-                        );
-                        let persistence = build_outbound_persistence(mysql_ref, None, bot_name);
-                        send_friend_text_with_persistence(
-                            adapter,
-                            &target_id,
-                            BUSY_REPLY,
-                            &persistence,
-                        );
-                    });
-                    task_handle.finish(AgentTaskResult {
-                        status: Some(AgentTaskStatus::Success),
-                        result_summary: Some(format!("会话忙，已向[{sender_id}]发送忙碌提示")),
-                        error_message: None,
-                    });
-                } else {
-                    let persistence = build_outbound_persistence(mysql_ref, None, bot_name);
-                    send_friend_text_with_persistence(
-                        adapter,
-                        &target_id,
-                        BUSY_REPLY,
-                        &persistence,
-                    );
-                }
+            let bot_id = get_bot_id(adapter);
+            let inference_event = expand_event_for_inference(event);
+            let current_message = extract_user_message_text(&inference_event, &bot_id, bot_name);
+            let (accepted, queue_len, accepted_steer_count) = pending_steer.enqueue_with_limit(
+                &sender_id,
+                PendingSteerEvent {
+                    event: event.clone(),
+                    time: time.to_string(),
+                },
+                max_steer_count,
+            );
+            if accepted {
+                info!(
+                    "{LOG_PREFIX} Session busy for {sender_id}, enqueueing steer: message_id={} queue_len={} accepted_steer_count={}/{} message={}",
+                    event.message_id,
+                    queue_len,
+                    accepted_steer_count,
+                    max_steer_count,
+                    truncate_for_log(&current_message, LOG_TEXT_PREVIEW_CHARS)
+                );
+            } else {
+                warn!(
+                    "{LOG_PREFIX} steer dropped for sender={} message_id={} because max steer count reached: accepted_steer_count={}/{} message={}",
+                    sender_id,
+                    event.message_id,
+                    accepted_steer_count,
+                    max_steer_count,
+                    truncate_for_log(&current_message, LOG_TEXT_PREVIEW_CHARS)
+                );
             }
             return Ok(());
         }
+
+        pending_steer.ensure_session_entry(&sender_id);
 
         let task_created_at = Local::now();
         let task_handle = task_runtime.map(|runtime| {
@@ -2835,8 +3008,10 @@ impl QqChatAgent {
                     is_group,
                     max_message_length,
                     compact_context_length,
+                    max_steer_count,
                     reply_batch_builder,
                     shared_runtime_values,
+                    pending_steer,
                 )
             })
         } else {
@@ -2863,13 +3038,16 @@ impl QqChatAgent {
                 is_group,
                 max_message_length,
                 compact_context_length,
+                max_steer_count,
                 reply_batch_builder,
                 shared_runtime_values,
+                pending_steer,
             )
         };
         trace.finish_with_summary();
 
         release_session(session, &sender_id, claim_token);
+        pending_steer.finish_session(&sender_id);
         if let Some(task_handle) = task_handle {
             match &result {
                 Ok(report) => task_handle.finish(AgentTaskResult {
@@ -2912,353 +3090,450 @@ impl QqChatAgent {
         is_group: bool,
         max_message_length: usize,
         compact_context_length: usize,
+        max_steer_count: usize,
         reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
         shared_runtime_values: HashMap<String, DataValue>,
+        pending_steer: &Arc<PendingSteerStore>,
     ) -> Result<QqChatHandleReport> {
         (|| -> Result<QqChatHandleReport> {
             let bot_id = get_bot_id(adapter);
-            let inference_event = expand_event_for_inference(event);
-            let raw_user_message = extract_user_message_text(event, &bot_id, bot_name);
-            let current_message = extract_user_message_text(&inference_event, &bot_id, bot_name);
-            trace.log_user_message(&raw_user_message, &current_message);
-
-            let intent_trace =
-                classify_intent_with_trace(intent_llm, embedding_model, &current_message);
-            let intent = intent_trace.category;
-            trace.record_intent(intent_trace);
-
-            let selected_llm = match intent {
-                IntentCategory::SolveComplexProblem | IntentCategory::WriteCode => {
-                    math_programming_llm
-                }
-                _ => llm,
-            };
-            let mut user_msg = build_user_message(
-                &inference_event,
-                &bot_id,
-                bot_name,
-                selected_llm.supports_multimodal_input(),
-                s3_ref,
-            );
-            if let Some(api_style) = selected_llm.api_style() {
-                user_msg.api_style = Some(api_style.to_string());
-            }
-
-            let history_key =
-                conversation_history_key(&bot_id, sender_id, is_group, inference_event.group_id);
-            let legacy_history_key = sender_id.to_string();
-            let mut history = sanitize_messages_for_inference(load_history(
-                cache,
-                &history_key,
-                &legacy_history_key,
-            ));
-
-            let direct_reply = match intent {
-                IntentCategory::AskSystemPrompt => Some(DIRECT_REPLY_NO_SYSTEM_PROMPT.to_string()),
-                IntentCategory::AskModelName => Some(build_model_name_reply(model_display_names)),
-                IntentCategory::AskToolList => Some(FUNCTION_LIST_TEXT.to_string()),
-                _ => None,
-            };
-
-            if let Some(content) = direct_reply {
-                trace.record_history_stats(history.len(), estimate_messages_tokens(&history));
-                let visible_assistant_history_text = send_direct_text_reply(
+            let mut current_event = event.clone();
+            let mut current_time = time.to_string();
+            let result_summary = loop {
+                let turn_result = self.handle_claimed_turn(
                     trace,
+                    &current_event,
                     adapter,
-                    target_id,
+                    &current_time,
+                    bot_name,
+                    agent_system_prompt,
+                    cache,
+                    llm,
+                    intent_llm,
+                    math_programming_llm,
+                    model_display_names,
                     mysql_ref,
-                    event.group_name.as_deref(),
-                    bot_name,
-                    &bot_id,
-                    &content,
-                    is_group,
+                    weaviate_image_ref,
+                    embedding_model,
+                    tavily,
+                    s3_ref,
                     sender_id,
-                    &inference_event.sender.nickname,
-                    inference_event.sender.card.as_str(),
-                    max_message_length,
-                    reply_batch_builder,
-                )?;
-                history.push(user_msg);
-                if let Some(assistant_text) = visible_assistant_history_text {
-                    let mut assistant_msg = OpenAIMessage::assistant_text(assistant_text);
-                    if let Some(api_style) = selected_llm.api_style() {
-                        assistant_msg.api_style = Some(api_style.to_string());
-                    }
-                    history.push(assistant_msg);
-                }
-                save_history(cache, &history_key, history);
-                let result_summary = format!(
-                    "已直接回复[{sender_id}]，内容：{}",
-                    summarize_task_text(&content, 80)
-                );
-                trace.log_result_summary(&result_summary);
-                return Ok(QqChatHandleReport { result_summary });
-            }
-
-            let compact_result = compact_message_history(
-                selected_llm,
-                history.clone(),
-                compact_context_length,
-                &user_msg,
-            );
-            if compact_result.did_compact {
-                info!(
-                    "{LOG_PREFIX} history compacted for {history_key}: tokens {} -> {}",
-                    compact_result.estimated_tokens_before, compact_result.estimated_tokens_after
-                );
-                history = compact_result.messages;
-                save_history(cache, &history_key, history.clone());
-            }
-            trace.record_history_stats(history.len(), estimate_messages_tokens(&history));
-
-            let system_prompt = if is_group {
-                let group_name = inference_event.group_name.as_deref().unwrap_or("未知");
-                build_group_system_prompt(
-                    bot_name,
-                    &bot_id,
-                    time,
-                    sender_id,
-                    &sender_display_name(
-                        &inference_event.sender.nickname,
-                        &inference_event.sender.card,
-                    ),
-                    group_name,
                     target_id,
-                    agent_system_prompt,
-                )
-            } else {
-                build_private_system_prompt(
-                    bot_name,
-                    &bot_id,
-                    time,
-                    sender_id,
-                    &sender_display_name(
-                        &inference_event.sender.nickname,
-                        &inference_event.sender.card,
-                    ),
-                    agent_system_prompt,
-                )
-            };
-            let system_msg = OpenAIMessage::system(system_prompt);
-            let priming_msg = build_output_contract_priming_message();
-
-            let mut shared_runtime_values = shared_runtime_values;
-            shared_runtime_values.insert(
-                QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
-                DataValue::MessageEvent(inference_event.clone()),
-            );
-            let adapter_handle: zihuan_core::ims_bot_adapter::BotAdapterHandle = adapter.clone();
-            shared_runtime_values.insert(
-                QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT.to_string(),
-                DataValue::BotAdapterRef(adapter_handle),
-            );
-
-            let mut conversation: Vec<OpenAIMessage> = Vec::with_capacity(history.len() + 3);
-            conversation.push(system_msg);
-            conversation.push(priming_msg);
-            conversation.extend(history.iter().cloned());
-            conversation.push(user_msg.clone());
-            let conversation = downgrade_messages_for_model(
-                conversation,
-                selected_llm.supports_multimodal_input(),
-            );
-            let prompt_tokens_estimated = estimate_messages_tokens(&conversation);
-            trace.log_llm_conversation(&conversation, prompt_tokens_estimated);
-
-            let mut brain = Brain::new(selected_llm.clone());
-            brain.set_observer(Arc::new(QqChatBrainObserver {
-                trace: trace.clone(),
-            }));
-
-            if self.is_default_tool_enabled(DEFAULT_TOOL_WEB_SEARCH) {
-                brain = brain.with_tool(WebSearchBrainTool {
-                    tavily_ref: tavily.clone(),
-                    adapter: Some(adapter.clone()),
-                    target_id: target_id.to_string(),
-                    mention_target_id: if is_group {
-                        Some(sender_id.to_string())
-                    } else {
-                        None
-                    },
                     is_group,
-                });
-            }
-
-            if self.is_default_tool_enabled(DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO) {
-                brain = brain.with_tool(GetAgentPublicInfoBrainTool {
-                    message: current_message,
-                });
-            }
-
-            if self.is_default_tool_enabled(DEFAULT_TOOL_GET_FUNCTION_LIST) {
-                brain = brain.with_tool(GetFunctionListBrainTool);
-            }
-
-            if self.is_default_tool_enabled(DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES) {
-                brain = brain.with_tool(GetRecentGroupMessagesBrainTool {
-                    mysql_ref: mysql_ref.cloned(),
-                    adapter: Some(adapter.clone()),
-                    target_id: target_id.to_string(),
-                    mention_target_id: if is_group {
-                        Some(sender_id.to_string())
-                    } else {
-                        None
-                    },
-                    is_group,
-                });
-            }
-
-            if self.is_default_tool_enabled(DEFAULT_TOOL_GET_RECENT_USER_MESSAGES) {
-                brain = brain.with_tool(GetRecentUserMessagesBrainTool {
-                    mysql_ref: mysql_ref.cloned(),
-                    adapter: Some(adapter.clone()),
-                    target_id: target_id.to_string(),
-                    mention_target_id: if is_group {
-                        Some(sender_id.to_string())
-                    } else {
-                        None
-                    },
-                    is_group,
-                });
-            }
-
-            if self.is_default_tool_enabled(DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES) {
-                brain = brain.with_tool(SearchSimilarImagesBrainTool {
-                    weaviate_image_ref: weaviate_image_ref.cloned(),
-                    embedding_model: embedding_model.cloned(),
-                    tavily_ref: tavily.clone(),
-                    s3_ref: s3_ref.cloned(),
-                    adapter: Some(adapter.clone()),
-                    target_id: target_id.to_string(),
-                    mention_target_id: if is_group {
-                        Some(sender_id.to_string())
-                    } else {
-                        None
-                    },
-                    is_group,
-                });
-            }
-
-            for tool_def in &self.tool_definitions {
-                brain.add_tool(EditableQqAgentTool {
-                    runner: ToolSubgraphRunner {
-                        node_id: self.id.clone(),
-                        owner_node_type: QQ_AGENT_TOOL_OWNER_TYPE.to_string(),
-                        shared_inputs: self.shared_inputs.clone(),
-                        definition: tool_def.clone(),
-                        shared_runtime_values: shared_runtime_values.clone(),
-                        result_mode: ToolResultMode::SingleString,
-                    },
-                });
-            }
-
-            trace.mark_llm_request_started();
-            let (brain_output, stop_reason) = brain.run(conversation);
-            trace.record_llm_final_result(&stop_reason, &brain_output);
-            let completion_tokens_estimated = estimate_messages_tokens(&brain_output);
-            trace.record_token_usage(completion_tokens_estimated);
-
-            let last_assistant = brain_output.iter().rev().find(|message| {
-                matches!(message.role, zihuan_core::llm::MessageRole::Assistant)
-                    && message.tool_calls.is_empty()
-            });
-            let final_assistant_text = last_assistant
-                .and_then(|message| message.content_text())
-                .map(str::trim)
-                .filter(|content| !content.is_empty())
-                .map(ToOwned::to_owned);
-            let final_assistant_text = match stop_reason {
-                BrainStopReason::TransportError(_) => None,
-                _ => final_assistant_text,
-            };
-            trace.record_llm_result_parsed(final_assistant_text.as_deref());
-
-            let available_media = collect_available_media_from_brain_output(&brain_output);
-            let mut visible_assistant_history_text = None;
-
-            if let Some(content) = final_assistant_text {
-                let reply_result = build_reply_result(
-                    &content,
-                    is_group,
-                    sender_id,
-                    &inference_event.sender.nickname,
-                    inference_event.sender.card.as_str(),
-                    &bot_id,
-                    bot_name,
                     max_message_length,
-                    Some(inference_event.message_id),
-                    available_media,
+                    compact_context_length,
+                    max_steer_count,
                     reply_batch_builder,
+                    shared_runtime_values.clone(),
+                    pending_steer,
+                    &bot_id,
                 )?;
 
-                trace.mark_reply_send_started();
-                if reply_result.suppress_send {
-                    trace.record_reply_send(true, false, &reply_result.batches);
-                } else if !reply_result.batches.is_empty() {
-                    let persistence = build_outbound_persistence(
-                        mysql_ref,
-                        event.group_name.as_deref(),
-                        bot_name,
-                    );
-                    if is_group {
-                        send_group_batches_with_persistence(
-                            adapter,
-                            target_id,
-                            &reply_result.batches,
-                            &persistence,
-                        );
-                    } else {
-                        send_friend_batches_with_persistence(
-                            adapter,
-                            target_id,
-                            &reply_result.batches,
-                            &persistence,
-                        );
-                    }
-                    trace.record_reply_send(false, true, &reply_result.batches);
-                    visible_assistant_history_text = Some(content);
-                } else {
-                    trace.record_reply_send(false, false, &reply_result.batches);
-                    warn!("{LOG_PREFIX} Brain finished with empty sendable reply content");
-                }
-            } else {
-                match stop_reason {
-                    BrainStopReason::TransportError(ref err) => {
-                        warn!("{LOG_PREFIX} Brain transport error without reply: {err}");
-                    }
-                    BrainStopReason::MaxIterationsReached => {
-                        warn!("{LOG_PREFIX} Brain exceeded max tool iterations without reply");
-                    }
-                    BrainStopReason::Done => {
-                        warn!("{LOG_PREFIX} Brain finished without any sendable reply content");
-                    }
-                }
-            }
+                let Some((next_event, remaining_queue_len, accepted_steer_count)) =
+                    pending_steer.pop_oldest(sender_id)
+                else {
+                    break turn_result.result_summary;
+                };
 
-            history.push(user_msg);
-            if let Some(ref assistant_text) = visible_assistant_history_text {
-                let mut assistant_msg = OpenAIMessage::assistant_text(assistant_text.clone());
-                if let Some(api_style) = selected_llm.api_style() {
-                    assistant_msg.api_style = Some(api_style.to_string());
-                }
-                history.push(assistant_msg);
-            }
-            save_history(cache, &history_key, history);
-
-            let result_summary = if let Some(ref assistant_text) = visible_assistant_history_text {
-                format!(
-                    "已回复[{sender_id}]，内容：{}",
-                    summarize_task_text(assistant_text, 80)
-                )
-            } else if matches!(stop_reason, BrainStopReason::TransportError(_)) {
-                format!("回复[{sender_id}]失败：模型请求异常")
-            } else {
-                format!("已处理[{sender_id}]的消息，但未发送回复")
+                let next_inference_event = expand_event_for_inference(&next_event.event);
+                let next_message =
+                    extract_user_message_text(&next_inference_event, &bot_id, bot_name);
+                trace.record_steer_follow_up(
+                    next_event.event.message_id,
+                    accepted_steer_count,
+                    max_steer_count,
+                    &next_message,
+                );
+                info!(
+                    "{LOG_PREFIX} steer follow-up picked for sender={} message_id={} remaining_queue_len={} accepted_steer_count={}/{} message={}",
+                    sender_id,
+                    next_event.event.message_id,
+                    remaining_queue_len,
+                    accepted_steer_count,
+                    max_steer_count,
+                    truncate_for_log(&next_message, LOG_TEXT_PREVIEW_CHARS)
+                );
+                current_event = next_event.event;
+                current_time = next_event.time;
             };
-            trace.log_result_summary(&result_summary);
 
             Ok(QqChatHandleReport { result_summary })
         })()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn handle_claimed_turn(
+        &self,
+        trace: &QqChatTaskTrace,
+        event: &ims_bot_adapter::models::MessageEvent,
+        adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
+        time: &str,
+        bot_name: &str,
+        agent_system_prompt: Option<&str>,
+        cache: &Arc<OpenAIMessageSessionCacheRef>,
+        llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
+        intent_llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
+        math_programming_llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
+        model_display_names: &[String],
+        mysql_ref: Option<&Arc<MySqlConfig>>,
+        weaviate_image_ref: Option<&Arc<WeaviateRef>>,
+        embedding_model: Option<&Arc<dyn EmbeddingBase>>,
+        tavily: &Arc<TavilyRef>,
+        s3_ref: Option<&Arc<S3Ref>>,
+        sender_id: &str,
+        target_id: &str,
+        is_group: bool,
+        max_message_length: usize,
+        compact_context_length: usize,
+        max_steer_count: usize,
+        reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
+        shared_runtime_values: HashMap<String, DataValue>,
+        pending_steer: &Arc<PendingSteerStore>,
+        bot_id: &str,
+    ) -> Result<QqChatTurnResult> {
+        let inference_event = expand_event_for_inference(event);
+        let raw_user_message = extract_user_message_text(event, bot_id, bot_name);
+        let current_message = extract_user_message_text(&inference_event, bot_id, bot_name);
+        trace.log_user_message(&raw_user_message, &current_message);
+
+        let intent_trace =
+            classify_intent_with_trace(intent_llm, embedding_model, &current_message);
+        let intent = intent_trace.category;
+        trace.record_intent(intent_trace);
+
+        let selected_llm = match intent {
+            IntentCategory::SolveComplexProblem | IntentCategory::WriteCode => math_programming_llm,
+            _ => llm,
+        };
+        let user_msg = message_with_api_style(
+            build_user_message(
+                &inference_event,
+                bot_id,
+                bot_name,
+                selected_llm.supports_multimodal_input(),
+                s3_ref,
+            ),
+            selected_llm.api_style(),
+        );
+
+        let history_key =
+            conversation_history_key(bot_id, sender_id, is_group, inference_event.group_id);
+        let legacy_history_key = sender_id.to_string();
+        let mut history =
+            sanitize_messages_for_inference(load_history(cache, &history_key, &legacy_history_key));
+
+        let direct_reply = match intent {
+            IntentCategory::AskSystemPrompt => Some(DIRECT_REPLY_NO_SYSTEM_PROMPT.to_string()),
+            IntentCategory::AskModelName => Some(build_model_name_reply(model_display_names)),
+            IntentCategory::AskToolList => Some(FUNCTION_LIST_TEXT.to_string()),
+            _ => None,
+        };
+
+        if let Some(content) = direct_reply {
+            trace.record_history_stats(history.len(), estimate_messages_tokens(&history));
+            let visible_assistant_history_text = send_direct_text_reply(
+                trace,
+                adapter,
+                target_id,
+                mysql_ref,
+                event.group_name.as_deref(),
+                bot_name,
+                bot_id,
+                &content,
+                is_group,
+                sender_id,
+                &inference_event.sender.nickname,
+                inference_event.sender.card.as_str(),
+                max_message_length,
+                reply_batch_builder,
+            )?;
+            history.push(user_msg);
+            if let Some(assistant_text) = visible_assistant_history_text {
+                history.push(message_with_api_style(
+                    OpenAIMessage::assistant_text(assistant_text),
+                    selected_llm.api_style(),
+                ));
+            }
+            save_history(cache, &history_key, history);
+            let result_summary = format!(
+                "已直接回复[{sender_id}]，内容：{}",
+                summarize_task_text(&content, 80)
+            );
+            trace.log_result_summary(&result_summary);
+            return Ok(QqChatTurnResult { result_summary });
+        }
+
+        let compact_result = compact_message_history(
+            selected_llm,
+            history.clone(),
+            compact_context_length,
+            &user_msg,
+        );
+        if compact_result.did_compact {
+            info!(
+                "{LOG_PREFIX} history compacted for {history_key}: tokens {} -> {}",
+                compact_result.estimated_tokens_before, compact_result.estimated_tokens_after
+            );
+            history = compact_result.messages;
+            save_history(cache, &history_key, history.clone());
+        }
+        trace.record_history_stats(history.len(), estimate_messages_tokens(&history));
+
+        let system_prompt = if is_group {
+            let group_name = inference_event.group_name.as_deref().unwrap_or("未知");
+            build_group_system_prompt(
+                bot_name,
+                bot_id,
+                time,
+                sender_id,
+                &sender_display_name(
+                    &inference_event.sender.nickname,
+                    &inference_event.sender.card,
+                ),
+                group_name,
+                target_id,
+                agent_system_prompt,
+            )
+        } else {
+            build_private_system_prompt(
+                bot_name,
+                bot_id,
+                time,
+                sender_id,
+                &sender_display_name(
+                    &inference_event.sender.nickname,
+                    &inference_event.sender.card,
+                ),
+                agent_system_prompt,
+            )
+        };
+        let system_msg = OpenAIMessage::system(system_prompt);
+        let priming_msg = build_output_contract_priming_message();
+
+        let mut shared_runtime_values = shared_runtime_values;
+        shared_runtime_values.insert(
+            QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
+            DataValue::MessageEvent(inference_event.clone()),
+        );
+        let adapter_handle: zihuan_core::ims_bot_adapter::BotAdapterHandle = adapter.clone();
+        shared_runtime_values.insert(
+            QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT.to_string(),
+            DataValue::BotAdapterRef(adapter_handle),
+        );
+
+        let mut conversation: Vec<OpenAIMessage> = Vec::with_capacity(history.len() + 3);
+        conversation.push(system_msg);
+        conversation.push(priming_msg);
+        conversation.extend(history.iter().cloned());
+        conversation.push(user_msg.clone());
+        let conversation =
+            downgrade_messages_for_model(conversation, selected_llm.supports_multimodal_input());
+        let prompt_tokens_estimated = estimate_messages_tokens(&conversation);
+        trace.log_llm_conversation(&conversation, prompt_tokens_estimated);
+
+        let consumed_steer_messages = Arc::new(Mutex::new(Vec::new()));
+        let mut brain = Brain::new(selected_llm.clone());
+        brain.set_observer(Arc::new(QqChatBrainObserver {
+            trace: trace.clone(),
+        }));
+        brain.set_iteration_hook(Arc::new(QqChatSteerHook {
+            pending_steer: Arc::clone(pending_steer),
+            sender_id: sender_id.to_string(),
+            bot_id: bot_id.to_string(),
+            bot_name: bot_name.to_string(),
+            max_steer_count,
+            llm_supports_multimodal_input: selected_llm.supports_multimodal_input(),
+            llm_api_style: selected_llm.api_style().map(ToOwned::to_owned),
+            s3_ref: s3_ref.cloned(),
+            trace: trace.clone(),
+            consumed_messages: Arc::clone(&consumed_steer_messages),
+        }));
+
+        if self.is_default_tool_enabled(DEFAULT_TOOL_WEB_SEARCH) {
+            brain = brain.with_tool(WebSearchBrainTool {
+                tavily_ref: tavily.clone(),
+                adapter: Some(adapter.clone()),
+                target_id: target_id.to_string(),
+                mention_target_id: if is_group {
+                    Some(sender_id.to_string())
+                } else {
+                    None
+                },
+                is_group,
+            });
+        }
+
+        if self.is_default_tool_enabled(DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO) {
+            brain = brain.with_tool(GetAgentPublicInfoBrainTool {
+                message: current_message,
+            });
+        }
+
+        if self.is_default_tool_enabled(DEFAULT_TOOL_GET_FUNCTION_LIST) {
+            brain = brain.with_tool(GetFunctionListBrainTool);
+        }
+
+        if self.is_default_tool_enabled(DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES) {
+            brain = brain.with_tool(GetRecentGroupMessagesBrainTool {
+                mysql_ref: mysql_ref.cloned(),
+                adapter: Some(adapter.clone()),
+                target_id: target_id.to_string(),
+                mention_target_id: if is_group {
+                    Some(sender_id.to_string())
+                } else {
+                    None
+                },
+                is_group,
+            });
+        }
+
+        if self.is_default_tool_enabled(DEFAULT_TOOL_GET_RECENT_USER_MESSAGES) {
+            brain = brain.with_tool(GetRecentUserMessagesBrainTool {
+                mysql_ref: mysql_ref.cloned(),
+                adapter: Some(adapter.clone()),
+                target_id: target_id.to_string(),
+                mention_target_id: if is_group {
+                    Some(sender_id.to_string())
+                } else {
+                    None
+                },
+                is_group,
+            });
+        }
+
+        if self.is_default_tool_enabled(DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES) {
+            brain = brain.with_tool(SearchSimilarImagesBrainTool {
+                weaviate_image_ref: weaviate_image_ref.cloned(),
+                embedding_model: embedding_model.cloned(),
+                tavily_ref: tavily.clone(),
+                s3_ref: s3_ref.cloned(),
+                adapter: Some(adapter.clone()),
+                target_id: target_id.to_string(),
+                mention_target_id: if is_group {
+                    Some(sender_id.to_string())
+                } else {
+                    None
+                },
+                is_group,
+            });
+        }
+
+        for tool_def in &self.tool_definitions {
+            brain.add_tool(EditableQqAgentTool {
+                runner: ToolSubgraphRunner {
+                    node_id: self.id.clone(),
+                    owner_node_type: QQ_AGENT_TOOL_OWNER_TYPE.to_string(),
+                    shared_inputs: self.shared_inputs.clone(),
+                    definition: tool_def.clone(),
+                    shared_runtime_values: shared_runtime_values.clone(),
+                    result_mode: ToolResultMode::SingleString,
+                },
+            });
+        }
+
+        trace.mark_llm_request_started();
+        let (brain_output, stop_reason) = brain.run(conversation);
+        trace.record_llm_final_result(&stop_reason, &brain_output);
+        let completion_tokens_estimated = estimate_messages_tokens(&brain_output);
+        trace.record_token_usage(completion_tokens_estimated);
+
+        let last_assistant = brain_output.iter().rev().find(|message| {
+            matches!(message.role, zihuan_core::llm::MessageRole::Assistant)
+                && message.tool_calls.is_empty()
+        });
+        let final_assistant_text = last_assistant
+            .and_then(|message| message.content_text())
+            .map(str::trim)
+            .filter(|content| !content.is_empty())
+            .map(ToOwned::to_owned);
+        let final_assistant_text = match stop_reason {
+            BrainStopReason::TransportError(_) => None,
+            _ => final_assistant_text,
+        };
+        trace.record_llm_result_parsed(final_assistant_text.as_deref());
+
+        let available_media = collect_available_media_from_brain_output(&brain_output);
+        let mut visible_assistant_history_text = None;
+
+        if let Some(content) = final_assistant_text {
+            let reply_result = build_reply_result(
+                &content,
+                is_group,
+                sender_id,
+                &inference_event.sender.nickname,
+                inference_event.sender.card.as_str(),
+                bot_id,
+                bot_name,
+                max_message_length,
+                Some(inference_event.message_id),
+                available_media,
+                reply_batch_builder,
+            )?;
+
+            trace.mark_reply_send_started();
+            if reply_result.suppress_send {
+                trace.record_reply_send(true, false, &reply_result.batches);
+            } else if !reply_result.batches.is_empty() {
+                let persistence =
+                    build_outbound_persistence(mysql_ref, event.group_name.as_deref(), bot_name);
+                if is_group {
+                    send_group_batches_with_persistence(
+                        adapter,
+                        target_id,
+                        &reply_result.batches,
+                        &persistence,
+                    );
+                } else {
+                    send_friend_batches_with_persistence(
+                        adapter,
+                        target_id,
+                        &reply_result.batches,
+                        &persistence,
+                    );
+                }
+                trace.record_reply_send(false, true, &reply_result.batches);
+                visible_assistant_history_text = Some(content);
+            } else {
+                trace.record_reply_send(false, false, &reply_result.batches);
+                warn!("{LOG_PREFIX} Brain finished with empty sendable reply content");
+            }
+        } else {
+            match stop_reason {
+                BrainStopReason::TransportError(ref err) => {
+                    warn!("{LOG_PREFIX} Brain transport error without reply: {err}");
+                }
+                BrainStopReason::MaxIterationsReached => {
+                    warn!("{LOG_PREFIX} Brain exceeded max tool iterations without reply");
+                }
+                BrainStopReason::Done => {
+                    warn!("{LOG_PREFIX} Brain finished without any sendable reply content");
+                }
+            }
+        }
+
+        history.push(user_msg);
+        history.extend(consumed_steer_messages.lock().unwrap().iter().cloned());
+        if let Some(ref assistant_text) = visible_assistant_history_text {
+            history.push(message_with_api_style(
+                OpenAIMessage::assistant_text(assistant_text.clone()),
+                selected_llm.api_style(),
+            ));
+        }
+        save_history(cache, &history_key, history);
+
+        let result_summary = if let Some(ref assistant_text) = visible_assistant_history_text {
+            format!(
+                "已回复[{sender_id}]，内容：{}",
+                summarize_task_text(assistant_text, 80)
+            )
+        } else if matches!(stop_reason, BrainStopReason::TransportError(_)) {
+            format!("回复[{sender_id}]失败：模型请求异常")
+        } else {
+            format!("已处理[{sender_id}]的消息，但未发送回复")
+        };
+        trace.log_result_summary(&result_summary);
+
+        Ok(QqChatTurnResult { result_summary })
     }
 }
 
@@ -3284,6 +3559,7 @@ pub struct QqChatAgentServiceConfig {
     pub s3_ref: Option<Arc<S3Ref>>,
     pub max_message_length: usize,
     pub compact_context_length: usize,
+    pub max_steer_count: usize,
     pub reply_batch_builder: Option<QqAgentReplyBatchBuilder>,
     pub default_tools_enabled: HashMap<String, bool>,
     pub shared_inputs: Vec<FunctionPortDef>,
@@ -3295,6 +3571,7 @@ pub struct QqChatAgentServiceConfig {
 pub struct QqChatAgentService {
     inner: QqChatAgent,
     config: QqChatAgentServiceConfig,
+    pending_steer: Arc<PendingSteerStore>,
 }
 
 impl QqChatAgentService {
@@ -3303,7 +3580,11 @@ impl QqChatAgentService {
         inner.set_default_tools_enabled(config.default_tools_enabled.clone());
         inner.set_shared_inputs(config.shared_inputs.clone())?;
         inner.set_tool_definitions(config.tool_definitions.clone())?;
-        Ok(Self { inner, config })
+        Ok(Self {
+            inner,
+            config,
+            pending_steer: Arc::new(PendingSteerStore::default()),
+        })
     }
 
     pub fn handle_event(
@@ -3340,8 +3621,10 @@ impl QqChatAgentService {
                     self.config.s3_ref.as_ref(),
                     self.config.max_message_length,
                     self.config.compact_context_length,
+                    self.config.max_steer_count,
                     self.config.reply_batch_builder.as_ref(),
                     self.config.shared_runtime_values.clone(),
+                    &self.pending_steer,
                     self.config.task_runtime.as_ref(),
                     None,
                 )
@@ -3352,8 +3635,14 @@ impl QqChatAgentService {
 
 #[cfg(test)]
 mod tests {
-    use super::{content_type_from_url, derive_tavily_s3_key};
+    use super::{
+        build_steer_user_message, content_type_from_url, derive_tavily_s3_key, PendingSteerEvent,
+        PendingSteerStore, STEER_PREFIX,
+    };
+    use zihuan_core::ims_bot_adapter::models::event_model::{MessageEvent, MessageType, Sender};
+    use zihuan_core::ims_bot_adapter::models::message::{Message, PlainTextMessage};
     use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
+    use zihuan_core::llm::MessageContent;
 
     #[test]
     fn tavily_s3_key_is_bare_object_key() {
@@ -3382,5 +3671,98 @@ mod tests {
         assert_eq!(media.mime_type.as_deref(), Some("image/webp"));
         assert!(!media.rustfs_path.starts_with("http://"));
         assert!(!media.rustfs_path.starts_with("https://"));
+    }
+
+    #[test]
+    fn pending_steer_store_preserves_arrival_order() {
+        let store = PendingSteerStore::default();
+        let (accepted_first, _, accepted_first_count) = store.enqueue_with_limit(
+            "10001",
+            PendingSteerEvent {
+                event: build_plain_text_event(1, "first"),
+                time: "t1".to_string(),
+            },
+            4,
+        );
+        let (accepted_second, _, accepted_second_count) = store.enqueue_with_limit(
+            "10001",
+            PendingSteerEvent {
+                event: build_plain_text_event(2, "second"),
+                time: "t2".to_string(),
+            },
+            4,
+        );
+
+        let (drained, _, _) = store.drain_all("10001");
+
+        assert!(accepted_first);
+        assert!(accepted_second);
+        assert_eq!(accepted_first_count, 1);
+        assert_eq!(accepted_second_count, 2);
+        assert_eq!(drained.len(), 2);
+        assert_eq!(drained[0].event.message_id, 1);
+        assert_eq!(drained[1].event.message_id, 2);
+    }
+
+    #[test]
+    fn pending_steer_store_enforces_max_steer_count() {
+        let store = PendingSteerStore::default();
+        let sender_id = "10001";
+
+        let mut accepted = Vec::new();
+        for index in 0..5 {
+            accepted.push(store.enqueue_with_limit(
+                sender_id,
+                PendingSteerEvent {
+                    event: build_plain_text_event(index + 1, &format!("msg-{index}")),
+                    time: format!("t-{index}"),
+                },
+                4,
+            ));
+        }
+
+        assert!(accepted[0].0);
+        assert!(accepted[1].0);
+        assert!(accepted[2].0);
+        assert!(accepted[3].0);
+        assert!(!accepted[4].0);
+        assert_eq!(accepted[4].2, 4);
+
+        let (drained, _, accepted_count) = store.drain_all(sender_id);
+        assert_eq!(accepted_count, 4);
+        assert_eq!(drained.len(), 4);
+    }
+
+    #[test]
+    fn steer_user_message_wraps_text_with_prefix() {
+        let event = build_plain_text_event(3, "继续刚才那个问题");
+        let message = build_steer_user_message(&event, "bot", "bot", false, None, None);
+
+        match message.content {
+            Some(MessageContent::Text(text)) => {
+                assert!(text.starts_with(STEER_PREFIX));
+                assert!(text.contains("继续刚才那个问题"));
+            }
+            other => panic!("unexpected steer content: {other:?}"),
+        }
+    }
+
+    fn build_plain_text_event(message_id: i64, text: &str) -> MessageEvent {
+        MessageEvent {
+            message_id,
+            message_type: MessageType::Private,
+            sender: Sender {
+                user_id: 10001,
+                nickname: "tester".to_string(),
+                card: String::new(),
+                role: None,
+            },
+            message_list: vec![Message::PlainText(PlainTextMessage {
+                text: text.to_string(),
+            })],
+            group_id: None,
+            group_name: None,
+            is_group_message: false,
+        }
     }
 }

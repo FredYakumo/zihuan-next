@@ -923,6 +923,7 @@ pub async fn spawn(
         s3_ref: object_storage.clone(),
         max_message_length: config.max_message_length,
         compact_context_length: config.compact_context_length,
+        max_steer_count: config.max_steer_count,
         reply_batch_builder: Some(build_reply_batch_builder()),
         default_tools_enabled: config.default_tools_enabled.clone(),
         shared_inputs: Vec::<FunctionPortDef>::new(),

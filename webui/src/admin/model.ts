@@ -105,6 +105,7 @@ export interface AgentFormState {
   weaviate_image_connection_id: string;
   max_message_length: number;
   compact_context_length: number;
+  max_steer_count: number;
   default_tools_enabled: Record<string, boolean>;
   http_bind: string;
   http_api_key: string;
@@ -235,6 +236,7 @@ export function defaultAgentForm(): AgentFormState {
     weaviate_image_connection_id: "",
     max_message_length: 500,
     compact_context_length: 0,
+    max_steer_count: 4,
     default_tools_enabled: defaultQqChatDefaultToolsEnabled(),
     http_bind: "127.0.0.1:18080",
     http_api_key: "",
@@ -487,6 +489,7 @@ export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): Agen
     form.weaviate_image_connection_id = String(agentType.weaviate_image_connection_id ?? "");
     form.max_message_length = Number(agentType.max_message_length ?? 500);
     form.compact_context_length = Number(agentType.compact_context_length ?? 0);
+    form.max_steer_count = Number(agentType.max_steer_count ?? 4);
     const source = (agentType.default_tools_enabled ?? {}) as Record<string, unknown>;
     form.default_tools_enabled = defaultQqChatDefaultToolsEnabled();
     for (const tool of QQ_CHAT_DEFAULT_TOOLS) {
@@ -579,6 +582,7 @@ export function buildAgentPayload(form: AgentFormState): {
         weaviate_image_connection_id: form.weaviate_image_connection_id || null,
         max_message_length: form.max_message_length,
         compact_context_length: form.compact_context_length,
+        max_steer_count: form.max_steer_count,
         default_tools_enabled: defaultToolsEnabled,
       },
     };

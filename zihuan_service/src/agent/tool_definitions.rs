@@ -220,13 +220,11 @@ fn merge_parameter_descriptions_from_graph(
     parameters
         .iter()
         .map(|param| {
-            let graph_input = inputs
-                .iter()
-                .find(|input| {
-                    reserved_tool_graph_input_type(&input.name).is_none()
-                        && input.name.trim() == param.name.trim()
-                        && input.data_type == param.data_type
-                });
+            let graph_input = inputs.iter().find(|input| {
+                reserved_tool_graph_input_type(&input.name).is_none()
+                    && input.name.trim() == param.name.trim()
+                    && input.data_type == param.data_type
+            });
 
             let mut merged = param.clone();
             if let Some(description) = graph_input
