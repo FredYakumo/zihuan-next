@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 
-use log::{info, warn};
+use log::{debug, info, warn};
 use redis::aio::Connection;
 use redis::AsyncCommands;
 use reqwest::Url;
@@ -34,71 +34,99 @@ pub async fn build_redis_ref(url: &str) -> Result<Arc<RedisConfig>> {
 }
 
 pub async fn set_value(redis_ref: &Arc<RedisConfig>, key: &str, value: &str) -> Result<()> {
-    {
+    let first_error = {
         let mut redis_cm = redis_ref.redis_cm.lock().await;
         let conn = ensure_connection(redis_ref, &mut redis_cm).await?;
         match conn.set::<_, _, ()>(key, value).await {
             Ok(()) => return Ok(()),
-            Err(err) => {
-                warn!(
-                    "[storage_handler][redis] SET failed, reconnecting once for key '{}': {}",
-                    key, err
-                );
-            }
+            Err(err) => err,
         }
-    }
+    };
 
     invalidate_connection(redis_ref).await;
 
     let mut redis_cm = redis_ref.redis_cm.lock().await;
     let conn = ensure_connection(redis_ref, &mut redis_cm).await?;
-    conn.set::<_, _, ()>(key, value).await.map_err(Error::from)
+    match conn.set::<_, _, ()>(key, value).await {
+        Ok(()) => {
+            debug!(
+                "[storage_handler][redis] SET recovered after reconnect for key '{}': {}",
+                key, first_error
+            );
+            Ok(())
+        }
+        Err(err) => {
+            warn!(
+                "[storage_handler][redis] SET failed after reconnect for key '{}': first_error={}, retry_error={}",
+                key, first_error, err
+            );
+            Err(Error::from(err))
+        }
+    }
 }
 
 pub async fn get_value(redis_ref: &Arc<RedisConfig>, key: &str) -> Result<Option<String>> {
-    {
+    let first_error = {
         let mut redis_cm = redis_ref.redis_cm.lock().await;
         let conn = ensure_connection(redis_ref, &mut redis_cm).await?;
         match conn.get(key).await {
             Ok(value) => return Ok(value),
-            Err(err) => {
-                warn!(
-                    "[storage_handler][redis] GET failed, reconnecting once for key '{}': {}",
-                    key, err
-                );
-            }
+            Err(err) => err,
         }
-    }
+    };
 
     invalidate_connection(redis_ref).await;
 
     let mut redis_cm = redis_ref.redis_cm.lock().await;
     let conn = ensure_connection(redis_ref, &mut redis_cm).await?;
-    conn.get(key).await.map_err(Error::from)
+    match conn.get(key).await {
+        Ok(value) => {
+            debug!(
+                "[storage_handler][redis] GET recovered after reconnect for key '{}': {}",
+                key, first_error
+            );
+            Ok(value)
+        }
+        Err(err) => {
+            warn!(
+                "[storage_handler][redis] GET failed after reconnect for key '{}': first_error={}, retry_error={}",
+                key, first_error, err
+            );
+            Err(Error::from(err))
+        }
+    }
 }
 
 pub async fn rpush_value(redis_ref: &Arc<RedisConfig>, key: &str, value: &str) -> Result<()> {
-    {
+    let first_error = {
         let mut redis_cm = redis_ref.redis_cm.lock().await;
         let conn = ensure_connection(redis_ref, &mut redis_cm).await?;
         match conn.rpush::<_, _, ()>(key, value).await {
             Ok(()) => return Ok(()),
-            Err(err) => {
-                warn!(
-                    "[storage_handler][redis] RPUSH failed, reconnecting once for key '{}': {}",
-                    key, err
-                );
-            }
+            Err(err) => err,
         }
-    }
+    };
 
     invalidate_connection(redis_ref).await;
 
     let mut redis_cm = redis_ref.redis_cm.lock().await;
     let conn = ensure_connection(redis_ref, &mut redis_cm).await?;
-    conn.rpush::<_, _, ()>(key, value)
-        .await
-        .map_err(Error::from)
+    match conn.rpush::<_, _, ()>(key, value).await {
+        Ok(()) => {
+            debug!(
+                "[storage_handler][redis] RPUSH recovered after reconnect for key '{}': {}",
+                key, first_error
+            );
+            Ok(())
+        }
+        Err(err) => {
+            warn!(
+                "[storage_handler][redis] RPUSH failed after reconnect for key '{}': first_error={}, retry_error={}",
+                key, first_error, err
+            );
+            Err(Error::from(err))
+        }
+    }
 }
 
 pub async fn blpop_value(
@@ -106,27 +134,35 @@ pub async fn blpop_value(
     key: &str,
     timeout_secs: usize,
 ) -> Result<Option<(String, String)>> {
-    {
+    let first_error = {
         let mut redis_cm = redis_ref.redis_cm.lock().await;
         let conn = ensure_connection(redis_ref, &mut redis_cm).await?;
         match conn.blpop(key, timeout_secs as f64).await {
             Ok(value) => return Ok(value),
-            Err(err) => {
-                warn!(
-                    "[storage_handler][redis] BLPOP failed, reconnecting once for key '{}': {}",
-                    key, err
-                );
-            }
+            Err(err) => err,
         }
-    }
+    };
 
     invalidate_connection(redis_ref).await;
 
     let mut redis_cm = redis_ref.redis_cm.lock().await;
     let conn = ensure_connection(redis_ref, &mut redis_cm).await?;
-    conn.blpop(key, timeout_secs as f64)
-        .await
-        .map_err(Error::from)
+    match conn.blpop(key, timeout_secs as f64).await {
+        Ok(value) => {
+            debug!(
+                "[storage_handler][redis] BLPOP recovered after reconnect for key '{}': {}",
+                key, first_error
+            );
+            Ok(value)
+        }
+        Err(err) => {
+            warn!(
+                "[storage_handler][redis] BLPOP failed after reconnect for key '{}': first_error={}, retry_error={}",
+                key, first_error, err
+            );
+            Err(Error::from(err))
+        }
+    }
 }
 
 pub struct RedisBlockingPopConnection {
@@ -147,25 +183,33 @@ impl RedisBlockingPopConnection {
         key: &str,
         timeout_secs: usize,
     ) -> Result<Option<(String, String)>> {
-        {
+        let first_error = {
             let conn = self.ensure_connection().await?;
             match conn.blpop(key, timeout_secs as f64).await {
                 Ok(value) => return Ok(value),
-                Err(err) => {
-                    warn!(
-                        "[storage_handler][redis] BLPOP failed, reconnecting once for key '{}': {}",
-                        key, err
-                    );
-                }
+                Err(err) => err,
             }
-        }
+        };
 
         self.invalidate_connection();
 
         let conn = self.ensure_connection().await?;
-        conn.blpop(key, timeout_secs as f64)
-            .await
-            .map_err(Error::from)
+        match conn.blpop(key, timeout_secs as f64).await {
+            Ok(value) => {
+                debug!(
+                    "[storage_handler][redis] BLPOP recovered after reconnect for key '{}': {}",
+                    key, first_error
+                );
+                Ok(value)
+            }
+            Err(err) => {
+                warn!(
+                    "[storage_handler][redis] BLPOP failed after reconnect for key '{}': first_error={}, retry_error={}",
+                    key, first_error, err
+                );
+                Err(Error::from(err))
+            }
+        }
     }
 
     async fn ensure_connection(&mut self) -> Result<&mut Connection> {

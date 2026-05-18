@@ -18,6 +18,7 @@ pub fn init_node_registry() -> Result<()> {
     use nodes::agent_rustfs_ref::AgentRustfsRefNode;
     use nodes::agent_tavily_ref::AgentTavilyRefNode;
     use nodes::brain_node::BrainNode;
+    use nodes::tavily_web_search::TavilyWebSearchNode;
 
     register_node!(
         "agent_llm",
@@ -67,6 +68,13 @@ pub fn init_node_registry() -> Result<()> {
         "Agent",
         "从当前 Agent 工具调用上下文中读取 Tavily 连接并输出 TavilyRef",
         AgentTavilyRefNode
+    );
+    register_node!(
+        "tavily_web_search",
+        "Tavily 网页搜索",
+        "工具",
+        "使用 Tavily 搜索网页，或对单个 URL 抽取正文内容",
+        TavilyWebSearchNode
     );
 
     Ok(())

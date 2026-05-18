@@ -1,9 +1,7 @@
 use crate::models::message::MessageProp;
-use base64::Engine;
 use log::{info, warn};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::path::Path;
 use tokio::task::block_in_place;
 use zihuan_core::error::Result;
 use zihuan_core::ims_bot_adapter::logging::{
@@ -13,7 +11,10 @@ use zihuan_core::llm::{ContentPart, OpenAIMessage};
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
 
-use crate::models::message::{ImageMessage, Message};
+use crate::models::message::Message;
+use crate::multimodal_image_url::{
+    resolve_image_message_part, resolve_plain_text_segments, ResolvedTextSegment,
+};
 
 /// Node that converts a MessageEvent to an LLM prompt message list
 ///
@@ -64,22 +65,6 @@ impl ExtractMessageFromEventNode {
             parts.push(ContentPart::text(text.to_string()));
         }
         buffer.clear();
-    }
-
-    fn infer_content_type(file_name: &str) -> &'static str {
-        match Path::new(file_name)
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .map(|ext| ext.to_ascii_lowercase())
-            .as_deref()
-        {
-            Some("jpg") | Some("jpeg") => "image/jpeg",
-            Some("gif") => "image/gif",
-            Some("webp") => "image/webp",
-            Some("bmp") => "image/bmp",
-            Some("svg") => "image/svg+xml",
-            _ => "image/png",
-        }
     }
 
     fn truncate_for_log(text: &str, max_chars: usize) -> String {
@@ -145,186 +130,23 @@ impl ExtractMessageFromEventNode {
         }
     }
 
-    fn image_name(image: &ImageMessage) -> &str {
-        image
-            .name()
-            .or_else(|| {
-                image
-                    .original_source()
-                    .and_then(|path| path.strip_prefix("file://").or(Some(path)))
-                    .and_then(|path| Path::new(path).file_name())
-                    .and_then(|name| name.to_str())
-            })
-            .unwrap_or("image.png")
-    }
-
-    fn image_part_from_bytes(image: &ImageMessage, bytes: Vec<u8>) -> ContentPart {
-        let base64_payload = base64::engine::general_purpose::STANDARD.encode(bytes);
-        ContentPart::image_data_url(
-            image
-                .mime_type()
-                .unwrap_or_else(|| Self::infer_content_type(Self::image_name(image))),
-            base64_payload,
-        )
-    }
-
-    fn image_part_from_object_storage(
-        s3_ref: &S3Ref,
-        object_key: &str,
-        image: &ImageMessage,
-    ) -> Option<ContentPart> {
-        let s3_ref = s3_ref.clone();
-        let key = object_key.to_string();
-        let result = if tokio::runtime::Handle::try_current().is_ok() {
-            block_in_place(|| {
-                tokio::runtime::Handle::current()
-                    .block_on(async move { s3_ref.get_object_bytes(&key).await })
-            })
-        } else {
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .ok()
-                .and_then(|runtime| {
-                    runtime
-                        .block_on(async move { s3_ref.get_object_bytes(&key).await })
-                        .ok()
-                })
-                .ok_or_else(|| {
-                    zihuan_core::error::Error::StringError(
-                        "failed to create runtime for object storage read".to_string(),
-                    )
-                })
-        };
-
-        match result {
-            Ok(bytes) => {
-                info!(
-                    "{} resolved image via object storage object_key={} bytes={}",
-                    Self::LOG_PREFIX,
-                    object_key,
-                    bytes.len()
-                );
-                Some(Self::image_part_from_bytes(image, bytes))
-            }
-            Err(error) => {
-                warn!(
-                    "{} failed to read object storage image for multimodal input object_key={}: {}",
-                    Self::LOG_PREFIX,
-                    object_key,
-                    error
-                );
-                None
+    fn append_plain_text_as_parts(
+        text: &str,
+        parts: &mut Vec<ContentPart>,
+        text_buffer: &mut String,
+        has_media: &mut bool,
+        s3_ref: Option<&S3Ref>,
+    ) {
+        for segment in resolve_plain_text_segments(text, s3_ref, false, Self::LOG_PREFIX) {
+            match segment {
+                ResolvedTextSegment::Text(text) => Self::append_text_segment(text_buffer, &text),
+                ResolvedTextSegment::Image(resolved) => {
+                    Self::flush_text_part(parts, text_buffer);
+                    parts.push(resolved.part);
+                    *has_media = true;
+                }
             }
         }
-    }
-
-    fn image_part_from_local_file(path: &str, image: &ImageMessage) -> Option<ContentPart> {
-        let file_path = Path::new(path);
-        if !file_path.exists() {
-            return None;
-        }
-
-        match std::fs::read(file_path) {
-            Ok(bytes) => Some(Self::image_part_from_bytes(image, bytes)),
-            Err(error) => {
-                warn!(
-                    "{} failed to read image file for multimodal input path={}: {}",
-                    Self::LOG_PREFIX,
-                    path,
-                    error
-                );
-                None
-            }
-        }
-    }
-
-    async fn download_remote_bytes(url: &str) -> Option<Vec<u8>> {
-        let response = match reqwest::Client::new().get(url).send().await {
-            Ok(response) => response,
-            Err(error) => {
-                warn!(
-                    "{} failed to download remote image for multimodal input url={}: {}",
-                    Self::LOG_PREFIX,
-                    url,
-                    error
-                );
-                return None;
-            }
-        };
-
-        if !response.status().is_success() {
-            warn!(
-                "{} remote image returned non-success status for multimodal input url={} status={}",
-                Self::LOG_PREFIX,
-                url,
-                response.status()
-            );
-            return None;
-        }
-
-        match response.bytes().await {
-            Ok(bytes) => Some(bytes.to_vec()),
-            Err(error) => {
-                warn!(
-                    "{} failed to read remote image body for multimodal input url={}: {}",
-                    Self::LOG_PREFIX,
-                    url,
-                    error
-                );
-                None
-            }
-        }
-    }
-
-    fn image_part_from_remote_url(url: &str, image: &ImageMessage) -> Option<ContentPart> {
-        let bytes = if tokio::runtime::Handle::try_current().is_ok() {
-            block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(Self::download_remote_bytes(url))
-            })
-        } else {
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .ok()
-                .and_then(|runtime| runtime.block_on(Self::download_remote_bytes(url)))
-        }?;
-
-        Some(Self::image_part_from_bytes(image, bytes))
-    }
-
-    fn image_part(image: &ImageMessage, s3_ref: Option<&S3Ref>) -> Option<ContentPart> {
-        if let Some(local_path) = image
-            .original_source()
-            .and_then(|value| value.strip_prefix("file://").or(Some(value)))
-        {
-            if let Some(part) = Self::image_part_from_local_file(local_path, image) {
-                return Some(part);
-            }
-        }
-
-        if let (Some(s3_ref), Some(object_key)) = (s3_ref, image.rustfs_path()) {
-            if let Some(part) = Self::image_part_from_object_storage(s3_ref, object_key, image) {
-                return Some(part);
-            }
-        }
-
-        if let Some(direct_url) = image.original_source() {
-            if direct_url.starts_with("data:") {
-                return Some(ContentPart::image_url_string(direct_url.to_string()));
-            }
-
-            if let Some(part) = Self::image_part_from_remote_url(direct_url, image) {
-                return Some(part);
-            }
-        }
-
-        warn!(
-            "{} skipping multimodal image because no safe source could be resolved: {}",
-            Self::LOG_PREFIX,
-            image
-        );
-        None
     }
 
     /// Purpose: Recursively process a list of messages, <br />
@@ -340,12 +162,20 @@ impl ExtractMessageFromEventNode {
         for message in messages {
             match message {
                 Message::PlainText(plain) => {
-                    Self::append_text_segment(text_buffer, &plain.text);
+                    Self::append_plain_text_as_parts(
+                        &plain.text,
+                        parts,
+                        text_buffer,
+                        has_media,
+                        s3_ref,
+                    );
                 }
                 Message::Image(image) => {
-                    if let Some(part) = Self::image_part(image, s3_ref) {
+                    if let Some(resolved) =
+                        resolve_image_message_part(image, s3_ref, false, Self::LOG_PREFIX)
+                    {
                         Self::flush_text_part(parts, text_buffer);
-                        parts.push(part);
+                        parts.push(resolved.part);
                         *has_media = true;
                     } else {
                         Self::append_text_segment(text_buffer, &image.to_string());
@@ -514,21 +344,52 @@ impl ExtractMessageFromEventNode {
 #[cfg(test)]
 mod tests {
     use super::ExtractMessageFromEventNode;
-    use crate::models::message::{ImageMessage, PersistedMedia, PersistedMediaSource};
+    use crate::models::message::{
+        ImageMessage, Message, PersistedMedia, PersistedMediaSource, PlainTextMessage,
+    };
+    use zihuan_core::llm::{ContentPart, MessageContent};
 
     #[test]
-    fn image_part_uses_known_mime_type_even_without_filename_extension() {
-        let image = ImageMessage::new(PersistedMedia::new(
+    fn build_user_message_keeps_non_image_url_as_text() {
+        let message = ExtractMessageFromEventNode::build_extracted_message_outputs(
+            &[Message::PlainText(PlainTextMessage {
+                text: "看这个链接 https://example.com/page.html".to_string(),
+            })],
+            "bot",
+            None,
+        )
+        .user_message;
+
+        match message.content.as_ref() {
+            Some(MessageContent::Text(text)) => {
+                assert!(text.contains("https://example.com/page.html"));
+            }
+            other => panic!("expected text content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_user_message_parses_data_url_image_message() {
+        let image = Message::Image(ImageMessage::new(PersistedMedia::new(
             PersistedMediaSource::QqChat,
-            "file://dummy",
+            "data:image/png;base64,AA==",
             "qq-images/test",
             Some("download".to_string()),
             None,
-            Some("image/jpeg".to_string()),
-        ));
-        let part = ExtractMessageFromEventNode::image_part_from_bytes(&image, vec![0xFF, 0xD8]);
-        let serialized = serde_json::to_string(&part).expect("serialize part");
-        assert!(serialized.contains("data:image/jpeg;base64,"));
+            Some("image/png".to_string()),
+        )));
+        let message =
+            ExtractMessageFromEventNode::build_extracted_message_outputs(&[image], "bot", None)
+                .user_message;
+
+        match message.content.as_ref() {
+            Some(MessageContent::Parts(parts)) => {
+                assert!(parts
+                    .iter()
+                    .any(|part| matches!(part, ContentPart::ImageUrl { .. })));
+            }
+            other => panic!("expected multipart content, got {other:?}"),
+        }
     }
 }
 

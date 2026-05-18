@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use storage_handler::redis::{RedisBlockingPopConnection, rpush_value};
+use storage_handler::redis::{rpush_value, RedisBlockingPopConnection};
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
