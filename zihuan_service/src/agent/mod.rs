@@ -8,6 +8,7 @@ mod classify_intent;
 mod qq_chat_agent_core;
 mod qq_chat_agent_inbox;
 mod qq_chat_agent_logging;
+mod tools;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
