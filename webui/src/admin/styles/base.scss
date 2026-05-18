@@ -675,4 +675,8 @@ code {
   .form-grid {
     grid-template-columns: 1fr;
   }
+
+  .split-header {
+    flex-wrap: wrap;
+  }
 }
