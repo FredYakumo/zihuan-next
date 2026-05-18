@@ -129,6 +129,64 @@ pub async fn blpop_value(
         .map_err(Error::from)
 }
 
+pub struct RedisBlockingPopConnection {
+    redis_ref: Arc<RedisConfig>,
+    conn: Option<Connection>,
+}
+
+impl RedisBlockingPopConnection {
+    pub fn new(redis_ref: Arc<RedisConfig>) -> Self {
+        Self {
+            redis_ref,
+            conn: None,
+        }
+    }
+
+    pub async fn blpop_value(
+        &mut self,
+        key: &str,
+        timeout_secs: usize,
+    ) -> Result<Option<(String, String)>> {
+        {
+            let conn = self.ensure_connection().await?;
+            match conn.blpop(key, timeout_secs as f64).await {
+                Ok(value) => return Ok(value),
+                Err(err) => {
+                    warn!(
+                        "[storage_handler][redis] BLPOP failed, reconnecting once for key '{}': {}",
+                        key, err
+                    );
+                }
+            }
+        }
+
+        self.invalidate_connection();
+
+        let conn = self.ensure_connection().await?;
+        conn.blpop(key, timeout_secs as f64)
+            .await
+            .map_err(Error::from)
+    }
+
+    async fn ensure_connection(&mut self) -> Result<&mut Connection> {
+        if self.conn.is_none() {
+            let url = self
+                .redis_ref
+                .url
+                .clone()
+                .ok_or_else(|| zihuan_core::string_error!("redis_ref missing url"))?;
+            self.conn = Some(connect(&url).await?);
+        }
+        self.conn
+            .as_mut()
+            .ok_or_else(|| zihuan_core::string_error!("redis connection unavailable"))
+    }
+
+    fn invalidate_connection(&mut self) {
+        self.conn = None;
+    }
+}
+
 async fn connect(url: &str) -> Result<Connection> {
     let client = redis::Client::open(url)?;
     client.get_tokio_connection().await.map_err(Error::from)

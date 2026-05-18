@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use storage_handler::redis::{blpop_value, rpush_value};
+use storage_handler::redis::{RedisBlockingPopConnection, rpush_value};
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
@@ -191,8 +191,14 @@ impl QqChatAgentInbox {
         if self.inner.redis_ref.is_some() {
             for consumer_idx in 0..self.inner.consumer_count {
                 let inbox = self.clone();
+                let redis_blpop = self
+                    .inner
+                    .redis_ref
+                    .as_ref()
+                    .map(|redis_ref| RedisBlockingPopConnection::new(Arc::clone(redis_ref)))
+                    .expect("redis consumer requires redis_ref");
                 tasks.spawn(async move {
-                    inbox.run_redis_consumer(consumer_idx).await;
+                    inbox.run_redis_consumer(consumer_idx, redis_blpop).await;
                     QqChatAgentSupervisorEvent::RedisConsumerFinished
                 });
             }
@@ -220,12 +226,19 @@ impl QqChatAgentInbox {
         Ok(())
     }
 
-    async fn run_redis_consumer(&self, consumer_idx: usize) {
+    async fn run_redis_consumer(
+        &self,
+        consumer_idx: usize,
+        mut redis_blpop: RedisBlockingPopConnection,
+    ) {
         loop {
             if self.inner.shutdown.is_closing() {
                 break;
             }
-            match self.dequeue_from_redis().await {
+            match self
+                .dequeue_from_redis(consumer_idx, &mut redis_blpop)
+                .await
+            {
                 Ok(Some(item)) => {
                     self.process_item(item).await;
                 }
@@ -260,16 +273,20 @@ impl QqChatAgentInbox {
         }
     }
 
-    async fn dequeue_from_redis(&self) -> Result<Option<QqChatAgentInboxItem>> {
-        let Some(redis_ref) = self.inner.redis_ref.as_ref() else {
-            return Ok(None);
-        };
-        let result = blpop_value(
-            redis_ref,
-            &self.inner.redis_queue_key,
-            REDIS_DEQUEUE_TIMEOUT_SECS,
-        )
-        .await?;
+    async fn dequeue_from_redis(
+        &self,
+        consumer_idx: usize,
+        redis_blpop: &mut RedisBlockingPopConnection,
+    ) -> Result<Option<QqChatAgentInboxItem>> {
+        let result = redis_blpop
+            .blpop_value(&self.inner.redis_queue_key, REDIS_DEQUEUE_TIMEOUT_SECS)
+            .await
+            .map_err(|err| {
+                zihuan_core::error::Error::StringError(format!(
+                    "redis consumer {} failed to BLPOP from '{}': {}",
+                    consumer_idx, self.inner.redis_queue_key, err
+                ))
+            })?;
         let Some((_, payload)) = result else {
             return Ok(None);
         };
