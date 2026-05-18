@@ -72,6 +72,61 @@
       <div v-else-if="storageError" class="empty-state">{{ storageError }}</div>
     </section>
 
+    <!-- Config backup / restore -->
+    <section class="panel settings-section">
+      <div class="split-header">
+        <div>
+          <h3>配置备份</h3>
+          <p class="muted">导出或恢复连接配置、模型配置等所有系统配置。</p>
+        </div>
+      </div>
+
+      <div class="settings-backup-body">
+        <!-- Export -->
+        <div class="settings-backup-row">
+          <div class="settings-backup-desc">
+            <strong>导出配置</strong>
+            <span class="muted">将当前所有配置导出为 zip 包，文件名附带机器名和当前时间。</span>
+          </div>
+          <button class="btn primary" @click="handleExportConfig">导出配置</button>
+        </div>
+
+        <!-- Restore -->
+        <div class="settings-backup-row">
+          <div class="settings-backup-desc">
+            <strong>恢复配置</strong>
+            <span class="muted">选择之前导出的配置 zip 包以覆盖当前配置（当前配置会自动备份为 .bak 文件）。</span>
+          </div>
+          <div class="settings-backup-restore-controls">
+            <label class="btn ghost settings-backup-file-label">
+              {{ restoreFileName ?? "选择 zip 文件…" }}
+              <input
+                ref="restoreFileInput"
+                type="file"
+                accept=".zip"
+                class="settings-backup-file-input"
+                @change="handleRestoreFileChange"
+              />
+            </label>
+            <button
+              class="btn primary"
+              :disabled="!restoreFile || restoreLoading"
+              @click="handleRestoreConfig"
+            >
+              {{ restoreLoading ? "恢复中…" : "恢复配置" }}
+            </button>
+          </div>
+        </div>
+
+        <div v-if="restoreSuccess" class="settings-backup-feedback settings-backup-feedback--ok">
+          配置已成功恢复，请重启服务以使新配置生效。
+        </div>
+        <div v-if="restoreError" class="settings-backup-feedback settings-backup-feedback--err">
+          {{ restoreError }}
+        </div>
+      </div>
+    </section>
+
     <!-- Local model files -->
     <section
       v-for="group in modelGroups"
@@ -247,6 +302,64 @@ function formatBytes(bytes: number): string {
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
+
+// ─── Config backup / restore ──────────────────────────────────────────────────
+
+const restoreFileInput = ref<HTMLInputElement | null>(null);
+const restoreFile = ref<File | null>(null);
+const restoreFileName = ref<string | null>(null);
+const restoreLoading = ref(false);
+const restoreError = ref<string | null>(null);
+const restoreSuccess = ref(false);
+
+function handleRestoreFileChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0] ?? null;
+  restoreFile.value = file;
+  restoreFileName.value = file?.name ?? null;
+  restoreError.value = null;
+  restoreSuccess.value = false;
+}
+
+function handleExportConfig() {
+  const a = document.createElement("a");
+  a.href = "/api/settings/config-export";
+  a.download = "";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+async function handleRestoreConfig() {
+  const file = restoreFile.value;
+  if (!file) return;
+
+  restoreLoading.value = true;
+  restoreError.value = null;
+  restoreSuccess.value = false;
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const response = await fetch("/api/settings/config-restore", {
+      method: "POST",
+      headers: { "Content-Type": "application/zip" },
+      body: arrayBuffer,
+    });
+    const json = await response.json();
+    if (!response.ok) {
+      restoreError.value = json?.error ?? `HTTP ${response.status}`;
+    } else {
+      restoreSuccess.value = true;
+      restoreFile.value = null;
+      restoreFileName.value = null;
+      if (restoreFileInput.value) restoreFileInput.value.value = "";
+    }
+  } catch (e) {
+    restoreError.value = String(e);
+  } finally {
+    restoreLoading.value = false;
+  }
+}
 </script>
 
 <style scoped lang="scss">
@@ -344,5 +457,81 @@ function formatBytes(bytes: number): string {
 
 .settings-model-meta {
   font-size: 12px;
+}
+
+.settings-backup-body {
+  display: grid;
+  gap: 16px;
+}
+
+.settings-backup-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--admin-bg-soft) 80%, transparent 20%);
+  border: 1px solid var(--admin-border);
+  flex-wrap: wrap;
+}
+
+.settings-backup-desc {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+
+  strong {
+    font-size: 14px;
+  }
+
+  span {
+    font-size: 12px;
+  }
+}
+
+.settings-backup-restore-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.settings-backup-file-label {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-backup-file-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 0;
+}
+
+.settings-backup-feedback {
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+
+  &--ok {
+    background: color-mix(in srgb, var(--admin-good-bg) 60%, transparent 40%);
+    color: var(--admin-good);
+    border: 1px solid color-mix(in srgb, var(--admin-good) 25%, transparent 75%);
+  }
+
+  &--err {
+    background: color-mix(in srgb, var(--admin-warn-bg) 60%, transparent 40%);
+    color: var(--admin-warn);
+    border: 1px solid color-mix(in srgb, var(--admin-warn) 25%, transparent 75%);
+  }
 }
 </style>

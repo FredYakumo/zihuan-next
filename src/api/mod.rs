@@ -173,6 +173,8 @@ pub fn build_router(
         )
         // Settings
         .push(Router::with_path("settings/storage-info").get(settings::get_storage_info))
+        .push(Router::with_path("settings/config-export").get(settings::export_config))
+        .push(Router::with_path("settings/config-restore").post(settings::restore_config))
         // Data Explorer
         .push(
             Router::with_path("explorer")
