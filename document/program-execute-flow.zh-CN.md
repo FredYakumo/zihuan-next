@@ -160,6 +160,16 @@
 
 它们围绕 `SessionStateRef::try_claim(...)` / `release(...)` 建立会话占用语义，确保同一发送者不会同时进入多个实际回复流程。
 
+### QQ Chat Agent 当前的 Steer 模型
+
+当某个发送者已经有一个正在进行中的 QQ Chat 回复流程时，同一发送者后续继续发来的消息，不再被视为“忙碌冲突”，而是会被当作 **插嘴 / steer**。
+
+关于 steer 的详细运行时行为、合并规则、历史写入方式，以及 `QqChatAgentConfig.max_steer_count`
+上限，统一见
+[`dev-guides/qq-chat-agent-steer.zh-CN.md`](dev-guides/qq-chat-agent-steer.zh-CN.md)。
+
+在执行流程层面，只需要把握一点：同一用户的重叠输入会优先附着到当前活跃回复流上，随后要么被注入后续 Brain 轮次，要么在当前流程结束后转成下一轮自动 follow-up 的输入。
+
 因此，当前模型的关键边界是：
 
 - adapter 层负责接入、解析、异步分发消息；

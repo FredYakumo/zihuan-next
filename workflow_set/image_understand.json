@@ -30,6 +30,13 @@
           "hidden": false
         },
         {
+          "name": "message_id",
+          "data_type": "Integer",
+          "description": "节点图输入 'message_id'",
+          "required": false,
+          "hidden": false
+        },
+        {
           "name": "qq_ims_bot_adapter",
           "data_type": "BotAdapterRef",
           "description": "节点图输入 'qq_ims_bot_adapter'",
@@ -53,6 +60,12 @@
             "data_type": "MessageEvent",
             "description": "",
             "name": "message_event"
+          },
+          {
+            "data_type": "Integer",
+            "description": "",
+            "name": "message_id",
+            "required": false
           },
           {
             "data_type": "BotAdapterRef",
@@ -114,14 +127,14 @@
     },
     {
       "id": "1429dd06-0384-4761-ac60-1a8282c9b739",
-      "name": "extract message from event",
+      "name": "extract message by id from event",
       "description": null,
-      "node_type": "extract_message_from_event",
+      "node_type": "extract_message_by_id_from_event",
       "input_ports": [
         {
           "name": "message_event",
           "data_type": "MessageEvent",
-          "description": "MessageEvent containing message data",
+          "description": "当前触发的消息事件",
           "required": true,
           "hidden": false
         },
@@ -130,6 +143,20 @@
           "data_type": "BotAdapterRef",
           "description": "BotAdapter reference for context-aware system message",
           "required": true,
+          "hidden": false
+        },
+        {
+          "name": "message_id",
+          "data_type": "Integer",
+          "description": "可选：要恢复并分析的目标消息 ID",
+          "required": false,
+          "hidden": false
+        },
+        {
+          "name": "mysql_ref",
+          "data_type": "MySqlRef",
+          "description": "可选：显式注册给消息恢复链路的 MySQL 连接",
+          "required": false,
           "hidden": false
         },
         {
@@ -472,6 +499,37 @@
       "disabled": false
     },
     {
+      "id": "75ccf40c-5206-47f3-b01f-f3c2aa99d001",
+      "name": "agent mysql ref",
+      "description": null,
+      "node_type": "agent_mysql_ref",
+      "input_ports": [],
+      "output_ports": [
+        {
+          "name": "mysql_ref",
+          "data_type": "MySqlRef",
+          "description": "Agent MySQL 连接引用",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 80.0,
+        "y": 500.0
+      },
+      "size": {
+        "width": 200.0,
+        "height": 120.0
+      },
+      "inline_values": {},
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false,
+      "disabled": false
+    },
+    {
       "id": "59b81fe6-42c4-4b49-80a2-f3724c2f27d8",
       "name": "agent rustfs ref",
       "description": null,
@@ -509,6 +567,12 @@
       "from_port": "message_event",
       "to_node_id": "1429dd06-0384-4761-ac60-1a8282c9b739",
       "to_port": "message_event"
+    },
+    {
+      "from_node_id": "__graph_inputs__",
+      "from_port": "message_id",
+      "to_node_id": "1429dd06-0384-4761-ac60-1a8282c9b739",
+      "to_port": "message_id"
     },
     {
       "from_node_id": "b60898f1-93ff-4e23-a545-6583bff413cd",
@@ -559,6 +623,12 @@
       "to_port": "ims_bot_adapter"
     },
     {
+      "from_node_id": "75ccf40c-5206-47f3-b01f-f3c2aa99d001",
+      "from_port": "mysql_ref",
+      "to_node_id": "1429dd06-0384-4761-ac60-1a8282c9b739",
+      "to_port": "mysql_ref"
+    },
+    {
       "from_node_id": "59b81fe6-42c4-4b49-80a2-f3724c2f27d8",
       "from_port": "s3_ref",
       "to_node_id": "1429dd06-0384-4761-ac60-1a8282c9b739",
@@ -570,6 +640,12 @@
       "name": "message_event",
       "data_type": "MessageEvent",
       "description": ""
+    },
+    {
+      "name": "message_id",
+      "data_type": "Integer",
+      "description": "",
+      "required": false
     },
     {
       "name": "qq_ims_bot_adapter",

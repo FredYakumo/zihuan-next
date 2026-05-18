@@ -150,6 +150,64 @@ impl QqChatTaskTrace {
         inner.history_tokens_estimated = Some(history_tokens_estimated);
     }
 
+    pub(crate) fn record_steer_received(&self, current_message: &str) {
+        self.log_key_event(
+            "收到插嘴消息",
+            0,
+            format!(
+                "message={}",
+                truncate_for_log(current_message, LOG_TEXT_PREVIEW_CHARS)
+            ),
+        );
+    }
+
+    pub(crate) fn record_steer_injected(
+        &self,
+        steer_count: usize,
+        injected_messages: usize,
+        accepted_steer_count: usize,
+        max_steer_count: usize,
+        remaining_queue_len: usize,
+        messages: &[OpenAIMessage],
+    ) {
+        self.log_key_event(
+            "插嘴已注入当前对话",
+            0,
+            format!(
+                "steer_count={} injected_messages={} merged={} accepted_steer_count={}/{} remaining_queue_len={} payload={}",
+                steer_count,
+                injected_messages,
+                steer_count > injected_messages,
+                accepted_steer_count,
+                max_steer_count,
+                remaining_queue_len,
+                json_for_log(messages, LOG_TEXT_PREVIEW_CHARS)
+            ),
+        );
+    }
+
+    pub(crate) fn record_steer_follow_up(
+        &self,
+        message_id: i64,
+        steer_count: usize,
+        accepted_steer_count: usize,
+        max_steer_count: usize,
+        current_message: &str,
+    ) {
+        self.log_key_event(
+            "插嘴触发下一轮",
+            0,
+            format!(
+                "message_id={} steer_count={} accepted_steer_count={}/{} message={}",
+                message_id,
+                steer_count,
+                accepted_steer_count,
+                max_steer_count,
+                truncate_for_log(current_message, LOG_TEXT_PREVIEW_CHARS)
+            ),
+        );
+    }
+
     pub(crate) fn mark_llm_request_started(&self) {
         let mut inner = self.inner.lock().unwrap();
         inner.llm_request_started_at = Some(TracePoint::now());

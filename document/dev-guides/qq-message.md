@@ -385,6 +385,22 @@ This readable rendering is the basis for:
 
 This is important because the agent should reason over the fully expanded referenced and forwarded content, while storage and raw logs may still preserve a more platform-shaped message list.
 
+## QQ Chat Agent Steer User Behavior
+
+From the user’s point of view, the live QQ chat agent supports “steer” style interruptions:
+when a same-sender follow-up arrives before the current reply finishes, the runtime treats it as
+an attempt to redirect that unfinished reply instead of producing a busy conflict.
+
+The detailed steer lifecycle, merge rules, follow-up behavior, and `QqChatAgentConfig.max_steer_count`
+limit are documented in
+[`qq-chat-agent-steer.md`](qq-chat-agent-steer.md).
+
+For this document, the important user-visible boundaries are:
+
+- the first message still starts the current reply flow immediately
+- later overlapping same-sender messages can influence that unfinished flow
+- group-chat gating for the initial QQ chat trigger is unchanged
+
 ## Multimodal Extraction
 
 Both of these paths now understand hydrated forwards:

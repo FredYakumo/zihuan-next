@@ -19,6 +19,12 @@ pub struct ToolParamDef {
     pub data_type: DataType,
     #[serde(default)]
     pub desc: String,
+    #[serde(default = "default_tool_param_required")]
+    pub required: bool,
+}
+
+fn default_tool_param_required() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -61,6 +67,7 @@ impl BrainToolDefinition {
                 name: param.name.clone(),
                 data_type: param.data_type.clone(),
                 description: param.desc.clone(),
+                required: param.required,
             })
             .collect()
     }
@@ -77,22 +84,26 @@ pub fn fixed_tool_runtime_inputs(owner_node_type: &str) -> Vec<FunctionPortDef> 
                 name: BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(),
                 data_type: DataType::String,
                 description: "触发此次工具调用的上下文文本内容".to_string(),
+                required: true,
             },
             FunctionPortDef {
                 name: QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
                 data_type: DataType::MessageEvent,
                 description: "当前触发此次工具调用的消息事件".to_string(),
+                required: true,
             },
             FunctionPortDef {
                 name: QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT.to_string(),
                 data_type: DataType::BotAdapterRef,
                 description: "当前消息事件对应的 Bot Adapter 连接引用".to_string(),
+                required: true,
             },
         ],
         _ => vec![FunctionPortDef {
             name: BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(),
             data_type: DataType::String,
             description: "触发此次工具调用的上下文文本内容".to_string(),
+            required: true,
         }],
     }
 }
@@ -135,6 +146,7 @@ pub fn normalized_tool_outputs_for_owner(
             name: QQ_AGENT_TOOL_OUTPUT_NAME.to_string(),
             data_type: crate::DataType::String,
             description: "工具返回给 Agent 的文本结果".to_string(),
+            required: true,
         }]
     }
 }

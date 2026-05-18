@@ -56,6 +56,17 @@ fn build_node_graph_tool_definition(
     };
 
     sync_root_graph_io(&mut graph);
+    let parameters = if parameters.is_empty() {
+        derive_parameters_from_graph_inputs(&graph.graph_inputs)
+    } else {
+        parameters
+    };
+    let outputs = if outputs.is_empty() {
+        graph.graph_outputs.clone()
+    } else {
+        outputs
+    };
+
     validate_tool_graph_contract(tool, &graph, &parameters, &outputs)?;
     let subgraph = root_graph_to_tool_subgraph(&graph);
     let parameters = merge_parameter_descriptions_from_graph(&parameters, &graph.graph_inputs);
@@ -69,6 +80,19 @@ fn build_node_graph_tool_definition(
         outputs,
         subgraph,
     })
+}
+
+fn derive_parameters_from_graph_inputs(inputs: &[FunctionPortDef]) -> Vec<ToolParamDef> {
+    inputs
+        .iter()
+        .filter(|input| reserved_tool_graph_input_type(&input.name).is_none())
+        .map(|input| ToolParamDef {
+            name: input.name.clone(),
+            data_type: input.data_type.clone(),
+            desc: input.description.clone(),
+            required: input.required,
+        })
+        .collect()
 }
 
 fn load_graph_from_path(
@@ -196,19 +220,21 @@ fn merge_parameter_descriptions_from_graph(
     parameters
         .iter()
         .map(|param| {
-            let graph_description = inputs
-                .iter()
-                .find(|input| {
-                    reserved_tool_graph_input_type(&input.name).is_none()
-                        && input.name.trim() == param.name.trim()
-                        && input.data_type == param.data_type
-                })
-                .map(|input| input.description.trim())
-                .filter(|description| !description.is_empty());
+            let graph_input = inputs.iter().find(|input| {
+                reserved_tool_graph_input_type(&input.name).is_none()
+                    && input.name.trim() == param.name.trim()
+                    && input.data_type == param.data_type
+            });
 
             let mut merged = param.clone();
-            if let Some(description) = graph_description {
+            if let Some(description) = graph_input
+                .map(|input| input.description.trim())
+                .filter(|description| !description.is_empty())
+            {
                 merged.desc = description.to_string();
+            }
+            if let Some(graph_input) = graph_input {
+                merged.required = graph_input.required;
             }
             merged
         })

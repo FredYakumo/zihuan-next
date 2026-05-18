@@ -66,6 +66,13 @@ fn build_reply_batch_builder() -> QqAgentReplyBatchBuilder {
     Arc::new(build_reply_batches_from_model_text)
 }
 
+#[doc(hidden)]
+pub fn expand_message_event_for_tool_input(
+    event: &ims_bot_adapter::models::event_model::MessageEvent,
+) -> ims_bot_adapter::models::event_model::MessageEvent {
+    super::qq_chat_agent_core::expand_event_for_inference(event)
+}
+
 fn build_reply_batches_from_model_text(
     request: &QqAgentReplyBuildRequest,
 ) -> Result<QqAgentReplyBuildResult> {
@@ -916,6 +923,7 @@ pub async fn spawn(
         s3_ref: object_storage.clone(),
         max_message_length: config.max_message_length,
         compact_context_length: config.compact_context_length,
+        max_steer_count: config.max_steer_count,
         reply_batch_builder: Some(build_reply_batch_builder()),
         default_tools_enabled: config.default_tools_enabled.clone(),
         shared_inputs: Vec::<FunctionPortDef>::new(),

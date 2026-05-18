@@ -45,6 +45,7 @@ The current trace captures these stage families:
 - intent classification
 - embedding participation inside intent classification
 - final LLM request payload
+- steer receipt, injection, and automatic follow-up turns
 - Brain tool request turns
 - tool call start and finish
 - final LLM result
@@ -99,6 +100,7 @@ Other Brain callers are unaffected because the observer is optional.
 The QQ chat task log should keep only high-signal content:
 
 - user message
+- steer message summaries, queue decisions, and follow-up decisions
 - intent result
 - LLM conversation payload
 - model output
@@ -116,6 +118,35 @@ Avoid reintroducing top-level logs for:
 - duplicate tool call logs in both tool implementations and the task trace
 
 If a new log line does not help answer “what did the agent receive, decide, call, return, and send?”, it usually does not belong in the main task trace.
+
+## Steer Logging
+
+The steer runtime itself is documented in
+[`qq-chat-agent-steer.md`](qq-chat-agent-steer.md).
+
+From the logging perspective, the QQ chat agent must expose that runtime through task-trace and
+service-level queue-management events.
+
+Task-trace events include:
+
+- `收到插嘴消息` — a same-sender overlapping message was consumed as steer
+- `插嘴已注入当前对话` — steer was appended into the in-flight Brain conversation before the next inference round
+- `插嘴触发下一轮` — queued steer became the primary input of the next automatic follow-up turn
+
+Service-level queue-management logs should cover:
+
+- steer enqueued while the sender session is busy
+- steer dropped because `max_steer_count` for the active reply flow was reached
+- follow-up steer dequeued for the next turn
+
+Relevant steer log fields include:
+
+- `message_id`
+- `steer_count` and `injected_messages`
+- accepted steer count versus configured `max_steer_count`
+- remaining queue length
+- truncated steer message preview
+- `merged=true/false` when injection collapses several steer messages into one explicit interruption
 
 ## How To Extend
 

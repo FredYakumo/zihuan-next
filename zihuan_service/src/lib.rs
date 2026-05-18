@@ -2,6 +2,7 @@ pub mod agent;
 pub mod nodes;
 mod resource_resolver;
 pub mod scheduled_task;
+pub mod storage;
 
 pub use agent::{AgentManager, AgentRuntimeInfo, AgentRuntimeStatus};
 
