@@ -1255,43 +1255,85 @@ fn build_merged_steer_user_message(
     events: &[ims_bot_adapter::models::MessageEvent],
     bot_id: &str,
     bot_name: &str,
+    llm_supports_multimodal_input: bool,
+    s3_ref: Option<&Arc<S3Ref>>,
     api_style: Option<&str>,
 ) -> OpenAIMessage {
-    let merged_text = events
-        .iter()
-        .enumerate()
-        .map(|(index, event)| {
-            let text = extract_user_message_text(event, bot_id, bot_name);
-            format!("{}. {text}", index + 1)
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    if !llm_supports_multimodal_input {
+        let merged_text = events
+            .iter()
+            .enumerate()
+            .map(|(index, event)| {
+                let text = extract_user_message_text(event, bot_id, bot_name);
+                format!("{}. {text}", index + 1)
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
 
-    let mut steer_message = OpenAIMessage::user(format!("{STEER_PREFIX}\n\n{merged_text}"));
+        let mut steer_message = OpenAIMessage::user(format!("{STEER_PREFIX}\n\n{merged_text}"));
+        if let Some(api_style) = api_style {
+            steer_message.api_style = Some(api_style.to_string());
+        }
+        return steer_message;
+    }
+
+    let mut parts = vec![ContentPart::text(format!("{STEER_PREFIX}\n\n"))];
+    let mut text_buffer = String::new();
+    let mut has_media = false;
+    let mut image_stats = MultimodalImageStats::default();
+
+    for (index, event) in events.iter().enumerate() {
+        let current_input = build_current_turn_user_input(event, bot_id, bot_name);
+        if index > 0 {
+            text_buffer.push_str("\n\n");
+        }
+        text_buffer.push_str(&format!("{}. ", index + 1));
+        append_messages_as_parts(
+            &current_input.messages,
+            &mut parts,
+            &mut text_buffer,
+            &mut has_media,
+            true,
+            s3_ref,
+            &mut image_stats,
+        );
+    }
+
+    flush_text_part(&mut parts, &mut text_buffer);
+
+    let mut steer_message = if has_media && parts.len() > 1 {
+        OpenAIMessage::user_with_parts(parts)
+    } else {
+        let merged_text = events
+            .iter()
+            .enumerate()
+            .map(|(index, event)| {
+                let text = extract_user_message_text(event, bot_id, bot_name);
+                format!("{}. {text}", index + 1)
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        OpenAIMessage::user(format!("{STEER_PREFIX}\n\n{merged_text}"))
+    };
+
     if let Some(api_style) = api_style {
         steer_message.api_style = Some(api_style.to_string());
     }
+
     steer_message
 }
 
 fn build_merged_follow_up_event(
     pending_events: &[PendingSteerEvent],
-    bot_id: &str,
-    bot_name: &str,
 ) -> ims_bot_adapter::models::MessageEvent {
     let first_event = pending_events
         .first()
         .expect("merged follow-up requires at least one pending steer event");
     let mut merged_event = first_event.event.clone();
-    let merged_text = pending_events
+    merged_event.message_list = pending_events
         .iter()
-        .map(|pending| {
-            let inference_event = expand_event_for_inference(&pending.event);
-            extract_user_message_text(&inference_event, bot_id, bot_name)
-        })
-        .collect::<Vec<_>>()
-        .join(" ");
-    merged_event.message_list = vec![Message::PlainText(PlainTextMessage { text: merged_text })];
+        .flat_map(|pending| pending.event.message_list.clone())
+        .collect();
     merged_event
 }
 
@@ -1979,6 +2021,8 @@ impl BrainIterationHook for QqChatSteerHook {
                 &injected,
                 &self.bot_id,
                 &self.bot_name,
+                self.llm_supports_multimodal_input,
+                self.s3_ref.as_ref(),
                 self.llm_api_style.as_deref(),
             )
         };
@@ -2314,7 +2358,7 @@ impl QqChatAgent {
                 }
 
                 let steer_count = pending.len();
-                let next_event = build_merged_follow_up_event(&pending, &bot_id, bot_name);
+                let next_event = build_merged_follow_up_event(&pending);
                 let next_inference_event = expand_event_for_inference(&next_event);
                 let next_message =
                     extract_user_message_text(&next_inference_event, &bot_id, bot_name);
@@ -2955,7 +2999,7 @@ mod tests {
             build_plain_text_event(2, "5341"),
             build_plain_text_event(3, "21345"),
         ];
-        let message = build_merged_steer_user_message(&events, "bot", "bot", None);
+        let message = build_merged_steer_user_message(&events, "bot", "bot", false, None, None);
 
         match message.content {
             Some(MessageContent::Text(text)) => {
@@ -3020,14 +3064,38 @@ mod tests {
     }
 
     #[test]
-    fn merged_follow_up_event_combines_pending_messages_into_single_text_input() {
+    fn merged_steer_user_message_multimodal_preserves_image_parts() {
+        let events = vec![
+            build_plain_text_event(1, "先看这张"),
+            build_image_event(2, "data:image/png;base64,AA=="),
+            build_plain_text_event(3, "然后继续"),
+        ];
+
+        let message = build_merged_steer_user_message(&events, "bot", "bot", true, None, None);
+        let combined = message.content_text_owned().unwrap_or_default();
+
+        match &message.content {
+            Some(MessageContent::Parts(parts)) => {
+                assert!(matches!(parts.first(), Some(ContentPart::Text { text }) if text.starts_with(STEER_PREFIX)));
+                assert!(parts
+                    .iter()
+                    .any(|part| matches!(part, ContentPart::ImageUrl { .. })));
+                assert!(combined.contains("1. 先看这张"));
+                assert!(combined.contains("3. 然后继续"));
+            }
+            other => panic!("expected multimodal parts, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn merged_follow_up_event_preserves_multimodal_segments() {
         let pending = vec![
             PendingSteerEvent {
                 event: build_plain_text_event(1, "1231"),
                 time: "t-1".to_string(),
             },
             PendingSteerEvent {
-                event: build_plain_text_event(2, "53443"),
+                event: build_image_event(2, "data:image/png;base64,AA=="),
                 time: "t-2".to_string(),
             },
             PendingSteerEvent {
@@ -3036,11 +3104,23 @@ mod tests {
             },
         ];
 
-        let merged_event = build_merged_follow_up_event(&pending, "bot", "bot");
+        let merged_event = build_merged_follow_up_event(&pending);
         let merged_text = extract_user_message_text(&merged_event, "bot", "bot");
+        let message = build_user_message(&merged_event, "bot", "bot", true, None);
 
         assert_eq!(merged_event.message_id, 1);
-        assert_eq!(merged_text, "1231 53443 312375");
+        assert!(merged_text.contains("1231"));
+        assert!(merged_text.contains("[图片]"));
+        assert!(merged_text.contains("312375"));
+
+        match &message.content {
+            Some(MessageContent::Parts(parts)) => {
+                assert!(parts
+                    .iter()
+                    .any(|part| matches!(part, ContentPart::ImageUrl { .. })));
+            }
+            other => panic!("expected multimodal parts, got {other:?}"),
+        }
     }
 
     #[test]
@@ -3195,6 +3275,30 @@ mod tests {
                 role: None,
             },
             message_list,
+            group_id: None,
+            group_name: None,
+            is_group_message: false,
+        }
+    }
+
+    fn build_image_event(message_id: i64, url: &str) -> MessageEvent {
+        MessageEvent {
+            message_id,
+            message_type: MessageType::Private,
+            sender: Sender {
+                user_id: 10001,
+                nickname: "tester".to_string(),
+                card: String::new(),
+                role: None,
+            },
+            message_list: vec![Message::Image(ImageMessage::new(PersistedMedia::new(
+                PersistedMediaSource::QqChat,
+                url.to_string(),
+                String::new(),
+                Some(format!("image-{message_id}.png")),
+                None,
+                Some("image/png".to_string()),
+            )))],
             group_id: None,
             group_name: None,
             is_group_message: false,
