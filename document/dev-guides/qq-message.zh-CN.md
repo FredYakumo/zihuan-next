@@ -385,6 +385,20 @@ at_target_list = ["42"]
 
 这很重要，因为 Agent 应该基于完全展开的引用和转发内容进行推理，而存储和原始日志仍可以保留更接近平台形状的消息列表。
 
+## QQ Chat Agent 的插嘴（Steer）用户行为
+
+从最终用户视角看，当前在线 QQ Chat Agent 支持“插嘴式打断”：当同一发送者在当前回复尚未结束前继续发消息时，运行时会把它视为对这条未完成回复的方向调整，而不是“忙碌冲突”。
+
+关于 steer 的完整生命周期、合并规则、follow-up 行为，以及 `QqChatAgentConfig.max_steer_count`
+上限，统一见
+[`qq-chat-agent-steer.zh-CN.md`](qq-chat-agent-steer.zh-CN.md)。
+
+对本文档来说，只需要把握这些用户可见边界：
+
+- 首条消息仍会立刻启动当前回复流程
+- 之后的同发送者重叠消息可以影响这条尚未完成的回复
+- 群聊中的初始 QQ Chat 触发条件保持不变，仍遵循当前 `@` 规则
+
 ## 多模态提取
 
 以下两个路径现在都理解 hydrated forward：

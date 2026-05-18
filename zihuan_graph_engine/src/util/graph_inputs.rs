@@ -94,12 +94,16 @@ impl Node for GraphInputsNode {
         let mut outputs = HashMap::new();
         for port in &self.signature {
             if let Some(runtime_values) = &self.runtime_values {
-                let value = runtime_values.get(&port.name).ok_or_else(|| {
-                    Error::ValidationError(format!(
-                        "节点图输入 '{}' 在 runtime_values 中缺失",
-                        port.name
-                    ))
-                })?;
+                let value = match runtime_values.get(&port.name) {
+                    Some(value) => value,
+                    None if !port.required => continue,
+                    None => {
+                        return Err(Error::ValidationError(format!(
+                            "节点图输入 '{}' 在 runtime_values 中缺失",
+                            port.name
+                        )))
+                    }
+                };
                 outputs.insert(port.name.clone(), value.clone());
                 continue;
             }
@@ -121,12 +125,16 @@ impl Node for GraphInputsNode {
                 }
             };
 
-            let value = runtime_values.get(&port.name).ok_or_else(|| {
-                Error::ValidationError(format!(
-                    "节点图输入 '{}' 在 runtime_values 中缺失",
-                    port.name
-                ))
-            })?;
+            let value = match runtime_values.get(&port.name) {
+                Some(value) => value,
+                None if !port.required => continue,
+                None => {
+                    return Err(Error::ValidationError(format!(
+                        "节点图输入 '{}' 在 runtime_values 中缺失",
+                        port.name
+                    )))
+                }
+            };
             outputs.insert(
                 port.name.clone(),
                 data_value_from_json_with_declared_type(port, value)?,
@@ -135,5 +143,95 @@ impl Node for GraphInputsNode {
 
         self.validate_outputs(&outputs)?;
         Ok(outputs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use serde_json::json;
+
+    use crate::function_graph::FUNCTION_SIGNATURE_PORT;
+    use crate::{DataType, DataValue, Node};
+
+    use super::GraphInputsNode;
+
+    fn test_signature() -> Vec<crate::function_graph::FunctionPortDef> {
+        vec![
+            crate::function_graph::FunctionPortDef {
+                name: "required_text".to_string(),
+                data_type: DataType::String,
+                description: String::new(),
+                required: true,
+            },
+            crate::function_graph::FunctionPortDef {
+                name: "optional_text".to_string(),
+                data_type: DataType::String,
+                description: String::new(),
+                required: false,
+            },
+        ]
+    }
+
+    fn build_node() -> GraphInputsNode {
+        let mut node = GraphInputsNode::new("test", "test");
+        node.apply_inline_config(&HashMap::from([(
+            FUNCTION_SIGNATURE_PORT.to_string(),
+            DataValue::Json(json!(test_signature())),
+        )]))
+        .expect("signature should apply");
+        node
+    }
+
+    #[test]
+    fn graph_inputs_skip_missing_optional_runtime_value() {
+        let mut node = build_node();
+        node.set_function_runtime_values(HashMap::from([(
+            "required_text".to_string(),
+            DataValue::String("hello".to_string()),
+        )]))
+        .expect("runtime values should apply");
+
+        let outputs = node
+            .execute(HashMap::new())
+            .expect("execute should succeed");
+
+        match outputs.get("required_text") {
+            Some(DataValue::String(value)) => assert_eq!(value, "hello"),
+            other => panic!("unexpected output: {other:?}"),
+        }
+        assert!(!outputs.contains_key("optional_text"));
+    }
+
+    #[test]
+    fn graph_inputs_still_require_required_runtime_value() {
+        let mut node = build_node();
+        node.set_function_runtime_values(HashMap::new())
+            .expect("runtime values should apply");
+
+        let error = node
+            .execute(HashMap::new())
+            .expect_err("execute should fail");
+        assert!(error.to_string().contains("required_text"));
+    }
+
+    #[test]
+    fn graph_inputs_json_runtime_values_skip_missing_optional() {
+        let mut node = build_node();
+        let outputs = node
+            .execute(HashMap::from([(
+                crate::function_graph::FUNCTION_RUNTIME_VALUES_PORT.to_string(),
+                DataValue::Json(json!({
+                    "required_text": "hello"
+                })),
+            )]))
+            .expect("execute should succeed");
+
+        match outputs.get("required_text") {
+            Some(DataValue::String(value)) => assert_eq!(value, "hello"),
+            other => panic!("unexpected output: {other:?}"),
+        }
+        assert!(!outputs.contains_key("optional_text"));
     }
 }

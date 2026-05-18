@@ -118,7 +118,9 @@ pub fn tool_parameters_to_json_schema(parameters: &[ToolParamDef]) -> Value {
         if param_name.is_empty() {
             continue;
         }
-        required.push(Value::String(param_name.to_string()));
+        if param.required {
+            required.push(Value::String(param_name.to_string()));
+        }
         properties.insert(
             param_name.to_string(),
             json!({
@@ -169,6 +171,7 @@ pub fn validate_shared_inputs(
             name: name.to_string(),
             data_type: port.data_type,
             description: port.description,
+            required: port.required,
         });
     }
 
@@ -417,6 +420,7 @@ impl ToolSubgraphRunner {
                             name: param.name.clone(),
                             data_type: param.data_type.clone(),
                             description: param.desc.clone(),
+                            required: param.required,
                         },
                         &value,
                     )

@@ -48,6 +48,7 @@
 - 意图分类
 - 意图分类中的 embedding 参与情况
 - 发给主大模型的最终消息列表
+- 插嘴（steer）消息的接收、注入与自动续轮
 - Brain 的工具请求轮次
 - 工具调用开始与结束
 - 主大模型最终返回
@@ -102,6 +103,7 @@ observer 能接收：
 QQ Chat 任务日志只应保留高信号内容：
 
 - 用户消息
+- steer 消息摘要、队列决策与续轮决策
 - 意图结果
 - 发给大模型的消息列表
 - 模型返回内容
@@ -119,6 +121,34 @@ QQ Chat 任务日志只应保留高信号内容：
 - 工具实现内部和任务 trace 双份工具调用日志
 
 一个简单判断标准是：如果一条日志不能帮助回答“收到了什么、怎么判断、调了什么、返回了什么、最终发了什么”，它通常就不应进入主任务 trace。
+
+## Steer 日志
+
+steer 机制本身的运行时规则统一见
+[`qq-chat-agent-steer.zh-CN.md`](qq-chat-agent-steer.zh-CN.md)。
+
+从日志角度看，QQ Chat Agent 需要把这套运行时行为暴露成任务 trace 事件与 service 级队列管理日志。
+
+任务 trace 中会出现这些事件：
+
+- `收到插嘴消息`：同一发送者的重叠消息被实际消费为 steer
+- `插嘴已注入当前对话`：steer 在下一轮推理前被追加进当前 Brain 对话
+- `插嘴触发下一轮`：排队中的 steer 成为下一轮自动 follow-up 对话的主输入
+
+service 级队列管理日志应覆盖：
+
+- 发送者 session 忙时，steer 已入队
+- 当前活跃回复流达到 `max_steer_count` 上限后，新的 steer 被丢弃
+- 用于下一轮 follow-up 的 steer 已从队列取出
+
+相关 steer 日志字段包括：
+
+- `message_id`
+- `steer_count` 与 `injected_messages`
+- 已接受 steer 次数与配置的 `max_steer_count`
+- 剩余队列长度
+- 截断后的 steer 消息摘要
+- 当多条 steer 折叠成一次注入时记录 `merged=true/false`
 
 ## 如何扩展
 

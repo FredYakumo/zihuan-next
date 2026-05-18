@@ -49,6 +49,16 @@ pub trait BrainObserver: Send + Sync + 'static {
     fn on_final_assistant(&self, _response: &OpenAIMessage, _stop_reason: &BrainStopReason) {}
 }
 
+pub trait BrainIterationHook: Send + Sync + 'static {
+    fn on_before_inference(
+        &self,
+        _iteration: usize,
+        _conversation: &[OpenAIMessage],
+    ) -> Vec<OpenAIMessage> {
+        Vec::new()
+    }
+}
+
 /// The reason a [`Brain::run`] call returned.
 #[derive(Debug)]
 pub enum BrainStopReason {
@@ -68,6 +78,7 @@ pub struct Brain {
     llm: Arc<dyn LLMBase>,
     tools: Vec<Box<dyn BrainTool>>,
     observer: Option<Arc<dyn BrainObserver>>,
+    iteration_hook: Option<Arc<dyn BrainIterationHook>>,
 }
 
 impl Brain {
@@ -76,6 +87,7 @@ impl Brain {
             llm,
             tools: Vec::new(),
             observer: None,
+            iteration_hook: None,
         }
     }
 
@@ -99,6 +111,15 @@ impl Brain {
         self.observer = Some(observer);
     }
 
+    pub fn with_iteration_hook(mut self, hook: Arc<dyn BrainIterationHook>) -> Self {
+        self.iteration_hook = Some(hook);
+        self
+    }
+
+    pub fn set_iteration_hook(&mut self, hook: Arc<dyn BrainIterationHook>) {
+        self.iteration_hook = Some(hook);
+    }
+
     /// Run the inference loop and return `(new_messages, stop_reason)`.
     ///
     /// `new_messages` contains all assistant and tool-result messages produced
@@ -108,6 +129,9 @@ impl Brain {
         let mut conversation = sanitize_messages_for_inference(messages);
         let mut output: Vec<OpenAIMessage> = Vec::new();
         for iteration in 0..MAX_TOOL_ITERATIONS {
+            if iteration > 0 {
+                self.append_iteration_messages(iteration + 1, &mut conversation);
+            }
             let is_last_iteration = iteration == MAX_TOOL_ITERATIONS - 1;
 
             if is_last_iteration {
@@ -236,6 +260,9 @@ impl Brain {
         let streaming_llm = self.llm.as_streaming();
 
         for iteration in 0..MAX_TOOL_ITERATIONS {
+            if iteration > 0 {
+                self.append_iteration_messages(iteration + 1, &mut conversation);
+            }
             let is_last_iteration = iteration == MAX_TOOL_ITERATIONS - 1;
 
             if is_last_iteration {
@@ -373,6 +400,24 @@ impl Brain {
         warn!("[Brain] Tool loop exceeded max iterations ({MAX_TOOL_ITERATIONS})");
         (output, BrainStopReason::MaxIterationsReached)
     }
+
+    fn append_iteration_messages(&self, iteration: usize, conversation: &mut Vec<OpenAIMessage>) {
+        let Some(hook) = self.iteration_hook.as_ref() else {
+            return;
+        };
+
+        let mut appended = hook.on_before_inference(iteration, conversation);
+        if appended.is_empty() {
+            return;
+        }
+
+        info!(
+            "[Brain] iteration {} appended {} external message(s) before inference",
+            iteration,
+            appended.len()
+        );
+        conversation.append(&mut appended);
+    }
 }
 
 /// Count tool calls already present in `messages` by tool name.
@@ -427,4 +472,195 @@ fn append_tool_summary_to_system(
     }
 
     messages.push(OpenAIMessage::system(summary));
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fmt;
+    use std::sync::{Arc, Mutex};
+
+    use serde_json::json;
+
+    use super::{Brain, BrainIterationHook, BrainTool};
+    use zihuan_core::llm::llm_base::LLMBase;
+    use zihuan_core::llm::tooling::{FunctionTool, ToolCalls, ToolCallsFuncSpec};
+    use zihuan_core::llm::{InferenceParam, MessageRole, OpenAIMessage};
+
+    #[derive(Debug, Default)]
+    struct RecordingLlmState {
+        calls: usize,
+        conversations: Vec<Vec<OpenAIMessage>>,
+    }
+
+    #[derive(Debug)]
+    struct RecordingLlm {
+        state: Arc<Mutex<RecordingLlmState>>,
+    }
+
+    impl LLMBase for RecordingLlm {
+        fn get_model_name(&self) -> &str {
+            "test-llm"
+        }
+
+        fn inference(&self, param: &InferenceParam) -> OpenAIMessage {
+            let mut state = self.state.lock().unwrap();
+            state.calls += 1;
+            state.conversations.push(param.messages.to_vec());
+
+            if state.calls == 1 {
+                OpenAIMessage {
+                    role: MessageRole::Assistant,
+                    api_style: None,
+                    content: Some(zihuan_core::llm::MessageContent::Text(
+                        "先调用工具".to_string(),
+                    )),
+                    reasoning_content: None,
+                    tool_calls: vec![ToolCalls {
+                        id: "call-1".to_string(),
+                        type_name: "function".to_string(),
+                        function: ToolCallsFuncSpec {
+                            name: "echo".to_string(),
+                            arguments: json!({"value": "x"}),
+                        },
+                    }],
+                    tool_call_id: None,
+                }
+            } else {
+                OpenAIMessage::assistant_text("最终回复")
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    struct EchoTool;
+
+    impl BrainTool for EchoTool {
+        fn spec(&self) -> Arc<dyn FunctionTool> {
+            Arc::new(EchoToolSpec)
+        }
+
+        fn execute(&self, _call_content: &str, arguments: &serde_json::Value) -> String {
+            json!({ "echo": arguments["value"].clone() }).to_string()
+        }
+    }
+
+    struct EchoToolSpec;
+
+    impl fmt::Debug for EchoToolSpec {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_struct("EchoToolSpec").finish()
+        }
+    }
+
+    impl FunctionTool for EchoToolSpec {
+        fn name(&self) -> &str {
+            "echo"
+        }
+
+        fn description(&self) -> &str {
+            "echo"
+        }
+
+        fn parameters(&self) -> serde_json::Value {
+            json!({
+                "type": "object",
+                "properties": {
+                    "value": { "type": "string" }
+                }
+            })
+        }
+
+        fn call(
+            &self,
+            _arguments: serde_json::Value,
+        ) -> zihuan_core::error::Result<serde_json::Value> {
+            Ok(json!({}))
+        }
+    }
+
+    #[derive(Debug)]
+    struct InjectUserHook;
+
+    impl BrainIterationHook for InjectUserHook {
+        fn on_before_inference(
+            &self,
+            iteration: usize,
+            _conversation: &[OpenAIMessage],
+        ) -> Vec<OpenAIMessage> {
+            if iteration == 2 {
+                vec![OpenAIMessage::user("【用户插嘴】继续回答新的问题")]
+            } else {
+                Vec::new()
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    struct InjectMergedUserHook;
+
+    impl BrainIterationHook for InjectMergedUserHook {
+        fn on_before_inference(
+            &self,
+            iteration: usize,
+            _conversation: &[OpenAIMessage],
+        ) -> Vec<OpenAIMessage> {
+            if iteration == 2 {
+                vec![OpenAIMessage::user(
+                    "【用户插嘴】\n\n1. 124\n2. 5341\n3. 21345",
+                )]
+            } else {
+                Vec::new()
+            }
+        }
+    }
+
+    #[test]
+    fn iteration_hook_appends_messages_before_next_inference() {
+        let state = Arc::new(Mutex::new(RecordingLlmState::default()));
+        let llm = Arc::new(RecordingLlm {
+            state: Arc::clone(&state),
+        });
+
+        let brain = Brain::new(llm)
+            .with_tool(EchoTool)
+            .with_iteration_hook(Arc::new(InjectUserHook));
+
+        let (_output, _stop_reason) = brain.run(vec![OpenAIMessage::user("原始问题")]);
+
+        let state = state.lock().unwrap();
+        assert_eq!(state.calls, 2);
+        assert_eq!(state.conversations.len(), 2);
+        assert!(
+            state.conversations[1]
+                .iter()
+                .any(|message| message.content_text() == Some("【用户插嘴】继续回答新的问题")),
+            "second inference should include injected steer message"
+        );
+    }
+
+    #[test]
+    fn iteration_hook_can_inject_one_merged_message_for_multiple_steers() {
+        let state = Arc::new(Mutex::new(RecordingLlmState::default()));
+        let llm = Arc::new(RecordingLlm {
+            state: Arc::clone(&state),
+        });
+
+        let brain = Brain::new(llm)
+            .with_tool(EchoTool)
+            .with_iteration_hook(Arc::new(InjectMergedUserHook));
+
+        let (_output, _stop_reason) = brain.run(vec![OpenAIMessage::user("原始问题")]);
+
+        let state = state.lock().unwrap();
+        assert_eq!(state.calls, 2);
+        assert_eq!(state.conversations.len(), 2);
+
+        let merged_messages: Vec<_> = state.conversations[1]
+            .iter()
+            .filter(|message| {
+                message.content_text() == Some("【用户插嘴】\n\n1. 124\n2. 5341\n3. 21345")
+            })
+            .collect();
+        assert_eq!(merged_messages.len(), 1);
+    }
 }

@@ -95,6 +95,8 @@ pub struct QqChatAgentConfig {
     pub max_message_length: usize,
     #[serde(default)]
     pub compact_context_length: usize,
+    #[serde(default = "default_max_steer_count")]
+    pub max_steer_count: usize,
     #[serde(default = "default_qq_chat_default_tools_enabled")]
     pub default_tools_enabled: HashMap<String, bool>,
     #[serde(default)]
@@ -117,6 +119,10 @@ fn default_max_message_length() -> usize {
     500
 }
 
+fn default_max_steer_count() -> usize {
+    4
+}
+
 fn default_qq_chat_default_tools_enabled() -> HashMap<String, bool> {
     [
         "web_search",
@@ -137,4 +143,20 @@ fn default_timeout_secs() -> u64 {
 
 fn default_retry_count() -> u32 {
     2
+}
+
+#[cfg(test)]
+mod tests {
+    use super::QqChatAgentConfig;
+
+    #[test]
+    fn qq_chat_agent_config_defaults_max_steer_count_to_four() {
+        let config: QqChatAgentConfig = serde_json::from_value(serde_json::json!({
+            "ims_bot_adapter_connection_id": "bot",
+            "tavily_connection_id": "tavily"
+        }))
+        .expect("config should deserialize");
+
+        assert_eq!(config.max_steer_count, 4);
+    }
 }

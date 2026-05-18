@@ -108,6 +108,14 @@
               </div>
               <div class="field"><label>Max Message Length</label><input v-model.number="form.max_message_length" type="number" min="1" /></div>
               <div class="field"><label>Compact Context Length</label><input v-model.number="form.compact_context_length" type="number" min="0" /></div>
+              <div class="field">
+                <label>Max Steer Count</label>
+                <input v-model.number="form.max_steer_count" type="number" min="0" />
+                <div class="muted" style="margin-top: 6px;">
+                  当 Agent 还没发出最终回复时，用户继续发消息会被视为“插嘴 / steer”。
+                  这里控制单次活跃回复流程里最多接受多少次插嘴；默认 4 次，超出会被丢弃并写入日志。
+                </div>
+              </div>
             </template>
 
             <template v-else>
@@ -354,6 +362,15 @@
                 <div class="key-value connection-card-edit-row">
                   <strong>Compact</strong>
                   <input v-model.number="form.compact_context_length" class="connection-card-inline-input" type="number" min="0" />
+                </div>
+                <div class="key-value connection-card-edit-row" style="align-items: flex-start;">
+                  <strong>Max Steer</strong>
+                  <div style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
+                    <input v-model.number="form.max_steer_count" class="connection-card-inline-input" type="number" min="0" />
+                    <span class="muted">
+                      最终回复发出前，用户继续输入会被当作插嘴。这里限制单次回复流程里最多接受多少次插嘴，默认 4 次。
+                    </span>
+                  </div>
                 </div>
 
                 <div class="editor-card" style="margin-top: 8px;">
@@ -757,6 +774,7 @@ function summarizeAgent(agent: AgentWithRuntime): Array<{ label: string; value: 
       { label: "文本向量模型", value: llmRefName(String(agentType.embedding_model_ref_id ?? "")) || "未绑定" },
       { label: "System Prompt", value: String(agentType.system_prompt ?? "").trim() ? "已配置" : "未设置" },
       { label: "Max Message", value: String(agentType.max_message_length ?? 500) },
+      { label: "Max Steer", value: String(agentType.max_steer_count ?? 4) },
     );
   } else {
     items.push(

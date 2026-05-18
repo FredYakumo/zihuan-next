@@ -25,6 +25,12 @@ pub struct FunctionPortDef {
     pub data_type: DataType,
     #[serde(default)]
     pub description: String,
+    #[serde(default = "default_function_port_required")]
+    pub required: bool,
+}
+
+fn default_function_port_required() -> bool {
+    true
 }
 
 impl FunctionPortDef {
@@ -34,7 +40,9 @@ impl FunctionPortDef {
         } else {
             self.description.clone()
         };
-        Port::new(self.name.clone(), self.data_type.clone()).with_description(description)
+        Port::new(self.name.clone(), self.data_type.clone())
+            .with_description(description)
+            .with_required(self.required)
     }
 }
 
