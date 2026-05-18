@@ -20,7 +20,7 @@ use crate::storage::qq_chat_history_store::{conversation_history_key, load_histo
 use crate::storage::qq_chat_session_store::{
     build_outbound_persistence, release_session, try_claim_session,
 };
-use ims_bot_adapter::adapter::shared_from_handle;
+use ims_bot_adapter::adapter::{restore_messages_for_message_id, shared_from_handle};
 use ims_bot_adapter::message_helpers::{
     get_bot_id, send_friend_batches_with_persistence,
     send_friend_progress_notification_with_persistence, send_group_batches_with_persistence,
@@ -29,7 +29,7 @@ use ims_bot_adapter::message_helpers::{
 use ims_bot_adapter::models::event_model::{MessageEvent, MessageType};
 use ims_bot_adapter::models::message::{
     AtTargetMessage, ForwardMessage, ForwardNodeMessage, ImageMessage, Message, MessageProp,
-    PersistedMedia, PersistedMediaSource, PlainTextMessage,
+    PersistedMedia, PersistedMediaSource, PlainTextMessage, ReplyMessage,
 };
 use model_inference::inference_function::compact_message::{
     compact_message_history, estimate_messages_tokens,
@@ -854,10 +854,8 @@ fn append_messages_as_parts(
                 }
             }
             Message::Reply(reply) => {
-                append_text_segment(text_buffer, &reply.to_string());
-
                 if include_reply_source_block {
-                    if let Some(source_messages) = reply.message_source.as_deref() {
+                    if let Some(source_messages) = valid_reply_source_messages(reply) {
                         if !text_buffer.is_empty() {
                             text_buffer.push_str("\n\n");
                         }
@@ -871,8 +869,11 @@ fn append_messages_as_parts(
                             s3_ref,
                             image_stats,
                         );
+                        continue;
                     }
                 }
+
+                append_text_segment(text_buffer, &reply.to_string());
             }
             Message::Forward(forward) => {
                 if forward.content.is_empty() {
@@ -924,6 +925,183 @@ fn push_inference_text(messages: &mut Vec<Message>, text: impl Into<String>) {
     messages.push(Message::PlainText(PlainTextMessage { text }));
 }
 
+#[derive(Debug, Clone)]
+struct CurrentTurnUserInput {
+    text: String,
+    is_at_me: bool,
+    at_target_list: Vec<String>,
+    messages: Vec<Message>,
+}
+
+fn messages_have_effective_content(messages: &[Message], depth: usize) -> bool {
+    if depth > 8 {
+        return false;
+    }
+
+    for message in messages {
+        match message {
+            Message::PlainText(plain) => {
+                if !plain.text.trim().is_empty() {
+                    return true;
+                }
+            }
+            Message::Image(_) => return true,
+            Message::Forward(forward) => {
+                if forward
+                    .content
+                    .iter()
+                    .any(|node| messages_have_effective_content(&node.content, depth + 1))
+                {
+                    return true;
+                }
+            }
+            Message::Reply(reply) => {
+                if let Some(source_messages) = reply.message_source.as_deref() {
+                    if matches!(source_messages, [Message::Reply(_)]) {
+                        continue;
+                    }
+                    if messages_have_effective_content(source_messages, depth + 1) {
+                        return true;
+                    }
+                }
+            }
+            Message::At(_) => {}
+        }
+    }
+
+    false
+}
+
+fn valid_reply_source_messages(reply: &ReplyMessage) -> Option<&[Message]> {
+    let source_messages = reply.message_source.as_deref()?;
+    if messages_have_effective_content(source_messages, 0) {
+        Some(source_messages)
+    } else {
+        None
+    }
+}
+
+fn hydrate_missing_reply_sources(
+    event: &ims_bot_adapter::models::MessageEvent,
+    adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
+) -> ims_bot_adapter::models::MessageEvent {
+    fn hydrate_messages(
+        messages: &mut [Message],
+        adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
+    ) {
+        for message in messages {
+            match message {
+                Message::Reply(reply) => {
+                    if valid_reply_source_messages(reply).is_none() {
+                        match block_async(restore_messages_for_message_id(adapter, reply.id)) {
+                            Ok(Some(messages)) => {
+                                reply.message_source = Some(messages);
+                            }
+                            Ok(None) => {}
+                            Err(error) => {
+                                warn!(
+                                    "{LOG_PREFIX} failed to restore reply source inside qq_chat_agent for message_id={}: {}",
+                                    reply.id, error
+                                );
+                            }
+                        }
+                    }
+
+                    if let Some(source_messages) = reply.message_source.as_mut() {
+                        hydrate_messages(source_messages, adapter);
+                    }
+                }
+                Message::Forward(forward) => {
+                    for node in &mut forward.content {
+                        hydrate_messages(&mut node.content, adapter);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut hydrated = event.clone();
+    hydrate_messages(&mut hydrated.message_list, adapter);
+    hydrated
+}
+
+fn render_current_message_body(messages: &[Message]) -> Option<String> {
+    let filtered: Vec<Message> = messages
+        .iter()
+        .filter(|message| !matches!(message, Message::Reply(_)))
+        .cloned()
+        .collect();
+    if filtered.is_empty() {
+        return None;
+    }
+
+    let rendered =
+        zihuan_core::ims_bot_adapter::models::message::render_messages_readable(&filtered);
+    let trimmed = rendered.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn collect_reply_reference_text(messages: &[Message]) -> Vec<String> {
+    messages
+        .iter()
+        .filter_map(|message| match message {
+            Message::Reply(reply) => {
+                valid_reply_source_messages(reply).and_then(|source_messages| {
+                    let rendered =
+                        zihuan_core::ims_bot_adapter::models::message::render_messages_readable(
+                            source_messages,
+                        );
+                    let trimmed = rendered.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                })
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn build_current_turn_user_input(
+    event: &ims_bot_adapter::models::MessageEvent,
+    bot_id: &str,
+    bot_name: &str,
+) -> CurrentTurnUserInput {
+    let msg_prop =
+        MessageProp::from_messages_with_bot_name(&event.message_list, Some(bot_id), Some(bot_name));
+    let mut user_text = render_current_message_body(&event.message_list).unwrap_or_default();
+    if msg_prop.is_at_me {
+        user_text = strip_leading_bot_mention(&user_text, bot_id, bot_name);
+    }
+    let reference_blocks = collect_reply_reference_text(&event.message_list);
+    let mut sections = Vec::new();
+
+    let trimmed_user_text = user_text.trim();
+    if !trimmed_user_text.is_empty() {
+        sections.push(trimmed_user_text.to_string());
+    } else if reference_blocks.is_empty() {
+        sections.push("(无文本内容，可能是仅@或回复)".to_string());
+    }
+
+    for reference_text in reference_blocks {
+        sections.push(format!("[引用内容]\n{reference_text}"));
+    }
+
+    CurrentTurnUserInput {
+        text: sections.join("\n\n"),
+        is_at_me: msg_prop.is_at_me,
+        at_target_list: msg_prop.at_target_list,
+        messages: event.message_list.clone(),
+    }
+}
+
 fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message> {
     let mut expanded = Vec::new();
 
@@ -931,7 +1109,7 @@ fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message> {
         match message {
             Message::Reply(reply) => {
                 push_inference_text(&mut expanded, format!("[引用消息 {} 开始]", reply.id));
-                if let Some(source_messages) = reply.message_source.as_deref() {
+                if let Some(source_messages) = valid_reply_source_messages(reply) {
                     expanded.extend(expand_messages_for_inference(source_messages));
                 } else {
                     expanded.push(message.clone());
@@ -992,8 +1170,7 @@ fn build_user_message(
     llm_supports_multimodal_input: bool,
     s3_ref: Option<&Arc<S3Ref>>,
 ) -> OpenAIMessage {
-    let msg_prop =
-        MessageProp::from_messages_with_bot_name(&event.message_list, Some(bot_id), Some(bot_name));
+    let current_input = build_current_turn_user_input(event, bot_id, bot_name);
     let sender_name = sender_display_name(&event.sender.nickname, &event.sender.card);
     let mut metadata_lines = Vec::new();
     metadata_lines.push("[消息元信息]".to_string());
@@ -1002,34 +1179,19 @@ fn build_user_message(
     metadata_lines.push(format!("sender_name: {}", sender_name));
     metadata_lines.push(format!("bot_id: {}", bot_id));
     metadata_lines.push(format!("bot_name: {}", bot_name));
-    metadata_lines.push(format!("is_at_bot: {}", msg_prop.is_at_me));
+    metadata_lines.push(format!("is_at_bot: {}", current_input.is_at_me));
 
-    if !msg_prop.at_target_list.is_empty() {
+    if !current_input.at_target_list.is_empty() {
         metadata_lines.push(format!(
             "at_targets: {}",
-            msg_prop.at_target_list.join(", ")
+            current_input.at_target_list.join(", ")
         ));
     }
 
     let mut lines = metadata_lines.clone();
     lines.push(String::new());
     lines.push("[用户消息]".to_string());
-    let mut user_text = msg_prop.content.unwrap_or_default();
-    if msg_prop.is_at_me {
-        user_text = strip_leading_bot_mention(&user_text, bot_id, bot_name);
-    }
-    if user_text.trim().is_empty() {
-        user_text = "(无文本内容，可能是仅@或回复)".to_string();
-    }
-    lines.push(user_text);
-
-    if let Some(ref ref_cnt) = msg_prop.ref_content {
-        if !ref_cnt.is_empty() {
-            lines.push(String::new());
-            lines.push("[引用内容]".to_string());
-            lines.push(ref_cnt.to_string());
-        }
-    }
+    lines.push(current_input.text.clone());
 
     let user_text = lines.join("\n");
     if !llm_supports_multimodal_input {
@@ -1041,7 +1203,7 @@ fn build_user_message(
     let mut has_media = false;
     let mut image_stats = MultimodalImageStats::default();
     append_messages_as_parts(
-        &event.message_list,
+        &current_input.messages,
         &mut parts,
         &mut text_buffer,
         &mut has_media,
@@ -1049,26 +1211,6 @@ fn build_user_message(
         s3_ref,
         &mut image_stats,
     );
-
-    if let Some(ref ref_cnt) = msg_prop
-        .ref_content
-        .as_deref()
-        .filter(|value| !value.is_empty())
-    {
-        if text_buffer.contains("[引用内容]") {
-            if !text_buffer.is_empty() {
-                text_buffer.push_str("\n\n");
-            }
-            text_buffer.push_str("[引用内容补充摘要]\n");
-            text_buffer.push_str(ref_cnt);
-        } else {
-            if !text_buffer.is_empty() {
-                text_buffer.push_str("\n\n");
-            }
-            text_buffer.push_str("[引用内容]\n");
-            text_buffer.push_str(ref_cnt);
-        }
-    }
 
     if has_media {
         flush_text_part(&mut parts, &mut text_buffer);
@@ -1168,9 +1310,7 @@ fn build_merged_follow_up_event(
         })
         .collect::<Vec<_>>()
         .join(" ");
-    merged_event.message_list = vec![Message::PlainText(PlainTextMessage {
-        text: merged_text,
-    })];
+    merged_event.message_list = vec![Message::PlainText(PlainTextMessage { text: merged_text })];
     merged_event
 }
 
@@ -1179,18 +1319,7 @@ fn extract_user_message_text(
     bot_id: &str,
     bot_name: &str,
 ) -> String {
-    let msg_prop =
-        MessageProp::from_messages_with_bot_name(&event.message_list, Some(bot_id), Some(bot_name));
-    let mut user_text = msg_prop.content.unwrap_or_default();
-    if msg_prop.is_at_me {
-        user_text = strip_leading_bot_mention(&user_text, bot_id, bot_name);
-    }
-    let trimmed = user_text.trim();
-    if trimmed.is_empty() {
-        "(无文本内容，可能是仅@或回复)".to_string()
-    } else {
-        trimmed.to_string()
-    }
+    build_current_turn_user_input(event, bot_id, bot_name).text
 }
 
 fn message_with_api_style(mut message: OpenAIMessage, api_style: Option<&str>) -> OpenAIMessage {
@@ -2995,12 +3124,13 @@ impl QqChatAgent {
         let (claimed, claim_token) = try_claim_session(session, &sender_id);
         if !claimed {
             let bot_id = get_bot_id(adapter);
-            let inference_event = expand_event_for_inference(event);
+            let hydrated_event = hydrate_missing_reply_sources(event, adapter);
+            let inference_event = expand_event_for_inference(&hydrated_event);
             let current_message = extract_user_message_text(&inference_event, &bot_id, bot_name);
             let (accepted, queue_len, accepted_steer_count) = pending_steer.enqueue_with_limit(
                 &sender_id,
                 PendingSteerEvent {
-                    event: event.clone(),
+                    event: hydrated_event,
                     time: time.to_string(),
                 },
                 max_steer_count,
@@ -3254,8 +3384,9 @@ impl QqChatAgent {
         pending_steer: &Arc<PendingSteerStore>,
         bot_id: &str,
     ) -> Result<QqChatTurnResult> {
-        let inference_event = expand_event_for_inference(event);
-        let raw_user_message = extract_user_message_text(event, bot_id, bot_name);
+        let hydrated_event = hydrate_missing_reply_sources(event, adapter);
+        let inference_event = expand_event_for_inference(&hydrated_event);
+        let raw_user_message = extract_user_message_text(&hydrated_event, bot_id, bot_name);
         let current_message = extract_user_message_text(&inference_event, bot_id, bot_name);
         trace.log_user_message(&raw_user_message, &current_message);
 
@@ -3704,16 +3835,16 @@ mod tests {
 
     use super::{
         build_merged_follow_up_event, build_merged_steer_user_message, build_steer_user_message,
-        content_type_from_url, derive_tavily_s3_key, extract_user_message_text,
-        PendingSteerEvent, PendingSteerStore, QqChatSteerHook,
-        STEER_PREFIX,
+        build_user_message, content_type_from_url, derive_tavily_s3_key, extract_user_message_text,
+        PendingSteerEvent, PendingSteerStore, QqChatSteerHook, STEER_PREFIX,
     };
     use crate::agent::qq_chat_agent_logging::QqChatTaskTrace;
     use zihuan_agent::brain::BrainIterationHook;
     use zihuan_core::ims_bot_adapter::models::event_model::{MessageEvent, MessageType, Sender};
-    use zihuan_core::ims_bot_adapter::models::message::{Message, PlainTextMessage};
-    use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
-    use zihuan_core::llm::MessageContent;
+    use zihuan_core::ims_bot_adapter::models::message::{
+        ImageMessage, Message, PersistedMedia, PersistedMediaSource, PlainTextMessage, ReplyMessage,
+    };
+    use zihuan_core::llm::{ContentPart, MessageContent};
 
     #[test]
     fn tavily_s3_key_is_bare_object_key() {
@@ -3835,8 +3966,12 @@ mod tests {
                 assert!(text.contains("3. 21345"));
 
                 let first = text.find("1. 124").expect("first steer text should exist");
-                let second = text.find("2. 5341").expect("second steer text should exist");
-                let third = text.find("3. 21345").expect("third steer text should exist");
+                let second = text
+                    .find("2. 5341")
+                    .expect("second steer text should exist");
+                let third = text
+                    .find("3. 21345")
+                    .expect("third steer text should exist");
                 assert!(first < second);
                 assert!(second < third);
             }
@@ -3909,6 +4044,128 @@ mod tests {
         assert_eq!(merged_text, "1231 53443 312375");
     }
 
+    #[test]
+    fn extract_user_message_text_includes_reply_text_block() {
+        let event = build_reply_event(vec![
+            Message::Reply(ReplyMessage {
+                id: 5001,
+                message_source: Some(vec![Message::PlainText(PlainTextMessage {
+                    text: "被引用的原文".to_string(),
+                })]),
+            }),
+            Message::PlainText(PlainTextMessage {
+                text: "@bot 这是谁？".to_string(),
+            }),
+        ]);
+
+        let text = extract_user_message_text(&event, "bot", "bot");
+
+        assert!(text.contains("这是谁？"));
+        assert!(text.contains("[引用内容]"));
+        assert!(text.contains("被引用的原文"));
+        assert!(!text.contains("[Reply of message ID 5001]"));
+    }
+
+    #[test]
+    fn extract_user_message_text_ignores_degenerate_reply_source() {
+        let event = build_reply_event(vec![
+            Message::Reply(ReplyMessage {
+                id: 5001,
+                message_source: Some(vec![Message::Reply(ReplyMessage {
+                    id: 5001,
+                    message_source: None,
+                })]),
+            }),
+            Message::PlainText(PlainTextMessage {
+                text: "@bot 现在说什么".to_string(),
+            }),
+        ]);
+
+        let text = extract_user_message_text(&event, "bot", "bot");
+
+        assert!(text.contains("现在说什么"));
+        assert!(!text.contains("[引用内容]"));
+    }
+
+    #[test]
+    fn build_user_message_multimodal_includes_reply_image_part() {
+        let referenced_messages = vec![Message::Image(ImageMessage::new(PersistedMedia::new(
+            PersistedMediaSource::QqChat,
+            "data:image/png;base64,AA==".to_string(),
+            String::new(),
+            Some("reply.png".to_string()),
+            None,
+            Some("image/png".to_string()),
+        )))];
+        let event = build_reply_event(vec![
+            Message::Reply(ReplyMessage {
+                id: 5001,
+                message_source: Some(referenced_messages),
+            }),
+            Message::PlainText(PlainTextMessage {
+                text: "@bot 这图是谁发的".to_string(),
+            }),
+        ]);
+
+        let message = build_user_message(&event, "bot", "bot", true, None);
+
+        let text = message.content_text_owned().unwrap_or_default();
+        match &message.content {
+            Some(MessageContent::Parts(parts)) => {
+                assert!(parts
+                    .iter()
+                    .any(|part| matches!(part, ContentPart::ImageUrl { .. })));
+                assert!(text.contains("这图是谁发的"));
+                assert!(text.contains("[引用内容]"));
+            }
+            other => panic!("expected multimodal parts, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_user_message_multimodal_keeps_reply_text_and_image() {
+        let referenced_messages = vec![
+            Message::PlainText(PlainTextMessage {
+                text: "图里这个人".to_string(),
+            }),
+            Message::Image(ImageMessage::new(PersistedMedia::new(
+                PersistedMediaSource::QqChat,
+                "data:image/png;base64,AA==".to_string(),
+                String::new(),
+                Some("reply-mixed.png".to_string()),
+                None,
+                Some("image/png".to_string()),
+            ))),
+        ];
+        let event = build_reply_event(vec![
+            Message::Reply(ReplyMessage {
+                id: 5001,
+                message_source: Some(referenced_messages),
+            }),
+            Message::PlainText(PlainTextMessage {
+                text: "@bot 认识吗".to_string(),
+            }),
+        ]);
+
+        let text = extract_user_message_text(&event, "bot", "bot");
+        let message = build_user_message(&event, "bot", "bot", true, None);
+        let combined = message.content_text_owned().unwrap_or_default();
+
+        assert!(text.contains("认识吗"));
+        assert!(text.contains("图里这个人"));
+
+        match &message.content {
+            Some(MessageContent::Parts(parts)) => {
+                assert!(parts
+                    .iter()
+                    .any(|part| matches!(part, ContentPart::ImageUrl { .. })));
+                assert!(combined.contains("图里这个人"));
+                assert!(combined.contains("[引用内容]"));
+            }
+            other => panic!("expected multimodal parts, got {other:?}"),
+        }
+    }
+
     fn build_plain_text_event(message_id: i64, text: &str) -> MessageEvent {
         MessageEvent {
             message_id,
@@ -3922,6 +4179,23 @@ mod tests {
             message_list: vec![Message::PlainText(PlainTextMessage {
                 text: text.to_string(),
             })],
+            group_id: None,
+            group_name: None,
+            is_group_message: false,
+        }
+    }
+
+    fn build_reply_event(message_list: Vec<Message>) -> MessageEvent {
+        MessageEvent {
+            message_id: 42,
+            message_type: MessageType::Private,
+            sender: Sender {
+                user_id: 10001,
+                nickname: "tester".to_string(),
+                card: String::new(),
+                role: None,
+            },
+            message_list,
             group_id: None,
             group_name: None,
             is_group_message: false,

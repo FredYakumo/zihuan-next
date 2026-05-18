@@ -603,6 +603,15 @@ pub(crate) async fn restore_message_list_for_message_id(
     }))
 }
 
+pub async fn restore_messages_for_message_id(
+    adapter: &SharedBotAdapter,
+    message_id: i64,
+) -> Result<Option<Vec<Message>>> {
+    Ok(restore_message_list_for_message_id(adapter, message_id)
+        .await?
+        .map(|resolved| resolved.messages))
+}
+
 fn parse_forward_node_value(value: &serde_json::Value) -> Option<ForwardNodeMessage> {
     let node = value.get("data").unwrap_or(value);
     let sender = node.get("sender").and_then(|value| value.as_object());
