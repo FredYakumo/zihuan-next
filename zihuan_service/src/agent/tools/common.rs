@@ -9,6 +9,7 @@ use ims_bot_adapter::message_helpers::{
     send_group_progress_notification_with_persistence, OutboundMessagePersistence,
 };
 use ims_bot_adapter::models::event_model::MessageType;
+use zihuan_agent::brain::consume_tool_progress_notification;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::runtime::block_async;
 use zihuan_graph_engine::{DataType, DataValue};
@@ -43,6 +44,9 @@ impl ToolNotificationTarget {
     }
 
     pub(crate) fn notify_progress(&self, call_content: &str) {
+        if !consume_tool_progress_notification(call_content) {
+            return;
+        }
         let Some(adapter) = self.adapter.as_ref() else {
             return;
         };
@@ -79,7 +83,7 @@ pub(crate) fn send_editable_tool_progress_notification(
     shared_runtime_values: &HashMap<String, DataValue>,
     call_content: &str,
 ) {
-    if call_content.trim().is_empty() {
+    if !consume_tool_progress_notification(call_content) {
         return;
     }
 

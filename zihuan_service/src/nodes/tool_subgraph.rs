@@ -1,9 +1,16 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use ims_bot_adapter::adapter::shared_from_handle;
+use ims_bot_adapter::message_helpers::{
+    send_friend_progress_notification_with_persistence,
+    send_group_progress_notification_with_persistence, OutboundMessagePersistence,
+};
+use ims_bot_adapter::models::MessageType;
 use log::{info, warn};
 use serde_json::{json, Map, Value};
 
+use zihuan_agent::brain::consume_tool_progress_notification;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_graph_engine::brain_tool_spec::{
@@ -286,6 +293,46 @@ pub fn build_tool_error_message(message: impl Into<String>) -> String {
     .to_string()
 }
 
+fn send_brain_tool_progress_notification(
+    shared_runtime_values: &HashMap<String, DataValue>,
+    call_content: &str,
+) {
+    if !consume_tool_progress_notification(call_content) {
+        return;
+    }
+
+    let event = match shared_runtime_values.get(QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT) {
+        Some(DataValue::MessageEvent(event)) => event,
+        _ => return,
+    };
+    let adapter = match shared_runtime_values.get(QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT) {
+        Some(DataValue::BotAdapterRef(handle)) => shared_from_handle(handle),
+        _ => return,
+    };
+
+    if event.message_type == MessageType::Group {
+        if let Some(group_id) = event.group_id {
+            send_group_progress_notification_with_persistence(
+                &adapter,
+                &group_id.to_string(),
+                &event.sender.user_id.to_string(),
+                call_content,
+                &OutboundMessagePersistence {
+                    group_name: event.group_name.clone(),
+                    ..OutboundMessagePersistence::default()
+                },
+            );
+        }
+    } else {
+        send_friend_progress_notification_with_persistence(
+            &adapter,
+            &event.sender.user_id.to_string(),
+            call_content,
+            &OutboundMessagePersistence::default(),
+        );
+    }
+}
+
 impl ToolSubgraphRunner {
     fn wrap_error(&self, msg: impl Into<String>) -> Error {
         Error::ValidationError(format!("[NODE_ERROR:{}] {}", self.node_id, msg.into()))
@@ -314,6 +361,9 @@ impl ToolSubgraphRunner {
             "[ToolSubgraph:{}] executing tool '{}' with content='{}' arguments={}",
             self.node_id, tool.name, tool_call_content, arguments
         );
+        if self.owner_node_type != QQ_AGENT_TOOL_OWNER_TYPE {
+            send_brain_tool_progress_notification(&self.shared_runtime_values, &tool_call_content);
+        }
         let _ = &NODE_REGISTRY;
 
         let tool_runtime_values = match arguments {
