@@ -396,7 +396,7 @@
           "name": "question",
           "data_type": "Any",
           "description": "变量 question",
-          "required": true,
+          "required": false,
           "hidden": false
         }
       ],
@@ -420,7 +420,7 @@
         "height": 120.0
       },
       "inline_values": {
-        "template": "请研究下面这个问题，并严格遵守以下工作流：\\n1. 先拆解出需要分别研究的要点。\\n2. 按要点逐个处理，每次工具调用只允许服务一个要点。\\n3. 不要把多个要点合并成一次搜索。\\n4. 一个要点查完并整理后，再进入下一个要点。\\n5. 全部要点完成后，再做统一汇总并给出最终结论。\\n\\n待研究问题：\\n${question}"
+        "template": "我将开始研究这个问题: \"${question}\""
       },
       "port_bindings": {},
       "has_error": false,
@@ -500,6 +500,18 @@
         "height": 220.0
       },
       "inline_values": {
+        "shared_inputs": [
+          {
+            "data_type": "MessageEvent",
+            "description": "当前触发此次工具调用的消息事件",
+            "name": "message_event"
+          },
+          {
+            "data_type": "BotAdapterRef",
+            "description": "当前消息事件对应的 Bot Adapter 连接引用",
+            "name": "qq_ims_bot_adapter"
+          }
+        ],
         "tools_config": [
           {
             "description": "使用 Tavily 联网搜索资料，或对单个 URL 抽取网页正文内容",
@@ -1530,18 +1542,6 @@
               ],
               "variables": []
             }
-          }
-        ],
-        "shared_inputs": [
-          {
-            "data_type": "MessageEvent",
-            "description": "当前触发此次工具调用的消息事件",
-            "name": "message_event"
-          },
-          {
-            "data_type": "BotAdapterRef",
-            "description": "当前消息事件对应的 Bot Adapter 连接引用",
-            "name": "qq_ims_bot_adapter"
           }
         ]
       },
