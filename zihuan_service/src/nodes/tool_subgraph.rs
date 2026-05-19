@@ -403,23 +403,23 @@ impl ToolSubgraphRunner {
                     tool.name, key
                 )));
             }
-            let parsed_value = tool
-                .parameters
-                .iter()
-                .find(|param| param.name == key)
-                .map(|param| {
-                    data_value_from_json_with_declared_type(
-                        &FunctionPortDef {
-                            name: param.name.clone(),
-                            data_type: param.data_type.clone(),
-                            description: param.desc.clone(),
-                            required: param.required,
-                        },
-                        &value,
-                    )
-                })
-                .transpose()?
-                .unwrap_or(DataValue::Json(value));
+            let param_definition = tool.parameters.iter().find(|param| param.name == key);
+            if matches!(param_definition, Some(param) if !param.required) && value.is_null() {
+                continue;
+            }
+
+            let parsed_value = match param_definition {
+                Some(param) => data_value_from_json_with_declared_type(
+                    &FunctionPortDef {
+                        name: param.name.clone(),
+                        data_type: param.data_type.clone(),
+                        description: param.desc.clone(),
+                        required: param.required,
+                    },
+                    &value,
+                )?,
+                None => DataValue::Json(value),
+            };
             runtime_values.insert(key, parsed_value);
         }
 
