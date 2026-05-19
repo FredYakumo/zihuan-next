@@ -311,10 +311,12 @@
 
 /* ---- log viewer dialog ---- */
 .log-viewer-dialog {
-  width: min(880px, 100%);
+  width: min(85vw, 1600px);
+  max-width: 85vw;
+  height: 85vh;
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 48px);
+  max-height: 85vh;
 }
 
 .log-viewer-controls {
@@ -359,8 +361,7 @@
 
 .log-viewer-body {
   flex: 1 1 0;
-  min-height: 320px;
-  max-height: 480px;
+  min-height: 0;
   border-radius: 12px;
   border: 1px solid var(--admin-border);
   margin-top: 4px;

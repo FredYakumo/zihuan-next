@@ -133,7 +133,7 @@
     </section>
 
     <!-- Log viewer dialog -->
-    <div v-if="logViewerTask" class="connection-picker-backdrop" @click.self="closeLogViewer">
+    <div v-if="logViewerTask" class="connection-picker-backdrop">
       <div class="connection-picker-dialog log-viewer-dialog" @click.stop>
         <div class="connection-picker-header">
           <h3>日志 — {{ logViewerTask.graph_name }}</h3>
