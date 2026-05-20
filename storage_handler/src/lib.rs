@@ -72,6 +72,7 @@ pub enum ConnectionKind {
     Rustfs(RustfsConnection),
     BotAdapter(serde_json::Value),
     Tavily(TavilyConnection),
+    Tokenizer(TokenizerConnection),
 }
 
 pub const DEFAULT_MYSQL_MAX_CONNECTIONS: u32 = 32;
@@ -127,6 +128,11 @@ pub struct TavilyConnection {
     pub api_token: Option<String>,
     #[serde(default = "default_tavily_timeout_secs")]
     pub timeout_secs: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenizerConnection {
+    pub model_name: String,
 }
 
 fn default_tavily_timeout_secs() -> u64 {
@@ -187,6 +193,7 @@ impl ConfigRecord for ConnectionConfig {
             ConnectionKind::Rustfs(_) => ConfigKind::ConnectionRustfs,
             ConnectionKind::BotAdapter(_) => ConfigKind::ConnectionBotAdapter,
             ConnectionKind::Tavily(_) => ConfigKind::ConnectionTavily,
+            ConnectionKind::Tokenizer(_) => ConfigKind::ConnectionTokenizer,
         }
     }
 

@@ -8,7 +8,7 @@ import type {
   LlmServiceConfig,
 } from "../api/client";
 
-export type ConnectionType = "mysql" | "redis" | "weaviate" | "rustfs" | "bot_adapter" | "ims_bot_adapter" | "tavily";
+export type ConnectionType = "mysql" | "redis" | "weaviate" | "rustfs" | "bot_adapter" | "ims_bot_adapter" | "tavily" | "tokenizer";
 export type WeaviateCollectionSchema = "message_record_semantic" | "image_semantic";
 export type AgentTypeName = "qq_chat" | "http_stream";
 export type ModelRefType = "chat_llm" | "text_embedding_local";
@@ -61,6 +61,7 @@ export interface ConnectionFormState {
   qq_id: string;
   tavily_api_token: string;
   tavily_timeout_secs: number;
+  tokenizer_model_name: string;
 }
 
 export interface LlmFormState {
@@ -100,6 +101,7 @@ export interface AgentFormState {
   intent_llm_ref_id: string;
   math_programming_llm_ref_id: string;
   embedding_model_ref_id: string;
+  tokenizer_connection_id: string;
   tavily_connection_id: string;
   mysql_connection_id: string;
   weaviate_image_connection_id: string;
@@ -186,6 +188,7 @@ export function defaultConnectionForm(): ConnectionFormState {
     qq_id: "",
     tavily_api_token: "",
     tavily_timeout_secs: 30,
+    tokenizer_model_name: "",
   };
 }
 
@@ -231,6 +234,7 @@ export function defaultAgentForm(): AgentFormState {
     intent_llm_ref_id: "",
     math_programming_llm_ref_id: "",
     embedding_model_ref_id: "",
+    tokenizer_connection_id: "",
     tavily_connection_id: "",
     mysql_connection_id: "",
     weaviate_image_connection_id: "",
@@ -299,6 +303,9 @@ export function connectionFormFromConfig(connection: ConnectionConfig): Connecti
     case "tavily":
       form.tavily_api_token = String(connection.kind.api_token ?? "");
       form.tavily_timeout_secs = Number(connection.kind.timeout_secs ?? 30);
+      break;
+    case "tokenizer":
+      form.tokenizer_model_name = String(connection.kind.model_name ?? "");
       break;
   }
   return form;
@@ -401,6 +408,12 @@ export function buildConnectionPayload(form: ConnectionFormState): {
         timeout_secs: form.tavily_timeout_secs,
       };
       break;
+    case "tokenizer":
+      payload.kind = {
+        type: "tokenizer",
+        model_name: form.tokenizer_model_name.trim(),
+      };
+      break;
   }
   return payload;
 }
@@ -484,6 +497,7 @@ export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): Agen
     form.intent_llm_ref_id = String(agentType.intent_llm_ref_id ?? "");
     form.math_programming_llm_ref_id = String(agentType.math_programming_llm_ref_id ?? "");
     form.embedding_model_ref_id = String(agentType.embedding_model_ref_id ?? "");
+    form.tokenizer_connection_id = String(agentType.tokenizer_connection_id ?? "");
     form.tavily_connection_id = String(agentType.tavily_connection_id ?? "");
     form.mysql_connection_id = String(agentType.mysql_connection_id ?? "");
     form.weaviate_image_connection_id = String(agentType.weaviate_image_connection_id ?? "");
@@ -576,6 +590,7 @@ export function buildAgentPayload(form: AgentFormState): {
         intent_llm_ref_id: form.intent_llm_ref_id || null,
         math_programming_llm_ref_id: form.math_programming_llm_ref_id || null,
         embedding_model_ref_id: form.embedding_model_ref_id || null,
+        tokenizer_connection_id: form.tokenizer_connection_id || null,
         tavily_connection_id: form.tavily_connection_id,
         embedding: null,
         mysql_connection_id: form.mysql_connection_id || null,

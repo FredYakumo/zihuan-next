@@ -161,6 +161,38 @@ If you need the distinction between saved connection definitions and live runtim
 
 - [Configuration And Connection Instances](./config-and-connection-instances.md)
 
+## 6.1 Optional: Configure Tokenizer For QQ Segmentation
+
+QQ Chat Agent now supports a dedicated `tokenizer` connection for segmentation.
+
+Model directory convention:
+
+```text
+models/tokenizer/<model_name>/tokenizer.json
+```
+
+Recommended tokenizer models:
+
+1. Quick start (no additional download)
+   - Copy existing tokenizer from
+     - `models/text_embedding/Qwen3-Embedding-0.6B/tokenizer.json`
+   - To
+     - `models/tokenizer/qwen3-embedding-0.6b/tokenizer.json`
+
+2. Highest-accuracy recommendation (current best)
+   - `Qwen/Qwen3-235B-A22B` tokenizer
+   - Download:
+
+```bash
+huggingface-cli download Qwen/Qwen3-235B-A22B tokenizer.json --local-dir models/tokenizer/qwen3-235b-a22b
+```
+
+Admin UI setup:
+
+1. Go to **Connections**, create a `Tokenizer` connection, and choose a model.
+2. Go to **Agents**, edit your QQ Chat Agent, and bind the `Tokenizer` connection.
+3. Leave it empty if you want to keep punctuation-based fallback segmentation.
+
 ## 7. Work With Graphs
 
 You can:

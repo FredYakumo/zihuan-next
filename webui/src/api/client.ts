@@ -220,6 +220,9 @@ export const fileIO = {
   listTextEmbeddingModels(): Promise<{ models: string[] }> {
     return request("GET", "/models/text-embedding");
   },
+  listTokenizerModels(): Promise<{ models: string[] }> {
+    return request("GET", "/models/tokenizer");
+  },
 };
 
 // Tasks

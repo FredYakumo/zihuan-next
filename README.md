@@ -199,6 +199,37 @@ Current resource types in the project include:
 - RustFS / S3-style object storage
 - IMS Bot Adapter connections
 - Tavily
+- Tokenizer (for NLP text segmentation)
+
+### Tokenizer model recommendation (QQ segmentation)
+
+When using QQ Chat Agent text segmentation with the new `tokenizer` connection type, place models under:
+
+```text
+models/tokenizer/<model_name>/tokenizer.json
+```
+
+Recommended options:
+
+1. **Quick start (no extra download)**
+   - Reuse existing file:
+     - `models/text_embedding/Qwen3-Embedding-0.6B/tokenizer.json`
+   - Copy it to:
+     - `models/tokenizer/qwen3-embedding-0.6b/tokenizer.json`
+
+2. **Highest-accuracy recommendation (current priority)**
+   - Use tokenizer from `Qwen/Qwen3-235B-A22B`
+   - Download command:
+
+```bash
+huggingface-cli download Qwen/Qwen3-235B-A22B tokenizer.json --local-dir models/tokenizer/qwen3-235b-a22b
+```
+
+After download:
+
+1. Open Admin UI -> **Connections** -> create a new `Tokenizer` connection.
+2. Select the model folder name (for example `qwen3-235b-a22b`).
+3. Open **Agents** -> QQ Chat Agent -> set **Tokenizer connection**.
 
 The runtime distinguishes between:
 

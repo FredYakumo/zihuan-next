@@ -67,6 +67,13 @@
                 </select>
               </div>
               <div class="field">
+                <label>分词 Tokenizer 连接</label>
+                <select v-model="form.tokenizer_connection_id">
+                  <option value="">不使用（标点分段）</option>
+                  <option v-for="item in tokenizerConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                </select>
+              </div>
+              <div class="field">
                 <label>Bot Adapter</label>
                 <select v-model="form.ims_bot_adapter_connection_id">
                   <option value="">请选择</option>
@@ -305,6 +312,13 @@
                   <select v-model="form.embedding_model_ref_id" class="connection-card-inline-input">
                     <option value="">不使用</option>
                     <option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                  </select>
+                </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>分词 Tokenizer</strong>
+                  <select v-model="form.tokenizer_connection_id" class="connection-card-inline-input">
+                    <option value="">不使用（标点分段）</option>
+                    <option v-for="item in tokenizerConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                   </select>
                 </div>
                 <div class="key-value connection-card-edit-row">
@@ -561,6 +575,7 @@ const botConnections = computed(() => connections.value.filter((item) => isBotAd
 const rustfsConnections = computed(() => connections.value.filter((item) => item.kind.type === "rustfs"));
 const tavilyConnections = computed(() => connections.value.filter((item) => item.kind.type === "tavily"));
 const mysqlConnections = computed(() => connections.value.filter((item) => item.kind.type === "mysql"));
+const tokenizerConnections = computed(() => connections.value.filter((item) => item.kind.type === "tokenizer"));
 const imageWeaviateConnections = computed(() =>
   connections.value.filter((item) => item.kind.type === "weaviate" && item.kind.collection_schema === "image_semantic"),
 );
@@ -772,6 +787,7 @@ function summarizeAgent(agent: AgentWithRuntime): Array<{ label: string; value: 
       { label: "意图分类模型", value: llmRefName(String(agentType.intent_llm_ref_id ?? "")) || llmName(agent) },
       { label: "数学编程模型", value: llmRefName(String(agentType.math_programming_llm_ref_id ?? "")) || llmName(agent) },
       { label: "文本向量模型", value: llmRefName(String(agentType.embedding_model_ref_id ?? "")) || "未绑定" },
+      { label: "分词 Tokenizer", value: connectionName(String(agentType.tokenizer_connection_id ?? "")) || "未绑定" },
       { label: "System Prompt", value: String(agentType.system_prompt ?? "").trim() ? "已配置" : "未设置" },
       { label: "Max Message", value: String(agentType.max_message_length ?? 500) },
       { label: "Max Steer", value: String(agentType.max_steer_count ?? 4) },
