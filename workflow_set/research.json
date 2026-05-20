@@ -2015,6 +2015,12 @@
     },
     {
       "from_node_id": "310e58e7-b875-4a00-9fad-caccf531757e",
+      "from_port": "true_output",
+      "to_node_id": "3ebb936c-8f14-49e3-aa3c-6eebf68e8838",
+      "to_port": "first"
+    },
+    {
+      "from_node_id": "310e58e7-b875-4a00-9fad-caccf531757e",
       "from_port": "false_output",
       "to_node_id": "25ffc278-425f-4ca2-a479-2e6745476fd7",
       "to_port": "message_event"
