@@ -17,6 +17,7 @@ use super::ws::WsBroadcast;
 const IMAGE_UPLOAD_MAX_BYTES: usize = 16 * 1024 * 1024;
 const LOCAL_IMAGE_UPLOAD_DIR: &str = "uploaded_images";
 const TEXT_EMBEDDING_MODEL_DIR: &str = "models/text_embedding";
+const TOKENIZER_MODEL_DIR: &str = "models/tokenizer";
 
 // ─── Workflows directory helpers ──────────────────────────────────────────────
 
@@ -70,6 +71,37 @@ pub async fn list_text_embedding_models(
                         .iter()
                         .all(|name| path.join(name).is_file());
                     if !has_required_files {
+                        return None;
+                    }
+
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .map(|name| name.to_string())
+                })
+                .collect();
+            names.sort();
+            names
+        }
+        Err(_) => Vec::new(),
+    };
+
+    res.render(Json(serde_json::json!({ "models": models })));
+}
+
+#[handler]
+pub async fn list_tokenizer_models(_req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let dir = std::path::Path::new(TOKENIZER_MODEL_DIR);
+    let models = match std::fs::read_dir(dir) {
+        Ok(entries) => {
+            let mut names: Vec<String> = entries
+                .filter_map(|entry| entry.ok())
+                .filter_map(|entry| {
+                    let path = entry.path();
+                    if !path.is_dir() {
+                        return None;
+                    }
+
+                    if !path.join("tokenizer.json").is_file() {
                         return None;
                     }
 

@@ -1,5 +1,8 @@
 [workspace]
-members = ["node_macros", "general_wheel_cpp", "zihuan_core", "zihuan_agent", "zihuan_graph_engine", "model_inference", "ims_bot_adapter", "storage_handler", "zihuan_service", "zihuan_graph_cli"]
+members = ["node_macros", "general_wheel_cpp", "zihuan_core", "zihuan_agent", "zihuan_graph_engine", "model_inference", "ims_bot_adapter", "storage_handler", "zihuan_service", "zihuan_graph_cli", "zihuan_nlp"]
+
+[workspace.dependencies]
+tokenizers = "0.22.2"
 
 [patch.crates-io]
 candle-transformers = { path = "third_party/candle-transformers" }

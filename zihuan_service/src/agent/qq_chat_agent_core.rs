@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use chrono::Local;
 use log::{info, warn};
 use serde_json::Value;
+use zihuan_nlp::{PunctuationSegmenter, TextSegmenter};
 
 use super::agent_text_similarity::{
     find_best_match, token_overlap_ratio, HybridSimilarityConfig, SimilarityCandidate,
@@ -1279,35 +1280,7 @@ fn dedupe_batches(batches: Vec<Vec<Message>>, sender_id: &str) -> Vec<Vec<Messag
 }
 
 fn split_text_by_semantic_boundaries(content: &str, max_chars: usize) -> Vec<String> {
-    let normalized = content.replace("\r\n", "\n");
-    let trimmed = normalized.trim();
-    if trimmed.is_empty() || max_chars == 0 {
-        return Vec::new();
-    }
-
-    let mut chunks = Vec::new();
-    let paragraphs: Vec<&str> = trimmed
-        .split("\n\n")
-        .map(str::trim)
-        .filter(|part| !part.is_empty())
-        .collect();
-
-    let mut current = String::new();
-    for paragraph in paragraphs {
-        for unit in split_overlong_text_unit(paragraph, max_chars) {
-            append_chunk_with_separator(&mut chunks, &mut current, &unit, "\n\n", max_chars);
-        }
-    }
-
-    if !current.is_empty() {
-        chunks.push(current);
-    }
-
-    if chunks.is_empty() {
-        split_text_hard(trimmed, max_chars)
-    } else {
-        chunks
-    }
+    PunctuationSegmenter.segment(content, max_chars)
 }
 
 fn split_overlong_text_unit(content: &str, max_chars: usize) -> Vec<String> {

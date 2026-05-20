@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 
 use super::inference::{InferenceToolContext, InferenceToolProvider};
@@ -43,10 +44,7 @@ use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
 use zihuan_graph_engine::data_value::{OpenAIMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::message_restore::{register_mysql_ref, restore_media_by_id};
-
-const FORWARD_SPLIT_PREFERRED_SEPARATORS: [char; 14] = [
-    '\n', '。', '！', '？', '；', '：', '.', '!', '?', ';', ':', '，', ',', ' ',
-];
+use zihuan_nlp::{build_segmenter, TextSegmenter};
 
 #[derive(Debug, Clone)]
 enum ReplySegment {
@@ -62,8 +60,8 @@ struct SplitRepairState {
     in_cn_quote: bool,
 }
 
-fn build_reply_batch_builder() -> QqAgentReplyBatchBuilder {
-    Arc::new(build_reply_batches_from_model_text)
+fn build_reply_batch_builder(segmenter: Arc<dyn TextSegmenter>) -> QqAgentReplyBatchBuilder {
+    Arc::new(move |request| build_reply_batches_from_model_text(request, segmenter.as_ref()))
 }
 
 #[doc(hidden)]
@@ -75,6 +73,7 @@ pub fn expand_message_event_for_tool_input(
 
 fn build_reply_batches_from_model_text(
     request: &QqAgentReplyBuildRequest,
+    segmenter: &dyn TextSegmenter,
 ) -> Result<QqAgentReplyBuildResult> {
     let resolved_text;
     let text = if let Some(mid) = request.trigger_message_id {
@@ -118,8 +117,11 @@ fn build_reply_batches_from_model_text(
                 if text_chars > request.max_message_length {
                     flush_batch(&mut batches, &mut current_batch);
                     if pending_reply.is_some() {
-                        let text_batches =
-                            build_plain_text_batches_from_text(&text, request.max_message_length);
+                        let text_batches = build_plain_text_batches_from_text(
+                            &text,
+                            request.max_message_length,
+                            segmenter,
+                        );
                         if let Some(reply) = pending_reply.take() {
                             append_reply_to_text_batches(&mut batches, text_batches, reply);
                         } else {
@@ -130,6 +132,7 @@ fn build_reply_batches_from_model_text(
                         request.max_message_length,
                         &request.bot_id,
                         &request.bot_name,
+                        segmenter,
                     )? {
                         batches.push(vec![Message::Forward(forward)]);
                     }
@@ -263,8 +266,12 @@ fn flush_batch(batches: &mut Vec<Vec<Message>>, current_batch: &mut Vec<Message>
     }
 }
 
-fn build_plain_text_batches_from_text(text: &str, max_chars: usize) -> Vec<Vec<Message>> {
-    split_plain_text_for_forward(text, max_chars)
+fn build_plain_text_batches_from_text(
+    text: &str,
+    max_chars: usize,
+    segmenter: &dyn TextSegmenter,
+) -> Vec<Vec<Message>> {
+    split_plain_text_for_forward(text, max_chars, segmenter)
         .into_iter()
         .map(|chunk| vec![Message::PlainText(PlainTextMessage { text: chunk })])
         .collect()
@@ -299,8 +306,9 @@ fn build_forward_from_text(
     max_chars: usize,
     bot_id: &str,
     bot_name: &str,
+    segmenter: &dyn TextSegmenter,
 ) -> Result<Option<ForwardMessage>> {
-    let chunks = split_plain_text_for_forward(text, max_chars);
+    let chunks = split_plain_text_for_forward(text, max_chars, segmenter);
     if chunks.is_empty() {
         return Ok(None);
     }
@@ -318,29 +326,27 @@ fn build_forward_from_text(
     Ok(Some(ForwardMessage { id: None, content }))
 }
 
-fn split_plain_text_for_forward(text: &str, max_chars: usize) -> Vec<String> {
+fn split_plain_text_for_forward(
+    text: &str,
+    max_chars: usize,
+    segmenter: &dyn TextSegmenter,
+) -> Vec<String> {
     let normalized = text.replace("\r\n", "\n");
     let trimmed = normalized.trim();
     if trimmed.is_empty() || max_chars == 0 {
         return Vec::new();
     }
 
-    let chars: Vec<char> = trimmed.chars().collect();
-    let mut start = 0usize;
+    let raw_chunks = segmenter.segment(trimmed, max_chars);
     let mut carry_prefix = String::new();
     let mut state = SplitRepairState::default();
     let mut chunks = Vec::new();
 
-    while start < chars.len() {
-        let prefix_chars = carry_prefix.chars().count();
-        let available = max_chars.saturating_sub(prefix_chars).max(1);
-        let end = find_split_end(&chars, start, available);
+    for (idx, raw_chunk) in raw_chunks.iter().enumerate() {
         let mut chunk = carry_prefix.clone();
-        chunk.extend(chars[start..end].iter());
-        start = end;
-
-        let has_more = start < chars.len();
+        chunk.push_str(raw_chunk);
         let analysis = analyze_chunk_state(&chunk, state);
+        let has_more = idx + 1 < raw_chunks.len();
         let mut finalized = chunk.trim().to_string();
         carry_prefix.clear();
 
@@ -367,21 +373,6 @@ fn split_plain_text_for_forward(text: &str, max_chars: usize) -> Vec<String> {
     }
 
     chunks
-}
-
-fn find_split_end(chars: &[char], start: usize, max_chars: usize) -> usize {
-    let hard_end = (start + max_chars).min(chars.len());
-    if hard_end >= chars.len() {
-        return chars.len();
-    }
-
-    for idx in (start + 1..hard_end).rev() {
-        if FORWARD_SPLIT_PREFERRED_SEPARATORS.contains(&chars[idx - 1]) {
-            return idx;
-        }
-    }
-
-    hard_end
 }
 
 fn analyze_chunk_state(chunk: &str, mut state: SplitRepairState) -> SplitRepairState {
@@ -869,6 +860,7 @@ pub async fn spawn(
         )
     })?;
     let tool_definitions = build_enabled_tool_definitions(&agent.tools)?;
+    let tokenizer_segmenter = resolve_tokenizer_segmenter(&config, &connections);
 
     if let Some(ref mysql) = mysql_ref {
         register_mysql_ref(mysql.clone());
@@ -924,7 +916,7 @@ pub async fn spawn(
         max_message_length: config.max_message_length,
         compact_context_length: config.compact_context_length,
         max_steer_count: config.max_steer_count,
-        reply_batch_builder: Some(build_reply_batch_builder()),
+        reply_batch_builder: Some(build_reply_batch_builder(tokenizer_segmenter)),
         default_tools_enabled: config.default_tools_enabled.clone(),
         shared_inputs: Vec::<FunctionPortDef>::new(),
         tool_definitions,
@@ -1038,6 +1030,43 @@ pub async fn spawn(
             cb(success, error_msg);
         }
     }))
+}
+
+fn resolve_tokenizer_segmenter(
+    config: &QqChatAgentConfig,
+    connections: &[ConnectionConfig],
+) -> Arc<dyn TextSegmenter> {
+    let tokenizer_path = config
+        .tokenizer_connection_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|connection_id| match find_connection(connections, connection_id) {
+            Ok(connection) => match &connection.kind {
+                ConnectionKind::Tokenizer(tokenizer) => Some(Path::new("models/tokenizer").join(
+                    tokenizer.model_name.trim(),
+                )),
+                _ => {
+                    warn!(
+                        "[service][qq_agent] tokenizer_connection_id='{}' points to non-tokenizer connection '{}', fallback to punctuation segmenter",
+                        connection_id,
+                        connection.name
+                    );
+                    None
+                }
+            },
+            Err(err) => {
+                warn!(
+                    "[service][qq_agent] tokenizer connection not found for id='{}': {}, fallback to punctuation segmenter",
+                    connection_id,
+                    err
+                );
+                None
+            }
+        })
+        .map(|model_dir| model_dir.join("tokenizer.json"));
+
+    build_segmenter(tokenizer_path.as_deref())
 }
 
 fn resolve_llm_ref_display_name(

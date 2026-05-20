@@ -21,6 +21,7 @@ model_inference = { path = "../model_inference" }
 ims_bot_adapter = { path = "../ims_bot_adapter" }
 storage_handler = { path = "../storage_handler" }
 general_wheel_cpp = { path = "../general_wheel_cpp" }
+zihuan_nlp = { path = "../zihuan_nlp" }
 base64 = "0.22"
 reqwest = { version = "0.12.25", features = ["blocking", "json", "stream"] }
 

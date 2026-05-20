@@ -161,6 +161,38 @@ workflow_set/
 
 - [配置与连接实例](./config-and-connection-instances.zh-CN.md)
 
+## 6.1 可选：为 QQ 分段配置 Tokenizer
+
+QQ Chat Agent 现在支持专门的 `tokenizer` 连接用于分段。
+
+模型目录约定：
+
+```text
+models/tokenizer/<model_name>/tokenizer.json
+```
+
+推荐模型：
+
+1. 快速上手（无需额外下载）
+   - 复用已有文件：
+     - `models/text_embedding/Qwen3-Embedding-0.6B/tokenizer.json`
+   - 复制到：
+     - `models/tokenizer/qwen3-embedding-0.6b/tokenizer.json`
+
+2. 高精度推荐（当前优先）
+   - 使用 `Qwen/Qwen3-235B-A22B` 的 tokenizer
+   - 下载命令：
+
+```bash
+huggingface-cli download Qwen/Qwen3-235B-A22B tokenizer.json --local-dir models/tokenizer/qwen3-235b-a22b
+```
+
+管理界面配置步骤：
+
+1. 打开 **连接配置**，新建 `Tokenizer` 类型连接并选择模型。
+2. 打开 **Agent 管理**，编辑 QQ Chat Agent，绑定该 `Tokenizer` 连接。
+3. 留空则继续使用标点分段回退逻辑。
+
 ## 7. 使用节点图
 
 你可以：
