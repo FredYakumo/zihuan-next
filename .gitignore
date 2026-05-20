@@ -9,6 +9,7 @@ Cargo.lock
 webui/dist/
 webui/package-lock.json
 uploaded_images/
+.venv/
 pnpm
 .lsmcp/
 .claude/
