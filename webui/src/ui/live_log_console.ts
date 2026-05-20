@@ -254,9 +254,13 @@ function ensureStyles(): void {
 
 @media (max-width: 900px) {
   .zh-live-log {
-    left: 12px;
+    left: auto;
+    right: 12px;
     bottom: 12px;
-    width: calc(100vw - 24px);
+    width: auto;
+    min-width: 0;
+    border-radius: 50%;
+    overflow: visible;
   }
 
   .zh-live-log--expanded {
@@ -266,6 +270,58 @@ function ensureStyles(): void {
     width: auto;
     max-width: none;
     height: min(82vh, 760px);
+    border-radius: 18px;
+    overflow: hidden;
+  }
+
+  .zh-live-log:not(.zh-live-log--expanded) {
+    width: 52px;
+    height: 52px;
+    padding: 0;
+    border: 0;
+    background: color-mix(in srgb, var(--toolbar-bg) 92%, transparent 8%);
+    box-shadow: 0 4px 16px color-mix(in srgb, var(--bg) 60%, transparent 40%);
+    backdrop-filter: blur(12px);
+  }
+
+  .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-bar {
+    position: static;
+    padding: 0;
+    background: transparent;
+    border: 0;
+  }
+
+  .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-preview,
+  .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-title,
+  .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-badge,
+  .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-btn-clear,
+  .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-btn-bottom {
+    display: none;
+  }
+
+  .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-btn {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text);
+    font-size: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-btn::before {
+    content: "📋";
+  }
+
+  .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-btn:hover {
+    background: color-mix(in srgb, var(--border) 40%, transparent 60%);
   }
 }
 `;
@@ -277,13 +333,24 @@ function scrollToBottom(): void {
   bodyEl.scrollTop = bodyEl.scrollHeight;
 }
 
+function isMobile(): boolean {
+  return window.matchMedia("(max-width: 900px)").matches;
+}
+
 function render(): void {
   if (!frameEl || !bodyEl || !toggleBtnEl || !previewEl) return;
   frameEl.classList.toggle("zh-live-log--expanded", expanded);
-  toggleBtnEl.textContent = expanded ? "缩小" : "⛶";
-  toggleBtnEl.title = expanded ? "缩小实时日志" : "展开实时日志";
+
+  const mobile = isMobile();
+  if (mobile && !expanded) {
+    toggleBtnEl.textContent = "";
+    toggleBtnEl.title = "展开实时日志";
+  } else {
+    toggleBtnEl.textContent = expanded ? "缩小" : "⛶";
+    toggleBtnEl.title = expanded ? "缩小实时日志" : "展开实时日志";
+  }
   toggleBtnEl.setAttribute("aria-label", toggleBtnEl.title);
-  previewEl.hidden = expanded;
+  previewEl.hidden = expanded || (mobile && !expanded);
   bodyEl.hidden = !expanded;
 
   const latestEntry = logs[logs.length - 1];
