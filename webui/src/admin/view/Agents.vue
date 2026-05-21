@@ -114,15 +114,15 @@
                 </select>
               </div>
               <div class="field"><label>Max Message Length</label><input v-model.number="form.max_message_length" type="number" min="1" /></div>
-              <div class="field"><label>Compact Context Length</label><input v-model.number="form.compact_context_length" type="number" min="0" /></div>
               <div class="field">
                 <label>Max Steer Count</label>
                 <input v-model.number="form.max_steer_count" type="number" min="0" />
-                <div class="muted" style="margin-top: 6px;">
-                  当 Agent 还没发出最终回复时，用户继续发消息会被视为“插嘴 / steer”。
+                <div class="muted">
+                  当 Agent 还没发出最终回复时，用户继续发消息会被视为"插嘴 / steer"。
                   这里控制单次活跃回复流程里最多接受多少次插嘴；默认 4 次，超出会被丢弃并写入日志。
                 </div>
               </div>
+              <div class="field"><label>Compact Context Length</label><input v-model.number="form.compact_context_length" type="number" min="0" /></div>
             </template>
 
             <template v-else>
@@ -230,299 +230,268 @@
       </div>
     </div>
 
+    <!-- 编辑 Agent 模态框 -->
+    <div v-if="showEditModal" class="agent-edit-modal-backdrop" @click.stop>
+      <div class="agent-edit-modal" @click.stop>
+        <div class="agent-edit-modal-header">
+          <div class="connection-card-badges">
+            <span class="badge">{{ form.type }}</span>
+            <span class="badge" :class="form.enabled ? 'success' : ''">{{ form.enabled ? "已启用" : "已停用" }}</span>
+            <span v-if="form.is_default" class="badge">default</span>
+          </div>
+          <h3 style="margin: 0;">{{ form.name || '编辑 Agent' }}</h3>
+        </div>
+
+        <div class="agent-edit-modal-body">
+          <div class="form-grid">
+            <div class="field">
+              <label>名称</label>
+              <input v-model="form.name" />
+            </div>
+            <div class="field">
+              <label>类型</label>
+              <select v-model="form.type">
+                <option value="qq_chat">QQ Chat Agent</option>
+                <option value="http_stream">HTTP Stream Agent</option>
+              </select>
+            </div>
+
+            <div class="field-full status-row">
+              <label class="field-check"><input v-model="form.enabled" type="checkbox" />启用</label>
+              <label class="field-check"><input v-model="form.auto_start" type="checkbox" />开机自动启动</label>
+              <label class="field-check"><input v-model="form.is_default" type="checkbox" />默认 Agent</label>
+            </div>
+
+            <div class="field">
+              <label>模型配置</label>
+              <select v-model="form.llm_ref_id">
+                <option value="">请选择</option>
+                <option v-for="item in chatModels" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+              </select>
+            </div>
+
+            <template v-if="form.type === 'qq_chat'">
+              <div class="field">
+                <label>意图分类模型</label>
+                <select v-model="form.intent_llm_ref_id">
+                  <option value="">回退主模型</option>
+                  <option v-for="item in chatModels" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>数学编程模型</label>
+                <select v-model="form.math_programming_llm_ref_id">
+                  <option value="">回退主模型</option>
+                  <option v-for="item in chatModels" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>文本向量模型</label>
+                <select v-model="form.embedding_model_ref_id">
+                  <option value="">不使用</option>
+                  <option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>分词 Tokenizer 连接</label>
+                <select v-model="form.tokenizer_connection_id">
+                  <option value="">不使用（标点分段）</option>
+                  <option v-for="item in tokenizerConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Bot Adapter</label>
+                <select v-model="form.ims_bot_adapter_connection_id">
+                  <option value="">请选择</option>
+                  <option v-for="item in botConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                </select>
+              </div>
+              <div class="field"><label>Bot Name</label><input v-model="form.bot_name" /></div>
+              <div class="field-full">
+                <label>System Prompt</label>
+                <textarea v-model="form.system_prompt" placeholder="可选。会追加在 QQ Chat Agent 的通用系统规则后面。" style="min-height: 100px;" />
+              </div>
+              <div class="field">
+                <label>RustFS Connection</label>
+                <select v-model="form.rustfs_connection_id">
+                  <option value="">不使用</option>
+                  <option v-for="item in rustfsConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Tavily Connection</label>
+                <select v-model="form.tavily_connection_id">
+                  <option value="">请选择</option>
+                  <option v-for="item in tavilyConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>MySQL Connection</label>
+                <select v-model="form.mysql_connection_id">
+                  <option value="">不使用</option>
+                  <option v-for="item in mysqlConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Weaviate Image Connection</label>
+                <select v-model="form.weaviate_image_connection_id">
+                  <option value="">不使用</option>
+                  <option v-for="item in imageWeaviateConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                </select>
+              </div>
+              <div class="field"><label>Max Message Length</label><input v-model.number="form.max_message_length" type="number" min="1" /></div>
+              <div class="field">
+                <label>Max Steer Count</label>
+                <input v-model.number="form.max_steer_count" type="number" min="0" />
+                <div class="muted">
+                  当 Agent 还没发出最终回复时，用户继续发消息会被视为"插嘴 / steer"。
+                  这里控制单次活跃回复流程里最多接受多少次插嘴；默认 4 次，超出会被丢弃并写入日志。
+                </div>
+              </div>
+              <div class="field"><label>Compact Context Length</label><input v-model.number="form.compact_context_length" type="number" min="0" /></div>
+
+              <div class="editor-card" style="margin-top: 12px;">
+                <div class="split-header">
+                  <div>
+                    <h3>默认工具</h3>
+                  </div>
+                </div>
+                <div class="list" style="margin-top: 12px;">
+                  <label
+                    v-for="tool in qqChatDefaultTools"
+                    :key="tool.id"
+                    class="field-check"
+                    style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px;"
+                  >
+                    <input v-model="form.default_tools_enabled[tool.id]" type="checkbox" />
+                    <span>
+                      <strong>{{ tool.label }}</strong>
+                      <span class="muted" style="display: block;">{{ tool.description }}</span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="field"><label>Bind</label><input v-model="form.http_bind" placeholder="127.0.0.1:18080" /></div>
+              <div class="field"><label>API Key</label><input v-model="form.http_api_key" /></div>
+            </template>
+          </div>
+
+          <div class="editor-card" style="margin-top: 18px;">
+            <div class="split-header">
+              <div>
+                <h3>工具配置</h3>
+              </div>
+              <button class="btn ghost" @click="addTool">新增工具</button>
+            </div>
+            <div class="list" style="margin-top: 14px;">
+              <div v-if="form.tools.length === 0" class="empty-state">还没有配置工具。</div>
+              <div v-for="(tool, index) in form.tools" :key="tool.id" class="tool-block">
+                <div class="split-header">
+                  <strong>工具 {{ index + 1 }}</strong>
+                  <button class="btn warn" @click="removeTool(index)">移除</button>
+                </div>
+                <div class="form-grid">
+                  <div class="field"><label>ID</label><input v-model="tool.id" /></div>
+                  <div class="field"><label>名称</label><input v-model="tool.name" /></div>
+                  <div class="field-full"><label>描述</label><input v-model="tool.description" /></div>
+                  <div class="field">
+                    <label>目标类型</label>
+                    <select v-model="tool.targetType" @change="handleToolTargetTypeChange(tool)">
+                      <option value="workflow_set">workflow_set</option>
+                      <option value="file_path">file_path</option>
+                      <option value="inline_graph">inline_graph</option>
+                    </select>
+                  </div>
+                  <div class="field field-check"><input v-model="tool.enabled" type="checkbox" />启用该工具</div>
+                  <div v-if="tool.targetType === 'workflow_set'" class="field-full">
+                    <label>Workflow Set 名称</label>
+                    <select v-model="tool.workflowName" @change="applyWorkflowSetMetadata(tool)">
+                      <option value="">请选择</option>
+                      <option v-for="workflow in workflows" :key="workflow.name" :value="workflow.name">
+                        {{ workflow.display_name || workflow.name }}
+                      </option>
+                    </select>
+                  </div>
+                  <div v-else-if="tool.targetType === 'file_path'" class="field-full">
+                    <label>文件路径</label>
+                    <input v-model="tool.filePath" placeholder="workflow_set/demo.json" />
+                  </div>
+                  <div v-else class="field-full">
+                    <label>Inline Graph JSON</label>
+                    <textarea v-model="tool.inlineGraphJson" />
+                  </div>
+                  <div class="field-full">
+                    <label>Parameters JSON</label>
+                    <textarea v-model="tool.parametersJson" />
+                  </div>
+                  <div class="field-full">
+                    <label>Outputs JSON</label>
+                    <textarea v-model="tool.outputsJson" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="agent-edit-modal-footer">
+          <button class="btn ghost" @click="closeEditModal">取消</button>
+          <button class="btn primary" @click="submitForm">保存</button>
+        </div>
+      </div>
+    </div>
+
     <section v-if="agents.length > 0" class="panel">
       <div class="connection-grid connection-grid--agents" style="margin-top: 0;">
         <article
           v-for="agent in agents"
           :key="agent.config_id"
-          :class="['connection-card', { 'connection-card--editing': isEditingAgent(agent.config_id) }]"
+          class="connection-card"
         >
-          <template v-if="isEditingAgent(agent.config_id)">
-            <div class="connection-card-header connection-card-header--stacked">
-              <div class="connection-card-header-top">
-                <div class="connection-card-badges">
-                  <span class="badge">{{ form.type }}</span>
-                  <span class="badge" :class="form.enabled ? 'success' : ''">{{ form.enabled ? "已启用" : "已停用" }}</span>
-                  <span v-if="form.is_default" class="badge">default</span>
-                </div>
-                <div class="inline-actions connection-card-edit-actions">
-                  <button class="btn primary connection-card-compact-btn" @click="submitForm">保存</button>
-                  <button class="btn ghost connection-card-compact-btn" @click="closeEditor">取消</button>
-                </div>
+          <div class="connection-card-header connection-card-header--stacked">
+            <div class="connection-card-header-top">
+              <div class="connection-card-badges">
+                <span class="badge">{{ agent.agent_type.type }}</span>
+                <span class="badge" :class="agent.enabled ? 'success' : ''">{{ agent.enabled ? "已启用" : "已停用" }}</span>
+                <span class="badge" :class="statusTone(agent.runtime.status)">{{ runtimeBadgeText(agent) }}</span>
+                <span v-if="agent.is_default" class="badge">default</span>
               </div>
-              <div class="connection-card-title-edit">
-                <input v-model="form.name" class="connection-card-inline-input connection-card-inline-input--title" />
-              </div>
-            </div>
-
-            <div class="connection-card-body">
-              <div class="key-value connection-card-edit-row">
-                <strong>类型</strong>
-                <select v-model="form.type" class="connection-card-inline-input">
-                  <option value="qq_chat">QQ Chat Agent</option>
-                  <option value="http_stream">HTTP Stream Agent</option>
-                </select>
-              </div>
-              <div class="key-value connection-card-edit-row">
-                <strong>启用</strong>
-                <label class="connection-card-inline-check">
-                  <input :id="`agent-enabled-${agent.config_id}`" v-model="form.enabled" type="checkbox" />
-                  <span>{{ form.enabled ? "已启用" : "已停用" }}</span>
-                </label>
-              </div>
-              <div class="key-value connection-card-edit-row">
-                <strong>自启</strong>
-                <label class="connection-card-inline-check">
-                  <input :id="`agent-auto-start-${agent.config_id}`" v-model="form.auto_start" type="checkbox" />
-                  <span>{{ form.auto_start ? "开启" : "关闭" }}</span>
-                </label>
-              </div>
-              <div class="key-value connection-card-edit-row">
-                <strong>默认</strong>
-                <label class="connection-card-inline-check">
-                  <input :id="`agent-default-${agent.config_id}`" v-model="form.is_default" type="checkbox" />
-                  <span>{{ form.is_default ? "是" : "否" }}</span>
-                </label>
-              </div>
-              <div class="key-value connection-card-edit-row">
-                <strong>模型</strong>
-                <select v-model="form.llm_ref_id" class="connection-card-inline-input">
-                  <option value="">请选择</option>
-                  <option v-for="item in chatModels" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
-                </select>
-              </div>
-
-              <template v-if="form.type === 'qq_chat'">
-                <div class="key-value connection-card-edit-row">
-                  <strong>意图分类模型</strong>
-                  <select v-model="form.intent_llm_ref_id" class="connection-card-inline-input">
-                    <option value="">回退主模型</option>
-                    <option v-for="item in chatModels" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
-                  </select>
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>数学编程模型</strong>
-                  <select v-model="form.math_programming_llm_ref_id" class="connection-card-inline-input">
-                    <option value="">回退主模型</option>
-                    <option v-for="item in chatModels" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
-                  </select>
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>文本向量模型</strong>
-                  <select v-model="form.embedding_model_ref_id" class="connection-card-inline-input">
-                    <option value="">不使用</option>
-                    <option v-for="item in embeddingModels" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
-                  </select>
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>分词 Tokenizer</strong>
-                  <select v-model="form.tokenizer_connection_id" class="connection-card-inline-input">
-                    <option value="">不使用（标点分段）</option>
-                    <option v-for="item in tokenizerConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
-                  </select>
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Bot Adapter</strong>
-                  <select v-model="form.ims_bot_adapter_connection_id" class="connection-card-inline-input">
-                    <option value="">请选择</option>
-                    <option v-for="item in botConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
-                  </select>
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Bot Name</strong>
-                  <input v-model="form.bot_name" class="connection-card-inline-input" />
-                </div>
-                <div class="key-value connection-card-edit-row" style="align-items: flex-start;">
-                  <strong>System Prompt</strong>
-                  <textarea
-                    v-model="form.system_prompt"
-                    class="connection-card-inline-input"
-                    placeholder="可选。会追加在 QQ Chat Agent 的通用系统规则后面。"
-                    style="min-height: 110px;"
-                  />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>RustFS</strong>
-                  <select v-model="form.rustfs_connection_id" class="connection-card-inline-input">
-                    <option value="">不使用</option>
-                    <option v-for="item in rustfsConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
-                  </select>
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Tavily</strong>
-                  <select v-model="form.tavily_connection_id" class="connection-card-inline-input">
-                    <option value="">请选择</option>
-                    <option v-for="item in tavilyConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
-                  </select>
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>MySQL</strong>
-                  <select v-model="form.mysql_connection_id" class="connection-card-inline-input">
-                    <option value="">不使用</option>
-                    <option v-for="item in mysqlConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
-                  </select>
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Image DB</strong>
-                  <select v-model="form.weaviate_image_connection_id" class="connection-card-inline-input">
-                    <option value="">不使用</option>
-                    <option v-for="item in imageWeaviateConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
-                  </select>
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Max Msg</strong>
-                  <input v-model.number="form.max_message_length" class="connection-card-inline-input" type="number" min="1" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Compact</strong>
-                  <input v-model.number="form.compact_context_length" class="connection-card-inline-input" type="number" min="0" />
-                </div>
-                <div class="key-value connection-card-edit-row" style="align-items: flex-start;">
-                  <strong>Max Steer</strong>
-                  <div style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
-                    <input v-model.number="form.max_steer_count" class="connection-card-inline-input" type="number" min="0" />
-                    <span class="muted">
-                      最终回复发出前，用户继续输入会被当作插嘴。这里限制单次回复流程里最多接受多少次插嘴，默认 4 次。
-                    </span>
-                  </div>
-                </div>
-
-                <div class="editor-card" style="margin-top: 8px;">
-                  <div class="split-header">
-                    <div>
-                      <h3>默认工具</h3>
-                    </div>
-                  </div>
-                  <div class="list" style="margin-top: 14px;">
-                    <label
-                      v-for="tool in qqChatDefaultTools"
-                      :key="tool.id"
-                      class="field-check"
-                      style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px;"
-                    >
-                      <input v-model="form.default_tools_enabled[tool.id]" type="checkbox" />
-                      <span>
-                        <strong>{{ tool.label }}</strong>
-                        <span class="muted" style="display: block;">{{ tool.description }}</span>
-                      </span>
-                    </label>
-                  </div>
-                </div>
-              </template>
-
-              <template v-else>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Bind</strong>
-                  <input v-model="form.http_bind" class="connection-card-inline-input" placeholder="127.0.0.1:18080" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>API Key</strong>
-                  <input v-model="form.http_api_key" class="connection-card-inline-input" />
-                </div>
-              </template>
-
-              <div class="editor-card">
-                <div class="split-header">
-                  <div>
-                    <h3>工具配置</h3>
-                  </div>
-                  <button class="btn ghost" @click="addTool">新增工具</button>
-                </div>
-                <div class="list" style="margin-top: 12px;">
-                  <div v-if="form.tools.length === 0" class="empty-state">还没有配置工具。</div>
-                  <div v-for="(tool, index) in form.tools" :key="tool.id" class="tool-block">
-                    <div class="split-header">
-                      <strong>工具 {{ index + 1 }}</strong>
-                      <button class="btn warn" @click="removeTool(index)">移除</button>
-                    </div>
-                    <div class="form-grid">
-                      <div class="field"><label>ID</label><input v-model="tool.id" /></div>
-                      <div class="field"><label>名称</label><input v-model="tool.name" /></div>
-                      <div class="field-full"><label>描述</label><input v-model="tool.description" /></div>
-                      <div class="field">
-                        <label>目标类型</label>
-                        <select v-model="tool.targetType" @change="handleToolTargetTypeChange(tool)">
-                          <option value="workflow_set">workflow_set</option>
-                          <option value="file_path">file_path</option>
-                          <option value="inline_graph">inline_graph</option>
-                        </select>
-                      </div>
-                      <div class="field field-check"><input v-model="tool.enabled" type="checkbox" />启用该工具</div>
-                      <div v-if="tool.targetType === 'workflow_set'" class="field-full">
-                        <label>Workflow Set 名称</label>
-                        <select v-model="tool.workflowName" @change="applyWorkflowSetMetadata(tool)">
-                          <option value="">请选择</option>
-                          <option v-for="workflow in workflows" :key="workflow.name" :value="workflow.name">
-                            {{ workflow.display_name || workflow.name }}
-                          </option>
-                        </select>
-                      </div>
-                      <div v-else-if="tool.targetType === 'file_path'" class="field-full">
-                        <label>文件路径</label>
-                        <input v-model="tool.filePath" placeholder="workflow_set/demo.json" />
-                      </div>
-                      <div v-else class="field-full">
-                        <label>Inline Graph JSON</label>
-                        <textarea v-model="tool.inlineGraphJson" />
-                      </div>
-                      <div class="field-full">
-                        <label>Parameters JSON</label>
-                        <textarea v-model="tool.parametersJson" />
-                      </div>
-                      <div class="field-full">
-                        <label>Outputs JSON</label>
-                        <textarea v-model="tool.outputsJson" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
+              <div class="inline-actions connection-card-display-actions">
+                <button class="btn ghost connection-card-compact-btn" @click="editAgent(agent)">编辑</button>
+                <button
+                  class="btn connection-card-compact-btn"
+                  @click="toggleAgentRuntime(agent)"
+                >
+                  {{ agent.runtime.status === "running" ? "停止" : "启动" }}
+                </button>
+                <button class="btn warn connection-card-compact-btn" @click="removeAgent(agent.config_id)">删除</button>
               </div>
             </div>
-          </template>
-
-          <template v-else>
-            <div class="connection-card-header connection-card-header--stacked">
-              <div class="connection-card-header-top">
-                <div class="connection-card-badges">
-                  <span class="badge">{{ agent.agent_type.type }}</span>
-                  <span class="badge" :class="agent.enabled ? 'success' : ''">{{ agent.enabled ? "已启用" : "已停用" }}</span>
-                  <span class="badge" :class="statusTone(agent.runtime.status)">{{ runtimeBadgeText(agent) }}</span>
-                  <span v-if="agent.is_default" class="badge">default</span>
-                </div>
-                <div class="inline-actions connection-card-display-actions">
-                  <button class="btn ghost connection-card-compact-btn" @click="editAgent(agent)">编辑</button>
-                  <button
-                    class="btn connection-card-compact-btn"
-                    @click="toggleAgentRuntime(agent)"
-                  >
-                    {{ agent.runtime.status === "running" ? "停止" : "启动" }}
-                  </button>
-                  <button class="btn warn connection-card-compact-btn" @click="removeAgent(agent.config_id)">删除</button>
-                </div>
-              </div>
-              <div style="display: flex; align-items: center; gap: 10px;">
-                <img
-                  v-if="botAvatarUrl(agent)"
-                  :src="botAvatarUrl(agent)"
-                  alt="bot avatar"
-                  style="width: 36px; height: 36px; border-radius: 999px; border: 1px solid var(--line); object-fit: cover; background: var(--surface-soft);"
-                />
-                <h4 style="margin: 0;">{{ agent.name }}</h4>
-              </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <img
+                v-if="botAvatarUrl(agent)"
+                :src="botAvatarUrl(agent)"
+                alt="bot avatar"
+                style="width: 36px; height: 36px; border-radius: 999px; border: 1px solid var(--line); object-fit: cover; background: var(--surface-soft);"
+              />
+              <h4 style="margin: 0;">{{ agent.name }}</h4>
             </div>
+          </div>
 
-            <div class="connection-card-body">
-              <div v-for="item in summarizeAgent(agent)" :key="item.label" class="key-value">
-                <strong>{{ item.label }}</strong>
-                <span :class="item.mono ? 'mono' : ''">{{ item.value }}</span>
-              </div>
+          <div class="connection-card-body">
+            <div v-for="item in summarizeAgent(agent)" :key="item.label" class="key-value">
+              <strong>{{ item.label }}</strong>
+              <span :class="item.mono ? 'mono' : ''">{{ item.value }}</span>
             </div>
+          </div>
 
-            <div class="connection-card-footer">
-              <span class="muted">启动于 {{ formatTime(agent.runtime.started_at) }}</span>
-              <span class="muted">工具 {{ agent.tools.length }} 个</span>
-            </div>
-          </template>
+          <div class="connection-card-footer">
+            <span class="muted">启动于 {{ formatTime(agent.runtime.started_at) }}</span>
+            <span class="muted">工具 {{ agent.tools.length }} 个</span>
+          </div>
         </article>
       </div>
     </section>
@@ -567,6 +536,7 @@ const form = reactive<AgentFormState>(defaultAgentForm());
 const editingAgentId = ref("");
 const showCreatePicker = ref(false);
 const showCreateForm = ref(false);
+const showEditModal = ref(false);
 const qqChatDefaultTools = QQ_CHAT_DEFAULT_TOOLS;
 const chatModels = computed(() => llm.value.filter((item) => item.model.type === "chat_llm"));
 const embeddingModels = computed(() => llm.value.filter((item) => item.model.type === "text_embedding_local" && item.enabled));
@@ -586,10 +556,6 @@ function resetForm() {
 
 function clearEditingAgent() {
   editingAgentId.value = "";
-}
-
-function isEditingAgent(agentId: string) {
-  return editingAgentId.value === agentId;
 }
 
 function startCreate() {
@@ -615,10 +581,9 @@ function pickCreateType(type: AgentTypeName) {
 }
 
 function closeEditor() {
-  resetForm();
-  clearEditingAgent();
   showCreatePicker.value = false;
   showCreateForm.value = false;
+  closeEditModal();
 }
 
 async function load() {
@@ -637,9 +602,13 @@ async function load() {
 function editAgent(agent: AgentWithRuntime) {
   Object.assign(form, agentFormFromConfig(agent));
   editingAgentId.value = agent.config_id;
-  showCreatePicker.value = false;
-  showCreateForm.value = false;
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  showEditModal.value = true;
+}
+
+function closeEditModal() {
+  showEditModal.value = false;
+  resetForm();
+  clearEditingAgent();
 }
 
 function addTool() {

@@ -6,10 +6,14 @@ services:
       - '6379:6379'
     volumes:
       - ./redis/data:/data
-      - ./redis/redis.conf:/etc/redis/redis.conf
     command:
       - redis-server
-      - /etc/redis/redis.conf
+      - --protected-mode
+      - 'no'
+      - --save
+      - ''
+      - --appendonly
+      - 'no'
 
   rustfs:
     image: rustfs/rustfs:latest
@@ -23,10 +27,6 @@ services:
       - rustfs_logs:/logs
     command:
       - --console-enable
-      - --access-key
-      - ${RUSTFS_ACCESS_KEY:-rustfsadmin}
-      - --secret-key
-      - ${RUSTFS_SECRET_KEY:-rustfsadmin}
       - /data
 
   weaviate:
@@ -45,6 +45,35 @@ services:
       DISK_USE_READONLY_PERCENTAGE: '95'
     volumes:
       - weaviate_data:/var/lib/weaviate
+
+  napcat:
+    image: mlikiowa/napcat-docker:latest
+    container_name: napcat
+    restart: always
+    ports:
+      - '3001:3001'
+      - '6099:6099'
+    volumes:
+      - ./napcat/config:/app/napcat/config
+      - ./napcat/ntqq:/app/.config/QQ
+
+  zihuan:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: zihuan_next
+    restart: unless-stopped
+    ports:
+      - '9951:9951'
+    environment:
+      ZIHUAN_HOST: '0.0.0.0'
+      ZIHUAN_PORT: '9951'
+    volumes:
+      - ../config.yaml:/app/config.yaml:ro
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+      - weaviate
 
 volumes:
   rustfs_data:
