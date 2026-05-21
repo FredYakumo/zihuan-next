@@ -418,7 +418,8 @@ pub async fn query_rustfs(req: &mut Request, res: &mut Response, _depot: &mut De
         .filter_map(|p| p.prefix().map(|s| s.to_string()))
         .collect();
 
-    let mut objects: Vec<RustfsObjectEntry> = output
+    // collect metas to Generate URL with auth
+    let object_metas: Vec<_> = output
         .contents()
         .iter()
         .filter_map(|obj| {
@@ -432,16 +433,21 @@ pub async fn query_rustfs(req: &mut Request, res: &mut Response, _depot: &mut De
             }
 
             let last_modified = obj.last_modified().map(|dt| dt.to_string());
-            let url = s3_ref.object_url_for_key(&key).unwrap_or_default();
-
-            Some(RustfsObjectEntry {
-                key,
-                size,
-                last_modified,
-                url,
-            })
+            Some((key, size, last_modified))
         })
         .collect();
+
+    //generate URL with auth
+    let mut objects = Vec::with_capacity(object_metas.len());
+    for (key, size, last_modified) in object_metas {
+        let url = s3_ref.object_url_for_key(&key).await.unwrap_or_default();
+        objects.push(RustfsObjectEntry {
+            key,
+            size,
+            last_modified,
+            url,
+        });
+    }
 
     let total = objects.len();
     let start = ((page - 1) * page_size) as usize;
