@@ -25,8 +25,7 @@ use zihuan_core::error::Result;
 use zihuan_core::llm::OpenAIMessage;
 use zihuan_core::task_context::AgentTaskRuntime;
 
-use self::inference::{InferenceToolProvider, LoadedInferenceAgent, StaticInferenceToolProvider};
-use self::tool_definitions::build_enabled_tool_definitions;
+use self::inference::{InferenceToolProvider, LoadedInferenceAgent};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -326,8 +325,8 @@ pub fn build_inference_tool_provider(
         AgentType::QqChat(config) => {
             qq_chat_agent::load_inference_tool_provider(agent, config, connections)
         }
-        AgentType::HttpStream(_) => Ok(Arc::new(StaticInferenceToolProvider::new(
-            build_enabled_tool_definitions(&agent.tools)?,
-        ))),
+        AgentType::HttpStream(config) => {
+            http_stream_agent::load_inference_tool_provider(agent, config, connections)
+        }
     }
 }
