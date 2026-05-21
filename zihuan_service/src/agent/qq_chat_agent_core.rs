@@ -2185,8 +2185,13 @@ impl QqChatAgent {
         let current_message = extract_user_message_text(&inference_event, bot_id, bot_name);
         trace.log_user_message(&raw_user_message, &current_message);
 
+        let history_key =
+            conversation_history_key(bot_id, sender_id, is_group, inference_event.group_id);
+        let legacy_history_key = sender_id.to_string();
+        let history = load_history(cache, &history_key, &legacy_history_key);
+
         let intent_trace =
-            classify_intent_with_trace(intent_llm, embedding_model, &current_message);
+            classify_intent_with_trace(intent_llm, embedding_model, &current_message, Some(&history), compact_context_length);
         let intent = intent_trace.category;
         trace.record_intent(intent_trace);
 
@@ -2205,11 +2210,7 @@ impl QqChatAgent {
             selected_llm.api_style(),
         );
 
-        let history_key =
-            conversation_history_key(bot_id, sender_id, is_group, inference_event.group_id);
-        let legacy_history_key = sender_id.to_string();
-        let mut history =
-            sanitize_messages_for_inference(load_history(cache, &history_key, &legacy_history_key));
+        let mut history = sanitize_messages_for_inference(history);
 
         let direct_reply = match intent {
             IntentCategory::AskSystemPrompt => Some(DIRECT_REPLY_NO_SYSTEM_PROMPT.to_string()),
