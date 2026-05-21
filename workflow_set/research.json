@@ -1769,52 +1769,6 @@
       "disabled": false
     },
     {
-      "id": "3ebb936c-8f14-49e3-aa3c-6eebf68e8838",
-      "name": "and then",
-      "description": null,
-      "node_type": "and_then",
-      "input_ports": [
-        {
-          "name": "first",
-          "data_type": "Any",
-          "description": "用于串联依赖的前置输入，仅用于等待其到齐",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "second",
-          "data_type": "Any",
-          "description": "在两个输入都到齐后原样透传的值",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "output",
-          "data_type": "Any",
-          "description": "second 的原样输出",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1950.0,
-        "y": 90.0
-      },
-      "size": {
-        "width": 200.0,
-        "height": 120.0
-      },
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
       "id": "25ffc278-425f-4ca2-a479-2e6745476fd7",
       "name": "extract sender from event",
       "description": null,
@@ -2010,8 +1964,8 @@
     {
       "from_node_id": "__graph_inputs__",
       "from_port": "question",
-      "to_node_id": "3ebb936c-8f14-49e3-aa3c-6eebf68e8838",
-      "to_port": "second"
+      "to_node_id": "19b88ffe-1f19-45b0-89c0-5c473e6c2c59",
+      "to_port": "content"
     },
     {
       "from_node_id": "310e58e7-b875-4a00-9fad-caccf531757e",
@@ -2036,18 +1990,6 @@
       "from_port": "qq_ims_bot_adapter",
       "to_node_id": "651470a4-d56c-4673-bd0c-8d1a5441f823",
       "to_port": "ims_bot_adapter"
-    },
-    {
-      "from_node_id": "651470a4-d56c-4673-bd0c-8d1a5441f823",
-      "from_port": "success",
-      "to_node_id": "3ebb936c-8f14-49e3-aa3c-6eebf68e8838",
-      "to_port": "first"
-    },
-    {
-      "from_node_id": "3ebb936c-8f14-49e3-aa3c-6eebf68e8838",
-      "from_port": "output",
-      "to_node_id": "19b88ffe-1f19-45b0-89c0-5c473e6c2c59",
-      "to_port": "content"
     }
   ],
   "graph_inputs": [
