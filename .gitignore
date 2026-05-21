@@ -3,6 +3,7 @@ logs/
 **/__pycache__/
 config.yaml
 docker/redis/
+docker/napcat/
 target/
 Cargo.lock
 **/node_modules/
