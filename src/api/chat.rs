@@ -27,12 +27,14 @@ const APP_DIR_NAME: &str = "zihuan-next_aibot";
 
 struct SseBrainObserver {
     event_tx: mpsc::UnboundedSender<Value>,
+    message_id: String,
 }
 
 impl BrainObserver for SseBrainObserver {
     fn on_tool_start(&self, name: &str, call_id: &str, arguments: &Value) {
         let event = json!({
             "type": "tool_call_start",
+            "message_id": self.message_id,
             "call_id": call_id,
             "name": name,
             "arguments": arguments,
@@ -43,6 +45,7 @@ impl BrainObserver for SseBrainObserver {
     fn on_tool_finish(&self, name: &str, call_id: &str, result: &str) {
         let event = json!({
             "type": "tool_call_result",
+            "message_id": self.message_id,
             "call_id": call_id,
             "name": name,
             "result": result,
@@ -275,7 +278,10 @@ async fn execute_chat_streaming(
 
     let (token_tx, mut token_rx) = mpsc::unbounded_channel::<String>();
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<Value>();
-    let observer: Arc<dyn BrainObserver> = Arc::new(SseBrainObserver { event_tx });
+    let observer: Arc<dyn BrainObserver> = Arc::new(SseBrainObserver {
+        event_tx,
+        message_id: assistant_message_id.clone(),
+    });
 
     let inference_handle = tokio::spawn({
         let state = state.clone();
