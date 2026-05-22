@@ -6,7 +6,7 @@ use model_inference::message_content_utils::sanitize_messages_for_inference;
 use model_inference::system_config::{AgentConfig, AgentType, LlmRefConfig};
 use storage_handler::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
-use zihuan_agent::brain::{Brain, BrainStopReason, BrainTool, MAX_TOOL_ITERATIONS};
+use zihuan_agent::brain::{Brain, BrainObserver, BrainStopReason, BrainTool, MAX_TOOL_ITERATIONS};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
@@ -182,6 +182,7 @@ impl LoadedInferenceAgent {
         &self,
         messages: Vec<OpenAIMessage>,
         token_tx: mpsc::UnboundedSender<String>,
+        observer: Option<Arc<dyn BrainObserver>>,
     ) -> Result<Vec<OpenAIMessage>> {
         let context = build_inference_tool_context(&messages);
 
@@ -202,6 +203,7 @@ impl LoadedInferenceAgent {
             self.tools.tool_definitions(),
             conversation,
             token_tx,
+            observer,
         )
         .await
     }
@@ -311,8 +313,12 @@ async fn run_agent_brain_streaming(
     tool_definitions: Vec<BrainToolDefinition>,
     messages: Vec<OpenAIMessage>,
     token_tx: mpsc::UnboundedSender<String>,
+    observer: Option<Arc<dyn BrainObserver>>,
 ) -> Result<Vec<OpenAIMessage>> {
-    let brain = build_brain(agent, llm, default_tools, tool_definitions);
+    let mut brain = build_brain(agent, llm, default_tools, tool_definitions);
+    if let Some(obs) = observer {
+        brain.set_observer(obs);
+    }
     let (output_messages, stop_reason) = brain.run_streaming(messages, token_tx).await;
     handle_brain_result(&agent.name, output_messages, stop_reason)
 }

@@ -24,6 +24,7 @@ use uuid::Uuid;
 use zihuan_core::error::Result;
 use zihuan_core::llm::OpenAIMessage;
 use zihuan_core::task_context::AgentTaskRuntime;
+use zihuan_agent::brain::BrainObserver;
 
 use self::inference::{InferenceToolProvider, LoadedInferenceAgent};
 
@@ -140,6 +141,7 @@ impl AgentManager {
         agent_id: &str,
         messages: Vec<OpenAIMessage>,
         token_tx: mpsc::UnboundedSender<String>,
+        observer: Option<Arc<dyn BrainObserver>>,
     ) -> Result<Vec<OpenAIMessage>> {
         let agent = self.running_agent(agent_id).ok_or_else(|| {
             zihuan_core::error::Error::ValidationError(format!(
@@ -148,7 +150,7 @@ impl AgentManager {
             ))
         })?;
         agent
-            .infer_response_streaming_with_trace(messages, token_tx)
+            .infer_response_streaming_with_trace(messages, token_tx, observer)
             .await
     }
 
