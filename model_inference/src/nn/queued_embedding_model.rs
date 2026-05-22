@@ -4,11 +4,12 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::Mutex;
 use std::thread;
 
+use candle_core::Device;
 use log::warn;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 
-use super::local_candle_embedding::LocalCandleEmbeddingModel;
+use super::local_candle_embedding::{describe_device, LocalCandleEmbeddingModel};
 
 const DEFAULT_EMBEDDING_QUEUE_CAPACITY: usize = 1024;
 
@@ -150,11 +151,33 @@ fn run_embedding_worker(
         let response = match result {
             Ok(result) => result,
             Err(_) => {
-                let _ = request.response.send(Err(Error::StringError(format!(
-                    "embedding worker '{}' panicked during inference",
-                    worker_name
-                ))));
-                break;
+                if model.preferred_device().is_cpu() {
+                    let _ = request.response.send(Err(Error::StringError(format!(
+                        "embedding worker '{}' panicked during inference on CPU",
+                        worker_name
+                    ))));
+                    break;
+                }
+
+                log::warn!(
+                    "Embedding worker '{}' panicked during inference on device '{}'; retrying on CPU",
+                    worker_name,
+                    describe_device(model.preferred_device())
+                );
+                model.set_preferred_device(Device::Cpu);
+
+                match panic::catch_unwind(AssertUnwindSafe(|| {
+                    model.batch_inference(&request.texts)
+                })) {
+                    Ok(cpu_result) => cpu_result,
+                    Err(_) => {
+                        let _ = request.response.send(Err(Error::StringError(format!(
+                            "embedding worker '{}' panicked during inference on CPU after device fallback",
+                            worker_name
+                        ))));
+                        break;
+                    }
+                }
             }
         };
 
