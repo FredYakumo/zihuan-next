@@ -4,18 +4,25 @@ use log::info;
 use model_inference::system_config::{
     load_agents, load_llm_refs, AgentConfig, AgentType, HttpStreamAgentConfig,
 };
+use storage_handler::{build_tavily_ref, ConnectionConfig};
 use salvo::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use salvo::http::{HeaderValue, StatusCode};
 use salvo::prelude::*;
 use tokio::task::JoinHandle;
+use zihuan_agent::brain::BrainTool;
 use zihuan_core::error::{Error, Result};
+use zihuan_core::rag::TavilyRef;
 use zihuan_core::task_context::{
     AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
 };
+use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
 
 use zihuan_graph_engine::data_value::EXECUTION_TASK_ID;
 
 use super::inference::{infer_agent_response, resolve_agent_model_name};
+use super::inference::{InferenceToolContext, InferenceToolProvider};
+use super::tool_definitions::build_enabled_tool_definitions;
+use super::tools::{ToolNotificationTarget, WebSearchBrainTool, DEFAULT_TOOL_WEB_SEARCH};
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
 
 #[derive(Clone)]
@@ -38,6 +45,75 @@ struct ChatCompletionsRequest {
 enum HttpStreamCompletion {
     Json(serde_json::Value),
     Sse(String),
+}
+
+#[derive(Clone, Default)]
+struct HttpStreamLoadedInferenceResources {
+    tavily_ref: Option<Arc<TavilyRef>>,
+    default_tools_enabled: std::collections::HashMap<String, bool>,
+}
+
+pub struct HttpStreamInferenceToolProvider {
+    resources: HttpStreamLoadedInferenceResources,
+    tool_definitions: Vec<BrainToolDefinition>,
+}
+
+impl InferenceToolProvider for HttpStreamInferenceToolProvider {
+    fn build_default_tools(&self, _context: &InferenceToolContext) -> Vec<Box<dyn BrainTool>> {
+        let web_search_enabled = *self
+            .resources
+            .default_tools_enabled
+            .get(DEFAULT_TOOL_WEB_SEARCH)
+            .unwrap_or(&true);
+
+        if !web_search_enabled {
+            return Vec::new();
+        }
+
+        let Some(tavily_ref) = self.resources.tavily_ref.as_ref() else {
+            return Vec::new();
+        };
+
+        vec![Box::new(WebSearchBrainTool::new(
+            tavily_ref.clone(),
+            ToolNotificationTarget::dashboard(),
+        ))]
+    }
+
+    fn tool_definitions(&self) -> Vec<BrainToolDefinition> {
+        self.tool_definitions.clone()
+    }
+}
+
+pub fn load_inference_tool_provider(
+    agent: &AgentConfig,
+    config: &HttpStreamAgentConfig,
+    connections: &[ConnectionConfig],
+) -> Result<Arc<dyn InferenceToolProvider>> {
+    Ok(Arc::new(HttpStreamInferenceToolProvider {
+        resources: load_http_stream_resources(config, connections),
+        tool_definitions: build_enabled_tool_definitions(&agent.tools)?,
+    }))
+}
+
+fn load_http_stream_resources(
+    config: &HttpStreamAgentConfig,
+    connections: &[ConnectionConfig],
+) -> HttpStreamLoadedInferenceResources {
+    let tavily_connection_id = config
+        .tavily_connection_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let tavily_ref = build_tavily_ref(tavily_connection_id, connections).unwrap_or_else(|error| {
+        log::warn!("[inference][http_stream] tavily connection unavailable: {error}");
+        None
+    });
+
+    HttpStreamLoadedInferenceResources {
+        tavily_ref,
+        default_tools_enabled: config.default_tools_enabled.clone(),
+    }
 }
 
 pub async fn spawn(

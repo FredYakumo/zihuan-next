@@ -393,12 +393,17 @@ export interface AgentWithRuntime extends AgentConfig {
 }
 
 export interface ChatStreamEvent {
-  type: "start" | "delta" | "done" | "error";
+  type: "start" | "delta" | "done" | "error" | "tool_call_start" | "tool_call_result";
   session_id?: string;
   message_id?: string;
   index?: number;
   token?: string;
   error?: string;
+  // tool_call_start / tool_call_result
+  call_id?: string;
+  name?: string;
+  arguments?: unknown;
+  result?: string;
 }
 
 export interface ChatToolCall {

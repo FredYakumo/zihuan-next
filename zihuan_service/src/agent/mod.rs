@@ -24,9 +24,9 @@ use uuid::Uuid;
 use zihuan_core::error::Result;
 use zihuan_core::llm::OpenAIMessage;
 use zihuan_core::task_context::AgentTaskRuntime;
+use zihuan_agent::brain::BrainObserver;
 
-use self::inference::{InferenceToolProvider, LoadedInferenceAgent, StaticInferenceToolProvider};
-use self::tool_definitions::build_enabled_tool_definitions;
+use self::inference::{InferenceToolProvider, LoadedInferenceAgent};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -141,6 +141,7 @@ impl AgentManager {
         agent_id: &str,
         messages: Vec<OpenAIMessage>,
         token_tx: mpsc::UnboundedSender<String>,
+        observer: Option<Arc<dyn BrainObserver>>,
     ) -> Result<Vec<OpenAIMessage>> {
         let agent = self.running_agent(agent_id).ok_or_else(|| {
             zihuan_core::error::Error::ValidationError(format!(
@@ -149,7 +150,7 @@ impl AgentManager {
             ))
         })?;
         agent
-            .infer_response_streaming_with_trace(messages, token_tx)
+            .infer_response_streaming_with_trace(messages, token_tx, observer)
             .await
     }
 
@@ -326,8 +327,8 @@ pub fn build_inference_tool_provider(
         AgentType::QqChat(config) => {
             qq_chat_agent::load_inference_tool_provider(agent, config, connections)
         }
-        AgentType::HttpStream(_) => Ok(Arc::new(StaticInferenceToolProvider::new(
-            build_enabled_tool_definitions(&agent.tools)?,
-        ))),
+        AgentType::HttpStream(config) => {
+            http_stream_agent::load_inference_tool_provider(agent, config, connections)
+        }
     }
 }

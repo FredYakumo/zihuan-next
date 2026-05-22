@@ -12,10 +12,11 @@ use salvo::http::HeaderValue;
 use salvo::http::ResBody;
 use salvo::prelude::*;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use storage_handler::{ConnectionConfig, ConnectionKind};
 use tokio::sync::mpsc;
 use uuid::Uuid;
+use zihuan_agent::brain::BrainObserver;
 use zihuan_core::agent_config::QqChatAgentConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::ToolCalls;
@@ -23,6 +24,32 @@ use zihuan_core::llm::{MessageRole, OpenAIMessage};
 
 const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
 const APP_DIR_NAME: &str = "zihuan-next_aibot";
+
+struct SseBrainObserver {
+    event_tx: mpsc::UnboundedSender<Value>,
+}
+
+impl BrainObserver for SseBrainObserver {
+    fn on_tool_start(&self, name: &str, call_id: &str, arguments: &Value) {
+        let event = json!({
+            "type": "tool_call_start",
+            "call_id": call_id,
+            "name": name,
+            "arguments": arguments,
+        });
+        let _ = self.event_tx.send(event);
+    }
+
+    fn on_tool_finish(&self, name: &str, call_id: &str, result: &str) {
+        let event = json!({
+            "type": "tool_call_result",
+            "call_id": call_id,
+            "name": name,
+            "result": result,
+        });
+        let _ = self.event_tx.send(event);
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub struct ChatStreamRequest {
@@ -247,6 +274,8 @@ async fn execute_chat_streaming(
     }
 
     let (token_tx, mut token_rx) = mpsc::unbounded_channel::<String>();
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel::<Value>();
+    let observer: Arc<dyn BrainObserver> = Arc::new(SseBrainObserver { event_tx });
 
     let inference_handle = tokio::spawn({
         let state = state.clone();
@@ -254,7 +283,7 @@ async fn execute_chat_streaming(
         async move {
             state
                 .agent_manager
-                .infer_agent_response_streaming(&agent_id, messages, token_tx)
+                .infer_agent_response_streaming(&agent_id, messages, token_tx, Some(observer))
                 .await
         }
     });
@@ -262,24 +291,59 @@ async fn execute_chat_streaming(
     let stream_enabled = stream.unwrap_or(true);
 
     if stream_enabled {
-        while let Some(token) = token_rx.recv().await {
-            let delta_event = json!({
-                "type": "delta",
-                "message_id": assistant_message_id,
-                "token": token,
-            });
-            if sender
-                .send_data(format!("data: {delta_event}\n\n"))
-                .await
-                .is_err()
-            {
-                break;
+        loop {
+            tokio::select! {
+                biased;
+                Some(brain_event) = event_rx.recv() => {
+                    if sender.send_data(format!("data: {brain_event}\n\n")).await.is_err() {
+                        break;
+                    }
+                }
+                token_opt = token_rx.recv() => {
+                    match token_opt {
+                        Some(token) => {
+                            let delta_event = json!({
+                                "type": "delta",
+                                "message_id": assistant_message_id,
+                                "token": token,
+                            });
+                            if sender.send_data(format!("data: {delta_event}\n\n")).await.is_err() {
+                                break;
+                            }
+                        }
+                        None => {
+                            // Token stream closed; drain remaining brain events.
+                            while let Ok(brain_event) = event_rx.try_recv() {
+                                if sender.send_data(format!("data: {brain_event}\n\n")).await.is_err() {
+                                    break;
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
             }
         }
     } else {
         let mut full_content = String::new();
-        while let Some(token) = token_rx.recv().await {
-            full_content.push_str(&token);
+        loop {
+            tokio::select! {
+                biased;
+                Some(brain_event) = event_rx.recv() => {
+                    let _ = sender.send_data(format!("data: {brain_event}\n\n")).await;
+                }
+                token_opt = token_rx.recv() => {
+                    match token_opt {
+                        Some(token) => full_content.push_str(&token),
+                        None => {
+                            while let Ok(brain_event) = event_rx.try_recv() {
+                                let _ = sender.send_data(format!("data: {brain_event}\n\n")).await;
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
         }
         if !full_content.is_empty() {
             let delta_event = json!({

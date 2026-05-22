@@ -128,6 +128,13 @@
             <template v-else>
               <div class="field"><label>Bind</label><input v-model="form.http_bind" placeholder="127.0.0.1:18080" /></div>
               <div class="field"><label>API Key</label><input v-model="form.http_api_key" /></div>
+              <div class="field">
+                <label>Tavily Connection</label>
+                <select v-model="form.http_tavily_connection_id">
+                  <option value="">不使用</option>
+                  <option v-for="item in tavilyConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                </select>
+              </div>
             </template>
           </div>
 
@@ -140,6 +147,28 @@
             <div class="list" style="margin-top: 12px;">
               <label
                 v-for="tool in qqChatDefaultTools"
+                :key="tool.id"
+                class="field-check"
+                style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px;"
+              >
+                <input v-model="form.default_tools_enabled[tool.id]" type="checkbox" />
+                <span>
+                  <strong>{{ tool.label }}</strong>
+                  <span class="muted" style="display: block;">{{ tool.description }}</span>
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <div v-else class="editor-card" style="margin-top: 12px;">
+            <div class="split-header">
+              <div>
+                <h3>默认工具</h3>
+              </div>
+            </div>
+            <div class="list" style="margin-top: 12px;">
+              <label
+                v-for="tool in httpStreamDefaultTools"
                 :key="tool.id"
                 class="field-check"
                 style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px;"
@@ -376,6 +405,35 @@
             <template v-else>
               <div class="field"><label>Bind</label><input v-model="form.http_bind" placeholder="127.0.0.1:18080" /></div>
               <div class="field"><label>API Key</label><input v-model="form.http_api_key" /></div>
+              <div class="field">
+                <label>Tavily Connection</label>
+                <select v-model="form.http_tavily_connection_id">
+                  <option value="">不使用</option>
+                  <option v-for="item in tavilyConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                </select>
+              </div>
+
+              <div class="editor-card" style="margin-top: 12px;">
+                <div class="split-header">
+                  <div>
+                    <h3>默认工具</h3>
+                  </div>
+                </div>
+                <div class="list" style="margin-top: 12px;">
+                  <label
+                    v-for="tool in httpStreamDefaultTools"
+                    :key="tool.id"
+                    class="field-check"
+                    style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px;"
+                  >
+                    <input v-model="form.default_tools_enabled[tool.id]" type="checkbox" />
+                    <span>
+                      <strong>{{ tool.label }}</strong>
+                      <span class="muted" style="display: block;">{{ tool.description }}</span>
+                    </span>
+                  </label>
+                </div>
+              </div>
             </template>
           </div>
 
@@ -505,6 +563,7 @@ import { system, workflows as workflowApi, type AgentWithRuntime, type Connectio
 import {
   agentFormFromConfig,
   buildAgentPayload,
+  HTTP_STREAM_DEFAULT_TOOLS,
   isBotAdapterConnectionType,
   QQ_CHAT_DEFAULT_TOOLS,
   defaultAgentForm,
@@ -538,6 +597,7 @@ const showCreatePicker = ref(false);
 const showCreateForm = ref(false);
 const showEditModal = ref(false);
 const qqChatDefaultTools = QQ_CHAT_DEFAULT_TOOLS;
+const httpStreamDefaultTools = HTTP_STREAM_DEFAULT_TOOLS;
 const chatModels = computed(() => llm.value.filter((item) => item.model.type === "chat_llm"));
 const embeddingModels = computed(() => llm.value.filter((item) => item.model.type === "text_embedding_local" && item.enabled));
 
@@ -685,6 +745,10 @@ async function submitForm() {
       alert("QQ Chat Agent 需要绑定 Tavily 连接");
       return;
     }
+    if (form.type === "http_stream" && form.default_tools_enabled.web_search !== false && !form.http_tavily_connection_id) {
+      alert("启用 web_search 时，HTTP Stream Agent 需要绑定 Tavily 连接");
+      return;
+    }
     if (form.id) {
       await system.agents.update(form.id, payload);
     } else {
@@ -765,6 +829,8 @@ function summarizeAgent(agent: AgentWithRuntime): Array<{ label: string; value: 
     items.push(
       { label: "Bind", value: String(agentType.bind ?? "127.0.0.1:18080"), mono: true },
       { label: "API Key", value: String(agentType.api_key ?? "") ? "已配置" : "未设置" },
+      { label: "Tavily", value: connectionName(String(agentType.tavily_connection_id ?? "")) || "未绑定" },
+      { label: "web_search", value: (agentType.default_tools_enabled as Record<string, unknown> | undefined)?.web_search === false ? "关闭" : "开启" },
     );
   }
   if (agent.runtime.last_error) {

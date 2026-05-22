@@ -111,10 +111,11 @@ export interface AgentFormState {
   default_tools_enabled: Record<string, boolean>;
   http_bind: string;
   http_api_key: string;
+  http_tavily_connection_id: string;
   tools: ToolFormState[];
 }
 
-export type QqChatDefaultTool = {
+export type DefaultToolOption = {
   id: string;
   label: string;
   description: string;
@@ -124,7 +125,7 @@ export function isBotAdapterConnectionType(type: string): type is "bot_adapter" 
   return type === "bot_adapter" || type === "ims_bot_adapter";
 }
 
-export const QQ_CHAT_DEFAULT_TOOLS: QqChatDefaultTool[] = [
+export const QQ_CHAT_DEFAULT_TOOLS: DefaultToolOption[] = [
   { id: "web_search", label: "web_search", description: "联网搜索（Tavily）" },
   { id: "get_agent_public_info", label: "get_agent_public_info", description: "返回智能体公开信息" },
   { id: "get_function_list", label: "get_function_list", description: "获取功能列表" },
@@ -133,8 +134,16 @@ export const QQ_CHAT_DEFAULT_TOOLS: QqChatDefaultTool[] = [
   { id: "search_similar_images", label: "search_similar_images", description: "语义检索相似图片" },
 ];
 
+export const HTTP_STREAM_DEFAULT_TOOLS: DefaultToolOption[] = [
+  { id: "web_search", label: "web_search", description: "联网搜索（Tavily）" },
+];
+
 export function defaultQqChatDefaultToolsEnabled(): Record<string, boolean> {
   return Object.fromEntries(QQ_CHAT_DEFAULT_TOOLS.map((tool) => [tool.id, true]));
+}
+
+export function defaultHttpStreamDefaultToolsEnabled(): Record<string, boolean> {
+  return Object.fromEntries(HTTP_STREAM_DEFAULT_TOOLS.map((tool) => [tool.id, true]));
 }
 
 export function defaultLlmConfig(): LlmServiceConfig {
@@ -244,6 +253,7 @@ export function defaultAgentForm(): AgentFormState {
     default_tools_enabled: defaultQqChatDefaultToolsEnabled(),
     http_bind: "127.0.0.1:18080",
     http_api_key: "",
+    http_tavily_connection_id: "",
     tools: [],
   };
 }
@@ -516,6 +526,15 @@ export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): Agen
     form.http_bind = String(agentType.bind ?? "127.0.0.1:18080");
     form.http_api_key = String(agentType.api_key ?? "");
     form.llm_ref_id = String(agentType.llm_ref_id ?? "");
+    form.http_tavily_connection_id = String(agentType.tavily_connection_id ?? "");
+    const source = (agentType.default_tools_enabled ?? {}) as Record<string, unknown>;
+    form.default_tools_enabled = defaultHttpStreamDefaultToolsEnabled();
+    for (const tool of HTTP_STREAM_DEFAULT_TOOLS) {
+      const value = source[tool.id];
+      if (typeof value === "boolean") {
+        form.default_tools_enabled[tool.id] = value;
+      }
+    }
   }
   return form;
 }
@@ -610,6 +629,10 @@ export function buildAgentPayload(form: AgentFormState): {
       bind: form.http_bind.trim(),
       api_key: form.http_api_key.trim() || null,
       llm_ref_id: form.llm_ref_id || null,
+      tavily_connection_id: form.http_tavily_connection_id || null,
+      default_tools_enabled: Object.fromEntries(
+        HTTP_STREAM_DEFAULT_TOOLS.map((tool) => [tool.id, form.default_tools_enabled[tool.id] !== false]),
+      ),
     },
   };
 }
