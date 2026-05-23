@@ -94,6 +94,7 @@ impl Node for BuildMultimodalUserMessageNode {
             reasoning_content: None,
             tool_calls: Vec::new(),
             tool_call_id: None,
+            usage: None,
         };
 
         let mut outputs = HashMap::new();

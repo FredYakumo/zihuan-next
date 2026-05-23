@@ -342,6 +342,7 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
                 reasoning_content: None,
                 tool_calls: Vec::new(),
                 tool_call_id: None,
+                usage: None,
             }))
         }
 

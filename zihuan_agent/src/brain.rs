@@ -581,6 +581,7 @@ mod tests {
                         },
                     }],
                     tool_call_id: None,
+                    usage: None,
                 }
             } else {
                 OpenAIMessage::assistant_text("最终回复")

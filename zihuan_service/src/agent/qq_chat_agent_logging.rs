@@ -11,7 +11,7 @@ use super::classify_intent::IntentClassificationTrace;
 use ims_bot_adapter::models::message::Message;
 use zihuan_agent::brain::{BrainObserver, BrainStopReason};
 use zihuan_core::llm::tooling::ToolCalls;
-use zihuan_core::llm::OpenAIMessage;
+use zihuan_core::llm::{OpenAIMessage, TokenUsage};
 
 const LOG_PREFIX: &str = "[QqChatAgent]";
 const LOG_TEXT_PREVIEW_CHARS: usize = 1_200;
@@ -397,8 +397,31 @@ impl QqChatTaskTrace {
         inner.reply_sent = Some(reply_sent);
     }
 
-    pub(crate) fn record_token_usage(&self, completion_tokens_estimated: usize) {
+    pub(crate) fn record_token_usage(
+        &self,
+        completion_tokens_estimated: usize,
+        exact_usage: Option<TokenUsage>,
+    ) {
         let mut inner = self.inner.lock().unwrap();
+        if let Some(usage) = exact_usage {
+            if let Some(prompt_tokens) = usage.prompt_tokens {
+                inner.prompt_tokens_estimated = Some(prompt_tokens);
+            }
+            if let Some(completion_tokens) = usage.completion_tokens {
+                inner.completion_tokens_estimated = Some(completion_tokens);
+            } else {
+                inner.completion_tokens_estimated = Some(completion_tokens_estimated);
+            }
+            inner.total_tokens_estimated = usage.total_tokens.or_else(|| {
+                match (inner.prompt_tokens_estimated, inner.completion_tokens_estimated) {
+                    (Some(prompt), Some(completion)) => Some(prompt + completion),
+                    _ => None,
+                }
+            });
+            inner.exact_usage_available = true;
+            return;
+        }
+
         inner.completion_tokens_estimated = Some(completion_tokens_estimated);
         inner.total_tokens_estimated = inner
             .prompt_tokens_estimated
