@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use chrono::Datelike;
 use zihuan_core::error::Result;
+use zihuan_core::runtime::block_async;
+use zihuan_core::url_utils::content_type_from_url;
 use zihuan_graph_engine::object_storage::S3Ref;
 
 #[derive(Debug, Clone)]
@@ -93,6 +95,27 @@ fn build_object_key(message_id: i64, segment_index: usize, file_name: &str) -> S
         segment_index,
         safe_file_name
     )
+}
+
+pub fn upload_remote_image_to_s3(s3_ref: &S3Ref, url: &str) -> Result<String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()?;
+    let resp = client.get(url).send()?;
+    if !resp.status().is_success() {
+        return Err(zihuan_core::error::Error::StringError(format!(
+            "image download returned status {}",
+            resp.status()
+        )));
+    }
+    let bytes = resp.bytes()?.to_vec();
+    let key = zihuan_core::utils::string_utils::derive_tavily_s3_key(url);
+    let content_type = content_type_from_url(url);
+    let s3_ref_clone = s3_ref.clone();
+    block_async(async move {
+        s3_ref_clone.put_object(&key, content_type, &bytes).await?;
+        Ok(key)
+    })
 }
 
 fn sanitize_filename(file_name: &str) -> String {

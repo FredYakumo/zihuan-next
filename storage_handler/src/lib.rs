@@ -30,8 +30,9 @@ pub use connection_manager::{
 pub use message_store::{MessageRecord, MessageStore};
 pub use mysql::MySqlNode;
 pub use object_storage::{
-    enrich_event_images, enrich_message_images, save_image_to_object_storage, ImageCacheAdapter,
-    ImageObjectStorageInput, ObjectStorageConfig, PendingImageUpload, SavedImageObject,
+    enrich_event_images, enrich_message_images, save_image_to_object_storage,
+    upload_remote_image_to_s3, ImageCacheAdapter, ImageObjectStorageInput, ObjectStorageConfig,
+    PendingImageUpload, SavedImageObject,
 };
 pub use redis::RedisNode;
 pub use resource_resolver::{

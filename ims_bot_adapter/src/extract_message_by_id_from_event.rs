@@ -188,20 +188,33 @@ impl Node for ExtractMessageByIdFromEventNode {
                 ))
             }?;
 
-            let resolved = resolved.ok_or_else(|| {
-                Error::ValidationError(format!(
-                    "message_id {} could not be restored from cache/redis/mysql/get_msg",
-                    message_id
-                ))
-            })?;
-            info!(
-                "{} restored target message_id={} via {} (segments={})",
-                Self::LOG_PREFIX,
-                message_id,
-                resolved.source_label,
-                resolved.messages.len()
-            );
-            resolved.messages
+            match resolved {
+                Some(resolved) => {
+                    info!(
+                        "{} restored target message_id={} via {} (segments={})",
+                        Self::LOG_PREFIX,
+                        message_id,
+                        resolved.source_label,
+                        resolved.messages.len()
+                    );
+                    resolved.messages
+                }
+                None if event.message_id == message_id && !event.message_list.is_empty() => {
+                    info!(
+                        "{} target message_id={} not found in backends; falling back to event message_list (segments={})",
+                        Self::LOG_PREFIX,
+                        message_id,
+                        event.message_list.len()
+                    );
+                    event.message_list.clone()
+                }
+                None => {
+                    return Err(Error::ValidationError(format!(
+                        "message_id {} could not be restored from cache/redis/mysql/get_msg",
+                        message_id
+                    )));
+                }
+            }
         } else {
             event.message_list.clone()
         };

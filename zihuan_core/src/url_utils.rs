@@ -6,6 +6,21 @@ pub fn extract_host(url: &str) -> Option<&str> {
         .and_then(|s| s.split(':').next())
 }
 
+/// Infers an image MIME type from a URL by inspecting the path extension.
+pub fn content_type_from_url(url: &str) -> &'static str {
+    let path = url.split('?').next().unwrap_or(url).to_lowercase();
+    match path.rsplit('.').next().unwrap_or("") {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "avif" => "image/avif",
+        "svg" => "image/svg+xml",
+        _ => "image/jpeg",
+    }
+}
+
 /// Percent-encode a password for safe inclusion in a URL
 pub fn pct_encode(input: &str) -> String {
     // Encode everything except unreserved characters per RFC 3986: ALPHA / DIGIT / '-' / '.' / '_' / '~'

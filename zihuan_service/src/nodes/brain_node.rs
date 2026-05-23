@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 
@@ -246,7 +246,7 @@ impl Node for BrainNode {
                     owner_node_type: "brain".to_string(),
                     shared_inputs: self.shared_inputs.clone(),
                     definition: tool_def.clone(),
-                    shared_runtime_values: shared_runtime_values.clone(),
+                    shared_runtime_values: Arc::new(Mutex::new(shared_runtime_values.clone())),
                     result_mode: ToolResultMode::JsonObject,
                 },
             });
