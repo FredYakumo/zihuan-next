@@ -146,6 +146,7 @@ pub fn build_router(
         .push(Router::with_path("file/upload").post(file_io::upload_graph))
         .push(Router::with_path("file/upload-image").post(file_io::upload_image))
         .push(Router::with_path("models/text-embedding").get(file_io::list_text_embedding_models))
+        .push(Router::with_path("models/tokenizer").get(file_io::list_tokenizer_models))
         .push(Router::with_path("uploaded-images/<**rest>").get(file_io::serve_uploaded_image))
         // Frontend log forwarding
         .push(Router::with_path("log").post(log::frontend_log))
@@ -173,6 +174,8 @@ pub fn build_router(
         )
         // Settings
         .push(Router::with_path("settings/storage-info").get(settings::get_storage_info))
+        .push(Router::with_path("settings/config-export").get(settings::export_config))
+        .push(Router::with_path("settings/config-restore").post(settings::restore_config))
         // Data Explorer
         .push(
             Router::with_path("explorer")

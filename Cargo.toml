@@ -1,5 +1,8 @@
 [workspace]
-members = ["node_macros", "general_wheel_cpp", "zihuan_core", "zihuan_agent", "zihuan_graph_engine", "model_inference", "ims_bot_adapter", "storage_handler", "zihuan_service", "zihuan_graph_cli"]
+members = ["node_macros", "general_wheel_cpp", "zihuan_core", "zihuan_agent", "zihuan_graph_engine", "model_inference", "ims_bot_adapter", "storage_handler", "zihuan_service", "zihuan_graph_cli", "zihuan_nlp"]
+
+[workspace.dependencies]
+tokenizers = "0.22.2"
 
 [patch.crates-io]
 candle-transformers = { path = "third_party/candle-transformers" }
@@ -38,6 +41,7 @@ once_cell = "1.20"
 salvo = { version = "0.75", features = ["websocket", "serve-static", "cors", "affix-state"] }
 rust-embed = { version = "8", features = ["debug-embed"] }
 uuid = { version = "1", features = ["v4"] }
+zip = { version = "2", features = ["deflate"] }
 node_macros = { path = "node_macros" }
 zihuan_core = { path = "zihuan_core" }
 zihuan_agent = { path = "zihuan_agent" }

@@ -46,6 +46,10 @@ pub struct HttpStreamAgentConfig {
     pub api_key: Option<String>,
     #[serde(default)]
     pub llm_ref_id: Option<String>,
+    #[serde(default)]
+    pub tavily_connection_id: Option<String>,
+    #[serde(default = "default_http_stream_default_tools_enabled")]
+    pub default_tools_enabled: std::collections::HashMap<String, bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +67,10 @@ pub enum LlmApiStyle {
 
 fn default_llm_api_style() -> LlmApiStyle {
     LlmApiStyle::OpenAiChatCompletions
+}
+
+fn default_http_stream_default_tools_enabled() -> std::collections::HashMap<String, bool> {
+    [("web_search".to_string(), true)].into_iter().collect()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

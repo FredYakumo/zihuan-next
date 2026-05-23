@@ -1,11 +1,10 @@
 use std::collections::{HashMap, VecDeque};
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use base64::Engine;
 use chrono::Local;
 use log::{info, warn};
 use serde_json::Value;
+use zihuan_nlp::{PunctuationSegmenter, TextSegmenter};
 
 use super::agent_text_similarity::{
     find_best_match, token_overlap_ratio, HybridSimilarityConfig, SimilarityCandidate,
@@ -34,8 +33,11 @@ use ims_bot_adapter::message_helpers::{
 };
 use ims_bot_adapter::models::event_model::{MessageEvent, MessageType};
 use ims_bot_adapter::models::message::{
-    AtTargetMessage, ForwardMessage, ForwardNodeMessage, ImageMessage, Message, MessageProp,
-    PersistedMedia, PersistedMediaSource, PlainTextMessage, ReplyMessage,
+    AtTargetMessage, ForwardMessage, ForwardNodeMessage, Message, MessageProp, PersistedMedia,
+    PersistedMediaSource, PlainTextMessage, ReplyMessage,
+};
+use ims_bot_adapter::multimodal_image_url::{
+    resolve_image_message_part, resolve_plain_text_segments, ImagePartSource, ResolvedTextSegment,
 };
 use model_inference::inference_function::compact_message::{
     compact_message_history, estimate_messages_tokens,
@@ -516,60 +518,6 @@ fn build_reply_batches(
     .batches)
 }
 
-fn infer_content_type(file_name: &str) -> &'static str {
-    match Path::new(file_name)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .map(|ext| ext.to_ascii_lowercase())
-        .as_deref()
-    {
-        Some("jpg") | Some("jpeg") => "image/jpeg",
-        Some("gif") => "image/gif",
-        Some("webp") => "image/webp",
-        Some("bmp") => "image/bmp",
-        Some("svg") => "image/svg+xml",
-        _ => "image/png",
-    }
-}
-
-fn image_name(image: &ImageMessage) -> &str {
-    image
-        .name()
-        .or_else(|| {
-            image
-                .original_source()
-                .and_then(|path| path.strip_prefix("file://").or(Some(path)))
-                .and_then(|path| Path::new(path).file_name())
-                .and_then(|name| name.to_str())
-        })
-        .unwrap_or("image.png")
-}
-
-fn image_part_from_bytes(image: &ImageMessage, bytes: Vec<u8>) -> ContentPart {
-    let base64_payload = base64::engine::general_purpose::STANDARD.encode(bytes);
-    ContentPart::image_data_url(
-        image
-            .mime_type()
-            .unwrap_or_else(|| infer_content_type(image_name(image))),
-        base64_payload,
-    )
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ImagePartSource {
-    LocalFile,
-    ObjectStorage,
-    DownloadedRemote,
-    UploadedToS3,
-    DataUrl,
-}
-
-#[derive(Debug)]
-struct ResolvedImagePart {
-    part: ContentPart,
-    source: ImagePartSource,
-}
-
 #[derive(Debug, Default)]
 struct MultimodalImageStats {
     image_parts: usize,
@@ -618,195 +566,25 @@ fn flush_text_part(parts: &mut Vec<ContentPart>, buffer: &mut String) {
     buffer.clear();
 }
 
-fn image_part_from_local_file(path: &str, image: &ImageMessage) -> Option<ContentPart> {
-    let file_path = Path::new(path);
-    if !file_path.exists() {
-        return None;
-    }
-
-    match std::fs::read(file_path) {
-        Ok(bytes) => Some(image_part_from_bytes(image, bytes)),
-        Err(error) => {
-            warn!(
-                "{LOG_PREFIX} failed to read image file for multimodal input path={}: {}",
-                path, error
-            );
-            None
-        }
-    }
-}
-
-fn sanitize_object_storage_key_fragment(value: &str, max_len: usize) -> String {
-    let sanitized: String = value
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || matches!(ch, '/' | '.' | '-' | '_') {
-                ch
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let trimmed = sanitized.trim_matches('/');
-    if trimmed.is_empty() {
-        return "image".to_string();
-    }
-
-    trimmed.chars().take(max_len).collect()
-}
-
-fn derive_multimodal_cache_key(url: &str, image: &ImageMessage) -> String {
-    let without_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
-    let source_fragment = sanitize_object_storage_key_fragment(without_scheme, 160);
-    let file_name_fragment = sanitize_object_storage_key_fragment(image_name(image), 80);
-    format!(
-        "qq-images/multimodal-cache/{}_{}",
-        source_fragment, file_name_fragment
-    )
-}
-
-fn image_part_from_object_storage(
-    s3_ref: &S3Ref,
-    object_key: &str,
-    image: &ImageMessage,
-) -> Option<ContentPart> {
-    let s3_ref = s3_ref.clone();
-    let key = object_key.to_string();
-    match block_async(async move { s3_ref.get_object_bytes(&key).await }) {
-        Ok(bytes) => Some(image_part_from_bytes(image, bytes)),
-        Err(error) => {
-            warn!(
-                "{LOG_PREFIX} failed to read object storage image for multimodal input object_key={}: {}",
-                object_key, error
-            );
-            None
-        }
-    }
-}
-
-fn image_part_from_remote_url(
-    direct_url: &str,
-    image: &ImageMessage,
+fn append_plain_text_as_parts(
+    text: &str,
+    parts: &mut Vec<ContentPart>,
+    text_buffer: &mut String,
+    has_media: &mut bool,
     s3_ref: Option<&Arc<S3Ref>>,
-    cache_to_s3: bool,
-) -> Option<ResolvedImagePart> {
-    if direct_url.starts_with("data:") {
-        return Some(ResolvedImagePart {
-            part: ContentPart::image_url_string(direct_url.to_string()),
-            source: ImagePartSource::DataUrl,
-        });
-    }
-
-    let bytes = block_async(download_remote_bytes(direct_url))?;
-    let part = image_part_from_bytes(image, bytes.clone());
-
-    if cache_to_s3 {
-        if let Some(s3_ref) = s3_ref {
-            let object_key = derive_multimodal_cache_key(direct_url, image);
-            let content_type = image
-                .mime_type()
-                .unwrap_or_else(|| infer_content_type(image_name(image)))
-                .to_string();
-            let bytes_for_upload = bytes.clone();
-            let s3_ref = s3_ref.as_ref().clone();
-            match block_async(async move {
-                s3_ref
-                    .put_object(&object_key, &content_type, &bytes_for_upload)
-                    .await
-            }) {
-                Ok(object_url) => {
-                    info!(
-                        "{LOG_PREFIX} cached remote image to object storage for multimodal input url={} object_url={}",
-                        direct_url, object_url
-                    );
-                    return Some(ResolvedImagePart {
-                        part,
-                        source: ImagePartSource::UploadedToS3,
-                    });
-                }
-                Err(error) => {
-                    warn!(
-                        "{LOG_PREFIX} failed to cache remote image to object storage for multimodal input url={}: {}",
-                        direct_url, error
-                    );
-                }
+    image_stats: &mut MultimodalImageStats,
+) {
+    for segment in resolve_plain_text_segments(text, s3_ref.map(AsRef::as_ref), true, LOG_PREFIX) {
+        match segment {
+            ResolvedTextSegment::Text(text) => append_text_segment(text_buffer, &text),
+            ResolvedTextSegment::Image(resolved) => {
+                flush_text_part(parts, text_buffer);
+                parts.push(resolved.part);
+                *has_media = true;
+                image_stats.record_success(resolved.source);
             }
         }
     }
-
-    Some(ResolvedImagePart {
-        part,
-        source: ImagePartSource::DownloadedRemote,
-    })
-}
-
-async fn download_remote_bytes(url: &str) -> Option<Vec<u8>> {
-    let response = match reqwest::Client::new().get(url).send().await {
-        Ok(response) => response,
-        Err(error) => {
-            warn!(
-                "{LOG_PREFIX} failed to download remote image for multimodal input url={}: {}",
-                url, error
-            );
-            return None;
-        }
-    };
-
-    if !response.status().is_success() {
-        warn!(
-            "{LOG_PREFIX} remote image returned non-success status for multimodal input url={} status={}",
-            url,
-            response.status()
-        );
-        return None;
-    }
-
-    match response.bytes().await {
-        Ok(bytes) => Some(bytes.to_vec()),
-        Err(error) => {
-            warn!(
-                "{LOG_PREFIX} failed to read remote image body for multimodal input url={}: {}",
-                url, error
-            );
-            None
-        }
-    }
-}
-
-fn image_part(image: &ImageMessage, s3_ref: Option<&Arc<S3Ref>>) -> Option<ResolvedImagePart> {
-    if let Some(local_path) = image
-        .original_source()
-        .and_then(|value| value.strip_prefix("file://").or(Some(value)))
-    {
-        if let Some(part) = image_part_from_local_file(local_path, image) {
-            return Some(ResolvedImagePart {
-                part,
-                source: ImagePartSource::LocalFile,
-            });
-        }
-    }
-
-    if let (Some(s3_ref), Some(object_key)) = (s3_ref, image.rustfs_path()) {
-        if let Some(part) = image_part_from_object_storage(s3_ref.as_ref(), object_key, image) {
-            return Some(ResolvedImagePart {
-                part,
-                source: ImagePartSource::ObjectStorage,
-            });
-        }
-    }
-
-    if let Some(direct_url) = image.original_source() {
-        let cache_to_s3 = image.rustfs_path().is_none();
-        if let Some(part) = image_part_from_remote_url(direct_url, image, s3_ref, cache_to_s3) {
-            return Some(part);
-        }
-    }
-
-    warn!(
-        "{LOG_PREFIX} skipping multimodal image because no safe source could be resolved: {}",
-        image
-    );
-    None
 }
 
 fn append_messages_as_parts(
@@ -821,10 +599,19 @@ fn append_messages_as_parts(
     for message in messages {
         match message {
             Message::PlainText(plain) => {
-                append_text_segment(text_buffer, &plain.text);
+                append_plain_text_as_parts(
+                    &plain.text,
+                    parts,
+                    text_buffer,
+                    has_media,
+                    s3_ref,
+                    image_stats,
+                );
             }
             Message::Image(image) => {
-                if let Some(resolved) = image_part(image, s3_ref) {
+                if let Some(resolved) =
+                    resolve_image_message_part(image, s3_ref.map(AsRef::as_ref), true, LOG_PREFIX)
+                {
                     flush_text_part(parts, text_buffer);
                     parts.push(resolved.part);
                     *has_media = true;
@@ -1493,35 +1280,7 @@ fn dedupe_batches(batches: Vec<Vec<Message>>, sender_id: &str) -> Vec<Vec<Messag
 }
 
 fn split_text_by_semantic_boundaries(content: &str, max_chars: usize) -> Vec<String> {
-    let normalized = content.replace("\r\n", "\n");
-    let trimmed = normalized.trim();
-    if trimmed.is_empty() || max_chars == 0 {
-        return Vec::new();
-    }
-
-    let mut chunks = Vec::new();
-    let paragraphs: Vec<&str> = trimmed
-        .split("\n\n")
-        .map(str::trim)
-        .filter(|part| !part.is_empty())
-        .collect();
-
-    let mut current = String::new();
-    for paragraph in paragraphs {
-        for unit in split_overlong_text_unit(paragraph, max_chars) {
-            append_chunk_with_separator(&mut chunks, &mut current, &unit, "\n\n", max_chars);
-        }
-    }
-
-    if !current.is_empty() {
-        chunks.push(current);
-    }
-
-    if chunks.is_empty() {
-        split_text_hard(trimmed, max_chars)
-    } else {
-        chunks
-    }
+    PunctuationSegmenter.segment(content, max_chars)
 }
 
 fn split_overlong_text_unit(content: &str, max_chars: usize) -> Vec<String> {
@@ -1981,6 +1740,7 @@ struct QqChatSteerHook {
     s3_ref: Option<Arc<S3Ref>>,
     trace: QqChatTaskTrace,
     consumed_messages: Arc<Mutex<Vec<OpenAIMessage>>>,
+    shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
 }
 
 impl BrainIterationHook for QqChatSteerHook {
@@ -2036,6 +1796,14 @@ impl BrainIterationHook for QqChatSteerHook {
             remaining_queue_len,
             std::slice::from_ref(&steer_message),
         );
+        {
+            let last_injected = injected.last().expect("injected must be non-empty");
+            let mut shared_rt = self.shared_runtime_values.lock().unwrap();
+            shared_rt.insert(
+                QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
+                DataValue::MessageEvent(last_injected.clone()),
+            );
+        }
         vec![steer_message]
     }
 }
@@ -2426,8 +2194,13 @@ impl QqChatAgent {
         let current_message = extract_user_message_text(&inference_event, bot_id, bot_name);
         trace.log_user_message(&raw_user_message, &current_message);
 
+        let history_key =
+            conversation_history_key(bot_id, sender_id, is_group, inference_event.group_id);
+        let legacy_history_key = sender_id.to_string();
+        let history = load_history(cache, &history_key, &legacy_history_key);
+
         let intent_trace =
-            classify_intent_with_trace(intent_llm, embedding_model, &current_message);
+            classify_intent_with_trace(intent_llm, embedding_model, &current_message, Some(&history), compact_context_length);
         let intent = intent_trace.category;
         trace.record_intent(intent_trace);
 
@@ -2446,11 +2219,7 @@ impl QqChatAgent {
             selected_llm.api_style(),
         );
 
-        let history_key =
-            conversation_history_key(bot_id, sender_id, is_group, inference_event.group_id);
-        let legacy_history_key = sender_id.to_string();
-        let mut history =
-            sanitize_messages_for_inference(load_history(cache, &history_key, &legacy_history_key));
+        let mut history = sanitize_messages_for_inference(history);
 
         let direct_reply = match intent {
             IntentCategory::AskSystemPrompt => Some(DIRECT_REPLY_NO_SYSTEM_PROMPT.to_string()),
@@ -2540,16 +2309,19 @@ impl QqChatAgent {
         let system_msg = OpenAIMessage::system(system_prompt);
         let priming_msg = build_output_contract_priming_message();
 
-        let mut shared_runtime_values = shared_runtime_values;
-        shared_runtime_values.insert(
-            QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
-            DataValue::MessageEvent(inference_event.clone()),
-        );
-        let adapter_handle: zihuan_core::ims_bot_adapter::BotAdapterHandle = adapter.clone();
-        shared_runtime_values.insert(
-            QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT.to_string(),
-            DataValue::BotAdapterRef(adapter_handle),
-        );
+        let shared_runtime_values = Arc::new(Mutex::new(shared_runtime_values));
+        {
+            let mut locked = shared_runtime_values.lock().unwrap();
+            locked.insert(
+                QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
+                DataValue::MessageEvent(inference_event.clone()),
+            );
+            let adapter_handle: zihuan_core::ims_bot_adapter::BotAdapterHandle = adapter.clone();
+            locked.insert(
+                QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT.to_string(),
+                DataValue::BotAdapterRef(adapter_handle),
+            );
+        }
 
         let mut conversation: Vec<OpenAIMessage> = Vec::with_capacity(history.len() + 3);
         conversation.push(system_msg);
@@ -2577,6 +2349,7 @@ impl QqChatAgent {
             s3_ref: s3_ref.cloned(),
             trace: trace.clone(),
             consumed_messages: Arc::clone(&consumed_steer_messages),
+            shared_runtime_values: Arc::clone(&shared_runtime_values),
         }));
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_WEB_SEARCH) {
@@ -2661,7 +2434,7 @@ impl QqChatAgent {
                     owner_node_type: QQ_AGENT_TOOL_OWNER_TYPE.to_string(),
                     shared_inputs: self.shared_inputs.clone(),
                     definition: tool_def.clone(),
-                    shared_runtime_values: shared_runtime_values.clone(),
+                    shared_runtime_values: Arc::clone(&shared_runtime_values),
                     result_mode: ToolResultMode::SingleString,
                 },
             });
@@ -2871,6 +2644,7 @@ impl QqChatAgentService {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
     use chrono::Local;
@@ -2881,7 +2655,11 @@ mod tests {
         QqChatSteerHook, STEER_PREFIX,
     };
     use crate::agent::qq_chat_agent_logging::QqChatTaskTrace;
-    use crate::agent::tools::{content_type_from_url, derive_tavily_s3_key};
+    use zihuan_core::url_utils::content_type_from_url;
+    use zihuan_core::utils::string_utils::derive_tavily_s3_key;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
     use zihuan_agent::brain::BrainIterationHook;
     use zihuan_core::ims_bot_adapter::models::event_model::{MessageEvent, MessageType, Sender};
     use zihuan_core::ims_bot_adapter::models::message::{
@@ -2916,6 +2694,32 @@ mod tests {
         assert_eq!(media.mime_type.as_deref(), Some("image/webp"));
         assert!(!media.rustfs_path.starts_with("http://"));
         assert!(!media.rustfs_path.starts_with("https://"));
+    }
+
+    fn spawn_image_http_server(path: &str, content_type: &str, body: &'static [u8]) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind listener");
+        let address = listener.local_addr().expect("listener address");
+        let route = path.to_string();
+        let content_type = content_type.to_string();
+        thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buffer = [0u8; 2048];
+                let bytes_read = stream.read(&mut buffer).expect("read request");
+                let request = String::from_utf8_lossy(&buffer[..bytes_read]);
+                assert!(request.starts_with("GET "));
+                assert!(request.contains(&route));
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    content_type,
+                    body.len()
+                );
+                stream
+                    .write_all(response.as_bytes())
+                    .expect("write response headers");
+                stream.write_all(body).expect("write response body");
+            }
+        });
+        format!("http://{address}{path}")
     }
 
     #[test]
@@ -3048,6 +2852,7 @@ mod tests {
             s3_ref: None,
             trace: QqChatTaskTrace::new(Local::now()),
             consumed_messages: Arc::new(Mutex::new(Vec::new())),
+            shared_runtime_values: Arc::new(Mutex::new(HashMap::new())),
         };
 
         let injected = hook.on_before_inference(2, &[]);
@@ -3076,7 +2881,9 @@ mod tests {
 
         match &message.content {
             Some(MessageContent::Parts(parts)) => {
-                assert!(matches!(parts.first(), Some(ContentPart::Text { text }) if text.starts_with(STEER_PREFIX)));
+                assert!(
+                    matches!(parts.first(), Some(ContentPart::Text { text }) if text.starts_with(STEER_PREFIX))
+                );
                 assert!(parts
                     .iter()
                     .any(|part| matches!(part, ContentPart::ImageUrl { .. })));
@@ -3242,6 +3049,71 @@ mod tests {
                 assert!(combined.contains("[引用内容]"));
             }
             other => panic!("expected multimodal parts, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_user_message_multimodal_resolves_plain_text_image_url() {
+        let image_url =
+            spawn_image_http_server("/plain-url.png", "image/png", &[0x89, 0x50, 0x4E, 0x47]);
+        let event = build_plain_text_event(77, &format!("@bot 帮我看这个 {image_url} 里面是什么"));
+
+        let message = build_user_message(&event, "bot", "bot", true, None);
+
+        match &message.content {
+            Some(MessageContent::Parts(parts)) => {
+                assert!(parts
+                    .iter()
+                    .any(|part| matches!(part, ContentPart::ImageUrl { .. })));
+                let text = message.content_text_owned().unwrap_or_default();
+                assert!(text.contains("帮我看这个"));
+                assert!(text.contains("里面是什么"));
+            }
+            other => panic!("expected multimodal parts, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_user_message_multimodal_resolves_reply_plain_text_image_url() {
+        let image_url =
+            spawn_image_http_server("/reply-url.png", "image/png", &[0x89, 0x50, 0x4E, 0x47]);
+        let event = build_reply_event(vec![
+            Message::Reply(ReplyMessage {
+                id: 5001,
+                message_source: Some(vec![Message::PlainText(PlainTextMessage {
+                    text: format!("原图在这里 {image_url}"),
+                })]),
+            }),
+            Message::PlainText(PlainTextMessage {
+                text: "@bot 这是什么".to_string(),
+            }),
+        ]);
+
+        let message = build_user_message(&event, "bot", "bot", true, None);
+
+        match &message.content {
+            Some(MessageContent::Parts(parts)) => {
+                assert!(parts
+                    .iter()
+                    .any(|part| matches!(part, ContentPart::ImageUrl { .. })));
+                let text = message.content_text_owned().unwrap_or_default();
+                assert!(text.contains("[引用内容]"));
+                assert!(text.contains("这是什么"));
+            }
+            other => panic!("expected multimodal parts, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_user_message_multimodal_keeps_non_image_url_as_text() {
+        let event = build_plain_text_event(78, "@bot 看看这个 https://example.com/page.html");
+        let message = build_user_message(&event, "bot", "bot", true, None);
+
+        match &message.content {
+            Some(MessageContent::Text(text)) => {
+                assert!(text.contains("https://example.com/page.html"));
+            }
+            other => panic!("expected text content, got {other:?}"),
         }
     }
 

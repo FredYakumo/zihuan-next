@@ -100,46 +100,100 @@
                 >
                   {{ agentInitial(message.agentName || selectedAgent?.name || "Bot") }}
                 </div>
-                <div class="chat-bubble" :class="message.role">
+                <div
+                  v-if="message.role === 'assistant'"
+                  class="chat-bubble-col"
+                >
+                  <div
+                    v-if="(message.liveToolCalls && message.liveToolCalls.length > 0) || message.toolCalls.length > 0 || activeToolDetail?.messageId === message.id"
+                    class="chat-tool-above-bubble"
+                  >
+                    <div
+                      v-if="message.liveToolCalls && message.liveToolCalls.length > 0"
+                      class="chat-tool-inline-list"
+                    >
+                      <div
+                        v-for="liveCall in message.liveToolCalls"
+                        :key="liveCall.call_id"
+                        class="chat-live-tool-wrapper"
+                      >
+                        <button
+                          class="chat-tool-inline"
+                          :class="{ active: expandedLiveToolCalls.has(liveCall.call_id) }"
+                          @click="toggleLiveToolCall(liveCall.call_id)"
+                        >
+                          <span v-if="!liveCall.done" class="live-tool-spinner"></span>
+                          <span v-else class="live-tool-done-icon">✓</span>
+                          工具调用: {{ liveCall.name }}
+                        </button>
+                        <div
+                          v-if="expandedLiveToolCalls.has(liveCall.call_id)"
+                          class="chat-tool-detail-inline"
+                        >
+                          <div class="chat-tool-detail-inline-block">
+                            <div class="chat-tool-detail-caption">arguments</div>
+                            <pre>{{ formatToolPayload(liveCall.arguments) }}</pre>
+                          </div>
+                          <div v-if="liveCall.done" class="chat-tool-detail-inline-block">
+                            <div class="chat-tool-detail-caption">result</div>
+                            <pre>{{ liveCall.result || "(空结果)" }}</pre>
+                          </div>
+                          <div v-else class="chat-tool-detail-inline-block">
+                            <div class="chat-tool-detail-caption">result</div>
+                            <div class="live-tool-pending">推理中...</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div
+                      v-if="message.toolCalls.length > 0"
+                      class="chat-tool-inline-list"
+                    >
+                      <button
+                        v-for="toolCall in message.toolCalls"
+                        :key="toolCall.id"
+                        class="chat-tool-inline"
+                        :class="{ active: activeToolCallId === toolCall.id }"
+                        @click="openToolDetail(message.id, toolCall.id)"
+                      >
+                        调用工具: {{ toolCall.function.name }}
+                      </button>
+                    </div>
+                    <div
+                      v-if="activeToolDetail?.messageId === message.id"
+                      class="chat-tool-detail-inline"
+                    >
+                      <div class="chat-tool-detail-inline-header">
+                        <strong>{{ activeToolDetail.toolCall.function.name }}</strong>
+                        <button class="chat-tool-detail-inline-close" @click="closeToolDetail">收起</button>
+                      </div>
+                      <div class="chat-tool-detail-inline-block">
+                        <div class="chat-tool-detail-caption">tool_call_id</div>
+                        <code>{{ activeToolDetail.toolCall.id }}</code>
+                      </div>
+                      <div class="chat-tool-detail-inline-block">
+                        <div class="chat-tool-detail-caption">arguments</div>
+                        <pre>{{ formatToolPayload(activeToolDetail.toolCall.function.arguments) }}</pre>
+                      </div>
+                      <div class="chat-tool-detail-inline-block">
+                        <div class="chat-tool-detail-caption">result</div>
+                        <pre>{{ activeToolDetail.result || "(空结果)" }}</pre>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="chat-bubble" :class="message.role">
+                    <div
+                      class="chat-bubble-content markdown-body"
+                      v-html="renderMessageContent(message.content, message.streaming)"
+                    ></div>
+                    <div class="chat-bubble-time">{{ formatChatTime(message.timestamp) }}</div>
+                  </div>
+                </div>
+                <div v-if="message.role !== 'assistant'" class="chat-bubble" :class="message.role">
                   <div
                     class="chat-bubble-content markdown-body"
                     v-html="renderMessageContent(message.content, message.streaming)"
                   ></div>
-                  <div
-                    v-if="message.toolCalls.length > 0"
-                    class="chat-tool-inline-list"
-                  >
-                    <button
-                      v-for="toolCall in message.toolCalls"
-                      :key="toolCall.id"
-                      class="chat-tool-inline"
-                      :class="{ active: activeToolCallId === toolCall.id }"
-                      @click="openToolDetail(message.id, toolCall.id)"
-                    >
-                      调用工具: {{ toolCall.function.name }}
-                    </button>
-                  </div>
-                  <div
-                    v-if="activeToolDetail?.messageId === message.id"
-                    class="chat-tool-detail-inline"
-                  >
-                    <div class="chat-tool-detail-inline-header">
-                      <strong>{{ activeToolDetail.toolCall.function.name }}</strong>
-                      <button class="chat-tool-detail-inline-close" @click="closeToolDetail">收起</button>
-                    </div>
-                    <div class="chat-tool-detail-inline-block">
-                      <div class="chat-tool-detail-caption">tool_call_id</div>
-                      <code>{{ activeToolDetail.toolCall.id }}</code>
-                    </div>
-                    <div class="chat-tool-detail-inline-block">
-                      <div class="chat-tool-detail-caption">arguments</div>
-                      <pre>{{ formatToolPayload(activeToolDetail.toolCall.function.arguments) }}</pre>
-                    </div>
-                    <div class="chat-tool-detail-inline-block">
-                      <div class="chat-tool-detail-caption">result</div>
-                      <pre>{{ activeToolDetail.result || "(空结果)" }}</pre>
-                    </div>
-                  </div>
                   <div class="chat-bubble-time">{{ formatChatTime(message.timestamp) }}</div>
                 </div>
               </div>
@@ -181,6 +235,13 @@ import {
 import { formatTime } from "../model";
 
 type ChatRole = "user" | "assistant" | "tool";
+type LiveToolCall = {
+  call_id: string;
+  name: string;
+  arguments: unknown;
+  result?: string;
+  done: boolean;
+};
 type DashboardMessage = {
   id: string;
   role: ChatRole;
@@ -192,6 +253,7 @@ type DashboardMessage = {
   linkedToolCall?: ChatToolCall | null;
   agentAvatarUrl?: string;
   agentName?: string;
+  liveToolCalls?: LiveToolCall[];
 };
 type ToolDetail = {
   messageId: string;
@@ -208,6 +270,7 @@ const sending = ref(false);
 const messagesContainer = ref<HTMLElement | null>(null);
 const messages = ref<DashboardMessage[]>([]);
 const activeToolCallId = ref("");
+const expandedLiveToolCalls = ref(new Set<string>());
 const stats = reactive({
   connections: 0,
   llm: 0,
@@ -348,6 +411,16 @@ function closeToolDetail() {
   activeToolCallId.value = "";
 }
 
+function toggleLiveToolCall(callId: string) {
+  if (expandedLiveToolCalls.value.has(callId)) {
+    expandedLiveToolCalls.value.delete(callId);
+  } else {
+    expandedLiveToolCalls.value.add(callId);
+  }
+  // Trigger Vue reactivity for Set mutation
+  expandedLiveToolCalls.value = new Set(expandedLiveToolCalls.value);
+}
+
 function formatToolPayload(payload: unknown): string {
   if (payload == null) {
     return "null";
@@ -411,6 +484,7 @@ function startNewSession() {
   activeSessionId.value = "";
   messages.value = [];
   activeToolCallId.value = "";
+  expandedLiveToolCalls.value.clear();
 }
 
 watch(selectedAgentId, async () => {
@@ -460,6 +534,36 @@ function applyStreamEvent(event: ChatStreamEvent, assistantTempId: string) {
     const message = messages.value.find((item) => item.id === (event.message_id || assistantTempId) || item.id === assistantTempId);
     if (message) {
       message.streaming = false;
+    }
+  }
+
+  if (event.type === "tool_call_start" && event.call_id && event.name) {
+    const targetId = event.message_id || assistantTempId;
+    const message = messages.value.find((item) => item.id === targetId || item.id === assistantTempId);
+    if (message) {
+      if (!message.liveToolCalls) {
+        message.liveToolCalls = [];
+      }
+      message.liveToolCalls.push({
+        call_id: event.call_id,
+        name: event.name,
+        arguments: event.arguments,
+        done: false,
+      });
+      scrollToBottom();
+    }
+  }
+
+  if (event.type === "tool_call_result" && event.call_id) {
+    const targetId = event.message_id || assistantTempId;
+    const message = messages.value.find((item) => item.id === targetId || item.id === assistantTempId);
+    if (message?.liveToolCalls) {
+      const liveCall = message.liveToolCalls.find((item) => item.call_id === event.call_id);
+      if (liveCall) {
+        liveCall.result = event.result ?? "";
+        liveCall.done = true;
+        scrollToBottom();
+      }
     }
   }
 }
@@ -854,6 +958,16 @@ onMounted(() => {
   justify-content: flex-start;
 }
 
+.chat-bubble-col {
+  display: flex;
+  flex-direction: column;
+  max-width: calc(85% - 54px);
+}
+
+.chat-tool-above-bubble {
+  margin-bottom: 6px;
+}
+
 .chat-message-avatar {
   width: 40px;
   height: 40px;
@@ -883,8 +997,8 @@ onMounted(() => {
   overflow-wrap: anywhere;
 }
 
-.chat-bubble-row.assistant .chat-bubble {
-  max-width: calc(85% - 54px);
+.chat-bubble-col .chat-bubble {
+  max-width: 100%;
 }
 
 .chat-bubble-time {
@@ -929,12 +1043,50 @@ onMounted(() => {
   color: var(--admin-subtle);
   cursor: pointer;
   text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .chat-tool-inline:hover,
 .chat-tool-inline.active {
   color: var(--admin-accent);
   text-decoration: underline;
+}
+
+.chat-live-tool-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.live-tool-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid color-mix(in srgb, var(--admin-accent) 40%, transparent);
+  border-top-color: var(--admin-accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.live-tool-done-icon {
+  color: var(--admin-accent);
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.live-tool-pending {
+  font-size: 12px;
+  color: var(--admin-subtle);
+  font-style: italic;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .chat-tool-detail-inline {
@@ -1137,7 +1289,7 @@ onMounted(() => {
   }
 
   .chat-bubble,
-  .chat-bubble-row.assistant .chat-bubble {
+  .chat-bubble-col .chat-bubble {
     max-width: 100%;
   }
 }

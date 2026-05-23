@@ -30,8 +30,9 @@ pub use connection_manager::{
 pub use message_store::{MessageRecord, MessageStore};
 pub use mysql::MySqlNode;
 pub use object_storage::{
-    enrich_event_images, enrich_message_images, save_image_to_object_storage, ImageCacheAdapter,
-    ImageObjectStorageInput, ObjectStorageConfig, PendingImageUpload, SavedImageObject,
+    enrich_event_images, enrich_message_images, save_image_to_object_storage,
+    upload_remote_image_to_s3, ImageCacheAdapter, ImageObjectStorageInput, ObjectStorageConfig,
+    PendingImageUpload, SavedImageObject,
 };
 pub use redis::RedisNode;
 pub use resource_resolver::{
@@ -72,6 +73,7 @@ pub enum ConnectionKind {
     Rustfs(RustfsConnection),
     BotAdapter(serde_json::Value),
     Tavily(TavilyConnection),
+    Tokenizer(TokenizerConnection),
 }
 
 pub const DEFAULT_MYSQL_MAX_CONNECTIONS: u32 = 32;
@@ -127,6 +129,11 @@ pub struct TavilyConnection {
     pub api_token: Option<String>,
     #[serde(default = "default_tavily_timeout_secs")]
     pub timeout_secs: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenizerConnection {
+    pub model_name: String,
 }
 
 fn default_tavily_timeout_secs() -> u64 {
@@ -187,6 +194,7 @@ impl ConfigRecord for ConnectionConfig {
             ConnectionKind::Rustfs(_) => ConfigKind::ConnectionRustfs,
             ConnectionKind::BotAdapter(_) => ConfigKind::ConnectionBotAdapter,
             ConnectionKind::Tavily(_) => ConfigKind::ConnectionTavily,
+            ConnectionKind::Tokenizer(_) => ConfigKind::ConnectionTokenizer,
         }
     }
 

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use log::warn;
 use serde_json::Value;
@@ -9,8 +10,8 @@ use ims_bot_adapter::message_helpers::{
     send_group_progress_notification_with_persistence, OutboundMessagePersistence,
 };
 use ims_bot_adapter::models::event_model::MessageType;
+use zihuan_agent::brain::consume_tool_progress_notification;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::runtime::block_async;
 use zihuan_graph_engine::{DataType, DataValue};
 
 const LOG_PREFIX: &str = "[QqChatAgent]";
@@ -43,6 +44,10 @@ impl ToolNotificationTarget {
     }
 
     pub(crate) fn notify_progress(&self, call_content: &str) {
+        // Skip empty or already-consumed progress content to avoid duplicate notifications.
+        if !consume_tool_progress_notification(call_content) {
+            return;
+        }
         let Some(adapter) = self.adapter.as_ref() else {
             return;
         };
@@ -75,15 +80,20 @@ impl ToolNotificationTarget {
     }
 }
 
+/// Sends a progress notification by extracting the bot adapter and event target
+/// from the shared graph runtime values. Used when the tool does not have a
+/// pre-built `ToolNotificationTarget` and must resolve the destination dynamically.
 pub(crate) fn send_editable_tool_progress_notification(
-    shared_runtime_values: &HashMap<String, DataValue>,
+    shared_runtime_values: &Arc<Mutex<HashMap<String, DataValue>>>,
     call_content: &str,
 ) {
-    if call_content.trim().is_empty() {
+    // Deduplicate and skip empty progress; the same content may stream in repeatedly.
+    if !consume_tool_progress_notification(call_content) {
         return;
     }
 
-    let event = match shared_runtime_values
+    let shared_rt = shared_runtime_values.lock().unwrap();
+    let event = match shared_rt
         .get(zihuan_graph_engine::brain_tool_spec::QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT)
     {
         Some(DataValue::MessageEvent(event)) => event,
@@ -94,7 +104,7 @@ pub(crate) fn send_editable_tool_progress_notification(
             return;
         }
     };
-    let adapter = match shared_runtime_values
+    let adapter = match shared_rt
         .get(zihuan_graph_engine::brain_tool_spec::QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT)
     {
         Some(DataValue::BotAdapterRef(handle)) => shared_from_handle(handle),
@@ -134,66 +144,8 @@ pub(crate) fn send_editable_tool_progress_notification(
     }
 }
 
-pub(crate) fn derive_tavily_s3_key(url: &str) -> String {
-    let after_scheme = url.find("://").map(|i| &url[i + 3..]).unwrap_or(url);
-    let path_start = after_scheme.find('/').map(|i| i + 1).unwrap_or(0);
-    let path = after_scheme[path_start..].split('?').next().unwrap_or("");
-    let sanitized: String = path
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '-' | '_') {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let trimmed = sanitized.trim_matches('/');
-    if trimmed.is_empty() {
-        "tavily/image.jpg".to_string()
-    } else {
-        format!("tavily/{}", &trimmed[..trimmed.len().min(200)])
-    }
-}
-
-pub(crate) fn content_type_from_url(url: &str) -> &'static str {
-    let path = url.split('?').next().unwrap_or(url).to_lowercase();
-    match path.rsplit('.').next().unwrap_or("") {
-        "jpg" | "jpeg" => "image/jpeg",
-        "png" => "image/png",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "bmp" => "image/bmp",
-        "avif" => "image/avif",
-        "svg" => "image/svg+xml",
-        _ => "image/jpeg",
-    }
-}
-
-pub(crate) fn upload_remote_image_to_s3(
-    s3_ref: &zihuan_graph_engine::object_storage::S3Ref,
-    url: &str,
-) -> Result<String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()?;
-    let resp = client.get(url).send()?;
-    if !resp.status().is_success() {
-        return Err(Error::StringError(format!(
-            "image download returned status {}",
-            resp.status()
-        )));
-    }
-    let bytes = resp.bytes()?.to_vec();
-    let key = derive_tavily_s3_key(url);
-    let content_type = content_type_from_url(url);
-    let s3_ref_clone = s3_ref.clone();
-    block_async(async move {
-        s3_ref_clone.put_object(&key, content_type, &bytes).await?;
-        Ok(key)
-    })
-}
-
+/// Coerces an optional limit into a bounded positive usize, falling back to
+/// `default_limit` and clamping between 1 and `max_limit`.
 pub(crate) fn sanitize_positive_limit(
     value: Option<i64>,
     default_limit: i64,
@@ -203,6 +155,7 @@ pub(crate) fn sanitize_positive_limit(
     limit.clamp(1, max_limit) as usize
 }
 
+/// Extracts a trimmed, non-empty string from a JSON object field if present.
 pub(crate) fn optional_string_argument(arguments: &Value, key: &str) -> Option<String> {
     arguments
         .get(key)
@@ -223,6 +176,8 @@ pub(crate) fn extract_string_field(value: &Value, key: &str) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+/// Extracts a `Vec<String>` from a graph output map, validating both the outer
+/// vector type and that every inner item is actually a string.
 pub(crate) fn extract_string_list_output(
     outputs: &HashMap<String, DataValue>,
     key: &str,

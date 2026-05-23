@@ -72,6 +72,35 @@
       <div v-else-if="storageError" class="empty-state">{{ storageError }}</div>
     </section>
 
+    <!-- Config backup / restore -->
+    <section class="panel settings-section">
+      <div class="split-header">
+        <div>
+          <h3>配置备份</h3>
+        </div>
+        <div class="settings-backup-actions">
+          <button class="btn ghost" @click="handleExportConfig">导出配置</button>
+          <button class="btn primary" :disabled="restoreLoading" @click="triggerRestorePicker">
+            {{ restoreLoading ? "恢复中…" : "恢复配置" }}
+          </button>
+          <input
+            ref="restoreFileInput"
+            type="file"
+            accept=".zip"
+            class="settings-backup-file-input"
+            @change="handleRestoreFileChange"
+          />
+        </div>
+      </div>
+
+      <div v-if="restoreSuccess" class="settings-backup-feedback settings-backup-feedback--ok">
+        配置已成功恢复，请重启服务以使新配置生效。
+      </div>
+      <div v-if="restoreError" class="settings-backup-feedback settings-backup-feedback--err">
+        {{ restoreError }}
+      </div>
+    </section>
+
     <!-- Local model files -->
     <section
       v-for="group in modelGroups"
@@ -247,6 +276,58 @@ function formatBytes(bytes: number): string {
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
+
+// ─── Config backup / restore ──────────────────────────────────────────────────
+
+const restoreFileInput = ref<HTMLInputElement | null>(null);
+const restoreLoading = ref(false);
+const restoreError = ref<string | null>(null);
+const restoreSuccess = ref(false);
+
+function triggerRestorePicker() {
+  restoreError.value = null;
+  restoreSuccess.value = false;
+  restoreFileInput.value?.click();
+}
+
+async function handleRestoreFileChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  restoreLoading.value = true;
+  restoreError.value = null;
+  restoreSuccess.value = false;
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const response = await fetch("/api/settings/config-restore", {
+      method: "POST",
+      headers: { "Content-Type": "application/zip" },
+      body: arrayBuffer,
+    });
+    const json = await response.json();
+    if (!response.ok) {
+      restoreError.value = json?.error ?? `HTTP ${response.status}`;
+    } else {
+      restoreSuccess.value = true;
+    }
+  } catch (e) {
+    restoreError.value = String(e);
+  } finally {
+    restoreLoading.value = false;
+    input.value = "";
+  }
+}
+
+function handleExportConfig() {
+  const a = document.createElement("a");
+  a.href = "/api/settings/config-export";
+  a.download = "";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
 </script>
 
 <style scoped lang="scss">
@@ -344,5 +425,33 @@ function formatBytes(bytes: number): string {
 
 .settings-model-meta {
   font-size: 12px;
+}
+
+.settings-backup-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.settings-backup-file-input {
+  display: none;
+}
+
+.settings-backup-feedback {
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+
+  &--ok {
+    background: color-mix(in srgb, var(--admin-good-bg) 60%, transparent 40%);
+    color: var(--admin-good);
+    border: 1px solid color-mix(in srgb, var(--admin-good) 25%, transparent 75%);
+  }
+
+  &--err {
+    background: color-mix(in srgb, var(--admin-warn-bg) 60%, transparent 40%);
+    color: var(--admin-warn);
+    border: 1px solid color-mix(in srgb, var(--admin-warn) 25%, transparent 75%);
+  }
 }
 </style>

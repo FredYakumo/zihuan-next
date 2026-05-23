@@ -1243,6 +1243,10 @@ impl NodeGraph {
                     continue;
                 }
 
+                if !port.required {
+                    continue;
+                }
+
                 return Ok(None);
             }
 
@@ -1286,6 +1290,9 @@ impl NodeGraph {
             if let Some(value) = data_pool.get(&port.name) {
                 inputs.insert(port.name.clone(), value.clone());
             } else if output_producers.contains_key(&port.name) {
+                if !port.required {
+                    continue;
+                }
                 return Ok(None);
             } else if let Some(value) = bound_variable_value {
                 inputs.insert(port.name.clone(), value);

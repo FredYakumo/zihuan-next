@@ -5,7 +5,7 @@ use log::{info, warn};
 use serde_json::Value;
 
 use ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
-use storage_handler::upsert_image_record;
+use storage_handler::{upload_remote_image_to_s3, upsert_image_record};
 use zihuan_agent::brain::BrainTool;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
@@ -15,10 +15,10 @@ use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::object_storage::S3Ref;
 
 use super::common::{
-    content_type_from_url, extract_string_field, optional_bool_argument, optional_string_argument,
-    sanitize_positive_limit, upload_remote_image_to_s3, StaticFunctionToolSpec,
-    ToolNotificationTarget,
+    extract_string_field, optional_bool_argument, optional_string_argument,
+    sanitize_positive_limit, StaticFunctionToolSpec, ToolNotificationTarget,
 };
+use zihuan_core::url_utils::content_type_from_url;
 
 const LOG_PREFIX: &str = "[QqChatAgent]";
 const DEFAULT_SEMANTIC_SEARCH_LIMIT: i64 = 5;

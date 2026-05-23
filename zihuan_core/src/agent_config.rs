@@ -84,6 +84,8 @@ pub struct QqChatAgentConfig {
     pub math_programming_llm_ref_id: Option<String>,
     #[serde(default)]
     pub embedding_model_ref_id: Option<String>,
+    #[serde(default)]
+    pub tokenizer_connection_id: Option<String>,
     pub tavily_connection_id: String,
     #[serde(default)]
     pub embedding: Option<EmbeddingServiceConfig>,

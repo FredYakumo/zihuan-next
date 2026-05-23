@@ -28,6 +28,7 @@
                 <option value="rustfs">RustFS</option>
                 <option value="bot_adapter">Bot Adapter</option>
                 <option value="tavily">Tavily</option>
+                <option value="tokenizer">Tokenizer</option>
               </select>
             </div>
 
@@ -136,6 +137,16 @@
               <div class="field-full"><label>API Token（可选）</label><input v-model="form.tavily_api_token" type="password" placeholder="可选" /></div>
               <div class="field"><label>Timeout</label><input v-model.number="form.tavily_timeout_secs" type="number" min="1" /></div>
             </template>
+
+            <template v-else-if="form.type === 'tokenizer'">
+              <div class="field-full">
+                <label>Tokenizer 模型</label>
+                <select v-model="form.tokenizer_model_name">
+                  <option value="">请选择</option>
+                  <option v-for="model in tokenizerModels" :key="model" :value="model">{{ model }}</option>
+                </select>
+              </div>
+            </template>
           </div>
           <div class="panel-actions connection-picker-form-actions">
             <button class="btn ghost" @click="showEditor = false">返回</button>
@@ -190,6 +201,7 @@
                   <option value="rustfs">RustFS</option>
                   <option value="bot_adapter">Bot Adapter</option>
                   <option value="tavily">Tavily</option>
+                  <option value="tokenizer">Tokenizer</option>
                 </select>
               </div>
               <div class="key-value connection-card-edit-row">
@@ -339,6 +351,16 @@
                   <input v-model.number="form.tavily_timeout_secs" class="connection-card-inline-input" type="number" min="1" />
                 </div>
               </template>
+
+              <template v-else-if="form.type === 'tokenizer'">
+                <div class="key-value connection-card-edit-row">
+                  <strong>Tokenizer 模型</strong>
+                  <select v-model="form.tokenizer_model_name" class="connection-card-inline-input">
+                    <option value="">请选择</option>
+                    <option v-for="model in tokenizerModels" :key="model" :value="model">{{ model }}</option>
+                  </select>
+                </div>
+              </template>
             </div>
           </template>
 
@@ -377,7 +399,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 
-import { ApiError, system, type ConnectionConfig, type RuntimeConnectionInstanceSummary } from "../../api/client";
+import { ApiError, fileIO, system, type ConnectionConfig, type RuntimeConnectionInstanceSummary } from "../../api/client";
 import {
   buildConnectionPayload,
   compactId,
@@ -404,10 +426,12 @@ const connectionTypes: ConnectionTypeOption[] = [
   { value: "rustfs", label: "RustFS", hint: "对象存储" },
   { value: "bot_adapter", label: "Bot Adapter", hint: "Bot 服务接入" },
   { value: "tavily", label: "Tavily", hint: "Tavily 搜索配置" },
+  { value: "tokenizer", label: "Tokenizer", hint: "分词模型" },
 ];
 
 const connections = ref<ConnectionConfig[]>([]);
 const runtimeInstances = ref<RuntimeConnectionInstanceSummary[]>([]);
+const tokenizerModels = ref<string[]>([]);
 const form = reactive<ConnectionFormState>(defaultConnectionForm());
 const showEditor = ref(false);
 const showCreatePicker = ref(false);
@@ -447,12 +471,14 @@ function closeEditor() {
 }
 
 async function load() {
-  const [loadedConnections, runtimeResponse] = await Promise.all([
+  const [loadedConnections, runtimeResponse, tokenizerModelResponse] = await Promise.all([
     system.connections.list(),
     system.connections.listRuntimeInstances({ page: 1, page_size: 200 }),
+    fileIO.listTokenizerModels(),
   ]);
   connections.value = loadedConnections;
   runtimeInstances.value = runtimeResponse.items;
+  tokenizerModels.value = tokenizerModelResponse.models;
 }
 
 function editConnection(connection: ConnectionConfig) {
@@ -499,6 +525,10 @@ async function submitForm() {
       alert("请填写 Weaviate Class Name");
       return;
     }
+  }
+  if (form.type === "tokenizer" && !form.tokenizer_model_name.trim()) {
+    alert("请选择 Tokenizer 模型");
+    return;
   }
   try {
     const payload = buildConnectionPayload(form);
@@ -626,6 +656,11 @@ function summarizeConnection(connection: ConnectionConfig): Array<{ label: strin
         ...base,
         { label: "API Token", value: String(kind.api_token ?? "") ? "已配置" : "未设置" },
         { label: "Timeout", value: String(kind.timeout_secs ?? 30) },
+      ];
+    case "tokenizer":
+      return [
+        ...base,
+        { label: "模型", value: String(kind.model_name ?? "") || "未设置" },
       ];
     default:
       return base;

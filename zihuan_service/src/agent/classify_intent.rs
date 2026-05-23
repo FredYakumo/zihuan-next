@@ -9,7 +9,7 @@ use super::agent_text_similarity::{
 };
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::InferenceParam;
-use zihuan_core::llm::OpenAIMessage;
+use zihuan_core::llm::{MessageRole, OpenAIMessage};
 
 const LOG_PREFIX: &str = "[QqChatAgent]";
 const CLASSIFY_INTENT_PROMPT: &str = r#"你是一个消息意图分类器。你必须只输出以下 9 个标签中的一个，且只能输出标签本身，不要输出解释、标点、引号、代码块或额外文字。
@@ -499,10 +499,46 @@ fn detect_prompt_injection_by_similarity(
     }
 }
 
+fn format_recent_history_for_intent(messages: &[OpenAIMessage], max_tokens: usize) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let mut used_chars: usize = 0;
+    let char_budget = max_tokens.saturating_mul(4);
+    for msg in messages.iter().rev() {
+        let role_label = match msg.role {
+            MessageRole::User => "user",
+            MessageRole::Assistant => "assistant",
+            _ => continue,
+        };
+        if let Some(text) = msg.content_text() {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                let entry_chars = role_label.len() + 2 + trimmed.len() + 1;
+                if used_chars + entry_chars > char_budget {
+                    break;
+                }
+                parts.push(format!("{role_label}: {trimmed}"));
+                used_chars += entry_chars;
+            }
+        }
+    }
+    parts.reverse();
+    if parts.is_empty() {
+        return String::new();
+    }
+    let mut result = String::from("最近对话历史：\n");
+    for part in &parts {
+        result.push_str(part);
+        result.push('\n');
+    }
+    result
+}
+
 pub fn classify_intent_with_trace(
     llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
     embedding_model: Option<&Arc<dyn EmbeddingBase>>,
     message: &str,
+    history: Option<&[OpenAIMessage]>,
+    intent_history_max_tokens: usize,
 ) -> IntentClassificationTrace {
     let started_at = Instant::now();
 
@@ -531,10 +567,15 @@ pub fn classify_intent_with_trace(
         };
     }
 
-    let messages = vec![
-        OpenAIMessage::system(CLASSIFY_INTENT_PROMPT.to_string()),
-        OpenAIMessage::user(message.to_string()),
-    ];
+    let mut messages = Vec::with_capacity(4);
+    messages.push(OpenAIMessage::system(CLASSIFY_INTENT_PROMPT.to_string()));
+    if let Some(history_msgs) = history {
+        let history_text = format_recent_history_for_intent(history_msgs, intent_history_max_tokens);
+        if !history_text.is_empty() {
+            messages.push(OpenAIMessage::user(history_text));
+        }
+    }
+    messages.push(OpenAIMessage::user(message.to_string()));
     let response = llm.inference(&InferenceParam {
         messages: &messages,
         tools: None,
@@ -564,6 +605,9 @@ pub fn classify_intent(
     llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
     embedding_model: Option<&Arc<dyn EmbeddingBase>>,
     message: &str,
+    history: Option<&[OpenAIMessage]>,
+    intent_history_max_tokens: usize,
 ) -> IntentCategory {
-    classify_intent_with_trace(llm, embedding_model, message).category
+    classify_intent_with_trace(llm, embedding_model, message, history, intent_history_max_tokens)
+        .category
 }

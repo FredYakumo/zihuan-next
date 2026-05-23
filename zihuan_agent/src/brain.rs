@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::cell::RefCell;
 use std::sync::Arc;
 
 use log::{info, warn};
@@ -14,6 +15,16 @@ use zihuan_core::llm::{ContentPart, InferenceParam, MessageContent, MessageRole,
 pub const MAX_TOOL_ITERATIONS: usize = 25;
 const LOG_PREVIEW_CHARS: usize = 600;
 
+thread_local! {
+    static TOOL_PROGRESS_SCOPE_STACK: RefCell<Vec<ToolProgressScopeState>> = const { RefCell::new(Vec::new()) };
+}
+
+#[derive(Debug, Clone)]
+struct ToolProgressScopeState {
+    call_content: String,
+    consumed: bool,
+}
+
 fn truncate_for_log(text: &str, max_chars: usize) -> String {
     let total_chars = text.chars().count();
     if total_chars <= max_chars {
@@ -22,6 +33,50 @@ fn truncate_for_log(text: &str, max_chars: usize) -> String {
 
     let truncated: String = text.chars().take(max_chars).collect();
     format!("{truncated}...(truncated,total_chars={total_chars})")
+}
+
+struct ToolProgressScopeGuard;
+
+impl ToolProgressScopeGuard {
+    fn enter(call_content: &str) -> Self {
+        TOOL_PROGRESS_SCOPE_STACK.with(|stack| {
+            stack.borrow_mut().push(ToolProgressScopeState {
+                call_content: call_content.to_string(),
+                consumed: false,
+            });
+        });
+        Self
+    }
+}
+
+impl Drop for ToolProgressScopeGuard {
+    fn drop(&mut self) {
+        TOOL_PROGRESS_SCOPE_STACK.with(|stack| {
+            stack.borrow_mut().pop();
+        });
+    }
+}
+
+pub fn consume_tool_progress_notification(call_content: &str) -> bool {
+    let trimmed = call_content.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    TOOL_PROGRESS_SCOPE_STACK.with(|stack| {
+        let mut stack = stack.borrow_mut();
+        let Some(scope) = stack.last_mut() else {
+            return true;
+        };
+        if scope.call_content.trim() != trimmed {
+            return true;
+        }
+        if scope.consumed {
+            return false;
+        }
+        scope.consumed = true;
+        true
+    })
 }
 
 /// A tool that [`Brain`] can invoke during an inference loop.
@@ -202,6 +257,7 @@ impl Brain {
             conversation.push(response.clone());
             output.push(response.clone());
 
+            let _tool_progress_scope = ToolProgressScopeGuard::enter(&tool_call_content);
             for tc in &response.tool_calls {
                 info!(
                     "[Brain] tool call id={} name={} arguments={}",
@@ -355,6 +411,7 @@ impl Brain {
             conversation.push(response.clone());
             output.push(response.clone());
 
+            let _tool_progress_scope = ToolProgressScopeGuard::enter(&tool_call_content);
             for tc in &response.tool_calls {
                 info!(
                     "[Brain] tool call id={} name={} arguments={}",

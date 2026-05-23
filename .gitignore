@@ -3,12 +3,14 @@ logs/
 **/__pycache__/
 config.yaml
 docker/redis/
+docker/napcat/
 target/
 Cargo.lock
 **/node_modules/
 webui/dist/
 webui/package-lock.json
 uploaded_images/
+.venv/
 pnpm
 .lsmcp/
 .claude/

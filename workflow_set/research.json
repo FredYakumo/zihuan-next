@@ -66,22 +66,26 @@
           {
             "data_type": "String",
             "description": "需要分析的问题。尽量描述问题是什么，需要解决什么，边界条件有哪些，需要得到什么",
-            "name": "question"
+            "name": "question",
+            "required": true
           },
           {
             "data_type": "String",
             "description": "工具调用content",
-            "name": "content"
+            "name": "content",
+            "required": true
           },
           {
             "data_type": "BotAdapterRef",
             "description": "",
-            "name": "qq_ims_bot_adapter"
+            "name": "qq_ims_bot_adapter",
+            "required": true
           },
           {
             "data_type": "MessageEvent",
             "description": "",
-            "name": "message_event"
+            "name": "message_event",
+            "required": true
           }
         ]
       },
@@ -127,7 +131,8 @@
           {
             "data_type": "String",
             "description": "分析结果",
-            "name": "answer"
+            "name": "answer",
+            "required": true
           }
         ]
       },
@@ -176,7 +181,7 @@
       "inline_values": {
         "messages": [
           {
-            "content": "You are an expert in mathematics, physics research, computer science, software engineering, programming, and formal logic.\n\nYour task is to analyze the questions, hypotheses, or conclusions proposed by the previous agent. You must carefully evaluate every point step by step, using rigorous reasoning, technical accuracy, and logical consistency.\n\nRequirements:\n\n1. Perform structured, point-by-point analysis.\n  - Break down the previous agent’s reasoning into individual claims or components.\n  - Examine assumptions, derivations, logic flow, and technical correctness.\n  - Identify hidden dependencies, ambiguities, contradictions, or unsupported conclusions.\n\n2. Provide deep analytical reasoning.\n  - Use mathematical, physical, computational, or logical principles where applicable.\n  - Verify formulas, algorithms, proofs, and code logic carefully.\n  - When analyzing code, consider correctness, complexity, edge cases, maintainability, and potential bugs.\n\n3. Maintain high precision and rigor.\n  - Do not make unsupported claims.\n  - Distinguish clearly between verified facts, assumptions, and speculation.\n  - If information is insufficient, explicitly state what is missing and what cannot yet be concluded.\n\n4. Optimize for clarity and readability.\n  - Use clear section headers.\n  - Present reasoning in sequential steps.\n  - Use concise but technically complete explanations.\n\n5. Output format:\n  - Problem Overview\n  - Step-by-Step Analysis\n  - Errors / Weaknesses Identified\n  - Corrected Reasoning or Improved Solution\n  - Final Conclusion\n  - Important Notes and Caveats\n\n6. Behavioral constraints:\n  - Remain objective, analytical, and technically rigorous.\n  - Do not blindly trust the previous agent’s output.\n  - Prioritize correctness over agreement.\n  - Avoid vague language and generic explanations.\n  - When multiple interpretations exist, analyze each possibility separately.\n\nYour final output should resemble a professional research review, technical audit, or expert-level reasoning report.",
+            "content": "你是一个严谨的研究助理，擅长数学、物理、计算机科学、软件工程、编程与形式逻辑分析。\n\n你的任务是对用户问题做深入研究，并在需要事实查证、网页资料或图片上下文时主动调用工具。\n\n研究流程要求：\n1. 先把用户问题拆成若干个彼此独立的研究点、子问题或核查点。\n2. 必须按“一个研究点一轮处理”的方式推进：每一轮只围绕一个研究点进行检索、阅读、核查和整理。\n3. 禁止把多个研究点混在同一次 `tavily_search` 调用里；如果有多个点，就分成多次工具调用逐个处理。\n4. 只有在当前研究点已有足够证据后，才能进入下一个研究点。\n5. 在所有研究点处理完成后，再做统一汇总、交叉校验和最终结论。\n\n工具使用规则：\n1. `tavily_search` 用于联网搜索资料，或对单个 URL 抽取网页正文。\n2. `image_understand` 用于理解当前消息或指定 `message_id` 对应消息中的图片内容。\n3. 每次调用工具前，assistant 的 content 必须先写一句简短中文进度提示；这句话会直接回给用户，所以不要包含 @，也不要留空。例如：`我先查第一个点`、`我先核对这个说法`、`我先看看图片内容`。\n4. 工具返回后再继续分析，优先基于工具结果作答。\n5. 如果某个研究点需要多次搜索，也要保持单点聚焦，不要把别的点混入当前搜索词。\n\n输出要求：\n- Problem Overview\n- Research Points Breakdown\n- Step-by-Step Analysis\n- Errors / Weaknesses Identified\n- Corrected Reasoning or Improved Solution\n- Final Conclusion\n- Important Notes and Caveats\n\n如果信息不足，要明确说明缺失信息和无法确认的部分。最终回答使用中文。",
             "role": "system"
           }
         ]
@@ -391,7 +396,7 @@
           "name": "question",
           "data_type": "Any",
           "description": "变量 question",
-          "required": true,
+          "required": false,
           "hidden": false
         }
       ],
@@ -415,7 +420,7 @@
         "height": 120.0
       },
       "inline_values": {
-        "template": "我将研究 \"${question}\" 这个问题。"
+        "template": "我将开始研究这个问题: \"${question}\""
       },
       "port_bindings": {},
       "has_error": false,
@@ -424,14 +429,14 @@
     },
     {
       "id": "581d92ed-5485-481e-b060-81ce34a7bbc2",
-      "name": "llm infer",
+      "name": "research brain",
       "description": null,
-      "node_type": "llm_infer",
+      "node_type": "brain",
       "input_ports": [
         {
           "name": "llm_model",
           "data_type": "LLModel",
-          "description": "LLM模型引用，由LlmNode提供",
+          "description": "LLM 模型引用，由 LLM API 节点提供",
           "required": true,
           "hidden": false
         },
@@ -440,33 +445,1106 @@
           "data_type": {
             "Vec": "OpenAIMessage"
           },
-          "description": "输入消息列表，包含系统消息和用户消息",
+          "description": "消息列表（包含 system/user/assistant/tool 等角色）",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "tools_config",
+          "data_type": "Json",
+          "description": "Tools 配置，由工具编辑器维护",
+          "required": false,
+          "hidden": true
+        },
+        {
+          "name": "shared_inputs",
+          "data_type": "Json",
+          "description": "Brain 共享输入签名，由工具编辑器维护",
+          "required": false,
+          "hidden": true
+        },
+        {
+          "name": "message_event",
+          "data_type": "MessageEvent",
+          "description": "当前触发此次工具调用的消息事件",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "qq_ims_bot_adapter",
+          "data_type": "BotAdapterRef",
+          "description": "当前消息事件对应的 Bot Adapter 连接引用",
           "required": true,
           "hidden": false
         }
       ],
       "output_ports": [
         {
-          "name": "response",
+          "name": "output",
           "data_type": {
             "Vec": "OpenAIMessage"
           },
-          "description": "LLM返回的消息列表",
+          "description": "本次 Brain 运行新增的 assistant/tool 消息轨迹",
           "required": true,
           "hidden": false
         }
       ],
-      "dynamic_input_ports": false,
+      "dynamic_input_ports": true,
       "dynamic_output_ports": false,
       "position": {
-        "x": 930.0,
-        "y": 480.0
+        "x": 900.0,
+        "y": 420.0
       },
       "size": {
-        "width": 200.0,
-        "height": 120.0
+        "width": 420.0,
+        "height": 220.0
       },
-      "inline_values": {},
+      "inline_values": {
+        "shared_inputs": [
+          {
+            "data_type": "MessageEvent",
+            "description": "当前触发此次工具调用的消息事件",
+            "name": "message_event"
+          },
+          {
+            "data_type": "BotAdapterRef",
+            "description": "当前消息事件对应的 Bot Adapter 连接引用",
+            "name": "qq_ims_bot_adapter"
+          }
+        ],
+        "tools_config": [
+          {
+            "description": "使用 Tavily 联网搜索资料，或对单个 URL 抽取网页正文内容",
+            "id": "tool_tavily_search",
+            "name": "tavily_search",
+            "outputs": [
+              {
+                "data_type": {
+                  "Vec": "String"
+                },
+                "description": "搜索或抽取得到的文本结果列表",
+                "name": "results",
+                "required": true
+              }
+            ],
+            "parameters": [
+              {
+                "data_type": "String",
+                "desc": "联网搜索关键词、问题或查询语句；当 url 为空时使用",
+                "name": "query",
+                "required": false
+              },
+              {
+                "data_type": "String",
+                "desc": "要单独读取的网页 URL；有值时优先精确抽取该页面",
+                "name": "url",
+                "required": false
+              },
+              {
+                "data_type": "Integer",
+                "desc": "返回结果数量，默认 3，建议 3 到 5",
+                "name": "search_count",
+                "required": false
+              }
+            ],
+            "subgraph": {
+              "edges": [
+                {
+                  "from_node_id": "tool_tavily_ref",
+                  "from_port": "tavily_ref",
+                  "to_node_id": "tool_tavily_search_node",
+                  "to_port": "tavily_ref"
+                },
+                {
+                  "from_node_id": "__function_inputs__",
+                  "from_port": "query",
+                  "to_node_id": "tool_tavily_search_node",
+                  "to_port": "query"
+                },
+                {
+                  "from_node_id": "__function_inputs__",
+                  "from_port": "url",
+                  "to_node_id": "tool_tavily_search_node",
+                  "to_port": "url"
+                },
+                {
+                  "from_node_id": "__function_inputs__",
+                  "from_port": "search_count",
+                  "to_node_id": "tool_tavily_search_node",
+                  "to_port": "search_count"
+                },
+                {
+                  "from_node_id": "tool_tavily_search_node",
+                  "from_port": "results",
+                  "to_node_id": "__function_outputs__",
+                  "to_port": "results"
+                }
+              ],
+              "graph_inputs": [],
+              "graph_outputs": [],
+              "hyperparameter_groups": [],
+              "hyperparameters": [],
+              "metadata": {
+                "description": null,
+                "name": null,
+                "version": null
+              },
+              "nodes": [
+                {
+                  "description": "函数子图的输入边界节点",
+                  "disabled": false,
+                  "dynamic_input_ports": false,
+                  "dynamic_output_ports": true,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "__function_inputs__",
+                  "inline_values": {
+                    "signature": [
+                      {
+                        "data_type": "MessageEvent",
+                        "description": "当前触发此次工具调用的消息事件",
+                        "name": "message_event",
+                        "required": true
+                      },
+                      {
+                        "data_type": "BotAdapterRef",
+                        "description": "当前消息事件对应的 Bot Adapter 连接引用",
+                        "name": "qq_ims_bot_adapter",
+                        "required": true
+                      },
+                      {
+                        "data_type": "String",
+                        "description": "触发此次工具调用的上下文文本内容",
+                        "name": "content",
+                        "required": true
+                      },
+                      {
+                        "data_type": "String",
+                        "description": "联网搜索关键词、问题或查询语句；当 url 为空时使用",
+                        "name": "query",
+                        "required": false
+                      },
+                      {
+                        "data_type": "String",
+                        "description": "要单独读取的网页 URL；有值时优先精确抽取该页面",
+                        "name": "url",
+                        "required": false
+                      },
+                      {
+                        "data_type": "Integer",
+                        "description": "返回结果数量，默认 3，建议 3 到 5",
+                        "name": "search_count",
+                        "required": false
+                      }
+                    ]
+                  },
+                  "input_ports": [
+                    {
+                      "data_type": "Json",
+                      "description": "隐藏的函数签名 JSON",
+                      "hidden": true,
+                      "name": "signature",
+                      "required": false
+                    },
+                    {
+                      "data_type": "Json",
+                      "description": "运行时注入的函数输入 JSON",
+                      "hidden": true,
+                      "name": "runtime_values",
+                      "required": false
+                    }
+                  ],
+                  "name": "函数输入",
+                  "node_type": "function_inputs",
+                  "output_ports": [
+                    {
+                      "data_type": "MessageEvent",
+                      "description": "当前触发此次工具调用的消息事件",
+                      "hidden": false,
+                      "name": "message_event",
+                      "required": true
+                    },
+                    {
+                      "data_type": "BotAdapterRef",
+                      "description": "当前消息事件对应的 Bot Adapter 连接引用",
+                      "hidden": false,
+                      "name": "qq_ims_bot_adapter",
+                      "required": true
+                    },
+                    {
+                      "data_type": "String",
+                      "description": "触发此次工具调用的上下文文本内容",
+                      "hidden": false,
+                      "name": "content",
+                      "required": true
+                    },
+                    {
+                      "data_type": "String",
+                      "description": "联网搜索关键词、问题或查询语句；当 url 为空时使用",
+                      "hidden": false,
+                      "name": "query",
+                      "required": false
+                    },
+                    {
+                      "data_type": "String",
+                      "description": "要单独读取的网页 URL；有值时优先精确抽取该页面",
+                      "hidden": false,
+                      "name": "url",
+                      "required": false
+                    },
+                    {
+                      "data_type": "Integer",
+                      "description": "返回结果数量，默认 3，建议 3 到 5",
+                      "hidden": false,
+                      "name": "search_count",
+                      "required": false
+                    }
+                  ],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 40,
+                    "y": 160
+                  },
+                  "size": {
+                    "height": 200,
+                    "width": 240
+                  }
+                },
+                {
+                  "description": null,
+                  "disabled": false,
+                  "dynamic_input_ports": false,
+                  "dynamic_output_ports": false,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "tool_tavily_ref",
+                  "inline_values": {},
+                  "input_ports": [],
+                  "name": "agent tavily ref",
+                  "node_type": "agent_tavily_ref",
+                  "output_ports": [
+                    {
+                      "data_type": "TavilyRef",
+                      "description": "Agent Tavily 搜索引用",
+                      "hidden": false,
+                      "name": "tavily_ref",
+                      "required": true
+                    }
+                  ],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 340,
+                    "y": 70
+                  },
+                  "size": {
+                    "height": 120,
+                    "width": 200
+                  }
+                },
+                {
+                  "description": null,
+                  "disabled": false,
+                  "dynamic_input_ports": false,
+                  "dynamic_output_ports": false,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "tool_tavily_search_node",
+                  "inline_values": {},
+                  "input_ports": [
+                    {
+                      "data_type": "TavilyRef",
+                      "description": "Tavily 搜索引用",
+                      "hidden": false,
+                      "name": "tavily_ref",
+                      "required": true
+                    },
+                    {
+                      "data_type": "String",
+                      "description": "搜索关键词或问题",
+                      "hidden": false,
+                      "name": "query",
+                      "required": false
+                    },
+                    {
+                      "data_type": "String",
+                      "description": "要单独抽取的网页 URL",
+                      "hidden": false,
+                      "name": "url",
+                      "required": false
+                    },
+                    {
+                      "data_type": "Integer",
+                      "description": "搜索结果数量，默认 3",
+                      "hidden": false,
+                      "name": "search_count",
+                      "required": false
+                    }
+                  ],
+                  "name": "tavily web search",
+                  "node_type": "tavily_web_search",
+                  "output_ports": [
+                    {
+                      "data_type": {
+                        "Vec": "String"
+                      },
+                      "description": "搜索或抽取得到的文本结果列表",
+                      "hidden": false,
+                      "name": "results",
+                      "required": true
+                    }
+                  ],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 640,
+                    "y": 160
+                  },
+                  "size": {
+                    "height": 140,
+                    "width": 220
+                  }
+                },
+                {
+                  "description": "函数子图的输出边界节点",
+                  "disabled": false,
+                  "dynamic_input_ports": true,
+                  "dynamic_output_ports": false,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "__function_outputs__",
+                  "inline_values": {
+                    "signature": [
+                      {
+                        "data_type": {
+                          "Vec": "String"
+                        },
+                        "description": "搜索或抽取得到的文本结果列表",
+                        "name": "results",
+                        "required": true
+                      }
+                    ]
+                  },
+                  "input_ports": [
+                    {
+                      "data_type": "Json",
+                      "description": "隐藏的函数签名 JSON",
+                      "hidden": true,
+                      "name": "signature",
+                      "required": false
+                    },
+                    {
+                      "data_type": {
+                        "Vec": "String"
+                      },
+                      "description": "搜索或抽取得到的文本结果列表",
+                      "hidden": false,
+                      "name": "results",
+                      "required": true
+                    }
+                  ],
+                  "name": "函数输出",
+                  "node_type": "function_outputs",
+                  "output_ports": [],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 960,
+                    "y": 160
+                  },
+                  "size": {
+                    "height": 120,
+                    "width": 220
+                  }
+                }
+              ],
+              "variables": []
+            }
+          },
+          {
+            "description": "理解当前消息或指定 message_id 对应消息中的图片内容，返回文字描述",
+            "id": "tool_image_understand",
+            "name": "image_understand",
+            "outputs": [
+              {
+                "data_type": "String",
+                "description": "图片理解结果",
+                "name": "image_description",
+                "required": true
+              }
+            ],
+            "parameters": [
+              {
+                "data_type": "Integer",
+                "desc": "可选：要恢复并分析的目标消息 ID；不传则使用当前消息上下文",
+                "name": "message_id",
+                "required": false
+              }
+            ],
+            "subgraph": {
+              "edges": [
+                {
+                  "from_node_id": "__function_inputs__",
+                  "from_port": "message_event",
+                  "to_node_id": "image_extract_message",
+                  "to_port": "message_event"
+                },
+                {
+                  "from_node_id": "__function_inputs__",
+                  "from_port": "message_id",
+                  "to_node_id": "image_extract_message",
+                  "to_port": "message_id"
+                },
+                {
+                  "from_node_id": "__function_inputs__",
+                  "from_port": "qq_ims_bot_adapter",
+                  "to_node_id": "image_extract_message",
+                  "to_port": "ims_bot_adapter"
+                },
+                {
+                  "from_node_id": "image_mysql_ref",
+                  "from_port": "mysql_ref",
+                  "to_node_id": "image_extract_message",
+                  "to_port": "mysql_ref"
+                },
+                {
+                  "from_node_id": "image_rustfs_ref",
+                  "from_port": "s3_ref",
+                  "to_node_id": "image_extract_message",
+                  "to_port": "s3_ref"
+                },
+                {
+                  "from_node_id": "image_system_messages",
+                  "from_port": "messages",
+                  "to_node_id": "image_concat_messages",
+                  "to_port": "vec1"
+                },
+                {
+                  "from_node_id": "image_extract_message",
+                  "from_port": "messages",
+                  "to_node_id": "image_concat_messages",
+                  "to_port": "vec2"
+                },
+                {
+                  "from_node_id": "image_concat_messages",
+                  "from_port": "vec",
+                  "to_node_id": "image_llm_infer",
+                  "to_port": "messages"
+                },
+                {
+                  "from_node_id": "image_llm_api",
+                  "from_port": "llm_model",
+                  "to_node_id": "image_llm_infer",
+                  "to_port": "llm_model"
+                },
+                {
+                  "from_node_id": "image_llm_infer",
+                  "from_port": "response",
+                  "to_node_id": "image_last_message",
+                  "to_port": "array"
+                },
+                {
+                  "from_node_id": "image_last_message",
+                  "from_port": "element",
+                  "to_node_id": "image_to_string",
+                  "to_port": "message"
+                },
+                {
+                  "from_node_id": "image_to_string",
+                  "from_port": "content",
+                  "to_node_id": "__function_outputs__",
+                  "to_port": "image_description"
+                }
+              ],
+              "graph_inputs": [],
+              "graph_outputs": [],
+              "hyperparameter_groups": [],
+              "hyperparameters": [],
+              "metadata": {
+                "description": null,
+                "name": null,
+                "version": null
+              },
+              "nodes": [
+                {
+                  "description": "函数子图的输入边界节点",
+                  "disabled": false,
+                  "dynamic_input_ports": false,
+                  "dynamic_output_ports": true,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "__function_inputs__",
+                  "inline_values": {
+                    "signature": [
+                      {
+                        "data_type": "MessageEvent",
+                        "description": "当前触发此次工具调用的消息事件",
+                        "name": "message_event",
+                        "required": true
+                      },
+                      {
+                        "data_type": "BotAdapterRef",
+                        "description": "当前消息事件对应的 Bot Adapter 连接引用",
+                        "name": "qq_ims_bot_adapter",
+                        "required": true
+                      },
+                      {
+                        "data_type": "String",
+                        "description": "触发此次工具调用的上下文文本内容",
+                        "name": "content",
+                        "required": true
+                      },
+                      {
+                        "data_type": "Integer",
+                        "description": "可选：要恢复并分析的目标消息 ID；不传则使用当前消息上下文",
+                        "name": "message_id",
+                        "required": false
+                      }
+                    ]
+                  },
+                  "input_ports": [
+                    {
+                      "data_type": "Json",
+                      "description": "隐藏的函数签名 JSON",
+                      "hidden": true,
+                      "name": "signature",
+                      "required": false
+                    },
+                    {
+                      "data_type": "Json",
+                      "description": "运行时注入的函数输入 JSON",
+                      "hidden": true,
+                      "name": "runtime_values",
+                      "required": false
+                    }
+                  ],
+                  "name": "函数输入",
+                  "node_type": "function_inputs",
+                  "output_ports": [
+                    {
+                      "data_type": "MessageEvent",
+                      "description": "当前触发此次工具调用的消息事件",
+                      "hidden": false,
+                      "name": "message_event",
+                      "required": true
+                    },
+                    {
+                      "data_type": "BotAdapterRef",
+                      "description": "当前消息事件对应的 Bot Adapter 连接引用",
+                      "hidden": false,
+                      "name": "qq_ims_bot_adapter",
+                      "required": true
+                    },
+                    {
+                      "data_type": "String",
+                      "description": "触发此次工具调用的上下文文本内容",
+                      "hidden": false,
+                      "name": "content",
+                      "required": true
+                    },
+                    {
+                      "data_type": "Integer",
+                      "description": "可选：要恢复并分析的目标消息 ID；不传则使用当前消息上下文",
+                      "hidden": false,
+                      "name": "message_id",
+                      "required": false
+                    }
+                  ],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 40,
+                    "y": 160
+                  },
+                  "size": {
+                    "height": 160,
+                    "width": 240
+                  }
+                },
+                {
+                  "description": null,
+                  "disabled": false,
+                  "dynamic_input_ports": false,
+                  "dynamic_output_ports": false,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "image_extract_message",
+                  "inline_values": {},
+                  "input_ports": [
+                    {
+                      "data_type": "MessageEvent",
+                      "description": "当前触发的消息事件",
+                      "hidden": false,
+                      "name": "message_event",
+                      "required": true
+                    },
+                    {
+                      "data_type": "BotAdapterRef",
+                      "description": "BotAdapter reference for context-aware system message",
+                      "hidden": false,
+                      "name": "ims_bot_adapter",
+                      "required": true
+                    },
+                    {
+                      "data_type": "Integer",
+                      "description": "可选：要恢复并分析的目标消息 ID",
+                      "hidden": false,
+                      "name": "message_id",
+                      "required": false
+                    },
+                    {
+                      "data_type": "MySqlRef",
+                      "description": "可选：显式注册给消息恢复链路的 MySQL 连接",
+                      "hidden": false,
+                      "name": "mysql_ref",
+                      "required": false
+                    },
+                    {
+                      "data_type": "S3Ref",
+                      "description": "可选：显式传入对象存储引用，优先用于多模态图片提取",
+                      "hidden": false,
+                      "name": "s3_ref",
+                      "required": false
+                    }
+                  ],
+                  "name": "extract message by id from event",
+                  "node_type": "extract_message_by_id_from_event",
+                  "output_ports": [
+                    {
+                      "data_type": {
+                        "Vec": "OpenAIMessage"
+                      },
+                      "description": "Vec<OpenAIMessage> containing system and user messages",
+                      "hidden": false,
+                      "name": "messages",
+                      "required": true
+                    },
+                    {
+                      "data_type": "String",
+                      "description": "Merged readable message body",
+                      "hidden": false,
+                      "name": "content",
+                      "required": true
+                    },
+                    {
+                      "data_type": "String",
+                      "description": "Referenced/replied message content",
+                      "hidden": false,
+                      "name": "ref_content",
+                      "required": true
+                    },
+                    {
+                      "data_type": "Boolean",
+                      "description": "Whether the message @'s the bot",
+                      "hidden": false,
+                      "name": "is_at_me",
+                      "required": true
+                    },
+                    {
+                      "data_type": {
+                        "Vec": "String"
+                      },
+                      "description": "List of all @ targets in the message",
+                      "hidden": false,
+                      "name": "at_target_list",
+                      "required": true
+                    }
+                  ],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 360,
+                    "y": 250
+                  },
+                  "size": {
+                    "height": 140,
+                    "width": 220
+                  }
+                },
+                {
+                  "description": null,
+                  "disabled": false,
+                  "dynamic_input_ports": false,
+                  "dynamic_output_ports": false,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "image_system_messages",
+                  "inline_values": {
+                    "messages": [
+                      {
+                        "content": "你是一个图片理解专家，请将消息中的所有图片总结成文字。如果图片中内含复杂的问题，只需要描述那个问题，不需要输出你的任何理解。",
+                        "role": "system"
+                      }
+                    ]
+                  },
+                  "input_ports": [
+                    {
+                      "data_type": {
+                        "Vec": "OpenAIMessage"
+                      },
+                      "description": "Vec<OpenAIMessage> provided by UI inline editor",
+                      "hidden": true,
+                      "name": "messages",
+                      "required": false
+                    }
+                  ],
+                  "name": "message list data",
+                  "node_type": "message_list_data",
+                  "output_ports": [
+                    {
+                      "data_type": {
+                        "Vec": "OpenAIMessage"
+                      },
+                      "description": "Output Vec<OpenAIMessage> from UI data source",
+                      "hidden": false,
+                      "name": "messages",
+                      "required": true
+                    }
+                  ],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 640,
+                    "y": 30
+                  },
+                  "size": {
+                    "height": 120,
+                    "width": 220
+                  }
+                },
+                {
+                  "description": null,
+                  "disabled": false,
+                  "dynamic_input_ports": false,
+                  "dynamic_output_ports": false,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "image_concat_messages",
+                  "inline_values": {},
+                  "input_ports": [
+                    {
+                      "data_type": {
+                        "Vec": "Any"
+                      },
+                      "description": "前半部分列表",
+                      "hidden": false,
+                      "name": "vec1",
+                      "required": true
+                    },
+                    {
+                      "data_type": {
+                        "Vec": "Any"
+                      },
+                      "description": "后半部分列表，将拼接到 vec1 后面",
+                      "hidden": false,
+                      "name": "vec2",
+                      "required": true
+                    }
+                  ],
+                  "name": "concat vec",
+                  "node_type": "concat_vec",
+                  "output_ports": [
+                    {
+                      "data_type": {
+                        "Vec": "Any"
+                      },
+                      "description": "拼接后的列表，元素类型与输入列表一致",
+                      "hidden": false,
+                      "name": "vec",
+                      "required": true
+                    }
+                  ],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 920,
+                    "y": 180
+                  },
+                  "size": {
+                    "height": 120,
+                    "width": 200
+                  }
+                },
+                {
+                  "description": null,
+                  "disabled": false,
+                  "dynamic_input_ports": false,
+                  "dynamic_output_ports": false,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "image_llm_api",
+                  "inline_values": {
+                    "llm_ref_id": "accdea8a-48a7-4e78-b833-514298606fc1"
+                  },
+                  "input_ports": [],
+                  "name": "llm api",
+                  "node_type": "llm_api",
+                  "output_ports": [
+                    {
+                      "data_type": "LLModel",
+                      "description": "LLM模型引用，传递给LLMInfer等节点使用",
+                      "hidden": false,
+                      "name": "llm_model",
+                      "required": true
+                    }
+                  ],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 1160,
+                    "y": 40
+                  },
+                  "size": {
+                    "height": 136,
+                    "width": 277
+                  }
+                },
+                {
+                  "description": null,
+                  "disabled": false,
+                  "dynamic_input_ports": false,
+                  "dynamic_output_ports": false,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "image_llm_infer",
+                  "inline_values": {},
+                  "input_ports": [
+                    {
+                      "data_type": "LLModel",
+                      "description": "LLM模型引用，由LLMApiNode提供",
+                      "hidden": false,
+                      "name": "llm_model",
+                      "required": true
+                    },
+                    {
+                      "data_type": {
+                        "Vec": "OpenAIMessage"
+                      },
+                      "description": "输入消息列表，包含系统消息和用户消息",
+                      "hidden": false,
+                      "name": "messages",
+                      "required": true
+                    }
+                  ],
+                  "name": "llm infer",
+                  "node_type": "llm_infer",
+                  "output_ports": [
+                    {
+                      "data_type": {
+                        "Vec": "OpenAIMessage"
+                      },
+                      "description": "LLM返回的消息列表",
+                      "hidden": false,
+                      "name": "response",
+                      "required": true
+                    }
+                  ],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 1540,
+                    "y": 170
+                  },
+                  "size": {
+                    "height": 120,
+                    "width": 200
+                  }
+                },
+                {
+                  "description": null,
+                  "disabled": false,
+                  "dynamic_input_ports": false,
+                  "dynamic_output_ports": false,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "image_last_message",
+                  "inline_values": {
+                    "index": -1
+                  },
+                  "input_ports": [
+                    {
+                      "data_type": {
+                        "Vec": "Any"
+                      },
+                      "description": "输入列表",
+                      "hidden": false,
+                      "name": "array",
+                      "required": true
+                    },
+                    {
+                      "data_type": "Integer",
+                      "description": "元素下标，负数表示从末尾倒数（-1为最后一个）",
+                      "hidden": false,
+                      "name": "index",
+                      "required": true
+                    }
+                  ],
+                  "name": "array get",
+                  "node_type": "array_get",
+                  "output_ports": [
+                    {
+                      "data_type": "Any",
+                      "description": "提取出的元素，类型与列表中元素的类型一致",
+                      "hidden": false,
+                      "name": "element",
+                      "required": true
+                    }
+                  ],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 1260,
+                    "y": 350
+                  },
+                  "size": {
+                    "height": 120,
+                    "width": 200
+                  }
+                },
+                {
+                  "description": null,
+                  "disabled": false,
+                  "dynamic_input_ports": false,
+                  "dynamic_output_ports": false,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "image_to_string",
+                  "inline_values": {},
+                  "input_ports": [
+                    {
+                      "data_type": "OpenAIMessage",
+                      "description": "输入的 OpenAIMessage",
+                      "hidden": false,
+                      "name": "message",
+                      "required": true
+                    }
+                  ],
+                  "name": "openai message to string",
+                  "node_type": "openai_message_to_string",
+                  "output_ports": [
+                    {
+                      "data_type": "String",
+                      "description": "拼接后的字符串：先 reasoning_content（如有），后 content",
+                      "hidden": false,
+                      "name": "content",
+                      "required": true
+                    }
+                  ],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 1520,
+                    "y": 360
+                  },
+                  "size": {
+                    "height": 120,
+                    "width": 220
+                  }
+                },
+                {
+                  "description": null,
+                  "disabled": false,
+                  "dynamic_input_ports": false,
+                  "dynamic_output_ports": false,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "image_mysql_ref",
+                  "inline_values": {},
+                  "input_ports": [],
+                  "name": "agent mysql ref",
+                  "node_type": "agent_mysql_ref",
+                  "output_ports": [
+                    {
+                      "data_type": "MySqlRef",
+                      "description": "Agent MySQL 连接引用",
+                      "hidden": false,
+                      "name": "mysql_ref",
+                      "required": true
+                    }
+                  ],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 40,
+                    "y": 380
+                  },
+                  "size": {
+                    "height": 120,
+                    "width": 220
+                  }
+                },
+                {
+                  "description": null,
+                  "disabled": false,
+                  "dynamic_input_ports": false,
+                  "dynamic_output_ports": false,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "image_rustfs_ref",
+                  "inline_values": {},
+                  "input_ports": [],
+                  "name": "agent rustfs ref",
+                  "node_type": "agent_rustfs_ref",
+                  "output_ports": [
+                    {
+                      "data_type": "S3Ref",
+                      "description": "Agent RustFS 对象存储引用",
+                      "hidden": false,
+                      "name": "s3_ref",
+                      "required": true
+                    }
+                  ],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 40,
+                    "y": 520
+                  },
+                  "size": {
+                    "height": 120,
+                    "width": 220
+                  }
+                },
+                {
+                  "description": "函数子图的输出边界节点",
+                  "disabled": false,
+                  "dynamic_input_ports": true,
+                  "dynamic_output_ports": false,
+                  "has_cycle": false,
+                  "has_error": false,
+                  "id": "__function_outputs__",
+                  "inline_values": {
+                    "signature": [
+                      {
+                        "data_type": "String",
+                        "description": "图片理解结果",
+                        "name": "image_description",
+                        "required": true
+                      }
+                    ]
+                  },
+                  "input_ports": [
+                    {
+                      "data_type": "Json",
+                      "description": "隐藏的函数签名 JSON",
+                      "hidden": true,
+                      "name": "signature",
+                      "required": false
+                    },
+                    {
+                      "data_type": "String",
+                      "description": "图片理解结果",
+                      "hidden": false,
+                      "name": "image_description",
+                      "required": true
+                    }
+                  ],
+                  "name": "函数输出",
+                  "node_type": "function_outputs",
+                  "output_ports": [],
+                  "port_bindings": {},
+                  "position": {
+                    "x": 1820,
+                    "y": 360
+                  },
+                  "size": {
+                    "height": 120,
+                    "width": 220
+                  }
+                }
+              ],
+              "variables": []
+            }
+          }
+        ]
+      },
       "port_bindings": {},
       "has_error": false,
       "has_cycle": false,
@@ -691,52 +1769,6 @@
       "disabled": false
     },
     {
-      "id": "3ebb936c-8f14-49e3-aa3c-6eebf68e8838",
-      "name": "and then",
-      "description": null,
-      "node_type": "and_then",
-      "input_ports": [
-        {
-          "name": "first",
-          "data_type": "Any",
-          "description": "用于串联依赖的前置输入，仅用于等待其到齐",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "second",
-          "data_type": "Any",
-          "description": "在两个输入都到齐后原样透传的值",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "output",
-          "data_type": "Any",
-          "description": "second 的原样输出",
-          "required": true,
-          "hidden": false
-        }
-      ],
-      "dynamic_input_ports": false,
-      "dynamic_output_ports": false,
-      "position": {
-        "x": 1950.0,
-        "y": 90.0
-      },
-      "size": {
-        "width": 200.0,
-        "height": 120.0
-      },
-      "inline_values": {},
-      "port_bindings": {},
-      "has_error": false,
-      "has_cycle": false,
-      "disabled": false
-    },
-    {
       "id": "25ffc278-425f-4ca2-a479-2e6745476fd7",
       "name": "extract sender from event",
       "description": null,
@@ -883,9 +1915,21 @@
     },
     {
       "from_node_id": "581d92ed-5485-481e-b060-81ce34a7bbc2",
-      "from_port": "response",
+      "from_port": "output",
       "to_node_id": "f3fce5f5-63ed-4b20-a9ee-2e993b3439cc",
       "to_port": "array"
+    },
+    {
+      "from_node_id": "__graph_inputs__",
+      "from_port": "message_event",
+      "to_node_id": "581d92ed-5485-481e-b060-81ce34a7bbc2",
+      "to_port": "message_event"
+    },
+    {
+      "from_node_id": "__graph_inputs__",
+      "from_port": "qq_ims_bot_adapter",
+      "to_node_id": "581d92ed-5485-481e-b060-81ce34a7bbc2",
+      "to_port": "qq_ims_bot_adapter"
     },
     {
       "from_node_id": "f3fce5f5-63ed-4b20-a9ee-2e993b3439cc",
@@ -920,12 +1964,12 @@
     {
       "from_node_id": "__graph_inputs__",
       "from_port": "question",
-      "to_node_id": "3ebb936c-8f14-49e3-aa3c-6eebf68e8838",
-      "to_port": "second"
+      "to_node_id": "19b88ffe-1f19-45b0-89c0-5c473e6c2c59",
+      "to_port": "content"
     },
     {
       "from_node_id": "310e58e7-b875-4a00-9fad-caccf531757e",
-      "from_port": "false_output",
+      "from_port": "true_output",
       "to_node_id": "25ffc278-425f-4ca2-a479-2e6745476fd7",
       "to_port": "message_event"
     },
@@ -946,47 +1990,40 @@
       "from_port": "qq_ims_bot_adapter",
       "to_node_id": "651470a4-d56c-4673-bd0c-8d1a5441f823",
       "to_port": "ims_bot_adapter"
-    },
-    {
-      "from_node_id": "651470a4-d56c-4673-bd0c-8d1a5441f823",
-      "from_port": "success",
-      "to_node_id": "3ebb936c-8f14-49e3-aa3c-6eebf68e8838",
-      "to_port": "first"
-    },
-    {
-      "from_node_id": "3ebb936c-8f14-49e3-aa3c-6eebf68e8838",
-      "from_port": "output",
-      "to_node_id": "19b88ffe-1f19-45b0-89c0-5c473e6c2c59",
-      "to_port": "content"
     }
   ],
   "graph_inputs": [
     {
       "name": "question",
       "data_type": "String",
-      "description": "需要分析的问题。尽量描述问题是什么，需要解决什么，边界条件有哪些，需要得到什么"
+      "description": "需要分析的问题。尽量描述问题是什么，需要解决什么，边界条件有哪些，需要得到什么",
+      "required": true
     },
     {
       "name": "content",
       "data_type": "String",
-      "description": "工具调用content"
+      "description": "工具调用content",
+      "required": true
     },
     {
       "name": "qq_ims_bot_adapter",
       "data_type": "BotAdapterRef",
-      "description": ""
+      "description": "",
+      "required": true
     },
     {
       "name": "message_event",
       "data_type": "MessageEvent",
-      "description": ""
+      "description": "",
+      "required": true
     }
   ],
   "graph_outputs": [
     {
       "name": "answer",
       "data_type": "String",
-      "description": "分析结果"
+      "description": "分析结果",
+      "required": true
     }
   ],
   "hyperparameter_groups": [],

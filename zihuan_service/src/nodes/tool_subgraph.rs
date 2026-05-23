@@ -1,8 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-
-use log::{info, warn};
-use serde_json::{json, Map, Value};
+use std::sync::{Arc, Mutex};
 
 use ims_bot_adapter::adapter::shared_from_handle;
 use ims_bot_adapter::message_helpers::{
@@ -10,14 +7,16 @@ use ims_bot_adapter::message_helpers::{
     send_group_progress_notification_with_persistence, OutboundMessagePersistence,
 };
 use ims_bot_adapter::models::MessageType;
+use log::{info, warn};
+use serde_json::{json, Map, Value};
 
+use zihuan_agent::brain::consume_tool_progress_notification;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_graph_engine::brain_tool_spec::{
     brain_tool_input_signature, fixed_tool_runtime_inputs, BrainToolDefinition, ToolParamDef,
     BRAIN_TOOL_FIXED_CONTENT_INPUT, QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
     QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
-    QQ_AGENT_TOOL_OWNER_TYPE_LEGACY,
 };
 use zihuan_graph_engine::function_graph::{
     sync_function_subgraph_signature, FunctionPortDef, FUNCTION_INPUTS_NODE_ID,
@@ -44,7 +43,7 @@ pub struct ToolSubgraphRunner {
     pub owner_node_type: String,
     pub shared_inputs: Vec<FunctionPortDef>,
     pub definition: BrainToolDefinition,
-    pub shared_runtime_values: HashMap<String, DataValue>,
+    pub shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
     pub result_mode: ToolResultMode,
 }
 
@@ -295,22 +294,19 @@ pub fn build_tool_error_message(message: impl Into<String>) -> String {
 }
 
 fn send_brain_tool_progress_notification(
-    owner_node_type: &str,
-    shared_runtime_values: &HashMap<String, DataValue>,
+    shared_runtime_values: &Arc<Mutex<HashMap<String, DataValue>>>,
     call_content: &str,
 ) {
-    if owner_node_type == QQ_AGENT_TOOL_OWNER_TYPE
-        || owner_node_type == QQ_AGENT_TOOL_OWNER_TYPE_LEGACY
-        || call_content.trim().is_empty()
-    {
+    if !consume_tool_progress_notification(call_content) {
         return;
     }
 
-    let event = match shared_runtime_values.get(QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT) {
+    let shared_rt = shared_runtime_values.lock().unwrap();
+    let event = match shared_rt.get(QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT) {
         Some(DataValue::MessageEvent(event)) => event,
         _ => return,
     };
-    let adapter = match shared_runtime_values.get(QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT) {
+    let adapter = match shared_rt.get(QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT) {
         Some(DataValue::BotAdapterRef(handle)) => shared_from_handle(handle),
         _ => return,
     };
@@ -366,11 +362,9 @@ impl ToolSubgraphRunner {
             "[ToolSubgraph:{}] executing tool '{}' with content='{}' arguments={}",
             self.node_id, tool.name, tool_call_content, arguments
         );
-        send_brain_tool_progress_notification(
-            &self.owner_node_type,
-            &self.shared_runtime_values,
-            &tool_call_content,
-        );
+        if self.owner_node_type != QQ_AGENT_TOOL_OWNER_TYPE {
+            send_brain_tool_progress_notification(&self.shared_runtime_values, &tool_call_content);
+        }
         let _ = &NODE_REGISTRY;
 
         let tool_runtime_values = match arguments {
@@ -384,7 +378,7 @@ impl ToolSubgraphRunner {
             }
         };
 
-        let mut runtime_values = self.shared_runtime_values.clone();
+        let mut runtime_values = self.shared_runtime_values.lock().unwrap().clone();
         runtime_values.insert(
             BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(),
             DataValue::String(tool_call_content),
@@ -410,23 +404,23 @@ impl ToolSubgraphRunner {
                     tool.name, key
                 )));
             }
-            let parsed_value = tool
-                .parameters
-                .iter()
-                .find(|param| param.name == key)
-                .map(|param| {
-                    data_value_from_json_with_declared_type(
-                        &FunctionPortDef {
-                            name: param.name.clone(),
-                            data_type: param.data_type.clone(),
-                            description: param.desc.clone(),
-                            required: param.required,
-                        },
-                        &value,
-                    )
-                })
-                .transpose()?
-                .unwrap_or(DataValue::Json(value));
+            let param_definition = tool.parameters.iter().find(|param| param.name == key);
+            if matches!(param_definition, Some(param) if !param.required) && value.is_null() {
+                continue;
+            }
+
+            let parsed_value = match param_definition {
+                Some(param) => data_value_from_json_with_declared_type(
+                    &FunctionPortDef {
+                        name: param.name.clone(),
+                        data_type: param.data_type.clone(),
+                        description: param.desc.clone(),
+                        required: param.required,
+                    },
+                    &value,
+                )?,
+                None => DataValue::Json(value),
+            };
             runtime_values.insert(key, parsed_value);
         }
 

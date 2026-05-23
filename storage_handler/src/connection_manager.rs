@@ -491,6 +491,7 @@ fn kind_name(kind: &ConnectionKind) -> &'static str {
         ConnectionKind::Rustfs(_) => "rustfs",
         ConnectionKind::BotAdapter(_) => "bot_adapter",
         ConnectionKind::Tavily(_) => "tavily",
+        ConnectionKind::Tokenizer(_) => "tokenizer",
     }
 }
 

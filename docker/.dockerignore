@@ -1,0 +1,6 @@
+target/
+logs/
+webui/node_modules/
+webui/dist/
+.git/
+*.md

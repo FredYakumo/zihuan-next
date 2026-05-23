@@ -94,6 +94,20 @@ impl LocalCandleEmbeddingModel {
         })
     }
 
+    pub fn preferred_device(&self) -> &Device {
+        &self.preferred_device
+    }
+
+    pub fn set_preferred_device(&mut self, device: Device) {
+        log::info!(
+            "Local embedding model '{}' switching preferred device from {} to {}",
+            self.model_name,
+            describe_device(&self.preferred_device),
+            describe_device(&device)
+        );
+        self.preferred_device = device;
+    }
+
     fn encode_batch(&self, texts: &[String], device: &Device) -> Result<(Tensor, Vec<usize>)> {
         let mut tokenizer = self.tokenizer.clone();
         tokenizer.with_padding(Some(PaddingParams {
@@ -371,7 +385,7 @@ fn select_preferred_device(model_name: &str) -> Device {
     Device::Cpu
 }
 
-fn describe_device(device: &Device) -> &'static str {
+pub(crate) fn describe_device(device: &Device) -> &'static str {
     if device.is_cuda() {
         "cuda"
     } else if device.is_metal() {

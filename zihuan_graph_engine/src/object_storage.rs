@@ -1,12 +1,14 @@
 use aws_config::BehaviorVersion;
 use aws_credential_types::Credentials;
 use aws_sdk_s3::config::Builder as S3ConfigBuilder;
+use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::{BucketLocationConstraint, CreateBucketConfiguration};
 use aws_sdk_s3::Client as S3Client;
 use aws_types::region::Region;
 use reqwest::Url;
 use std::fmt;
+use std::time::Duration;
 use zihuan_core::error::{Error, Result};
 
 #[derive(Clone)]
@@ -21,7 +23,17 @@ pub struct S3Ref {
 }
 
 impl S3Ref {
-    pub fn object_url_for_key(&self, key: &str) -> Result<String> {
+    /// Generate URL for accessing the object. If public_base_url is configured, use it (assuming it's publicly accessible). Otherwise, generate a presigned URL for private buckets.
+    pub async fn object_url_for_key(&self, key: &str) -> Result<String> {
+        if self.public_base_url.is_some() {
+            return self.build_public_url(key);
+        }
+
+        // 生成带鉴权的预签名 URL，过期时间为 1 小时
+        self.generate_presigned_url(key, Duration::from_secs(3600)).await
+    }
+
+    fn build_public_url(&self, key: &str) -> Result<String> {
         let base = if let Some(ref public_base_url) = self.public_base_url {
             public_base_url.trim_end_matches('/').to_string()
         } else if self.path_style {
@@ -44,6 +56,29 @@ impl S3Ref {
         Ok(format!("{base}/{}", key.trim_start_matches('/')))
     }
 
+    pub async fn generate_presigned_url(&self, key: &str, expires_in: Duration) -> Result<String> {
+        let client = self.s3_client().await?;
+
+        let presigned_request = client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .presigned(
+                PresigningConfig::builder()
+                    .expires_in(expires_in)
+                    .build()
+                    .map_err(|e| {
+                        Error::ValidationError(format!("presign config build failed: {e}"))
+                    })?,
+            )
+            .await
+            .map_err(|e| {
+                Error::ValidationError(format!("presign URL generation failed: {e}"))
+            })?;
+
+        Ok(presigned_request.uri().to_string())
+    }
+
     pub async fn put_object(&self, key: &str, content_type: &str, body: &[u8]) -> Result<String> {
         let client = self.s3_client().await?;
         client
@@ -56,7 +91,7 @@ impl S3Ref {
             .await
             .map_err(|e| Error::ValidationError(format!("object storage PUT failed: {}", e)))?;
 
-        self.object_url_for_key(key)
+        self.object_url_for_key(key).await
     }
 
     pub async fn get_object_bytes(&self, key: &str) -> Result<Vec<u8>> {
