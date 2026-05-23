@@ -145,8 +145,8 @@ impl Node for ExtractMessageByIdFromEventNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let event = match inputs.get("message_event") {
@@ -231,6 +231,7 @@ impl Node for ExtractMessageByIdFromEventNode {
         );
 
         let outputs = Self::build_outputs_map(extracted);
+        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
@@ -280,3 +281,4 @@ mod tests {
         assert_eq!(result, Some(123));
     }
 }
+

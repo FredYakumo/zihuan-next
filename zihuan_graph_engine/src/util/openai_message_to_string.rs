@@ -39,8 +39,8 @@ impl Node for OpenAIMessageToStringNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let message = match inputs.get("message") {
@@ -71,7 +71,10 @@ impl Node for OpenAIMessageToStringNode {
         let mut outputs = HashMap::new();
         outputs.insert("content".to_string(), DataValue::String(parts.join("\n\n")));
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+

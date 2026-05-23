@@ -94,7 +94,7 @@ impl BrainNode {
             .collect()
     }
 
-    fn parse_messages_input(inputs: &HashMap<String, DataValue>) -> Result<Vec<OpenAIMessage>> {
+    fn parse_messages_input(inputs: &zihuan_graph_engine::NodeInputFlow) -> Result<Vec<OpenAIMessage>> {
         match inputs.get("messages") {
             Some(DataValue::Vec(_, items)) => Ok(items
                 .iter()
@@ -114,7 +114,7 @@ impl BrainNode {
 
     fn parse_shared_inputs_input(
         &self,
-        inputs: &HashMap<String, DataValue>,
+        inputs: &zihuan_graph_engine::NodeInputFlow,
     ) -> Result<HashMap<String, DataValue>> {
         let mut values = HashMap::new();
         for port in &self.shared_inputs {
@@ -168,7 +168,7 @@ impl Node for BrainNode {
         true
     }
 
-    fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
+    fn apply_inline_config(&mut self, inline_values: &zihuan_graph_engine::NodeConfigFlow) -> Result<()> {
         match inline_values.get(BRAIN_SHARED_INPUTS_PORT) {
             Some(DataValue::Json(value)) => {
                 if value.is_null() {
@@ -214,8 +214,8 @@ impl Node for BrainNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         if let Some(DataValue::Json(value)) = inputs.get(BRAIN_SHARED_INPUTS_PORT) {
@@ -277,7 +277,11 @@ impl Node for BrainNode {
                     .collect(),
             ),
         );
+        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+
+

@@ -41,7 +41,7 @@ impl Node for StringDataNode {
 
     node_output![port! { name = "text", ty = String, desc = "Output string from UI input" },];
 
-    fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
+    fn apply_inline_config(&mut self, inline_values: &crate::NodeConfigFlow) -> Result<()> {
         if let Some(DataValue::String(s)) = inline_values.get("text") {
             self.value = s.clone();
         }
@@ -50,14 +50,18 @@ impl Node for StringDataNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();
         outputs.insert("text".to_string(), DataValue::String(self.value.clone()));
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+
+

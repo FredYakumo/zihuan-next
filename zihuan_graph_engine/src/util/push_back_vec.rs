@@ -40,8 +40,8 @@ impl Node for PushBackVecNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let (vec_type, vec_items) = match inputs.get("vec") {
@@ -75,7 +75,10 @@ impl Node for PushBackVecNode {
             DataValue::Vec(Box::new(vec_type), merged),
         );
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+

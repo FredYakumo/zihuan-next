@@ -15,7 +15,7 @@ use crate::function_graph::{
     sync_function_node_definition, sync_function_subgraph_signature,
 };
 use crate::graph_boundary::sync_root_graph_io;
-use crate::{DataValue, Node, NodeGraph, Port};
+use crate::{DataValue, Node, NodeConfigFlow, NodeGraph, NodeOutputFlow, Port};
 use zihuan_core::error::Result;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -109,7 +109,7 @@ pub struct NodeGraphDefinition {
     #[serde(default)]
     pub metadata: GraphMetadata,
     #[serde(skip)]
-    pub execution_results: HashMap<String, HashMap<String, DataValue>>,
+    pub execution_results: HashMap<String, NodeOutputFlow>,
 }
 
 #[derive(Debug, Clone)]
@@ -384,7 +384,7 @@ pub fn refresh_node_dynamic_ports(node: &mut NodeDefinition) {
         )
         .collect();
 
-    let inline_values: HashMap<String, DataValue> = node
+    let inline_values: NodeConfigFlow = node
         .inline_values
         .iter()
         .filter_map(|(port_name, json_val)| {
@@ -393,7 +393,8 @@ pub fn refresh_node_dynamic_ports(node: &mut NodeDefinition) {
                 .and_then(|data_type| json_to_data_value(json_val, data_type))
                 .map(|value| (port_name.clone(), value))
         })
-        .collect();
+        .collect::<HashMap<_, _>>()
+        .into();
 
     if runtime_node.apply_inline_config(&inline_values).is_err() {
         node.has_error = true;

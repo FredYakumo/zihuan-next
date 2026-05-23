@@ -103,7 +103,7 @@ impl BrainTool for GetRecentGroupMessagesBrainTool {
                 ),
                 ("group_id".to_string(), DataValue::String(group_id)),
                 ("limit".to_string(), DataValue::Integer(limit as i64)),
-            ]))?;
+            ]).into())?;
             let items = extract_string_list_output(&outputs, "messages")?;
             Ok(serde_json::json!({
                 "ok": true,
@@ -179,7 +179,7 @@ impl BrainTool for GetRecentUserMessagesBrainTool {
             if let Some(group_id) = group_id {
                 payload.insert("group_id".to_string(), DataValue::String(group_id));
             }
-            let outputs = node.execute(payload)?;
+            let outputs = node.execute(payload.into())?;
             let items = extract_string_list_output(&outputs, "messages")?;
             Ok(serde_json::json!({
                 "ok": true,
@@ -193,3 +193,4 @@ impl BrainTool for GetRecentUserMessagesBrainTool {
         }
     }
 }
+

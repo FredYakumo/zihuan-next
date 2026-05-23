@@ -1,5 +1,6 @@
 use serde_json::{json, Value};
 use std::backtrace::Backtrace;
+use std::collections::{HashMap, HashSet};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, RwLock,
@@ -66,13 +67,13 @@ impl NodeConfigField {
 
 #[derive(Debug, Clone)]
 pub struct ExecutionResult {
-    pub node_results: HashMap<String, HashMap<String, DataValue>>,
+    pub node_results: HashMap<String, NodeOutputFlow>,
     pub error_node_id: Option<String>,
     pub error_message: Option<String>,
 }
 
 impl ExecutionResult {
-    pub fn success(node_results: HashMap<String, HashMap<String, DataValue>>) -> Self {
+    pub fn success(node_results: HashMap<String, NodeOutputFlow>) -> Self {
         Self {
             node_results,
             error_node_id: None,
@@ -81,7 +82,7 @@ impl ExecutionResult {
     }
 
     pub fn with_error(
-        node_results: HashMap<String, HashMap<String, DataValue>>,
+        node_results: HashMap<String, NodeOutputFlow>,
         error_node_id: String,
         error_message: String,
     ) -> Self {
@@ -94,10 +95,9 @@ impl ExecutionResult {
 }
 
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
 use zihuan_core::error::Result;
 
-type OutputPool = HashMap<String, HashMap<String, DataValue>>;
+type OutputPool = HashMap<String, NodeOutputFlow>;
 type InputSourceMap = HashMap<String, HashMap<String, (String, String)>>;
 
 pub mod brain_tool_spec;
@@ -119,10 +119,11 @@ pub mod qq_message_list_mysql_persistence;
 pub mod registry;
 pub mod util;
 
-pub type RuntimeVariableStore = Arc<RwLock<HashMap<String, DataValue>>>;
+pub type RuntimeVariableStore = Arc<RwLock<RuntimeValueFlow>>;
 
 #[allow(unused_imports)]
 pub use data_value::{DataType, DataValue};
+pub use flow::{NodeConfigFlow, NodeInputFlow, NodeOutputFlow, RuntimeValueFlow};
 #[allow(unused_imports)]
 pub use graph_io::{
     ensure_positions, load_graph_definition_from_json,
@@ -133,6 +134,139 @@ pub use graph_io::{
 pub use node_macros::{node_input, node_output};
 #[allow(unused_imports)]
 pub use registry::build_node_graph_from_definition;
+
+pub mod flow {
+    use std::collections::HashMap;
+    use std::ops::{Deref, DerefMut};
+
+    use zihuan_core::error::{Error, Result};
+
+    use crate::DataValue;
+
+    type FlowValues = HashMap<String, DataValue>;
+
+    macro_rules! define_value_flow {
+        ($name:ident, $missing_label:literal) => {
+            #[derive(Debug, Clone, Default)]
+            pub struct $name {
+                values: FlowValues,
+            }
+
+            impl $name {
+                pub fn new() -> Self {
+                    Self::default()
+                }
+
+                pub fn get(&self, key: &str) -> Option<&DataValue> {
+                    self.values.get(key)
+                }
+
+                pub fn get_required(&self, key: &str) -> Result<&DataValue> {
+                    self.values.get(key).ok_or_else(|| {
+                        Error::ValidationError(format!($missing_label, key))
+                    })
+                }
+
+                pub fn get_optional(&self, key: &str) -> Option<&DataValue> {
+                    self.get(key)
+                }
+
+                pub fn contains(&self, key: &str) -> bool {
+                    self.values.contains_key(key)
+                }
+
+                pub fn insert(
+                    &mut self,
+                    key: impl Into<String>,
+                    value: DataValue,
+                ) -> Option<DataValue> {
+                    self.values.insert(key.into(), value)
+                }
+
+                pub fn iter(&self) -> impl Iterator<Item = (&String, &DataValue)> {
+                    self.values.iter()
+                }
+
+                pub fn into_inner(self) -> FlowValues {
+                    self.values
+                }
+
+                pub fn as_map(&self) -> &FlowValues {
+                    &self.values
+                }
+            }
+
+            impl From<FlowValues> for $name {
+                fn from(values: FlowValues) -> Self {
+                    Self { values }
+                }
+            }
+
+            impl From<$name> for FlowValues {
+                fn from(flow: $name) -> Self {
+                    flow.values
+                }
+            }
+
+            impl Deref for $name {
+                type Target = FlowValues;
+
+                fn deref(&self) -> &Self::Target {
+                    &self.values
+                }
+            }
+        };
+    }
+    define_value_flow!(NodeInputFlow, "Required input port '{}' is missing");
+    define_value_flow!(NodeOutputFlow, "Required output port '{}' is missing");
+    define_value_flow!(NodeConfigFlow, "Required config field '{}' is missing");
+    define_value_flow!(RuntimeValueFlow, "Required runtime value '{}' is missing");
+
+    impl DerefMut for NodeOutputFlow {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.values
+        }
+    }
+
+    impl IntoIterator for NodeOutputFlow {
+        type Item = (String, DataValue);
+        type IntoIter = std::collections::hash_map::IntoIter<String, DataValue>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            self.values.into_iter()
+        }
+    }
+
+    impl DerefMut for NodeConfigFlow {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.values
+        }
+    }
+
+    impl DerefMut for RuntimeValueFlow {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.values
+        }
+    }
+
+    impl IntoIterator for NodeConfigFlow {
+        type Item = (String, DataValue);
+        type IntoIter = std::collections::hash_map::IntoIter<String, DataValue>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            self.values.into_iter()
+        }
+    }
+
+    impl IntoIterator for RuntimeValueFlow {
+        type Item = (String, DataValue);
+        type IntoIter = std::collections::hash_map::IntoIter<String, DataValue>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            self.values.into_iter()
+        }
+    }
+}
 
 /// Node input/output ports
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -212,8 +346,7 @@ pub trait Node: Send + Sync {
     /// Execute the node's main logic
     /// inputs: input port name -> data value
     /// returns: output port name -> data value
-    fn execute(&mut self, inputs: HashMap<String, DataValue>)
-        -> Result<HashMap<String, DataValue>>;
+    fn execute(&mut self, inputs: NodeInputFlow) -> Result<NodeOutputFlow>;
 
     /// Called once at the start of each graph execution.
     ///
@@ -225,13 +358,13 @@ pub trait Node: Send + Sync {
 
     /// Restore node-specific configuration from parsed inline values after the
     /// graph has been loaded from JSON.
-    fn apply_inline_config(&mut self, _inline_values: &HashMap<String, DataValue>) -> Result<()> {
+    fn apply_inline_config(&mut self, _inline_values: &NodeConfigFlow) -> Result<()> {
         Ok(())
     }
 
     /// Inject runtime values for a function-input boundary node without forcing
     /// opaque runtime references through a JSON round-trip.
-    fn set_function_runtime_values(&mut self, _values: HashMap<String, DataValue>) -> Result<()> {
+    fn set_function_runtime_values(&mut self, _values: RuntimeValueFlow) -> Result<()> {
         Err(zihuan_core::error::Error::ValidationError(
             "Node does not accept function runtime values".to_string(),
         ))
@@ -251,7 +384,7 @@ pub trait Node: Send + Sync {
         })
     }
 
-    fn validate_inputs(&self, inputs: &HashMap<String, DataValue>) -> Result<()> {
+    fn validate_inputs(&self, inputs: &NodeInputFlow) -> Result<()> {
         let input_ports = self.input_ports();
 
         for port in &input_ports {
@@ -280,7 +413,7 @@ pub trait Node: Send + Sync {
         Ok(())
     }
 
-    fn validate_outputs(&self, outputs: &HashMap<String, DataValue>) -> Result<()> {
+    fn validate_outputs(&self, outputs: &NodeOutputFlow) -> Result<()> {
         let output_ports = self.output_ports();
 
         for port in &output_ports {
@@ -302,12 +435,12 @@ pub trait Node: Send + Sync {
 /// NodeGraph manages multiple nodes
 pub struct NodeGraph {
     pub nodes: HashMap<String, Box<dyn Node>>,
-    pub inline_values: HashMap<String, HashMap<String, DataValue>>,
+    pub inline_values: HashMap<String, NodeConfigFlow>,
     runtime_variable_store: RuntimeVariableStore,
     stop_flag: Arc<AtomicBool>,
     execution_task_id: Option<String>,
     execution_callback: Option<
-        Arc<dyn Fn(&str, &HashMap<String, DataValue>, &HashMap<String, DataValue>) + Send + Sync>,
+        Arc<dyn Fn(&str, &NodeInputFlow, &NodeOutputFlow) + Send + Sync>,
     >,
     edges: Vec<EdgeDefinition>,
     definition: Option<NodeGraphDefinition>,
@@ -318,7 +451,7 @@ impl NodeGraph {
         Self {
             nodes: HashMap::new(),
             inline_values: HashMap::new(),
-            runtime_variable_store: Arc::new(RwLock::new(HashMap::new())),
+            runtime_variable_store: Arc::new(RwLock::new(RuntimeValueFlow::new())),
             stop_flag: Arc::new(AtomicBool::new(false)),
             execution_task_id: None,
             execution_callback: None,
@@ -329,10 +462,7 @@ impl NodeGraph {
 
     pub fn set_execution_callback<F>(&mut self, callback: F)
     where
-        F: Fn(&str, &HashMap<String, DataValue>, &HashMap<String, DataValue>)
-            + Send
-            + Sync
-            + 'static,
+        F: Fn(&str, &NodeInputFlow, &NodeOutputFlow) + Send + Sync + 'static,
     {
         self.execution_callback = Some(Arc::new(callback));
     }
@@ -417,7 +547,7 @@ impl NodeGraph {
             return;
         };
 
-        let mut values = HashMap::new();
+        let mut values = RuntimeValueFlow::new();
         for variable in &definition.variables {
             let Some(initial_value) = variable.initial_value.as_ref() else {
                 continue;
@@ -618,7 +748,7 @@ impl NodeGraph {
             let outputs = node
                 .execute(inputs)
                 .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
-            for (key, value) in outputs {
+            for (key, value) in outputs.into_inner() {
                 if data_pool.contains_key(&key) {
                     return Err(zihuan_core::error::Error::ValidationError(format!(
                         "Output key '{}' from node '{}' conflicts with existing data",
@@ -634,7 +764,7 @@ impl NodeGraph {
 
     /// Execute the graph and capture results for each node
     pub fn execute_and_capture_results(&mut self) -> ExecutionResult {
-        let mut node_results: HashMap<String, HashMap<String, DataValue>> = HashMap::new();
+        let mut node_results: HashMap<String, NodeOutputFlow> = HashMap::new();
 
         // Try to execute, if error occurs, return early with error info
         match self.execute_and_capture_results_internal(&mut node_results) {
@@ -671,7 +801,7 @@ impl NodeGraph {
 
     fn execute_and_capture_results_internal(
         &mut self,
-        node_results: &mut HashMap<String, HashMap<String, DataValue>>,
+        node_results: &mut HashMap<String, NodeOutputFlow>,
     ) -> Result<()> {
         self.prepare_for_execution()?;
 
@@ -823,11 +953,13 @@ impl NodeGraph {
                 }
             }
 
-            let mut result = inputs;
-            result.extend(outputs.iter().map(|(k, v)| (k.clone(), v.clone())));
+            let mut result = NodeOutputFlow::from(inputs.clone().into_inner());
+            for (key, value) in outputs.iter() {
+                result.insert(key.clone(), value.clone());
+            }
             node_results.insert(node_id.clone(), result);
 
-            for (key, value) in outputs {
+            for (key, value) in outputs.into_inner() {
                 if data_pool.contains_key(&key) {
                     return Err(zihuan_core::error::Error::ValidationError(format!(
                         "Output key '{}' from node '{}' conflicts with existing data",
@@ -987,7 +1119,7 @@ impl NodeGraph {
 
     fn execute_and_capture_results_with_edges(
         &mut self,
-        node_results: &mut HashMap<String, HashMap<String, DataValue>>,
+        node_results: &mut HashMap<String, NodeOutputFlow>,
     ) -> Result<()> {
         let (connected_nodes, dependents, dependencies, input_sources) = self.build_edge_maps()?;
 
@@ -1126,8 +1258,10 @@ impl NodeGraph {
                 }
             }
 
-            let mut result = inputs;
-            result.extend(outputs.iter().map(|(k, v)| (k.clone(), v.clone())));
+            let mut result = NodeOutputFlow::from(inputs.clone().into_inner());
+            for (key, value) in outputs.iter() {
+                result.insert(key.clone(), value.clone());
+            }
             node_results.insert(node_id.clone(), result);
 
             self.insert_outputs(&mut data_pool, &node_id, outputs);
@@ -1226,9 +1360,9 @@ impl NodeGraph {
         data_pool: &OutputPool,
         input_sources: &InputSourceMap,
         node_id: &str,
-        inline_values: Option<&HashMap<String, DataValue>>,
-    ) -> Result<Option<HashMap<String, DataValue>>> {
-        let mut inputs: HashMap<String, DataValue> = HashMap::new();
+        inline_values: Option<&NodeConfigFlow>,
+    ) -> Result<Option<NodeInputFlow>> {
+        let mut inputs = NodeInputFlow::new();
         let sources = input_sources.get(node_id);
 
         for port in node.input_ports() {
@@ -1268,10 +1402,10 @@ impl NodeGraph {
         &self,
         pool: &mut OutputPool,
         node_id: &str,
-        outputs: HashMap<String, DataValue>,
+        outputs: NodeOutputFlow,
     ) {
         let entry = pool.entry(node_id.to_string()).or_default();
-        for (key, value) in outputs {
+        for (key, value) in outputs.into_inner() {
             entry.insert(key, value);
         }
     }
@@ -1282,9 +1416,9 @@ impl NodeGraph {
         data_pool: &HashMap<String, DataValue>,
         output_producers: &HashMap<String, String>,
         node_id: &str,
-        inline_values: Option<&HashMap<String, DataValue>>,
-    ) -> Result<Option<HashMap<String, DataValue>>> {
-        let mut inputs: HashMap<String, DataValue> = HashMap::new();
+        inline_values: Option<&NodeConfigFlow>,
+    ) -> Result<Option<NodeInputFlow>> {
+        let mut inputs = NodeInputFlow::new();
         for port in node.input_ports() {
             let bound_variable_value = self.runtime_bound_variable_value(node_id, &port.name);
             if let Some(value) = data_pool.get(&port.name) {

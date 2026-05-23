@@ -40,8 +40,8 @@ impl Node for StringIsNotEmptyNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let input = match inputs.get("input") {
@@ -67,7 +67,10 @@ impl Node for StringIsNotEmptyNode {
         let mut outputs = HashMap::new();
         outputs.insert("result".to_string(), DataValue::Boolean(is_not_empty));
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+

@@ -79,8 +79,8 @@ impl Node for MessageMySQLGetUserHistoryNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let mysql_config = inputs
@@ -139,7 +139,10 @@ impl Node for MessageMySQLGetUserHistoryNode {
                 messages.into_iter().map(DataValue::String).collect(),
             ),
         );
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+

@@ -46,8 +46,8 @@ impl Node for BinaryToImageContentPartNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let bytes = match inputs.get("bytes") {
@@ -89,7 +89,10 @@ impl Node for BinaryToImageContentPartNode {
         let mut outputs = HashMap::new();
         outputs.insert("content_part".to_string(), DataValue::ContentPart(part));
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+

@@ -43,8 +43,8 @@ impl Node for QQMessageToImageNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let qq_message = inputs
@@ -85,7 +85,10 @@ impl Node for QQMessageToImageNode {
             DataValue::String(object_storage_path),
         );
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+

@@ -46,8 +46,8 @@ impl Node for TavilyWebSearchNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let tavily_ref = inputs
@@ -124,7 +124,9 @@ impl Node for TavilyWebSearchNode {
                 results.into_iter().map(DataValue::String).collect(),
             ),
         );
+        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+

@@ -47,8 +47,8 @@ impl Node for SendMessageNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let adapter_ref = match inputs.get("ims_bot_adapter") {
@@ -113,7 +113,9 @@ impl Node for SendMessageNode {
         let mut outputs = HashMap::new();
         outputs.insert("success".to_string(), DataValue::Boolean(success));
         outputs.insert("message_id".to_string(), DataValue::Integer(message_id));
+        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+

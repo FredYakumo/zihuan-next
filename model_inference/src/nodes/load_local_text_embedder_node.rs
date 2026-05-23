@@ -43,8 +43,8 @@ impl Node for LoadLocalTextEmbedderNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let model_name = match inputs.get("model_name") {
@@ -62,7 +62,9 @@ impl Node for LoadLocalTextEmbedderNode {
             "embedding_model".to_string(),
             DataValue::EmbeddingModel(model),
         )]);
+        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+

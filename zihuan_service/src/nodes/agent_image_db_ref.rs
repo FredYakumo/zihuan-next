@@ -40,8 +40,8 @@ impl Node for AgentImageDbRefNode {
 
     fn execute(
         &mut self,
-        _inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        _inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let config = current_qq_chat_agent_config()?;
         let weaviate_image_connection_id = config.weaviate_image_connection_id.as_deref();
         let weaviate_image_connection_id = weaviate_image_connection_id
@@ -68,9 +68,11 @@ impl Node for AgentImageDbRefNode {
             WeaviateCollectionSchema::ImageSemantic,
             false,
         )?;
-        Ok(HashMap::from([(
+        Ok((HashMap::from([(
             "weaviate_ref".to_string(),
             DataValue::WeaviateRef(weaviate_ref),
-        )]))
+        )])).into())
     }
 }
+
+

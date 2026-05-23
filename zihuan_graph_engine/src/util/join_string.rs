@@ -38,8 +38,8 @@ impl Node for JoinStringNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let strings = match inputs.get("strings") {
@@ -81,7 +81,10 @@ impl Node for JoinStringNode {
         let mut outputs = HashMap::new();
         outputs.insert("result".to_string(), DataValue::String(joined));
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+

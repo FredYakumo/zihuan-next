@@ -39,8 +39,8 @@ impl Node for ExtractGroupIdFromEventNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let event = match inputs.get("message_event") {
             Some(DataValue::MessageEvent(event)) => event,
             _ => return Err("message_event input is required".into()),
@@ -59,6 +59,8 @@ impl Node for ExtractGroupIdFromEventNode {
             "result".to_string(),
             DataValue::String(group_id.to_string()),
         );
-        Ok(outputs)
+        Ok(outputs.into())
     }
 }
+
+

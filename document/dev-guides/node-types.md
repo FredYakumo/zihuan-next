@@ -29,8 +29,8 @@ inputs -> execute() -> outputs
 A Simple node:
 
 - runs once when the graph executor reaches it in topological order
-- receives all resolved input values as a `HashMap<String, DataValue>`
-- returns one output map synchronously
+- receives all resolved input values as a `NodeInputFlow`
+- returns one `NodeOutputFlow` synchronously
 - may keep per-run state via `on_graph_start()`
 - may rebuild config-driven ports in `apply_inline_config()`
 

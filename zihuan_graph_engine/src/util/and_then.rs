@@ -1,4 +1,4 @@
-use crate::{node_input, node_output, DataType, DataValue, Node, Port};
+use crate::{node_input, node_output, DataType, Node, Port};
 use std::collections::HashMap;
 use zihuan_core::error::Result;
 
@@ -39,8 +39,8 @@ impl Node for AndThenNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let output = inputs.get("second").cloned().ok_or_else(|| {
@@ -48,7 +48,10 @@ impl Node for AndThenNode {
         })?;
 
         let outputs = HashMap::from([("output".to_string(), output)]);
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+

@@ -39,8 +39,8 @@ impl Node for QQMessageListDataNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();
@@ -51,7 +51,10 @@ impl Node for QQMessageListDataNode {
             .unwrap_or_else(|| DataValue::Vec(Box::new(crate::DataType::QQMessage), Vec::new()));
         outputs.insert("messages".to_string(), value);
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+

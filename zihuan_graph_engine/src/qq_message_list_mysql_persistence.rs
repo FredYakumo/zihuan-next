@@ -76,8 +76,8 @@ impl Node for QQMessageListMySQLPersistenceNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         // ── Extract qq_message_list ──────────────────────────────────────────
         let (msg_item_type, msg_items) = inputs
             .get("qq_message_list")
@@ -194,6 +194,7 @@ impl Node for QQMessageListMySQLPersistenceNode {
                 let mut outputs = HashMap::new();
                 outputs.insert("success".to_string(), DataValue::Boolean(false));
                 outputs.insert("qq_message_list".to_string(), passthrough);
+                let outputs = crate::NodeOutputFlow::from(outputs);
                 self.validate_outputs(&outputs)?;
                 return Ok(outputs);
             }
@@ -358,7 +359,10 @@ impl Node for QQMessageListMySQLPersistenceNode {
         let mut outputs = HashMap::new();
         outputs.insert("success".to_string(), DataValue::Boolean(success));
         outputs.insert("qq_message_list".to_string(), passthrough);
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+

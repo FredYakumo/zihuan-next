@@ -196,8 +196,8 @@ impl Node for RedisNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         let host = inputs
             .get("redis_host")
             .and_then(|v| match v {
@@ -266,7 +266,10 @@ impl Node for RedisNode {
 
         let mut outputs = HashMap::new();
         outputs.insert("redis_ref".to_string(), DataValue::RedisRef(config));
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+

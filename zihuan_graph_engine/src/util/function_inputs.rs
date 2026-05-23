@@ -15,7 +15,7 @@ pub struct FunctionInputsNode {
     id: String,
     name: String,
     signature: Vec<FunctionPortDef>,
-    runtime_values: Option<HashMap<String, DataValue>>,
+    runtime_values: Option<crate::RuntimeValueFlow>,
 }
 
 impl FunctionInputsNode {
@@ -64,7 +64,7 @@ impl Node for FunctionInputsNode {
         true
     }
 
-    fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
+    fn apply_inline_config(&mut self, inline_values: &crate::NodeConfigFlow) -> Result<()> {
         match inline_values.get(FUNCTION_SIGNATURE_PORT) {
             Some(DataValue::Json(value)) => self.apply_signature_json(value),
             Some(other) => Err(Error::ValidationError(format!(
@@ -75,15 +75,15 @@ impl Node for FunctionInputsNode {
         }
     }
 
-    fn set_function_runtime_values(&mut self, values: HashMap<String, DataValue>) -> Result<()> {
+    fn set_function_runtime_values(&mut self, values: crate::RuntimeValueFlow) -> Result<()> {
         self.runtime_values = Some(values);
         Ok(())
     }
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         if let Some(DataValue::Json(value)) = inputs.get(FUNCTION_SIGNATURE_PORT) {
             self.apply_signature_json(value)?;
         }
@@ -109,7 +109,7 @@ impl Node for FunctionInputsNode {
             let runtime_values = match inputs.get(FUNCTION_RUNTIME_VALUES_PORT) {
                 Some(DataValue::Json(Value::Object(map))) => map,
                 Some(DataValue::Json(Value::Null)) | None => {
-                    return Ok(HashMap::new());
+                    return Ok(crate::NodeOutputFlow::new());
                 }
                 Some(DataValue::Json(other)) => {
                     return Err(Error::ValidationError(format!(
@@ -141,6 +141,7 @@ impl Node for FunctionInputsNode {
             );
         }
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
@@ -176,10 +177,10 @@ mod tests {
 
     fn build_node() -> FunctionInputsNode {
         let mut node = FunctionInputsNode::new("test", "test");
-        node.apply_inline_config(&HashMap::from([(
+        node.apply_inline_config(&crate::NodeConfigFlow::from(HashMap::from([(
             FUNCTION_SIGNATURE_PORT.to_string(),
             DataValue::Json(json!(test_signature())),
-        )]))
+        )])))
         .expect("signature should apply");
         node
     }
@@ -187,14 +188,14 @@ mod tests {
     #[test]
     fn function_inputs_skip_missing_optional_runtime_value() {
         let mut node = build_node();
-        node.set_function_runtime_values(HashMap::from([(
+        node.set_function_runtime_values(crate::RuntimeValueFlow::from(HashMap::from([(
             "required_text".to_string(),
             DataValue::String("hello".to_string()),
-        )]))
+        )])))
         .expect("runtime values should apply");
 
         let outputs = node
-            .execute(HashMap::new())
+            .execute(crate::NodeInputFlow::new())
             .expect("execute should succeed");
 
         match outputs.get("required_text") {
@@ -207,11 +208,11 @@ mod tests {
     #[test]
     fn function_inputs_still_require_required_runtime_value() {
         let mut node = build_node();
-        node.set_function_runtime_values(HashMap::new())
+        node.set_function_runtime_values(crate::RuntimeValueFlow::new())
             .expect("runtime values should apply");
 
         let error = node
-            .execute(HashMap::new())
+            .execute(crate::NodeInputFlow::new())
             .expect_err("execute should fail");
         assert!(error.to_string().contains("required_text"));
     }
@@ -220,12 +221,12 @@ mod tests {
     fn function_inputs_json_runtime_values_skip_missing_optional() {
         let mut node = build_node();
         let outputs = node
-            .execute(HashMap::from([(
+            .execute(crate::NodeInputFlow::from(HashMap::from([(
                 crate::function_graph::FUNCTION_RUNTIME_VALUES_PORT.to_string(),
                 DataValue::Json(json!({
                     "required_text": "hello"
                 })),
-            )]))
+            )])))
             .expect("execute should succeed");
 
         match outputs.get("required_text") {
@@ -235,3 +236,8 @@ mod tests {
         assert!(!outputs.contains_key("optional_text"));
     }
 }
+
+
+
+
+

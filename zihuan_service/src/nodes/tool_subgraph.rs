@@ -462,7 +462,7 @@ impl ToolSubgraphRunner {
 
         let mut graph = build_node_graph_from_definition(&subgraph)
             .map_err(|e| self.wrap_error(format!("Tool '{}' 子图构建失败: {e}", tool.name)))?;
-        inject_runtime_values_into_function_inputs_node(&mut graph, runtime_values).map_err(
+        inject_runtime_values_into_function_inputs_node(&mut graph, runtime_values.into()).map_err(
             |e| self.wrap_error(format!("Tool '{}' 注入子图运行时输入失败: {e}", tool.name)),
         )?;
         let execution_result = graph.execute_and_capture_results();
@@ -544,3 +544,4 @@ impl ToolSubgraphRunner {
         }
     }
 }
+
