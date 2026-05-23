@@ -67,7 +67,7 @@ impl Node for TavilyProviderNode {
         vec![Self::connection_select_field()]
     }
 
-    fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
+    fn apply_inline_config(&mut self, inline_values: &zihuan_graph_engine::NodeConfigFlow) -> Result<()> {
         self.config_id = inline_values
             .get(CONFIG_ID_FIELD)
             .or_else(|| inline_values.get(LEGACY_CONNECTION_ID_FIELD))
@@ -80,15 +80,18 @@ impl Node for TavilyProviderNode {
 
     fn execute(
         &mut self,
-        _inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        _inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let config_id = self.selected_config_id()?;
         let tavily_ref = build_tavily_ref(Some(config_id), &load_connections()?)?
             .ok_or_else(|| Error::ValidationError("config_id is required".to_string()))?;
 
-        Ok(HashMap::from([(
+        Ok((HashMap::from([(
             "tavily_ref".to_string(),
             DataValue::TavilyRef(tavily_ref),
-        )]))
+        )])).into())
     }
 }
+
+
+

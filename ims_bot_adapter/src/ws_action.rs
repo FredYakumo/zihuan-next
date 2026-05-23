@@ -11,6 +11,7 @@ use tokio::task::block_in_place;
 use uuid::Uuid;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::models::message::{ImageMessage, Message};
+use zihuan_core::url_utils::content_type_from_url;
 use zihuan_graph_engine::object_storage::S3Ref;
 
 /// Global counter for generating unique echo IDs.
@@ -314,19 +315,6 @@ fn remote_image_object_key(url: &str) -> String {
     )
 }
 
-fn content_type_from_url(url: &str) -> &'static str {
-    let path = url.split('?').next().unwrap_or(url).to_lowercase();
-    match path.rsplit('.').next().unwrap_or("") {
-        "jpg" | "jpeg" => "image/jpeg",
-        "png" => "image/png",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "bmp" => "image/bmp",
-        "avif" => "image/avif",
-        "svg" => "image/svg+xml",
-        _ => "image/jpeg",
-    }
-}
 
 fn candidate_object_storage_locators(locator: &str) -> Vec<String> {
     let mut locators = vec![locator.trim().to_string()];

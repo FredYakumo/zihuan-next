@@ -45,8 +45,8 @@ impl Node for TopKSimilarityNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let candidates = parse_vector_list(inputs.get("vectors"))?;
@@ -96,6 +96,7 @@ impl Node for TopKSimilarityNode {
             ),
         ]);
 
+        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
@@ -145,3 +146,4 @@ fn parse_vector_list(value: Option<&DataValue>) -> Result<Vec<Vec<f32>>> {
 
     Ok(vectors)
 }
+

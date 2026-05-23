@@ -55,8 +55,8 @@ impl Node for ImageWeaviatePersistenceNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let object_storage_path = required_string(&inputs, "object_storage_path")?;
@@ -145,6 +145,7 @@ impl Node for ImageWeaviatePersistenceNode {
             "object_storage_path".to_string(),
             DataValue::String(object_storage_path),
         );
+        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
@@ -180,3 +181,4 @@ fn parse_media_source(value: Option<&str>) -> PersistedMediaSource {
         _ => PersistedMediaSource::Upload,
     }
 }
+

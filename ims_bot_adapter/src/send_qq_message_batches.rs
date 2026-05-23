@@ -584,8 +584,8 @@ impl Node for SendQQMessageBatchesNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let ims_bot_adapter_ref = match inputs.get("ims_bot_adapter_ref") {
@@ -615,7 +615,9 @@ impl Node for SendQQMessageBatchesNode {
             "success".to_string(),
             DataValue::Boolean(actual_sends_all_successful(&results)),
         );
+        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+

@@ -38,8 +38,8 @@ impl Node for MessageContentNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let content = inputs
@@ -55,7 +55,10 @@ impl Node for MessageContentNode {
         let mut outputs = HashMap::new();
         outputs.insert("content".to_string(), DataValue::String(content));
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+

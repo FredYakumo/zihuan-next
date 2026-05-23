@@ -1,4 +1,4 @@
-use crate::{DataType, DataValue, Node, NodeConfigField};
+use crate::{DataType, DataValue, Node, NodeConfigField, NodeConfigFlow};
 use once_cell::sync::Lazy;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -178,7 +178,7 @@ pub fn build_node_graph_from_definition(
 
         // Parse inline values
         if !node_def.inline_values.is_empty() {
-            let mut values = HashMap::new();
+            let mut values = NodeConfigFlow::new();
             let ports: HashMap<String, DataType> = node
                 .input_ports()
                 .into_iter()
@@ -216,7 +216,7 @@ pub fn build_node_graph_from_definition(
     // Second pass: nodes with dynamic input ports (e.g. FormatStringNode) only expose
     // their full port list after apply_inline_config. Re-collect any inline values that
     // were skipped in the first pass because the ports didn't exist yet.
-    let extra_inline: Vec<(String, HashMap<String, DataValue>)> = definition
+    let extra_inline: Vec<(String, NodeConfigFlow)> = definition
         .nodes
         .iter()
         .filter_map(|node_def| {
@@ -240,7 +240,7 @@ pub fn build_node_graph_from_definition(
                         .map(|field| (field.key, field.data_type)),
                 )
                 .collect();
-            let mut extra = HashMap::new();
+            let mut extra = NodeConfigFlow::new();
             for (port_name, json_val) in &node_def.inline_values {
                 if !already_set.contains(port_name.as_str()) {
                     if let Some(data_type) = ports.get(port_name) {

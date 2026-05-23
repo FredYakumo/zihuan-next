@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::nodes::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 use model_inference::message_content_utils::sanitize_messages_for_inference;
@@ -267,7 +267,7 @@ fn build_brain(
                 owner_node_type: "brain".to_string(),
                 shared_inputs: Vec::new(),
                 definition: tool_def,
-                shared_runtime_values: HashMap::new(),
+                shared_runtime_values: Arc::new(Mutex::new(HashMap::new())),
                 result_mode: ToolResultMode::JsonObject,
             },
         });

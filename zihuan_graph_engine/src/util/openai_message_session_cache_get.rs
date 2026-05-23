@@ -43,8 +43,8 @@ impl Node for OpenAIMessageSessionCacheGetNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let cache_ref: Arc<OpenAIMessageSessionCacheRef> = inputs
@@ -105,7 +105,10 @@ impl Node for OpenAIMessageSessionCacheGetNode {
             ),
         );
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+

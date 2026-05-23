@@ -11,7 +11,7 @@ candle-transformers = { path = "third_party/candle-transformers" }
 name = "zihuan_next"
 version = "0.1.0"
 edition = "2021"
-description = "A bot for daily helper and coding helper, support for adapter qq bot, web, edge devices"
+description = "A Rust-based node-graph workflow platform for AI agents, synchronous graph execution, and service-hosted runtimes such as QQ chat agents and HTTP stream agents."
 authors = ["FredYakumo"]
 
 [features]

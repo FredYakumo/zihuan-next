@@ -39,8 +39,8 @@ impl Node for ExtractOptionalGroupIdFromEventNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let event = match inputs.get("message_event") {
             Some(DataValue::MessageEvent(event)) => event,
             _ => return Err("message_event input is required".into()),
@@ -55,10 +55,10 @@ impl Node for ExtractOptionalGroupIdFromEventNode {
             String::new()
         };
 
-        Ok(HashMap::from([(
+        Ok((HashMap::from([(
             "result".to_string(),
             DataValue::String(group_id),
-        )]))
+        )])).into())
     }
 }
 
@@ -120,3 +120,5 @@ mod tests {
         }
     }
 }
+
+

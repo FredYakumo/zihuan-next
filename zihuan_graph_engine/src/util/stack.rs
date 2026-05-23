@@ -35,8 +35,8 @@ impl Node for StackNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let element = inputs.get("element").cloned().ok_or_else(|| {
@@ -50,7 +50,10 @@ impl Node for StackNode {
             DataValue::Vec(Box::new(element_type), vec![element]),
         );
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+

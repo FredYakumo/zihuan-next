@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use ims_bot_adapter::adapter::shared_from_handle;
 use ims_bot_adapter::message_helpers::{
@@ -43,7 +43,7 @@ pub struct ToolSubgraphRunner {
     pub owner_node_type: String,
     pub shared_inputs: Vec<FunctionPortDef>,
     pub definition: BrainToolDefinition,
-    pub shared_runtime_values: HashMap<String, DataValue>,
+    pub shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
     pub result_mode: ToolResultMode,
 }
 
@@ -294,18 +294,19 @@ pub fn build_tool_error_message(message: impl Into<String>) -> String {
 }
 
 fn send_brain_tool_progress_notification(
-    shared_runtime_values: &HashMap<String, DataValue>,
+    shared_runtime_values: &Arc<Mutex<HashMap<String, DataValue>>>,
     call_content: &str,
 ) {
     if !consume_tool_progress_notification(call_content) {
         return;
     }
 
-    let event = match shared_runtime_values.get(QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT) {
+    let shared_rt = shared_runtime_values.lock().unwrap();
+    let event = match shared_rt.get(QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT) {
         Some(DataValue::MessageEvent(event)) => event,
         _ => return,
     };
-    let adapter = match shared_runtime_values.get(QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT) {
+    let adapter = match shared_rt.get(QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT) {
         Some(DataValue::BotAdapterRef(handle)) => shared_from_handle(handle),
         _ => return,
     };
@@ -377,7 +378,7 @@ impl ToolSubgraphRunner {
             }
         };
 
-        let mut runtime_values = self.shared_runtime_values.clone();
+        let mut runtime_values = self.shared_runtime_values.lock().unwrap().clone();
         runtime_values.insert(
             BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(),
             DataValue::String(tool_call_content),
@@ -461,7 +462,7 @@ impl ToolSubgraphRunner {
 
         let mut graph = build_node_graph_from_definition(&subgraph)
             .map_err(|e| self.wrap_error(format!("Tool '{}' 子图构建失败: {e}", tool.name)))?;
-        inject_runtime_values_into_function_inputs_node(&mut graph, runtime_values).map_err(
+        inject_runtime_values_into_function_inputs_node(&mut graph, runtime_values.into()).map_err(
             |e| self.wrap_error(format!("Tool '{}' 注入子图运行时输入失败: {e}", tool.name)),
         )?;
         let execution_result = graph.execute_and_capture_results();
@@ -543,3 +544,4 @@ impl ToolSubgraphRunner {
         }
     }
 }
+

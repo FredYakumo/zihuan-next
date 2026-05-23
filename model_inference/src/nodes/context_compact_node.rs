@@ -70,8 +70,8 @@ impl Node for ContextCompactNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let llm = match inputs.get("llm_model") {
@@ -114,7 +114,9 @@ impl Node for ContextCompactNode {
             DataValue::Integer(result.estimated_tokens_after as i64),
         );
 
+        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+

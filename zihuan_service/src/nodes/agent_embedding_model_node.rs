@@ -39,13 +39,15 @@ impl Node for AgentEmbeddingModelNode {
 
     fn execute(
         &mut self,
-        _inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        _inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let config = current_qq_chat_agent_config()?;
         let model = build_embedding_from_ref_id(config.embedding_model_ref_id.as_deref())?;
-        Ok(HashMap::from([(
+        Ok((HashMap::from([(
             "embedding_model".to_string(),
             DataValue::EmbeddingModel(model),
-        )]))
+        )])).into())
     }
 }
+
+

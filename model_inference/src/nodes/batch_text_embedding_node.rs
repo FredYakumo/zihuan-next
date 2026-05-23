@@ -43,8 +43,8 @@ impl Node for BatchTextEmbeddingNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let embedding_model = match inputs.get("embedding_model") {
@@ -77,6 +77,7 @@ impl Node for BatchTextEmbeddingNode {
             ("dimension".to_string(), DataValue::Integer(dimension)),
         ]);
 
+        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
@@ -114,3 +115,4 @@ fn parse_string_list(value: Option<&DataValue>) -> Result<Vec<String>> {
 
     Ok(texts)
 }
+

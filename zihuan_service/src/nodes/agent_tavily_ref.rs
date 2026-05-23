@@ -37,8 +37,8 @@ impl Node for AgentTavilyRefNode {
 
     fn execute(
         &mut self,
-        _inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        _inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let config = current_qq_chat_agent_config()?;
         let tavily_connection_id = config.tavily_connection_id.trim();
         if tavily_connection_id.is_empty() {
@@ -54,9 +54,11 @@ impl Node for AgentTavilyRefNode {
                         "tavily_connection_id is required".to_string(),
                     )
                 })?;
-        Ok(HashMap::from([(
+        Ok((HashMap::from([(
             "tavily_ref".to_string(),
             DataValue::TavilyRef(tavily_ref),
-        )]))
+        )])).into())
     }
 }
+
+

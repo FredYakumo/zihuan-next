@@ -37,8 +37,8 @@ impl Node for ExtractQQMessageListFromEventNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let event = match inputs.get("message_event") {
             Some(DataValue::MessageEvent(e)) => e.clone(),
             _ => return Err("message_event input is required".into()),
@@ -55,6 +55,8 @@ impl Node for ExtractQQMessageListFromEventNode {
             "message_list".to_string(),
             DataValue::Vec(Box::new(DataType::QQMessage), message_list),
         );
-        Ok(outputs)
+        Ok(outputs.into())
     }
 }
+
+

@@ -422,8 +422,8 @@ impl Node for ExtractMessageFromEventNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();
@@ -513,7 +513,9 @@ impl Node for ExtractMessageFromEventNode {
         } else {
             return Err("message_event input is required and must be MessageEvent type".into());
         }
+        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+

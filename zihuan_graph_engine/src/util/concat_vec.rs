@@ -40,8 +40,8 @@ impl Node for ConcatVecNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let (vec1_type, vec1_items) = match inputs.get("vec1") {
@@ -79,7 +79,10 @@ impl Node for ConcatVecNode {
             DataValue::Vec(Box::new(vec1_type), merged),
         );
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+

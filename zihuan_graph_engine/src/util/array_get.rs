@@ -40,8 +40,8 @@ impl Node for ArrayGetNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let list = match inputs.get("array") {
@@ -76,7 +76,10 @@ impl Node for ArrayGetNode {
         let mut outputs = HashMap::new();
         outputs.insert("element".to_string(), element);
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+

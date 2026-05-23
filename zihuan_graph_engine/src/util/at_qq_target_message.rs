@@ -37,8 +37,8 @@ impl Node for AtQQTargetMessageNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let id = match inputs.get("id") {
@@ -55,7 +55,10 @@ impl Node for AtQQTargetMessageNode {
         let mut outputs = HashMap::new();
         outputs.insert("result".to_string(), DataValue::QQMessage(qq_message));
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+

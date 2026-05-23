@@ -128,7 +128,7 @@ impl Node for FormatStringNode {
 
     node_output![port! { name = "output", ty = String, desc = "格式化后的字符串" },];
 
-    fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
+    fn apply_inline_config(&mut self, inline_values: &crate::NodeConfigFlow) -> Result<()> {
         if let Some(DataValue::String(template)) = inline_values.get("template") {
             self.template = template.clone();
             self.variables = extract_variables(template);
@@ -138,8 +138,8 @@ impl Node for FormatStringNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let mut result = self.template.clone();
@@ -153,7 +153,11 @@ impl Node for FormatStringNode {
 
         let mut outputs = HashMap::new();
         outputs.insert("output".to_string(), DataValue::String(result));
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+
+

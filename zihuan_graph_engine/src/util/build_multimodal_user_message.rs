@@ -44,8 +44,8 @@ impl Node for BuildMultimodalUserMessageNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: crate::NodeInputFlow,
+    ) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let text = match inputs.get("text") {
@@ -100,7 +100,10 @@ impl Node for BuildMultimodalUserMessageNode {
         let mut outputs = HashMap::new();
         outputs.insert("message".to_string(), DataValue::OpenAIMessage(message));
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
+
+

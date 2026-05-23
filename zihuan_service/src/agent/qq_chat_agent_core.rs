@@ -1740,6 +1740,7 @@ struct QqChatSteerHook {
     s3_ref: Option<Arc<S3Ref>>,
     trace: QqChatTaskTrace,
     consumed_messages: Arc<Mutex<Vec<OpenAIMessage>>>,
+    shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
 }
 
 impl BrainIterationHook for QqChatSteerHook {
@@ -1795,6 +1796,14 @@ impl BrainIterationHook for QqChatSteerHook {
             remaining_queue_len,
             std::slice::from_ref(&steer_message),
         );
+        {
+            let last_injected = injected.last().expect("injected must be non-empty");
+            let mut shared_rt = self.shared_runtime_values.lock().unwrap();
+            shared_rt.insert(
+                QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
+                DataValue::MessageEvent(last_injected.clone()),
+            );
+        }
         vec![steer_message]
     }
 }
@@ -2300,16 +2309,19 @@ impl QqChatAgent {
         let system_msg = OpenAIMessage::system(system_prompt);
         let priming_msg = build_output_contract_priming_message();
 
-        let mut shared_runtime_values = shared_runtime_values;
-        shared_runtime_values.insert(
-            QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
-            DataValue::MessageEvent(inference_event.clone()),
-        );
-        let adapter_handle: zihuan_core::ims_bot_adapter::BotAdapterHandle = adapter.clone();
-        shared_runtime_values.insert(
-            QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT.to_string(),
-            DataValue::BotAdapterRef(adapter_handle),
-        );
+        let shared_runtime_values = Arc::new(Mutex::new(shared_runtime_values));
+        {
+            let mut locked = shared_runtime_values.lock().unwrap();
+            locked.insert(
+                QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
+                DataValue::MessageEvent(inference_event.clone()),
+            );
+            let adapter_handle: zihuan_core::ims_bot_adapter::BotAdapterHandle = adapter.clone();
+            locked.insert(
+                QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT.to_string(),
+                DataValue::BotAdapterRef(adapter_handle),
+            );
+        }
 
         let mut conversation: Vec<OpenAIMessage> = Vec::with_capacity(history.len() + 3);
         conversation.push(system_msg);
@@ -2337,6 +2349,7 @@ impl QqChatAgent {
             s3_ref: s3_ref.cloned(),
             trace: trace.clone(),
             consumed_messages: Arc::clone(&consumed_steer_messages),
+            shared_runtime_values: Arc::clone(&shared_runtime_values),
         }));
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_WEB_SEARCH) {
@@ -2421,7 +2434,7 @@ impl QqChatAgent {
                     owner_node_type: QQ_AGENT_TOOL_OWNER_TYPE.to_string(),
                     shared_inputs: self.shared_inputs.clone(),
                     definition: tool_def.clone(),
-                    shared_runtime_values: shared_runtime_values.clone(),
+                    shared_runtime_values: Arc::clone(&shared_runtime_values),
                     result_mode: ToolResultMode::SingleString,
                 },
             });
@@ -2668,6 +2681,7 @@ impl QqChatAgentService {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
     use chrono::Local;
@@ -2678,7 +2692,8 @@ mod tests {
         QqChatSteerHook, STEER_PREFIX,
     };
     use crate::agent::qq_chat_agent_logging::QqChatTaskTrace;
-    use crate::agent::tools::{content_type_from_url, derive_tavily_s3_key};
+    use zihuan_core::url_utils::content_type_from_url;
+    use zihuan_core::utils::string_utils::derive_tavily_s3_key;
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::thread;
@@ -2874,6 +2889,7 @@ mod tests {
             s3_ref: None,
             trace: QqChatTaskTrace::new(Local::now()),
             consumed_messages: Arc::new(Mutex::new(Vec::new())),
+            shared_runtime_values: Arc::new(Mutex::new(HashMap::new())),
         };
 
         let injected = hook.on_before_inference(2, &[]);

@@ -59,8 +59,8 @@ services:
 
   zihuan:
     build:
-      context: ..
-      dockerfile: docker/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     container_name: zihuan_next
     restart: unless-stopped
     ports:
