@@ -434,21 +434,22 @@ pub trait Node: Send + Sync {
     ///    output on every execution), so they are silently skipped.
     /// 4. Return `Ok(())` when all present outputs pass the type check.
     fn validate_outputs(&self, outputs: &NodeOutputFlow) -> Result<()> {
-        let output_ports = self.output_ports();
-
-        for port in &output_ports {
-            if let Some(value) = outputs.get(&port.name) {
-                let actual_type = value.data_type();
-                if !port.data_type.is_compatible_with(&actual_type) {
-                    return Err(zihuan_core::validation_error!(
-                        "Output port '{}' expects type {}, got {}",
-                        port.name, port.data_type, actual_type
-                    ));
-                }
-            }
-        }
-
-        Ok(())
+        self.output_ports()
+            .iter()
+            .try_for_each(|port| {
+                outputs.get(&port.name)
+                    .map(|value| {
+                        let actual_type = value.data_type();
+                        port.data_type.is_compatible_with(&actual_type)
+                            .then_some(())
+                            .ok_or_else(|| zihuan_core::validation_error!(
+                                "Output port '{}' expects type {}, got {}",
+                                port.name, port.data_type, actual_type
+                            ))
+                    })
+                    .transpose()
+                    .map(|_| ())
+            })
     }
 }
 
