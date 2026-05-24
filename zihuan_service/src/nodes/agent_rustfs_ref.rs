@@ -55,11 +55,8 @@ impl Node for AgentRustfsRefNode {
         let s3_ref = zihuan_core::runtime::block_async(
             RuntimeStorageConnectionManager::shared().get_or_create_s3_ref(rustfs_connection_id),
         )?;
-        Ok((HashMap::from([(
-            "s3_ref".to_string(),
-            DataValue::S3Ref(s3_ref),
-        )])).into())
+        Ok(zihuan_graph_engine::node_output_flow![
+            "s3_ref" => DataValue::S3Ref(s3_ref),
+        ])
     }
 }
-
-

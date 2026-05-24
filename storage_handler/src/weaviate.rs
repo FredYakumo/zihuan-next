@@ -88,7 +88,10 @@ impl Node for WeaviateNode {
         vec![Self::connection_select_field()]
     }
 
-    fn apply_inline_config(&mut self, inline_values: &zihuan_graph_engine::NodeConfigFlow) -> Result<()> {
+    fn apply_inline_config(
+        &mut self,
+        inline_values: &zihuan_graph_engine::NodeConfigFlow,
+    ) -> Result<()> {
         self.config_id = inline_values
             .get(CONFIG_ID_FIELD)
             .or_else(|| inline_values.get(LEGACY_CONNECTION_ID_FIELD))
@@ -113,12 +116,8 @@ impl Node for WeaviateNode {
             RuntimeStorageConnectionManager::shared().get_or_create_weaviate_ref(config_id),
         )?;
 
-        Ok((HashMap::from([(
-            "weaviate_ref".to_string(),
-            DataValue::WeaviateRef(weaviate_ref),
-        )])).into())
+        Ok(zihuan_graph_engine::node_output_flow![
+            "weaviate_ref" => DataValue::WeaviateRef(weaviate_ref),
+        ])
     }
 }
-
-
-

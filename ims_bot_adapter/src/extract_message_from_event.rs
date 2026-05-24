@@ -518,4 +518,3 @@ impl Node for ExtractMessageFromEventNode {
         Ok(outputs)
     }
 }
-

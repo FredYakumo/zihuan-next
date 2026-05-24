@@ -1,3 +1,5 @@
+extern crate self as zihuan_graph_engine;
+
 use serde_json::{json, Value};
 use std::backtrace::Backtrace;
 use std::collections::{HashMap, HashSet};
@@ -131,7 +133,7 @@ pub use graph_io::{
     GraphPosition, LoadedGraphDefinition, NodeDefinition, NodeGraphDefinition,
 };
 #[allow(unused_imports)]
-pub use node_macros::{node_input, node_output};
+pub use node_macros::{node_input, node_input_flow, node_output, node_output_flow};
 #[allow(unused_imports)]
 pub use registry::build_node_graph_from_definition;
 
@@ -162,9 +164,9 @@ pub mod flow {
                 }
 
                 pub fn get_required(&self, key: &str) -> Result<&DataValue> {
-                    self.values.get(key).ok_or_else(|| {
-                        Error::ValidationError(format!($missing_label, key))
-                    })
+                    self.values
+                        .get(key)
+                        .ok_or_else(|| Error::ValidationError(format!($missing_label, key)))
                 }
 
                 pub fn get_optional(&self, key: &str) -> Option<&DataValue> {
@@ -439,9 +441,7 @@ pub struct NodeGraph {
     runtime_variable_store: RuntimeVariableStore,
     stop_flag: Arc<AtomicBool>,
     execution_task_id: Option<String>,
-    execution_callback: Option<
-        Arc<dyn Fn(&str, &NodeInputFlow, &NodeOutputFlow) + Send + Sync>,
-    >,
+    execution_callback: Option<Arc<dyn Fn(&str, &NodeInputFlow, &NodeOutputFlow) + Send + Sync>>,
     edges: Vec<EdgeDefinition>,
     definition: Option<NodeGraphDefinition>,
 }
@@ -1398,12 +1398,7 @@ impl NodeGraph {
         Ok(Some(inputs))
     }
 
-    fn insert_outputs(
-        &self,
-        pool: &mut OutputPool,
-        node_id: &str,
-        outputs: NodeOutputFlow,
-    ) {
+    fn insert_outputs(&self, pool: &mut OutputPool, node_id: &str, outputs: NodeOutputFlow) {
         let entry = pool.entry(node_id.to_string()).or_default();
         for (key, value) in outputs.into_inner() {
             entry.insert(key, value);

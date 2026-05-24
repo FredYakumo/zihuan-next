@@ -33,10 +33,7 @@ impl Node for BooleanNotNode {
 
     node_output![port! { name = "result", ty = Boolean, desc = "取反后的布尔值" },];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let input = match inputs.get("input") {
@@ -56,5 +53,3 @@ impl Node for BooleanNotNode {
         Ok(outputs)
     }
 }
-
-

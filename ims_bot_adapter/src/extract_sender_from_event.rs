@@ -48,11 +48,8 @@ impl Node for ExtractSenderFromEventNode {
         let sender = crate::models::sender_model::Sender::from_message_event(event)
             .ok_or_else(|| "group message is missing group_id".to_string())?;
 
-        Ok((HashMap::from([(
-            "result".to_string(),
-            DataValue::Sender(sender),
-        )])).into())
+        Ok(zihuan_graph_engine::node_output_flow![
+            "result" => DataValue::Sender(sender),
+        ])
     }
 }
-
-

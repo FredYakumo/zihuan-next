@@ -2199,8 +2199,13 @@ impl QqChatAgent {
         let legacy_history_key = sender_id.to_string();
         let history = load_history(cache, &history_key, &legacy_history_key);
 
-        let intent_trace =
-            classify_intent_with_trace(intent_llm, embedding_model, &current_message, Some(&history), compact_context_length);
+        let intent_trace = classify_intent_with_trace(
+            intent_llm,
+            embedding_model,
+            &current_message,
+            Some(&history),
+            compact_context_length,
+        );
         let intent = intent_trace.category;
         trace.record_intent(intent_trace);
 
@@ -2655,8 +2660,6 @@ mod tests {
         QqChatSteerHook, STEER_PREFIX,
     };
     use crate::agent::qq_chat_agent_logging::QqChatTaskTrace;
-    use zihuan_core::url_utils::content_type_from_url;
-    use zihuan_core::utils::string_utils::derive_tavily_s3_key;
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::thread;
@@ -2666,6 +2669,8 @@ mod tests {
         ImageMessage, Message, PersistedMedia, PersistedMediaSource, PlainTextMessage, ReplyMessage,
     };
     use zihuan_core::llm::{ContentPart, MessageContent};
+    use zihuan_core::url_utils::content_type_from_url;
+    use zihuan_core::utils::string_utils::derive_tavily_s3_key;
 
     #[test]
     fn tavily_s3_key_is_bare_object_key() {

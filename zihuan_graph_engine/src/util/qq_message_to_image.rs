@@ -41,10 +41,7 @@ impl Node for QQMessageToImageNode {
         port! { name = "object_storage_path", ty = String, desc = "解析出的对象存储路径（优先 object_key）" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let qq_message = inputs
@@ -90,5 +87,3 @@ impl Node for QQMessageToImageNode {
         Ok(outputs)
     }
 }
-
-

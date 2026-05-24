@@ -71,10 +71,7 @@ impl Node for GraphOutputsNode {
         }
     }
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         if let Some(DataValue::Json(value)) = inputs.get(FUNCTION_SIGNATURE_PORT) {
             self.apply_signature_json(value)?;
         }
@@ -82,7 +79,3 @@ impl Node for GraphOutputsNode {
         Ok(crate::NodeOutputFlow::new())
     }
 }
-
-
-
-

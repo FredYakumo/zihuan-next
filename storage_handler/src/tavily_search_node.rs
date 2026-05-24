@@ -100,4 +100,3 @@ impl Node for TavilySearchNode {
         Ok(outputs)
     }
 }
-

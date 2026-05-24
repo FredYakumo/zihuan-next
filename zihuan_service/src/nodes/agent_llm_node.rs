@@ -52,7 +52,10 @@ impl Node for AgentLlmNode {
         .with_description("选择读取主模型、意图分类模型或数学编程模型")]
     }
 
-    fn apply_inline_config(&mut self, inline_values: &zihuan_graph_engine::NodeConfigFlow) -> Result<()> {
+    fn apply_inline_config(
+        &mut self,
+        inline_values: &zihuan_graph_engine::NodeConfigFlow,
+    ) -> Result<()> {
         self.llm_kind = inline_values
             .get(LLM_KIND_FIELD)
             .and_then(|value| match value {
@@ -69,12 +72,8 @@ impl Node for AgentLlmNode {
         let config = current_qq_chat_agent_config()?;
         let llm_kind = normalize_llm_kind(self.llm_kind.as_deref())?;
         let llm = build_llm_from_ref_id(llm_ref_id_for_kind(&config, llm_kind))?;
-        Ok((HashMap::from([(
-            "llm_model".to_string(),
-            DataValue::LLModel(llm),
-        )])).into())
+        Ok(zihuan_graph_engine::node_output_flow![
+            "llm_model" => DataValue::LLModel(llm),
+        ])
     }
 }
-
-
-

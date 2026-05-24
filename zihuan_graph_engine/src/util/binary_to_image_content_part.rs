@@ -44,10 +44,7 @@ impl Node for BinaryToImageContentPartNode {
         port! { name = "content_part", ty = ContentPart, desc = "封装后的多模态 ContentPart" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let bytes = match inputs.get("bytes") {
@@ -94,5 +91,3 @@ impl Node for BinaryToImageContentPartNode {
         Ok(outputs)
     }
 }
-
-

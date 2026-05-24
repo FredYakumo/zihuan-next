@@ -94,7 +94,9 @@ impl BrainNode {
             .collect()
     }
 
-    fn parse_messages_input(inputs: &zihuan_graph_engine::NodeInputFlow) -> Result<Vec<OpenAIMessage>> {
+    fn parse_messages_input(
+        inputs: &zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<Vec<OpenAIMessage>> {
         match inputs.get("messages") {
             Some(DataValue::Vec(_, items)) => Ok(items
                 .iter()
@@ -168,7 +170,10 @@ impl Node for BrainNode {
         true
     }
 
-    fn apply_inline_config(&mut self, inline_values: &zihuan_graph_engine::NodeConfigFlow) -> Result<()> {
+    fn apply_inline_config(
+        &mut self,
+        inline_values: &zihuan_graph_engine::NodeConfigFlow,
+    ) -> Result<()> {
         match inline_values.get(BRAIN_SHARED_INPUTS_PORT) {
             Some(DataValue::Json(value)) => {
                 if value.is_null() {
@@ -282,6 +287,3 @@ impl Node for BrainNode {
         Ok(outputs)
     }
 }
-
-
-

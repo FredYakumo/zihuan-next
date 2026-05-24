@@ -101,13 +101,10 @@ impl Node for LoadTextEmbedderNode {
             .with_retry_count(retry_count),
         );
 
-        let outputs = HashMap::from([(
-            "embedding_model".to_string(),
-            DataValue::EmbeddingModel(model),
-        )]);
-        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
+        let outputs = zihuan_graph_engine::node_output_flow![
+            "embedding_model" => DataValue::EmbeddingModel(model),
+        ];
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
-

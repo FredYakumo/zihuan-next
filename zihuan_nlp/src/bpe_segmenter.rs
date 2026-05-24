@@ -92,7 +92,11 @@ impl crate::TextSegmenter for BpeSegmenter {
         while start < chars.len() {
             let hard_end = (start + max_chars).min(chars.len());
             if hard_end == chars.len() {
-                let chunk = chars[start..hard_end].iter().collect::<String>().trim().to_string();
+                let chunk = chars[start..hard_end]
+                    .iter()
+                    .collect::<String>()
+                    .trim()
+                    .to_string();
                 if !chunk.is_empty() {
                     chunks.push(chunk);
                 }
@@ -108,7 +112,11 @@ impl crate::TextSegmenter for BpeSegmenter {
                 .max();
 
             let split_end = token_boundary.unwrap_or(hard_end);
-            let chunk = chars[start..split_end].iter().collect::<String>().trim().to_string();
+            let chunk = chars[start..split_end]
+                .iter()
+                .collect::<String>()
+                .trim()
+                .to_string();
             if chunk.is_empty() {
                 start = hard_end;
                 continue;

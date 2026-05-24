@@ -570,7 +570,8 @@ pub fn classify_intent_with_trace(
     let mut messages = Vec::with_capacity(4);
     messages.push(OpenAIMessage::system(CLASSIFY_INTENT_PROMPT.to_string()));
     if let Some(history_msgs) = history {
-        let history_text = format_recent_history_for_intent(history_msgs, intent_history_max_tokens);
+        let history_text =
+            format_recent_history_for_intent(history_msgs, intent_history_max_tokens);
         if !history_text.is_empty() {
             messages.push(OpenAIMessage::user(history_text));
         }
@@ -608,6 +609,12 @@ pub fn classify_intent(
     history: Option<&[OpenAIMessage]>,
     intent_history_max_tokens: usize,
 ) -> IntentCategory {
-    classify_intent_with_trace(llm, embedding_model, message, history, intent_history_max_tokens)
-        .category
+    classify_intent_with_trace(
+        llm,
+        embedding_model,
+        message,
+        history,
+        intent_history_max_tokens,
+    )
+    .category
 }

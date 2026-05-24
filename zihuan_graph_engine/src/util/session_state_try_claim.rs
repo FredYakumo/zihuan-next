@@ -46,10 +46,7 @@ impl Node for SessionStateTryClaimNode {
         port! { name = "state_json", ty = Json, desc = "当前 sender_id 的附加 JSON 状态" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let session_ref: Arc<SessionStateRef> = inputs
@@ -138,5 +135,3 @@ impl Node for SessionStateTryClaimNode {
         Ok(outputs)
     }
 }
-
-

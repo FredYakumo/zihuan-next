@@ -39,10 +39,7 @@ impl Node for StringToOpenAIMessageNode {
 
     node_output![port! { name = "message", ty = OpenAIMessage, desc = "封装后的 OpenAIMessage" },];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let content = match inputs.get("content") {
@@ -74,5 +71,3 @@ impl Node for StringToOpenAIMessageNode {
         Ok(outputs)
     }
 }
-
-

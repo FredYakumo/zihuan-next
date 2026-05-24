@@ -68,11 +68,8 @@ impl Node for AgentImageDbRefNode {
             WeaviateCollectionSchema::ImageSemantic,
             false,
         )?;
-        Ok((HashMap::from([(
-            "weaviate_ref".to_string(),
-            DataValue::WeaviateRef(weaviate_ref),
-        )])).into())
+        Ok(zihuan_graph_engine::node_output_flow![
+            "weaviate_ref" => DataValue::WeaviateRef(weaviate_ref),
+        ])
     }
 }
-
-

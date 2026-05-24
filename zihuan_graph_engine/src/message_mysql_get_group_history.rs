@@ -59,10 +59,7 @@ impl Node for MessageMySQLGetGroupHistoryNode {
 
     node_output![port! { name = "messages", ty = Vec(String), desc = "格式化后的历史消息列表" },];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let mysql_config = inputs
@@ -113,5 +110,3 @@ impl Node for MessageMySQLGetGroupHistoryNode {
         Ok(outputs)
     }
 }
-
-

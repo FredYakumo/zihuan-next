@@ -36,10 +36,7 @@ impl Node for QQMessageJsonOutputSystemPromptProviderNode {
         port! { name = "system_prompt", ty = String, desc = "固定的 QQ 消息二维 JSON 输出格式 prompt" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let outputs = HashMap::from([(
@@ -51,5 +48,3 @@ impl Node for QQMessageJsonOutputSystemPromptProviderNode {
         Ok(outputs)
     }
 }
-
-

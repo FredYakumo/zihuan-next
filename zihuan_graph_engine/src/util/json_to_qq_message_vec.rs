@@ -38,10 +38,7 @@ impl Node for JsonToQQMessageVecNode {
         port! { name = "failed", ty = Json, desc = "转换失败时输出原始 JSON" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let json_value = match inputs.get("json") {
@@ -71,8 +68,8 @@ impl Node for JsonToQQMessageVecNode {
                     ),
                 )]);
                 let outputs = crate::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+                self.validate_outputs(&outputs)?;
+                Ok(outputs)
             }
             Err(e) => {
                 warn!(
@@ -82,11 +79,9 @@ impl Node for JsonToQQMessageVecNode {
                 let outputs =
                     HashMap::from([("failed".to_string(), DataValue::Json(json_value.clone()))]);
                 let outputs = crate::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+                self.validate_outputs(&outputs)?;
+                Ok(outputs)
             }
         }
     }
 }
-
-

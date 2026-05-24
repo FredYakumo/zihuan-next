@@ -48,10 +48,7 @@ impl Node for StringDataNode {
         Ok(())
     }
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();
@@ -62,6 +59,3 @@ impl Node for StringDataNode {
         Ok(outputs)
     }
 }
-
-
-

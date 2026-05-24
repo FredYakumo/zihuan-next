@@ -281,4 +281,3 @@ mod tests {
         assert_eq!(result, Some(123));
     }
 }
-

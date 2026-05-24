@@ -71,23 +71,15 @@ fn find_split_end(chars: &[char], start: usize, hard_end: usize) -> usize {
 
     let min_split_index = start + (hard_end - start) * 2 / 3;
 
-    if let Some(boundary) = find_split_boundary_from_right(
-        chars,
-        start,
-        hard_end,
-        min_split_index,
-        &STRONG_SEPARATORS,
-    ) {
+    if let Some(boundary) =
+        find_split_boundary_from_right(chars, start, hard_end, min_split_index, &STRONG_SEPARATORS)
+    {
         return boundary;
     }
 
-    if let Some(boundary) = find_split_boundary_from_right(
-        chars,
-        start,
-        hard_end,
-        min_split_index,
-        &WEAK_SEPARATORS,
-    ) {
+    if let Some(boundary) =
+        find_split_boundary_from_right(chars, start, hard_end, min_split_index, &WEAK_SEPARATORS)
+    {
         return boundary;
     }
 
@@ -114,14 +106,14 @@ fn is_safe_split_separator(chars: &[char], separator_index: usize) -> bool {
     match separator {
         '.' => {
             let prev_is_digit = separator_index > 0 && chars[separator_index - 1].is_ascii_digit();
-            let next_is_digit = separator_index + 1 < chars.len()
-                && chars[separator_index + 1].is_ascii_digit();
+            let next_is_digit =
+                separator_index + 1 < chars.len() && chars[separator_index + 1].is_ascii_digit();
             !(prev_is_digit && next_is_digit)
         }
         ':' => {
             let prev_is_digit = separator_index > 0 && chars[separator_index - 1].is_ascii_digit();
-            let next_is_digit = separator_index + 1 < chars.len()
-                && chars[separator_index + 1].is_ascii_digit();
+            let next_is_digit =
+                separator_index + 1 < chars.len() && chars[separator_index + 1].is_ascii_digit();
             if prev_is_digit && next_is_digit {
                 return false;
             }
@@ -133,8 +125,8 @@ fn is_safe_split_separator(chars: &[char], separator_index: usize) -> bool {
         }
         ',' => {
             let prev_is_digit = separator_index > 0 && chars[separator_index - 1].is_ascii_digit();
-            let next_is_digit = separator_index + 1 < chars.len()
-                && chars[separator_index + 1].is_ascii_digit();
+            let next_is_digit =
+                separator_index + 1 < chars.len() && chars[separator_index + 1].is_ascii_digit();
             !(prev_is_digit && next_is_digit)
         }
         _ => true,

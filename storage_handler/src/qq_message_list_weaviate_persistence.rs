@@ -147,4 +147,3 @@ fn optional_non_empty_string(inputs: &HashMap<String, DataValue>, key: &str) -> 
         _ => None,
     })
 }
-

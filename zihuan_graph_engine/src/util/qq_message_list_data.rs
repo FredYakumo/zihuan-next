@@ -37,10 +37,7 @@ impl Node for QQMessageListDataNode {
         port! { name = "messages", ty = Vec(QQMessage), desc = "Output Vec<QQMessage> from UI data source" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();
@@ -56,5 +53,3 @@ impl Node for QQMessageListDataNode {
         Ok(outputs)
     }
 }
-
-

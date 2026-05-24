@@ -51,10 +51,7 @@ impl FunctionNode {
         Ok(())
     }
 
-    fn runtime_values_from_inputs(
-        &self,
-        inputs: &crate::NodeInputFlow,
-    ) -> crate::RuntimeValueFlow {
+    fn runtime_values_from_inputs(&self, inputs: &crate::NodeInputFlow) -> crate::RuntimeValueFlow {
         self.config
             .inputs
             .iter()
@@ -155,10 +152,7 @@ impl Node for FunctionNode {
         }
     }
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         let inline_config = inputs.as_map().clone().into();
         self.parse_config_input(&inline_config)?;
         self.validate_inputs(&inputs)?;
@@ -229,9 +223,3 @@ pub fn inject_runtime_values_into_function_inputs_node(
         })?;
     function_inputs_node.set_function_runtime_values(runtime_values)
 }
-
-
-
-
-
-

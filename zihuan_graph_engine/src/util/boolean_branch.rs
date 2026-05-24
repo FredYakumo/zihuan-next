@@ -41,10 +41,7 @@ impl Node for BooleanBranchNode {
         port! { name = "branch_taken", ty = String, desc = "实际走到的分支：true 或 false" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let condition = match inputs.get("condition") {
@@ -80,5 +77,3 @@ impl Node for BooleanBranchNode {
         Ok(outputs)
     }
 }
-
-

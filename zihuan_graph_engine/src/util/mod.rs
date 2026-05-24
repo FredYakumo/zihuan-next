@@ -91,10 +91,7 @@ pub mod openai_message_session_cache_clear {
             port! { name = "cleared", ty = Boolean, desc = "是否成功清空至少一条历史消息" },
         ];
 
-        fn execute(
-            &mut self,
-            inputs: crate::NodeInputFlow,
-        ) -> Result<crate::NodeOutputFlow> {
+        fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
             self.validate_inputs(&inputs)?;
 
             let cache_ref: Arc<OpenAIMessageSessionCacheRef> = inputs
@@ -129,8 +126,8 @@ pub mod openai_message_session_cache_clear {
             outputs.insert("cleared".to_string(), DataValue::Boolean(cleared));
 
             let outputs = crate::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+            self.validate_outputs(&outputs)?;
+            Ok(outputs)
         }
     }
 }
@@ -184,5 +181,3 @@ pub use string_to_openai_message::StringToOpenAIMessageNode;
 pub use string_to_plain_text::StringToPlainTextNode;
 pub use switch::SwitchNode;
 pub use tool_result_node::ToolResultNode;
-
-

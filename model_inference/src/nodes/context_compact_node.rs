@@ -119,4 +119,3 @@ impl Node for ContextCompactNode {
         Ok(outputs)
     }
 }
-

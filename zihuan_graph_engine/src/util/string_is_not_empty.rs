@@ -38,10 +38,7 @@ impl Node for StringIsNotEmptyNode {
         port! { name = "result", ty = Boolean, desc = "字符串非空则为 true，否则为 false" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let input = match inputs.get("input") {
@@ -72,5 +69,3 @@ impl Node for StringIsNotEmptyNode {
         Ok(outputs)
     }
 }
-
-

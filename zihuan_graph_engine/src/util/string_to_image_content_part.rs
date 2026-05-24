@@ -40,10 +40,7 @@ impl Node for StringToImageContentPartNode {
         port! { name = "content_part", ty = ContentPart, desc = "封装后的多模态 ContentPart" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let url = match inputs.get("url") {
@@ -83,5 +80,3 @@ impl Node for StringToImageContentPartNode {
         Ok(outputs)
     }
 }
-
-

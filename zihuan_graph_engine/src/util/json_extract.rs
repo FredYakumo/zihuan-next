@@ -142,10 +142,7 @@ impl Node for JsonExtractNode {
         }
     }
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         if let Some(DataValue::Json(value)) = inputs.get(FIELDS_CONFIG_PORT) {
@@ -189,6 +186,3 @@ impl Node for JsonExtractNode {
         Ok(outputs)
     }
 }
-
-
-

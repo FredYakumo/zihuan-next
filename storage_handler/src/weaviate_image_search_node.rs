@@ -243,4 +243,3 @@ fn semantic_result_order(left: &Value, right: &Value) -> Ordering {
         .partial_cmp(&right_distance)
         .unwrap_or(Ordering::Equal)
 }
-

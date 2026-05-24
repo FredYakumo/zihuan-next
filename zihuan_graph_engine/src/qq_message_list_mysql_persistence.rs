@@ -74,10 +74,7 @@ impl Node for QQMessageListMySQLPersistenceNode {
         port! { name = "qq_message_list", ty = Vec(QQMessage),  desc = "透传输入的消息列表" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         // ── Extract qq_message_list ──────────────────────────────────────────
         let (msg_item_type, msg_items) = inputs
             .get("qq_message_list")
@@ -364,5 +361,3 @@ impl Node for QQMessageListMySQLPersistenceNode {
         Ok(outputs)
     }
 }
-
-

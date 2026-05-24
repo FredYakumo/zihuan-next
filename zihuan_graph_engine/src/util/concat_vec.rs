@@ -38,10 +38,7 @@ impl Node for ConcatVecNode {
         port! { name = "vec", ty = Vec(Any), desc = "拼接后的列表，元素类型与输入列表一致" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let (vec1_type, vec1_items) = match inputs.get("vec1") {
@@ -84,5 +81,3 @@ impl Node for ConcatVecNode {
         Ok(outputs)
     }
 }
-
-

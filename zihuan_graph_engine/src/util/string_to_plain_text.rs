@@ -37,10 +37,7 @@ impl Node for StringToPlainTextNode {
         port! { name = "result", ty = QQMessage, desc = "输出 QQMessage PlainText 消息段" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let text = match inputs.get("text") {
@@ -62,5 +59,3 @@ impl Node for StringToPlainTextNode {
         Ok(outputs)
     }
 }
-
-

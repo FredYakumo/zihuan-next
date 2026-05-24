@@ -40,10 +40,7 @@ impl Node for ToolResultNode {
         port! { name = "message", ty = OpenAIMessage, desc = "role=tool 的结果消息，可拼入对话列表后重新送入 BrainNode" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let tool_call_id = match inputs.get("tool_call") {
@@ -72,5 +69,3 @@ impl Node for ToolResultNode {
         Ok(outputs)
     }
 }
-
-

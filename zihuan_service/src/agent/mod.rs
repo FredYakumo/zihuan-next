@@ -21,10 +21,10 @@ use storage_handler::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
+use zihuan_agent::brain::BrainObserver;
 use zihuan_core::error::Result;
 use zihuan_core::llm::OpenAIMessage;
 use zihuan_core::task_context::AgentTaskRuntime;
-use zihuan_agent::brain::BrainObserver;
 
 use self::inference::{InferenceToolProvider, LoadedInferenceAgent};
 

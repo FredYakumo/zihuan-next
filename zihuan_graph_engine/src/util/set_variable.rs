@@ -101,10 +101,7 @@ impl Node for SetVariableNode {
         self.runtime_variable_store = Some(store);
     }
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let variable_name = self
@@ -124,7 +121,3 @@ impl Node for SetVariableNode {
         Ok(crate::NodeOutputFlow::new())
     }
 }
-
-
-
-

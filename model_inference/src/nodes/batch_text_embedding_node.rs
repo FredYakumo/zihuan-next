@@ -115,4 +115,3 @@ fn parse_string_list(value: Option<&DataValue>) -> Result<Vec<String>> {
 
     Ok(texts)
 }
-

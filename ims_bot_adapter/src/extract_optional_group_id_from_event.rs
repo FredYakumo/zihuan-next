@@ -55,10 +55,9 @@ impl Node for ExtractOptionalGroupIdFromEventNode {
             String::new()
         };
 
-        Ok((HashMap::from([(
-            "result".to_string(),
-            DataValue::String(group_id),
-        )])).into())
+        Ok(zihuan_graph_engine::node_output_flow![
+            "result" => DataValue::String(group_id),
+        ])
     }
 }
 
@@ -92,10 +91,13 @@ mod tests {
     fn returns_group_id_for_group_message() {
         let mut node = ExtractOptionalGroupIdFromEventNode::new("test", "test");
         let outputs = node
-            .execute(HashMap::from([(
-                "message_event".to_string(),
-                DataValue::MessageEvent(build_event(MessageType::Group, Some(123))),
-            )]))
+            .execute(
+                HashMap::from([(
+                    "message_event".to_string(),
+                    DataValue::MessageEvent(build_event(MessageType::Group, Some(123))),
+                )])
+                .into(),
+            )
             .expect("group message should succeed");
 
         match outputs.get("result") {
@@ -108,10 +110,13 @@ mod tests {
     fn returns_empty_string_for_private_message() {
         let mut node = ExtractOptionalGroupIdFromEventNode::new("test", "test");
         let outputs = node
-            .execute(HashMap::from([(
-                "message_event".to_string(),
-                DataValue::MessageEvent(build_event(MessageType::Private, None)),
-            )]))
+            .execute(
+                HashMap::from([(
+                    "message_event".to_string(),
+                    DataValue::MessageEvent(build_event(MessageType::Private, None)),
+                )])
+                .into(),
+            )
             .expect("private message should succeed");
 
         match outputs.get("result") {
@@ -120,5 +125,3 @@ mod tests {
         }
     }
 }
-
-

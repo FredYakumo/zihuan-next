@@ -50,13 +50,8 @@ impl Node for ExtractQQMessageListFromEventNode {
             .map(DataValue::QQMessage)
             .collect();
 
-        let mut outputs = HashMap::new();
-        outputs.insert(
-            "message_list".to_string(),
-            DataValue::Vec(Box::new(DataType::QQMessage), message_list),
-        );
-        Ok(outputs.into())
+        Ok(zihuan_graph_engine::node_output_flow![
+            "message_list" => DataValue::Vec(Box::new(DataType::QQMessage), message_list),
+        ])
     }
 }
-
-

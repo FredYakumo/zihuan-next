@@ -1,6 +1,5 @@
 use crate::data_value::OpenAIMessageSessionCacheRef;
-use crate::{node_input, node_output, DataType, DataValue, Node, Port};
-use std::collections::HashMap;
+use crate::{node_input, node_output, node_output_flow, DataType, DataValue, Node, Port};
 use std::sync::Arc;
 use zihuan_core::error::Result;
 use zihuan_core::llm::OpenAIMessage;
@@ -40,10 +39,7 @@ impl Node for OpenAIMessageSessionCacheSetNode {
 
     node_output![port! { name = "success", ty = Boolean, desc = "是否成功覆写历史消息" },];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let cache_ref: Arc<OpenAIMessageSessionCacheRef> = inputs
@@ -87,13 +83,10 @@ impl Node for OpenAIMessageSessionCacheSetNode {
 
         cache_ref.set_messages_blocking(&sender_id, messages)?;
 
-        let mut outputs = HashMap::new();
-        outputs.insert("success".to_string(), DataValue::Boolean(true));
-
-        let outputs = crate::NodeOutputFlow::from(outputs);
+        let outputs = node_output_flow![
+            "success" => DataValue::Boolean(true),
+        ];
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
-
-

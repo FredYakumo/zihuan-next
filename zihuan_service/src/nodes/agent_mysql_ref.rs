@@ -55,11 +55,8 @@ impl Node for AgentMySqlRefNode {
         let mysql_ref = zihuan_core::runtime::block_async(
             RuntimeStorageConnectionManager::shared().get_or_create_mysql_ref(mysql_connection_id),
         )?;
-        Ok((HashMap::from([(
-            "mysql_ref".to_string(),
-            DataValue::MySqlRef(mysql_ref),
-        )])).into())
+        Ok(zihuan_graph_engine::node_output_flow![
+            "mysql_ref" => DataValue::MySqlRef(mysql_ref),
+        ])
     }
 }
-
-

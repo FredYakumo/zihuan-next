@@ -136,10 +136,7 @@ impl Node for FormatStringNode {
         Ok(())
     }
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let mut result = self.template.clone();
@@ -158,6 +155,3 @@ impl Node for FormatStringNode {
         Ok(outputs)
     }
 }
-
-
-

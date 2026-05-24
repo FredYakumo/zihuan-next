@@ -40,10 +40,7 @@ impl Node for ConditionalNode {
         port! { name = "branch_taken", ty = String, desc = "Which branch was taken" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();
@@ -79,5 +76,3 @@ impl Node for ConditionalNode {
         Ok(outputs)
     }
 }
-
-

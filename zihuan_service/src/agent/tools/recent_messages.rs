@@ -96,14 +96,17 @@ impl BrainTool for GetRecentGroupMessagesBrainTool {
                 MAX_HISTORY_TOOL_LIMIT,
             );
             let mut node = MessageMySQLGetGroupHistoryNode::new("__tool__", "__tool__");
-            let outputs = node.execute(HashMap::from([
-                (
-                    "mysql_ref".to_string(),
-                    DataValue::MySqlRef(mysql_ref.clone()),
-                ),
-                ("group_id".to_string(), DataValue::String(group_id)),
-                ("limit".to_string(), DataValue::Integer(limit as i64)),
-            ]).into())?;
+            let outputs = node.execute(
+                HashMap::from([
+                    (
+                        "mysql_ref".to_string(),
+                        DataValue::MySqlRef(mysql_ref.clone()),
+                    ),
+                    ("group_id".to_string(), DataValue::String(group_id)),
+                    ("limit".to_string(), DataValue::Integer(limit as i64)),
+                ])
+                .into(),
+            )?;
             let items = extract_string_list_output(&outputs, "messages")?;
             Ok(serde_json::json!({
                 "ok": true,
@@ -193,4 +196,3 @@ impl BrainTool for GetRecentUserMessagesBrainTool {
         }
     }
 }
-

@@ -181,4 +181,3 @@ fn parse_media_source(value: Option<&str>) -> PersistedMediaSource {
         _ => PersistedMediaSource::Upload,
     }
 }
-

@@ -35,10 +35,7 @@ impl Node for AtQQTargetMessageNode {
 
     node_output![port! { name = "result", ty = QQMessage, desc = "输出 QQMessage At 消息段" },];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let id = match inputs.get("id") {
@@ -60,5 +57,3 @@ impl Node for AtQQTargetMessageNode {
         Ok(outputs)
     }
 }
-
-

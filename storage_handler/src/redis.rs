@@ -466,7 +466,10 @@ impl Node for RedisNode {
         vec![Self::connection_select_field()]
     }
 
-    fn apply_inline_config(&mut self, inline_values: &zihuan_graph_engine::NodeConfigFlow) -> Result<()> {
+    fn apply_inline_config(
+        &mut self,
+        inline_values: &zihuan_graph_engine::NodeConfigFlow,
+    ) -> Result<()> {
         self.connection_id = inline_values
             .get(CONNECTION_ID_FIELD)
             .and_then(|value| match value {
@@ -491,10 +494,9 @@ impl Node for RedisNode {
             cached_redis_url: self.cached_redis_url.clone(),
         });
         self.initialize_run(Some(&config))?;
-        Ok((HashMap::from([(
-            "redis_ref".to_string(),
-            DataValue::RedisRef(config),
-        )])).into())
+        Ok(zihuan_graph_engine::node_output_flow![
+            "redis_ref" => DataValue::RedisRef(config),
+        ])
     }
 }
 
@@ -529,6 +531,3 @@ pub fn build_redis_connection_url(
         })?;
     Ok(parsed.to_string())
 }
-
-
-

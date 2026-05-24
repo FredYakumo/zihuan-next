@@ -41,10 +41,7 @@ impl Node for OpenAIMessageContentAsJsonNode {
         port! { name = "failed", ty = String, desc = "解析失败时输出原始 content 字符串" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let message = match inputs.get("message") {
@@ -95,8 +92,8 @@ impl Node for OpenAIMessageContentAsJsonNode {
                     return {
                         let outputs = HashMap::from([("json".to_string(), DataValue::Json(json))]);
                         let outputs = crate::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+                        self.validate_outputs(&outputs)?;
+                        Ok(outputs)
                     };
                 }
 
@@ -122,8 +119,8 @@ impl Node for OpenAIMessageContentAsJsonNode {
                     return {
                         let outputs = HashMap::from([("json".to_string(), DataValue::Json(json))]);
                         let outputs = crate::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+                        self.validate_outputs(&outputs)?;
+                        Ok(outputs)
                     };
                 }
 
@@ -139,5 +136,3 @@ impl Node for OpenAIMessageContentAsJsonNode {
         Ok(outputs)
     }
 }
-
-

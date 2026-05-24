@@ -60,7 +60,10 @@ impl Node for ImsBotAdapterProviderNode {
         vec![Self::connection_select_field()]
     }
 
-    fn apply_inline_config(&mut self, inline_values: &zihuan_graph_engine::NodeConfigFlow) -> Result<()> {
+    fn apply_inline_config(
+        &mut self,
+        inline_values: &zihuan_graph_engine::NodeConfigFlow,
+    ) -> Result<()> {
         self.config_id = inline_values
             .get(CONFIG_ID_FIELD)
             .or_else(|| inline_values.get(LEGACY_CONNECTION_ID_FIELD))
@@ -85,12 +88,8 @@ impl Node for ImsBotAdapterProviderNode {
             ActiveAdapterManager::shared().get_active_bot_adapter_handle(config_id),
         )?;
 
-        Ok((HashMap::from([(
-            "ims_bot_adapter".to_string(),
-            DataValue::BotAdapterRef(handle),
-        )])).into())
+        Ok(zihuan_graph_engine::node_output_flow![
+            "ims_bot_adapter" => DataValue::BotAdapterRef(handle),
+        ])
     }
 }
-
-
-

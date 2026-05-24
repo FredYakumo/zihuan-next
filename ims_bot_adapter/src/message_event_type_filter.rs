@@ -57,14 +57,12 @@ impl Node for MessageEventTypeFilterNode {
             _ => event.message_type == MessageType::Private,
         };
 
-        let mut outputs = HashMap::new();
+        let mut outputs = zihuan_graph_engine::node_output_flow![];
         if matches {
             outputs.insert("true_event".to_string(), DataValue::MessageEvent(event));
         } else {
             outputs.insert("false_event".to_string(), DataValue::MessageEvent(event));
         }
-        Ok(outputs.into())
+        Ok(outputs)
     }
 }
-
-

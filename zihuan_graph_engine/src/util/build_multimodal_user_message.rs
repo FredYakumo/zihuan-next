@@ -42,10 +42,7 @@ impl Node for BuildMultimodalUserMessageNode {
         port! { name = "message", ty = OpenAIMessage, desc = "封装后的多模态 OpenAIMessage" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let text = match inputs.get("text") {
@@ -104,5 +101,3 @@ impl Node for BuildMultimodalUserMessageNode {
         Ok(outputs)
     }
 }
-
-

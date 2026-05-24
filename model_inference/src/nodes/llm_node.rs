@@ -121,7 +121,10 @@ impl Node for LlmNode {
         vec![Self::llm_ref_select_field()]
     }
 
-    fn apply_inline_config(&mut self, inline_values: &zihuan_graph_engine::NodeConfigFlow) -> Result<()> {
+    fn apply_inline_config(
+        &mut self,
+        inline_values: &zihuan_graph_engine::NodeConfigFlow,
+    ) -> Result<()> {
         self.llm_ref_id = inline_values
             .get(LLM_REF_ID_FIELD)
             .and_then(|value| match value {
@@ -144,5 +147,3 @@ impl Node for LlmNode {
         Ok(outputs)
     }
 }
-
-

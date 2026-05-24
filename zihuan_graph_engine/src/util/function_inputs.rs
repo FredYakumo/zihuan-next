@@ -80,16 +80,13 @@ impl Node for FunctionInputsNode {
         Ok(())
     }
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         if let Some(DataValue::Json(value)) = inputs.get(FUNCTION_SIGNATURE_PORT) {
             self.apply_signature_json(value)?;
         }
         self.validate_inputs(&inputs)?;
 
-        let mut outputs = HashMap::new();
+        let mut outputs = crate::node_output_flow![];
         for port in &self.signature {
             if let Some(runtime_values) = &self.runtime_values {
                 let value = match runtime_values.get(&port.name) {
@@ -141,7 +138,6 @@ impl Node for FunctionInputsNode {
             );
         }
 
-        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
@@ -236,8 +232,3 @@ mod tests {
         assert!(!outputs.contains_key("optional_text"));
     }
 }
-
-
-
-
-

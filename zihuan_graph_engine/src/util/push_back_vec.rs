@@ -1,5 +1,4 @@
-use crate::{node_input, node_output, DataType, DataValue, Node, Port};
-use std::collections::HashMap;
+use crate::{node_input, node_output, node_output_flow, DataType, DataValue, Node, Port};
 use zihuan_core::error::Result;
 
 pub struct PushBackVecNode {
@@ -38,10 +37,7 @@ impl Node for PushBackVecNode {
         port! { name = "result", ty = Any, desc = "追加元素后的新列表，元素类型与输入列表一致" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let (vec_type, vec_items) = match inputs.get("vec") {
@@ -69,16 +65,10 @@ impl Node for PushBackVecNode {
         merged.extend(vec_items.iter().cloned());
         merged.push(element);
 
-        let mut outputs = HashMap::new();
-        outputs.insert(
-            "result".to_string(),
-            DataValue::Vec(Box::new(vec_type), merged),
-        );
-
-        let outputs = crate::NodeOutputFlow::from(outputs);
+        let outputs = node_output_flow![
+            "result" => DataValue::Vec(Box::new(vec_type), merged),
+        ];
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
 }
-
-

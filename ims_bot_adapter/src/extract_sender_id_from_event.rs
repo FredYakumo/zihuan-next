@@ -42,13 +42,8 @@ impl Node for ExtractSenderIdFromEventNode {
             _ => return Err("message_event input is required".into()),
         };
 
-        let mut outputs = HashMap::new();
-        outputs.insert(
-            "result".to_string(),
-            DataValue::String(event.sender.user_id.to_string()),
-        );
-        Ok(outputs.into())
+        Ok(zihuan_graph_engine::node_output_flow![
+            "result" => DataValue::String(event.sender.user_id.to_string()),
+        ])
     }
 }
-
-

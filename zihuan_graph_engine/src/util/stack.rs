@@ -33,10 +33,7 @@ impl Node for StackNode {
 
     node_output![port! { name = "array", ty = Vec(Any), desc = "包含单个元素的 List" },];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let element = inputs.get("element").cloned().ok_or_else(|| {
@@ -55,5 +52,3 @@ impl Node for StackNode {
         Ok(outputs)
     }
 }
-
-

@@ -36,10 +36,7 @@ impl Node for MessageContentNode {
         port! { name = "content", ty = String, desc = "OpenAIMessage 的 content 字符串，若为 None 则输出空字符串" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let content = inputs
@@ -60,5 +57,3 @@ impl Node for MessageContentNode {
         Ok(outputs)
     }
 }
-
-

@@ -118,4 +118,3 @@ impl Node for SendMessageNode {
         Ok(outputs)
     }
 }
-

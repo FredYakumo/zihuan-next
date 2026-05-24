@@ -38,10 +38,7 @@ impl Node for ArrayGetNode {
         port! { name = "element", ty = Any, desc = "提取出的元素，类型与列表中元素的类型一致" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let list = match inputs.get("array") {
@@ -81,5 +78,3 @@ impl Node for ArrayGetNode {
         Ok(outputs)
     }
 }
-
-

@@ -36,10 +36,7 @@ impl Node for JoinStringNode {
 
     node_output![port! { name = "result", ty = String, desc = "拼接后的字符串" },];
 
-    fn execute(
-        &mut self,
-        inputs: crate::NodeInputFlow,
-    ) -> Result<crate::NodeOutputFlow> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let strings = match inputs.get("strings") {
@@ -86,5 +83,3 @@ impl Node for JoinStringNode {
         Ok(outputs)
     }
 }
-
-
