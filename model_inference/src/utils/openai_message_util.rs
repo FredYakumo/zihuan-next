@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 use zihuan_core::llm::tooling::{ToolCalls, ToolCallsFuncSpec};
 use zihuan_core::llm::{
     role_to_str, str_to_role, ContentPart, InferenceParam, MessageContent, MessageRole,
-    OpenAIMessage,
+    OpenAIMessage, TokenUsage,
 };
 
 #[derive(Default)]
@@ -72,6 +72,25 @@ fn parse_tool_calls(tool_calls_value: &Value) -> Vec<ToolCalls> {
         .unwrap_or_default()
 }
 
+fn parse_token_usage(value: Option<&Value>) -> Option<TokenUsage> {
+    let value = value?;
+
+    Some(TokenUsage {
+        prompt_tokens: value
+            .get("prompt_tokens")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize),
+        completion_tokens: value
+            .get("completion_tokens")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize),
+        total_tokens: value
+            .get("total_tokens")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize),
+    })
+}
+
 pub fn parse_chat_completions_api_message(api_resp: &Value) -> Option<OpenAIMessage> {
     let choices = api_resp.get("choices")?.as_array()?;
     let choice = choices.first()?;
@@ -104,6 +123,7 @@ pub fn parse_chat_completions_api_message(api_resp: &Value) -> Option<OpenAIMess
         reasoning_content,
         tool_calls,
         tool_call_id,
+        usage: parse_token_usage(api_resp.get("usage")),
     })
 }
 
@@ -113,6 +133,7 @@ pub fn parse_responses_api_message(api_resp: &Value) -> Option<OpenAIMessage> {
     let mut content = String::new();
     let mut reasoning_content = String::new();
     let mut tool_calls = Vec::new();
+    let usage = parse_token_usage(api_resp.get("usage"));
 
     for item in output_items {
         match item.get("type").and_then(|value| value.as_str()) {
@@ -182,7 +203,8 @@ pub fn parse_responses_api_message(api_resp: &Value) -> Option<OpenAIMessage> {
         }
     }
 
-    if content.is_empty() && reasoning_content.is_empty() && tool_calls.is_empty() {
+    if content.is_empty() && reasoning_content.is_empty() && tool_calls.is_empty() && usage.is_none()
+    {
         return None;
     }
 
@@ -201,6 +223,7 @@ pub fn parse_responses_api_message(api_resp: &Value) -> Option<OpenAIMessage> {
         },
         tool_calls,
         tool_call_id: None,
+        usage,
     })
 }
 
@@ -289,6 +312,7 @@ pub fn parse_chat_completions_sse_message(response_text: &str) -> Option<OpenAIM
     let mut reasoning_content = String::new();
     let mut streamed_tool_calls: BTreeMap<usize, StreamToolCallDelta> = BTreeMap::new();
     let mut final_tool_calls: Option<Vec<ToolCalls>> = None;
+    let mut usage: Option<TokenUsage> = None;
 
     for line in response_text.lines() {
         let line = line.trim();
@@ -304,6 +328,10 @@ pub fn parse_chat_completions_sse_message(response_text: &str) -> Option<OpenAIM
         let Ok(chunk) = serde_json::from_str::<Value>(payload) else {
             continue;
         };
+
+        if let Some(parsed_usage) = parse_token_usage(chunk.get("usage")) {
+            usage = Some(parsed_usage);
+        }
 
         let choice = chunk
             .get("choices")
@@ -429,6 +457,7 @@ pub fn parse_chat_completions_sse_message(response_text: &str) -> Option<OpenAIM
         },
         tool_calls,
         tool_call_id: None,
+        usage,
     })
 }
 
@@ -641,6 +670,12 @@ pub fn build_request_body(
         "stream": stream,
     });
 
+    if stream {
+        request_body["stream_options"] = json!({
+            "include_usage": true,
+        });
+    }
+
     if let Some(tool_list) = tools {
         request_body["tools"] = json!(tool_list);
         request_body["tool_choice"] = json!("auto");
@@ -766,6 +801,7 @@ pub fn parse_responses_sse_message(response_text: &str) -> Option<OpenAIMessage>
     let mut streamed_tool_calls: BTreeMap<String, StreamToolCallDelta> = BTreeMap::new();
     let mut tool_call_aliases: BTreeMap<String, String> = BTreeMap::new();
     let mut completed_message = None;
+    let mut usage: Option<TokenUsage> = None;
 
     for line in response_text.lines() {
         let line = line.trim();
@@ -781,6 +817,10 @@ pub fn parse_responses_sse_message(response_text: &str) -> Option<OpenAIMessage>
         let Ok(chunk) = serde_json::from_str::<Value>(payload) else {
             continue;
         };
+
+        if let Some(parsed_usage) = parse_token_usage(chunk.get("usage")) {
+            usage = Some(parsed_usage);
+        }
 
         match chunk.get("type").and_then(|value| value.as_str()) {
             Some("response.output_text.delta") => {
@@ -884,7 +924,7 @@ pub fn parse_responses_sse_message(response_text: &str) -> Option<OpenAIMessage>
 
     let tool_calls = collect_responses_stream_tool_calls(streamed_tool_calls);
 
-    if content.is_empty() && tool_calls.is_empty() {
+    if content.is_empty() && tool_calls.is_empty() && usage.is_none() {
         None
     } else {
         Some(OpenAIMessage {
@@ -898,6 +938,7 @@ pub fn parse_responses_sse_message(response_text: &str) -> Option<OpenAIMessage>
             reasoning_content: None,
             tool_calls,
             tool_call_id: None,
+            usage,
         })
     }
 }
@@ -913,6 +954,7 @@ pub async fn parse_chat_completions_sse_stream(
     let mut reasoning_content = String::new();
     let mut streamed_tool_calls: BTreeMap<usize, StreamToolCallDelta> = BTreeMap::new();
     let mut final_tool_calls: Option<Vec<ToolCalls>> = None;
+    let mut usage: Option<TokenUsage> = None;
 
     let mut stream = response.bytes_stream();
     let mut sse_buffer = String::new();
@@ -944,6 +986,10 @@ pub async fn parse_chat_completions_sse_stream(
             let Ok(chunk_data) = serde_json::from_str::<Value>(payload) else {
                 continue;
             };
+
+            if let Some(parsed_usage) = parse_token_usage(chunk_data.get("usage")) {
+                usage = Some(parsed_usage);
+            }
 
             let choice = chunk_data
                 .get("choices")
@@ -1048,7 +1094,8 @@ pub async fn parse_chat_completions_sse_stream(
             .collect::<Vec<_>>()
     };
 
-    if content.is_empty() && reasoning_content.is_empty() && tool_calls.is_empty() {
+    if content.is_empty() && reasoning_content.is_empty() && tool_calls.is_empty() && usage.is_none()
+    {
         return OpenAIMessage::assistant_text("");
     }
 
@@ -1067,6 +1114,7 @@ pub async fn parse_chat_completions_sse_stream(
         },
         tool_calls,
         tool_call_id: None,
+        usage,
     }
 }
 
@@ -1080,6 +1128,7 @@ pub async fn parse_responses_sse_stream(
     let mut streamed_tool_calls: BTreeMap<String, StreamToolCallDelta> = BTreeMap::new();
     let mut tool_call_aliases: BTreeMap<String, String> = BTreeMap::new();
     let mut completed_message = None;
+    let mut usage: Option<TokenUsage> = None;
 
     let mut stream = response.bytes_stream();
     let mut sse_buffer = String::new();
@@ -1111,6 +1160,10 @@ pub async fn parse_responses_sse_stream(
             let Ok(chunk_data) = serde_json::from_str::<Value>(payload) else {
                 continue;
             };
+
+            if let Some(parsed_usage) = parse_token_usage(chunk_data.get("usage")) {
+                usage = Some(parsed_usage);
+            }
 
             match chunk_data.get("type").and_then(|value| value.as_str()) {
                 Some("response.output_text.delta") => {
@@ -1232,5 +1285,6 @@ pub async fn parse_responses_sse_stream(
         reasoning_content: None,
         tool_calls,
         tool_call_id: None,
+        usage,
     }
 }

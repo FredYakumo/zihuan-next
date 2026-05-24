@@ -50,7 +50,7 @@ use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::InferenceParam;
-use zihuan_core::llm::{ContentPart, MessageContent, OpenAIMessage};
+use zihuan_core::llm::{ContentPart, MessageContent, OpenAIMessage, TokenUsage};
 use zihuan_core::rag::TavilyRef;
 use zihuan_core::runtime::block_async;
 use zihuan_core::task_context::{
@@ -2449,7 +2449,44 @@ impl QqChatAgent {
         let (brain_output, stop_reason) = brain.run(conversation);
         trace.record_llm_final_result(&stop_reason, &brain_output);
         let completion_tokens_estimated = estimate_messages_tokens(&brain_output);
-        trace.record_token_usage(completion_tokens_estimated);
+        let exact_token_usage = {
+            let mut prompt_tokens = 0usize;
+            let mut completion_tokens = 0usize;
+            let mut total_tokens = 0usize;
+            let mut has_usage = false;
+            let mut total_tokens_seen = false;
+
+            for message in &brain_output {
+                if let Some(usage) = message.usage.as_ref() {
+                    if let Some(value) = usage.prompt_tokens {
+                        prompt_tokens = prompt_tokens.saturating_add(value);
+                    }
+                    if let Some(value) = usage.completion_tokens {
+                        completion_tokens = completion_tokens.saturating_add(value);
+                    }
+                    if let Some(value) = usage.total_tokens {
+                        total_tokens = total_tokens.saturating_add(value);
+                        total_tokens_seen = true;
+                    }
+                    has_usage = true;
+                }
+            }
+
+            if has_usage {
+                Some(TokenUsage {
+                    prompt_tokens: Some(prompt_tokens),
+                    completion_tokens: Some(completion_tokens),
+                    total_tokens: if total_tokens_seen {
+                        Some(total_tokens)
+                    } else {
+                        None
+                    },
+                })
+            } else {
+                None
+            }
+        };
+        trace.record_token_usage(completion_tokens_estimated, exact_token_usage);
 
         let last_assistant = brain_output.iter().rev().find(|message| {
             matches!(message.role, zihuan_core::llm::MessageRole::Assistant)

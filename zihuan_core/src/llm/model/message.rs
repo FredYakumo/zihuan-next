@@ -11,6 +11,16 @@ pub enum MessageContent {
     Parts(Vec<ContentPart>),
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TokenUsage {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_tokens: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completion_tokens: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_tokens: Option<usize>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentPart {
@@ -86,6 +96,8 @@ pub struct OpenAIMessage {
     pub tool_calls: Vec<ToolCalls>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<TokenUsage>,
 }
 
 impl OpenAIMessage {
@@ -97,6 +109,7 @@ impl OpenAIMessage {
             reasoning_content: None,
             tool_calls: Vec::new(),
             tool_call_id: None,
+            usage: None,
         }
     }
 
@@ -108,6 +121,7 @@ impl OpenAIMessage {
             reasoning_content: None,
             tool_calls: Vec::new(),
             tool_call_id: None,
+            usage: None,
         }
     }
 
@@ -119,6 +133,7 @@ impl OpenAIMessage {
             reasoning_content: None,
             tool_calls: Vec::new(),
             tool_call_id: None,
+            usage: None,
         }
     }
 
@@ -130,6 +145,7 @@ impl OpenAIMessage {
             reasoning_content: None,
             tool_calls: Vec::new(),
             tool_call_id: None,
+            usage: None,
         }
     }
 
@@ -141,6 +157,7 @@ impl OpenAIMessage {
             reasoning_content: None,
             tool_calls: Vec::new(),
             tool_call_id: Some(tool_call_id.into()),
+            usage: None,
         }
     }
 
