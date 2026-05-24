@@ -389,35 +389,35 @@ pub trait Node: Send + Sync {
     /// Validate incoming data against the node's declared input ports.
     ///
     /// # Logic
-    /// 1. Iterate over every port returned by `self.input_ports()`.
-    /// 2. Look up the port name in the provided `inputs` map.
-    ///    - If a value is present, ensure its [`DataType`] is compatible with
-    ///      the port's declared `data_type` via `is_compatible_with`.
-    ///    - If the value is missing and the port is marked `required`, fail.
-    /// 3. Return `Ok(())` when all checks pass.
+    /// - Iterate over every port returned by `self.input_ports()`.
+    /// - Look up the port name in the provided `inputs` map.
+    ///   - If a value is present, ensure its [`DataType`] is compatible with
+    ///     the port's declared `data_type` via `is_compatible_with`.
+    ///   - If the value is missing and the port is marked `required`, fail.
+    /// - Return `Ok(())` when all checks pass.
     fn validate_inputs(&self, inputs: &NodeInputFlow) -> Result<()> {
         let input_ports = self.input_ports();
 
         for port in &input_ports {
-            match inputs.get(&port.name) {
-                Some(value) => {
-                    let actual_type = value.data_type();
-                    if !port.data_type.is_compatible_with(&actual_type) {
-                        return Err(zihuan_core::error::Error::ValidationError(format!(
-                            "Input port '{}' expects type {}, got {}",
-                            port.name, port.data_type, actual_type
-                        )));
-                    }
-                }
-                None => {
-                    if port.required {
-                        return Err(zihuan_core::error::Error::ValidationError(format!(
+            inputs.get(&port.name).map_or_else(
+                || {
+                    (!port.required)
+                        .then_some(())
+                        .ok_or_else(|| zihuan_core::validation_error!(
                             "Required input port '{}' is missing",
                             port.name
-                        )));
-                    }
-                }
-            }
+                        ))
+                },
+                |value| {
+                    let actual_type = value.data_type();
+                    port.data_type.is_compatible_with(&actual_type)
+                        .then_some(())
+                        .ok_or_else(|| zihuan_core::validation_error!(
+                            "Input port '{}' expects type {}, got {}",
+                            port.name, port.data_type, actual_type
+                        ))
+                },
+            )?;
         }
 
         Ok(())
@@ -440,10 +440,10 @@ pub trait Node: Send + Sync {
             if let Some(value) = outputs.get(&port.name) {
                 let actual_type = value.data_type();
                 if !port.data_type.is_compatible_with(&actual_type) {
-                    return Err(zihuan_core::error::Error::ValidationError(format!(
+                    return Err(zihuan_core::validation_error!(
                         "Output port '{}' expects type {}, got {}",
                         port.name, port.data_type, actual_type
-                    )));
+                    ));
                 }
             }
         }
@@ -540,7 +540,7 @@ impl NodeGraph {
         stage: &str,
         err: zihuan_core::error::Error,
     ) -> zihuan_core::error::Error {
-        zihuan_core::error::Error::ValidationError(format!(
+        zihuan_core::validation_error!(
             "[NODE_ERROR:{}] Node '{}' (type='{}', category='{}', stage='{}') failed: {}{}",
             node_id,
             node.name(),
@@ -549,7 +549,7 @@ impl NodeGraph {
             stage,
             err,
             Self::format_debug_backtrace(),
-        ))
+        )
     }
 
     pub fn set_runtime_variable_store(&mut self, store: RuntimeVariableStore) {
@@ -598,10 +598,10 @@ impl NodeGraph {
     pub fn add_node(&mut self, node: Box<dyn Node>) -> Result<()> {
         let id = node.id().to_string();
         if self.nodes.contains_key(&id) {
-            return Err(zihuan_core::error::Error::ValidationError(format!(
+            return Err(zihuan_core::validation_error!(
                 "Node with id '{}' already exists",
                 id
-            )));
+            ));
         }
         self.nodes.insert(id, node);
         Ok(())
@@ -615,7 +615,7 @@ impl NodeGraph {
             node.set_runtime_variable_store(self.runtime_variable_store.clone());
             node.on_graph_start().map_err(|e| {
                 let node_ref: &dyn Node = node.as_ref();
-                zihuan_core::error::Error::ValidationError(format!(
+                zihuan_core::validation_error!(
                     "[NODE_ERROR:{}] Node '{}' (type='{}', category='{}', stage='on_graph_start') failed: {}{}",
                     node_id,
                     node_ref.name(),
@@ -623,7 +623,7 @@ impl NodeGraph {
                     Self::node_type_label(node_ref),
                     e,
                     Self::format_debug_backtrace(),
-                ))
+                )
             })?;
         }
 
@@ -641,10 +641,10 @@ impl NodeGraph {
             for port in node.output_ports() {
                 if let Some(existing) = output_producers.insert(port.name.clone(), node_id.clone())
                 {
-                    return Err(zihuan_core::error::Error::ValidationError(format!(
+                    return Err(zihuan_core::validation_error!(
                         "Output port '{}' is produced by both '{}' and '{}'",
                         port.name, existing, node_id
-                    )));
+                    ));
                 }
             }
         }
@@ -741,10 +741,10 @@ impl NodeGraph {
             }
             let Some(inputs) = ({
                 let node = self.nodes.get(&node_id).ok_or_else(|| {
-                    zihuan_core::error::Error::ValidationError(format!(
+                    zihuan_core::validation_error!(
                         "Node '{}' not found during execution",
                         node_id
-                    ))
+                    )
                 })?;
                 self.collect_inputs_if_available(
                     node.as_ref(),
@@ -758,20 +758,20 @@ impl NodeGraph {
             };
 
             let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
-                zihuan_core::error::Error::ValidationError(format!(
+                zihuan_core::validation_error!(
                     "Node '{}' not found during execution",
                     node_id
-                ))
+                )
             })?;
             let outputs = node
                 .execute(inputs)
                 .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
             for (key, value) in outputs.into_inner() {
                 if data_pool.contains_key(&key) {
-                    return Err(zihuan_core::error::Error::ValidationError(format!(
+                    return Err(zihuan_core::validation_error!(
                         "Output key '{}' from node '{}' conflicts with existing data",
                         key, node_id
-                    )));
+                    ));
                 }
                 data_pool.insert(key, value);
             }
@@ -832,10 +832,10 @@ impl NodeGraph {
             for port in node.output_ports() {
                 if let Some(existing) = output_producers.insert(port.name.clone(), node_id.clone())
                 {
-                    return Err(zihuan_core::error::Error::ValidationError(format!(
+                    return Err(zihuan_core::validation_error!(
                         "Output port '{}' is produced by both '{}' and '{}'",
                         port.name, existing, node_id
-                    )));
+                    ));
                 }
             }
         }
@@ -932,10 +932,10 @@ impl NodeGraph {
             }
             let Some(inputs) = ({
                 let node = self.nodes.get(&node_id).ok_or_else(|| {
-                    zihuan_core::error::Error::ValidationError(format!(
+                    zihuan_core::validation_error!(
                         "Node '{}' not found during execution",
                         node_id
-                    ))
+                    )
                 })?;
                 self.collect_inputs_if_available(
                     node.as_ref(),
@@ -949,10 +949,10 @@ impl NodeGraph {
             };
 
             let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
-                zihuan_core::error::Error::ValidationError(format!(
+                zihuan_core::validation_error!(
                     "Node '{}' not found during execution",
                     node_id
-                ))
+                )
             })?;
 
             let inputs_clone = if self.execution_callback.is_some() {
@@ -979,10 +979,10 @@ impl NodeGraph {
 
             for (key, value) in outputs.into_inner() {
                 if data_pool.contains_key(&key) {
-                    return Err(zihuan_core::error::Error::ValidationError(format!(
+                    return Err(zihuan_core::validation_error!(
                         "Output key '{}' from node '{}' conflicts with existing data",
                         key, node_id
-                    )));
+                    ));
                 }
                 data_pool.insert(key, value);
             }
@@ -1044,10 +1044,10 @@ impl NodeGraph {
                 continue;
             }
             let node = self.nodes.get(node_id).ok_or_else(|| {
-                zihuan_core::error::Error::ValidationError(format!(
+                zihuan_core::validation_error!(
                     "Node '{}' not found during execution",
                     node_id
-                ))
+                )
             })?;
 
             let has_inline = self.inline_values.get(node_id);
@@ -1089,10 +1089,10 @@ impl NodeGraph {
             }
             let inputs = {
                 let node = self.nodes.get(&node_id).ok_or_else(|| {
-                    zihuan_core::error::Error::ValidationError(format!(
+                    zihuan_core::validation_error!(
                         "Node '{}' not found during execution",
                         node_id
-                    ))
+                    )
                 })?;
                 self.collect_inputs_with_edges_if_available(
                     node.as_ref(),
@@ -1114,10 +1114,10 @@ impl NodeGraph {
             };
             let outputs = {
                 let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
-                    zihuan_core::error::Error::ValidationError(format!(
+                    zihuan_core::validation_error!(
                         "Node '{}' not found during execution",
                         node_id
-                    ))
+                    )
                 })?;
                 node.execute(inputs)
                     .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?
@@ -1191,10 +1191,10 @@ impl NodeGraph {
                 continue;
             }
             let node = self.nodes.get(node_id).ok_or_else(|| {
-                zihuan_core::error::Error::ValidationError(format!(
+                zihuan_core::validation_error!(
                     "Node '{}' not found during execution",
                     node_id
-                ))
+                )
             })?;
 
             let has_inline = self.inline_values.get(node_id);
@@ -1236,10 +1236,10 @@ impl NodeGraph {
             }
             let inputs = {
                 let node = self.nodes.get(&node_id).ok_or_else(|| {
-                    zihuan_core::error::Error::ValidationError(format!(
+                    zihuan_core::validation_error!(
                         "Node '{}' not found during execution",
                         node_id
-                    ))
+                    )
                 })?;
                 self.collect_inputs_with_edges_if_available(
                     node.as_ref(),
@@ -1261,10 +1261,10 @@ impl NodeGraph {
             };
             let outputs = {
                 let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
-                    zihuan_core::error::Error::ValidationError(format!(
+                    zihuan_core::validation_error!(
                         "Node '{}' not found during execution",
                         node_id
-                    ))
+                    )
                 })?;
                 node.execute(inputs.clone())
                     .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?
@@ -1303,16 +1303,16 @@ impl NodeGraph {
 
         for edge in &self.edges {
             let from_node = self.nodes.get(&edge.from_node_id).ok_or_else(|| {
-                zihuan_core::error::Error::ValidationError(format!(
+                zihuan_core::validation_error!(
                     "Node '{}' not found for edge",
                     edge.from_node_id
-                ))
+                )
             })?;
             let to_node = self.nodes.get(&edge.to_node_id).ok_or_else(|| {
-                zihuan_core::error::Error::ValidationError(format!(
+                zihuan_core::validation_error!(
                     "Node '{}' not found for edge",
                     edge.to_node_id
-                ))
+                )
             })?;
 
             let from_port = from_node
@@ -1320,10 +1320,10 @@ impl NodeGraph {
                 .into_iter()
                 .find(|p| p.name == edge.from_port)
                 .ok_or_else(|| {
-                    zihuan_core::error::Error::ValidationError(format!(
+                    zihuan_core::validation_error!(
                         "Output port '{}' not found on node '{}'",
                         edge.from_port, edge.from_node_id
-                    ))
+                    )
                 })?;
 
             let to_port = to_node
@@ -1331,17 +1331,17 @@ impl NodeGraph {
                 .into_iter()
                 .find(|p| p.name == edge.to_port)
                 .ok_or_else(|| {
-                    zihuan_core::error::Error::ValidationError(format!(
+                    zihuan_core::validation_error!(
                         "Input port '{}' not found on node '{}'",
                         edge.to_port, edge.to_node_id
-                    ))
+                    )
                 })?;
 
             if !from_port.data_type.is_compatible_with(&to_port.data_type) {
-                return Err(zihuan_core::error::Error::ValidationError(format!(
+                return Err(zihuan_core::validation_error!(
                     "端口类型不匹配：\"{}\"的输出端口\"{}\" -> \"{}\"的输入端口\"{}\" [NODE_ERROR:{}]",
                     from_node.name(), edge.from_port, to_node.name(), edge.to_port, edge.to_node_id
-                )));
+                ));
             }
 
             connected_nodes.insert(edge.from_node_id.clone());
@@ -1358,10 +1358,10 @@ impl NodeGraph {
 
             let entry = input_sources.entry(edge.to_node_id.clone()).or_default();
             if entry.contains_key(&edge.to_port) {
-                return Err(zihuan_core::error::Error::ValidationError(format!(
+                return Err(zihuan_core::validation_error!(
                     "Input port '{}' on node '{}' has multiple connections",
                     edge.to_port, edge.to_node_id
-                )));
+                ));
             }
             entry.insert(
                 edge.to_port.clone(),
