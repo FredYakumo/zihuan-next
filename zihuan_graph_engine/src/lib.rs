@@ -426,13 +426,13 @@ pub trait Node: Send + Sync {
     /// Validate outgoing data against the node's declared output ports.
     ///
     /// # Logic
-    /// 1. Iterate over every port returned by `self.output_ports()`.
-    /// 2. If the port name exists in the provided `outputs` map, ensure the
-    ///    value's [`DataType`] is compatible with the port's declared
-    ///    `data_type` via `is_compatible_with`.
-    /// 3. Missing entries are allowed (a node may choose not to emit every
-    ///    output on every execution), so they are silently skipped.
-    /// 4. Return `Ok(())` when all present outputs pass the type check.
+    /// - Iterate over every port returned by `self.output_ports()`.
+    /// - If the port name exists in the provided `outputs` map, ensure the
+    ///   value's [`DataType`] is compatible with the port's declared
+    ///   `data_type` via `is_compatible_with`.
+    /// - Missing entries are allowed (a node may choose not to emit every
+    ///   output on every execution), so they are silently skipped.
+    /// - Return `Ok(())` when all present outputs pass the type check.
     fn validate_outputs(&self, outputs: &NodeOutputFlow) -> Result<()> {
         self.output_ports()
             .iter()
