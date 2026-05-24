@@ -386,13 +386,21 @@ pub trait Node: Send + Sync {
         })
     }
 
+    /// Validate incoming data against the node's declared input ports.
+    ///
+    /// # Logic
+    /// 1. Iterate over every port returned by `self.input_ports()`.
+    /// 2. Look up the port name in the provided `inputs` map.
+    ///    - If a value is present, ensure its [`DataType`] is compatible with
+    ///      the port's declared `data_type` via `is_compatible_with`.
+    ///    - If the value is missing and the port is marked `required`, fail.
+    /// 3. Return `Ok(())` when all checks pass.
     fn validate_inputs(&self, inputs: &NodeInputFlow) -> Result<()> {
         let input_ports = self.input_ports();
 
         for port in &input_ports {
             match inputs.get(&port.name) {
                 Some(value) => {
-                    // Validate data type
                     let actual_type = value.data_type();
                     if !port.data_type.is_compatible_with(&actual_type) {
                         return Err(zihuan_core::error::Error::ValidationError(format!(
@@ -415,6 +423,16 @@ pub trait Node: Send + Sync {
         Ok(())
     }
 
+    /// Validate outgoing data against the node's declared output ports.
+    ///
+    /// # Logic
+    /// 1. Iterate over every port returned by `self.output_ports()`.
+    /// 2. If the port name exists in the provided `outputs` map, ensure the
+    ///    value's [`DataType`] is compatible with the port's declared
+    ///    `data_type` via `is_compatible_with`.
+    /// 3. Missing entries are allowed (a node may choose not to emit every
+    ///    output on every execution), so they are silently skipped.
+    /// 4. Return `Ok(())` when all present outputs pass the type check.
     fn validate_outputs(&self, outputs: &NodeOutputFlow) -> Result<()> {
         let output_ports = self.output_ports();
 

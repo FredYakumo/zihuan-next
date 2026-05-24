@@ -117,7 +117,7 @@ fn extract_message_by_id_node_builds_multimodal_parts_from_cached_message() {
                 DataValue::BotAdapterRef(build_adapter_handle()),
             ),
             ("message_id".to_string(), DataValue::Integer(4242)),
-        ]))
+        ]).into())
         .expect("execute node");
 
     let messages = match outputs.get("messages") {
@@ -174,7 +174,7 @@ fn extract_message_by_id_node_resolves_plain_text_image_url_from_cached_message(
                 DataValue::BotAdapterRef(build_adapter_handle()),
             ),
             ("message_id".to_string(), DataValue::Integer(4243)),
-        ]))
+        ]).into())
         .expect("execute node");
 
     let messages = match outputs.get("messages") {
@@ -228,7 +228,7 @@ fn extract_message_by_id_node_keeps_non_image_url_as_text() {
                 DataValue::BotAdapterRef(build_adapter_handle()),
             ),
             ("message_id".to_string(), DataValue::Integer(4244)),
-        ]))
+        ]).into())
         .expect("execute node");
 
     let messages = match outputs.get("messages") {
