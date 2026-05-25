@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod command;
 pub mod nodes;
 mod resource_resolver;
 pub mod scheduled_task;

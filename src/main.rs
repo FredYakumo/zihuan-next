@@ -12,6 +12,7 @@ use lazy_static::lazy_static;
 use log::{error, info};
 use log_util::log_util::LogUtil;
 use salvo::Listener;
+use zihuan_core::config::ConfigRepository;
 
 lazy_static! {
     static ref BASE_LOG: LogUtil = LogUtil::new_with_path("zihuan_next", "logs");
@@ -39,6 +40,22 @@ async fn main() {
         error!("Failed to initialize node registry: {}", e);
     } else {
         info!("Node registry initialized");
+    }
+
+    // Initialize global command registry and sync persisted permissions
+    {
+        let registry = zihuan_service::command::init_global_command_registry();
+        info!("Command registry initialized with {} commands", registry.list_commands().len());
+
+        // Load persisted permissions from config.yaml and apply to registry
+        let repo = zihuan_core::config::FsConfigRepository::default();
+        if let Ok(root) = repo.load_root() {
+            for record in &root.configs.command_permissions {
+                if let Ok(cmd) = serde_json::from_value::<zihuan_core::command::CommandPermission>(record.spec.clone()) {
+                    registry.set_permissions(&cmd.command_name, cmd.rules);
+                }
+            }
+        }
     }
 
     let args = Args::parse();

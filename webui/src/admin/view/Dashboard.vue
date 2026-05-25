@@ -260,6 +260,13 @@ type ToolDetail = {
   toolCall: ChatToolCall;
   result: string;
 };
+type PendingNewConversationCommand = {
+  passthroughText: string | null;
+};
+type StreamState = {
+  assistantMessageId: string | null;
+  pendingNewConversation: PendingNewConversationCommand | null;
+};
 
 const agents = ref<AgentWithRuntime[]>([]);
 const sessions = ref<ChatSessionSummary[]>([]);
@@ -293,6 +300,18 @@ const selectedAgentAvatarFallback = computed(() => {
   const name = selectedAgent.value?.name ?? "Bot";
   return agentInitial(name);
 });
+
+function parseNewConversationCommand(input: string): PendingNewConversationCommand | null {
+  const match = input.trim().match(/^\/(new|clear|reset)(?:\s+([\s\S]*))?$/i);
+  if (!match) {
+    return null;
+  }
+
+  const passthroughText = (match[2] ?? "").trim();
+  return {
+    passthroughText: passthroughText.length > 0 ? passthroughText : null,
+  };
+}
 
 function messageAvatarUrl(record: ChatHistoryRecord): string {
   if (record.agent_avatar_url) {
@@ -484,7 +503,7 @@ function startNewSession() {
   activeSessionId.value = "";
   messages.value = [];
   activeToolCallId.value = "";
-  expandedLiveToolCalls.value.clear();
+  expandedLiveToolCalls.value = new Set();
 }
 
 watch(selectedAgentId, async () => {
@@ -507,22 +526,83 @@ async function removeSession(sessionId: string) {
   }
 }
 
-function applyStreamEvent(event: ChatStreamEvent, assistantTempId: string) {
+function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
+  if (event.type === "error") {
+    if (streamState.assistantMessageId) {
+      const message = messages.value.find((item) => item.id === streamState.assistantMessageId);
+      if (message) {
+        message.streaming = false;
+        if (!message.content) {
+          message.content = `推理失败: ${event.error ?? "未知错误"}`;
+        }
+      }
+    } else if (event.error) {
+      console.error(event.error);
+    }
+    return;
+  }
+
   if (event.type === "start") {
+    if (streamState.pendingNewConversation) {
+      startNewSession();
+      if (event.session_id) {
+        activeSessionId.value = event.session_id;
+      }
+
+      const passthroughText = streamState.pendingNewConversation.passthroughText;
+      if (passthroughText) {
+        messages.value.push({
+          id: `local-user-${crypto.randomUUID()}`,
+          role: "user",
+          content: passthroughText,
+          timestamp: new Date().toISOString(),
+          toolCalls: [],
+          toolCallId: null,
+          linkedToolCall: null,
+        });
+
+        const assistantMessageId = event.message_id ?? `local-assistant-${crypto.randomUUID()}`;
+        messages.value.push({
+          id: assistantMessageId,
+          role: "assistant",
+          content: "",
+          streaming: true,
+          timestamp: new Date().toISOString(),
+          toolCalls: [],
+          toolCallId: null,
+          linkedToolCall: null,
+        });
+        streamState.assistantMessageId = assistantMessageId;
+      } else {
+        streamState.assistantMessageId = event.message_id ?? null;
+      }
+
+      streamState.pendingNewConversation = null;
+      scrollToBottom();
+      return;
+    }
+
     if (event.session_id) {
       activeSessionId.value = event.session_id;
     }
     if (event.message_id) {
-      const message = messages.value.find((item) => item.id === assistantTempId);
+      const currentAssistantId = streamState.assistantMessageId;
+      const message = currentAssistantId
+        ? messages.value.find((item) => item.id === currentAssistantId || item.id === event.message_id)
+        : undefined;
       if (message) {
         message.id = event.message_id;
       }
+      streamState.assistantMessageId = event.message_id;
     }
   }
 
   if (event.type === "delta") {
-    const targetId = event.message_id || assistantTempId;
-    const message = messages.value.find((item) => item.id === targetId || item.id === assistantTempId);
+    const targetId = event.message_id || streamState.assistantMessageId;
+    if (!targetId) {
+      return;
+    }
+    const message = messages.value.find((item) => item.id === targetId);
     if (message) {
       message.content += event.token ?? "";
       message.streaming = true;
@@ -531,15 +611,22 @@ function applyStreamEvent(event: ChatStreamEvent, assistantTempId: string) {
   }
 
   if (event.type === "done") {
-    const message = messages.value.find((item) => item.id === (event.message_id || assistantTempId) || item.id === assistantTempId);
+    const targetId = event.message_id || streamState.assistantMessageId;
+    if (!targetId) {
+      return;
+    }
+    const message = messages.value.find((item) => item.id === targetId);
     if (message) {
       message.streaming = false;
     }
   }
 
   if (event.type === "tool_call_start" && event.call_id && event.name) {
-    const targetId = event.message_id || assistantTempId;
-    const message = messages.value.find((item) => item.id === targetId || item.id === assistantTempId);
+    const targetId = event.message_id || streamState.assistantMessageId;
+    if (!targetId) {
+      return;
+    }
+    const message = messages.value.find((item) => item.id === targetId);
     if (message) {
       if (!message.liveToolCalls) {
         message.liveToolCalls = [];
@@ -555,8 +642,11 @@ function applyStreamEvent(event: ChatStreamEvent, assistantTempId: string) {
   }
 
   if (event.type === "tool_call_result" && event.call_id) {
-    const targetId = event.message_id || assistantTempId;
-    const message = messages.value.find((item) => item.id === targetId || item.id === assistantTempId);
+    const targetId = event.message_id || streamState.assistantMessageId;
+    if (!targetId) {
+      return;
+    }
+    const message = messages.value.find((item) => item.id === targetId);
     if (message?.liveToolCalls) {
       const liveCall = message.liveToolCalls.find((item) => item.call_id === event.call_id);
       if (liveCall) {
@@ -574,33 +664,49 @@ async function sendMessage() {
   }
 
   const userText = draftMessage.value.trim();
+  const pendingNewConversation = parseNewConversationCommand(userText);
+  const requestMessages = [
+    ...toApiMessages(),
+    {
+      role: "user",
+      content: userText,
+    },
+  ];
+
   draftMessage.value = "";
   sending.value = true;
 
-  const userMessage = {
-    id: `local-user-${crypto.randomUUID()}`,
-    role: "user" as const,
-    content: userText,
-    timestamp: new Date().toISOString(),
-    toolCalls: [],
-    toolCallId: null,
-    linkedToolCall: null,
+  const streamState: StreamState = {
+    assistantMessageId: null,
+    pendingNewConversation,
   };
-  messages.value.push(userMessage);
-  const requestMessages = toApiMessages();
 
-  const assistantTempId = `local-assistant-${crypto.randomUUID()}`;
-  messages.value.push({
-    id: assistantTempId,
-    role: "assistant",
-    content: "",
-    streaming: true,
-    timestamp: new Date().toISOString(),
-    toolCalls: [],
-    toolCallId: null,
-    linkedToolCall: null,
-  });
-  scrollToBottom();
+  if (!pendingNewConversation) {
+    const userMessage = {
+      id: `local-user-${crypto.randomUUID()}`,
+      role: "user" as const,
+      content: userText,
+      timestamp: new Date().toISOString(),
+      toolCalls: [],
+      toolCallId: null,
+      linkedToolCall: null,
+    };
+    messages.value.push(userMessage);
+
+    const assistantTempId = `local-assistant-${crypto.randomUUID()}`;
+    messages.value.push({
+      id: assistantTempId,
+      role: "assistant",
+      content: "",
+      streaming: true,
+      timestamp: new Date().toISOString(),
+      toolCalls: [],
+      toolCallId: null,
+      linkedToolCall: null,
+    });
+    streamState.assistantMessageId = assistantTempId;
+    scrollToBottom();
+  }
 
   try {
     await chat.stream(
@@ -610,19 +716,23 @@ async function sendMessage() {
         stream: true,
         messages: requestMessages,
       },
-      (event) => applyStreamEvent(event, assistantTempId),
+      (event) => applyStreamEvent(event, streamState),
     );
     await reloadSessions();
     if (activeSessionId.value) {
       await openSession(activeSessionId.value);
     }
   } catch (error) {
-    const message = messages.value.find((item) => item.id === assistantTempId);
+    const message = streamState.assistantMessageId
+      ? messages.value.find((item) => item.id === streamState.assistantMessageId)
+      : undefined;
     if (message) {
       message.streaming = false;
       if (!message.content) {
         message.content = `推理失败: ${(error as Error).message}`;
       }
+    } else {
+      alert(`推理失败: ${(error as Error).message}`);
     }
   } finally {
     sending.value = false;

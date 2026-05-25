@@ -2,6 +2,7 @@ pub mod utils {
     pub mod string_utils;
 }
 pub mod agent_config;
+pub mod command;
 pub mod config;
 pub mod connection_manager;
 pub mod data_refs;

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use log::warn;
 
+use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::OpenAIMessage;
 use zihuan_core::runtime::block_async;
 use zihuan_graph_engine::data_value::OpenAIMessageSessionCacheRef;
@@ -45,4 +46,35 @@ pub(crate) fn save_history(
     if let Err(err) = block_async(cache.set_messages(history_key, messages)) {
         warn!("{LOG_PREFIX} Failed to save history for {history_key}: {err}");
     }
+}
+
+fn clear_history_key(
+    cache: &Arc<OpenAIMessageSessionCacheRef>,
+    history_key: &str,
+) -> Result<()> {
+    block_async(cache.clear_messages(history_key))
+        .map(|_| ())
+        .map_err(|err| {
+            Error::StringError(format!(
+                "failed to clear QQ chat history for key '{history_key}': {err}"
+            ))
+        })
+}
+
+pub(crate) fn clear_history(
+    cache: &Arc<OpenAIMessageSessionCacheRef>,
+    bot_id: &str,
+    sender_id: &str,
+    is_group: bool,
+    group_id: Option<i64>,
+) -> Result<()> {
+    let history_key = conversation_history_key(bot_id, sender_id, is_group, group_id);
+    clear_history_key(cache, &history_key)?;
+
+    let legacy_key = sender_id.trim();
+    if !legacy_key.is_empty() && legacy_key != history_key {
+        clear_history_key(cache, legacy_key)?;
+    }
+
+    Ok(())
 }

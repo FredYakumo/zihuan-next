@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod commands;
 pub mod connections;
 pub mod llm_refs;
 

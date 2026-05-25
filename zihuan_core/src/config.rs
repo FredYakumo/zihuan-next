@@ -33,6 +33,7 @@ pub enum ConfigKind {
     LlmRef,
     AgentQqChat,
     AgentHttpStream,
+    CommandPermission,
 }
 
 impl ConfigKind {
@@ -47,6 +48,7 @@ impl ConfigKind {
             | Self::ConnectionTokenizer => ConfigCategory::Connection,
             Self::LlmRef => ConfigCategory::LlmRef,
             Self::AgentQqChat | Self::AgentHttpStream => ConfigCategory::Agent,
+            Self::CommandPermission => ConfigCategory::Agent,
         }
     }
 }
@@ -112,6 +114,8 @@ pub struct ConfigCollections {
     pub llm_refs: Vec<StoredConfigRecord>,
     #[serde(default)]
     pub agents: Vec<StoredConfigRecord>,
+    #[serde(default)]
+    pub command_permissions: Vec<StoredConfigRecord>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

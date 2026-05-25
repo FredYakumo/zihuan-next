@@ -18,12 +18,14 @@ use super::tools::{
     ToolNotificationTarget, WebSearchBrainTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
     DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
     DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
-    DEFAULT_TOOL_WEB_SEARCH, FUNCTION_LIST_TEXT,
+    DEFAULT_TOOL_WEB_SEARCH,
 };
 use crate::nodes::tool_subgraph::{
     validate_shared_inputs, validate_tool_definitions, ToolResultMode, ToolSubgraphRunner,
 };
-use crate::storage::qq_chat_history_store::{conversation_history_key, load_history, save_history};
+use crate::storage::qq_chat_history_store::{
+    clear_history, conversation_history_key, load_history, save_history,
+};
 use crate::storage::qq_chat_session_store::{
     build_outbound_persistence, release_session, try_claim_session,
 };
@@ -46,6 +48,9 @@ use model_inference::message_content_utils::{
     downgrade_messages_for_model, sanitize_messages_for_inference,
 };
 use zihuan_agent::brain::{Brain, BrainIterationHook, BrainStopReason};
+use zihuan_core::command::{
+    CommandChannel, CommandContext, DispatchResult, NewConversationRequest, SideEffectContext,
+};
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
@@ -100,6 +105,34 @@ struct PendingSteerSession {
 #[derive(Default)]
 struct PendingSteerStore {
     by_sender: Mutex<HashMap<String, PendingSteerSession>>,
+}
+
+struct QqCommandSideEffectContext<'a> {
+    command_context: &'a CommandContext,
+    cache: &'a Arc<OpenAIMessageSessionCacheRef>,
+    bot_id: &'a str,
+}
+
+impl SideEffectContext for QqCommandSideEffectContext<'_> {
+    fn command_context(&self) -> &CommandContext {
+        self.command_context
+    }
+
+    fn start_new_conversation(&self, request: &NewConversationRequest) -> Result<()> {
+        let CommandChannel::QqChat {
+            sender_id,
+            is_group,
+            group_id,
+            ..
+        } = &request.channel
+        else {
+            return Err(Error::ValidationError(
+                "QQ command context received a non-QQ new conversation request".to_string(),
+            ));
+        };
+
+        clear_history(self.cache, self.bot_id, sender_id, *is_group, *group_id)
+    }
 }
 
 impl PendingSteerStore {
@@ -2191,13 +2224,103 @@ impl QqChatAgent {
         let hydrated_event = hydrate_missing_reply_sources(event, adapter);
         let inference_event = expand_event_for_inference(&hydrated_event);
         let raw_user_message = extract_user_message_text(&hydrated_event, bot_id, bot_name);
-        let current_message = extract_user_message_text(&inference_event, bot_id, bot_name);
+        let mut current_message = extract_user_message_text(&inference_event, bot_id, bot_name);
         trace.log_user_message(&raw_user_message, &current_message);
 
         let history_key =
             conversation_history_key(bot_id, sender_id, is_group, inference_event.group_id);
         let legacy_history_key = sender_id.to_string();
-        let history = load_history(cache, &history_key, &legacy_history_key);
+        let mut history = load_history(cache, &history_key, &legacy_history_key);
+
+        // Intercept command-style messages (e.g. slash commands) before the brain loop.
+        // Commands are dispatched synchronously; if `passthrough_text` is present it
+        // replaces `current_message` and the brain loop runs with the leftover text.
+        if let Some(command_registry) = crate::command::global_command_registry() {
+            let cmd_ctx = CommandContext {
+                agent_type: "qq_chat".to_string(),
+                agent_id: self.id.clone(),
+                caller_id: sender_id.to_string(),
+                channel: CommandChannel::QqChat {
+                    sender_id: sender_id.to_string(),
+                    is_group,
+                    group_id: inference_event.group_id,
+                    target_id: target_id.to_string(),
+                },
+            };
+            if let Some(DispatchResult { result, passthrough_text }) =
+                command_registry.dispatch(&cmd_ctx, &raw_user_message)
+            {
+                let side_effect_ctx = QqCommandSideEffectContext {
+                    command_context: &cmd_ctx,
+                    cache,
+                    bot_id,
+                };
+
+                // Execute side effects
+                for effect in &result.side_effects {
+                    effect.execute(&side_effect_ctx)?;
+                }
+
+                // Send echo message to user (message_id is tracked automatically
+                // via send_direct_text_reply → build_outbound_persistence →
+                // MySQL message_record + Redis).
+                if let Some(ref echo) = result.echo_message {
+                    let _ = send_direct_text_reply(
+                        trace,
+                        adapter,
+                        target_id,
+                        mysql_ref,
+                        event.group_name.as_deref(),
+                        bot_name,
+                        bot_id,
+                        echo,
+                        is_group,
+                        sender_id,
+                        &inference_event.sender.nickname,
+                        inference_event.sender.card.as_str(),
+                        max_message_length,
+                        reply_batch_builder,
+                    )?;
+                }
+
+                // Inject command reply into LLM conversation only if requested
+                let has_passthrough = passthrough_text.is_some();
+                if result.inject_to_llm {
+                    let user_msg_for_cmd = message_with_api_style(
+                        build_user_message(
+                            &inference_event,
+                            bot_id,
+                            bot_name,
+                            llm.supports_multimodal_input(),
+                            s3_ref,
+                        ),
+                        llm.api_style(),
+                    );
+                    history.push(user_msg_for_cmd);
+                    history.push(message_with_api_style(
+                        OpenAIMessage::assistant_text(result.reply),
+                        llm.api_style(),
+                    ));
+                    // Only persist now if we are NOT falling through to the
+                    // brain loop. When there is passthrough text the brain
+                    // loop will save history at the end of the turn.
+                    if !has_passthrough {
+                        save_history(cache, &history_key, history.clone());
+                    }
+                }
+
+                // If there is passthrough text (command does not consume all
+                // input), use it as the user message for the brain loop.
+                if let Some(passthrough) = passthrough_text {
+                    current_message = passthrough;
+                    // Fall through to the brain loop below
+                } else {
+                    return Ok(QqChatTurnResult {
+                        result_summary: "已处理命令".to_string(),
+                    });
+                }
+            }
+        }
 
         let intent_trace = classify_intent_with_trace(
             intent_llm,
@@ -2229,7 +2352,7 @@ impl QqChatAgent {
         let direct_reply = match intent {
             IntentCategory::AskSystemPrompt => Some(DIRECT_REPLY_NO_SYSTEM_PROMPT.to_string()),
             IntentCategory::AskModelName => Some(build_model_name_reply(model_display_names)),
-            IntentCategory::AskToolList => Some(FUNCTION_LIST_TEXT.to_string()),
+            IntentCategory::AskToolList => crate::command::build_help_text(),
             _ => None,
         };
 

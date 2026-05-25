@@ -6,7 +6,7 @@ use zihuan_agent::brain::BrainTool;
 use zihuan_core::llm::tooling::FunctionTool;
 
 use super::common::StaticFunctionToolSpec;
-use super::{format_public_info_message, FUNCTION_LIST_TEXT};
+use super::format_public_info_message;
 
 pub(crate) struct GetFunctionListBrainTool;
 
@@ -24,7 +24,8 @@ impl BrainTool for GetFunctionListBrainTool {
     }
 
     fn execute(&self, _call_content: &str, _arguments: &Value) -> String {
-        FUNCTION_LIST_TEXT.to_string()
+        crate::command::build_help_text()
+            .unwrap_or_else(|| "命令注册表尚未初始化。".to_string())
     }
 }
 
