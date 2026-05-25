@@ -91,11 +91,8 @@ impl Node for OpenAIMessageSessionCacheNode {
 
         cache_ref.append_messages_blocking(&sender_id, messages)?;
 
-        let mut outputs = HashMap::new();
-        outputs.insert("success".to_string(), DataValue::Boolean(true));
-
-        let outputs = crate::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "success" => DataValue::Boolean(true),
+        ]
     }
 }

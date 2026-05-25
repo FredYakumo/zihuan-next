@@ -49,11 +49,8 @@ impl Node for AtQQTargetMessageNode {
 
         let qq_message = Message::At(AtTargetMessage { target: Some(id) });
 
-        let mut outputs = HashMap::new();
-        outputs.insert("result".to_string(), DataValue::QQMessage(qq_message));
-
-        let outputs = crate::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "result" => DataValue::QQMessage(qq_message),
+        ]
     }
 }

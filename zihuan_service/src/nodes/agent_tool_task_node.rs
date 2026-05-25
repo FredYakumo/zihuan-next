@@ -1,16 +1,15 @@
 use std::collections::HashMap;
 
-use model_inference::agent_config_support::build_embedding_from_ref_id;
-use zihuan_core::agent_config::current_qq_chat_agent_config;
 use zihuan_core::error::Result;
+use zihuan_core::task_context::current_task_id;
 use zihuan_graph_engine::{node_output, DataType, DataValue, Node, Port};
 
-pub struct AgentEmbeddingModelNode {
+pub struct AgentToolTaskNode {
     id: String,
     name: String,
 }
 
-impl AgentEmbeddingModelNode {
+impl AgentToolTaskNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -19,32 +18,38 @@ impl AgentEmbeddingModelNode {
     }
 }
 
-impl Node for AgentEmbeddingModelNode {
+impl Node for AgentToolTaskNode {
     fn id(&self) -> &str {
         &self.id
     }
+
     fn name(&self) -> &str {
         &self.name
     }
+
     fn description(&self) -> Option<&str> {
-        Some("从当前 Agent 工具调用上下文中读取文本向量模型，并输出 EmbeddingModel 引用")
+        Some("读取当前 Agent 工具调用关联的任务 ID")
     }
+
     fn input_ports(&self) -> Vec<Port> {
         Vec::new()
     }
 
     node_output![
-        port! { name = "embedding_model", ty = EmbeddingModel, desc = "Agent 文本向量模型引用" },
+        port! { name = "task_id", ty = String, desc = "当前工具调用绑定的任务 ID；若不存在则为空字符串" },
+        port! { name = "has_task", ty = Boolean, desc = "当前是否存在绑定的任务" },
     ];
 
     fn execute(
         &mut self,
         _inputs: zihuan_graph_engine::NodeInputFlow,
     ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
-        let config = current_qq_chat_agent_config()?;
-        let model = build_embedding_from_ref_id(config.embedding_model_ref_id.as_deref())?;
+        let task_id = current_task_id().unwrap_or_default();
+        let has_task = !task_id.trim().is_empty();
+
         zihuan_graph_engine::return_with_node_output![self;
-            "embedding_model" => DataValue::EmbeddingModel(model),
+            "task_id" => DataValue::String(task_id.clone()),
+            "has_task" => DataValue::Boolean(has_task)
         ]
     }
 }

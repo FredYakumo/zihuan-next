@@ -47,7 +47,9 @@ use model_inference::inference_function::compact_message::{
 use model_inference::message_content_utils::{
     downgrade_messages_for_model, sanitize_messages_for_inference,
 };
-use zihuan_agent::brain::{Brain, BrainIterationHook, BrainStopReason};
+use zihuan_agent::brain::{
+    Brain, BrainIterationHook, BrainStopReason, LongTaskContext, LongTaskNotifier,
+};
 use zihuan_core::command::{
     CommandChannel, CommandContext, DispatchResult, NewConversationRequest, SideEffectContext,
 };
@@ -110,7 +112,13 @@ struct PendingSteerStore {
 struct QqCommandSideEffectContext<'a> {
     command_context: &'a CommandContext,
     cache: &'a Arc<OpenAIMessageSessionCacheRef>,
+    adapter: &'a ims_bot_adapter::adapter::SharedBotAdapter,
     bot_id: &'a str,
+    bot_name: &'a str,
+    target_id: &'a str,
+    is_group: bool,
+    group_name: Option<&'a str>,
+    mysql_ref: Option<&'a Arc<MySqlConfig>>,
 }
 
 impl SideEffectContext for QqCommandSideEffectContext<'_> {
@@ -132,6 +140,19 @@ impl SideEffectContext for QqCommandSideEffectContext<'_> {
         };
 
         clear_history(self.cache, self.bot_id, sender_id, *is_group, *group_id)
+    }
+
+    fn send_forward_content(&self, content: &str) -> Result<()> {
+        send_forward_content_to_target(
+            self.adapter,
+            self.target_id,
+            self.mysql_ref,
+            self.group_name,
+            self.bot_id,
+            self.bot_name,
+            content,
+            self.is_group,
+        )
     }
 }
 
@@ -1607,6 +1628,82 @@ fn send_direct_text_reply(
     Ok(Some(content.trim().to_string()))
 }
 
+fn send_persisted_batches(
+    adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
+    target_id: &str,
+    batches: &[Vec<Message>],
+    mysql_ref: Option<&Arc<MySqlConfig>>,
+    group_name: Option<&str>,
+    bot_name: &str,
+    is_group: bool,
+) {
+    let persistence = build_outbound_persistence(mysql_ref, group_name, bot_name);
+    if is_group {
+        send_group_batches_with_persistence(adapter, target_id, batches, &persistence);
+    } else {
+        send_friend_batches_with_persistence(adapter, target_id, batches, &persistence);
+    }
+}
+
+fn notification_text_batches(content: &str, is_group: bool, sender_id: Option<&str>) -> Vec<Vec<Message>> {
+    let mut batches = plain_text_batches(content);
+    if is_group {
+        if let (Some(sender_id), Some(first_batch)) = (sender_id, batches.first_mut()) {
+            first_batch.insert(
+                0,
+                Message::At(AtTargetMessage {
+                    target: Some(sender_id.to_string()),
+                }),
+            );
+            if let Some(Message::PlainText(first_text)) = first_batch.get_mut(1) {
+                first_text.text = format!(" {}", first_text.text.trim_start());
+            }
+        }
+    }
+    batches
+}
+
+fn build_long_task_start_text(task_id: &str, call_content: &str) -> String {
+    let content = call_content.trim();
+    if content.is_empty() {
+        format!("⏳ 正在执行长时任务\n任务ID: {task_id}\n可使用 /task {task_id} 查看进度。")
+    } else {
+        format!(
+            "⏳ 正在执行：{content}\n任务ID: {task_id}\n可使用 /task {task_id} 查看进度。"
+        )
+    }
+}
+
+fn build_long_task_complete_content(task_id: &str, task_name: &str, result: &str) -> String {
+    let result = result.trim();
+    let result = if result.is_empty() { "（工具未返回内容）" } else { result };
+    format!("✅ 完成\n任务: {task_name}\n任务ID: {task_id}\n\n{result}")
+}
+
+fn send_forward_content_to_target(
+    adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
+    target_id: &str,
+    mysql_ref: Option<&Arc<MySqlConfig>>,
+    group_name: Option<&str>,
+    bot_id: &str,
+    bot_name: &str,
+    content: &str,
+    is_group: bool,
+) -> Result<()> {
+    let forward = build_forward_message(content, bot_id, bot_name)?;
+    let batches = vec![vec![Message::Forward(forward)]];
+    send_persisted_batches(
+        adapter,
+        target_id,
+        &batches,
+        mysql_ref,
+        group_name,
+        bot_name,
+        is_group,
+    );
+    Ok(())
+}
+
 fn build_model_name_reply(model_display_names: &[String]) -> String {
     let mut names = Vec::new();
     for name in model_display_names {
@@ -1732,6 +1829,52 @@ fn build_forward_message_via_llm(
         }
     }
 }
+
+struct QqLongTaskNotifier {
+    adapter: ims_bot_adapter::adapter::SharedBotAdapter,
+    target_id: String,
+    sender_id: String,
+    is_group: bool,
+    mysql_ref: Option<Arc<MySqlConfig>>,
+    group_name: Option<String>,
+    bot_id: String,
+    bot_name: String,
+}
+
+impl LongTaskNotifier for QqLongTaskNotifier {
+    fn on_start(&self, task_id: &str, _task_name: &str, call_content: &str) {
+        let text = build_long_task_start_text(task_id, call_content);
+        let batches = notification_text_batches(&text, self.is_group, Some(&self.sender_id));
+        send_persisted_batches(
+            &self.adapter,
+            &self.target_id,
+            &batches,
+            self.mysql_ref.as_ref(),
+            self.group_name.as_deref(),
+            &self.bot_name,
+            self.is_group,
+        );
+    }
+
+    fn on_complete(&self, task_id: &str, task_name: &str, result: &str) {
+        let content = build_long_task_complete_content(task_id, task_name, result);
+        if let Err(err) = send_forward_content_to_target(
+            &self.adapter,
+            &self.target_id,
+            self.mysql_ref.as_ref(),
+            self.group_name.as_deref(),
+            &self.bot_id,
+            &self.bot_name,
+            &content,
+            self.is_group,
+        ) {
+            warn!(
+                "{LOG_PREFIX} failed to send long-task completion forward message for task_id={task_id}: {err}"
+            );
+        }
+    }
+}
+
 fn extract_string_field(value: &Value, key: &str) -> Option<String> {
     value
         .get(key)
@@ -1997,12 +2140,14 @@ impl QqChatAgent {
         pending_steer.ensure_session_entry(&sender_id);
 
         let task_created_at = Local::now();
-        let task_handle = task_runtime.map(|runtime| {
+        let task_runtime_arc: Option<Arc<dyn AgentTaskRuntime>> = task_runtime.map(Arc::clone);
+        let task_handle = task_runtime_arc.as_ref().map(|runtime| {
             runtime.start_task(AgentTaskRequest {
                 task_name: format!("回复[{sender_id}]的消息"),
                 agent_id: agent_id.to_string(),
                 agent_name: bot_name.to_string(),
                 user_ip,
+                owner_id: Some(sender_id.to_string()),
             })
         });
         let trace = QqChatTaskTrace::new(task_created_at);
@@ -2035,6 +2180,7 @@ impl QqChatAgent {
                     reply_batch_builder,
                     shared_runtime_values,
                     pending_steer,
+                    task_runtime_arc.clone(),
                 )
             })
         } else {
@@ -2065,6 +2211,7 @@ impl QqChatAgent {
                 reply_batch_builder,
                 shared_runtime_values,
                 pending_steer,
+                task_runtime_arc,
             )
         };
         trace.finish_with_summary();
@@ -2117,6 +2264,7 @@ impl QqChatAgent {
         reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
         shared_runtime_values: HashMap<String, DataValue>,
         pending_steer: &Arc<PendingSteerStore>,
+        task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
     ) -> Result<QqChatHandleReport> {
         (|| -> Result<QqChatHandleReport> {
             let bot_id = get_bot_id(adapter);
@@ -2150,6 +2298,7 @@ impl QqChatAgent {
                     shared_runtime_values.clone(),
                     pending_steer,
                     &bot_id,
+                    task_runtime.clone(),
                 )?;
 
                 let (pending, remaining_queue_len, accepted_steer_count) =
@@ -2220,6 +2369,7 @@ impl QqChatAgent {
         shared_runtime_values: HashMap<String, DataValue>,
         pending_steer: &Arc<PendingSteerStore>,
         bot_id: &str,
+        task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
     ) -> Result<QqChatTurnResult> {
         let hydrated_event = hydrate_missing_reply_sources(event, adapter);
         let inference_event = expand_event_for_inference(&hydrated_event);
@@ -2253,7 +2403,13 @@ impl QqChatAgent {
                 let side_effect_ctx = QqCommandSideEffectContext {
                     command_context: &cmd_ctx,
                     cache,
+                    adapter,
                     bot_id,
+                    bot_name,
+                    target_id,
+                    is_group,
+                    group_name: event.group_name.as_deref(),
+                    mysql_ref,
                 };
 
                 // Execute side effects
@@ -2569,6 +2725,24 @@ impl QqChatAgent {
         }
 
         trace.mark_llm_request_started();
+        if let Some(task_runtime) = task_runtime {
+            brain.set_long_task_context(LongTaskContext {
+                task_runtime,
+                owner_id: Some(sender_id.to_string()),
+                agent_id: self.id.clone(),
+                agent_name: bot_name.to_string(),
+                notifier: Arc::new(QqLongTaskNotifier {
+                    adapter: adapter.clone(),
+                    target_id: target_id.to_string(),
+                    sender_id: sender_id.to_string(),
+                    is_group,
+                    mysql_ref: mysql_ref.cloned(),
+                    group_name: event.group_name.clone(),
+                    bot_id: bot_id.to_string(),
+                    bot_name: bot_name.to_string(),
+                }),
+            });
+        }
         let (brain_output, stop_reason) = brain.run(conversation);
         trace.record_llm_final_result(&stop_reason, &brain_output);
         let completion_tokens_estimated = estimate_messages_tokens(&brain_output);

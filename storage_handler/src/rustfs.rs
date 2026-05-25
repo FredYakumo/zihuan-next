@@ -168,8 +168,8 @@ impl Node for RustfsNode {
             RuntimeStorageConnectionManager::shared().get_or_create_s3_ref(config_id),
         )?;
 
-        Ok(zihuan_graph_engine::node_output_flow![
+        zihuan_graph_engine::return_with_node_output![self;
             "s3_ref" => DataValue::S3Ref(s3_ref),
-        ])
+        ]
     }
 }

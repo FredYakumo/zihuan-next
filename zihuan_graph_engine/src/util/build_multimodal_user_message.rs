@@ -94,11 +94,8 @@ impl Node for BuildMultimodalUserMessageNode {
             usage: None,
         };
 
-        let mut outputs = HashMap::new();
-        outputs.insert("message".to_string(), DataValue::OpenAIMessage(message));
-
-        let outputs = crate::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "message" => DataValue::OpenAIMessage(message),
+        ]
     }
 }

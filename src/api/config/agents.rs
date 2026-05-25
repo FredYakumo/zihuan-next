@@ -1,3 +1,11 @@
+//! REST API handlers for agent management.
+//!
+//! This module provides CRUD endpoints for agent configurations (create, read, update, delete),
+//! start/stop lifecycle control, and runtime status queries. It also defines the
+//! [`DefaultAgentTaskRuntime`] — the in-process implementation of [`AgentTaskRuntime`] that tracks
+//! background agent tasks, reports progress, and broadcasts status changes to WebSocket clients.
+
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use salvo::prelude::*;
@@ -6,7 +14,8 @@ use serde::{Deserialize, Serialize};
 use storage_handler::{ConnectionConfig, ConnectionKind, WeaviateCollectionSchema};
 use uuid::Uuid;
 use zihuan_core::task_context::{
-    AgentTaskHandle, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
+    AgentTaskHandle, AgentTaskInfo, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime,
+    AgentTaskStatus,
 };
 
 use ims_bot_adapter::{fetch_login_info, parse_ims_bot_adapter_connection, qq_avatar_url};
@@ -44,6 +53,7 @@ struct QqChatProfile {
 struct DefaultAgentTaskRuntime {
     state: Arc<AppState>,
     broadcast_tx: WsBroadcast,
+    background_tasks: Arc<std::sync::Mutex<HashMap<String, AgentTaskInfo>>>,
 }
 
 impl AgentTaskRuntime for DefaultAgentTaskRuntime {
@@ -52,37 +62,74 @@ impl AgentTaskRuntime for DefaultAgentTaskRuntime {
             request.agent_id.clone(),
             request.task_name.clone(),
             request.user_ip.clone(),
+            request.owner_id.clone(),
         );
 
         let _ = self.broadcast_tx.send(ServerMessage::TaskStarted {
             task_id: task_id.clone(),
-            graph_name: request.task_name,
-            graph_session_id: request.agent_id,
+            graph_name: request.task_name.clone(),
+            graph_session_id: request.agent_id.clone(),
         });
 
         let state = Arc::clone(&self.state);
         let broadcast_tx = self.broadcast_tx.clone();
+        let bg_tasks = Arc::clone(&self.background_tasks);
+        let owner = request.owner_id.clone();
+        let created_at = chrono::Local::now();
+
+        {
+            let mut bg = self.background_tasks.lock().unwrap();
+            bg.insert(
+                task_id.clone(),
+                AgentTaskInfo {
+                    task_id: task_id.clone(),
+                    task_name: request.task_name,
+                    owner_id: owner,
+                    agent_id: request.agent_id,
+                    status: AgentTaskStatus::Running,
+                    created_at,
+                    finished_at: None,
+                    progress: vec![],
+                    result_summary: None,
+                    error_message: None,
+                },
+            );
+        }
+
         AgentTaskHandle::new(task_id.clone(), move |result: AgentTaskResult| {
-            let status = match result.status.unwrap_or_else(|| {
+            let status = result.status.unwrap_or_else(|| {
                 if result.error_message.is_some() {
                     AgentTaskStatus::Failed
                 } else {
                     AgentTaskStatus::Success
                 }
-            }) {
+            });
+
+            let task_status = match status {
                 AgentTaskStatus::Success => TaskStatus::Success,
                 AgentTaskStatus::Failed => TaskStatus::Failed,
                 AgentTaskStatus::Stopped => TaskStatus::Stopped,
+                AgentTaskStatus::Running => TaskStatus::Running,
             };
 
             state.tasks.lock().unwrap().finish_task(
                 &task_id,
-                status.clone(),
+                task_status.clone(),
                 result.error_message.clone(),
                 result.result_summary.clone(),
             );
 
-            match status {
+            {
+                let mut bg = bg_tasks.lock().unwrap();
+                if let Some(info) = bg.get_mut(&task_id) {
+                    info.status = status;
+                    info.finished_at = Some(chrono::Local::now());
+                    info.result_summary = result.result_summary.clone();
+                    info.error_message = result.error_message.clone();
+                }
+            }
+
+            match task_status {
                 TaskStatus::Stopped => {
                     let _ = broadcast_tx.send(ServerMessage::TaskStopped {
                         task_id: task_id.clone(),
@@ -106,16 +153,52 @@ impl AgentTaskRuntime for DefaultAgentTaskRuntime {
             }
         })
     }
+
+    fn spawn_task(
+        &self,
+        request: AgentTaskRequest,
+        runner: Box<dyn FnOnce() + Send + 'static>,
+    ) -> Arc<AgentTaskHandle> {
+        let handle = self.start_task(request);
+        let handle_clone = Arc::clone(&handle);
+        tokio::spawn(async move {
+            runner();
+        });
+        handle_clone
+    }
+
+    fn query_task(&self, task_id: &str) -> Option<AgentTaskInfo> {
+        self.background_tasks.lock().unwrap().get(task_id).cloned()
+    }
+
+    fn list_tasks(&self, owner_id: &str) -> Vec<AgentTaskInfo> {
+        self.background_tasks
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|info| info.owner_id.as_deref() == Some(owner_id))
+            .cloned()
+            .collect()
+    }
+
+    fn append_task_progress(&self, task_id: &str, message: String) {
+        if let Some(info) = self.background_tasks.lock().unwrap().get_mut(task_id) {
+            info.progress.push(message);
+        }
+    }
 }
 
 pub fn build_agent_task_runtime(
     state: Arc<AppState>,
     broadcast_tx: WsBroadcast,
 ) -> Arc<dyn AgentTaskRuntime> {
-    Arc::new(DefaultAgentTaskRuntime {
+    let runtime: Arc<dyn AgentTaskRuntime> = Arc::new(DefaultAgentTaskRuntime {
         state,
         broadcast_tx,
-    })
+        background_tasks: Arc::new(std::sync::Mutex::new(HashMap::new())),
+    });
+    zihuan_service::command::set_global_task_runtime(Arc::clone(&runtime));
+    runtime
 }
 
 pub async fn start_agent_runtime(

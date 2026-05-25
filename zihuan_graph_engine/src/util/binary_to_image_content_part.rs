@@ -83,11 +83,8 @@ impl Node for BinaryToImageContentPartNode {
             }
         };
 
-        let mut outputs = HashMap::new();
-        outputs.insert("content_part".to_string(), DataValue::ContentPart(part));
-
-        let outputs = crate::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "content_part" => DataValue::ContentPart(part),
+        ]
     }
 }

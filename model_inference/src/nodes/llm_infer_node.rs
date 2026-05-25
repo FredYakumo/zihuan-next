@@ -75,16 +75,11 @@ impl Node for LLMInferNode {
         };
         let response_message = model.inference(&param);
 
-        let mut outputs = HashMap::new();
-        outputs.insert(
-            "response".to_string(),
-            DataValue::Vec(
+        zihuan_graph_engine::return_with_node_output![self;
+            "response" => DataValue::Vec(
                 Box::new(DataType::OpenAIMessage),
                 vec![DataValue::OpenAIMessage(response_message)],
             ),
-        );
-        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        ]
     }
 }

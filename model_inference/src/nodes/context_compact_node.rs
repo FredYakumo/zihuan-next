@@ -89,10 +89,8 @@ impl Node for ContextCompactNode {
         let result =
             compact_context_messages(&llm, messages, compact_context_length, &[], force_compact);
 
-        let mut outputs = HashMap::new();
-        outputs.insert(
-            "messages".to_string(),
-            DataValue::Vec(
+        zihuan_graph_engine::return_with_node_output![self;
+            "messages" => DataValue::Vec(
                 Box::new(DataType::OpenAIMessage),
                 result
                     .messages
@@ -100,22 +98,9 @@ impl Node for ContextCompactNode {
                     .map(DataValue::OpenAIMessage)
                     .collect(),
             ),
-        );
-        outputs.insert(
-            "did_compact".to_string(),
-            DataValue::Boolean(result.did_compact),
-        );
-        outputs.insert(
-            "estimated_tokens_before".to_string(),
-            DataValue::Integer(result.estimated_tokens_before as i64),
-        );
-        outputs.insert(
-            "estimated_tokens_after".to_string(),
-            DataValue::Integer(result.estimated_tokens_after as i64),
-        );
-
-        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+            "did_compact" => DataValue::Boolean(result.did_compact),
+            "estimated_tokens_before" => DataValue::Integer(result.estimated_tokens_before as i64),
+            "estimated_tokens_after" => DataValue::Integer(result.estimated_tokens_after as i64),
+        ]
     }
 }

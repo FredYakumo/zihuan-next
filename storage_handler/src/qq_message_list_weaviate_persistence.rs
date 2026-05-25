@@ -116,12 +116,10 @@ impl Node for QQMessageListWeaviatePersistenceNode {
             }
         };
 
-        let mut outputs = HashMap::new();
-        outputs.insert("success".to_string(), DataValue::Boolean(success));
-        outputs.insert("qq_message_list".to_string(), passthrough);
-        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        zihuan_graph_engine::return_with_node_output![self;
+            "success" => DataValue::Boolean(success),
+            "qq_message_list" => passthrough,
+        ]
     }
 }
 

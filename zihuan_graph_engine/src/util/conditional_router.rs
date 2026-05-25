@@ -68,11 +68,9 @@ impl Node for ConditionalRouterNode {
             )
         };
 
-        let outputs = node_output_flow![
+        crate::return_with_node_output![self;
             "result" => result,
             "branch_taken" => DataValue::String(branch_taken.to_string()),
-        ];
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        ]
     }
 }

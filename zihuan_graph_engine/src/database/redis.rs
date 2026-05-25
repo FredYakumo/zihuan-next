@@ -261,10 +261,8 @@ impl Node for RedisNode {
         self.initialize_run(Some(&config))?;
         register_redis_persistence_ref(config.clone());
 
-        let outputs = crate::node_output_flow![
+        crate::return_with_node_output![self;
             "redis_ref" => DataValue::RedisRef(config),
-        ];
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        ]
     }
 }

@@ -201,6 +201,13 @@
                   <div class="field"><label>名称</label><input v-model="tool.name" /></div>
                   <div class="field-full"><label>描述</label><input v-model="tool.description" /></div>
                   <div class="field">
+                    <label>运行时长</label>
+                    <select v-model="tool.runDuration">
+                      <option value="Short">Short（短时）</option>
+                      <option value="Long">Long（长时）</option>
+                    </select>
+                  </div>
+                  <div class="field">
                     <label>目标类型</label>
                     <select v-model="tool.targetType" @change="handleToolTargetTypeChange(tool)">
                       <option value="workflow_set">workflow_set</option>
@@ -455,6 +462,13 @@
                   <div class="field"><label>ID</label><input v-model="tool.id" /></div>
                   <div class="field"><label>名称</label><input v-model="tool.name" /></div>
                   <div class="field-full"><label>描述</label><input v-model="tool.description" /></div>
+                  <div class="field">
+                    <label>运行时长</label>
+                    <select v-model="tool.runDuration">
+                      <option value="Short">Short（短时）</option>
+                      <option value="Long">Long（长时）</option>
+                    </select>
+                  </div>
                   <div class="field">
                     <label>目标类型</label>
                     <select v-model="tool.targetType" @change="handleToolTargetTypeChange(tool)">

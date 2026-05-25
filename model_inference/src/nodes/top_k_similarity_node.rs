@@ -81,24 +81,11 @@ impl Node for TopKSimilarityNode {
             .map(|(index, _)| DataValue::Vector(candidates[index].clone()))
             .collect::<Vec<_>>();
 
-        let outputs = HashMap::from([
-            (
-                "indices".to_string(),
-                DataValue::Vec(Box::new(DataType::Integer), indices),
-            ),
-            (
-                "scores".to_string(),
-                DataValue::Vec(Box::new(DataType::Float), scores),
-            ),
-            (
-                "vectors".to_string(),
-                DataValue::Vec(Box::new(DataType::Vector), matched_vectors),
-            ),
-        ]);
-
-        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        zihuan_graph_engine::return_with_node_output![self;
+            "indices" => DataValue::Vec(Box::new(DataType::Integer), indices),
+            "scores" => DataValue::Vec(Box::new(DataType::Float), scores),
+            "vectors" => DataValue::Vec(Box::new(DataType::Vector), matched_vectors),
+        ]
     }
 }
 

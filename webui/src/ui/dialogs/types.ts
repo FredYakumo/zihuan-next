@@ -24,6 +24,7 @@ export interface BrainToolDefinition {
   id: string;
   name: string;
   description: string;
+  run_duration?: "Short" | "Long";
   parameters: ToolParamDef[];
   outputs: FunctionPortDef[];
   subgraph: NodeGraphDefinition;

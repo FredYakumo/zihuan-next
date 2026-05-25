@@ -68,18 +68,11 @@ impl Node for BatchTextEmbeddingNode {
             .map(DataValue::Vector)
             .collect::<Vec<_>>();
 
-        let outputs = HashMap::from([
-            (
-                "embeddings".to_string(),
-                DataValue::Vec(Box::new(DataType::Vector), values),
-            ),
-            ("count".to_string(), DataValue::Integer(count)),
-            ("dimension".to_string(), DataValue::Integer(dimension)),
-        ]);
-
-        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        zihuan_graph_engine::return_with_node_output![self;
+            "embeddings" => DataValue::Vec(Box::new(DataType::Vector), values),
+            "count" => DataValue::Integer(count),
+            "dimension" => DataValue::Integer(dimension),
+        ]
     }
 }
 

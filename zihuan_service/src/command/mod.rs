@@ -5,12 +5,14 @@ mod task_command;
 use std::sync::{Arc, OnceLock};
 
 use zihuan_core::command::{CommandDefinition, CommandRegistry, CommandScope};
+use zihuan_core::task_context::AgentTaskRuntime;
 
 use help_command::HelpCommand;
 use new_command::NewCommand;
 use task_command::TaskCommand;
 
 static GLOBAL_COMMAND_REGISTRY: OnceLock<Arc<CommandRegistry>> = OnceLock::new();
+static GLOBAL_TASK_RUNTIME: OnceLock<Arc<dyn AgentTaskRuntime>> = OnceLock::new();
 
 /// Initialize the global command registry. Must be called once during startup.
 pub fn init_global_command_registry() -> Arc<CommandRegistry> {
@@ -20,6 +22,19 @@ pub fn init_global_command_registry() -> Arc<CommandRegistry> {
         .ok()
         .expect("command registry already initialized");
     registry
+}
+
+/// Set the global task runtime reference. Called during agent startup.
+pub fn set_global_task_runtime(runtime: Arc<dyn AgentTaskRuntime>) {
+    GLOBAL_TASK_RUNTIME
+        .set(runtime)
+        .ok()
+        .expect("task runtime already initialized");
+}
+
+/// Get a reference to the global task runtime.
+pub fn global_task_runtime() -> Option<Arc<dyn AgentTaskRuntime>> {
+    GLOBAL_TASK_RUNTIME.get().cloned()
 }
 
 /// Get a reference to the global command registry.
@@ -93,7 +108,7 @@ pub fn build_command_registry() -> Arc<CommandRegistry> {
         CommandDefinition {
             name: "task".to_string(),
             aliases: vec![],
-            description: "查看任务状态（建设中）".to_string(),
+            description: "查看后台任务状态".to_string(),
             scope: CommandScope::All,
             accepted_arg_count: 1,
         },

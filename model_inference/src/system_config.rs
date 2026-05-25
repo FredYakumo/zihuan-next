@@ -6,6 +6,7 @@ use zihuan_core::config::{
     ConfigCategory, ConfigCenter, ConfigKind, ConfigRecord, StoredConfigRecord,
 };
 use zihuan_core::error::Result;
+use zihuan_core::tool_runtime::ToolRunDuration;
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::graph_io::NodeGraphDefinition;
 
@@ -106,6 +107,8 @@ pub struct AgentToolConfig {
     pub description: String,
     #[serde(default)]
     pub enabled: bool,
+    #[serde(default)]
+    pub run_duration: ToolRunDuration,
     pub tool_type: AgentToolType,
 }
 

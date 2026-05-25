@@ -606,17 +606,9 @@ impl Node for SendQQMessageBatchesNode {
         let results =
             send_qq_message_batches(&ims_bot_adapter_ref, target_type, &target_id, &batches);
 
-        let mut outputs = HashMap::new();
-        outputs.insert(
-            "summary".to_string(),
-            DataValue::String(build_send_summary(target_type, &target_id, &results)),
-        );
-        outputs.insert(
-            "success".to_string(),
-            DataValue::Boolean(actual_sends_all_successful(&results)),
-        );
-        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        zihuan_graph_engine::return_with_node_output![self;
+            "summary" => DataValue::String(build_send_summary(target_type, &target_id, &results)),
+            "success" => DataValue::Boolean(actual_sends_all_successful(&results)),
+        ]
     }
 }

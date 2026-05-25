@@ -139,15 +139,10 @@ impl Node for ImageWeaviatePersistenceNode {
             }
         };
 
-        let mut outputs = HashMap::new();
-        outputs.insert("success".to_string(), DataValue::Boolean(success));
-        outputs.insert(
-            "object_storage_path".to_string(),
-            DataValue::String(object_storage_path),
-        );
-        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        zihuan_graph_engine::return_with_node_output![self;
+            "success" => DataValue::Boolean(success),
+            "object_storage_path" => DataValue::String(object_storage_path),
+        ]
     }
 }
 

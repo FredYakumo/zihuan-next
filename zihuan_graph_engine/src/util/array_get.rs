@@ -70,11 +70,8 @@ impl Node for ArrayGetNode {
         }
 
         let element = list[actual as usize].clone();
-        let mut outputs = HashMap::new();
-        outputs.insert("element".to_string(), element);
-
-        let outputs = crate::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "element" => element,
+        ]
     }
 }

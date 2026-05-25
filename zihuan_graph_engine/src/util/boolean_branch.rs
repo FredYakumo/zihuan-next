@@ -57,23 +57,16 @@ impl Node for BooleanBranchNode {
             zihuan_core::error::Error::ValidationError("input 输入不存在".to_string())
         })?;
 
-        let mut outputs = HashMap::new();
         if condition {
-            outputs.insert("true_output".to_string(), input);
-            outputs.insert(
-                "branch_taken".to_string(),
-                DataValue::String("true".to_string()),
-            );
+            crate::return_with_node_output![self;
+                "true_output" => input,
+                "branch_taken" => DataValue::String("true".to_string()),
+            ]
         } else {
-            outputs.insert("false_output".to_string(), input);
-            outputs.insert(
-                "branch_taken".to_string(),
-                DataValue::String("false".to_string()),
-            );
+            crate::return_with_node_output![self;
+                "false_output" => input,
+                "branch_taken" => DataValue::String("false".to_string()),
+            ]
         }
-
-        let outputs = crate::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
     }
 }

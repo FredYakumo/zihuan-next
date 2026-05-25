@@ -97,16 +97,11 @@ impl Node for MessageMySQLGetGroupHistoryNode {
             limit as usize,
         ));
 
-        let mut outputs = HashMap::new();
-        outputs.insert(
-            "messages".to_string(),
-            DataValue::Vec(
+        crate::return_with_node_output![self;
+            "messages" => DataValue::Vec(
                 Box::new(DataType::String),
                 messages.into_iter().map(DataValue::String).collect(),
             ),
-        );
-        let outputs = crate::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        ]
     }
 }

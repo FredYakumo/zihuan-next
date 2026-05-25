@@ -133,7 +133,7 @@ pub use graph_io::{
     GraphPosition, LoadedGraphDefinition, NodeDefinition, NodeGraphDefinition,
 };
 #[allow(unused_imports)]
-pub use node_macros::{node_input, node_input_flow, node_output, node_output_flow};
+pub use node_macros::{node_input, node_input_flow, node_output, node_output_flow, return_with_node_output};
 #[allow(unused_imports)]
 pub use registry::build_node_graph_from_definition;
 
@@ -767,6 +767,8 @@ impl NodeGraph {
             let outputs = node
                 .execute(inputs)
                 .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
+            node.validate_outputs(&outputs)
+                .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e))?;
             for (key, value) in outputs.into_inner() {
                 if data_pool.contains_key(&key) {
                     return Err(zihuan_core::validation_error!(
@@ -965,6 +967,8 @@ impl NodeGraph {
             let outputs = node
                 .execute(inputs.clone())
                 .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
+            node.validate_outputs(&outputs)
+                .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e))?;
 
             if let Some(cb) = &self.execution_callback {
                 if let Some(inp) = inputs_clone {
@@ -1120,8 +1124,11 @@ impl NodeGraph {
                         node_id
                     )
                 })?;
-                node.execute(inputs)
-                    .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?
+                let outputs = node.execute(inputs)
+                    .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
+                node.validate_outputs(&outputs)
+                    .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e))?;
+                outputs
             };
 
             if let Some(cb) = &self.execution_callback {
@@ -1267,8 +1274,11 @@ impl NodeGraph {
                         node_id
                     )
                 })?;
-                node.execute(inputs.clone())
-                    .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?
+                let outputs = node.execute(inputs.clone())
+                    .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
+                node.validate_outputs(&outputs)
+                    .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e))?;
+                outputs
             };
 
             if let Some(cb) = &self.execution_callback {

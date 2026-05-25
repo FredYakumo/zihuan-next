@@ -71,10 +71,7 @@ impl BrainTool for GetRecentGroupMessagesBrainTool {
             parameters: schema,
         })
     }
-
-    fn execute(&self, call_content: &str, arguments: &Value) -> String {
-        self.notification_target.notify_progress(call_content);
-
+    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
         let result = (|| -> Result<Value> {
             let group_id = if self.notification_target.target_id().is_empty() {
                 optional_string_argument(arguments, "group_id")
@@ -123,7 +120,7 @@ impl BrainTool for GetRecentGroupMessagesBrainTool {
 
 pub(crate) struct GetRecentUserMessagesBrainTool {
     mysql_ref: Option<Arc<MySqlConfig>>,
-    notification_target: ToolNotificationTarget,
+    _notification_target: ToolNotificationTarget,
 }
 
 impl GetRecentUserMessagesBrainTool {
@@ -133,7 +130,7 @@ impl GetRecentUserMessagesBrainTool {
     ) -> Self {
         Self {
             mysql_ref,
-            notification_target,
+            _notification_target: notification_target,
         }
     }
 }
@@ -155,9 +152,7 @@ impl BrainTool for GetRecentUserMessagesBrainTool {
         })
     }
 
-    fn execute(&self, call_content: &str, arguments: &Value) -> String {
-        self.notification_target.notify_progress(call_content);
-
+    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
         let result = (|| -> Result<Value> {
             let mysql_ref = self.mysql_ref.as_ref().ok_or_else(|| {
                 Error::ValidationError("mysql_ref is required for message lookup".to_string())

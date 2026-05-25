@@ -67,10 +67,8 @@ impl Node for SessionStateClearNode {
             tokio::runtime::Runtime::new()?.block_on(clear_state)
         };
 
-        let outputs = node_output_flow![
+        crate::return_with_node_output![self;
             "cleared" => DataValue::Boolean(cleared),
-        ];
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        ]
     }
 }

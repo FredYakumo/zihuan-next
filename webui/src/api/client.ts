@@ -361,6 +361,7 @@ export interface AgentToolConfig {
   name: string;
   description: string;
   enabled: boolean;
+  run_duration?: "Short" | "Long";
   tool_type: Record<string, unknown> & { type: string };
 }
 

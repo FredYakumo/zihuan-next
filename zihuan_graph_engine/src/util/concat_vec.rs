@@ -70,14 +70,8 @@ impl Node for ConcatVecNode {
         merged.extend(vec1_items.iter().cloned());
         merged.extend(vec2_items.iter().cloned());
 
-        let mut outputs = HashMap::new();
-        outputs.insert(
-            "vec".to_string(),
-            DataValue::Vec(Box::new(vec1_type), merged),
-        );
-
-        let outputs = crate::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "vec" => DataValue::Vec(Box::new(vec1_type), merged),
+        ]
     }
 }

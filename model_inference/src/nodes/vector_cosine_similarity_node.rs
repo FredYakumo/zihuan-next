@@ -51,11 +51,9 @@ impl Node for VectorCosineSimilarityNode {
         let similarity = cosine_similarity(&left, &right)
             .map_err(|error| Error::StringError(error.to_string()))?;
 
-        let outputs = zihuan_graph_engine::node_output_flow![
+        zihuan_graph_engine::return_with_node_output![self;
             "similarity" => DataValue::Float(similarity as f64),
-        ];
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        ]
     }
 }
 

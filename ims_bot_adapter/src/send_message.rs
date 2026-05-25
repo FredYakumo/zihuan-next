@@ -110,11 +110,9 @@ impl Node for SendMessageNode {
             );
         }
 
-        let mut outputs = HashMap::new();
-        outputs.insert("success".to_string(), DataValue::Boolean(success));
-        outputs.insert("message_id".to_string(), DataValue::Integer(message_id));
-        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        zihuan_graph_engine::return_with_node_output![self;
+            "success" => DataValue::Boolean(success),
+            "message_id" => DataValue::Integer(message_id),
+        ]
     }
 }

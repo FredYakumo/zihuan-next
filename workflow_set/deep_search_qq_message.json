@@ -1385,34 +1385,22 @@
           "subgraph": {
             "edges": [
               {
+                "from_node_id": "8ba6469a-d28d-4e00-8b8b-0f9f3b689f40",
+                "from_port": "task_id",
+                "to_node_id": "64ae75c8-289f-4f63-bc1f-6a091ec53166",
+                "to_port": "task_id"
+              },
+              {
                 "from_node_id": "e331569f-0a0e-4f9d-810e-7cf7dd483d1e",
-                "from_port": "messages",
+                "from_port": "output",
                 "to_node_id": "64ae75c8-289f-4f63-bc1f-6a091ec53166",
                 "to_port": "message"
               },
               {
-                "from_node_id": "8ba6469a-d28d-4e00-8b8b-0f9f3b689f40",
-                "from_port": "result",
-                "to_node_id": "64ae75c8-289f-4f63-bc1f-6a091ec53166",
-                "to_port": "sender"
-              },
-              {
                 "from_node_id": "64ae75c8-289f-4f63-bc1f-6a091ec53166",
-                "from_port": "success",
+                "from_port": "ok",
                 "to_node_id": "2d6347f6-f0cb-49ae-9cc1-9a63db37f36d",
                 "to_port": "first"
-              },
-              {
-                "from_node_id": "__function_inputs__",
-                "from_port": "message_event",
-                "to_node_id": "8ba6469a-d28d-4e00-8b8b-0f9f3b689f40",
-                "to_port": "message_event"
-              },
-              {
-                "from_node_id": "__function_inputs__",
-                "from_port": "ims_bot_adapter",
-                "to_node_id": "64ae75c8-289f-4f63-bc1f-6a091ec53166",
-                "to_port": "ims_bot_adapter"
               },
               {
                 "from_node_id": "__function_inputs__",
@@ -1440,48 +1428,37 @@
               {
                 "description": null,
                 "disabled": false,
-                "dynamic_input_ports": false,
+                "dynamic_input_ports": true,
                 "dynamic_output_ports": false,
                 "has_cycle": false,
                 "has_error": false,
                 "id": "e331569f-0a0e-4f9d-810e-7cf7dd483d1e",
                 "inline_values": {
-                  "messages": [
-                    {
-                      "data": {
-                        "text": "我将开始深度查找群消息，这可能需要一点时间，请稍后"
-                      },
-                      "type": "text"
-                    }
-                  ]
+                  "template": "我将开始深度查找群消息，这可能需要一点时间，请稍后"
                 },
                 "input_ports": [
                   {
-                    "data_type": {
-                      "Vec": "QQMessage"
-                    },
-                    "description": "Vec<QQMessage> provided by UI inline editor",
+                    "data_type": "String",
+                    "description": "格式化模板字符串，使用 ${变量名} 语法引用输入变量",
                     "hidden": false,
-                    "name": "messages",
+                    "name": "template",
                     "required": false
                   }
                 ],
-                "name": "qq message list data",
-                "node_type": "qq_message_list_data",
+                "name": "format string",
+                "node_type": "format_string",
                 "output_ports": [
                   {
-                    "data_type": {
-                      "Vec": "QQMessage"
-                    },
-                    "description": "Output Vec<QQMessage> from UI data source",
+                    "data_type": "String",
+                    "description": "格式化后的字符串",
                     "hidden": false,
-                    "name": "messages",
+                    "name": "output",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 620,
+                  "x": 460,
                   "y": 140
                 },
                 "size": {
@@ -1498,30 +1475,29 @@
                 "has_error": false,
                 "id": "8ba6469a-d28d-4e00-8b8b-0f9f3b689f40",
                 "inline_values": {},
-                "input_ports": [
-                  {
-                    "data_type": "MessageEvent",
-                    "description": "输入的消息事件",
-                    "hidden": false,
-                    "name": "message_event",
-                    "required": true
-                  }
-                ],
-                "name": "extract sender from event",
-                "node_type": "extract_sender_from_event",
+                "input_ports": [],
+                "name": "agent tool task",
+                "node_type": "agent_tool_task",
                 "output_ports": [
                   {
-                    "data_type": "Sender",
-                    "description": "可用于发送消息的 Sender",
+                    "data_type": "String",
+                    "description": "当前工具调用绑定的任务 ID；若不存在则为空字符串",
                     "hidden": false,
-                    "name": "result",
+                    "name": "task_id",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Boolean",
+                    "description": "当前是否存在绑定的任务",
+                    "hidden": false,
+                    "name": "has_task",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 410,
-                  "y": 260
+                  "x": 430,
+                  "y": 300
                 },
                 "size": {
                   "height": 120,
@@ -1539,51 +1515,35 @@
                 "inline_values": {},
                 "input_ports": [
                   {
-                    "data_type": "BotAdapterRef",
-                    "description": "Bot适配器引用",
+                    "data_type": "String",
+                    "description": "要更新的任务 ID",
                     "hidden": false,
-                    "name": "ims_bot_adapter",
+                    "name": "task_id",
                     "required": true
                   },
                   {
-                    "data_type": "Sender",
-                    "description": "消息目标 Sender",
-                    "hidden": false,
-                    "name": "sender",
-                    "required": true
-                  },
-                  {
-                    "data_type": {
-                      "Vec": "QQMessage"
-                    },
-                    "description": "要发送的QQ消息段列表",
+                    "data_type": "String",
+                    "description": "要追加的进度消息",
                     "hidden": false,
                     "name": "message",
                     "required": true
                   }
                 ],
-                "name": "send message",
-                "node_type": "send_message",
+                "name": "agent task progress",
+                "node_type": "agent_task_progress",
                 "output_ports": [
                   {
                     "data_type": "Boolean",
-                    "description": "是否发送成功",
+                    "description": "是否成功写入进度",
                     "hidden": false,
-                    "name": "success",
-                    "required": true
-                  },
-                  {
-                    "data_type": "Integer",
-                    "description": "服务器返回的消息ID",
-                    "hidden": false,
-                    "name": "message_id",
+                    "name": "ok",
                     "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 790,
-                  "y": 290
+                  "x": 800,
+                  "y": 250
                 },
                 "size": {
                   "height": 120,

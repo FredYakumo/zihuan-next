@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::validation_error;
 
 mod parser;
@@ -119,6 +119,14 @@ pub trait SideEffectContext: Send + Sync {
         Err(validation_error!("side effect 'start_new_conversation' is not supported for agent_type='{}' agent_id='{}'",
             self.command_context().agent_type,
             self.command_context().agent_id))
+    }
+
+    fn send_forward_content(&self, _content: &str) -> Result<()> {
+        Err(validation_error!(
+            "side effect 'send_forward_content' is not supported for agent_type='{}' agent_id='{}'",
+            self.command_context().agent_type,
+            self.command_context().agent_id
+        ))
     }
 }
 

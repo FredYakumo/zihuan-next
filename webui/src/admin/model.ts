@@ -12,6 +12,7 @@ export type ConnectionType = "mysql" | "redis" | "weaviate" | "rustfs" | "bot_ad
 export type WeaviateCollectionSchema = "message_record_semantic" | "image_semantic";
 export type AgentTypeName = "qq_chat" | "http_stream";
 export type ModelRefType = "chat_llm" | "text_embedding_local";
+export type ToolRunDuration = "Short" | "Long";
 export type LlmApiStyle =
   | "candle"
   | "open_ai_chat_completions"
@@ -78,6 +79,7 @@ export interface ToolFormState {
   name: string;
   description: string;
   enabled: boolean;
+  runDuration: ToolRunDuration;
   targetType: ToolTargetType;
   workflowName: string;
   filePath: string;
@@ -218,6 +220,7 @@ export function defaultToolForm(): ToolFormState {
     name: "",
     description: "",
     enabled: true,
+    runDuration: "Short",
     targetType: "workflow_set",
     workflowName: "",
     filePath: "",
@@ -460,6 +463,7 @@ export function toolFormFromConfig(tool: AgentToolConfig): ToolFormState {
   form.name = tool.name;
   form.description = tool.description;
   form.enabled = tool.enabled;
+  form.runDuration = (tool.run_duration ?? "Short") as ToolRunDuration;
   const nodeGraph = tool.tool_type as Record<string, unknown>;
   const targetType = String(nodeGraph.target_type ?? "workflow_set") as ToolTargetType;
   form.targetType = targetType;
@@ -573,6 +577,7 @@ export function buildToolPayload(form: ToolFormState): AgentToolConfig {
     name: form.name.trim(),
     description: form.description.trim(),
     enabled: form.enabled,
+    run_duration: form.runDuration,
     tool_type: toolType,
   };
 }

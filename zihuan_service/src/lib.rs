@@ -15,6 +15,8 @@ pub fn init_node_registry() -> Result<()> {
     use nodes::agent_embedding_model_node::AgentEmbeddingModelNode;
     use nodes::agent_image_db_ref::AgentImageDbRefNode;
     use nodes::agent_llm_node::AgentLlmNode;
+    use nodes::agent_task_progress_node::AgentTaskProgressNode;
+    use nodes::agent_tool_task_node::AgentToolTaskNode;
     use nodes::agent_mysql_ref::AgentMySqlRefNode;
     use nodes::agent_rustfs_ref::AgentRustfsRefNode;
     use nodes::agent_tavily_ref::AgentTavilyRefNode;
@@ -34,6 +36,20 @@ pub fn init_node_registry() -> Result<()> {
         "Agent",
         "从当前 Agent 工具调用上下文中读取文本向量模型并输出 EmbeddingModel 引用",
         AgentEmbeddingModelNode
+    );
+    register_node!(
+        "agent_tool_task",
+        "读取Agent工具任务",
+        "工具调用",
+        "读取当前 Agent 工具调用关联的任务 ID 与是否存在任务",
+        AgentToolTaskNode
+    );
+    register_node!(
+        "agent_task_progress",
+        "更新Agent任务进度",
+        "工具调用",
+        "向任务追加一条进度消息",
+        AgentTaskProgressNode
     );
     register_node!(
         "brain",

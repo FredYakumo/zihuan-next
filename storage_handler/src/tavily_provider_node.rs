@@ -89,8 +89,8 @@ impl Node for TavilyProviderNode {
         let tavily_ref = build_tavily_ref(Some(config_id), &load_connections()?)?
             .ok_or_else(|| Error::ValidationError("config_id is required".to_string()))?;
 
-        Ok(zihuan_graph_engine::node_output_flow![
+        zihuan_graph_engine::return_with_node_output![self;
             "tavily_ref" => DataValue::TavilyRef(tavily_ref),
-        ])
+        ]
     }
 }

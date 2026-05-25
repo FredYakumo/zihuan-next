@@ -45,11 +45,8 @@ impl Node for BooleanNotNode {
             }
         };
 
-        let mut outputs = HashMap::new();
-        outputs.insert("result".to_string(), DataValue::Boolean(!input));
-
-        let outputs = crate::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "result" => DataValue::Boolean(!input),
+        ]
     }
 }

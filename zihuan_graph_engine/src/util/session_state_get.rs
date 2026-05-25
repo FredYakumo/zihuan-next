@@ -70,11 +70,9 @@ impl Node for SessionStateGetNode {
             tokio::runtime::Runtime::new()?.block_on(read_state)
         };
 
-        let outputs = node_output_flow![
+        crate::return_with_node_output![self;
             "in_session" => DataValue::Boolean(state.in_session),
             "state_json" => DataValue::Json(state.state_json),
-        ];
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        ]
     }
 }

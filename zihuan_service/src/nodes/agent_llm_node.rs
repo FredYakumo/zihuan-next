@@ -72,8 +72,8 @@ impl Node for AgentLlmNode {
         let config = current_qq_chat_agent_config()?;
         let llm_kind = normalize_llm_kind(self.llm_kind.as_deref())?;
         let llm = build_llm_from_ref_id(llm_ref_id_for_kind(&config, llm_kind))?;
-        Ok(zihuan_graph_engine::node_output_flow![
+        zihuan_graph_engine::return_with_node_output![self;
             "llm_model" => DataValue::LLModel(llm),
-        ])
+        ]
     }
 }

@@ -88,11 +88,9 @@ impl Node for RustfsNode {
         let s3_ref_for_init = Arc::clone(&s3_ref);
         block_async(async move { s3_ref_for_init.ensure_bucket_exists().await })?;
 
-        let outputs = crate::node_output_flow![
+        crate::return_with_node_output![self;
             "s3_ref" => DataValue::S3Ref(s3_ref),
-        ];
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        ]
     }
 }
 

@@ -6,7 +6,9 @@ use model_inference::message_content_utils::sanitize_messages_for_inference;
 use model_inference::system_config::{AgentConfig, AgentType, LlmRefConfig};
 use storage_handler::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
-use zihuan_agent::brain::{Brain, BrainObserver, BrainStopReason, BrainTool, MAX_TOOL_ITERATIONS};
+use zihuan_agent::brain::{
+    Brain, BrainObserver, BrainStopReason, BrainTool, ToolRunDuration, MAX_TOOL_ITERATIONS,
+};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
@@ -69,6 +71,10 @@ impl BrainTool for ServiceSubgraphBrainTool {
         self.runner.spec()
     }
 
+    fn run_duration(&self) -> ToolRunDuration {
+        self.runner.definition.run_duration
+    }
+
     fn execute(&self, call_content: &str, arguments: &serde_json::Value) -> String {
         self.runner.execute_to_string(call_content, arguments)
     }
@@ -79,6 +85,10 @@ struct DynBrainToolWrapper(Box<dyn BrainTool>);
 impl BrainTool for DynBrainToolWrapper {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         self.0.spec()
+    }
+
+    fn run_duration(&self) -> ToolRunDuration {
+        self.0.run_duration()
     }
 
     fn execute(&self, call_content: &str, arguments: &serde_json::Value) -> String {

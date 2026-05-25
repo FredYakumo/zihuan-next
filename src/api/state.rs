@@ -77,6 +77,7 @@ pub struct TaskEntry {
     pub end_time: Option<DateTime<Local>>,
     pub duration_ms: Option<i64>,
     pub user_ip: Option<String>,
+    pub owner_id: Option<String>,
     pub status: TaskStatus,
     pub error_message: Option<String>,
     pub result_summary: Option<String>,
@@ -132,6 +133,7 @@ impl TaskManager {
             file_path,
             is_workflow_set,
             user_ip,
+            None,
             Some(stop_flag),
             can_rerun,
         )
@@ -142,6 +144,7 @@ impl TaskManager {
         agent_id: String,
         task_name: String,
         user_ip: Option<String>,
+        owner_id: Option<String>,
     ) -> String {
         self.add_task_with_type(
             TaskType::AgentService,
@@ -150,6 +153,7 @@ impl TaskManager {
             None,
             false,
             user_ip,
+            owner_id,
             None,
             false,
         )
@@ -163,6 +167,7 @@ impl TaskManager {
         file_path: Option<String>,
         is_workflow_set: bool,
         user_ip: Option<String>,
+        owner_id: Option<String>,
         stop_flag: Option<Arc<AtomicBool>>,
         can_rerun: bool,
     ) -> String {
@@ -181,6 +186,7 @@ impl TaskManager {
             end_time: None,
             duration_ms: None,
             user_ip,
+            owner_id,
             status: TaskStatus::Running,
             error_message: None,
             result_summary: None,
@@ -416,6 +422,7 @@ impl TaskManager {
                 end_time: Some(modified),
                 duration_ms: Some(0),
                 user_ip: None,
+                owner_id: None,
                 status: TaskStatus::Success,
                 error_message: None,
                 result_summary: Some("从历史日志文件恢复的任务记录".to_string()),

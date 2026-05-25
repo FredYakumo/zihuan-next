@@ -76,6 +76,7 @@ fn build_node_graph_tool_definition(
         id: tool.id.clone(),
         name: tool.name.clone(),
         description: tool.description.clone(),
+        run_duration: tool.run_duration,
         parameters,
         outputs,
         subgraph,

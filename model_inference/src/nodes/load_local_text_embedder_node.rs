@@ -58,10 +58,8 @@ impl Node for LoadLocalTextEmbedderNode {
 
         let model: Arc<dyn EmbeddingBase> = Arc::new(QueuedEmbeddingModel::new(model_name)?);
 
-        let outputs = zihuan_graph_engine::node_output_flow![
+        zihuan_graph_engine::return_with_node_output![self;
             "embedding_model" => DataValue::EmbeddingModel(model),
-        ];
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        ]
     }
 }

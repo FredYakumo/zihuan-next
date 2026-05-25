@@ -14,18 +14,14 @@ const LOG_PREFIX: &str = "[QqChatAgent]";
 
 pub(crate) struct WebSearchBrainTool {
     tavily_ref: Arc<TavilyRef>,
-    notification_target: ToolNotificationTarget,
 }
 
 impl WebSearchBrainTool {
     pub(crate) fn new(
         tavily_ref: Arc<TavilyRef>,
-        notification_target: ToolNotificationTarget,
+        _notification_target: ToolNotificationTarget,
     ) -> Self {
-        Self {
-            tavily_ref,
-            notification_target,
-        }
+        Self { tavily_ref }
     }
 
     fn extract_url_with_fallback(&self, url: &str) -> Result<Vec<String>> {
@@ -72,9 +68,7 @@ impl BrainTool for WebSearchBrainTool {
         })
     }
 
-    fn execute(&self, call_content: &str, arguments: &Value) -> String {
-        self.notification_target.notify_progress(call_content);
-
+    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
         let query = arguments
             .get("query")
             .and_then(|v| v.as_str())

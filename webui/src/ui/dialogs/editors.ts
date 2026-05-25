@@ -457,6 +457,7 @@ export function openBrainToolsEditor(
         id: `tool_${Date.now()}`,
         name: `tool_${tools.length + 1}`,
         description: "",
+        run_duration: "Short",
         parameters: [],
         outputs: isQqMessageAgent ? [{ name: "result", data_type: "String" }] : [],
         subgraph: {
@@ -554,6 +555,28 @@ export function openBrainToolsEditor(
     });
     card.appendChild(descLabel);
     card.appendChild(descInput);
+
+    const runDurationLabel = document.createElement("label");
+    runDurationLabel.textContent = "运行时长";
+    const runDurationSelect = document.createElement("select");
+    const currentRunDuration = tool.run_duration ?? "Short";
+    [
+      { value: "Short", label: "Short（短时任务）" },
+      { value: "Long", label: "Long（长时任务）" },
+    ].forEach((option) => {
+      const opt = document.createElement("option");
+      opt.value = option.value;
+      opt.textContent = option.label;
+      if (currentRunDuration === option.value) {
+        opt.selected = true;
+      }
+      runDurationSelect.appendChild(opt);
+    });
+    runDurationSelect.addEventListener("change", () => {
+      tools[idx].run_duration = runDurationSelect.value as "Short" | "Long";
+    });
+    card.appendChild(runDurationLabel);
+    card.appendChild(runDurationSelect);
 
     const paramLabel = document.createElement("div");
     paramLabel.className = "zh-section-label";

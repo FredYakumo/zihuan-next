@@ -88,8 +88,8 @@ impl Node for ImsBotAdapterProviderNode {
             ActiveAdapterManager::shared().get_active_bot_adapter_handle(config_id),
         )?;
 
-        Ok(zihuan_graph_engine::node_output_flow![
+        zihuan_graph_engine::return_with_node_output![self;
             "ims_bot_adapter" => DataValue::BotAdapterRef(handle),
-        ])
+        ]
     }
 }

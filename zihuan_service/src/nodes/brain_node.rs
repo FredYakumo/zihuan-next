@@ -7,7 +7,7 @@ use crate::nodes::tool_subgraph::{
     shared_inputs_ports, validate_shared_inputs, validate_tool_definitions, SubgraphFunctionTool,
     ToolResultMode, ToolSubgraphRunner,
 };
-use zihuan_agent::brain::{Brain, BrainStopReason, BrainTool, MAX_TOOL_ITERATIONS};
+use zihuan_agent::brain::{Brain, BrainStopReason, BrainTool, ToolRunDuration, MAX_TOOL_ITERATIONS};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::OpenAIMessage;
@@ -25,6 +25,10 @@ struct SubgraphBrainTool {
 impl BrainTool for SubgraphBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         self.runner.spec()
+    }
+
+    fn run_duration(&self) -> ToolRunDuration {
+        self.runner.definition.run_duration
     }
 
     fn execute(&self, call_content: &str, arguments: &Value) -> String {

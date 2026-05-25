@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+pub use zihuan_core::tool_runtime::ToolRunDuration;
 
 use crate::function_graph::{default_function_subgraph, FunctionPortDef, FUNCTION_OUTPUTS_NODE_ID};
 use crate::graph_io::NodeGraphDefinition;
@@ -34,6 +35,8 @@ pub struct BrainToolDefinition {
     pub name: String,
     #[serde(default)]
     pub description: String,
+    #[serde(default)]
+    pub run_duration: ToolRunDuration,
     #[serde(default)]
     pub parameters: Vec<ToolParamDef>,
     #[serde(default)]

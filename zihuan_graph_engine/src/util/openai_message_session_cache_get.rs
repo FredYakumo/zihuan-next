@@ -93,17 +93,11 @@ impl Node for OpenAIMessageSessionCacheGetNode {
             cached_messages
         };
 
-        let mut outputs = HashMap::new();
-        outputs.insert(
-            "messages".to_string(),
-            DataValue::Vec(
+        crate::return_with_node_output![self;
+            "messages" => DataValue::Vec(
                 Box::new(DataType::OpenAIMessage),
                 messages.into_iter().map(DataValue::OpenAIMessage).collect(),
             ),
-        );
-
-        let outputs = crate::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        ]
     }
 }

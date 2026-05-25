@@ -50,8 +50,6 @@ impl Node for SendGroupMessageBatchesNode {
     ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
         let outputs = execute_fixed_target_batch_send(&inputs, TARGET_TYPE_GROUP, LOG_PREFIX)?;
-        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        Ok(outputs.into())
     }
 }

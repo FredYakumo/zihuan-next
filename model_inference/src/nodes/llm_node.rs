@@ -140,10 +140,8 @@ impl Node for LlmNode {
     ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let llm_config = self.resolve_llm_config()?;
         let llm = build_llm(llm_config)?;
-        let mut outputs = HashMap::new();
-        outputs.insert("llm_model".to_string(), DataValue::LLModel(llm));
-        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        zihuan_graph_engine::return_with_node_output![self;
+            "llm_model" => DataValue::LLModel(llm),
+        ]
     }
 }

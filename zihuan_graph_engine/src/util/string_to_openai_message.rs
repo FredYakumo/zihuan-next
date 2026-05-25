@@ -53,10 +53,8 @@ impl Node for StringToOpenAIMessageNode {
             None => str_to_role("system"),
         };
 
-        let mut outputs = HashMap::new();
-        outputs.insert(
-            "message".to_string(),
-            DataValue::OpenAIMessage(OpenAIMessage {
+        crate::return_with_node_output![self;
+            "message" => DataValue::OpenAIMessage(OpenAIMessage {
                 role,
                 api_style: None,
                 content: Some(MessageContent::Text(content)),
@@ -65,10 +63,6 @@ impl Node for StringToOpenAIMessageNode {
                 tool_call_id: None,
                 usage: None,
             }),
-        );
-
-        let outputs = crate::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        ]
     }
 }

@@ -42,8 +42,8 @@ impl Node for ExtractSenderIdFromEventNode {
             _ => return Err("message_event input is required".into()),
         };
 
-        Ok(zihuan_graph_engine::node_output_flow![
+        zihuan_graph_engine::return_with_node_output![self;
             "result" => DataValue::String(event.sender.user_id.to_string()),
-        ])
+        ]
     }
 }

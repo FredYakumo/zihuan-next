@@ -13,6 +13,7 @@ pub mod rag;
 pub mod runtime;
 pub mod system_config;
 pub mod task_context;
+pub mod tool_runtime;
 pub mod url_utils;
 pub mod weaviate;
 pub mod worker_pool;

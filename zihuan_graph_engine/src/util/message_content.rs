@@ -48,11 +48,8 @@ impl Node for MessageContentNode {
             })
             .ok_or(validation_error!("OpenAIMessage content is None",))?;
 
-        let outputs = node_output_flow![
+        crate::return_with_node_output![self;
             "content" => DataValue::String(content),
-        ];
-
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        ]
     }
 }

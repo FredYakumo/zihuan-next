@@ -54,8 +54,8 @@ impl Node for AgentTavilyRefNode {
                         "tavily_connection_id is required".to_string(),
                     )
                 })?;
-        Ok(zihuan_graph_engine::node_output_flow![
+        zihuan_graph_engine::return_with_node_output![self;
             "tavily_ref" => DataValue::TavilyRef(tavily_ref),
-        ])
+        ]
     }
 }

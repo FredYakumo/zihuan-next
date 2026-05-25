@@ -30,7 +30,6 @@ pub(crate) struct SearchSimilarImagesBrainTool {
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
     tavily_ref: Arc<TavilyRef>,
     s3_ref: Option<Arc<S3Ref>>,
-    notification_target: ToolNotificationTarget,
 }
 
 impl SearchSimilarImagesBrainTool {
@@ -39,14 +38,13 @@ impl SearchSimilarImagesBrainTool {
         embedding_model: Option<Arc<dyn EmbeddingBase>>,
         tavily_ref: Arc<TavilyRef>,
         s3_ref: Option<Arc<S3Ref>>,
-        notification_target: ToolNotificationTarget,
+        _notification_target: ToolNotificationTarget,
     ) -> Self {
         Self {
             weaviate_image_ref,
             embedding_model,
             tavily_ref,
             s3_ref,
-            notification_target,
         }
     }
 }
@@ -68,9 +66,7 @@ impl BrainTool for SearchSimilarImagesBrainTool {
         })
     }
 
-    fn execute(&self, call_content: &str, arguments: &Value) -> String {
-        self.notification_target.notify_progress(call_content);
-
+    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
         let result = (|| -> Result<Value> {
             let query = optional_string_argument(arguments, "query")
                 .ok_or_else(|| Error::ValidationError("query is required".to_string()))?;

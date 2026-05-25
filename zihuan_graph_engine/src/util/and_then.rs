@@ -43,10 +43,8 @@ impl Node for AndThenNode {
             zihuan_core::error::Error::ValidationError("second 输入不存在".to_string())
         })?;
 
-        let outputs = node_output_flow![
+        crate::return_with_node_output![self;
             "output" => output,
-        ];
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        ]
     }
 }

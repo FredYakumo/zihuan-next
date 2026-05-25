@@ -188,12 +188,10 @@ impl Node for QQMessageListMySQLPersistenceNode {
             }
             None => {
                 error!("[QQMessageListMySQLPersistenceNode] mysql_ref has no active pool");
-                let mut outputs = HashMap::new();
-                outputs.insert("success".to_string(), DataValue::Boolean(false));
-                outputs.insert("qq_message_list".to_string(), passthrough);
-                let outputs = crate::NodeOutputFlow::from(outputs);
-                self.validate_outputs(&outputs)?;
-                return Ok(outputs);
+                return crate::return_with_node_output![self;
+                    "success" => DataValue::Boolean(false),
+                    "qq_message_list" => passthrough,
+                ];
             }
         };
 
@@ -353,11 +351,9 @@ impl Node for QQMessageListMySQLPersistenceNode {
             );
         }
 
-        let mut outputs = HashMap::new();
-        outputs.insert("success".to_string(), DataValue::Boolean(success));
-        outputs.insert("qq_message_list".to_string(), passthrough);
-        let outputs = crate::NodeOutputFlow::from(outputs);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "success" => DataValue::Boolean(success),
+            "qq_message_list" => passthrough,
+        ]
     }
 }

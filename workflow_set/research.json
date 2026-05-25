@@ -193,30 +193,22 @@
     },
     {
       "id": "dad6a420-4c69-4435-8d34-c5d6e20cb120",
-      "name": "string is not empty",
+      "name": "agent tool task",
       "description": null,
-      "node_type": "string_is_not_empty",
-      "input_ports": [
+      "node_type": "agent_tool_task",
+      "input_ports": [],
+      "output_ports": [
         {
-          "name": "input",
+          "name": "task_id",
           "data_type": "String",
-          "description": "待判断的字符串",
+          "description": "当前工具调用绑定的任务 ID；若不存在则为空字符串",
           "required": true,
           "hidden": false
         },
         {
-          "name": "trim_before_check",
+          "name": "has_task",
           "data_type": "Boolean",
-          "description": "为 true 时先 trim 再判断，纯空格字符串将视为空；默认 false",
-          "required": false,
-          "hidden": false
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "result",
-          "data_type": "Boolean",
-          "description": "字符串非空则为 true，否则为 false",
+          "description": "当前是否存在绑定的任务",
           "required": true,
           "hidden": false
         }
@@ -231,9 +223,7 @@
         "width": 200.0,
         "height": 120.0
       },
-      "inline_values": {
-        "trim_before_check": true
-      },
+      "inline_values": {},
       "port_bindings": {},
       "has_error": false,
       "has_cycle": false,
@@ -241,44 +231,30 @@
     },
     {
       "id": "310e58e7-b875-4a00-9fad-caccf531757e",
-      "name": "boolean branch",
+      "name": "agent task progress",
       "description": null,
-      "node_type": "boolean_branch",
+      "node_type": "agent_task_progress",
       "input_ports": [
         {
-          "name": "condition",
-          "data_type": "Boolean",
-          "description": "为 true 时走 true_output，否则走 false_output",
+          "name": "task_id",
+          "data_type": "String",
+          "description": "要更新的任务 ID",
           "required": true,
           "hidden": false
         },
         {
-          "name": "input",
-          "data_type": "Any",
-          "description": "要分流到某个分支的输入值",
+          "name": "message",
+          "data_type": "String",
+          "description": "要追加的进度消息",
           "required": true,
           "hidden": false
         }
       ],
       "output_ports": [
         {
-          "name": "true_output",
-          "data_type": "Any",
-          "description": "condition=true 时输出",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "false_output",
-          "data_type": "Any",
-          "description": "condition=false 时输出",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "branch_taken",
-          "data_type": "String",
-          "description": "实际走到的分支：true 或 false",
+          "name": "ok",
+          "data_type": "Boolean",
+          "description": "是否成功写入进度",
           "required": true,
           "hidden": false
         }
@@ -1873,30 +1849,6 @@
   "edges": [
     {
       "from_node_id": "__graph_inputs__",
-      "from_port": "content",
-      "to_node_id": "dad6a420-4c69-4435-8d34-c5d6e20cb120",
-      "to_port": "input"
-    },
-    {
-      "from_node_id": "dad6a420-4c69-4435-8d34-c5d6e20cb120",
-      "from_port": "result",
-      "to_node_id": "310e58e7-b875-4a00-9fad-caccf531757e",
-      "to_port": "condition"
-    },
-    {
-      "from_node_id": "__graph_inputs__",
-      "from_port": "message_event",
-      "to_node_id": "310e58e7-b875-4a00-9fad-caccf531757e",
-      "to_port": "input"
-    },
-    {
-      "from_node_id": "2622129c-bc6c-453b-9d1a-877235578728",
-      "from_port": "result",
-      "to_node_id": "53230963-8bd1-4a9f-b597-a2710247d5e6",
-      "to_port": "element"
-    },
-    {
-      "from_node_id": "__graph_inputs__",
       "from_port": "question",
       "to_node_id": "dd49c397-d859-403a-a892-aeef445e2cfb",
       "to_port": "question"
@@ -1904,8 +1856,8 @@
     {
       "from_node_id": "dd49c397-d859-403a-a892-aeef445e2cfb",
       "from_port": "output",
-      "to_node_id": "2622129c-bc6c-453b-9d1a-877235578728",
-      "to_port": "text"
+      "to_node_id": "310e58e7-b875-4a00-9fad-caccf531757e",
+      "to_port": "message"
     },
     {
       "from_node_id": "b1bc6e9e-3a8f-49c0-b653-e234587932ab",
@@ -1968,28 +1920,10 @@
       "to_port": "content"
     },
     {
-      "from_node_id": "310e58e7-b875-4a00-9fad-caccf531757e",
-      "from_port": "true_output",
-      "to_node_id": "25ffc278-425f-4ca2-a479-2e6745476fd7",
-      "to_port": "message_event"
-    },
-    {
-      "from_node_id": "25ffc278-425f-4ca2-a479-2e6745476fd7",
-      "from_port": "result",
-      "to_node_id": "651470a4-d56c-4673-bd0c-8d1a5441f823",
-      "to_port": "sender"
-    },
-    {
-      "from_node_id": "53230963-8bd1-4a9f-b597-a2710247d5e6",
-      "from_port": "array",
-      "to_node_id": "651470a4-d56c-4673-bd0c-8d1a5441f823",
-      "to_port": "message"
-    },
-    {
-      "from_node_id": "__graph_inputs__",
-      "from_port": "qq_ims_bot_adapter",
-      "to_node_id": "651470a4-d56c-4673-bd0c-8d1a5441f823",
-      "to_port": "ims_bot_adapter"
+      "from_node_id": "dad6a420-4c69-4435-8d34-c5d6e20cb120",
+      "from_port": "task_id",
+      "to_node_id": "310e58e7-b875-4a00-9fad-caccf531757e",
+      "to_port": "task_id"
     }
   ],
   "graph_inputs": [

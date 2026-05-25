@@ -54,8 +54,8 @@ impl Node for ExtractGroupIdFromEventNode {
             .group_id
             .ok_or("group_id is missing in group message event")?;
 
-        Ok(zihuan_graph_engine::node_output_flow![
+        zihuan_graph_engine::return_with_node_output![self;
             "result" => DataValue::String(group_id.to_string()),
-        ])
+        ]
     }
 }

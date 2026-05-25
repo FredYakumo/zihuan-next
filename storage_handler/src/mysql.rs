@@ -118,8 +118,8 @@ impl Node for MySqlNode {
             RuntimeStorageConnectionManager::shared().get_or_create_mysql_ref(config_id),
         )?;
         register_mysql_ref(config.clone());
-        Ok(zihuan_graph_engine::node_output_flow![
+        zihuan_graph_engine::return_with_node_output![self;
             "mysql_ref" => DataValue::MySqlRef(config),
-        ])
+        ]
     }
 }
