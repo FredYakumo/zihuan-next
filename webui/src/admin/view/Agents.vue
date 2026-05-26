@@ -256,7 +256,16 @@
                     <textarea v-model="tool.inlineGraphJson" />
                   </div>
                   <div class="field-full">
-                    <label>Parameters JSON</label>
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                      <label style="margin-bottom: 0;">Parameters JSON</label>
+                      <button
+                        v-if="tool.targetType === 'workflow_set' && tool.workflowName"
+                        class="btn ghost"
+                        style="padding: 2px 10px; font-size: 12px;"
+                        :disabled="syncingToolIndex === index"
+                        @click="syncToolFromGraph(tool, index)"
+                      >{{ syncingToolIndex === index ? '同步中…' : '从节点图更新' }}</button>
+                    </div>
                     <textarea v-model="tool.parametersJson" />
                   </div>
                   <div class="field-full">
@@ -540,7 +549,16 @@
                     <textarea v-model="tool.inlineGraphJson" />
                   </div>
                   <div class="field-full">
-                    <label>Parameters JSON</label>
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                      <label style="margin-bottom: 0;">Parameters JSON</label>
+                      <button
+                        v-if="tool.targetType === 'workflow_set' && tool.workflowName"
+                        class="btn ghost"
+                        style="padding: 2px 10px; font-size: 12px;"
+                        :disabled="syncingToolIndex === index"
+                        @click="syncToolFromGraph(tool, index)"
+                      >{{ syncingToolIndex === index ? '同步中…' : '从节点图更新' }}</button>
+                    </div>
                     <textarea v-model="tool.parametersJson" />
                   </div>
                   <div class="field-full">
@@ -760,6 +778,19 @@ const RESERVED_TOOL_RUNTIME_INPUTS = new Set(["content", "message_event", "qq_im
 
 function isGeneratedToolId(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
+}
+
+const syncingToolIndex = ref<number | null>(null);
+
+async function syncToolFromGraph(tool: AgentFormState["tools"][number], index: number) {
+  syncingToolIndex.value = index;
+  try {
+    const result = await workflowApi.listDetailed();
+    workflows.value = result.workflows;
+    applyWorkflowSetMetadata(tool);
+  } finally {
+    syncingToolIndex.value = null;
+  }
 }
 
 function handleToolTargetTypeChange(tool: AgentFormState["tools"][number]) {
