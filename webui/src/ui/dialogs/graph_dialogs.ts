@@ -198,18 +198,22 @@ export async function openGraphIODialog(
 
   const hint = document.createElement("div");
   hint.className = "zh-hint";
-  hint.textContent = "这里定义主节点图的固定输入和输出列表；保存后会自动同步不可删除的“节点图输入/节点图输出”边界节点。";
+  hint.textContent = "定义节点图的固定输入和输出端口。";
   dialog.appendChild(hint);
 
   const graph = await graphs.get(sessionId);
 
   const agentEventWrap = document.createElement("label");
-  agentEventWrap.style.cssText = "display:flex;align-items:center;gap:6px;margin:8px 0;font-size:13px;cursor:pointer;";
+  agentEventWrap.style.cssText = "display:flex;align-items:center;gap:8px;margin:10px 0;padding:8px 10px;background:#1a1a1a;border:1px solid #333;border-radius:4px;cursor:pointer;";
   const agentEventCb = document.createElement("input");
   agentEventCb.type = "checkbox";
   agentEventCb.checked = graph.accepts_agent_events ?? false;
+  agentEventCb.style.cssText = "flex-shrink:0;width:16px;height:16px;margin:0;";
+  const agentEventLabel = document.createElement("span");
+  agentEventLabel.textContent = "接受Agent事件输入(选择后该节点图只能作为Agent的工具子图执行)";
+  agentEventLabel.style.cssText = "font-size:13px;line-height:1.4;";
   agentEventWrap.appendChild(agentEventCb);
-  agentEventWrap.appendChild(document.createTextNode("输入Agent事件"));
+  agentEventWrap.appendChild(agentEventLabel);
   dialog.appendChild(agentEventWrap);
 
   const inputsSection = document.createElement("div");
