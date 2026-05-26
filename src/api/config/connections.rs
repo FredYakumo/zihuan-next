@@ -10,7 +10,7 @@ use ims_bot_adapter::{
     list_runtime_bot_adapter_instances, parse_ims_bot_adapter_connection,
     sync_enabled_bot_adapters,
 };
-use log::info;
+use log::{info, warn};
 use model_inference::nn::embedding::embedding_runtime_manager::{
     close_runtime_embedding_instance, list_runtime_embedding_instances,
 };
@@ -84,6 +84,12 @@ fn validate_connection_basics(kind: &ConnectionKind) -> Result<(), String> {
         ConnectionKind::Tokenizer(tokenizer) => {
             if tokenizer.model_name.trim().is_empty() {
                 return Err("tokenizer.model_name must not be empty".to_string());
+            }
+            Ok(())
+        }
+        ConnectionKind::Sqlite(sqlite) => {
+            if sqlite.path.trim().is_empty() {
+                return Err("sqlite.path must not be empty".to_string());
             }
             Ok(())
         }
@@ -224,6 +230,15 @@ pub async fn create_connection(req: &mut Request, res: &mut Response, _depot: &m
     match system_config::save_connections(connections) {
         Ok(()) => {
             let _ = close_runtime_storage_instances_for_config(&connection.id);
+
+            // Ensure database tables exist for MySQL/SQLite connections.
+            if let Err(e) = storage_handler::ensure_tables_for_connection(&connection.kind).await {
+                warn!(
+                    "[connections] table creation failed for '{}' (id={}): {}",
+                    connection.name, connection.id, e
+                );
+            }
+
             let refreshed = system_config::load_connections().unwrap_or_default();
             sync_enabled_bot_adapters(&refreshed).await;
             info!(
@@ -271,6 +286,15 @@ pub async fn update_connection(req: &mut Request, res: &mut Response, _depot: &m
     match system_config::save_connections(connections) {
         Ok(()) => {
             let _ = close_runtime_storage_instances_for_config(&response.id);
+
+            // Ensure database tables exist for MySQL/SQLite connections.
+            if let Err(e) = storage_handler::ensure_tables_for_connection(&response.kind).await {
+                warn!(
+                    "[connections] table creation failed for '{}' (id={}): {}",
+                    response.name, response.id, e
+                );
+            }
+
             let refreshed = system_config::load_connections().unwrap_or_default();
             sync_enabled_bot_adapters(&refreshed).await;
             info!(

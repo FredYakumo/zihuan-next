@@ -274,6 +274,7 @@ async fn http_stream_chat_completions(req: &mut Request, res: &mut Response, dep
             agent_name: runtime.owner_agent.name.clone(),
             user_ip: request_ip.clone(),
             owner_id: None,
+            task_db_connection_id: None,
         })
     });
 

@@ -10,6 +10,7 @@ pub mod log;
 pub mod registry;
 pub mod settings;
 pub mod state;
+pub mod task_store;
 pub mod themes;
 pub mod ws;
 

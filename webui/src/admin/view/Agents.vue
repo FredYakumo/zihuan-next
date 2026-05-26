@@ -123,6 +123,13 @@
                 </div>
               </div>
               <div class="field"><label>Compact Context Length</label><input v-model.number="form.compact_context_length" type="number" min="0" /></div>
+              <div class="field">
+                <label>Task DB Connection</label>
+                <select v-model="form.task_db_connection_id">
+                  <option value="">不使用</option>
+                  <option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                </select>
+              </div>
             </template>
 
             <template v-else>
@@ -133,6 +140,13 @@
                 <select v-model="form.http_tavily_connection_id">
                   <option value="">不使用</option>
                   <option v-for="item in tavilyConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Task DB Connection</label>
+                <select v-model="form.task_db_connection_id">
+                  <option value="">不使用</option>
+                  <option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
             </template>
@@ -385,6 +399,13 @@
                 </div>
               </div>
               <div class="field"><label>Compact Context Length</label><input v-model.number="form.compact_context_length" type="number" min="0" /></div>
+              <div class="field">
+                <label>Task DB Connection</label>
+                <select v-model="form.task_db_connection_id">
+                  <option value="">不使用</option>
+                  <option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                </select>
+              </div>
 
               <div class="editor-card" style="margin-top: 12px;">
                 <div class="split-header">
@@ -417,6 +438,13 @@
                 <select v-model="form.http_tavily_connection_id">
                   <option value="">不使用</option>
                   <option v-for="item in tavilyConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Task DB Connection</label>
+                <select v-model="form.task_db_connection_id">
+                  <option value="">不使用</option>
+                  <option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
 
@@ -619,6 +647,8 @@ const botConnections = computed(() => connections.value.filter((item) => isBotAd
 const rustfsConnections = computed(() => connections.value.filter((item) => item.kind.type === "rustfs"));
 const tavilyConnections = computed(() => connections.value.filter((item) => item.kind.type === "tavily"));
 const mysqlConnections = computed(() => connections.value.filter((item) => item.kind.type === "mysql"));
+const sqliteConnections = computed(() => connections.value.filter((item) => item.kind.type === "sqlite"));
+const taskDbConnections = computed(() => connections.value.filter((item) => item.kind.type === "mysql" || item.kind.type === "sqlite"));
 const tokenizerConnections = computed(() => connections.value.filter((item) => item.kind.type === "tokenizer"));
 const imageWeaviateConnections = computed(() =>
   connections.value.filter((item) => item.kind.type === "weaviate" && item.kind.collection_schema === "image_semantic"),

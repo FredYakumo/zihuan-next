@@ -2148,6 +2148,7 @@ impl QqChatAgent {
                 agent_name: bot_name.to_string(),
                 user_ip,
                 owner_id: Some(sender_id.to_string()),
+                task_db_connection_id: None,
             })
         });
         let trace = QqChatTaskTrace::new(task_created_at);

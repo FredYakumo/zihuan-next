@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use zihuan_core::data_refs::MySqlConfig;
+use zihuan_core::data_refs::{MySqlConfig, SqliteConfig};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::rag::TavilyRef;
 use zihuan_core::weaviate::WeaviateRef;
@@ -141,6 +141,21 @@ pub fn build_tavily_ref(
     ))))
 }
 
+pub async fn build_sqlite_ref(
+    connection_id: Option<&str>,
+    connections: &[ConnectionConfig],
+) -> Result<Option<Arc<SqliteConfig>>> {
+    let Some(connection_id) = connection_id else {
+        return Ok(None);
+    };
+    let _ = connections;
+    Ok(Some(
+        RuntimeStorageConnectionManager::shared()
+            .get_or_create_sqlite_ref(connection_id)
+            .await?,
+    ))
+}
+
 pub async fn resolve_connection_data_value(
     data_type: &zihuan_graph_engine::DataType,
     connection_id: &str,
@@ -166,6 +181,11 @@ pub async fn resolve_connection_data_value(
         zihuan_graph_engine::DataType::TavilyRef => {
             build_tavily_ref(Some(connection_id), connections)
                 .map(|value| value.map(DataValue::TavilyRef))
+        }
+        zihuan_graph_engine::DataType::SqliteRef => {
+            build_sqlite_ref(Some(connection_id), connections)
+                .await
+                .map(|value| value.map(DataValue::SqliteRef))
         }
         _ => Ok(None),
     }

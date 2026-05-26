@@ -12,7 +12,7 @@ export type DataTypeMetaDataObject = { Vec: DataTypeMetaData } | { Custom: strin
  *
  * Unit variants:  "Any" | "String" | "Integer" | "Float" | "Boolean" | "Json" | "Binary" |
  *                 "Password" | "MessageEvent" | "Sender" | "OpenAIMessage" | "QQMessage" | "FunctionTools" |
- *                 "BotAdapterRef" | "S3Ref" | "RedisRef" | "MySqlRef" | "TavilyRef" |
+ *                 "BotAdapterRef" | "S3Ref" | "RedisRef" | "MySqlRef" | "TavilyRef" | "SqliteRef" |
  *                 "SessionStateRef" | "OpenAIMessageSessionCacheRef" | "LLModel" | "LoopControlRef"
  * Tuple variants: { Vec: DataTypeMetaData } | { Custom: string }
  */

@@ -38,6 +38,7 @@ pub struct AgentTaskRequest {
     pub agent_name: String,
     pub user_ip: Option<String>,
     pub owner_id: Option<String>,
+    pub task_db_connection_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]

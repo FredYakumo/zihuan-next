@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as TokioMutex;
 use tokio::task::block_in_place;
 pub use zihuan_core::data_refs::MySqlConfig;
+pub use zihuan_core::data_refs::SqliteConfig;
 use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
 use zihuan_core::ims_bot_adapter::models::message::ImageMessage;
 use zihuan_core::ims_bot_adapter::models::sender_model::Sender as GraphSender;
@@ -669,6 +670,7 @@ pub enum DataType {
     S3Ref,
     RedisRef,
     MySqlRef,
+    SqliteRef,
     WeaviateRef,
     TavilyRef,
     SessionStateRef,
@@ -714,6 +716,7 @@ impl fmt::Display for DataType {
             DataType::S3Ref => write!(f, "S3Ref"),
             DataType::RedisRef => write!(f, "RedisRef"),
             DataType::MySqlRef => write!(f, "MySqlRef"),
+            DataType::SqliteRef => write!(f, "SqliteRef"),
             DataType::WeaviateRef => write!(f, "WeaviateRef"),
             DataType::TavilyRef => write!(f, "TavilyRef"),
             DataType::SessionStateRef => write!(f, "SessionStateRef"),
@@ -762,6 +765,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "S3Ref" => Ok(DataType::S3Ref),
                     "RedisRef" => Ok(DataType::RedisRef),
                     "MySqlRef" => Ok(DataType::MySqlRef),
+                    "SqliteRef" => Ok(DataType::SqliteRef),
                     "WeaviateRef" => Ok(DataType::WeaviateRef),
                     "TavilyRef" => Ok(DataType::TavilyRef),
                     "SessionStateRef" => Ok(DataType::SessionStateRef),
@@ -794,6 +798,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                             "S3Ref",
                             "RedisRef",
                             "MySqlRef",
+                            "SqliteRef",
                             "WeaviateRef",
                             "TavilyRef",
                             "SessionStateRef",
@@ -864,6 +869,7 @@ pub enum DataValue {
     S3Ref(Arc<S3Ref>),
     RedisRef(Arc<RedisConfig>),
     MySqlRef(Arc<MySqlConfig>),
+    SqliteRef(Arc<SqliteConfig>),
     WeaviateRef(Arc<WeaviateRef>),
     TavilyRef(Arc<TavilyRef>),
     SessionStateRef(Arc<SessionStateRef>),
@@ -896,6 +902,7 @@ impl DataValue {
             DataValue::S3Ref(_) => DataType::S3Ref,
             DataValue::RedisRef(_) => DataType::RedisRef,
             DataValue::MySqlRef(_) => DataType::MySqlRef,
+            DataValue::SqliteRef(_) => DataType::SqliteRef,
             DataValue::WeaviateRef(_) => DataType::WeaviateRef,
             DataValue::TavilyRef(_) => DataType::TavilyRef,
             DataValue::SessionStateRef(_) => DataType::SessionStateRef,
@@ -999,6 +1006,10 @@ impl DataValue {
                 "reconnect_max_attempts": config.reconnect_max_attempts,
                 "reconnect_interval_secs": config.reconnect_interval_secs,
             }),
+            DataValue::SqliteRef(config) => serde_json::json!({
+                "type": "SqliteRef",
+                "path": config.path,
+            }),
             DataValue::WeaviateRef(weaviate_ref) => serde_json::json!({
                 "type": "WeaviateRef",
                 "base_url": weaviate_ref.base_url,
@@ -1044,6 +1055,7 @@ impl fmt::Debug for DataValue {
             DataValue::S3Ref(config) => f.debug_tuple("S3Ref").field(config).finish(),
             DataValue::RedisRef(config) => f.debug_tuple("RedisRef").field(config).finish(),
             DataValue::MySqlRef(config) => f.debug_tuple("MySqlRef").field(config).finish(),
+            DataValue::SqliteRef(config) => f.debug_tuple("SqliteRef").field(config).finish(),
             DataValue::WeaviateRef(weaviate_ref) => {
                 f.debug_tuple("WeaviateRef").field(weaviate_ref).finish()
             }

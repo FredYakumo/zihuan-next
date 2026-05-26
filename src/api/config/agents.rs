@@ -63,6 +63,7 @@ impl AgentTaskRuntime for DefaultAgentTaskRuntime {
             request.task_name.clone(),
             request.user_ip.clone(),
             request.owner_id.clone(),
+            request.task_db_connection_id.clone(),
         );
 
         let _ = self.broadcast_tx.send(ServerMessage::TaskStarted {
@@ -183,22 +184,17 @@ impl AgentTaskRuntime for DefaultAgentTaskRuntime {
 
     fn append_task_progress(&self, task_id: &str, message: String) {
         if let Some(info) = self.background_tasks.lock().unwrap().get_mut(task_id) {
-            info.progress.push(message);
+            info.progress.push(message.clone());
         }
+        self.state
+            .tasks
+            .lock()
+            .unwrap()
+            .append_task_progress(task_id, message);
     }
 
     fn cancel_task(&self, task_id: &str) -> bool {
-        let stopped = self.state.tasks.lock().unwrap().stop_task(task_id);
-        if stopped {
-            if let Some(info) = self.background_tasks.lock().unwrap().get_mut(task_id) {
-                info.status = AgentTaskStatus::Stopped;
-                info.finished_at = Some(chrono::Local::now());
-            }
-            let _ = self.broadcast_tx.send(ServerMessage::TaskStopped {
-                task_id: task_id.to_string(),
-            });
-        }
-        stopped
+        self.state.tasks.lock().unwrap().stop_task(task_id)
     }
 }
 

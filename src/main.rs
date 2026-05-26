@@ -12,6 +12,7 @@ use lazy_static::lazy_static;
 use log::{error, info};
 use log_util::log_util::LogUtil;
 use salvo::Listener;
+use sqlx;
 use zihuan_core::config::ConfigRepository;
 
 lazy_static! {
@@ -34,6 +35,9 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
+    // Install sqlx AnyPool drivers before any async DB operations
+    sqlx::any::install_default_drivers();
+
     log_forwarder::init(&BASE_LOG);
 
     if let Err(e) = init_registry::init_node_registry() {
@@ -58,12 +62,18 @@ async fn main() {
         }
     }
 
+    // Ensure database tables exist for all existing MySQL/SQLite connections.
+    ensure_database_tables_for_existing_connections().await;
+
     let args = Args::parse();
 
     let state = Arc::new(api::state::AppState::new());
     let broadcast = api::ws::create_broadcast();
     log_forwarder::set_app_state(Arc::clone(&state));
     log_forwarder::set_broadcast(broadcast.clone());
+
+    startup_recover_orphan_tasks(&state).await;
+    spawn_task_ttl_cleanup(Arc::clone(&state));
 
     {
         let agents = crate::system_config::load_agents().unwrap_or_else(|e| {
@@ -113,4 +123,77 @@ async fn main() {
         .await
         .expect("Failed to bind TCP listener");
     salvo::Server::new(acceptor).serve(service).await;
+}
+
+async fn startup_recover_orphan_tasks(state: &api::state::AppState) {
+    let pools: Vec<(String, std::sync::Arc<sqlx::AnyPool>)> = state
+        .tasks
+        .lock()
+        .unwrap()
+        .all_db_pools()
+        .into_iter()
+        .collect();
+
+    for (conn_id, pool) in pools {
+        match api::task_store::mark_orphan_running_stopped(&pool).await {
+            Ok(count) if count > 0 => {
+                info!("Recovered {} orphan running tasks for connection '{}'", count, conn_id);
+            }
+            Err(err) => {
+                log::warn!("Failed to recover orphan tasks for connection '{}': {}", conn_id, err);
+            }
+            _ => {}
+        }
+    }
+}
+
+async fn ensure_database_tables_for_existing_connections() {
+    let connections = match crate::system_config::load_connections() {
+        Ok(conns) => conns,
+        Err(e) => {
+            log::warn!("[startup] failed to load connections for table check: {}", e);
+            return;
+        }
+    };
+
+    for conn in &connections {
+        if !conn.enabled {
+            continue;
+        }
+        if matches!(conn.kind, storage_handler::ConnectionKind::Mysql(_) | storage_handler::ConnectionKind::Sqlite(_)) {
+            if let Err(e) = storage_handler::ensure_tables_for_connection(&conn.kind).await {
+                log::warn!(
+                    "[startup] table creation failed for connection '{}' (id={}): {}",
+                    conn.name, conn.id, e
+                );
+            }
+        }
+    }
+}
+
+fn spawn_task_ttl_cleanup(state: std::sync::Arc<api::state::AppState>) {
+    let ttl_hours = zihuan_core::system_config::load_section::<
+        zihuan_core::system_config::GlobalSettingsSection,
+    >()
+    .unwrap_or_default()
+    .task_ttl_hours;
+
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
+        loop {
+            interval.tick().await;
+            let pools: Vec<std::sync::Arc<sqlx::AnyPool>> = state
+                .tasks
+                .lock()
+                .unwrap()
+                .all_db_pools()
+                .into_values()
+                .collect();
+            for pool in pools {
+                if let Err(err) = api::task_store::cleanup_expired_tasks(&pool, ttl_hours).await {
+                    log::warn!("Task TTL cleanup failed: {}", err);
+                }
+            }
+        }
+    });
 }

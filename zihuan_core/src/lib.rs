@@ -6,6 +6,7 @@ pub mod command;
 pub mod config;
 pub mod connection_manager;
 pub mod data_refs;
+pub mod database;
 pub mod error;
 pub mod ims_bot_adapter;
 pub mod llm;

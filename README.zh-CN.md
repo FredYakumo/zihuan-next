@@ -275,7 +275,7 @@ Agent 通过共享的 Brain/tool loop 调用这些图工具。这样一套工作
 
 图结构、inline values、variables 与嵌入式子图保存在图 JSON 或 `workflow_set/` 下的工作流文件中。
 
-`config.yaml` 只用于 Python Alembic 的 MySQL 表结构迁移流程。
+数据库表在通过 Connections 界面添加 MySQL/SQLite 连接时自动创建。
 
 ## 文档
 

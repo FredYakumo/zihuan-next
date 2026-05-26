@@ -8,7 +8,7 @@ import type {
   LlmServiceConfig,
 } from "../api/client";
 
-export type ConnectionType = "mysql" | "redis" | "weaviate" | "rustfs" | "bot_adapter" | "ims_bot_adapter" | "tavily" | "tokenizer";
+export type ConnectionType = "mysql" | "redis" | "weaviate" | "rustfs" | "bot_adapter" | "ims_bot_adapter" | "tavily" | "tokenizer" | "sqlite";
 export type WeaviateCollectionSchema = "message_record_semantic" | "image_semantic";
 export type AgentTypeName = "qq_chat" | "http_stream";
 export type ModelRefType = "chat_llm" | "text_embedding_local";
@@ -63,6 +63,7 @@ export interface ConnectionFormState {
   tavily_api_token: string;
   tavily_timeout_secs: number;
   tokenizer_model_name: string;
+  sqlite_path: string;
 }
 
 export interface LlmFormState {
@@ -114,6 +115,7 @@ export interface AgentFormState {
   http_bind: string;
   http_api_key: string;
   http_tavily_connection_id: string;
+  task_db_connection_id: string;
   tools: ToolFormState[];
 }
 
@@ -200,6 +202,7 @@ export function defaultConnectionForm(): ConnectionFormState {
     tavily_api_token: "",
     tavily_timeout_secs: 30,
     tokenizer_model_name: "",
+    sqlite_path: "",
   };
 }
 
@@ -257,6 +260,7 @@ export function defaultAgentForm(): AgentFormState {
     http_bind: "127.0.0.1:18080",
     http_api_key: "",
     http_tavily_connection_id: "",
+    task_db_connection_id: "",
     tools: [],
   };
 }
@@ -319,6 +323,9 @@ export function connectionFormFromConfig(connection: ConnectionConfig): Connecti
       break;
     case "tokenizer":
       form.tokenizer_model_name = String(connection.kind.model_name ?? "");
+      break;
+    case "sqlite":
+      form.sqlite_path = String(connection.kind.path ?? "");
       break;
   }
   return form;
@@ -427,6 +434,12 @@ export function buildConnectionPayload(form: ConnectionFormState): {
         model_name: form.tokenizer_model_name.trim(),
       };
       break;
+    case "sqlite":
+      payload.kind = {
+        type: "sqlite",
+        path: form.sqlite_path.trim(),
+      };
+      break;
   }
   return payload;
 }
@@ -518,6 +531,7 @@ export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): Agen
     form.max_message_length = Number(agentType.max_message_length ?? 500);
     form.compact_context_length = Number(agentType.compact_context_length ?? 0);
     form.max_steer_count = Number(agentType.max_steer_count ?? 4);
+    form.task_db_connection_id = String(agentType.task_db_connection_id ?? "");
     const source = (agentType.default_tools_enabled ?? {}) as Record<string, unknown>;
     form.default_tools_enabled = defaultQqChatDefaultToolsEnabled();
     for (const tool of QQ_CHAT_DEFAULT_TOOLS) {
@@ -531,6 +545,7 @@ export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): Agen
     form.http_api_key = String(agentType.api_key ?? "");
     form.llm_ref_id = String(agentType.llm_ref_id ?? "");
     form.http_tavily_connection_id = String(agentType.tavily_connection_id ?? "");
+    form.task_db_connection_id = String(agentType.task_db_connection_id ?? "");
     const source = (agentType.default_tools_enabled ?? {}) as Record<string, unknown>;
     form.default_tools_enabled = defaultHttpStreamDefaultToolsEnabled();
     for (const tool of HTTP_STREAM_DEFAULT_TOOLS) {
@@ -623,6 +638,7 @@ export function buildAgentPayload(form: AgentFormState): {
         compact_context_length: form.compact_context_length,
         max_steer_count: form.max_steer_count,
         default_tools_enabled: defaultToolsEnabled,
+        task_db_connection_id: form.task_db_connection_id || null,
       },
     };
   }
@@ -635,6 +651,7 @@ export function buildAgentPayload(form: AgentFormState): {
       api_key: form.http_api_key.trim() || null,
       llm_ref_id: form.llm_ref_id || null,
       tavily_connection_id: form.http_tavily_connection_id || null,
+      task_db_connection_id: form.task_db_connection_id || null,
       default_tools_enabled: Object.fromEntries(
         HTTP_STREAM_DEFAULT_TOOLS.map((tool) => [tool.id, form.default_tools_enabled[tool.id] !== false]),
       ),

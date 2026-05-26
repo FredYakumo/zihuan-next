@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
+use sqlx::AnyPool;
 use uuid::Uuid;
 use zihuan_graph_engine::graph_io::NodeGraphDefinition;
 
@@ -83,6 +84,8 @@ pub struct TaskEntry {
     pub result_summary: Option<String>,
     pub log_path: Option<String>,
     pub can_rerun: bool,
+    #[serde(default)]
+    pub task_db_connection_id: Option<String>,
     #[serde(skip, default)]
     pub stop_flag: Option<Arc<AtomicBool>>,
 }
@@ -105,11 +108,15 @@ pub struct TaskLogEntry {
 
 pub struct TaskManager {
     tasks: Vec<TaskEntry>,
+    db_pools: HashMap<String, Arc<AnyPool>>,
 }
 
 impl TaskManager {
     pub fn new() -> Self {
-        let mut manager = Self { tasks: Vec::new() };
+        let mut manager = Self {
+            tasks: Vec::new(),
+            db_pools: HashMap::new(),
+        };
         if let Err(err) = manager.load_persisted_tasks() {
             log::warn!("Failed to load persisted task records: {}", err);
         }
@@ -136,6 +143,7 @@ impl TaskManager {
             None,
             Some(stop_flag),
             can_rerun,
+            None,
         )
     }
 
@@ -145,6 +153,7 @@ impl TaskManager {
         task_name: String,
         user_ip: Option<String>,
         owner_id: Option<String>,
+        task_db_connection_id: Option<String>,
     ) -> String {
         self.add_task_with_type(
             TaskType::AgentService,
@@ -156,6 +165,7 @@ impl TaskManager {
             owner_id,
             None,
             false,
+            task_db_connection_id,
         )
     }
 
@@ -170,10 +180,12 @@ impl TaskManager {
         owner_id: Option<String>,
         stop_flag: Option<Arc<AtomicBool>>,
         can_rerun: bool,
+        task_db_connection_id: Option<String>,
     ) -> String {
         let id = Uuid::new_v4().to_string();
         let log_path = Self::task_log_path(&id).ok();
-        self.tasks.push(TaskEntry {
+        let task_db_connection_id_for_insert = task_db_connection_id.clone();
+        let entry = TaskEntry {
             id: id.clone(),
             task_type,
             graph_name,
@@ -191,8 +203,23 @@ impl TaskManager {
             error_message: None,
             result_summary: None,
             log_path,
+            task_db_connection_id,
             stop_flag,
-        });
+        };
+
+        if let Some(conn_id) = &task_db_connection_id_for_insert {
+            if let Some(pool) = self.db_pools.get(conn_id).cloned() {
+                let entry_ref = entry.clone();
+                let pool_ref = pool.clone();
+                tokio::spawn(async move {
+                    if let Err(err) = crate::api::task_store::insert_task_entry(&pool_ref, &entry_ref).await {
+                        log::warn!("Failed to insert task_entry '{}' into DB: {}", entry_ref.id, err);
+                    }
+                });
+            }
+        }
+
+        self.tasks.push(entry);
         self.persist_index();
         id
     }
@@ -221,12 +248,47 @@ impl TaskManager {
             task.is_running = false;
             task.end_time = Some(end_time);
             task.duration_ms = Some((end_time - task.start_time).num_milliseconds().max(0));
-            task.status = status;
-            task.error_message = error_message;
-            task.result_summary = result_summary;
+            task.status = status.clone();
+            task.error_message = error_message.clone();
+            task.result_summary = result_summary.clone();
             task.stop_flag = None;
+
+            if let Some(conn_id) = &task.task_db_connection_id {
+                if let Some(pool) = self.db_pools.get(conn_id).cloned() {
+                    let task_id = task.id.clone();
+                    let duration_ms = task.duration_ms.unwrap_or(0);
+                    tokio::spawn(async move {
+                        if let Err(err) = crate::api::task_store::update_task_entry_finished(
+                            &pool,
+                            &task_id,
+                            &status,
+                            error_message.as_deref(),
+                            result_summary.as_deref(),
+                            end_time,
+                            duration_ms,
+                        )
+                        .await
+                        {
+                            log::warn!("Failed to update task_entry '{}' in DB: {}", task_id, err);
+                        }
+                    });
+                }
+            }
+
             self.persist_index();
         }
+    }
+
+    pub fn register_db_pool(&mut self, connection_id: String, pool: Arc<AnyPool>) {
+        self.db_pools.insert(connection_id, pool);
+    }
+
+    pub fn get_db_pool(&self, connection_id: &str) -> Option<Arc<AnyPool>> {
+        self.db_pools.get(connection_id).cloned()
+    }
+
+    pub fn all_db_pools(&self) -> HashMap<String, Arc<AnyPool>> {
+        self.db_pools.clone()
     }
 
     pub fn list(&self) -> Vec<TaskEntry> {
@@ -326,6 +388,35 @@ impl TaskManager {
             }
         }
         Ok(entries)
+    }
+
+    /// Append a progress step message for a task. If the task has a DB connection configured,
+    /// writes to the database; otherwise the message is silently dropped (in-memory tracking
+    /// is handled by the agent runtime).
+    pub fn append_task_progress(&self, task_id: &str, message: String) {
+        if let Some(task) = self.get(task_id) {
+            if let Some(conn_id) = &task.task_db_connection_id {
+                if let Some(pool) = self.get_db_pool(conn_id) {
+                    let task_id = task_id.to_string();
+                    tokio::spawn(async move {
+                        if let Err(err) = crate::api::task_store::append_task_progress(
+                            &pool,
+                            &task_id,
+                            0,
+                            &message,
+                        )
+                        .await
+                        {
+                            log::warn!(
+                                "Failed to append task_progress for task '{}': {}",
+                                task_id,
+                                err
+                            );
+                        }
+                    });
+                }
+            }
+        }
     }
 
     fn task_log_path(task_id: &str) -> std::io::Result<String> {
@@ -428,6 +519,7 @@ impl TaskManager {
                 result_summary: Some("从历史日志文件恢复的任务记录".to_string()),
                 log_path: Some(path.to_string_lossy().to_string()),
                 can_rerun: false,
+                task_db_connection_id: None,
                 stop_flag: None,
             });
         }

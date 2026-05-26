@@ -49,6 +49,7 @@ pub struct HttpStreamAgentConfig {
     pub llm_ref_id: Option<String>,
     #[serde(default)]
     pub tavily_connection_id: Option<String>,
+    pub task_db_connection_id: String,
     #[serde(default = "default_http_stream_default_tools_enabled")]
     pub default_tools_enabled: std::collections::HashMap<String, bool>,
 }

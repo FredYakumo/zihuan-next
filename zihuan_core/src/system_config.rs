@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::error::{Error, Result};
@@ -137,4 +137,29 @@ fn ensure_version(object: &mut Map<String, Value>) {
     object
         .entry(VERSION_KEY.to_string())
         .or_insert_with(|| Value::from(DEFAULT_VERSION));
+}
+
+fn default_task_ttl_hours() -> u64 {
+    168 // 7 days
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GlobalSettings {
+    #[serde(default = "default_task_ttl_hours")]
+    pub task_ttl_hours: u64,
+}
+
+impl Default for GlobalSettings {
+    fn default() -> Self {
+        Self {
+            task_ttl_hours: default_task_ttl_hours(),
+        }
+    }
+}
+
+pub struct GlobalSettingsSection;
+
+impl SystemConfigSection for GlobalSettingsSection {
+    const SECTION_KEY: &'static str = "global_settings";
+    type Value = GlobalSettings;
 }

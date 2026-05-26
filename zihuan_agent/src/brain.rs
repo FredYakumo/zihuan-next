@@ -233,6 +233,7 @@ impl Brain {
                     agent_name: long_ctx.agent_name.clone(),
                     user_ip: None,
                     owner_id: long_ctx.owner_id.clone(),
+                    task_db_connection_id: None,
                 });
                 let task_id = handle.task_id.clone();
                 let progress_text = call_content.trim();

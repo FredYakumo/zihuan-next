@@ -1,4 +1,5 @@
 mod connection_manager;
+mod db_schema;
 mod image_weaviate_persistence;
 mod message_store;
 pub mod mysql;
@@ -7,6 +8,7 @@ mod qq_message_list_weaviate_persistence;
 pub mod redis;
 pub mod resource_resolver;
 pub mod rustfs;
+pub mod sqlite;
 mod tavily_provider_node;
 mod tavily_search_node;
 pub mod weaviate;
@@ -27,8 +29,10 @@ pub use connection_manager::{
     close_runtime_storage_instances_for_config, list_runtime_storage_instances,
     MessageStoreConnectionAccess, RuntimeStorageConnectionManager, StorageRuntimeHandle,
 };
+pub use db_schema::ensure_tables_for_connection;
 pub use message_store::{MessageRecord, MessageStore};
 pub use mysql::MySqlNode;
+pub use sqlite::SqliteNode;
 pub use object_storage::{
     enrich_event_images, enrich_message_images, save_image_to_object_storage,
     upload_remote_image_to_s3, ImageCacheAdapter, ImageObjectStorageInput, ObjectStorageConfig,
@@ -36,8 +40,8 @@ pub use object_storage::{
 };
 pub use redis::RedisNode;
 pub use resource_resolver::{
-    build_mysql_ref, build_redis_ref, build_s3_ref, build_tavily_ref, build_weaviate_ref,
-    find_connection, resolve_connection_data_value,
+    build_mysql_ref, build_redis_ref, build_s3_ref, build_sqlite_ref, build_tavily_ref,
+    build_weaviate_ref, find_connection, resolve_connection_data_value,
 };
 pub use rustfs::RustfsNode;
 pub use weaviate::WeaviateNode;
@@ -74,6 +78,7 @@ pub enum ConnectionKind {
     BotAdapter(serde_json::Value),
     Tavily(TavilyConnection),
     Tokenizer(TokenizerConnection),
+    Sqlite(SqliteConnection),
 }
 
 pub const DEFAULT_MYSQL_MAX_CONNECTIONS: u32 = 32;
@@ -136,6 +141,11 @@ pub struct TokenizerConnection {
     pub model_name: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SqliteConnection {
+    pub path: String,
+}
+
 fn default_tavily_timeout_secs() -> u64 {
     30
 }
@@ -195,6 +205,7 @@ impl ConfigRecord for ConnectionConfig {
             ConnectionKind::BotAdapter(_) => ConfigKind::ConnectionBotAdapter,
             ConnectionKind::Tavily(_) => ConfigKind::ConnectionTavily,
             ConnectionKind::Tokenizer(_) => ConfigKind::ConnectionTokenizer,
+            ConnectionKind::Sqlite(_) => ConfigKind::ConnectionSqlite,
         }
     }
 
@@ -222,6 +233,11 @@ impl ConfigRecord for ConnectionConfig {
                 return Err(zihuan_core::string_error!(
                     "mysql.acquire_timeout_secs must be greater than 0"
                 ));
+            }
+        }
+        if let ConnectionKind::Sqlite(sqlite) = &self.kind {
+            if sqlite.path.trim().is_empty() {
+                return Err(zihuan_core::string_error!("sqlite.path must not be empty"));
             }
         }
         Ok(())
@@ -416,6 +432,13 @@ pub fn init_node_registry() -> Result<()> {
         "数据库",
         "从系统连接配置中选择 MySQL 并输出 MySqlRef 引用",
         MySqlNode
+    );
+    register_node!(
+        "sqlite",
+        "SQLite连接",
+        "数据库",
+        "从系统连接配置中选择 SQLite 并输出 SqliteRef 引用",
+        SqliteNode
     );
     register_node!(
         "rustfs",

@@ -30,6 +30,7 @@ pub enum ConfigKind {
     ConnectionBotAdapter,
     ConnectionTavily,
     ConnectionTokenizer,
+    ConnectionSqlite,
     LlmRef,
     AgentQqChat,
     AgentHttpStream,
@@ -45,7 +46,8 @@ impl ConfigKind {
             | Self::ConnectionRustfs
             | Self::ConnectionBotAdapter
             | Self::ConnectionTavily
-            | Self::ConnectionTokenizer => ConfigCategory::Connection,
+            | Self::ConnectionTokenizer
+            | Self::ConnectionSqlite => ConfigCategory::Connection,
             Self::LlmRef => ConfigCategory::LlmRef,
             Self::AgentQqChat | Self::AgentHttpStream => ConfigCategory::Agent,
             Self::CommandPermission => ConfigCategory::Agent,

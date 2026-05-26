@@ -29,6 +29,7 @@
                 <option value="bot_adapter">Bot Adapter</option>
                 <option value="tavily">Tavily</option>
                 <option value="tokenizer">Tokenizer</option>
+                <option value="sqlite">SQLite</option>
               </select>
             </div>
 
@@ -147,6 +148,13 @@
                 </select>
               </div>
             </template>
+
+            <template v-else-if="form.type === 'sqlite'">
+              <div class="field-full">
+                <label>数据库文件路径</label>
+                <input v-model="form.sqlite_path" placeholder="/path/to/database.db" />
+              </div>
+            </template>
           </div>
           <div class="panel-actions connection-picker-form-actions">
             <button class="btn ghost" @click="showEditor = false">返回</button>
@@ -202,6 +210,7 @@
                   <option value="bot_adapter">Bot Adapter</option>
                   <option value="tavily">Tavily</option>
                   <option value="tokenizer">Tokenizer</option>
+                  <option value="sqlite">SQLite</option>
                 </select>
               </div>
               <div class="key-value connection-card-edit-row">
@@ -361,6 +370,13 @@
                   </select>
                 </div>
               </template>
+
+              <template v-else-if="form.type === 'sqlite'">
+                <div class="key-value connection-card-edit-row">
+                  <strong>文件路径</strong>
+                  <input v-model="form.sqlite_path" class="connection-card-inline-input" placeholder="/path/to/database.db" />
+                </div>
+              </template>
             </div>
           </template>
 
@@ -427,6 +443,7 @@ const connectionTypes: ConnectionTypeOption[] = [
   { value: "bot_adapter", label: "Bot Adapter", hint: "Bot 服务接入" },
   { value: "tavily", label: "Tavily", hint: "Tavily 搜索配置" },
   { value: "tokenizer", label: "Tokenizer", hint: "分词模型" },
+  { value: "sqlite", label: "SQLite", hint: "SQLite 数据库" },
 ];
 
 const connections = ref<ConnectionConfig[]>([]);
