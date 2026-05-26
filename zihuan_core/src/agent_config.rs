@@ -87,6 +87,7 @@ pub struct QqChatAgentConfig {
     #[serde(default)]
     pub tokenizer_connection_id: Option<String>,
     pub tavily_connection_id: String,
+    #[serde(default)]
     pub task_db_connection_id: String,
     #[serde(default)]
     pub embedding: Option<EmbeddingServiceConfig>,

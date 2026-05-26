@@ -2065,6 +2065,7 @@ impl QqChatAgent {
         pending_steer: &Arc<PendingSteerStore>,
         task_runtime: Option<&Arc<dyn AgentTaskRuntime>>,
         user_ip: Option<String>,
+        task_db_connection_id: Option<String>,
     ) -> Result<()> {
         let is_group = event.message_type == MessageType::Group;
         let sender_id = event.sender.user_id.to_string();
@@ -2148,7 +2149,7 @@ impl QqChatAgent {
                 agent_name: bot_name.to_string(),
                 user_ip,
                 owner_id: Some(sender_id.to_string()),
-                task_db_connection_id: None,
+                task_db_connection_id: task_db_connection_id.clone(),
             })
         });
         let trace = QqChatTaskTrace::new(task_created_at);
@@ -2182,6 +2183,7 @@ impl QqChatAgent {
                     shared_runtime_values,
                     pending_steer,
                     task_runtime_arc.clone(),
+                    task_db_connection_id.clone(),
                 )
             })
         } else {
@@ -2213,6 +2215,7 @@ impl QqChatAgent {
                 shared_runtime_values,
                 pending_steer,
                 task_runtime_arc,
+                task_db_connection_id.clone(),
             )
         };
         trace.finish_with_summary();
@@ -2266,6 +2269,7 @@ impl QqChatAgent {
         shared_runtime_values: HashMap<String, DataValue>,
         pending_steer: &Arc<PendingSteerStore>,
         task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
+        task_db_connection_id: Option<String>,
     ) -> Result<QqChatHandleReport> {
         (|| -> Result<QqChatHandleReport> {
             let bot_id = get_bot_id(adapter);
@@ -2300,6 +2304,7 @@ impl QqChatAgent {
                     pending_steer,
                     &bot_id,
                     task_runtime.clone(),
+                    task_db_connection_id.clone(),
                 )?;
 
                 let (pending, remaining_queue_len, accepted_steer_count) =
@@ -2371,6 +2376,7 @@ impl QqChatAgent {
         pending_steer: &Arc<PendingSteerStore>,
         bot_id: &str,
         task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
+        task_db_connection_id: Option<String>,
     ) -> Result<QqChatTurnResult> {
         let hydrated_event = hydrate_missing_reply_sources(event, adapter);
         let inference_event = expand_event_for_inference(&hydrated_event);
@@ -2732,6 +2738,7 @@ impl QqChatAgent {
                 owner_id: Some(sender_id.to_string()),
                 agent_id: self.id.clone(),
                 agent_name: bot_name.to_string(),
+                task_db_connection_id: task_db_connection_id.clone(),
                 notifier: Arc::new(QqLongTaskNotifier {
                     adapter: adapter.clone(),
                     target_id: target_id.to_string(),
@@ -2947,6 +2954,15 @@ impl QqChatAgentService {
             self.config.intent_llm_display_name.clone(),
             self.config.math_programming_llm_display_name.clone(),
         ];
+        let task_db_connection_id = self
+            .config
+            .qq_chat_config
+            .task_db_connection_id
+            .trim()
+            .is_empty()
+            .then(|| None)
+            .unwrap_or_else(|| Some(self.config.qq_chat_config.task_db_connection_id.clone()));
+
         zihuan_core::agent_config::with_current_qq_chat_agent_config(
             self.config.qq_chat_config.clone(),
             || {
@@ -2976,6 +2992,7 @@ impl QqChatAgentService {
                     &self.pending_steer,
                     self.config.task_runtime.as_ref(),
                     None,
+                    task_db_connection_id,
                 )
             },
         )

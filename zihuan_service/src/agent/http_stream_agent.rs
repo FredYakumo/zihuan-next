@@ -33,6 +33,7 @@ use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
 struct HttpStreamRuntimeState {
     owner_agent: AgentConfig,
     task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
+    task_db_connection_id: Option<String>,
 }
 
 struct HttpStreamCommandSideEffectContext {
@@ -152,9 +153,16 @@ pub async fn spawn(
             ))
         })?;
 
+    let task_db_connection_id = if config.task_db_connection_id.trim().is_empty() {
+        None
+    } else {
+        Some(config.task_db_connection_id.clone())
+    };
+
     let runtime_state = Arc::new(HttpStreamRuntimeState {
         owner_agent: agent.clone(),
         task_runtime,
+        task_db_connection_id,
     });
     let auth_token = normalize_optional_token(config.api_key.clone());
     let router = Router::new()
@@ -274,7 +282,7 @@ async fn http_stream_chat_completions(req: &mut Request, res: &mut Response, dep
             agent_name: runtime.owner_agent.name.clone(),
             user_ip: request_ip.clone(),
             owner_id: None,
-            task_db_connection_id: None,
+            task_db_connection_id: runtime.task_db_connection_id.clone(),
         })
     });
 

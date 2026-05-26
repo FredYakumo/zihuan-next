@@ -104,6 +104,7 @@ pub struct LongTaskContext {
     pub agent_id: String,
     pub agent_name: String,
     pub notifier: Arc<dyn LongTaskNotifier>,
+    pub task_db_connection_id: Option<String>,
 }
 
 /// A tool that [`Brain`] can invoke during an inference loop.
@@ -233,7 +234,7 @@ impl Brain {
                     agent_name: long_ctx.agent_name.clone(),
                     user_ip: None,
                     owner_id: long_ctx.owner_id.clone(),
-                    task_db_connection_id: None,
+                    task_db_connection_id: long_ctx.task_db_connection_id.clone(),
                 });
                 let task_id = handle.task_id.clone();
                 let progress_text = call_content.trim();

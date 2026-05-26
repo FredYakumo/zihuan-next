@@ -129,6 +129,10 @@
                   <option value="">不使用</option>
                   <option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
+                <div v-if="!form.task_db_connection_id" class="muted" style="margin-top: 4px;">
+                  💡 未配置关系数据库连接时，任务记录仅在内存中保存，重启服务后会丢失。
+                  如需持久化，请在 <a href="#/connections" style="color: var(--primary);">连接管理</a> 中新建 MySQL 或 SQLite 连接。
+                </div>
               </div>
             </template>
 
@@ -148,6 +152,10 @@
                   <option value="">不使用</option>
                   <option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
+                <div v-if="!form.task_db_connection_id" class="muted" style="margin-top: 4px;">
+                  💡 未配置关系数据库连接时，任务记录仅在内存中保存，重启服务后会丢失。
+                  如需持久化，请在 <a href="#/connections" style="color: var(--primary);">连接管理</a> 中新建 MySQL 或 SQLite 连接。
+                </div>
               </div>
             </template>
           </div>
@@ -405,6 +413,10 @@
                   <option value="">不使用</option>
                   <option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
+                <div v-if="!form.task_db_connection_id" class="muted" style="margin-top: 4px;">
+                  💡 未配置关系数据库连接时，任务记录仅在内存中保存，重启服务后会丢失。
+                  如需持久化，请在 <a href="#/connections" style="color: var(--primary);">连接管理</a> 中新建 MySQL 或 SQLite 连接。
+                </div>
               </div>
 
               <div class="editor-card" style="margin-top: 12px;">
@@ -446,6 +458,10 @@
                   <option value="">不使用</option>
                   <option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
+                <div v-if="!form.task_db_connection_id" class="muted" style="margin-top: 4px;">
+                  💡 未配置关系数据库连接时，任务记录仅在内存中保存，重启服务后会丢失。
+                  如需持久化，请在 <a href="#/connections" style="color: var(--primary);">连接管理</a> 中新建 MySQL 或 SQLite 连接。
+                </div>
               </div>
 
               <div class="editor-card" style="margin-top: 12px;">
