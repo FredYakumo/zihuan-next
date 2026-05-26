@@ -30,13 +30,6 @@
           "hidden": false
         },
         {
-          "name": "message_id",
-          "data_type": "Integer",
-          "description": "节点图输入 'message_id'",
-          "required": false,
-          "hidden": false
-        },
-        {
           "name": "qq_ims_bot_adapter",
           "data_type": "BotAdapterRef",
           "description": "节点图输入 'qq_ims_bot_adapter'",
@@ -58,19 +51,15 @@
         "signature": [
           {
             "data_type": "MessageEvent",
-            "description": "",
-            "name": "message_event"
-          },
-          {
-            "data_type": "Integer",
-            "description": "",
-            "name": "message_id",
-            "required": false
+            "description": "当前触发此次工具调用的消息事件",
+            "name": "message_event",
+            "required": true
           },
           {
             "data_type": "BotAdapterRef",
-            "description": "",
-            "name": "qq_ims_bot_adapter"
+            "description": "当前消息事件对应的 Bot Adapter 连接引用",
+            "name": "qq_ims_bot_adapter",
+            "required": true
           }
         ]
       },
@@ -116,7 +105,8 @@
           {
             "data_type": "String",
             "description": "",
-            "name": "image_description"
+            "name": "image_description",
+            "required": true
           }
         ]
       },
@@ -517,7 +507,7 @@
       "dynamic_output_ports": false,
       "position": {
         "x": 80.0,
-        "y": 500.0
+        "y": 560.0
       },
       "size": {
         "width": 200.0,
@@ -562,18 +552,6 @@
     }
   ],
   "edges": [
-    {
-      "from_node_id": "__graph_inputs__",
-      "from_port": "message_event",
-      "to_node_id": "1429dd06-0384-4761-ac60-1a8282c9b739",
-      "to_port": "message_event"
-    },
-    {
-      "from_node_id": "__graph_inputs__",
-      "from_port": "message_id",
-      "to_node_id": "1429dd06-0384-4761-ac60-1a8282c9b739",
-      "to_port": "message_id"
-    },
     {
       "from_node_id": "b60898f1-93ff-4e23-a545-6583bff413cd",
       "from_port": "llm_model",
@@ -633,31 +611,21 @@
       "from_port": "s3_ref",
       "to_node_id": "1429dd06-0384-4761-ac60-1a8282c9b739",
       "to_port": "s3_ref"
-    }
-  ],
-  "graph_inputs": [
-    {
-      "name": "message_event",
-      "data_type": "MessageEvent",
-      "description": ""
     },
     {
-      "name": "message_id",
-      "data_type": "Integer",
-      "description": "",
-      "required": false
-    },
-    {
-      "name": "qq_ims_bot_adapter",
-      "data_type": "BotAdapterRef",
-      "description": ""
+      "from_node_id": "__graph_inputs__",
+      "from_port": "message_event",
+      "to_node_id": "1429dd06-0384-4761-ac60-1a8282c9b739",
+      "to_port": "message_event"
     }
   ],
+  "graph_inputs": [],
   "graph_outputs": [
     {
       "name": "image_description",
       "data_type": "String",
-      "description": ""
+      "description": "",
+      "required": true
     }
   ],
   "hyperparameter_groups": [],
@@ -667,5 +635,6 @@
     "name": "图像分析能力",
     "description": "调用图像分析模型对图像进行分析",
     "version": null
-  }
+  },
+  "accepts_agent_events": true
 }

@@ -94,6 +94,28 @@
         "height": 220.0
       },
       "inline_values": {
+        "shared_inputs": [
+          {
+            "data_type": "MySqlRef",
+            "name": "mysql_ref"
+          },
+          {
+            "data_type": "WeaviateRef",
+            "name": "weaviate_ref"
+          },
+          {
+            "data_type": "EmbeddingModel",
+            "name": "embedding_model"
+          },
+          {
+            "data_type": "MessageEvent",
+            "name": "message_event"
+          },
+          {
+            "data_type": "BotAdapterRef",
+            "name": "qq_ims_bot_adapter"
+          }
+        ],
         "tools_config": [
           {
             "description": "在 MySQL 消息记录中搜索聊天消息；未使用的文本过滤条件传空字符串",
@@ -105,7 +127,8 @@
                   "Vec": "String"
                 },
                 "description": "",
-                "name": "messages"
+                "name": "messages",
+                "required": true
               }
             ],
             "parameters": [
@@ -152,7 +175,9 @@
                 "required": true
               }
             ],
+            "run_duration": "Short",
             "subgraph": {
+              "accepts_agent_events": false,
               "edges": [
                 {
                   "from_node_id": "__function_inputs__",
@@ -232,67 +257,80 @@
                       {
                         "data_type": "MySqlRef",
                         "description": "",
-                        "name": "mysql_ref"
+                        "name": "mysql_ref",
+                        "required": true
                       },
                       {
                         "data_type": "WeaviateRef",
                         "description": "",
-                        "name": "weaviate_ref"
+                        "name": "weaviate_ref",
+                        "required": true
                       },
                       {
                         "data_type": "EmbeddingModel",
                         "description": "",
-                        "name": "embedding_model"
+                        "name": "embedding_model",
+                        "required": true
                       },
                       {
                         "data_type": "MessageEvent",
                         "description": "",
-                        "name": "message_event"
+                        "name": "message_event",
+                        "required": true
                       },
                       {
                         "data_type": "BotAdapterRef",
                         "description": "",
-                        "name": "qq_ims_bot_adapter"
+                        "name": "qq_ims_bot_adapter",
+                        "required": true
                       },
                       {
                         "data_type": "String",
                         "description": "触发此次工具调用的上下文文本内容",
-                        "name": "content"
+                        "name": "content",
+                        "required": true
                       },
                       {
                         "data_type": "String",
                         "description": "按发送者 QQ 号过滤；未使用时传空字符串",
-                        "name": "sender_id"
+                        "name": "sender_id",
+                        "required": true
                       },
                       {
                         "data_type": "String",
                         "description": "按群号过滤；未使用时传空字符串",
-                        "name": "group_id"
+                        "name": "group_id",
+                        "required": true
                       },
                       {
                         "data_type": "String",
                         "description": "消息内容包含的关键词；未使用时传空字符串",
-                        "name": "contain"
+                        "name": "contain",
+                        "required": true
                       },
                       {
                         "data_type": "String",
                         "description": "时间范围起始（YYYY-MM-DD HH:MM:SS）；未使用时传空字符串",
-                        "name": "start_time"
+                        "name": "start_time",
+                        "required": true
                       },
                       {
                         "data_type": "String",
                         "description": "时间范围结束（YYYY-MM-DD HH:MM:SS）；未使用时传空字符串",
-                        "name": "end_time"
+                        "name": "end_time",
+                        "required": true
                       },
                       {
                         "data_type": "Integer",
                         "description": "返回消息数量，建议 10",
-                        "name": "limit"
+                        "name": "limit",
+                        "required": true
                       },
                       {
                         "data_type": "Boolean",
                         "description": "是否按时间倒序，建议 true",
-                        "name": "sort_by_time_desc"
+                        "name": "sort_by_time_desc",
+                        "required": true
                       }
                     ]
                   },
@@ -320,91 +358,91 @@
                       "description": "函数输入 'mysql_ref'",
                       "hidden": false,
                       "name": "mysql_ref",
-                      "required": false
+                      "required": true
                     },
                     {
                       "data_type": "WeaviateRef",
                       "description": "函数输入 'weaviate_ref'",
                       "hidden": false,
                       "name": "weaviate_ref",
-                      "required": false
+                      "required": true
                     },
                     {
                       "data_type": "EmbeddingModel",
                       "description": "函数输入 'embedding_model'",
                       "hidden": false,
                       "name": "embedding_model",
-                      "required": false
+                      "required": true
                     },
                     {
                       "data_type": "MessageEvent",
                       "description": "函数输入 'message_event'",
                       "hidden": false,
                       "name": "message_event",
-                      "required": false
+                      "required": true
                     },
                     {
                       "data_type": "BotAdapterRef",
                       "description": "函数输入 'qq_ims_bot_adapter'",
                       "hidden": false,
                       "name": "qq_ims_bot_adapter",
-                      "required": false
+                      "required": true
                     },
                     {
                       "data_type": "String",
                       "description": "触发此次工具调用的上下文文本内容",
                       "hidden": false,
                       "name": "content",
-                      "required": false
+                      "required": true
                     },
                     {
                       "data_type": "String",
                       "description": "按发送者 QQ 号过滤；未使用时传空字符串",
                       "hidden": false,
                       "name": "sender_id",
-                      "required": false
+                      "required": true
                     },
                     {
                       "data_type": "String",
                       "description": "按群号过滤；未使用时传空字符串",
                       "hidden": false,
                       "name": "group_id",
-                      "required": false
+                      "required": true
                     },
                     {
                       "data_type": "String",
                       "description": "消息内容包含的关键词；未使用时传空字符串",
                       "hidden": false,
                       "name": "contain",
-                      "required": false
+                      "required": true
                     },
                     {
                       "data_type": "String",
                       "description": "时间范围起始（YYYY-MM-DD HH:MM:SS）；未使用时传空字符串",
                       "hidden": false,
                       "name": "start_time",
-                      "required": false
+                      "required": true
                     },
                     {
                       "data_type": "String",
                       "description": "时间范围结束（YYYY-MM-DD HH:MM:SS）；未使用时传空字符串",
                       "hidden": false,
                       "name": "end_time",
-                      "required": false
+                      "required": true
                     },
                     {
                       "data_type": "Integer",
                       "description": "返回消息数量，建议 10",
                       "hidden": false,
                       "name": "limit",
-                      "required": false
+                      "required": true
                     },
                     {
                       "data_type": "Boolean",
                       "description": "是否按时间倒序，建议 true",
                       "hidden": false,
                       "name": "sort_by_time_desc",
-                      "required": false
+                      "required": true
                     }
                   ],
                   "port_bindings": {},
@@ -413,8 +451,8 @@
                     "y": 120
                   },
                   "size": {
-                    "height": 279.11465,
-                    "width": 236.24341
+                    "height": 279.1146545410156,
+                    "width": 236.243408203125
                   }
                 },
                 {
@@ -432,7 +470,8 @@
                           "Vec": "String"
                         },
                         "description": "",
-                        "name": "messages"
+                        "name": "messages",
+                        "required": true
                       }
                     ]
                   },
@@ -451,7 +490,7 @@
                       "description": "函数输出 'messages'",
                       "hidden": false,
                       "name": "messages",
-                      "required": false
+                      "required": true
                     }
                   ],
                   "name": "函数输出",
@@ -593,7 +632,9 @@
                 "required": true
               }
             ],
+            "run_duration": "Short",
             "subgraph": {
+              "accepts_agent_events": false,
               "edges": [
                 {
                   "from_node_id": "__function_inputs__",
@@ -933,28 +974,6 @@
               "variables": []
             }
           }
-        ],
-        "shared_inputs": [
-          {
-            "data_type": "MySqlRef",
-            "name": "mysql_ref"
-          },
-          {
-            "data_type": "WeaviateRef",
-            "name": "weaviate_ref"
-          },
-          {
-            "data_type": "EmbeddingModel",
-            "name": "embedding_model"
-          },
-          {
-            "data_type": "MessageEvent",
-            "name": "message_event"
-          },
-          {
-            "data_type": "BotAdapterRef",
-            "name": "qq_ims_bot_adapter"
-          }
         ]
       },
       "port_bindings": {},
@@ -1074,6 +1093,13 @@
       ],
       "output_ports": [
         {
+          "name": "query",
+          "data_type": "String",
+          "description": "节点图输入 'query'",
+          "required": true,
+          "hidden": false
+        },
+        {
           "name": "message_event",
           "data_type": "MessageEvent",
           "description": "节点图输入 'message_event'",
@@ -1084,13 +1110,6 @@
           "name": "qq_ims_bot_adapter",
           "data_type": "BotAdapterRef",
           "description": "节点图输入 'qq_ims_bot_adapter'",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "query",
-          "data_type": "String",
-          "description": "节点图输入 'query'",
           "required": true,
           "hidden": false
         }
@@ -1108,21 +1127,21 @@
       "inline_values": {
         "signature": [
           {
-            "data_type": "MessageEvent",
+            "data_type": "String",
             "description": "",
+            "name": "query",
+            "required": true
+          },
+          {
+            "data_type": "MessageEvent",
+            "description": "当前触发此次工具调用的消息事件",
             "name": "message_event",
             "required": true
           },
           {
             "data_type": "BotAdapterRef",
-            "description": "",
+            "description": "当前消息事件对应的 Bot Adapter 连接引用",
             "name": "qq_ims_bot_adapter",
-            "required": true
-          },
-          {
-            "data_type": "String",
-            "description": "",
-            "name": "query",
             "required": true
           }
         ]
@@ -1383,6 +1402,7 @@
             }
           ],
           "subgraph": {
+            "accepts_agent_events": false,
             "edges": [
               {
                 "from_node_id": "8ba6469a-d28d-4e00-8b8b-0f9f3b689f40",
@@ -1440,7 +1460,7 @@
                   {
                     "data_type": "String",
                     "description": "格式化模板字符串，使用 ${变量名} 语法引用输入变量",
-                    "hidden": false,
+                    "hidden": true,
                     "name": "template",
                     "required": false
                   }
@@ -1831,6 +1851,7 @@
             }
           ],
           "subgraph": {
+            "accepts_agent_events": false,
             "edges": [
               {
                 "from_node_id": "system_prompt",
@@ -2416,7 +2437,7 @@
                 "port_bindings": {},
                 "position": {
                   "x": 1130,
-                  "y": 373.33334
+                  "y": 373.3333435058594
                 },
                 "size": {
                   "height": 120,
@@ -2467,7 +2488,7 @@
                 "port_bindings": {},
                 "position": {
                   "x": 3390,
-                  "y": 373.33334
+                  "y": 373.3333435058594
                 },
                 "size": {
                   "height": 120,
@@ -2591,18 +2612,6 @@
   ],
   "graph_inputs": [
     {
-      "name": "message_event",
-      "data_type": "MessageEvent",
-      "description": "",
-      "required": true
-    },
-    {
-      "name": "qq_ims_bot_adapter",
-      "data_type": "BotAdapterRef",
-      "description": "",
-      "required": true
-    },
-    {
       "name": "query",
       "data_type": "String",
       "description": "",
@@ -2655,5 +2664,6 @@
     "name": "QQ 消息深度搜索",
     "description": "供 qq_chat_agent 手动挂载的 workflow_set 工具。它会在消息记录和本地图片库中深度检索，不会回退到联网搜图。",
     "version": "1.0.0"
-  }
+  },
+  "accepts_agent_events": true
 }

@@ -24,6 +24,12 @@ fn agent_event_ports() -> Vec<crate::function_graph::FunctionPortDef> {
     use crate::DataType;
     vec![
         FunctionPortDef {
+            name: "content".to_string(),
+            data_type: DataType::String,
+            description: "触发此次工具调用的上下文文本内容".to_string(),
+            required: true,
+        },
+        FunctionPortDef {
             name: "message_event".to_string(),
             data_type: DataType::MessageEvent,
             description: "当前触发此次工具调用的消息事件".to_string(),

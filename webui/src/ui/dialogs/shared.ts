@@ -20,19 +20,70 @@ export function extractTemplateVars(template: string): string[] {
   return result;
 }
 
+type PortRowItem = {
+  nameEl: HTMLInputElement;
+  typeEl: HTMLSelectElement;
+  descEl?: HTMLInputElement;
+  row: HTMLElement;
+  reserved: boolean;
+};
+
 export function buildPortListEditor(
   container: HTMLElement,
   ports: FunctionPortDef[],
   showDesc = false,
   excludeDataTypes?: string[],
+  reservedPorts?: FunctionPortDef[],
 ): () => FunctionPortDef[] {
-  const items: Array<{
-    nameEl: HTMLInputElement;
-    typeEl: HTMLSelectElement;
-    descEl?: HTMLInputElement;
-  }> = [];
+  const items: PortRowItem[] = [];
 
-  const addRow = (port?: FunctionPortDef) => {
+  function clearRowError(row: HTMLElement) {
+    row.style.border = "";
+    row.style.borderRadius = "";
+    const existing = row.querySelector(".port-duplicate-error");
+    if (existing) existing.remove();
+  }
+
+  function setRowError(row: HTMLElement, msg: string) {
+    row.style.border = "1px solid #e74c3c";
+    row.style.borderRadius = "4px";
+    let err = row.querySelector(".port-duplicate-error") as HTMLElement | null;
+    if (!err) {
+      err = document.createElement("span");
+      err.className = "port-duplicate-error";
+      err.style.cssText = "color:#e74c3c;font-size:11px;white-space:nowrap;align-self:center;";
+      row.appendChild(err);
+    }
+    err.textContent = msg;
+  }
+
+  function validateDuplicates() {
+    const nameToRows = new Map<string, HTMLElement[]>();
+    for (const it of items) {
+      const name = it.nameEl.value.trim();
+      if (name) {
+        const list = nameToRows.get(name) ?? [];
+        list.push(it.row);
+        nameToRows.set(name, list);
+      }
+    }
+    for (const it of items) {
+      clearRowError(it.row);
+    }
+    for (const [name, rows] of nameToRows) {
+      if (rows.length > 1) {
+        for (const row of rows) {
+          setRowError(row, `重复名称: ${name}`);
+        }
+      }
+    }
+  }
+
+  const addBtn = document.createElement("button");
+  addBtn.textContent = "+ 添加端口";
+  addBtn.style.marginBottom = "8px";
+
+  const addRow = (port?: FunctionPortDef, reserved = false) => {
     const row = document.createElement("div");
     row.className = "zh-port-row";
 
@@ -40,50 +91,78 @@ export function buildPortListEditor(
     nameEl.type = "text";
     nameEl.placeholder = "port_name";
     nameEl.value = port?.name ?? "";
+    nameEl.style.marginBottom = "0";
 
     const typeEl = dataTypeSelect(port?.data_type ?? "String", undefined, excludeDataTypes);
+    typeEl.style.marginBottom = "0";
 
     const descEl = showDesc ? document.createElement("input") : undefined;
     if (descEl) {
       descEl.type = "text";
       descEl.placeholder = "description";
       descEl.value = port?.description ?? "";
+      descEl.style.marginBottom = "0";
     }
 
-    const removeBtn = document.createElement("button");
-    removeBtn.textContent = "✕";
-    removeBtn.className = "danger";
-    removeBtn.style.padding = "4px 8px";
-    removeBtn.addEventListener("click", () => {
-      const i = items.findIndex((it) => it.nameEl === nameEl);
-      if (i >= 0) items.splice(i, 1);
-      row.remove();
-    });
+    if (reserved) {
+      row.style.cssText = "opacity:0.6;background:#1a1a1a;border-radius:4px;";
+      nameEl.readOnly = true;
+      typeEl.disabled = true;
+      if (descEl) descEl.readOnly = true;
 
-    row.appendChild(nameEl);
-    row.appendChild(typeEl);
-    if (descEl) row.appendChild(descEl);
-    row.appendChild(removeBtn);
-    container.insertBefore(row, addBtn);
+      const badge = document.createElement("span");
+      badge.textContent = "保留";
+      badge.style.cssText = "font-size:11px;color:#888;padding:2px 6px;border:1px solid #444;border-radius:3px;align-self:center;";
 
-    items.push({ nameEl, typeEl, descEl });
+      row.appendChild(nameEl);
+      row.appendChild(typeEl);
+      if (descEl) row.appendChild(descEl);
+      row.appendChild(badge);
+      container.insertBefore(row, addBtn);
+      items.push({ nameEl, typeEl, descEl, row, reserved: true });
+    } else {
+      const removeBtn = document.createElement("button");
+      removeBtn.textContent = "✕";
+      removeBtn.className = "danger";
+      removeBtn.style.padding = "4px 8px";
+      removeBtn.addEventListener("click", () => {
+        const i = items.findIndex((it) => it.nameEl === nameEl);
+        if (i >= 0) items.splice(i, 1);
+        row.remove();
+        validateDuplicates();
+      });
+
+      nameEl.addEventListener("input", () => validateDuplicates());
+
+      row.appendChild(nameEl);
+      row.appendChild(typeEl);
+      if (descEl) row.appendChild(descEl);
+      row.appendChild(removeBtn);
+      container.insertBefore(row, addBtn);
+      items.push({ nameEl, typeEl, descEl, row, reserved: false });
+    }
   };
 
-  const addBtn = document.createElement("button");
-  addBtn.textContent = "+ 添加端口";
-  addBtn.style.marginBottom = "8px";
-  addBtn.addEventListener("click", () => addRow());
+  addBtn.addEventListener("click", () => {
+    addRow();
+    validateDuplicates();
+  });
   container.appendChild(addBtn);
 
-  for (const p of ports) addRow(p);
+  for (const p of (reservedPorts ?? [])) addRow(p, true);
+  for (const p of ports) addRow(p, false);
 
-  return () => items
-    .map((it) => ({
-      name: it.nameEl.value.trim(),
-      data_type: cloneDataTypeMetaData(parseDisplayDataType(it.typeEl.value)),
-      description: it.descEl?.value.trim() ?? "",
-    }))
-    .filter((p) => p.name);
+  validateDuplicates();
+
+  return () =>
+    items
+      .filter((it) => !it.reserved)
+      .map((it) => ({
+        name: it.nameEl.value.trim(),
+        data_type: cloneDataTypeMetaData(parseDisplayDataType(it.typeEl.value)),
+        description: it.descEl?.value.trim() ?? "",
+      }))
+      .filter((p) => p.name);
 }
 
 export { isValidConnectionType } from "./data_types";

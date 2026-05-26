@@ -25,6 +25,30 @@ pub struct DeleteTasksRequest {
     pub task_ids: Vec<String>,
 }
 
+fn validate_duplicate_port_names(graph: &zihuan_graph_engine::graph_io::NodeGraphDefinition) -> Result<(), String> {
+    for node in &graph.nodes {
+        let mut seen = std::collections::HashSet::new();
+        for port in &node.input_ports {
+            if !seen.insert(&port.name) {
+                return Err(format!(
+                    "节点 '{}' 存在重复的输入端口名称: '{}'",
+                    node.name, port.name
+                ));
+            }
+        }
+        seen.clear();
+        for port in &node.output_ports {
+            if !seen.insert(&port.name) {
+                return Err(format!(
+                    "节点 '{}' 存在重复的输出端口名称: '{}'",
+                    node.name, port.name
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 #[handler]
 pub async fn execute_graph(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
@@ -49,6 +73,12 @@ pub async fn execute_graph(req: &mut Request, res: &mut Response, depot: &mut De
             is_workflow_set_path(file_path.as_deref()),
         )
     };
+
+    if let Err(msg) = validate_duplicate_port_names(&graph_def) {
+        res.status_code(StatusCode::BAD_REQUEST);
+        res.render(Json(serde_json::json!({"error": msg})));
+        return;
+    }
 
     if graph_def.accepts_agent_events {
         res.status_code(StatusCode::BAD_REQUEST);
@@ -189,6 +219,12 @@ pub async fn rerun_task(req: &mut Request, res: &mut Response, depot: &mut Depot
                 return;
             }
         };
+    if let Err(msg) = validate_duplicate_port_names(&graph) {
+        res.status_code(StatusCode::BAD_REQUEST);
+        res.render(Json(serde_json::json!({"error": msg})));
+        return;
+    }
+
     if graph.accepts_agent_events {
         res.status_code(StatusCode::BAD_REQUEST);
         res.render(Json(serde_json::json!({
