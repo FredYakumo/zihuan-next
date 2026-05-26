@@ -560,7 +560,14 @@
       </div>
     </div>
 
-    <section v-if="agents.length > 0" class="panel">
+    <section v-if="agentsLoading && agents.length === 0" class="panel">
+      <div class="agent-loading-state" aria-live="polite">
+        <span class="agent-loading-spinner"></span>
+        <span>Agent 加载中...</span>
+      </div>
+    </section>
+
+    <section v-else-if="agents.length > 0" class="panel">
       <div class="connection-grid connection-grid--agents" style="margin-top: 0;">
         <article
           v-for="agent in agents"
@@ -611,6 +618,10 @@
         </article>
       </div>
     </section>
+
+    <section v-else class="panel">
+      <div class="empty-state">当前没有 Agent。</div>
+    </section>
   </section>
 </template>
 
@@ -646,6 +657,7 @@ const agentTypes: AgentTypeOption[] = [
 ];
 
 const agents = ref<AgentWithRuntime[]>([]);
+const agentsLoading = ref(false);
 const connections = ref<ConnectionConfig[]>([]);
 const llm = ref<LlmConfig[]>([]);
 const workflows = ref<WorkflowInfo[]>([]);
@@ -707,16 +719,21 @@ function closeEditor() {
 }
 
 async function load() {
-  const [loadedAgents, loadedConnections, loadedLlm, loadedWorkflows] = await Promise.all([
-    system.agents.list(),
-    system.connections.list(),
-    system.llm.list(),
-    workflowApi.listDetailed(),
-  ]);
-  agents.value = loadedAgents;
-  connections.value = loadedConnections;
-  llm.value = loadedLlm;
-  workflows.value = loadedWorkflows.workflows;
+  agentsLoading.value = true;
+  try {
+    const [loadedAgents, loadedConnections, loadedLlm, loadedWorkflows] = await Promise.all([
+      system.agents.list(),
+      system.connections.list(),
+      system.llm.list(),
+      workflowApi.listDetailed(),
+    ]);
+    agents.value = loadedAgents;
+    connections.value = loadedConnections;
+    llm.value = loadedLlm;
+    workflows.value = loadedWorkflows.workflows;
+  } finally {
+    agentsLoading.value = false;
+  }
 }
 
 function editAgent(agent: AgentWithRuntime) {
@@ -944,3 +961,30 @@ onMounted(() => {
   });
 });
 </script>
+
+<style scoped lang="scss">
+.agent-loading-state {
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--admin-subtle);
+}
+
+.agent-loading-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid color-mix(in srgb, var(--admin-accent) 28%, transparent);
+  border-top-color: var(--admin-accent);
+  border-radius: 50%;
+  animation: agent-loading-spin 0.75s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes agent-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+</style>

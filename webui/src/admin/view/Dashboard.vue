@@ -26,28 +26,34 @@
           <div class="chat-agent-picker">
             <div class="chat-agent-picker-title">选择 Agent</div>
             <div class="chat-agent-cards">
-              <button
-                v-for="agent in agents"
-                :key="agent.config_id"
-                class="chat-agent-card"
-                :class="{ active: selectedAgentId === agent.config_id, inactive: agent.runtime.status !== 'running' }"
-                @click="selectedAgentId = agent.config_id"
-              >
-                <img
-                  v-if="agentAvatarUrl(agent)"
-                  class="chat-agent-card-avatar"
-                  :src="agentAvatarUrl(agent)"
-                  alt="agent avatar"
-                />
-                <div v-else class="chat-agent-card-avatar chat-agent-card-avatar--fallback">
-                  {{ agentInitial(agent.name) }}
-                </div>
-                <div class="chat-agent-card-meta">
-                  <strong>{{ agent.name }}</strong>
-                  <span>{{ readableAgentType(agent.agent_type.type) }}</span>
-                </div>
-                <span v-if="agent.runtime.status !== 'running'" class="agent-status-badge">未运行</span>
-              </button>
+              <div v-if="agentsLoading && agents.length === 0" class="chat-agent-loading" aria-live="polite">
+                <span class="chat-agent-loading-spinner"></span>
+                <span>Agent 加载中...</span>
+              </div>
+              <template v-else>
+                <button
+                  v-for="agent in agents"
+                  :key="agent.config_id"
+                  class="chat-agent-card"
+                  :class="{ active: selectedAgentId === agent.config_id, inactive: agent.runtime.status !== 'running' }"
+                  @click="selectedAgentId = agent.config_id"
+                >
+                  <img
+                    v-if="agentAvatarUrl(agent)"
+                    class="chat-agent-card-avatar"
+                    :src="agentAvatarUrl(agent)"
+                    alt="agent avatar"
+                  />
+                  <div v-else class="chat-agent-card-avatar chat-agent-card-avatar--fallback">
+                    {{ agentInitial(agent.name) }}
+                  </div>
+                  <div class="chat-agent-card-meta">
+                    <strong>{{ agent.name }}</strong>
+                    <span>{{ readableAgentType(agent.agent_type.type) }}</span>
+                  </div>
+                  <span v-if="agent.runtime.status !== 'running'" class="agent-status-badge">未运行</span>
+                </button>
+              </template>
             </div>
           </div>
           <button class="btn ghost" @click="reloadSessions">刷新历史</button>
@@ -269,6 +275,7 @@ type StreamState = {
 };
 
 const agents = ref<AgentWithRuntime[]>([]);
+const agentsLoading = ref(false);
 const sessions = ref<ChatSessionSummary[]>([]);
 const activeSessionId = ref("");
 const selectedAgentId = ref("");
@@ -740,18 +747,23 @@ async function sendMessage() {
 }
 
 async function load() {
-  const [connections, llm, loadedAgents] = await Promise.all([
-    system.connections.list(),
-    system.llm.list(),
-    system.agents.list(),
-  ]);
-  stats.connections = connections.length;
-  stats.llm = llm.length;
-  stats.agents = loadedAgents.length;
-  agents.value = loadedAgents;
+  agentsLoading.value = true;
+  try {
+    const [connections, llm, loadedAgents] = await Promise.all([
+      system.connections.list(),
+      system.llm.list(),
+      system.agents.list(),
+    ]);
+    stats.connections = connections.length;
+    stats.llm = llm.length;
+    stats.agents = loadedAgents.length;
+    agents.value = loadedAgents;
 
-  if (!selectedAgentId.value || !loadedAgents.some((agent) => agent.config_id === selectedAgentId.value)) {
-    selectedAgentId.value = loadedAgents[0]?.config_id ?? "";
+    if (!selectedAgentId.value || !loadedAgents.some((agent) => agent.config_id === selectedAgentId.value)) {
+      selectedAgentId.value = loadedAgents[0]?.config_id ?? "";
+    }
+  } finally {
+    agentsLoading.value = false;
   }
 
   await reloadSessions();
@@ -847,6 +859,24 @@ onMounted(() => {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.chat-agent-loading {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--admin-subtle);
+}
+
+.chat-agent-loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid color-mix(in srgb, var(--admin-accent) 28%, transparent);
+  border-top-color: var(--admin-accent);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+  flex-shrink: 0;
 }
 
 .chat-agent-card {
