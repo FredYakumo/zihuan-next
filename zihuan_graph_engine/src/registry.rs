@@ -397,15 +397,16 @@ fn infer_any_data_value(json: &Value) -> Option<DataValue> {
 /// in-crate tests that need the registry populated.
 pub fn init_node_registry() -> zihuan_core::error::Result<()> {
     use crate::util::{
-        AndThenNode, ArrayGetNode, AtQQTargetMessageNode, BinaryToImageContentPartNode,
-        BooleanBranchNode, BooleanNotNode, BuildMultimodalUserMessageNode, ConcatVecNode,
-        ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode,
-        FunctionInputsNode, FunctionNode, FunctionOutputsNode, GraphInputsNode, GraphOutputsNode,
-        JoinStringNode, JsonExtractNode, JsonParserNode, JsonToQQMessageVecNode,
-        MessageContentNode, MessageListDataNode, OpenAIMessageContentAsJsonNode,
-        OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode,
-        OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheSetNode, OpenAIMessageToStringNode,
-        PreviewMessageListNode, PreviewQQMessageListNode, PreviewStringNode, PushBackVecNode,
+        AndThenNode, AnyOfNode, ArrayGetNode, AtQQTargetMessageNode,
+        BinaryToImageContentPartNode, BooleanBranchNode, BooleanNotNode,
+        BuildMultimodalUserMessageNode, ConcatVecNode, ConditionalNode, ConditionalRouterNode,
+        CurrentTimeNode, FormatStringNode, FunctionInputsNode, FunctionNode, FunctionOutputsNode,
+        GraphInputsNode, GraphOutputsNode, JoinStringNode, JsonExtractNode, JsonParserNode,
+        JsonToQQMessageVecNode, MessageContentNode, MessageListDataNode,
+        OpenAIMessageContentAsJsonNode, OpenAIMessageSessionCacheClearNode,
+        OpenAIMessageSessionCacheGetNode, OpenAIMessageSessionCacheNode,
+        OpenAIMessageSessionCacheSetNode, OpenAIMessageToStringNode, PreviewMessageListNode,
+        PreviewQQMessageListNode, PreviewStringNode, PushBackVecNode,
         QQMessageJsonOutputSystemPromptProviderNode, QQMessageListDataNode, QQMessageToImageNode,
         SessionStateClearNode, SessionStateGetNode, SessionStateReleaseNode,
         SessionStateTryClaimNode, SetVariableNode, StackNode, StringDataNode, StringIsNotEmptyNode,
@@ -419,6 +420,13 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         "工具",
         "等待两个输入都到齐后，原样透传第二个输入",
         AndThenNode
+    );
+    register_node!(
+        "any_of",
+        "Any Of",
+        "工具",
+        "任意一个输入到齐后就原样透传该输入，适用于多个输入中只需要一个到齐即可继续执行的场景",
+        AnyOfNode
     );
     register_node!(
         "format_string",

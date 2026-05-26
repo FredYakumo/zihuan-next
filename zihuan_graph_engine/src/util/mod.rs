@@ -46,6 +46,7 @@ pub mod string_to_openai_message;
 pub mod string_to_plain_text;
 pub mod switch;
 pub mod tool_result_node;
+pub mod any_of;
 
 pub mod openai_message_session_cache_clear {
     use crate::data_value::OpenAIMessageSessionCacheRef;
@@ -133,6 +134,7 @@ pub mod openai_message_session_cache_clear {
 }
 
 pub use and_then::AndThenNode;
+pub use any_of::AnyOfNode;
 pub use array_get::ArrayGetNode;
 pub use at_qq_target_message::AtQQTargetMessageNode;
 pub use binary_to_image_content_part::BinaryToImageContentPartNode;
