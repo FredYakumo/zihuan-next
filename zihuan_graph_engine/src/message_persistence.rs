@@ -5,7 +5,7 @@ use crate::message_mysql_chunking::{
     MEDIA_JSON_MAX_CHARS, MESSAGE_ID_MAX_CHARS, SENDER_ID_MAX_CHARS, SENDER_NAME_MAX_CHARS,
 };
 use crate::message_restore::{
-    cache_message_snapshot, register_redis_ref, CachedMessageSnapshotPayload,
+    cache_message_snapshot, register_mysql_ref, register_redis_ref, CachedMessageSnapshotPayload,
 };
 use log::{info, warn};
 use once_cell::sync::Lazy;
@@ -22,8 +22,9 @@ static LATEST_REDIS_REF: Lazy<RwLock<Option<Arc<RedisConfig>>>> = Lazy::new(|| R
 
 pub fn register_mysql_persistence_ref(config: Arc<MySqlConfig>) {
     if let Ok(mut guard) = LATEST_MYSQL_REF.write() {
-        *guard = Some(config);
+        *guard = Some(config.clone());
     }
+    register_mysql_ref(config);
 }
 
 pub fn register_redis_persistence_ref(config: Arc<RedisConfig>) {
@@ -301,6 +302,7 @@ pub fn persist_message_event(
     }
 
     if let Some(mysql_ref) = mysql_ref.cloned().or_else(latest_mysql_ref) {
+        register_mysql_ref(mysql_ref.clone());
         persist_message_to_mysql(event, &mysql_ref)?;
     }
 

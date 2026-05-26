@@ -153,7 +153,7 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
         .unwrap_or_else(|| rebuild_message_list(&content, media_json.as_deref()));
 
     if messages.is_empty() {
-        debug!(
+        warn!(
             "[message_restore] message {} found in mysql but rebuilt into an empty message list",
             message_id
         );

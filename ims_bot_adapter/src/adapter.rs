@@ -538,6 +538,11 @@ pub fn parse_reply_source_messages_from_get_msg_response(
     };
 
     let Some(data) = payload.data else {
+        let raw = response.to_string();
+        warn!(
+            "[adapter] get_msg response contained no data field; NapCat may not support this message_id. response={}",
+            if raw.len() > 256 { &raw[..256] } else { &raw }
+        );
         return Vec::new();
     };
 
