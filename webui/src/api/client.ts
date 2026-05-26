@@ -86,7 +86,7 @@ export const graphs = {
     name: string | undefined,
     x: number,
     y: number
-  ): Promise<{ id: string }> {
+  ): Promise<NodeDefinition> {
     return request("POST", `/graphs/${id}/nodes`, { node_type: nodeType, name, x, y });
   },
   updateNode(

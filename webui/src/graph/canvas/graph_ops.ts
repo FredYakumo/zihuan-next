@@ -463,6 +463,13 @@ export class CanvasGraphOps {
     }
   }
 
+  /// Incrementally add a single node to the canvas without clearing the graph.
+  /// Used by pasteNodes to avoid a full rebuild cycle.
+  addLGraphNodeDirect(nodeDef: NodeDefinition): void {
+    this.addLGraphNode(nodeDef);
+    this.canvas.lGraph.setDirtyCanvas(true, true);
+  }
+
   private connectLGraphEdge(edge: EdgeDefinition): void {
     const fromNode = this.canvas.nodeMap.get(edge.from_node_id) as any;
     const toNode = this.canvas.nodeMap.get(edge.to_node_id) as any;
@@ -508,14 +515,20 @@ export class CanvasGraphOps {
     const x: number = node.pos?.[0] ?? 0;
     const y: number = node.pos?.[1] ?? 0;
     graphs.addNode(sessionId, typeId, node.title ?? undefined, x, y)
-      .then(async (result) => {
-        node.zihuanId = result.id;
-        this.canvas.nodeMap.set(result.id, node);
+      .then(async (nodeDef) => {
+        node.zihuanId = nodeDef.id;
+        this.canvas.nodeMap.set(nodeDef.id, node);
         this.canvas.state.dirty = true;
         try {
-          const updated = await graphs.get(sessionId);
-          this.canvas.state.graph = updated;
-          this.canvas.history.push(updated);
+          if (this.canvas.state.graph) {
+            const updatedGraph = { ...this.canvas.state.graph, nodes: [...this.canvas.state.graph.nodes, nodeDef] };
+            this.canvas.state.graph = updatedGraph;
+            this.canvas.history.push(updatedGraph);
+          } else {
+            const updated = await graphs.get(sessionId);
+            this.canvas.state.graph = updated;
+            this.canvas.history.push(updated);
+          }
           this.canvas.onHistoryChange?.();
         } catch {}
       })
