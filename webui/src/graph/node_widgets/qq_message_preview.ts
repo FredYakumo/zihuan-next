@@ -3,10 +3,10 @@
 // onto the node via canvas onDrawForeground, while preserving any existing
 // onDrawForeground assigned upstream (binding badges, help button).
 
-import type { NodeDefinition } from "../api/types";
-import type { ServerMessage } from "../api/types";
-import type { QQMessageItem } from "../ui/dialogs/types";
-import type { ZihuanWS } from "../api/ws";
+import type { NodeDefinition } from "../../api/types";
+import type { ServerMessage } from "../../api/types";
+import type { QQMessageItem } from "../../ui/dialogs/types";
+import type { ZihuanWS } from "../../api/ws";
 
 const PADDING_X = 8;
 const PADDING_TOP = 30;
