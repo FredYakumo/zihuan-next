@@ -2,7 +2,7 @@ mod help_command;
 mod new_command;
 mod task_command;
 
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use zihuan_core::command::{CommandDefinition, CommandRegistry, CommandScope};
 use zihuan_core::task_context::AgentTaskRuntime;
@@ -12,7 +12,7 @@ use new_command::NewCommand;
 use task_command::TaskCommand;
 
 static GLOBAL_COMMAND_REGISTRY: OnceLock<Arc<CommandRegistry>> = OnceLock::new();
-static GLOBAL_TASK_RUNTIME: OnceLock<Arc<dyn AgentTaskRuntime>> = OnceLock::new();
+static GLOBAL_TASK_RUNTIME: RwLock<Option<Arc<dyn AgentTaskRuntime>>> = RwLock::new(None);
 
 /// Initialize the global command registry. Must be called once during startup.
 pub fn init_global_command_registry() -> Arc<CommandRegistry> {
@@ -25,16 +25,16 @@ pub fn init_global_command_registry() -> Arc<CommandRegistry> {
 }
 
 /// Set the global task runtime reference. Called during agent startup.
+///
+/// Replaces any previously set runtime — each agent start updates the global
+/// runtime so that slash commands target the currently active agent.
 pub fn set_global_task_runtime(runtime: Arc<dyn AgentTaskRuntime>) {
-    GLOBAL_TASK_RUNTIME
-        .set(runtime)
-        .ok()
-        .expect("task runtime already initialized");
+    *GLOBAL_TASK_RUNTIME.write().unwrap() = Some(runtime);
 }
 
 /// Get a reference to the global task runtime.
 pub fn global_task_runtime() -> Option<Arc<dyn AgentTaskRuntime>> {
-    GLOBAL_TASK_RUNTIME.get().cloned()
+    GLOBAL_TASK_RUNTIME.read().unwrap().clone()
 }
 
 /// Get a reference to the global command registry.
