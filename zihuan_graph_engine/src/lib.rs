@@ -128,9 +128,8 @@ pub use data_value::{DataType, DataValue};
 pub use flow::{NodeConfigFlow, NodeInputFlow, NodeOutputFlow, RuntimeValueFlow};
 #[allow(unused_imports)]
 pub use graph_io::{
-    ensure_positions, load_graph_definition_from_json,
-    load_graph_definition_from_json_with_migration, save_graph_definition_to_json, EdgeDefinition,
-    GraphPosition, LoadedGraphDefinition, NodeDefinition, NodeGraphDefinition,
+    ensure_positions, load_graph_definition_from_json, save_graph_definition_to_json, EdgeDefinition,
+    GraphPosition, NodeDefinition, NodeGraphDefinition,
 };
 #[allow(unused_imports)]
 pub use node_macros::{node_input, node_input_flow, node_output, node_output_flow, return_with_node_output};

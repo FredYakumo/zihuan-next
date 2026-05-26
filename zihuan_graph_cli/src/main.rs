@@ -30,8 +30,8 @@ async fn run() -> Result<()> {
     init_node_registry()?;
 
     let graph_path = resolve_graph_path(&args)?;
-    let loaded = zihuan_graph_engine::load_graph_definition_from_json_with_migration(&graph_path)?;
-    let mut graph = zihuan_graph_engine::build_node_graph_from_definition(&loaded.graph)?;
+    let graph_def = zihuan_graph_engine::load_graph_definition_from_json(&graph_path)?;
+    let mut graph = zihuan_graph_engine::build_node_graph_from_definition(&graph_def)?;
     graph.execute()?;
     println!("Graph executed successfully: {}", graph_path.display());
     Ok(())

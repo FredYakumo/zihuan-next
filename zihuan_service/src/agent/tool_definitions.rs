@@ -105,8 +105,7 @@ fn load_graph_from_path(
             path.display()
         )));
     }
-    let loaded = zihuan_graph_engine::load_graph_definition_from_json_with_migration(&path)?;
-    Ok(loaded.graph)
+    zihuan_graph_engine::load_graph_definition_from_json(&path)
 }
 
 fn validate_tool_graph_contract(

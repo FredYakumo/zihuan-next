@@ -165,10 +165,9 @@ pub async fn list_workflows_detailed(_req: &mut Request, res: &mut Response, _de
             });
 
             let (display_name, description, version, inputs, outputs) =
-                zihuan_graph_engine::load_graph_definition_from_json_with_migration(&p)
+                zihuan_graph_engine::load_graph_definition_from_json(&p)
                     .ok()
-                    .map(|loaded| {
-                        let graph = loaded.graph;
+                    .map(|graph| {
                         (
                             graph.metadata.name,
                             graph.metadata.description,
@@ -406,13 +405,9 @@ pub async fn open_file(req: &mut Request, res: &mut Response, depot: &mut Depot)
         }
     };
 
-    let result = zihuan_graph_engine::load_graph_definition_from_json_with_migration(&body.path);
+    let result = zihuan_graph_engine::load_graph_definition_from_json(&body.path);
     match result {
-        Ok(loaded) => {
-            let zihuan_graph_engine::LoadedGraphDefinition {
-                mut graph,
-                migrated,
-            } = loaded;
+        Ok(mut graph) => {
             zihuan_graph_engine::graph_boundary::sync_root_graph_io(&mut graph);
             zihuan_graph_engine::ensure_positions(&mut graph);
             let session_id = uuid::Uuid::new_v4().to_string();
@@ -422,7 +417,6 @@ pub async fn open_file(req: &mut Request, res: &mut Response, depot: &mut Depot)
             sessions.insert(session_id.clone(), session);
             res.render(Json(serde_json::json!({
                 "session_id": session_id,
-                "migrated": migrated,
             })));
         }
         Err(e) => {

@@ -170,9 +170,9 @@ pub async fn rerun_task(req: &mut Request, res: &mut Response, depot: &mut Depot
         )
     };
 
-    let loaded =
-        match zihuan_graph_engine::load_graph_definition_from_json_with_migration(&file_path) {
-            Ok(loaded) => loaded,
+    let mut graph =
+        match zihuan_graph_engine::load_graph_definition_from_json(&file_path) {
+            Ok(graph) => graph,
             Err(e) => {
                 res.status_code(StatusCode::UNPROCESSABLE_ENTITY);
                 res.render(Json(
@@ -181,8 +181,6 @@ pub async fn rerun_task(req: &mut Request, res: &mut Response, depot: &mut Depot
                 return;
             }
         };
-
-    let mut graph = loaded.graph;
     zihuan_graph_engine::ensure_positions(&mut graph);
     let session_id = format!("rerun-{}", Uuid::new_v4());
     let task_id = start_graph_task(
