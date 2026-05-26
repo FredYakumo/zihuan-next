@@ -111,4 +111,9 @@ pub trait AgentTaskRuntime: Send + Sync {
 
     /// Append a progress message to a running task.
     fn append_task_progress(&self, task_id: &str, message: String);
+
+    /// Request cancellation of a running task. Returns `true` if the task
+    /// was found and a stop signal was set, `false` if the task does not
+    /// exist or has already finished.
+    fn cancel_task(&self, task_id: &str) -> bool;
 }

@@ -108,9 +108,9 @@ pub fn build_command_registry() -> Arc<CommandRegistry> {
         CommandDefinition {
             name: "task".to_string(),
             aliases: vec![],
-            description: "查看后台任务状态".to_string(),
+            description: "查看最近任务状态".to_string(),
             scope: CommandScope::All,
-            accepted_arg_count: 1,
+            accepted_arg_count: 2,
         },
         Arc::new(TaskCommand),
     );

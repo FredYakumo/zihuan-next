@@ -186,6 +186,20 @@ impl AgentTaskRuntime for DefaultAgentTaskRuntime {
             info.progress.push(message);
         }
     }
+
+    fn cancel_task(&self, task_id: &str) -> bool {
+        let stopped = self.state.tasks.lock().unwrap().stop_task(task_id);
+        if stopped {
+            if let Some(info) = self.background_tasks.lock().unwrap().get_mut(task_id) {
+                info.status = AgentTaskStatus::Stopped;
+                info.finished_at = Some(chrono::Local::now());
+            }
+            let _ = self.broadcast_tx.send(ServerMessage::TaskStopped {
+                task_id: task_id.to_string(),
+            });
+        }
+        stopped
+    }
 }
 
 pub fn build_agent_task_runtime(
