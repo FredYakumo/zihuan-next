@@ -114,7 +114,8 @@ fn validate_tool_graph_contract(
     parameters: &[ToolParamDef],
     outputs: &[FunctionPortDef],
 ) -> Result<()> {
-    if graph.graph_inputs.is_empty() {
+    let has_effective_inputs = !graph.graph_inputs.is_empty() || graph.accepts_agent_events;
+    if !has_effective_inputs {
         return Err(Error::ValidationError(format!(
             "agent tool '{}' 引用的节点图未定义输入列表",
             tool.name

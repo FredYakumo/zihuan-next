@@ -136,6 +136,7 @@ export interface NodeGraphDefinition {
   hyperparameters: HyperParameter[];
   variables: GraphVariable[];
   metadata: GraphMetadata;
+  accepts_agent_events?: boolean;
 }
 
 export interface GraphTabInfo {

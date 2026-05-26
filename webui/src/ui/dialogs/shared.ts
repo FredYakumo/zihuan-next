@@ -24,6 +24,7 @@ export function buildPortListEditor(
   container: HTMLElement,
   ports: FunctionPortDef[],
   showDesc = false,
+  excludeDataTypes?: string[],
 ): () => FunctionPortDef[] {
   const items: Array<{
     nameEl: HTMLInputElement;
@@ -40,7 +41,7 @@ export function buildPortListEditor(
     nameEl.placeholder = "port_name";
     nameEl.value = port?.name ?? "";
 
-    const typeEl = dataTypeSelect(port?.data_type ?? "String");
+    const typeEl = dataTypeSelect(port?.data_type ?? "String", undefined, excludeDataTypes);
 
     const descEl = showDesc ? document.createElement("input") : undefined;
     if (descEl) {

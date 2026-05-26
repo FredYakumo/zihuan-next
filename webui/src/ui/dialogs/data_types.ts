@@ -105,13 +105,17 @@ export function normalizeDataType(dt: DataTypeMetaData): string {
  * If the normalised value is not found in DATA_TYPES (e.g. a custom or future Vec variant),
  * it is prepended as a selected option so the value is never silently lost.
  */
-export function dataTypeSelect(value: DataTypeMetaData = "String", id?: string): HTMLSelectElement {
+export function dataTypeSelect(
+  value: DataTypeMetaData = "String",
+  id?: string,
+  exclude?: string[]
+): HTMLSelectElement {
   const normalized = normalizeDataType(value);
   const sel = document.createElement("select");
   if (id) sel.id = id;
 
   // Fallback: keep unknown values (e.g. Vec<CustomType>) visible
-  if (normalized && !DATA_TYPES.includes(normalized)) {
+  if (normalized && !DATA_TYPES.includes(normalized) && !exclude?.includes(normalized)) {
     const custom = document.createElement("option");
     custom.value = normalized;
     custom.textContent = normalized;
@@ -120,6 +124,7 @@ export function dataTypeSelect(value: DataTypeMetaData = "String", id?: string):
   }
 
   for (const dt of DATA_TYPES) {
+    if (exclude?.includes(dt)) continue;
     const opt = document.createElement("option");
     opt.value = dt;
     opt.textContent = dt;

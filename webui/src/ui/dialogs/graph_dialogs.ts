@@ -203,13 +203,27 @@ export async function openGraphIODialog(
 
   const graph = await graphs.get(sessionId);
 
+  const agentEventWrap = document.createElement("label");
+  agentEventWrap.style.cssText = "display:flex;align-items:center;gap:6px;margin:8px 0;font-size:13px;cursor:pointer;";
+  const agentEventCb = document.createElement("input");
+  agentEventCb.type = "checkbox";
+  agentEventCb.checked = graph.accepts_agent_events ?? false;
+  agentEventWrap.appendChild(agentEventCb);
+  agentEventWrap.appendChild(document.createTextNode("输入Agent事件"));
+  dialog.appendChild(agentEventWrap);
+
   const inputsSection = document.createElement("div");
   const inputsLabel = document.createElement("div");
   inputsLabel.className = "zh-section-label";
   inputsLabel.textContent = "输入列表";
   inputsSection.appendChild(inputsLabel);
   dialog.appendChild(inputsSection);
-  const readInputs = buildPortListEditor(inputsSection, graph.graph_inputs ?? [], true);
+  const readInputs = buildPortListEditor(
+    inputsSection,
+    graph.graph_inputs ?? [],
+    true,
+    ["BotAdapterRef", "MessageEvent"],
+  );
 
   const outputsSection = document.createElement("div");
   outputsSection.style.marginTop = "12px";
@@ -236,6 +250,7 @@ export async function openGraphIODialog(
         ...graph,
         graph_inputs: readInputs(),
         graph_outputs: readOutputs(),
+        accepts_agent_events: agentEventCb.checked,
       });
       await onSaved();
       close();

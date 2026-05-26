@@ -50,6 +50,14 @@ pub async fn execute_graph(req: &mut Request, res: &mut Response, depot: &mut De
         )
     };
 
+    if graph_def.accepts_agent_events {
+        res.status_code(StatusCode::BAD_REQUEST);
+        res.render(Json(serde_json::json!({
+            "error": "此节点图接受 Agent 事件，不能直接运行，只能作为 Agent 工具子图执行。"
+        })));
+        return;
+    }
+
     let task_id = start_graph_task(
         Arc::clone(&state),
         broadcast_tx,
@@ -181,6 +189,14 @@ pub async fn rerun_task(req: &mut Request, res: &mut Response, depot: &mut Depot
                 return;
             }
         };
+    if graph.accepts_agent_events {
+        res.status_code(StatusCode::BAD_REQUEST);
+        res.render(Json(serde_json::json!({
+            "error": "此节点图接受 Agent 事件，不能直接运行，只能作为 Agent 工具子图执行。"
+        })));
+        return;
+    }
+
     zihuan_graph_engine::ensure_positions(&mut graph);
     let session_id = format!("rerun-{}", Uuid::new_v4());
     let task_id = start_graph_task(

@@ -119,6 +119,8 @@ pub struct NodeGraphDefinition {
     pub variables: Vec<GraphVariable>,
     #[serde(default)]
     pub metadata: GraphMetadata,
+    #[serde(default)]
+    pub accepts_agent_events: bool,
     #[serde(skip)]
     pub execution_results: HashMap<String, NodeOutputFlow>,
 }
@@ -1285,6 +1287,7 @@ pub fn build_definition_from_graph(graph: &NodeGraph) -> NodeGraphDefinition {
         hyperparameters: Vec::new(),
         variables: Vec::new(),
         metadata: Default::default(),
+        accepts_agent_events: false,
         execution_results: HashMap::new(),
     }
 }
