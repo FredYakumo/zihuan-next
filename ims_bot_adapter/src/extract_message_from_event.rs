@@ -1,15 +1,17 @@
+use crate::adapter::{restore_message_list_for_message_id, shared_from_handle};
 use crate::models::message::MessageProp;
 use log::{info, warn};
 use serde_json::Value;
 use std::collections::HashMap;
 use tokio::task::block_in_place;
-use zihuan_core::error::Result;
+use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::logging::{
     LOG_DATA_URL_PREVIEW_CHARS, LOG_MESSAGE_PREVIEW_CHARS,
 };
 use zihuan_core::llm::{ContentPart, OpenAIMessage};
+use zihuan_graph_engine::message_restore::register_mysql_ref;
 use zihuan_graph_engine::object_storage::S3Ref;
-use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
+use zihuan_graph_engine::{DataType, DataValue, Node, NodeInputFlow, Port, node_input, node_output};
 
 use crate::models::message::Message;
 use crate::multimodal_image_url::{
@@ -339,6 +341,13 @@ impl ExtractMessageFromEventNode {
             at_target_list: msg_prop.at_target_list,
         }
     }
+
+    fn extract_target_message_id(inputs: &NodeInputFlow) -> Option<i64> {
+        match inputs.get("message_id") {
+            Some(DataValue::Integer(value)) if *value > 0 => Some(*value),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -403,12 +412,14 @@ impl Node for ExtractMessageFromEventNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("Converts MessageEvent to LLM prompt string")
+        Some("从消息事件或指定消息ID恢复消息，并提取 OpenAIMessage 列表")
     }
 
     node_input![
         port! { name = "message_event", ty = MessageEvent, desc = "MessageEvent containing message data" },
         port! { name = "ims_bot_adapter", ty = BotAdapterRef, desc = "BotAdapter reference for context-aware system message", required = true },
+        port! { name = "message_id", ty = Integer, desc = "可选：要恢复并分析的目标消息 ID", optional },
+        port! { name = "mysql_ref", ty = MySqlRef, desc = "可选：显式注册给消息恢复链路的 MySQL 连接", optional },
         port! { name = "s3_ref", ty = S3Ref, desc = "可选：显式传入对象存储引用，优先用于多模态图片提取", optional }
     ];
 
@@ -426,93 +437,148 @@ impl Node for ExtractMessageFromEventNode {
     ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
-        let mut outputs = HashMap::new();
+        if let Some(DataValue::MySqlRef(mysql_ref)) = inputs.get("mysql_ref") {
+            register_mysql_ref(mysql_ref.clone());
+        }
 
-        if let Some(DataValue::MessageEvent(event)) = inputs.get("message_event") {
-            let ims_bot_adapter_ref = inputs
-                .get("ims_bot_adapter")
-                .and_then(|v| {
-                    if let DataValue::BotAdapterRef(handle) = v {
-                        Some(crate::adapter::shared_from_handle(handle))
-                    } else {
-                        None
-                    }
-                })
-                .ok_or("ims_bot_adapter input is required")?;
+        let event = match inputs.get("message_event") {
+            Some(DataValue::MessageEvent(event)) => event,
+            _ => {
+                return Err(Error::InvalidNodeInput(
+                    "message_event input is required and must be MessageEvent type".to_string(),
+                ))
+            }
+        };
 
-            // This node still has a sync execute() API, so if we're already on a Tokio
-            // worker thread we must move the blocking lock into block_in_place.
-            let explicit_s3_ref = inputs.get("s3_ref").and_then(|value| match value {
-                DataValue::S3Ref(s3_ref) => Some(s3_ref.clone()),
-                _ => None,
-            });
+        let ims_bot_adapter_ref = inputs
+            .get("ims_bot_adapter")
+            .and_then(|v| {
+                if let DataValue::BotAdapterRef(handle) = v {
+                    Some(shared_from_handle(handle))
+                } else {
+                    None
+                }
+            })
+            .ok_or("ims_bot_adapter input is required")?;
 
-            let (bot_id, adapter_object_storage) = if tokio::runtime::Handle::try_current().is_ok()
-            {
-                block_in_place(|| {
-                    let adapter = ims_bot_adapter_ref.blocking_lock();
-                    (
-                        adapter.get_bot_id().to_string(),
-                        adapter.get_object_storage(),
-                    )
-                })
-            } else {
+        let explicit_s3_ref = inputs.get("s3_ref").and_then(|value| match value {
+            DataValue::S3Ref(s3_ref) => Some(s3_ref.clone()),
+            _ => None,
+        });
+
+        let (bot_id, adapter_object_storage) = if tokio::runtime::Handle::try_current().is_ok()
+        {
+            block_in_place(|| {
                 let adapter = ims_bot_adapter_ref.blocking_lock();
                 (
                     adapter.get_bot_id().to_string(),
                     adapter.get_object_storage(),
                 )
-            };
-            let object_storage = explicit_s3_ref.or(adapter_object_storage);
-            info!(
-                "{} object storage availability: explicit_s3_ref_present={} resolved_object_storage_present={}",
-                Self::LOG_PREFIX,
-                inputs.contains_key("s3_ref"),
-                object_storage.is_some()
-            );
-
-            let extracted = Self::build_extracted_message_outputs(
-                &event.message_list,
-                &bot_id,
-                object_storage.as_deref(),
-            );
-            info!(
-                "{} output user message={}",
-                Self::LOG_PREFIX,
-                Self::json_for_log(&extracted.user_message)
-            );
-
-            let messages = vec![extracted.user_message];
-            outputs.insert(
-                "messages".to_string(),
-                DataValue::Vec(
-                    Box::new(zihuan_graph_engine::DataType::OpenAIMessage),
-                    messages.into_iter().map(DataValue::OpenAIMessage).collect(),
-                ),
-            );
-            outputs.insert("content".to_string(), DataValue::String(extracted.content));
-            outputs.insert(
-                "ref_content".to_string(),
-                DataValue::String(extracted.ref_content),
-            );
-            outputs.insert(
-                "is_at_me".to_string(),
-                DataValue::Boolean(extracted.is_at_me),
-            );
-            outputs.insert(
-                "at_target_list".to_string(),
-                DataValue::Vec(
-                    Box::new(DataType::String),
-                    extracted
-                        .at_target_list
-                        .into_iter()
-                        .map(DataValue::String)
-                        .collect(),
-                ),
-            );
+            })
         } else {
-            return Err("message_event input is required and must be MessageEvent type".into());
-        }
+            let adapter = ims_bot_adapter_ref.blocking_lock();
+            (
+                adapter.get_bot_id().to_string(),
+                adapter.get_object_storage(),
+            )
+        };
+        let object_storage = explicit_s3_ref.or(adapter_object_storage);
+
+        let target_message_id = Self::extract_target_message_id(&inputs);
+
+        info!(
+            "{} resolving message content: target_message_id={:?} explicit_s3_ref_present={}",
+            Self::LOG_PREFIX,
+            target_message_id,
+            inputs.contains_key("s3_ref"),
+        );
+
+        let message_list = if let Some(message_id) = target_message_id {
+            let resolved = if tokio::runtime::Handle::try_current().is_ok() {
+                block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(restore_message_list_for_message_id(
+                        &ims_bot_adapter_ref,
+                        message_id,
+                    ))
+                })
+            } else {
+                tokio::runtime::Runtime::new()?.block_on(restore_message_list_for_message_id(
+                    &ims_bot_adapter_ref,
+                    message_id,
+                ))
+            }?;
+
+            match resolved {
+                Some(resolved) => {
+                    info!(
+                        "{} restored target message_id={} via {} (segments={})",
+                        Self::LOG_PREFIX,
+                        message_id,
+                        resolved.source_label,
+                        resolved.messages.len()
+                    );
+                    resolved.messages
+                }
+                None if event.message_id == message_id && !event.message_list.is_empty() => {
+                    info!(
+                        "{} target message_id={} not found in backends; falling back to event message_list (segments={})",
+                        Self::LOG_PREFIX,
+                        message_id,
+                        event.message_list.len()
+                    );
+                    event.message_list.clone()
+                }
+                None => {
+                    return Err(Error::ValidationError(format!(
+                        "message_id {} could not be restored from cache/redis/mysql/get_msg",
+                        message_id
+                    )));
+                }
+            }
+        } else {
+            event.message_list.clone()
+        };
+
+        let extracted = Self::build_extracted_message_outputs(
+            &message_list,
+            &bot_id,
+            object_storage.as_deref(),
+        );
+        info!(
+            "{} output user message={}",
+            Self::LOG_PREFIX,
+            Self::json_for_log(&extracted.user_message)
+        );
+
+        let mut outputs = HashMap::new();
+        outputs.insert(
+            "messages".to_string(),
+            DataValue::Vec(
+                Box::new(zihuan_graph_engine::DataType::OpenAIMessage),
+                vec![DataValue::OpenAIMessage(extracted.user_message)],
+            ),
+        );
+        outputs.insert("content".to_string(), DataValue::String(extracted.content));
+        outputs.insert(
+            "ref_content".to_string(),
+            DataValue::String(extracted.ref_content),
+        );
+        outputs.insert(
+            "is_at_me".to_string(),
+            DataValue::Boolean(extracted.is_at_me),
+        );
+        outputs.insert(
+            "at_target_list".to_string(),
+            DataValue::Vec(
+                Box::new(DataType::String),
+                extracted
+                    .at_target_list
+                    .into_iter()
+                    .map(DataValue::String)
+                    .collect(),
+            ),
+        );
+
         let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)

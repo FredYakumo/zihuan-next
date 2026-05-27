@@ -86,36 +86,14 @@
       "dynamic_input_ports": true,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1430.0,
-        "y": 260.0
+        "x": 1800.0,
+        "y": 630.0
       },
       "size": {
         "width": 420.0,
         "height": 220.0
       },
       "inline_values": {
-        "shared_inputs": [
-          {
-            "data_type": "MySqlRef",
-            "name": "mysql_ref"
-          },
-          {
-            "data_type": "WeaviateRef",
-            "name": "weaviate_ref"
-          },
-          {
-            "data_type": "EmbeddingModel",
-            "name": "embedding_model"
-          },
-          {
-            "data_type": "MessageEvent",
-            "name": "message_event"
-          },
-          {
-            "data_type": "BotAdapterRef",
-            "name": "qq_ims_bot_adapter"
-          }
-        ],
         "tools_config": [
           {
             "description": "在 MySQL 消息记录中搜索聊天消息；未使用的文本过滤条件传空字符串",
@@ -127,8 +105,7 @@
                   "Vec": "String"
                 },
                 "description": "",
-                "name": "messages",
-                "required": true
+                "name": "messages"
               }
             ],
             "parameters": [
@@ -257,80 +234,67 @@
                       {
                         "data_type": "MySqlRef",
                         "description": "",
-                        "name": "mysql_ref",
-                        "required": true
+                        "name": "mysql_ref"
                       },
                       {
                         "data_type": "WeaviateRef",
                         "description": "",
-                        "name": "weaviate_ref",
-                        "required": true
+                        "name": "weaviate_ref"
                       },
                       {
                         "data_type": "EmbeddingModel",
                         "description": "",
-                        "name": "embedding_model",
-                        "required": true
+                        "name": "embedding_model"
                       },
                       {
                         "data_type": "MessageEvent",
                         "description": "",
-                        "name": "message_event",
-                        "required": true
+                        "name": "message_event"
                       },
                       {
                         "data_type": "BotAdapterRef",
                         "description": "",
-                        "name": "qq_ims_bot_adapter",
-                        "required": true
+                        "name": "qq_ims_bot_adapter"
                       },
                       {
                         "data_type": "String",
                         "description": "触发此次工具调用的上下文文本内容",
-                        "name": "content",
-                        "required": true
+                        "name": "content"
                       },
                       {
                         "data_type": "String",
                         "description": "按发送者 QQ 号过滤；未使用时传空字符串",
-                        "name": "sender_id",
-                        "required": true
+                        "name": "sender_id"
                       },
                       {
                         "data_type": "String",
                         "description": "按群号过滤；未使用时传空字符串",
-                        "name": "group_id",
-                        "required": true
+                        "name": "group_id"
                       },
                       {
                         "data_type": "String",
                         "description": "消息内容包含的关键词；未使用时传空字符串",
-                        "name": "contain",
-                        "required": true
+                        "name": "contain"
                       },
                       {
                         "data_type": "String",
                         "description": "时间范围起始（YYYY-MM-DD HH:MM:SS）；未使用时传空字符串",
-                        "name": "start_time",
-                        "required": true
+                        "name": "start_time"
                       },
                       {
                         "data_type": "String",
                         "description": "时间范围结束（YYYY-MM-DD HH:MM:SS）；未使用时传空字符串",
-                        "name": "end_time",
-                        "required": true
+                        "name": "end_time"
                       },
                       {
                         "data_type": "Integer",
                         "description": "返回消息数量，建议 10",
-                        "name": "limit",
-                        "required": true
+                        "name": "limit"
                       },
                       {
                         "data_type": "Boolean",
                         "description": "是否按时间倒序，建议 true",
-                        "name": "sort_by_time_desc",
-                        "required": true
+                        "name": "sort_by_time_desc"
                       }
                     ]
                   },
@@ -358,91 +322,91 @@
                       "description": "函数输入 'mysql_ref'",
                       "hidden": false,
                       "name": "mysql_ref",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "WeaviateRef",
                       "description": "函数输入 'weaviate_ref'",
                       "hidden": false,
                       "name": "weaviate_ref",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "EmbeddingModel",
                       "description": "函数输入 'embedding_model'",
                       "hidden": false,
                       "name": "embedding_model",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "MessageEvent",
                       "description": "函数输入 'message_event'",
                       "hidden": false,
                       "name": "message_event",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "BotAdapterRef",
                       "description": "函数输入 'qq_ims_bot_adapter'",
                       "hidden": false,
                       "name": "qq_ims_bot_adapter",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "String",
                       "description": "触发此次工具调用的上下文文本内容",
                       "hidden": false,
                       "name": "content",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "String",
                       "description": "按发送者 QQ 号过滤；未使用时传空字符串",
                       "hidden": false,
                       "name": "sender_id",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "String",
                       "description": "按群号过滤；未使用时传空字符串",
                       "hidden": false,
                       "name": "group_id",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "String",
                       "description": "消息内容包含的关键词；未使用时传空字符串",
                       "hidden": false,
                       "name": "contain",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "String",
                       "description": "时间范围起始（YYYY-MM-DD HH:MM:SS）；未使用时传空字符串",
                       "hidden": false,
                       "name": "start_time",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "String",
                       "description": "时间范围结束（YYYY-MM-DD HH:MM:SS）；未使用时传空字符串",
                       "hidden": false,
                       "name": "end_time",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "Integer",
                       "description": "返回消息数量，建议 10",
                       "hidden": false,
                       "name": "limit",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "Boolean",
                       "description": "是否按时间倒序，建议 true",
                       "hidden": false,
                       "name": "sort_by_time_desc",
-                      "required": true
+                      "required": false
                     }
                   ],
                   "port_bindings": {},
@@ -451,8 +415,8 @@
                     "y": 120
                   },
                   "size": {
-                    "height": 279.1146545410156,
-                    "width": 236.243408203125
+                    "height": 279.11465,
+                    "width": 236.24341
                   }
                 },
                 {
@@ -470,8 +434,7 @@
                           "Vec": "String"
                         },
                         "description": "",
-                        "name": "messages",
-                        "required": true
+                        "name": "messages"
                       }
                     ]
                   },
@@ -490,7 +453,7 @@
                       "description": "函数输出 'messages'",
                       "hidden": false,
                       "name": "messages",
-                      "required": true
+                      "required": false
                     }
                   ],
                   "name": "函数输出",
@@ -608,14 +571,12 @@
               {
                 "data_type": "Json",
                 "description": "",
-                "name": "images",
-                "required": true
+                "name": "images"
               },
               {
                 "data_type": "Boolean",
                 "description": "",
-                "name": "has_results",
-                "required": true
+                "name": "has_results"
               }
             ],
             "parameters": [
@@ -696,50 +657,42 @@
                       {
                         "data_type": "MySqlRef",
                         "description": "",
-                        "name": "mysql_ref",
-                        "required": true
+                        "name": "mysql_ref"
                       },
                       {
                         "data_type": "WeaviateRef",
                         "description": "",
-                        "name": "weaviate_ref",
-                        "required": true
+                        "name": "weaviate_ref"
                       },
                       {
                         "data_type": "EmbeddingModel",
                         "description": "",
-                        "name": "embedding_model",
-                        "required": true
+                        "name": "embedding_model"
                       },
                       {
                         "data_type": "MessageEvent",
                         "description": "",
-                        "name": "message_event",
-                        "required": true
+                        "name": "message_event"
                       },
                       {
                         "data_type": "BotAdapterRef",
                         "description": "",
-                        "name": "qq_ims_bot_adapter",
-                        "required": true
+                        "name": "qq_ims_bot_adapter"
                       },
                       {
                         "data_type": "String",
                         "description": "触发此次工具调用的上下文文本内容",
-                        "name": "content",
-                        "required": true
+                        "name": "content"
                       },
                       {
                         "data_type": "String",
                         "description": "要搜索的图片语义描述",
-                        "name": "query",
-                        "required": true
+                        "name": "query"
                       },
                       {
                         "data_type": "Integer",
                         "description": "返回数量，建议 5",
-                        "name": "limit",
-                        "required": true
+                        "name": "limit"
                       }
                     ]
                   },
@@ -767,56 +720,56 @@
                       "description": "函数输入 'mysql_ref'",
                       "hidden": false,
                       "name": "mysql_ref",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "WeaviateRef",
                       "description": "函数输入 'weaviate_ref'",
                       "hidden": false,
                       "name": "weaviate_ref",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "EmbeddingModel",
                       "description": "函数输入 'embedding_model'",
                       "hidden": false,
                       "name": "embedding_model",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "MessageEvent",
                       "description": "函数输入 'message_event'",
                       "hidden": false,
                       "name": "message_event",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "BotAdapterRef",
                       "description": "函数输入 'qq_ims_bot_adapter'",
                       "hidden": false,
                       "name": "qq_ims_bot_adapter",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "String",
                       "description": "触发此次工具调用的上下文文本内容",
                       "hidden": false,
                       "name": "content",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "String",
                       "description": "要搜索的图片语义描述",
                       "hidden": false,
                       "name": "query",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "Integer",
                       "description": "返回数量，建议 5",
                       "hidden": false,
                       "name": "limit",
-                      "required": true
+                      "required": false
                     }
                   ],
                   "port_bindings": {},
@@ -842,14 +795,12 @@
                       {
                         "data_type": "Json",
                         "description": "",
-                        "name": "images",
-                        "required": true
+                        "name": "images"
                       },
                       {
                         "data_type": "Boolean",
                         "description": "",
-                        "name": "has_results",
-                        "required": true
+                        "name": "has_results"
                       }
                     ]
                   },
@@ -866,14 +817,14 @@
                       "description": "函数输出 'images'",
                       "hidden": false,
                       "name": "images",
-                      "required": true
+                      "required": false
                     },
                     {
                       "data_type": "Boolean",
                       "description": "函数输出 'has_results'",
                       "hidden": false,
                       "name": "has_results",
-                      "required": true
+                      "required": false
                     }
                   ],
                   "name": "函数输出",
@@ -974,6 +925,33 @@
               "variables": []
             }
           }
+        ],
+        "shared_inputs": [
+          {
+            "data_type": "MySqlRef",
+            "description": "",
+            "name": "mysql_ref"
+          },
+          {
+            "data_type": "WeaviateRef",
+            "description": "",
+            "name": "weaviate_ref"
+          },
+          {
+            "data_type": "EmbeddingModel",
+            "description": "",
+            "name": "embedding_model"
+          },
+          {
+            "data_type": "MessageEvent",
+            "description": "",
+            "name": "message_event"
+          },
+          {
+            "data_type": "BotAdapterRef",
+            "description": "",
+            "name": "qq_ims_bot_adapter"
+          }
         ]
       },
       "port_bindings": {},
@@ -1016,8 +994,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1940.0,
-        "y": 280.0
+        "x": 2550.0,
+        "y": 290.0
       },
       "size": {
         "width": 220.0,
@@ -1057,8 +1035,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1990.0,
-        "y": 500.0
+        "x": 2920.0,
+        "y": 290.0
       },
       "size": {
         "width": 240.0,
@@ -1189,8 +1167,8 @@
       "dynamic_input_ports": true,
       "dynamic_output_ports": false,
       "position": {
-        "x": 1990.0,
-        "y": 700.0
+        "x": 3310.0,
+        "y": 290.0
       },
       "size": {
         "width": 220.0,
@@ -1260,8 +1238,8 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 680.0,
-        "y": 650.0
+        "x": 660.0,
+        "y": 660.0
       },
       "size": {
         "width": 200.0,
@@ -1322,7 +1300,7 @@
       "dynamic_input_ports": false,
       "dynamic_output_ports": false,
       "position": {
-        "x": 670.0,
+        "x": 660.0,
         "y": 1240.0
       },
       "size": {
@@ -1361,7 +1339,7 @@
       "dynamic_input_ports": true,
       "dynamic_output_ports": true,
       "position": {
-        "x": 710.0,
+        "x": 660.0,
         "y": 260.0
       },
       "size": {
@@ -1375,7 +1353,8 @@
             {
               "data_type": "String",
               "description": "",
-              "name": "content"
+              "name": "content",
+              "required": true
             }
           ],
           "name": "发送提示信息给用户",
@@ -1383,18 +1362,13 @@
             {
               "data_type": "Any",
               "description": "",
-              "name": "output"
+              "name": "output",
+              "required": true
             }
           ],
           "subgraph": {
             "accepts_agent_events": false,
             "edges": [
-              {
-                "from_node_id": "8ba6469a-d28d-4e00-8b8b-0f9f3b689f40",
-                "from_port": "task_id",
-                "to_node_id": "64ae75c8-289f-4f63-bc1f-6a091ec53166",
-                "to_port": "task_id"
-              },
               {
                 "from_node_id": "e331569f-0a0e-4f9d-810e-7cf7dd483d1e",
                 "from_port": "output",
@@ -1402,22 +1376,58 @@
                 "to_port": "message"
               },
               {
-                "from_node_id": "64ae75c8-289f-4f63-bc1f-6a091ec53166",
-                "from_port": "ok",
-                "to_node_id": "2d6347f6-f0cb-49ae-9cc1-9a63db37f36d",
-                "to_port": "first"
-              },
-              {
-                "from_node_id": "2d6347f6-f0cb-49ae-9cc1-9a63db37f36d",
-                "from_port": "output",
-                "to_node_id": "__function_outputs__",
-                "to_port": "output"
-              },
-              {
                 "from_node_id": "__function_inputs__",
                 "from_port": "content",
                 "to_node_id": "339265a7-fbd6-4df3-8885-f38e0c8cea4d",
                 "to_port": "input"
+              },
+              {
+                "from_node_id": "339265a7-fbd6-4df3-8885-f38e0c8cea4d",
+                "from_port": "result",
+                "to_node_id": "cdf88201-80ad-4ce7-a209-ee0928c5e293",
+                "to_port": "condition"
+              },
+              {
+                "from_node_id": "8ba6469a-d28d-4e00-8b8b-0f9f3b689f40",
+                "from_port": "task_id",
+                "to_node_id": "cdf88201-80ad-4ce7-a209-ee0928c5e293",
+                "to_port": "input"
+              },
+              {
+                "from_node_id": "cdf88201-80ad-4ce7-a209-ee0928c5e293",
+                "from_port": "false_output",
+                "to_node_id": "64ae75c8-289f-4f63-bc1f-6a091ec53166",
+                "to_port": "task_id"
+              },
+              {
+                "from_node_id": "cdf88201-80ad-4ce7-a209-ee0928c5e293",
+                "from_port": "true_output",
+                "to_node_id": "49d71a90-e428-4f34-8ed5-c6ff4d770a43",
+                "to_port": "task_id"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "content",
+                "to_node_id": "49d71a90-e428-4f34-8ed5-c6ff4d770a43",
+                "to_port": "message"
+              },
+              {
+                "from_node_id": "49d71a90-e428-4f34-8ed5-c6ff4d770a43",
+                "from_port": "ok",
+                "to_node_id": "0c87f56e-2e9e-453d-a501-0c60c2a1e671",
+                "to_port": "first"
+              },
+              {
+                "from_node_id": "64ae75c8-289f-4f63-bc1f-6a091ec53166",
+                "from_port": "ok",
+                "to_node_id": "0c87f56e-2e9e-453d-a501-0c60c2a1e671",
+                "to_port": "second"
+              },
+              {
+                "from_node_id": "0c87f56e-2e9e-453d-a501-0c60c2a1e671",
+                "from_port": "output",
+                "to_node_id": "__function_outputs__",
+                "to_port": "output"
               }
             ],
             "graph_inputs": [],
@@ -1463,8 +1473,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 750,
-                  "y": 0
+                  "x": 1090,
+                  "y": 840
                 },
                 "size": {
                   "height": 120,
@@ -1501,8 +1511,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 440,
-                  "y": 380
+                  "x": 540,
+                  "y": 220
                 },
                 "size": {
                   "height": 120,
@@ -1547,54 +1557,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 800,
-                  "y": 250
-                },
-                "size": {
-                  "height": 120,
-                  "width": 200
-                }
-              },
-              {
-                "description": null,
-                "disabled": false,
-                "dynamic_input_ports": false,
-                "dynamic_output_ports": false,
-                "has_cycle": false,
-                "has_error": false,
-                "id": "2d6347f6-f0cb-49ae-9cc1-9a63db37f36d",
-                "inline_values": {},
-                "input_ports": [
-                  {
-                    "data_type": "Any",
-                    "description": "用于串联依赖的前置输入，仅用于等待其到齐",
-                    "hidden": false,
-                    "name": "first",
-                    "required": true
-                  },
-                  {
-                    "data_type": "Any",
-                    "description": "在两个输入都到齐后原样透传的值",
-                    "hidden": false,
-                    "name": "second",
-                    "required": true
-                  }
-                ],
-                "name": "and then",
-                "node_type": "and_then",
-                "output_ports": [
-                  {
-                    "data_type": "Any",
-                    "description": "second 的原样输出",
-                    "hidden": false,
-                    "name": "output",
-                    "required": true
-                  }
-                ],
-                "port_bindings": {},
-                "position": {
-                  "x": 1100,
-                  "y": 270
+                  "x": 1470,
+                  "y": 770
                 },
                 "size": {
                   "height": 120,
@@ -1648,8 +1612,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 110,
-                  "y": 240
+                  "x": 260,
+                  "y": 410
                 },
                 "size": {
                   "height": 120,
@@ -1695,8 +1659,8 @@
                 "output_ports": [],
                 "port_bindings": {},
                 "position": {
-                  "x": 1400,
-                  "y": 240
+                  "x": 2120,
+                  "y": 490
                 },
                 "size": {
                   "height": 120,
@@ -1711,7 +1675,9 @@
                 "has_cycle": false,
                 "has_error": false,
                 "id": "339265a7-fbd6-4df3-8885-f38e0c8cea4d",
-                "inline_values": {},
+                "inline_values": {
+                  "trim_before_check": true
+                },
                 "input_ports": [
                   {
                     "data_type": "String",
@@ -1741,12 +1707,164 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 450,
-                  "y": 180
+                  "x": 540,
+                  "y": 610
                 },
                 "size": {
                   "height": 128.93289,
                   "width": 282.0939
+                }
+              },
+              {
+                "description": null,
+                "disabled": false,
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "cdf88201-80ad-4ce7-a209-ee0928c5e293",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "Boolean",
+                    "description": "为 true 时走 true_output，否则走 false_output",
+                    "hidden": false,
+                    "name": "condition",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "要分流到某个分支的输入值",
+                    "hidden": false,
+                    "name": "input",
+                    "required": true
+                  }
+                ],
+                "name": "boolean branch",
+                "node_type": "boolean_branch",
+                "output_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "condition=true 时输出",
+                    "hidden": false,
+                    "name": "true_output",
+                    "required": true
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "condition=false 时输出",
+                    "hidden": false,
+                    "name": "false_output",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "实际走到的分支：true 或 false",
+                    "hidden": false,
+                    "name": "branch_taken",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 890,
+                  "y": 350
+                },
+                "size": {
+                  "height": 120,
+                  "width": 200
+                }
+              },
+              {
+                "description": null,
+                "disabled": false,
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "49d71a90-e428-4f34-8ed5-c6ff4d770a43",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "String",
+                    "description": "要更新的任务 ID",
+                    "hidden": false,
+                    "name": "task_id",
+                    "required": true
+                  },
+                  {
+                    "data_type": "String",
+                    "description": "要追加的进度消息",
+                    "hidden": false,
+                    "name": "message",
+                    "required": true
+                  }
+                ],
+                "name": "agent task progress",
+                "node_type": "agent_task_progress",
+                "output_ports": [
+                  {
+                    "data_type": "Boolean",
+                    "description": "是否成功写入进度",
+                    "hidden": false,
+                    "name": "ok",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 1480,
+                  "y": 480
+                },
+                "size": {
+                  "height": 120,
+                  "width": 200
+                }
+              },
+              {
+                "description": null,
+                "disabled": false,
+                "dynamic_input_ports": false,
+                "dynamic_output_ports": false,
+                "has_cycle": false,
+                "has_error": false,
+                "id": "0c87f56e-2e9e-453d-a501-0c60c2a1e671",
+                "inline_values": {},
+                "input_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "输入",
+                    "hidden": false,
+                    "name": "first",
+                    "required": false
+                  },
+                  {
+                    "data_type": "Any",
+                    "description": "输入",
+                    "hidden": false,
+                    "name": "second",
+                    "required": false
+                  }
+                ],
+                "name": "any of",
+                "node_type": "any_of",
+                "output_ports": [
+                  {
+                    "data_type": "Any",
+                    "description": "输出",
+                    "hidden": false,
+                    "name": "output",
+                    "required": true
+                  }
+                ],
+                "port_bindings": {},
+                "position": {
+                  "x": 1810,
+                  "y": 480
+                },
+                "size": {
+                  "height": 120,
+                  "width": 200
                 }
               }
             ],
@@ -1785,13 +1903,6 @@
           "description": "函数输入 'message_event'",
           "required": true,
           "hidden": false
-        },
-        {
-          "name": "extract_sender_id_from_event_message_event",
-          "data_type": "Any",
-          "description": "函数输入 'extract_sender_id_from_event_message_event'",
-          "required": true,
-          "hidden": false
         }
       ],
       "output_ports": [
@@ -1808,8 +1919,8 @@
       "dynamic_input_ports": true,
       "dynamic_output_ports": true,
       "position": {
-        "x": 1090.0,
-        "y": 260.0
+        "x": 1430.0,
+        "y": 350.0
       },
       "size": {
         "width": 220.0,
@@ -1835,12 +1946,6 @@
               "data_type": "Any",
               "description": "",
               "name": "message_event",
-              "required": true
-            },
-            {
-              "data_type": "Any",
-              "description": "",
-              "name": "extract_sender_id_from_event_message_event",
               "required": true
             }
           ],
@@ -1925,16 +2030,16 @@
                 "to_port": "message_event"
               },
               {
-                "from_node_id": "__function_inputs__",
-                "from_port": "extract_sender_id_from_event_message_event",
-                "to_node_id": "3b99aed6-aa72-4ed6-beb4-301ce6b82007",
-                "to_port": "message_event"
-              },
-              {
                 "from_node_id": "conversation",
                 "from_port": "vec",
                 "to_node_id": "__function_outputs__",
                 "to_port": "vec"
+              },
+              {
+                "from_node_id": "__function_inputs__",
+                "from_port": "message_event",
+                "to_node_id": "3b99aed6-aa72-4ed6-beb4-301ce6b82007",
+                "to_port": "message_event"
               }
             ],
             "graph_inputs": [],
@@ -1971,28 +2076,28 @@
                     "description": "变量 current_time",
                     "hidden": false,
                     "name": "current_time",
-                    "required": true
+                    "required": false
                   },
                   {
                     "data_type": "Any",
                     "description": "变量 query",
                     "hidden": false,
                     "name": "query",
-                    "required": true
+                    "required": false
                   },
                   {
                     "data_type": "Any",
                     "description": "变量 group_id",
                     "hidden": false,
                     "name": "group_id",
-                    "required": true
+                    "required": false
                   },
                   {
                     "data_type": "Any",
                     "description": "变量 sender_id",
                     "hidden": false,
                     "name": "sender_id",
-                    "required": true
+                    "required": false
                   }
                 ],
                 "name": "System Prompt",
@@ -2008,11 +2113,11 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2020,
-                  "y": 200
+                  "x": 2040,
+                  "y": 170
                 },
                 "size": {
-                  "height": 230,
+                  "height": 472,
                   "width": 420
                 }
               },
@@ -2145,8 +2250,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2070,
-                  "y": 550
+                  "x": 2110,
+                  "y": 820
                 },
                 "size": {
                   "height": 110,
@@ -2277,7 +2382,7 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1440,
+                  "x": 1510,
                   "y": 350
                 },
                 "size": {
@@ -2347,8 +2452,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1430,
-                  "y": 540
+                  "x": 1510,
+                  "y": 650
                 },
                 "size": {
                   "height": 120,
@@ -2381,12 +2486,6 @@
                       "data_type": "Any",
                       "description": "",
                       "name": "message_event",
-                      "required": true
-                    },
-                    {
-                      "data_type": "Any",
-                      "description": "",
-                      "name": "extract_sender_id_from_event_message_event",
                       "required": true
                     }
                   ]
@@ -2430,19 +2529,12 @@
                     "hidden": false,
                     "name": "message_event",
                     "required": true
-                  },
-                  {
-                    "data_type": "Any",
-                    "description": "函数输入 'extract_sender_id_from_event_message_event'",
-                    "hidden": false,
-                    "name": "extract_sender_id_from_event_message_event",
-                    "required": true
                   }
                 ],
                 "port_bindings": {},
                 "position": {
                   "x": 1130,
-                  "y": 373.3333435058594
+                  "y": 373.33334
                 },
                 "size": {
                   "height": 120,
@@ -2493,7 +2585,7 @@
                 "port_bindings": {},
                 "position": {
                   "x": 3390,
-                  "y": 373.3333435058594
+                  "y": 373.33334
                 },
                 "size": {
                   "height": 120,
@@ -2505,6 +2597,52 @@
           }
         }
       },
+      "port_bindings": {},
+      "has_error": false,
+      "has_cycle": false,
+      "disabled": false
+    },
+    {
+      "id": "fc3c2ad7-fc13-4f41-bc57-3913b5487ec9",
+      "name": "and then",
+      "description": null,
+      "node_type": "and_then",
+      "input_ports": [
+        {
+          "name": "first",
+          "data_type": "Any",
+          "description": "用于串联依赖的前置输入，仅用于等待其到齐",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "second",
+          "data_type": "Any",
+          "description": "在两个输入都到齐后原样透传的值",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "output",
+          "data_type": "Any",
+          "description": "second 的原样输出",
+          "required": true,
+          "hidden": false
+        }
+      ],
+      "dynamic_input_ports": false,
+      "dynamic_output_ports": false,
+      "position": {
+        "x": 1090.0,
+        "y": 300.0
+      },
+      "size": {
+        "width": 200.0,
+        "height": 120.0
+      },
+      "inline_values": {},
       "port_bindings": {},
       "has_error": false,
       "has_cycle": false,
@@ -2579,18 +2717,6 @@
       "to_port": "content"
     },
     {
-      "from_node_id": "171574da-3af0-4d07-b677-2f79d8257729",
-      "from_port": "output",
-      "to_node_id": "e2e1823e-2765-4c5c-86d6-0c8e8f68e270",
-      "to_port": "message_event"
-    },
-    {
-      "from_node_id": "171574da-3af0-4d07-b677-2f79d8257729",
-      "from_port": "output",
-      "to_node_id": "e2e1823e-2765-4c5c-86d6-0c8e8f68e270",
-      "to_port": "extract_sender_id_from_event_message_event"
-    },
-    {
       "from_node_id": "e2e1823e-2765-4c5c-86d6-0c8e8f68e270",
       "from_port": "vec",
       "to_node_id": "deep_search_brain",
@@ -2601,6 +2727,24 @@
       "from_port": "content",
       "to_node_id": "171574da-3af0-4d07-b677-2f79d8257729",
       "to_port": "content"
+    },
+    {
+      "from_node_id": "171574da-3af0-4d07-b677-2f79d8257729",
+      "from_port": "output",
+      "to_node_id": "fc3c2ad7-fc13-4f41-bc57-3913b5487ec9",
+      "to_port": "first"
+    },
+    {
+      "from_node_id": "__graph_inputs__",
+      "from_port": "message_event",
+      "to_node_id": "fc3c2ad7-fc13-4f41-bc57-3913b5487ec9",
+      "to_port": "second"
+    },
+    {
+      "from_node_id": "fc3c2ad7-fc13-4f41-bc57-3913b5487ec9",
+      "from_port": "output",
+      "to_node_id": "e2e1823e-2765-4c5c-86d6-0c8e8f68e270",
+      "to_port": "message_event"
     }
   ],
   "graph_inputs": [

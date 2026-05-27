@@ -23,16 +23,9 @@
       ],
       "output_ports": [
         {
-          "name": "content",
+          "name": "media_id",
           "data_type": "String",
-          "description": "节点图输入 'content'",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "message_event",
-          "data_type": "MessageEvent",
-          "description": "节点图输入 'message_event'",
+          "description": "节点图输入 'media_id' — 持久化媒体 ID",
           "required": true,
           "hidden": false
         },
@@ -58,14 +51,8 @@
         "signature": [
           {
             "data_type": "String",
-            "description": "触发此次工具调用的上下文文本内容",
-            "name": "content",
-            "required": true
-          },
-          {
-            "data_type": "MessageEvent",
-            "description": "当前触发此次工具调用的消息事件",
-            "name": "message_event",
+            "description": "持久化媒体 ID，用于从数据库查询图片",
+            "name": "media_id",
             "required": true
           },
           {
@@ -129,30 +116,30 @@
       "disabled": false
     },
     {
-      "id": "1429dd06-0384-4761-ac60-1a8282c9b739",
-      "name": "extract message from event",
+      "id": "650a2d8a-1fa7-4a22-8a42-e7bcf3c5c0a1",
+      "name": "extract media by id",
       "description": null,
-      "node_type": "extract_message_from_event",
+      "node_type": "extract_media_by_id",
       "input_ports": [
         {
-          "name": "message_event",
-          "data_type": "MessageEvent",
-          "description": "当前触发的消息事件",
+          "name": "media_id",
+          "data_type": "String",
+          "description": "持久化媒体 ID",
           "required": true,
           "hidden": false
         },
         {
-          "name": "ims_bot_adapter",
-          "data_type": "BotAdapterRef",
-          "description": "BotAdapter reference for context-aware system message",
+          "name": "mysql_ref",
+          "data_type": "MySqlRef",
+          "description": "MySQL 连接引用，用于查询消息记录表",
           "required": true,
           "hidden": false
         },
         {
           "name": "s3_ref",
           "data_type": "S3Ref",
-          "description": "可选：显式传入对象存储引用，优先用于多模态图片提取",
-          "required": false,
+          "description": "对象存储引用，用于读取图片字节",
+          "required": true,
           "hidden": false
         }
       ],
@@ -162,37 +149,14 @@
           "data_type": {
             "Vec": "OpenAIMessage"
           },
-          "description": "Vec<OpenAIMessage> containing system and user messages",
+          "description": "Vec<OpenAIMessage> 包含一条带图片内容的用户消息",
           "required": true,
           "hidden": false
         },
         {
           "name": "content",
           "data_type": "String",
-          "description": "Merged readable message body",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "ref_content",
-          "data_type": "String",
-          "description": "Referenced/replied message content",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "is_at_me",
-          "data_type": "Boolean",
-          "description": "Whether the message @'s the bot",
-          "required": true,
-          "hidden": false
-        },
-        {
-          "name": "at_target_list",
-          "data_type": {
-            "Vec": "String"
-          },
-          "description": "List of all @ targets in the message",
+          "description": "人类可读的图片摘要标签",
           "required": true,
           "hidden": false
         }
@@ -204,8 +168,8 @@
         "y": 330.0
       },
       "size": {
-        "width": 387.0,
-        "height": 181.0
+        "width": 200.0,
+        "height": 120.0
       },
       "inline_values": {},
       "port_bindings": {},
@@ -564,7 +528,7 @@
       "to_port": "vec1"
     },
     {
-      "from_node_id": "1429dd06-0384-4761-ac60-1a8282c9b739",
+      "from_node_id": "650a2d8a-1fa7-4a22-8a42-e7bcf3c5c0a1",
       "from_port": "messages",
       "to_node_id": "81de3bde-f79a-48c6-9ef1-9d388ba632a9",
       "to_port": "vec2"
@@ -595,21 +559,21 @@
     },
     {
       "from_node_id": "__graph_inputs__",
-      "from_port": "qq_ims_bot_adapter",
-      "to_node_id": "1429dd06-0384-4761-ac60-1a8282c9b739",
-      "to_port": "ims_bot_adapter"
+      "from_port": "media_id",
+      "to_node_id": "650a2d8a-1fa7-4a22-8a42-e7bcf3c5c0a1",
+      "to_port": "media_id"
+    },
+    {
+      "from_node_id": "75ccf40c-5206-47f3-b01f-f3c2aa99d001",
+      "from_port": "mysql_ref",
+      "to_node_id": "650a2d8a-1fa7-4a22-8a42-e7bcf3c5c0a1",
+      "to_port": "mysql_ref"
     },
     {
       "from_node_id": "59b81fe6-42c4-4b49-80a2-f3724c2f27d8",
       "from_port": "s3_ref",
-      "to_node_id": "1429dd06-0384-4761-ac60-1a8282c9b739",
+      "to_node_id": "650a2d8a-1fa7-4a22-8a42-e7bcf3c5c0a1",
       "to_port": "s3_ref"
-    },
-    {
-      "from_node_id": "__graph_inputs__",
-      "from_port": "message_event",
-      "to_node_id": "1429dd06-0384-4761-ac60-1a8282c9b739",
-      "to_port": "message_event"
     }
   ],
   "graph_inputs": [],
@@ -625,8 +589,8 @@
   "hyperparameters": [],
   "variables": [],
   "metadata": {
-    "name": "图像分析能力",
-    "description": "调用图像分析模型对图像进行分析",
+    "name": "图像分析能力（按媒体 ID）",
+    "description": "通过持久化媒体 ID 从数据库取出图片并进行分析",
     "version": null
   },
   "accepts_agent_events": true

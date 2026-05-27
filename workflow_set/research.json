@@ -1079,8 +1079,8 @@
                       "required": false
                     }
                   ],
-                  "name": "extract message by id from event",
-                  "node_type": "extract_message_by_id_from_event",
+                  "name": "extract message from event",
+                  "node_type": "extract_message_from_event",
                   "output_ports": [
                     {
                       "data_type": {

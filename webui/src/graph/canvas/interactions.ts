@@ -334,12 +334,12 @@ export class CanvasInteractions {
     const minX = Math.min(...xs);
     const minY = Math.min(...ys);
     const offset = 20;
-    const newNodes: NodeDefinition[] = [];
+    const newNodeIds: string[] = [];
     for (const def of this.canvas.nodeClipboard) {
       const dx = (def.position?.x ?? 0) - minX;
       const dy = (def.position?.y ?? 0) - minY;
       const newNode = await graphs.addNode(sid, def.node_type, def.name, graphX + dx + offset, graphY + dy + offset);
-      // Preserve inline values and port bindings from the original node
+      newNodeIds.push(newNode.id);
       if (Object.keys(def.inline_values ?? {}).length > 0 || Object.keys(def.port_bindings ?? {}).length > 0) {
         const updates: { inline_values?: Record<string, unknown>; port_bindings?: Record<string, { kind: string; name: string }> } = {};
         if (Object.keys(def.inline_values ?? {}).length > 0) {
@@ -348,16 +348,18 @@ export class CanvasInteractions {
         if (Object.keys(def.port_bindings ?? {}).length > 0) {
           updates.port_bindings = def.port_bindings;
         }
-        graphs.updateNode(sid, newNode.id, updates).catch(() => {});
+        await graphs.updateNode(sid, newNode.id, updates);
       }
-      newNodes.push(newNode);
     }
-    // Use the returned node definitions to patch the graph state incrementally
-    // instead of doing a full graph reload, which avoids a clear+rebuild cycle
+
+    const refreshedGraph = await graphs.get(sid);
+    const newNodes = newNodeIds
+      .map((nodeId) => refreshedGraph.nodes.find((node) => node.id === nodeId))
+      .filter((node): node is NodeDefinition => node != null);
+
     if (this.canvas.state.graph) {
-      const updatedGraph = { ...this.canvas.state.graph, nodes: [...this.canvas.state.graph.nodes, ...newNodes] };
-      this.canvas.state.graph = updatedGraph;
-      this.canvas.history.push(updatedGraph);
+      this.canvas.state.graph = refreshedGraph;
+      this.canvas.history.push(refreshedGraph);
       for (const nodeDef of newNodes) {
         this.canvas.addLGraphNodeDirect(nodeDef);
       }
