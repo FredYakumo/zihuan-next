@@ -105,19 +105,13 @@ export function buildPortListEditor(
     }
 
     if (reserved) {
-      row.style.cssText = "opacity:0.6;background:#1a1a1a;border-radius:4px;";
       nameEl.readOnly = true;
       typeEl.disabled = true;
       if (descEl) descEl.readOnly = true;
 
-      const badge = document.createElement("span");
-      badge.textContent = "保留";
-      badge.style.cssText = "font-size:11px;color:#888;padding:2px 6px;border:1px solid #444;border-radius:3px;align-self:center;";
-
       row.appendChild(nameEl);
       row.appendChild(typeEl);
       if (descEl) row.appendChild(descEl);
-      row.appendChild(badge);
       container.insertBefore(row, addBtn);
       items.push({ nameEl, typeEl, descEl, row, reserved: true });
     } else {
