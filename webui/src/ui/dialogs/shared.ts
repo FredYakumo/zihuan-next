@@ -105,9 +105,10 @@ export function buildPortListEditor(
     }
 
     if (reserved) {
-      nameEl.readOnly = true;
+      row.classList.add("zh-port-row-reserved");
+      nameEl.disabled = true;
       typeEl.disabled = true;
-      if (descEl) descEl.readOnly = true;
+      if (descEl) descEl.disabled = true;
 
       row.appendChild(nameEl);
       row.appendChild(typeEl);
