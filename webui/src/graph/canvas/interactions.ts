@@ -27,6 +27,7 @@ export class CanvasInteractions {
 
   bind(): void {
     (LiteGraph as any).release_link_on_empty_shows_menu = true;
+    this.bindClipboardShortcuts();
 
     const dispatchConnectionDrop = (
       sourceNode: any,
@@ -104,6 +105,20 @@ export class CanvasInteractions {
 
       this.showCanvasContextMenu(e, gx, gy);
     }, { capture: true });
+  }
+
+  private bindClipboardShortcuts(): void {
+    const lCanvas = this.canvas.lCanvas as any;
+    lCanvas.copyToClipboard = () => {
+      this.copySelectedNodes();
+    };
+    lCanvas.pasteFromClipboard = () => {
+      if (this.canvas.nodeClipboard.length === 0) return;
+      const graphMouse = lCanvas.graph_mouse as [number, number] | undefined;
+      const graphX = graphMouse?.[0] ?? 0;
+      const graphY = graphMouse?.[1] ?? 0;
+      this.pasteNodes(graphX, graphY).catch(console.error);
+    };
   }
 
   private createContextMenu(event: MouseEvent): {
@@ -334,12 +349,10 @@ export class CanvasInteractions {
     const minX = Math.min(...xs);
     const minY = Math.min(...ys);
     const offset = 20;
-    const newNodeIds: string[] = [];
     for (const def of this.canvas.nodeClipboard) {
       const dx = (def.position?.x ?? 0) - minX;
       const dy = (def.position?.y ?? 0) - minY;
       const newNode = await graphs.addNode(sid, def.node_type, def.name, graphX + dx + offset, graphY + dy + offset);
-      newNodeIds.push(newNode.id);
       if (Object.keys(def.inline_values ?? {}).length > 0 || Object.keys(def.port_bindings ?? {}).length > 0) {
         const updates: { inline_values?: Record<string, unknown>; port_bindings?: Record<string, { kind: string; name: string }> } = {};
         if (Object.keys(def.inline_values ?? {}).length > 0) {
@@ -353,16 +366,11 @@ export class CanvasInteractions {
     }
 
     const refreshedGraph = await graphs.get(sid);
-    const newNodes = newNodeIds
-      .map((nodeId) => refreshedGraph.nodes.find((node) => node.id === nodeId))
-      .filter((node): node is NodeDefinition => node != null);
 
     if (this.canvas.state.graph) {
       this.canvas.state.graph = refreshedGraph;
       this.canvas.history.push(refreshedGraph);
-      for (const nodeDef of newNodes) {
-        this.canvas.addLGraphNodeDirect(nodeDef);
-      }
+      this.canvas.rebuildCanvas(refreshedGraph);
     } else {
       await this.canvas.reloadCurrentSession();
     }
