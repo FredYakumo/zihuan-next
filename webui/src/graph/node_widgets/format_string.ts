@@ -27,7 +27,7 @@ export function setupFormatStringWidgets(
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
 
-    const display = template || "(空模板 — 双击编辑)";
+    const display = template || "(空模板 — 单击编辑)";
     const lines: string[] = [];
     for (const para of display.split("\n")) {
       if (para.length === 0) {
@@ -75,15 +75,17 @@ export function setupFormatStringWidgets(
     }
   };
 
-  lNode.onDblClick = (_e: MouseEvent) => {
-    const sid = getSessionId();
-    if (!sid) {
-      alert("请先打开一个图。");
-      return;
+  lNode.onMouseDown = function (this: any, _e: MouseEvent, pos: [number, number]) {
+    const slotCount = Math.max(this.inputs?.length ?? 0, this.outputs?.length ?? 0);
+    const startY = slotCount * SLOT_HEIGHT + PADDING;
+
+    if (pos[1] >= startY) {
+      const sid = getSessionId();
+      if (!sid) { alert("请先打开一个图。"); return; }
+      openFormatStringEditor(nodeDef, sid, () => {
+        template = (nodeDef.inline_values?.["template"] as string) ?? "";
+        onRefresh();
+      });
     }
-    openFormatStringEditor(nodeDef, sid, () => {
-      template = (nodeDef.inline_values?.["template"] as string) ?? "";
-      onRefresh();
-    });
   };
 }
