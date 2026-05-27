@@ -211,7 +211,8 @@ export async function openGraphIODialog(
   const graph = await graphs.get(sessionId);
 
   const agentEventWrap = document.createElement("label");
-  agentEventWrap.style.cssText = "display:flex;align-items:center;gap:8px;margin:10px 0;padding:8px 10px;background:#1a1a1a;border:1px solid #333;border-radius:4px;cursor:pointer;";
+  agentEventWrap.className = "zh-agent-event-wrap";
+  agentEventWrap.style.cssText = "display:flex;align-items:center;gap:8px;margin:10px 0;padding:8px 10px;background:var(--accent-subtle);border:1px solid var(--accent);border-radius:4px;cursor:pointer;";
   const agentEventCb = document.createElement("input");
   agentEventCb.type = "checkbox";
   agentEventCb.checked = graph.accepts_agent_events ?? false;

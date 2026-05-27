@@ -110,9 +110,13 @@ export function buildPortListEditor(
       typeEl.disabled = true;
       if (descEl) descEl.disabled = true;
 
+      const spacer = document.createElement("div");
+      spacer.style.cssText = "width:32px;height:28px;flex-shrink:0;";
+
       row.appendChild(nameEl);
       row.appendChild(typeEl);
       if (descEl) row.appendChild(descEl);
+      row.appendChild(spacer);
       container.insertBefore(row, addBtn);
       items.push({ nameEl, typeEl, descEl, row, reserved: true });
     } else {
