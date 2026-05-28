@@ -6,9 +6,6 @@ use log::{info, warn};
 use serde_json::Value;
 use zihuan_nlp::{PunctuationSegmenter, TextSegmenter};
 
-use super::agent_text_similarity::{
-    find_best_match, token_overlap_ratio, HybridSimilarityConfig, SimilarityCandidate,
-};
 use super::classify_intent::{classify_intent_with_trace, IntentCategory};
 use super::qq_chat_agent_ignore_store::should_ignore_message_blocking;
 use super::qq_chat_agent_logging::{QqChatBrainObserver, QqChatTaskTrace};
@@ -80,9 +77,6 @@ const MAX_REPLY_CHARS: usize = 250;
 const MAX_FORWARD_NODE_CHARS: usize = 800;
 const LOG_TEXT_PREVIEW_CHARS: usize = 1_200;
 const LOG_TOOL_PREVIEW_CHARS: usize = 600;
-const DUPLICATE_COSINE_THRESHOLD: f64 = 0.95;
-const DUPLICATE_HYBRID_THRESHOLD: f64 = 0.90;
-const DUPLICATE_OVERLAP_THRESHOLD: f64 = 0.78;
 const DIRECT_REPLY_NO_SYSTEM_PROMPT: &str = "没有系统提示词";
 const MODEL_NAME_REPLY_PREFIX: &str = "我不是模型，不过我会调用: ";
 const STEER_PREFIX: &str =
@@ -1205,135 +1199,6 @@ fn plain_text_batches(content: &str) -> Vec<Vec<Message>> {
         .into_iter()
         .map(|chunk| vec![Message::PlainText(PlainTextMessage { text: chunk })])
         .collect()
-}
-
-fn normalize_batch_text_signature(text: &str) -> Option<String> {
-    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    let trimmed = normalized.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
-}
-
-fn final_assistant_text_signature(
-    content: &str,
-    is_group: bool,
-    sender_id: &str,
-    sender_nickname: &str,
-    sender_card: &str,
-) -> Option<String> {
-    let source = if is_group {
-        let patterns = sender_mention_patterns(sender_id, sender_nickname, sender_card);
-        strip_leading_textual_mention(content, &patterns).unwrap_or(content)
-    } else {
-        content
-    };
-    normalize_batch_text_signature(source)
-}
-
-fn batch_text_signature(batch: &[Message], sender_id: &str) -> Option<String> {
-    let mut rendered = String::new();
-
-    for message in batch {
-        match message {
-            Message::PlainText(text) => rendered.push_str(&text.text),
-            Message::At(at) if at.target.as_deref() == Some(sender_id) => {}
-            Message::At(at) => {
-                rendered.push_str(&format!("@{}", at.target.as_deref().unwrap_or("")))
-            }
-            Message::Forward(forward) => {
-                rendered.push_str(&render_forward_for_history(forward).unwrap_or_default());
-            }
-            Message::Reply(_) => rendered.push_str("[回复消息]"),
-            Message::Image(_) => rendered.push_str("[图片]"),
-        }
-    }
-
-    normalize_batch_text_signature(&rendered)
-}
-
-fn contains_equivalent_batch_text(
-    batches: &[Vec<Message>],
-    content: &str,
-    is_group: bool,
-    sender_id: &str,
-    sender_nickname: &str,
-    sender_card: &str,
-) -> bool {
-    let Some(target_signature) =
-        final_assistant_text_signature(content, is_group, sender_id, sender_nickname, sender_card)
-    else {
-        return false;
-    };
-
-    batches
-        .iter()
-        .filter_map(|batch| batch_text_signature(batch, sender_id))
-        .any(|signature| signature == target_signature)
-}
-
-fn batch_similarity_candidates(
-    batches: &[Vec<Message>],
-    sender_id: &str,
-) -> Vec<SimilarityCandidate> {
-    batches
-        .iter()
-        .filter_map(|batch| batch_text_signature(batch, sender_id))
-        .map(|text| SimilarityCandidate {
-            source: "pending_batch".to_string(),
-            text,
-        })
-        .collect()
-}
-
-fn is_similar_to_pending_batches(
-    batches: &[Vec<Message>],
-    content: &str,
-    embedding_model: Option<&Arc<dyn EmbeddingBase>>,
-    is_group: bool,
-    sender_id: &str,
-    sender_nickname: &str,
-    sender_card: &str,
-) -> Result<bool> {
-    let Some(final_signature) =
-        final_assistant_text_signature(content, is_group, sender_id, sender_nickname, sender_card)
-    else {
-        return Ok(false);
-    };
-
-    let candidates = batch_similarity_candidates(batches, sender_id);
-    if candidates.is_empty() {
-        return Ok(false);
-    }
-
-    let config = HybridSimilarityConfig::default();
-    let Some(best_match) = find_best_match(&final_signature, &candidates, embedding_model, config)?
-    else {
-        return Ok(false);
-    };
-
-    let cosine = best_match.cosine_score.unwrap_or(0.0);
-    let overlap = token_overlap_ratio(&final_signature, &best_match.text);
-    Ok(cosine >= DUPLICATE_COSINE_THRESHOLD
-        || best_match.hybrid_score >= DUPLICATE_HYBRID_THRESHOLD
-        || overlap >= DUPLICATE_OVERLAP_THRESHOLD)
-}
-
-fn dedupe_batches(batches: Vec<Vec<Message>>, sender_id: &str) -> Vec<Vec<Message>> {
-    let mut seen = std::collections::HashSet::new();
-    let mut deduped = Vec::with_capacity(batches.len());
-
-    for batch in batches {
-        let signature =
-            batch_text_signature(&batch, sender_id).unwrap_or_else(|| format!("{batch:?}"));
-        if seen.insert(signature) {
-            deduped.push(batch);
-        }
-    }
-
-    deduped
 }
 
 fn split_text_by_semantic_boundaries(content: &str, max_chars: usize) -> Vec<String> {
