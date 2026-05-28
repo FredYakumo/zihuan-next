@@ -921,6 +921,10 @@ fn build_current_turn_user_input(
     }
 }
 
+/// Recursively flattens nested message structures into a linear list suitable for LLM inference.
+///
+/// Wraps `Reply` and `Forward` messages with plain-text boundary markers so the model can
+/// distinguish quoted content from the current turn without relying on opaque nested types.
 fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message> {
     let mut expanded = Vec::new();
 
@@ -1205,135 +1209,6 @@ fn split_text_by_semantic_boundaries(content: &str, max_chars: usize) -> Vec<Str
     PunctuationSegmenter.segment(content, max_chars)
 }
 
-fn split_overlong_text_unit(content: &str, max_chars: usize) -> Vec<String> {
-    let trimmed = content.trim();
-    if trimmed.is_empty() {
-        return Vec::new();
-    }
-    if trimmed.chars().count() <= max_chars {
-        return vec![trimmed.to_string()];
-    }
-
-    let lines: Vec<&str> = trimmed
-        .split('\n')
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect();
-    if lines.len() > 1 {
-        return pack_text_units(lines, "\n", max_chars);
-    }
-
-    let sentences = split_into_sentence_like_units(trimmed);
-    if sentences.len() > 1 {
-        return pack_text_units(
-            sentences.iter().map(String::as_str).collect(),
-            "",
-            max_chars,
-        );
-    }
-
-    split_text_hard(trimmed, max_chars)
-}
-
-fn split_into_sentence_like_units(content: &str) -> Vec<String> {
-    let mut units = Vec::new();
-    let mut current = String::new();
-
-    for ch in content.chars() {
-        current.push(ch);
-        if is_sentence_boundary(ch) {
-            let segment = current.trim();
-            if !segment.is_empty() {
-                units.push(segment.to_string());
-            }
-            current.clear();
-        }
-    }
-
-    let tail = current.trim();
-    if !tail.is_empty() {
-        units.push(tail.to_string());
-    }
-
-    units
-}
-
-fn is_sentence_boundary(ch: char) -> bool {
-    matches!(
-        ch,
-        '。' | '！' | '？' | '；' | '!' | '?' | ';' | '\u{2026}' | '.'
-    )
-}
-
-fn pack_text_units(units: Vec<&str>, separator: &str, max_chars: usize) -> Vec<String> {
-    let mut chunks = Vec::new();
-    let mut current = String::new();
-
-    for unit in units {
-        for sub_unit in split_overlong_sub_unit(unit, max_chars) {
-            append_chunk_with_separator(&mut chunks, &mut current, &sub_unit, separator, max_chars);
-        }
-    }
-
-    if !current.is_empty() {
-        chunks.push(current);
-    }
-
-    chunks
-}
-
-fn split_overlong_sub_unit(content: &str, max_chars: usize) -> Vec<String> {
-    if content.chars().count() <= max_chars {
-        return vec![content.to_string()];
-    }
-    split_text_hard(content, max_chars)
-}
-
-fn append_chunk_with_separator(
-    chunks: &mut Vec<String>,
-    current: &mut String,
-    unit: &str,
-    separator: &str,
-    max_chars: usize,
-) {
-    if unit.is_empty() {
-        return;
-    }
-
-    let candidate = if current.is_empty() {
-        unit.to_string()
-    } else {
-        format!("{current}{separator}{unit}")
-    };
-
-    if candidate.chars().count() <= max_chars {
-        *current = candidate;
-    } else {
-        if !current.is_empty() {
-            chunks.push(std::mem::take(current));
-        }
-        *current = unit.to_string();
-    }
-}
-
-fn split_text_hard(content: &str, max_chars: usize) -> Vec<String> {
-    let chars: Vec<char> = content.chars().collect();
-    let mut start = 0;
-    let mut chunks = Vec::new();
-
-    while start < chars.len() {
-        let end = (start + max_chars).min(chars.len());
-        let chunk: String = chars[start..end].iter().collect();
-        let trimmed = chunk.trim();
-        if !trimmed.is_empty() {
-            chunks.push(trimmed.to_string());
-        }
-        start = end;
-    }
-
-    chunks
-}
-
 fn build_output_contract_priming_message() -> OpenAIMessage {
     OpenAIMessage::assistant_text(
         "明白。我最终只会写聊天对象真正会看到的话，必要时直接使用 @QQ号、[Reply his_message]、[Reply message_id=...]、[Image media_id=...]、[no reply] 这些标记，不写内部汇报。"
@@ -1390,67 +1265,6 @@ fn collect_available_media_from_brain_output(
     media_by_id
 }
 
-fn render_forward_for_history(forward: &ForwardMessage) -> Option<String> {
-    let nodes: Vec<String> = forward
-        .content
-        .iter()
-        .filter_map(|node| {
-            let text = node
-                .content
-                .iter()
-                .filter_map(render_message_fragment_for_history)
-                .collect::<String>()
-                .trim()
-                .to_string();
-            if text.is_empty() {
-                None
-            } else {
-                Some(text)
-            }
-        })
-        .collect();
-
-    if nodes.is_empty() {
-        None
-    } else {
-        Some(format!("[转发消息]\n{}", nodes.join("\n\n")))
-    }
-}
-
-fn render_message_fragment_for_history(message: &Message) -> Option<String> {
-    match message {
-        Message::PlainText(text) => Some(text.text.clone()),
-        Message::At(at) => Some(format!("@{}", at.target.as_deref().unwrap_or("unknown"))),
-        Message::Forward(forward) => render_forward_for_history(forward),
-        Message::Image(_) => Some("[图片]".to_string()),
-        Message::Reply(_) => Some("[回复消息]".to_string()),
-    }
-}
-
-fn render_batches_for_history(batches: &[Vec<Message>]) -> Option<String> {
-    let rendered: Vec<String> = batches
-        .iter()
-        .filter_map(|batch| {
-            let joined = batch
-                .iter()
-                .filter_map(render_message_fragment_for_history)
-                .collect::<String>()
-                .trim()
-                .to_string();
-            if joined.is_empty() {
-                None
-            } else {
-                Some(joined)
-            }
-        })
-        .collect();
-
-    if rendered.is_empty() {
-        None
-    } else {
-        Some(rendered.join("\n\n"))
-    }
-}
 
 fn send_direct_text_reply(
     trace: &QqChatTaskTrace,
@@ -1913,6 +1727,17 @@ impl QqChatAgent {
         Ok(())
     }
 
+    /// Entry point for handling a single inbound QQ message event.
+    ///
+    /// The flow is:
+    /// - **Validation** — persists the message and checks ignore rules.
+    /// - **Group mention filter** — silently drops group messages that do not `@` the bot.
+    /// - **Session claim** — tries to acquire a per-sender session lock. If the session is busy,
+    ///   the message is enqueued as a steer event instead.
+    /// - **Task tracking** — starts a runtime task (if available) and builds a [`QqChatTaskTrace`].
+    /// - **Delegation** — forwards to [`handle_claimed`] for the actual brain loop and reply.
+    /// - **Cleanup** — releases the session lock, finalizes steer state, and marks the task
+    ///   as completed or failed.
     fn handle(
         &self,
         event: &ims_bot_adapter::models::MessageEvent,
@@ -2135,6 +1960,13 @@ impl QqChatAgent {
         result.map(|_| ())
     }
 
+    /// Processes a claimed QQ chat message, potentially across multiple turns due to steering.
+    ///
+    /// Repeatedly calls [`handle_claimed_turn`] and drains any pending steer messages after each
+    /// turn. When steer messages exist, they are merged into a follow-up event that becomes the
+    /// input for the next iteration. The loop ends once no more steer messages remain.
+    ///
+    /// Returns a [`QqChatHandleReport`] with a summary of the final turn.
     #[allow(clippy::too_many_arguments)]
     fn handle_claimed(
         &self,
@@ -2244,6 +2076,21 @@ impl QqChatAgent {
         })()
     }
 
+    /// Processes a single QQ chat turn end-to-end for a claimed message.
+    ///
+    /// The lifecycle is:
+    /// - **Hydration & extraction** — resolves reply chains and extracts the user text.
+    /// - **Command interception** — dispatches slash commands, executes side effects, and
+    ///   optionally passes remaining text to the brain loop.
+    /// - **Intent classification** — selects the appropriate LLM (general vs math/programming).
+    /// - **Short-circuit replies** — answers meta-queries (model name, tool list, etc.) directly.
+    /// - **History compaction** — compresses conversation context when it exceeds budget.
+    /// - **Brain loop** — builds system prompt + conversation messages, attaches tools, and
+    ///   runs the LLM inference loop with steer support.
+    /// - **Reply delivery** — parses the final assistant output and sends it back to the user
+    ///   (group or private chat), persisting message history along the way.
+    ///
+    /// Returns a [`QqChatTurnResult`] containing a human-readable summary of what happened.
     #[allow(clippy::too_many_arguments)]
     fn handle_claimed_turn(
         &self,
