@@ -1583,6 +1583,31 @@ fn extract_tavily_link(item: &str) -> Option<String> {
     })
 }
 
+struct QqChatAgentContext<'a> {
+    adapter: &'a ims_bot_adapter::adapter::SharedBotAdapter,
+    bot_name: &'a str,
+    agent_system_prompt: Option<&'a str>,
+    cache: &'a Arc<OpenAIMessageSessionCacheRef>,
+    llm: &'a Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
+    intent_llm: &'a Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
+    math_programming_llm: &'a Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
+    model_display_names: &'a [String],
+    rdb_pool: Option<&'a RelationalDbConnection>,
+    mysql_ref: Option<&'a Arc<MySqlConfig>>,
+    weaviate_image_ref: Option<&'a Arc<WeaviateRef>>,
+    embedding_model: Option<&'a Arc<dyn EmbeddingBase>>,
+    tavily: &'a Arc<TavilyRef>,
+    s3_ref: Option<&'a Arc<S3Ref>>,
+    max_message_length: usize,
+    compact_context_length: usize,
+    max_steer_count: usize,
+    reply_batch_builder: Option<&'a QqAgentReplyBatchBuilder>,
+    shared_runtime_values: HashMap<String, DataValue>,
+    pending_steer: &'a Arc<PendingSteerStore>,
+    task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
+    task_db_connection_id: Option<String>,
+}
+
 pub struct QqChatAgent {
     id: String,
     default_tools_enabled: HashMap<String, bool>,
@@ -1741,32 +1766,11 @@ impl QqChatAgent {
     fn handle(
         &self,
         event: &ims_bot_adapter::models::MessageEvent,
-        adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
         time: &str,
         agent_id: &str,
-        bot_name: &str,
-        agent_system_prompt: Option<&str>,
-        cache: &Arc<OpenAIMessageSessionCacheRef>,
         session: &Arc<SessionStateRef>,
-        llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-        intent_llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-        math_programming_llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-        model_display_names: &[String],
-        rdb_pool: Option<&RelationalDbConnection>,
-        mysql_ref: Option<&Arc<MySqlConfig>>,
-        weaviate_image_ref: Option<&Arc<WeaviateRef>>,
-        embedding_model: Option<&Arc<dyn EmbeddingBase>>,
-        tavily: &Arc<TavilyRef>,
-        s3_ref: Option<&Arc<S3Ref>>,
-        max_message_length: usize,
-        compact_context_length: usize,
-        max_steer_count: usize,
-        reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
-        shared_runtime_values: HashMap<String, DataValue>,
-        pending_steer: &Arc<PendingSteerStore>,
-        task_runtime: Option<&Arc<dyn AgentTaskRuntime>>,
         user_ip: Option<String>,
-        task_db_connection_id: Option<String>,
+        ctx: &QqChatAgentContext<'_>,
     ) -> Result<()> {
         let is_group = event.message_type == MessageType::Group;
         let sender_id = event.sender.user_id.to_string();
@@ -1787,11 +1791,11 @@ impl QqChatAgent {
             target_id
         );
 
-        if let Err(err) = persist_message_event(event, rdb_pool, mysql_ref, None) {
+        if let Err(err) = persist_message_event(event, ctx.rdb_pool, ctx.mysql_ref, None) {
             warn!("{LOG_PREFIX} Message persistence failed: {err}");
         }
 
-        if let Some(rdb_pool) = rdb_pool {
+        if let Some(rdb_pool) = ctx.rdb_pool {
             let group_id_text = event.group_id.map(|value| value.to_string());
             if should_ignore_message_blocking(
                 rdb_pool,
@@ -1810,11 +1814,11 @@ impl QqChatAgent {
         }
 
         if is_group {
-            let bot_id = get_bot_id(adapter);
+            let bot_id = get_bot_id(ctx.adapter);
             let msg_prop = MessageProp::from_messages_with_bot_name(
                 &event.message_list,
                 Some(&bot_id),
-                Some(bot_name),
+                Some(ctx.bot_name),
             );
             if !msg_prop.is_at_me {
                 return Ok(());
@@ -1823,17 +1827,17 @@ impl QqChatAgent {
 
         let (claimed, claim_token) = try_claim_session(session, &sender_id);
         if !claimed {
-            let bot_id = get_bot_id(adapter);
-            let hydrated_event = hydrate_missing_reply_sources(event, adapter);
+            let bot_id = get_bot_id(ctx.adapter);
+            let hydrated_event = hydrate_missing_reply_sources(event, ctx.adapter);
             let inference_event = expand_event_for_inference(&hydrated_event);
-            let current_message = extract_user_message_text(&inference_event, &bot_id, bot_name);
-            let (accepted, queue_len, accepted_steer_count) = pending_steer.enqueue_with_limit(
+            let current_message = extract_user_message_text(&inference_event, &bot_id, ctx.bot_name);
+            let (accepted, queue_len, accepted_steer_count) = ctx.pending_steer.enqueue_with_limit(
                 &sender_id,
                 PendingSteerEvent {
                     event: hydrated_event,
                     time: time.to_string(),
                 },
-                max_steer_count,
+                ctx.max_steer_count,
             );
             if accepted {
                 info!(
@@ -1841,7 +1845,7 @@ impl QqChatAgent {
                     event.message_id,
                     queue_len,
                     accepted_steer_count,
-                    max_steer_count,
+                    ctx.max_steer_count,
                     truncate_for_log(&current_message, LOG_TEXT_PREVIEW_CHARS)
                 );
             } else {
@@ -1850,25 +1854,24 @@ impl QqChatAgent {
                     sender_id,
                     event.message_id,
                     accepted_steer_count,
-                    max_steer_count,
+                    ctx.max_steer_count,
                     truncate_for_log(&current_message, LOG_TEXT_PREVIEW_CHARS)
                 );
             }
             return Ok(());
         }
 
-        pending_steer.ensure_session_entry(&sender_id);
+        ctx.pending_steer.ensure_session_entry(&sender_id);
 
         let task_created_at = Local::now();
-        let task_runtime_arc: Option<Arc<dyn AgentTaskRuntime>> = task_runtime.map(Arc::clone);
-        let task_handle = task_runtime_arc.as_ref().map(|runtime| {
+        let task_handle = ctx.task_runtime.as_ref().map(|runtime| {
             runtime.start_task(AgentTaskRequest {
                 task_name: format!("回复[{sender_id}]的消息"),
                 agent_id: agent_id.to_string(),
-                agent_name: bot_name.to_string(),
+                agent_name: ctx.bot_name.to_string(),
                 user_ip,
                 owner_id: Some(sender_id.to_string()),
-                task_db_connection_id: task_db_connection_id.clone(),
+                task_db_connection_id: ctx.task_db_connection_id.clone(),
             })
         });
         let trace = QqChatTaskTrace::new(task_created_at);
@@ -1877,72 +1880,28 @@ impl QqChatAgent {
                 self.handle_claimed(
                     &trace,
                     event,
-                    adapter,
                     time,
-                    bot_name,
-                    agent_system_prompt,
-                    cache,
-                    session,
-                    llm,
-                    intent_llm,
-                    math_programming_llm,
-                    model_display_names,
-                    rdb_pool,
-                    mysql_ref,
-                    weaviate_image_ref,
-                    embedding_model,
-                    tavily,
-                    s3_ref,
                     &sender_id,
                     &target_id,
                     is_group,
-                    max_message_length,
-                    compact_context_length,
-                    max_steer_count,
-                    reply_batch_builder,
-                    shared_runtime_values,
-                    pending_steer,
-                    task_runtime_arc.clone(),
-                    task_db_connection_id.clone(),
+                    ctx,
                 )
             })
         } else {
             self.handle_claimed(
                 &trace,
                 event,
-                adapter,
                 time,
-                bot_name,
-                agent_system_prompt,
-                cache,
-                session,
-                llm,
-                intent_llm,
-                math_programming_llm,
-                model_display_names,
-                rdb_pool,
-                mysql_ref,
-                weaviate_image_ref,
-                embedding_model,
-                tavily,
-                s3_ref,
                 &sender_id,
                 &target_id,
                 is_group,
-                max_message_length,
-                compact_context_length,
-                max_steer_count,
-                reply_batch_builder,
-                shared_runtime_values,
-                pending_steer,
-                task_runtime_arc,
-                task_db_connection_id.clone(),
+                ctx,
             )
         };
         trace.finish_with_summary();
 
         release_session(session, &sender_id, claim_token);
-        pending_steer.finish_session(&sender_id);
+        ctx.pending_steer.finish_session(&sender_id);
         if let Some(task_handle) = task_handle {
             match &result {
                 Ok(report) => task_handle.finish(AgentTaskResult {
@@ -1967,78 +1926,34 @@ impl QqChatAgent {
     /// input for the next iteration. The loop ends once no more steer messages remain.
     ///
     /// Returns a [`QqChatHandleReport`] with a summary of the final turn.
-    #[allow(clippy::too_many_arguments)]
     fn handle_claimed(
         &self,
         trace: &QqChatTaskTrace,
         event: &ims_bot_adapter::models::MessageEvent,
-        adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
         time: &str,
-        bot_name: &str,
-        agent_system_prompt: Option<&str>,
-        cache: &Arc<OpenAIMessageSessionCacheRef>,
-        _session: &Arc<SessionStateRef>,
-        llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-        intent_llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-        math_programming_llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-        model_display_names: &[String],
-        rdb_pool: Option<&RelationalDbConnection>,
-        mysql_ref: Option<&Arc<MySqlConfig>>,
-        weaviate_image_ref: Option<&Arc<WeaviateRef>>,
-        embedding_model: Option<&Arc<dyn EmbeddingBase>>,
-        tavily: &Arc<TavilyRef>,
-        s3_ref: Option<&Arc<S3Ref>>,
         sender_id: &str,
         target_id: &str,
         is_group: bool,
-        max_message_length: usize,
-        compact_context_length: usize,
-        max_steer_count: usize,
-        reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
-        shared_runtime_values: HashMap<String, DataValue>,
-        pending_steer: &Arc<PendingSteerStore>,
-        task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
-        task_db_connection_id: Option<String>,
+        ctx: &QqChatAgentContext<'_>,
     ) -> Result<QqChatHandleReport> {
         (|| -> Result<QqChatHandleReport> {
-            let bot_id = get_bot_id(adapter);
+            let bot_id = get_bot_id(ctx.adapter);
             let mut current_event = event.clone();
             let mut current_time = time.to_string();
             let result_summary = loop {
                 let turn_result = self.handle_claimed_turn(
                     trace,
                     &current_event,
-                    adapter,
                     &current_time,
-                    bot_name,
-                    agent_system_prompt,
-                    cache,
-                    llm,
-                    intent_llm,
-                    math_programming_llm,
-                    model_display_names,
-                    rdb_pool,
-                    mysql_ref,
-                    weaviate_image_ref,
-                    embedding_model,
-                    tavily,
-                    s3_ref,
                     sender_id,
                     target_id,
                     is_group,
-                    max_message_length,
-                    compact_context_length,
-                    max_steer_count,
-                    reply_batch_builder,
-                    shared_runtime_values.clone(),
-                    pending_steer,
                     &bot_id,
-                    task_runtime.clone(),
-                    task_db_connection_id.clone(),
+                    ctx,
                 )?;
 
                 let (pending, remaining_queue_len, accepted_steer_count) =
-                    pending_steer.drain_all(sender_id);
+                    ctx.pending_steer.drain_all(sender_id);
                 if pending.is_empty() {
                     break turn_result.result_summary;
                 }
@@ -2047,12 +1962,12 @@ impl QqChatAgent {
                 let next_event = build_merged_follow_up_event(&pending);
                 let next_inference_event = expand_event_for_inference(&next_event);
                 let next_message =
-                    extract_user_message_text(&next_inference_event, &bot_id, bot_name);
+                    extract_user_message_text(&next_inference_event, &bot_id, ctx.bot_name);
                 trace.record_steer_follow_up(
                     next_event.message_id,
                     steer_count,
                     accepted_steer_count,
-                    max_steer_count,
+                    ctx.max_steer_count,
                     &next_message,
                 );
                 info!(
@@ -2062,7 +1977,7 @@ impl QqChatAgent {
                     steer_count,
                     remaining_queue_len,
                     accepted_steer_count,
-                    max_steer_count,
+                    ctx.max_steer_count,
                     truncate_for_log(&next_message, LOG_TEXT_PREVIEW_CHARS)
                 );
                 current_event = next_event;
@@ -2091,49 +2006,27 @@ impl QqChatAgent {
     ///   (group or private chat), persisting message history along the way.
     ///
     /// Returns a [`QqChatTurnResult`] containing a human-readable summary of what happened.
-    #[allow(clippy::too_many_arguments)]
     fn handle_claimed_turn(
         &self,
         trace: &QqChatTaskTrace,
         event: &ims_bot_adapter::models::MessageEvent,
-        adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
         time: &str,
-        bot_name: &str,
-        agent_system_prompt: Option<&str>,
-        cache: &Arc<OpenAIMessageSessionCacheRef>,
-        llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-        intent_llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-        math_programming_llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-        model_display_names: &[String],
-        rdb_pool: Option<&RelationalDbConnection>,
-        mysql_ref: Option<&Arc<MySqlConfig>>,
-        weaviate_image_ref: Option<&Arc<WeaviateRef>>,
-        embedding_model: Option<&Arc<dyn EmbeddingBase>>,
-        tavily: &Arc<TavilyRef>,
-        s3_ref: Option<&Arc<S3Ref>>,
         sender_id: &str,
         target_id: &str,
         is_group: bool,
-        max_message_length: usize,
-        compact_context_length: usize,
-        max_steer_count: usize,
-        reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
-        shared_runtime_values: HashMap<String, DataValue>,
-        pending_steer: &Arc<PendingSteerStore>,
         bot_id: &str,
-        task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
-        task_db_connection_id: Option<String>,
+        ctx: &QqChatAgentContext<'_>,
     ) -> Result<QqChatTurnResult> {
-        let hydrated_event = hydrate_missing_reply_sources(event, adapter);
+        let hydrated_event = hydrate_missing_reply_sources(event, ctx.adapter);
         let inference_event = expand_event_for_inference(&hydrated_event);
-        let raw_user_message = extract_user_message_text(&hydrated_event, bot_id, bot_name);
-        let mut current_message = extract_user_message_text(&inference_event, bot_id, bot_name);
+        let raw_user_message = extract_user_message_text(&hydrated_event, bot_id, ctx.bot_name);
+        let mut current_message = extract_user_message_text(&inference_event, bot_id, ctx.bot_name);
         trace.log_user_message(&raw_user_message, &current_message);
 
         let history_key =
             conversation_history_key(bot_id, sender_id, is_group, inference_event.group_id);
         let legacy_history_key = sender_id.to_string();
-        let mut history = load_history(cache, &history_key, &legacy_history_key);
+        let mut history = load_history(ctx.cache, &history_key, &legacy_history_key);
 
         // Intercept command-style messages (e.g. slash commands) before the brain loop.
         // Commands are dispatched synchronously; if `passthrough_text` is present it
@@ -2155,15 +2048,15 @@ impl QqChatAgent {
             {
                 let side_effect_ctx = QqCommandSideEffectContext {
                     command_context: &cmd_ctx,
-                    cache,
-                    adapter,
+                    cache: ctx.cache,
+                    adapter: ctx.adapter,
                     bot_id,
-                    bot_name,
+                    bot_name: ctx.bot_name,
                     target_id,
                     is_group,
                     group_name: event.group_name.as_deref(),
-                    rdb_pool,
-                    mysql_ref,
+                    rdb_pool: ctx.rdb_pool,
+                    mysql_ref: ctx.mysql_ref,
                 };
 
                 // Execute side effects
@@ -2177,20 +2070,20 @@ impl QqChatAgent {
                 if let Some(ref echo) = result.echo_message {
                     let _ = send_direct_text_reply(
                         trace,
-                        adapter,
+                        ctx.adapter,
                         target_id,
-                        rdb_pool,
-                        mysql_ref,
+                        ctx.rdb_pool,
+                        ctx.mysql_ref,
                         event.group_name.as_deref(),
-                        bot_name,
+                        ctx.bot_name,
                         bot_id,
                         echo,
                         is_group,
                         sender_id,
                         &inference_event.sender.nickname,
                         inference_event.sender.card.as_str(),
-                        max_message_length,
-                        reply_batch_builder,
+                        ctx.max_message_length,
+                        ctx.reply_batch_builder,
                     )?;
                 }
 
@@ -2201,22 +2094,22 @@ impl QqChatAgent {
                         build_user_message(
                             &inference_event,
                             bot_id,
-                            bot_name,
-                            llm.supports_multimodal_input(),
-                            s3_ref,
+                            ctx.bot_name,
+                            ctx.llm.supports_multimodal_input(),
+                            ctx.s3_ref,
                         ),
-                        llm.api_style(),
+                        ctx.llm.api_style(),
                     );
                     history.push(user_msg_for_cmd);
                     history.push(message_with_api_style(
                         OpenAIMessage::assistant_text(result.reply),
-                        llm.api_style(),
+                        ctx.llm.api_style(),
                     ));
                     // Only persist now if we are NOT falling through to the
                     // brain loop. When there is passthrough text the brain
                     // loop will save history at the end of the turn.
                     if !has_passthrough {
-                        save_history(cache, &history_key, history.clone());
+                        save_history(ctx.cache, &history_key, history.clone());
                     }
                 }
 
@@ -2234,26 +2127,28 @@ impl QqChatAgent {
         }
 
         let intent_trace = classify_intent_with_trace(
-            intent_llm,
-            embedding_model,
+            ctx.intent_llm,
+            ctx.embedding_model,
             &current_message,
             Some(&history),
-            compact_context_length,
+            ctx.compact_context_length,
         );
         let intent = intent_trace.category;
         trace.record_intent(intent_trace);
 
         let selected_llm = match intent {
-            IntentCategory::SolveComplexProblem | IntentCategory::WriteCode => math_programming_llm,
-            _ => llm,
+            IntentCategory::SolveComplexProblem | IntentCategory::WriteCode => {
+                ctx.math_programming_llm
+            }
+            _ => ctx.llm,
         };
         let user_msg = message_with_api_style(
             build_user_message(
                 &inference_event,
                 bot_id,
-                bot_name,
+                ctx.bot_name,
                 selected_llm.supports_multimodal_input(),
-                s3_ref,
+                ctx.s3_ref,
             ),
             selected_llm.api_style(),
         );
@@ -2262,7 +2157,9 @@ impl QqChatAgent {
 
         let direct_reply = match intent {
             IntentCategory::AskSystemPrompt => Some(DIRECT_REPLY_NO_SYSTEM_PROMPT.to_string()),
-            IntentCategory::AskModelName => Some(build_model_name_reply(model_display_names)),
+            IntentCategory::AskModelName => {
+                Some(build_model_name_reply(ctx.model_display_names))
+            }
             IntentCategory::AskToolList => crate::command::build_help_text(),
             _ => None,
         };
@@ -2271,20 +2168,20 @@ impl QqChatAgent {
             trace.record_history_stats(history.len(), estimate_messages_tokens(&history));
             let visible_assistant_history_text = send_direct_text_reply(
                 trace,
-                adapter,
+                ctx.adapter,
                 target_id,
-                rdb_pool,
-                mysql_ref,
+                ctx.rdb_pool,
+                ctx.mysql_ref,
                 event.group_name.as_deref(),
-                bot_name,
+                ctx.bot_name,
                 bot_id,
                 &content,
                 is_group,
                 sender_id,
                 &inference_event.sender.nickname,
                 inference_event.sender.card.as_str(),
-                max_message_length,
-                reply_batch_builder,
+                ctx.max_message_length,
+                ctx.reply_batch_builder,
             )?;
             history.push(user_msg);
             if let Some(assistant_text) = visible_assistant_history_text {
@@ -2293,7 +2190,7 @@ impl QqChatAgent {
                     selected_llm.api_style(),
                 ));
             }
-            save_history(cache, &history_key, history);
+            save_history(ctx.cache, &history_key, history);
             let result_summary = format!(
                 "已直接回复[{sender_id}]，内容：{}",
                 summarize_task_text(&content, 80)
@@ -2305,7 +2202,7 @@ impl QqChatAgent {
         let compact_result = compact_message_history(
             selected_llm,
             history.clone(),
-            compact_context_length,
+            ctx.compact_context_length,
             &user_msg,
         );
         if compact_result.did_compact {
@@ -2314,14 +2211,14 @@ impl QqChatAgent {
                 compact_result.estimated_tokens_before, compact_result.estimated_tokens_after
             );
             history = compact_result.messages;
-            save_history(cache, &history_key, history.clone());
+            save_history(ctx.cache, &history_key, history.clone());
         }
         trace.record_history_stats(history.len(), estimate_messages_tokens(&history));
 
         let system_prompt = if is_group {
             let group_name = inference_event.group_name.as_deref().unwrap_or("未知");
             build_group_system_prompt(
-                bot_name,
+                ctx.bot_name,
                 bot_id,
                 time,
                 sender_id,
@@ -2331,11 +2228,11 @@ impl QqChatAgent {
                 ),
                 group_name,
                 target_id,
-                agent_system_prompt,
+                ctx.agent_system_prompt,
             )
         } else {
             build_private_system_prompt(
-                bot_name,
+                ctx.bot_name,
                 bot_id,
                 time,
                 sender_id,
@@ -2343,20 +2240,20 @@ impl QqChatAgent {
                     &inference_event.sender.nickname,
                     &inference_event.sender.card,
                 ),
-                agent_system_prompt,
+                ctx.agent_system_prompt,
             )
         };
         let system_msg = OpenAIMessage::system(system_prompt);
         let priming_msg = build_output_contract_priming_message();
 
-        let shared_runtime_values = Arc::new(Mutex::new(shared_runtime_values));
+        let shared_runtime_values = Arc::new(Mutex::new(ctx.shared_runtime_values.clone()));
         {
             let mut locked = shared_runtime_values.lock().unwrap();
             locked.insert(
                 QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
                 DataValue::MessageEvent(inference_event.clone()),
             );
-            let adapter_handle: zihuan_core::ims_bot_adapter::BotAdapterHandle = adapter.clone();
+            let adapter_handle: zihuan_core::ims_bot_adapter::BotAdapterHandle = ctx.adapter.clone();
             locked.insert(
                 QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT.to_string(),
                 DataValue::BotAdapterRef(adapter_handle),
@@ -2379,14 +2276,14 @@ impl QqChatAgent {
             trace: trace.clone(),
         }));
         brain.set_iteration_hook(Arc::new(QqChatSteerHook {
-            pending_steer: Arc::clone(pending_steer),
+            pending_steer: Arc::clone(ctx.pending_steer),
             sender_id: sender_id.to_string(),
             bot_id: bot_id.to_string(),
-            bot_name: bot_name.to_string(),
-            max_steer_count,
+            bot_name: ctx.bot_name.to_string(),
+            max_steer_count: ctx.max_steer_count,
             llm_supports_multimodal_input: selected_llm.supports_multimodal_input(),
             llm_api_style: selected_llm.api_style().map(ToOwned::to_owned),
-            s3_ref: s3_ref.cloned(),
+            s3_ref: ctx.s3_ref.cloned(),
             trace: trace.clone(),
             consumed_messages: Arc::clone(&consumed_steer_messages),
             shared_runtime_values: Arc::clone(&shared_runtime_values),
@@ -2394,9 +2291,9 @@ impl QqChatAgent {
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_WEB_SEARCH) {
             brain = brain.with_tool(WebSearchBrainTool::new(
-                tavily.clone(),
+                ctx.tavily.clone(),
                 ToolNotificationTarget::new(
-                    Some(adapter.clone()),
+                    Some(ctx.adapter.clone()),
                     target_id.to_string(),
                     if is_group {
                         Some(sender_id.to_string())
@@ -2418,9 +2315,9 @@ impl QqChatAgent {
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES) {
             brain = brain.with_tool(GetRecentGroupMessagesBrainTool::new(
-                mysql_ref.cloned(),
+                ctx.mysql_ref.cloned(),
                 ToolNotificationTarget::new(
-                    Some(adapter.clone()),
+                    Some(ctx.adapter.clone()),
                     target_id.to_string(),
                     if is_group {
                         Some(sender_id.to_string())
@@ -2434,9 +2331,9 @@ impl QqChatAgent {
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_GET_RECENT_USER_MESSAGES) {
             brain = brain.with_tool(GetRecentUserMessagesBrainTool::new(
-                mysql_ref.cloned(),
+                ctx.mysql_ref.cloned(),
                 ToolNotificationTarget::new(
-                    Some(adapter.clone()),
+                    Some(ctx.adapter.clone()),
                     target_id.to_string(),
                     if is_group {
                         Some(sender_id.to_string())
@@ -2450,12 +2347,12 @@ impl QqChatAgent {
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES) {
             brain = brain.with_tool(SearchSimilarImagesBrainTool::new(
-                weaviate_image_ref.cloned(),
-                embedding_model.cloned(),
-                tavily.clone(),
-                s3_ref.cloned(),
+                ctx.weaviate_image_ref.cloned(),
+                ctx.embedding_model.cloned(),
+                ctx.tavily.clone(),
+                ctx.s3_ref.cloned(),
                 ToolNotificationTarget::new(
-                    Some(adapter.clone()),
+                    Some(ctx.adapter.clone()),
                     target_id.to_string(),
                     if is_group {
                         Some(sender_id.to_string())
@@ -2481,23 +2378,23 @@ impl QqChatAgent {
         }
 
         trace.mark_llm_request_started();
-        if let Some(task_runtime) = task_runtime {
+        if let Some(task_runtime) = ctx.task_runtime.clone() {
             brain.set_long_task_context(LongTaskContext {
                 task_runtime,
                 owner_id: Some(sender_id.to_string()),
                 agent_id: self.id.clone(),
-                agent_name: bot_name.to_string(),
-                task_db_connection_id: task_db_connection_id.clone(),
+                agent_name: ctx.bot_name.to_string(),
+                task_db_connection_id: ctx.task_db_connection_id.clone(),
                 notifier: Arc::new(QqLongTaskNotifier {
-                    adapter: adapter.clone(),
+                    adapter: ctx.adapter.clone(),
                     target_id: target_id.to_string(),
                     sender_id: sender_id.to_string(),
                     is_group,
-                    rdb_pool: rdb_pool.cloned(),
-                    mysql_ref: mysql_ref.cloned(),
+                    rdb_pool: ctx.rdb_pool.cloned(),
+                    mysql_ref: ctx.mysql_ref.cloned(),
                     group_name: event.group_name.clone(),
                     bot_id: bot_id.to_string(),
-                    bot_name: bot_name.to_string(),
+                    bot_name: ctx.bot_name.to_string(),
                 }),
             });
         }
@@ -2569,11 +2466,11 @@ impl QqChatAgent {
                 &inference_event.sender.nickname,
                 inference_event.sender.card.as_str(),
                 bot_id,
-                bot_name,
-                max_message_length,
+                ctx.bot_name,
+                ctx.max_message_length,
                 Some(inference_event.message_id),
                 available_media,
-                reply_batch_builder,
+                ctx.reply_batch_builder,
             )?;
 
             trace.mark_reply_send_started();
@@ -2581,21 +2478,21 @@ impl QqChatAgent {
                 trace.record_reply_send(true, false, &reply_result.batches);
             } else if !reply_result.batches.is_empty() {
                 let persistence = build_outbound_persistence(
-                    rdb_pool,
-                    mysql_ref,
+                    ctx.rdb_pool,
+                    ctx.mysql_ref,
                     event.group_name.as_deref(),
-                    bot_name,
+                    ctx.bot_name,
                 );
                 if is_group {
                     send_group_batches_with_persistence(
-                        adapter,
+                        ctx.adapter,
                         target_id,
                         &reply_result.batches,
                         &persistence,
                     );
                 } else {
                     send_friend_batches_with_persistence(
-                        adapter,
+                        ctx.adapter,
                         target_id,
                         &reply_result.batches,
                         &persistence,
@@ -2629,7 +2526,7 @@ impl QqChatAgent {
                 selected_llm.api_style(),
             ));
         }
-        save_history(cache, &history_key, history);
+        save_history(ctx.cache, &history_key, history);
 
         let result_summary = if let Some(ref assistant_text) = visible_assistant_history_text {
             format!(
@@ -2715,37 +2612,41 @@ impl QqChatAgentService {
             .resolved_rdb_id()
             .map(ToOwned::to_owned);
 
+        let ctx = QqChatAgentContext {
+            adapter,
+            bot_name: &self.config.bot_name,
+            agent_system_prompt: self.config.system_prompt.as_deref(),
+            cache: &self.config.cache,
+            llm: &self.config.llm,
+            intent_llm: &self.config.intent_llm,
+            math_programming_llm: &self.config.math_programming_llm,
+            model_display_names: &model_display_names,
+            rdb_pool: self.config.rdb_pool.as_ref(),
+            mysql_ref: self.config.mysql_ref.as_ref(),
+            weaviate_image_ref: self.config.weaviate_image_ref.as_ref(),
+            embedding_model: self.config.embedding_model.as_ref(),
+            tavily: &self.config.tavily,
+            s3_ref: self.config.s3_ref.as_ref(),
+            max_message_length: self.config.max_message_length,
+            compact_context_length: self.config.compact_context_length,
+            max_steer_count: self.config.max_steer_count,
+            reply_batch_builder: self.config.reply_batch_builder.as_ref(),
+            shared_runtime_values: self.config.shared_runtime_values.clone(),
+            pending_steer: &self.pending_steer,
+            task_runtime: self.config.task_runtime.clone(),
+            task_db_connection_id,
+        };
+
         zihuan_core::agent_config::with_current_qq_chat_agent_config(
             self.config.qq_chat_config.clone(),
             || {
                 self.inner.handle(
                     event,
-                    adapter,
                     time,
                     &self.config.agent_id,
-                    &self.config.bot_name,
-                    self.config.system_prompt.as_deref(),
-                    &self.config.cache,
                     &self.config.session,
-                    &self.config.llm,
-                    &self.config.intent_llm,
-                    &self.config.math_programming_llm,
-                    &model_display_names,
-                    self.config.rdb_pool.as_ref(),
-                    self.config.mysql_ref.as_ref(),
-                    self.config.weaviate_image_ref.as_ref(),
-                    self.config.embedding_model.as_ref(),
-                    &self.config.tavily,
-                    self.config.s3_ref.as_ref(),
-                    self.config.max_message_length,
-                    self.config.compact_context_length,
-                    self.config.max_steer_count,
-                    self.config.reply_batch_builder.as_ref(),
-                    self.config.shared_runtime_values.clone(),
-                    &self.pending_steer,
-                    self.config.task_runtime.as_ref(),
                     None,
-                    task_db_connection_id,
+                    &ctx,
                 )
             },
         )
