@@ -35,9 +35,6 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
-    // Install sqlx AnyPool drivers before any async DB operations
-    sqlx::any::install_default_drivers();
-
     log_forwarder::init(&BASE_LOG);
 
     if let Err(e) = init_registry::init_node_registry() {
@@ -72,6 +69,7 @@ async fn main() {
     log_forwarder::set_app_state(Arc::clone(&state));
     log_forwarder::set_broadcast(broadcast.clone());
 
+    register_existing_relational_db_pools(&state).await;
     startup_recover_orphan_tasks(&state).await;
     spawn_task_ttl_cleanup(Arc::clone(&state));
 
@@ -126,7 +124,7 @@ async fn main() {
 }
 
 async fn startup_recover_orphan_tasks(state: &api::state::AppState) {
-    let pools: Vec<(String, std::sync::Arc<sqlx::AnyPool>)> = state
+    let pools: Vec<(String, zihuan_core::data_refs::RelationalDbConnection)> = state
         .tasks
         .lock()
         .unwrap()
@@ -171,6 +169,43 @@ async fn ensure_database_tables_for_existing_connections() {
     }
 }
 
+async fn register_existing_relational_db_pools(state: &api::state::AppState) {
+    let connections = match crate::system_config::load_connections() {
+        Ok(conns) => conns,
+        Err(err) => {
+            log::warn!("[startup] failed to load connections for DB pool setup: {}", err);
+            return;
+        }
+    };
+
+    for connection in connections.into_iter().filter(|item| item.enabled) {
+        if !matches!(
+            connection.kind,
+            storage_handler::ConnectionKind::Mysql(_) | storage_handler::ConnectionKind::Sqlite(_)
+        ) {
+            continue;
+        }
+
+        match storage_handler::build_relational_db_connection_for_kind(&connection.id, &connection.kind).await {
+            Ok(pool) => {
+                state
+                    .tasks
+                    .lock()
+                    .unwrap()
+                    .register_db_pool(connection.id.clone(), pool);
+            }
+            Err(err) => {
+                log::warn!(
+                    "[startup] failed to register relational DB pool for connection '{}' (id={}): {}",
+                    connection.name,
+                    connection.id,
+                    err
+                );
+            }
+        }
+    }
+}
+
 fn spawn_task_ttl_cleanup(state: std::sync::Arc<api::state::AppState>) {
     let ttl_hours = zihuan_core::system_config::load_section::<
         zihuan_core::system_config::GlobalSettingsSection,
@@ -182,7 +217,7 @@ fn spawn_task_ttl_cleanup(state: std::sync::Arc<api::state::AppState>) {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
         loop {
             interval.tick().await;
-            let pools: Vec<std::sync::Arc<sqlx::AnyPool>> = state
+            let pools: Vec<zihuan_core::data_refs::RelationalDbConnection> = state
                 .tasks
                 .lock()
                 .unwrap()

@@ -153,11 +153,9 @@ pub async fn spawn(
             ))
         })?;
 
-    let task_db_connection_id = if config.task_db_connection_id.trim().is_empty() {
-        None
-    } else {
-        Some(config.task_db_connection_id.clone())
-    };
+    let task_db_connection_id = Some(config.task_db_connection_id.trim())
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
 
     let runtime_state = Arc::new(HttpStreamRuntimeState {
         owner_agent: agent.clone(),

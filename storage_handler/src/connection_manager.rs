@@ -25,8 +25,8 @@ use crate::resource_resolver::find_connection;
 use crate::rustfs::build_s3_ref as build_s3_direct_ref;
 use crate::weaviate::build_weaviate_ref as build_weaviate_direct_ref;
 use crate::{
-    load_connections, ConnectionKind, DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS,
-    DEFAULT_MYSQL_MAX_CONNECTIONS,
+    db_schema::ensure_tables_for_connection, load_connections, ConnectionKind,
+    DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS, DEFAULT_MYSQL_MAX_CONNECTIONS,
 };
 
 const STORAGE_INSTANCE_IDLE_TIMEOUT_SECS: i64 = 15 * 60;
@@ -203,6 +203,12 @@ impl RuntimeStorageConnectionManager {
                         })?;
                     (pool, handle, Some(runtime))
                 };
+                if let Err(e) = ensure_tables_for_connection(&connection.kind).await {
+                    log::warn!(
+                        "[storage_instance_manager] ensure tables failed for mysql connection '{}' (id={}): {}",
+                        connection.name, connection.id, e
+                    );
+                }
                 let config = Arc::new(MySqlConfig {
                     url: Some(mysql.url.clone()),
                     reconnect_max_attempts: None,
@@ -285,6 +291,12 @@ impl RuntimeStorageConnectionManager {
                         })?;
                         (pool, handle, Some(runtime))
                     };
+                if let Err(e) = ensure_tables_for_connection(&connection.kind).await {
+                    log::warn!(
+                        "[storage_instance_manager] ensure tables failed for sqlite connection '{}' (id={}): {}",
+                        connection.name, connection.id, e
+                    );
+                }
                 let config = Arc::new(SqliteConfig {
                     path: sqlite.path.clone(),
                     pool: Some(pool),

@@ -6,6 +6,7 @@ pub mod mysql;
 pub mod object_storage;
 mod qq_message_list_weaviate_persistence;
 pub mod redis;
+pub mod rdb;
 pub mod resource_resolver;
 pub mod rustfs;
 pub mod sqlite;
@@ -42,6 +43,9 @@ pub use redis::RedisNode;
 pub use resource_resolver::{
     build_mysql_ref, build_redis_ref, build_s3_ref, build_sqlite_ref, build_tavily_ref,
     build_weaviate_ref, find_connection, resolve_connection_data_value,
+};
+pub use rdb::{
+    build_relational_db_connection_for_connection, build_relational_db_connection_for_kind,
 };
 pub use rustfs::RustfsNode;
 pub use weaviate::WeaviateNode;

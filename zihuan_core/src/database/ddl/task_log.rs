@@ -19,7 +19,7 @@ pub const SQLITE_DDL: &str = "CREATE TABLE IF NOT EXISTS task_log (
     )";
 
 pub const MYSQL_INDEXES: &[&str] = &[
-    "CREATE INDEX IF NOT EXISTS ix_task_log_task_id ON task_log (task_id)",
+    "CREATE INDEX ix_task_log_task_id ON task_log (task_id)",
 ];
 
 pub const SQLITE_INDEXES: &[&str] = &[

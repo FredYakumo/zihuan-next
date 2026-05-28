@@ -1,6 +1,7 @@
 use sqlx::mysql::MySqlPool;
 use sqlx::sqlite::SqlitePool;
 use std::fmt;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct MySqlConfig {
@@ -44,4 +45,10 @@ impl fmt::Debug for SqliteConfig {
             )
             .finish()
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum RelationalDbConnection {
+    MySql(Arc<MySqlConfig>),
+    Sqlite(Arc<SqliteConfig>),
 }

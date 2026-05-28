@@ -7,9 +7,9 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
-use sqlx::AnyPool;
 use uuid::Uuid;
 use zihuan_graph_engine::graph_io::NodeGraphDefinition;
+use zihuan_core::data_refs::RelationalDbConnection;
 
 use zihuan_service::AgentManager;
 
@@ -108,7 +108,7 @@ pub struct TaskLogEntry {
 
 pub struct TaskManager {
     tasks: Vec<TaskEntry>,
-    db_pools: HashMap<String, Arc<AnyPool>>,
+    db_pools: HashMap<String, RelationalDbConnection>,
 }
 
 impl TaskManager {
@@ -279,15 +279,19 @@ impl TaskManager {
         }
     }
 
-    pub fn register_db_pool(&mut self, connection_id: String, pool: Arc<AnyPool>) {
+    pub fn register_db_pool(&mut self, connection_id: String, pool: RelationalDbConnection) {
         self.db_pools.insert(connection_id, pool);
     }
 
-    pub fn get_db_pool(&self, connection_id: &str) -> Option<Arc<AnyPool>> {
+    pub fn unregister_db_pool(&mut self, connection_id: &str) {
+        self.db_pools.remove(connection_id);
+    }
+
+    pub fn get_db_pool(&self, connection_id: &str) -> Option<RelationalDbConnection> {
         self.db_pools.get(connection_id).cloned()
     }
 
-    pub fn all_db_pools(&self) -> HashMap<String, Arc<AnyPool>> {
+    pub fn all_db_pools(&self) -> HashMap<String, RelationalDbConnection> {
         self.db_pools.clone()
     }
 

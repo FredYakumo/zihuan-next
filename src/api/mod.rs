@@ -86,7 +86,17 @@ pub fn build_router(
                                 .put(config::agents::update_agent)
                                 .delete(config::agents::delete_agent)
                                 .push(Router::with_path("start").post(config::agents::start_agent))
-                                .push(Router::with_path("stop").post(config::agents::stop_agent)),
+                                .push(Router::with_path("stop").post(config::agents::stop_agent))
+                                .push(
+                                    Router::with_path("ignore-rules")
+                                        .get(config::agents::list_agent_ignore_rules)
+                                        .post(config::agents::create_agent_ignore_rule)
+                                        .push(
+                                            Router::with_path("<rule_id>")
+                                                .put(config::agents::update_agent_ignore_rule)
+                                                .delete(config::agents::delete_agent_ignore_rule),
+                                        ),
+                                ),
                         ),
                 )
                 .push(

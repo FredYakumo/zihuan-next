@@ -18,15 +18,22 @@ use zihuan_core::task_context::{
     AgentTaskStatus,
 };
 
-use ims_bot_adapter::{fetch_login_info, parse_ims_bot_adapter_connection, qq_avatar_url};
+use ims_bot_adapter::{
+    fetch_login_info, fetch_login_info_via_adapter_connection, parse_ims_bot_adapter_connection,
+    qq_avatar_url,
+};
 use log::{info, warn};
+use zihuan_service::agent::qq_chat_agent_ignore_store::{
+    create_ignore_rule, delete_ignore_rule, list_ignore_rules, update_ignore_rule,
+    QqChatAgentIgnoreRuleUpsert,
+};
 
 use crate::api::state::{AppState, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
 use crate::system_config;
 use model_inference::system_config::{AgentConfig, AgentToolConfig, AgentType};
 use zihuan_core::agent_config::QqChatAgentConfig;
-use zihuan_core::error::Result as CoreResult;
+use zihuan_core::error::{Error as CoreError, Result as CoreResult};
 use zihuan_service::AgentRuntimeInfo;
 
 use super::{
@@ -48,6 +55,14 @@ struct QqChatProfile {
     bot_user_id: Option<String>,
     bot_nickname: Option<String>,
     bot_avatar_url: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct IgnoreRuleMutationRequest {
+    #[serde(default)]
+    pub sender_id: Option<String>,
+    #[serde(default)]
+    pub group_id: Option<String>,
 }
 
 struct DefaultAgentTaskRuntime {
@@ -316,7 +331,7 @@ async fn resolve_qq_chat_profile(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
 
-    match fetch_login_info(&bot_connection).await {
+    match fetch_login_info_via_adapter_connection(&connection.id).await {
         Ok(info) => Some(QqChatProfile {
             bot_user_id: Some(info.user_id.clone()),
             bot_nickname: if info.nickname.trim().is_empty() {
@@ -326,17 +341,158 @@ async fn resolve_qq_chat_profile(
             },
             bot_avatar_url: qq_avatar_url(&info.user_id),
         }),
-        Err(err) => {
+        Err(adapter_err) => {
             warn!(
-                "[agents] failed to fetch bot login info for connection '{}': {}",
-                connection.id, err
+                "[agents] failed to fetch bot login info via adapter for connection '{}': {}; falling back to direct fetch",
+                connection.id, adapter_err
             );
-            fallback_user_id.map(|user_id| QqChatProfile {
-                bot_user_id: Some(user_id.clone()),
-                bot_nickname: None,
-                bot_avatar_url: qq_avatar_url(&user_id),
-            })
+            match fetch_login_info(&bot_connection).await {
+                Ok(info) => Some(QqChatProfile {
+                    bot_user_id: Some(info.user_id.clone()),
+                    bot_nickname: if info.nickname.trim().is_empty() {
+                        None
+                    } else {
+                        Some(info.nickname)
+                    },
+                    bot_avatar_url: qq_avatar_url(&info.user_id),
+                }),
+                Err(err) => {
+                    warn!(
+                        "[agents] failed to fetch bot login info for connection '{}': {}",
+                        connection.id, err
+                    );
+                    fallback_user_id.map(|user_id| QqChatProfile {
+                        bot_user_id: Some(user_id.clone()),
+                        bot_nickname: None,
+                        bot_avatar_url: qq_avatar_url(&user_id),
+                    })
+                }
+            }
         }
+    }
+}
+
+fn resolve_qq_chat_agent_config<'a>(
+    agents: &'a [AgentConfig],
+    agent_id: &str,
+) -> Result<&'a QqChatAgentConfig, String> {
+    let agent = agents
+        .iter()
+        .find(|item| item.id == agent_id)
+        .ok_or_else(|| "Agent not found".to_string())?;
+    let AgentType::QqChat(config) = &agent.agent_type else {
+        return Err("Agent is not a QQ chat agent".to_string());
+    };
+    Ok(config)
+}
+
+async fn resolve_agent_rdb_connection(
+    agent_id: &str,
+) -> CoreResult<zihuan_core::data_refs::RelationalDbConnection> {
+    let agents = system_config::load_agents()?;
+    let config = resolve_qq_chat_agent_config(&agents, agent_id)
+        .map_err(|err| zihuan_core::string_error!("{}", err))?;
+    let rdb_id = config.resolved_rdb_id().ok_or_else(|| {
+        zihuan_core::string_error!("QQ chat agent '{}' has no rdb_id configured", agent_id)
+    })?;
+    let connections = system_config::load_connections()?;
+    storage_handler::build_relational_db_connection_for_connection(rdb_id, &connections).await
+}
+
+fn render_ignore_rule_error(res: &mut Response, err: CoreError) {
+    match err {
+        CoreError::ValidationError(message) => render_unprocessable_entity(res, message),
+        CoreError::StringError(message) => {
+            if message.eq_ignore_ascii_case("agent not found") {
+                render_not_found(res, &message);
+            } else {
+                render_unprocessable_entity(res, message);
+            }
+        }
+        CoreError::StaticStrError(message) => {
+            render_unprocessable_entity(res, message.to_string())
+        }
+        other => render_internal_error(res, other),
+    }
+}
+
+#[handler]
+pub async fn list_agent_ignore_rules(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let id = req.param::<String>("id").unwrap_or_default();
+    match resolve_agent_rdb_connection(&id).await {
+        Ok(connection) => match list_ignore_rules(&connection, &id).await {
+            Ok(items) => res.render(Json(items)),
+            Err(err) => render_ignore_rule_error(res, err),
+        },
+        Err(err) => render_ignore_rule_error(res, err),
+    }
+}
+
+#[handler]
+pub async fn create_agent_ignore_rule(
+    req: &mut Request,
+    res: &mut Response,
+    _depot: &mut Depot,
+) {
+    let id = req.param::<String>("id").unwrap_or_default();
+    let body: IgnoreRuleMutationRequest = match req.parse_json().await {
+        Ok(body) => body,
+        Err(err) => return render_bad_request(res, err.to_string()),
+    };
+
+    let payload = QqChatAgentIgnoreRuleUpsert {
+        sender_id: body.sender_id,
+        group_id: body.group_id,
+    };
+    match resolve_agent_rdb_connection(&id).await {
+        Ok(connection) => match create_ignore_rule(&connection, &id, &payload).await {
+            Ok(item) => res.render(Json(item)),
+            Err(err) => render_ignore_rule_error(res, err),
+        },
+        Err(err) => render_ignore_rule_error(res, err),
+    }
+}
+
+#[handler]
+pub async fn update_agent_ignore_rule(
+    req: &mut Request,
+    res: &mut Response,
+    _depot: &mut Depot,
+) {
+    let id = req.param::<String>("id").unwrap_or_default();
+    let rule_id = req.param::<i64>("rule_id").unwrap_or_default();
+    let body: IgnoreRuleMutationRequest = match req.parse_json().await {
+        Ok(body) => body,
+        Err(err) => return render_bad_request(res, err.to_string()),
+    };
+
+    let payload = QqChatAgentIgnoreRuleUpsert {
+        sender_id: body.sender_id,
+        group_id: body.group_id,
+    };
+    match resolve_agent_rdb_connection(&id).await {
+        Ok(connection) => match update_ignore_rule(&connection, &id, rule_id, &payload).await {
+            Ok(item) => res.render(Json(item)),
+            Err(err) => render_ignore_rule_error(res, err),
+        },
+        Err(err) => render_ignore_rule_error(res, err),
+    }
+}
+
+#[handler]
+pub async fn delete_agent_ignore_rule(
+    req: &mut Request,
+    res: &mut Response,
+    _depot: &mut Depot,
+) {
+    let id = req.param::<String>("id").unwrap_or_default();
+    let rule_id = req.param::<i64>("rule_id").unwrap_or_default();
+    match resolve_agent_rdb_connection(&id).await {
+        Ok(connection) => match delete_ignore_rule(&connection, &id, rule_id).await {
+            Ok(()) => res.render(Json(ok_response())),
+            Err(err) => render_ignore_rule_error(res, err),
+        },
+        Err(err) => render_ignore_rule_error(res, err),
     }
 }
 
@@ -540,12 +696,36 @@ fn validate_agent_connection_schemas(
     let AgentType::QqChat(config) = agent_type else {
         return Ok(());
     };
+    validate_rdb_connection(connections, config.resolved_rdb_id())?;
     validate_weaviate_connection_schema(
         connections,
         config.weaviate_image_connection_id.as_deref(),
         WeaviateCollectionSchema::ImageSemantic,
         "weaviate_image_connection_id",
     )
+}
+
+fn validate_rdb_connection(
+    connections: &[ConnectionConfig],
+    connection_id: Option<&str>,
+) -> Result<(), String> {
+    let Some(connection_id) = connection_id else {
+        return Ok(());
+    };
+    let connection = connections
+        .iter()
+        .find(|item| item.id == connection_id || item.config_id == connection_id)
+        .ok_or_else(|| format!("rdb_id '{}' not found", connection_id))?;
+    if !matches!(
+        connection.kind,
+        ConnectionKind::Mysql(_) | ConnectionKind::Sqlite(_)
+    ) {
+        return Err(format!(
+            "rdb_id '{}' is not a MySQL or SQLite connection",
+            connection.name
+        ));
+    }
+    Ok(())
 }
 
 fn validate_weaviate_connection_schema(

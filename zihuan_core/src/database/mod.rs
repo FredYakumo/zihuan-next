@@ -16,12 +16,20 @@ pub async fn ensure_tables_mysql(conn: &mut MySqlConnection) -> Result<()> {
             )))
         })?;
         for idx in *indexes {
-            sqlx::query(idx).execute(&mut *conn).await.map_err(|e| {
-                Error::Database(sqlx::Error::Protocol(format!(
+            if let Err(e) = sqlx::query(idx).execute(&mut *conn).await {
+                let msg = e.to_string();
+                if msg.contains("Duplicate key name") || msg.contains("1061") {
+                    log::debug!(
+                        "MySQL index already exists, skipping: {}",
+                        &idx[..idx.len().min(120)]
+                    );
+                    continue;
+                }
+                return Err(Error::Database(sqlx::Error::Protocol(format!(
                     "MySQL index creation failed: {} — statement: {}",
-                    e, idx
-                )))
-            })?;
+                    msg, idx
+                ))));
+            }
         }
     }
     Ok(())

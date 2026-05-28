@@ -289,8 +289,16 @@ impl BotAdapter {
                         warn!("Received binary message that is not valid UTF-8");
                     }
                 }
-                Ok(WsMessage::Close(_)) => {
-                    info!("WebSocket connection closed");
+                Ok(WsMessage::Close(frame)) => {
+                    if let Some(frame) = frame {
+                        info!(
+                            "WebSocket connection closed by server: code={} reason='{}'",
+                            frame.code,
+                            frame.reason
+                        );
+                    } else {
+                        info!("WebSocket connection closed");
+                    }
                     break;
                 }
                 Ok(WsMessage::Ping(_)) | Ok(WsMessage::Pong(_)) => {

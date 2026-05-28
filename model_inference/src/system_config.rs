@@ -1,4 +1,4 @@
-use log::info;
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use zihuan_core::agent_config::QqChatAgentConfig;
@@ -471,11 +471,48 @@ fn agent_from_record(record: StoredConfigRecord) -> Result<AgentConfig> {
     let spec = record.spec.as_object().ok_or_else(|| {
         zihuan_core::string_error!("agent config '{}' spec must be an object", record.config_id)
     })?;
+    let mut agent_type =
+        serde_json::from_value(spec.get("agent_type").cloned().unwrap_or(Value::Null))?;
+    if let AgentType::QqChat(config) = &mut agent_type {
+        let rdb_id = config
+            .rdb_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned);
+        let mysql_connection_id = config
+            .mysql_connection_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned);
+        let task_db_connection_id = config
+            .task_db_connection_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned);
+
+        if rdb_id.is_none() {
+            if let (Some(mysql_id), Some(task_id)) = (&mysql_connection_id, &task_db_connection_id) {
+                if mysql_id != task_id {
+                    warn!(
+                        "[config_center] qq_chat agent '{}' has conflicting legacy mysql_connection_id='{}' and task_db_connection_id='{}'; using mysql_connection_id",
+                        record.config_id,
+                        mysql_id,
+                        task_id
+                    );
+                }
+            }
+            config.rdb_id = mysql_connection_id.or(task_db_connection_id);
+        }
+    }
+
     Ok(AgentConfig {
         id: record.config_id.clone(),
         config_id: record.config_id.clone(),
         name: record.name,
-        agent_type: serde_json::from_value(spec.get("agent_type").cloned().unwrap_or(Value::Null))?,
+        agent_type,
         enabled: record.enabled,
         auto_start: spec
             .get("auto_start")

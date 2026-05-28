@@ -26,8 +26,8 @@ use log::{error, info, warn};
 use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use model_inference::system_config::{load_llm_refs, AgentConfig, LlmRefConfig};
 use storage_handler::{
-    build_mysql_ref, build_s3_ref, build_tavily_ref, build_weaviate_ref, find_connection,
-    ConnectionConfig, ConnectionKind,
+    build_mysql_ref, build_relational_db_connection_for_connection, build_s3_ref, build_tavily_ref,
+    build_weaviate_ref, find_connection, ConnectionConfig, ConnectionKind,
 };
 use tokio::task::JoinHandle;
 use zihuan_agent::brain::BrainTool;
@@ -43,7 +43,7 @@ use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
 use zihuan_graph_engine::data_value::{OpenAIMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
-use zihuan_graph_engine::message_restore::{register_mysql_ref, restore_media_by_id};
+use zihuan_graph_engine::message_restore::{register_mysql_ref, register_rdb_pool, restore_media_by_id};
 use zihuan_nlp::{build_segmenter, TextSegmenter};
 
 #[derive(Debug, Clone)]
@@ -712,19 +712,7 @@ fn load_qq_resources(
         None
     });
 
-    let mysql_connection_id = config
-        .mysql_connection_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let mysql_ref =
-        block_async(build_mysql_ref(mysql_connection_id, connections)).map_err(|err| {
-            let connection_label = mysql_connection_id.unwrap_or("<none>");
-            Error::ValidationError(format!(
-            "agent '{}' failed to initialize mysql dependency from mysql_connection_id='{}': {}",
-            agent.name, connection_label, err
-        ))
-        })?;
+    let mysql_ref = build_agent_mysql_ref(config, connections, &agent.name)?;
 
     let weaviate_image_ref = tokio::task::block_in_place(|| {
         build_weaviate_ref(
@@ -776,6 +764,27 @@ fn load_qq_resources(
         mysql_ref,
         weaviate_image_ref,
         embedding_model,
+    })
+}
+
+fn build_agent_mysql_ref(
+    config: &QqChatAgentConfig,
+    connections: &[ConnectionConfig],
+    agent_name: &str,
+) -> Result<Option<Arc<MySqlConfig>>> {
+    let Some(connection_id) = config.resolved_rdb_id() else {
+        return Ok(None);
+    };
+    let connection = find_connection(connections, connection_id)?;
+    if !matches!(connection.kind, ConnectionKind::Mysql(_)) {
+        return Ok(None);
+    }
+
+    block_async(build_mysql_ref(Some(connection_id), connections)).map_err(|err| {
+        Error::ValidationError(format!(
+            "agent '{}' failed to initialize mysql dependency from rdb_id='{}': {}",
+            agent_name, connection_id, err
+        ))
     })
 }
 
@@ -850,7 +859,13 @@ pub async fn spawn(
     let tavily = build_tavily_ref(Some(&config.tavily_connection_id), &connections)?
         .ok_or_else(|| Error::ValidationError("missing tavily connection".to_string()))?;
     let object_storage = build_s3_ref(config.rustfs_connection_id.as_deref(), &connections).await?;
-    let mysql_ref = build_mysql_ref(config.mysql_connection_id.as_deref(), &connections).await?;
+    let rdb_pool = match config.resolved_rdb_id() {
+        Some(connection_id) => Some(
+            build_relational_db_connection_for_connection(connection_id, &connections).await?,
+        ),
+        None => None,
+    };
+    let mysql_ref = build_agent_mysql_ref(&config, &connections, &agent.name)?;
     let redis_ref = resolve_inbox_redis_ref(&connections)?;
     let weaviate_image_ref = tokio::task::block_in_place(|| {
         build_weaviate_ref(
@@ -864,6 +879,9 @@ pub async fn spawn(
 
     if let Some(ref mysql) = mysql_ref {
         register_mysql_ref(mysql.clone());
+    }
+    if let Some(ref rdb_pool) = rdb_pool {
+        register_rdb_pool(rdb_pool.clone());
     }
 
     let service = Arc::new(QqChatAgentService::new(QqChatAgentServiceConfig {
@@ -908,6 +926,7 @@ pub async fn spawn(
             &llm_refs,
             &math_programming_llm_config.model_name,
         ),
+        rdb_pool,
         mysql_ref,
         weaviate_image_ref,
         embedding_model,

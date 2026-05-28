@@ -37,8 +37,8 @@ pub const SQLITE_DDL: &str = "CREATE TABLE IF NOT EXISTS task_entry (
     )";
 
 pub const MYSQL_INDEXES: &[&str] = &[
-    "CREATE INDEX IF NOT EXISTS ix_task_entry_owner_id ON task_entry (owner_id)",
-    "CREATE INDEX IF NOT EXISTS ix_task_entry_status_end_time ON task_entry (status, end_time)",
+    "CREATE INDEX ix_task_entry_owner_id ON task_entry (owner_id)",
+    "CREATE INDEX ix_task_entry_status_end_time ON task_entry (status, end_time)",
 ];
 
 pub const SQLITE_INDEXES: &[&str] = &[

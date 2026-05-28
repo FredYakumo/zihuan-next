@@ -100,10 +100,10 @@
                 </select>
               </div>
               <div class="field">
-                <label>MySQL Connection</label>
-                <select v-model="form.mysql_connection_id">
+                <label>RDB Connection</label>
+                <select v-model="form.rdb_id">
                   <option value="">不使用</option>
-                  <option v-for="item in mysqlConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                  <option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
               <div class="field">
@@ -116,22 +116,23 @@
               <div class="field"><label>Max Message Length</label><input v-model.number="form.max_message_length" type="number" min="1" /></div>
               <div class="field">
                 <label>Max Steer Count</label>
-                <input v-model.number="form.max_steer_count" type="number" min="0" />
                 <div class="muted">
                   当 Agent 还没发出最终回复时，用户继续发消息会被视为"插嘴 / steer"。
                   这里控制单次活跃回复流程里最多接受多少次插嘴；默认 4 次，超出会被丢弃并写入日志。
                 </div>
+                <input v-model.number="form.max_steer_count" type="number" min="0" />
               </div>
               <div class="field"><label>Compact Context Length</label><input v-model.number="form.compact_context_length" type="number" min="0" /></div>
               <div class="field">
-                <label>Task DB Connection</label>
-                <select v-model="form.task_db_connection_id">
-                  <option value="">不使用</option>
-                  <option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
-                </select>
-                <div v-if="!form.task_db_connection_id" class="muted" style="margin-top: 4px;">
-                  💡 未配置关系数据库连接时，任务记录仅在内存中保存，重启服务后会丢失。
-                  如需持久化，请在 <a href="#/connections" style="color: var(--primary);">连接管理</a> 中新建 MySQL 或 SQLite 连接。
+                <label>Ignore Rules</label>
+                <div class="muted" style="margin-top: 2px;">
+                  命中后仅做消息存储，不回复、不进入推理流程。
+                </div>
+                <button class="btn ghost" type="button" style="margin-top: 6px;" :disabled="Boolean(ignoreRulesDisabledReason)" @click="openIgnoreRulesModal()">
+                  管理 Ignore Rules
+                </button>
+                <div v-if="ignoreRulesDisabledReason" class="muted" style="margin-top: 4px; font-size: 12px;">
+                  💡 {{ ignoreRulesDisabledReason }}
                 </div>
               </div>
             </template>
@@ -393,10 +394,10 @@
                 </select>
               </div>
               <div class="field">
-                <label>MySQL Connection</label>
-                <select v-model="form.mysql_connection_id">
+                <label>RDB Connection</label>
+                <select v-model="form.rdb_id">
                   <option value="">不使用</option>
-                  <option v-for="item in mysqlConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                  <option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
               <div class="field">
@@ -409,22 +410,23 @@
               <div class="field"><label>Max Message Length</label><input v-model.number="form.max_message_length" type="number" min="1" /></div>
               <div class="field">
                 <label>Max Steer Count</label>
-                <input v-model.number="form.max_steer_count" type="number" min="0" />
                 <div class="muted">
                   当 Agent 还没发出最终回复时，用户继续发消息会被视为"插嘴 / steer"。
                   这里控制单次活跃回复流程里最多接受多少次插嘴；默认 4 次，超出会被丢弃并写入日志。
                 </div>
+                <input v-model.number="form.max_steer_count" type="number" min="0" />
               </div>
               <div class="field"><label>Compact Context Length</label><input v-model.number="form.compact_context_length" type="number" min="0" /></div>
               <div class="field">
-                <label>Task DB Connection</label>
-                <select v-model="form.task_db_connection_id">
-                  <option value="">不使用</option>
-                  <option v-for="item in taskDbConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
-                </select>
-                <div v-if="!form.task_db_connection_id" class="muted" style="margin-top: 4px;">
-                  💡 未配置关系数据库连接时，任务记录仅在内存中保存，重启服务后会丢失。
-                  如需持久化，请在 <a href="#/connections" style="color: var(--primary);">连接管理</a> 中新建 MySQL 或 SQLite 连接。
+                <label>Ignore Rules</label>
+                <div class="muted" style="margin-top: 2px;">
+                  命中后仅做消息存储，不回复、不进入推理流程。
+                </div>
+                <button class="btn ghost" type="button" style="margin-top: 6px;" :disabled="Boolean(ignoreRulesDisabledReason)" @click="openIgnoreRulesModal()">
+                  管理 Ignore Rules
+                </button>
+                <div v-if="ignoreRulesDisabledReason" class="muted" style="margin-top: 4px; font-size: 12px;">
+                  💡 {{ ignoreRulesDisabledReason }}
                 </div>
               </div>
 
@@ -578,6 +580,69 @@
       </div>
     </div>
 
+    <div v-if="showIgnoreRulesModal" class="agent-edit-modal-backdrop" @click.stop>
+      <div class="agent-edit-modal" @click.stop style="max-width: 760px;">
+        <div class="agent-edit-modal-header">
+          <h3 style="margin: 0;">Ignore Rules</h3>
+          <button class="btn ghost" @click="closeIgnoreRulesModal">关闭</button>
+        </div>
+        <div class="agent-edit-modal-body">
+          <div class="editor-card">
+            <div class="split-header">
+              <div>
+                <h3>{{ ignoreRuleForm.id == null ? "新增规则" : "编辑规则" }}</h3>
+              </div>
+            </div>
+            <div class="form-grid" style="margin-top: 12px;">
+              <div class="field">
+                <label>sender_id</label>
+                <input v-model="ignoreRuleForm.sender_id" :disabled="ignoreRuleSubmitting" placeholder="可空" />
+              </div>
+              <div class="field">
+                <label>group_id</label>
+                <input v-model="ignoreRuleForm.group_id" :disabled="ignoreRuleSubmitting" placeholder="可空" />
+              </div>
+              <div class="field-full">
+                <label>规则说明</label>
+                <div class="muted">{{ ignoreRulePreview }}</div>
+              </div>
+            </div>
+            <div v-if="ignoreRuleError" class="muted" style="margin-top: 12px; color: var(--danger, #d9534f);">
+              {{ ignoreRuleError }}
+            </div>
+            <div class="panel-actions" style="margin-top: 12px;">
+              <button class="btn ghost" :disabled="ignoreRuleSubmitting" @click="resetIgnoreRuleForm">清空</button>
+              <button class="btn primary" :disabled="ignoreRuleSubmitting" @click="submitIgnoreRule">{{ ignoreRuleSubmitting ? (ignoreRuleForm.id == null ? "新增中…" : "保存中…") : (ignoreRuleForm.id == null ? "新增" : "保存") }}</button>
+            </div>
+          </div>
+
+          <div class="editor-card" style="margin-top: 16px;">
+            <div class="split-header">
+              <div>
+                <h3>现有规则</h3>
+              </div>
+            </div>
+            <div class="list" style="margin-top: 12px;">
+              <div v-if="ignoreRulesLoading" class="empty-state">加载中...</div>
+              <div v-else-if="ignoreRules.length === 0" class="empty-state">还没有规则。</div>
+              <div v-for="rule in ignoreRules" :key="rule.id" class="tool-block">
+                <div class="split-header">
+                  <strong>#{{ rule.id }}</strong>
+                  <div class="inline-actions">
+                    <button class="btn ghost connection-card-compact-btn" :disabled="ignoreRuleSubmitting || ignoreRuleDeletingId === rule.id" @click="editIgnoreRule(rule)">编辑</button>
+                    <button class="btn warn connection-card-compact-btn" :disabled="ignoreRuleSubmitting || ignoreRuleDeletingId === rule.id" @click="removeIgnoreRule(rule.id)">{{ ignoreRuleDeletingId === rule.id ? "删除中…" : "删除" }}</button>
+                  </div>
+                </div>
+                <div class="key-value"><strong>sender_id</strong><span>{{ rule.sender_id || "未设置" }}</span></div>
+                <div class="key-value"><strong>group_id</strong><span>{{ rule.group_id || "未设置" }}</span></div>
+                <div class="key-value"><strong>含义</strong><span>{{ formatIgnoreRule(rule.sender_id, rule.group_id) }}</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <section v-if="agentsLoading && agents.length === 0" class="panel">
       <div class="agent-loading-state" aria-live="polite">
         <span class="agent-loading-spinner"></span>
@@ -646,7 +711,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 
-import { system, workflows as workflowApi, type AgentWithRuntime, type ConnectionConfig, type LlmConfig, type WorkflowInfo } from "../../api/client";
+import { system, workflows as workflowApi, type AgentWithRuntime, type ConnectionConfig, type LlmConfig, type QqChatAgentIgnoreRule, type WorkflowInfo } from "../../api/client";
 import {
   agentFormFromConfig,
   buildAgentPayload,
@@ -684,6 +749,17 @@ const editingAgentId = ref("");
 const showCreatePicker = ref(false);
 const showCreateForm = ref(false);
 const showEditModal = ref(false);
+const showIgnoreRulesModal = ref(false);
+const ignoreRulesLoading = ref(false);
+const ignoreRules = ref<QqChatAgentIgnoreRule[]>([]);
+const ignoreRuleSubmitting = ref(false);
+const ignoreRuleDeletingId = ref<number | null>(null);
+const ignoreRuleError = ref("");
+const ignoreRuleForm = reactive<{ id: number | null; sender_id: string; group_id: string }>({
+  id: null,
+  sender_id: "",
+  group_id: "",
+});
 const qqChatDefaultTools = QQ_CHAT_DEFAULT_TOOLS;
 const httpStreamDefaultTools = HTTP_STREAM_DEFAULT_TOOLS;
 const chatModels = computed(() => llm.value.filter((item) => item.model.type === "chat_llm"));
@@ -692,13 +768,20 @@ const embeddingModels = computed(() => llm.value.filter((item) => item.model.typ
 const botConnections = computed(() => connections.value.filter((item) => isBotAdapterConnectionType(String(item.kind.type ?? ""))));
 const rustfsConnections = computed(() => connections.value.filter((item) => item.kind.type === "rustfs"));
 const tavilyConnections = computed(() => connections.value.filter((item) => item.kind.type === "tavily"));
-const mysqlConnections = computed(() => connections.value.filter((item) => item.kind.type === "mysql"));
-const sqliteConnections = computed(() => connections.value.filter((item) => item.kind.type === "sqlite"));
 const taskDbConnections = computed(() => connections.value.filter((item) => item.kind.type === "mysql" || item.kind.type === "sqlite"));
 const tokenizerConnections = computed(() => connections.value.filter((item) => item.kind.type === "tokenizer"));
 const imageWeaviateConnections = computed(() =>
   connections.value.filter((item) => item.kind.type === "weaviate" && item.kind.collection_schema === "image_semantic"),
 );
+const ignoreRulesDisabledReason = computed(() => {
+  if (!editingAgentId.value) {
+    return "请先保存当前 Agent，再管理 Ignore Rules。";
+  }
+  if (!form.rdb_id) {
+    return "先配置 RDB Connection，Ignore Rules 和任务/消息持久化都会共用这条关系库连接。";
+  }
+  return "";
+});
 
 function resetForm() {
   Object.assign(form, defaultAgentForm());
@@ -706,6 +789,15 @@ function resetForm() {
 
 function clearEditingAgent() {
   editingAgentId.value = "";
+}
+
+const ignoreRulePreview = computed(() => formatIgnoreRule(ignoreRuleForm.sender_id, ignoreRuleForm.group_id));
+
+function formatRequestError(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  return "请求失败，请稍后重试";
 }
 
 function startCreate() {
@@ -766,6 +858,116 @@ function closeEditModal() {
   clearEditingAgent();
 }
 
+function resetIgnoreRuleForm() {
+  ignoreRuleForm.id = null;
+  ignoreRuleForm.sender_id = "";
+  ignoreRuleForm.group_id = "";
+  ignoreRuleError.value = "";
+}
+
+function formatIgnoreRule(senderId: string | null | undefined, groupId: string | null | undefined): string {
+  const sender = String(senderId ?? "").trim();
+  const group = String(groupId ?? "").trim();
+  if (sender && group) {
+    return `屏蔽群 ${group} 下的 QQ ${sender}`;
+  }
+  if (sender) {
+    return `屏蔽 QQ ${sender}`;
+  }
+  if (group) {
+    return `屏蔽群 ${group}`;
+  }
+  return "至少填写 sender_id 或 group_id 其中一个";
+}
+
+async function loadIgnoreRules() {
+  if (!editingAgentId.value) {
+    return;
+  }
+  ignoreRulesLoading.value = true;
+  try {
+    ignoreRuleError.value = "";
+    ignoreRules.value = await system.agents.listIgnoreRules(editingAgentId.value);
+  } catch (error) {
+    ignoreRuleError.value = `加载 Ignore Rules 失败: ${formatRequestError(error)}`;
+  } finally {
+    ignoreRulesLoading.value = false;
+  }
+}
+
+async function openIgnoreRulesModal() {
+  if (ignoreRulesDisabledReason.value) {
+    alert(ignoreRulesDisabledReason.value);
+    return;
+  }
+  resetIgnoreRuleForm();
+  showIgnoreRulesModal.value = true;
+  await loadIgnoreRules();
+}
+
+function closeIgnoreRulesModal() {
+  showIgnoreRulesModal.value = false;
+  resetIgnoreRuleForm();
+  ignoreRuleDeletingId.value = null;
+}
+
+function editIgnoreRule(rule: QqChatAgentIgnoreRule) {
+  ignoreRuleForm.id = rule.id;
+  ignoreRuleForm.sender_id = rule.sender_id ?? "";
+  ignoreRuleForm.group_id = rule.group_id ?? "";
+}
+
+async function submitIgnoreRule() {
+  if (!editingAgentId.value) {
+    return;
+  }
+  const payload = {
+    sender_id: ignoreRuleForm.sender_id.trim() || null,
+    group_id: ignoreRuleForm.group_id.trim() || null,
+  };
+  if (!payload.sender_id && !payload.group_id) {
+    alert("sender_id 和 group_id 至少填写一个");
+    return;
+  }
+  ignoreRuleSubmitting.value = true;
+  ignoreRuleError.value = "";
+  try {
+    if (ignoreRuleForm.id == null) {
+      await system.agents.createIgnoreRule(editingAgentId.value, payload);
+    } else {
+      await system.agents.updateIgnoreRule(editingAgentId.value, ignoreRuleForm.id, payload);
+    }
+    resetIgnoreRuleForm();
+    await loadIgnoreRules();
+  } catch (error) {
+    ignoreRuleError.value = `保存 Ignore Rule 失败: ${formatRequestError(error)}`;
+  } finally {
+    ignoreRuleSubmitting.value = false;
+  }
+}
+
+async function removeIgnoreRule(ruleId: number) {
+  if (!editingAgentId.value) {
+    return;
+  }
+  if (!window.confirm("确认删除这条 Ignore Rule 吗？")) {
+    return;
+  }
+  ignoreRuleDeletingId.value = ruleId;
+  ignoreRuleError.value = "";
+  try {
+    await system.agents.deleteIgnoreRule(editingAgentId.value, ruleId);
+    if (ignoreRuleForm.id === ruleId) {
+      resetIgnoreRuleForm();
+    }
+    await loadIgnoreRules();
+  } catch (error) {
+    ignoreRuleError.value = `删除 Ignore Rule 失败: ${formatRequestError(error)}`;
+  } finally {
+    ignoreRuleDeletingId.value = null;
+  }
+}
+
 function addTool() {
   form.tools.push(defaultToolForm());
 }
@@ -819,7 +1021,7 @@ function applyWorkflowSetMetadata(tool: AgentFormState["tools"][number]) {
       .map((port) => ({
         name: port.name,
         data_type: port.data_type,
-        desc: "",
+        desc: port.description ?? "",
       })),
     null,
     2,
@@ -828,6 +1030,7 @@ function applyWorkflowSetMetadata(tool: AgentFormState["tools"][number]) {
     (workflow.outputs ?? []).map((port) => ({
       name: port.name,
       data_type: port.data_type,
+      desc: port.description ?? "",
     })),
     null,
     2,

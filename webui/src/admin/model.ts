@@ -106,7 +106,7 @@ export interface AgentFormState {
   embedding_model_ref_id: string;
   tokenizer_connection_id: string;
   tavily_connection_id: string;
-  mysql_connection_id: string;
+  rdb_id: string;
   weaviate_image_connection_id: string;
   max_message_length: number;
   compact_context_length: number;
@@ -251,7 +251,7 @@ export function defaultAgentForm(): AgentFormState {
     embedding_model_ref_id: "",
     tokenizer_connection_id: "",
     tavily_connection_id: "",
-    mysql_connection_id: "",
+    rdb_id: "",
     weaviate_image_connection_id: "",
     max_message_length: 500,
     compact_context_length: 0,
@@ -526,12 +526,11 @@ export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): Agen
     form.embedding_model_ref_id = String(agentType.embedding_model_ref_id ?? "");
     form.tokenizer_connection_id = String(agentType.tokenizer_connection_id ?? "");
     form.tavily_connection_id = String(agentType.tavily_connection_id ?? "");
-    form.mysql_connection_id = String(agentType.mysql_connection_id ?? "");
+    form.rdb_id = String(agentType.rdb_id ?? agentType.mysql_connection_id ?? agentType.task_db_connection_id ?? "");
     form.weaviate_image_connection_id = String(agentType.weaviate_image_connection_id ?? "");
     form.max_message_length = Number(agentType.max_message_length ?? 500);
     form.compact_context_length = Number(agentType.compact_context_length ?? 0);
     form.max_steer_count = Number(agentType.max_steer_count ?? 4);
-    form.task_db_connection_id = String(agentType.task_db_connection_id ?? "");
     const source = (agentType.default_tools_enabled ?? {}) as Record<string, unknown>;
     form.default_tools_enabled = defaultQqChatDefaultToolsEnabled();
     for (const tool of QQ_CHAT_DEFAULT_TOOLS) {
@@ -632,13 +631,12 @@ export function buildAgentPayload(form: AgentFormState): {
         tokenizer_connection_id: form.tokenizer_connection_id || null,
         tavily_connection_id: form.tavily_connection_id,
         embedding: null,
-        mysql_connection_id: form.mysql_connection_id || null,
+        rdb_id: form.rdb_id || null,
         weaviate_image_connection_id: form.weaviate_image_connection_id || null,
         max_message_length: form.max_message_length,
         compact_context_length: form.compact_context_length,
         max_steer_count: form.max_steer_count,
         default_tools_enabled: defaultToolsEnabled,
-        task_db_connection_id: form.task_db_connection_id || null,
       },
     };
   }

@@ -5,19 +5,21 @@ use crate::message_mysql_chunking::{
     MEDIA_JSON_MAX_CHARS, MESSAGE_ID_MAX_CHARS, SENDER_ID_MAX_CHARS, SENDER_NAME_MAX_CHARS,
 };
 use crate::message_restore::{
-    cache_message_snapshot, register_mysql_ref, register_redis_ref, CachedMessageSnapshotPayload,
+    cache_message_snapshot, register_mysql_ref, register_rdb_pool, register_redis_ref,
+    CachedMessageSnapshotPayload,
 };
 use log::{info, warn};
 use once_cell::sync::Lazy;
 use redis::AsyncCommands;
 use std::sync::{Arc, RwLock};
 use tokio::task::block_in_place;
-use zihuan_core::data_refs::MySqlConfig;
+use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection, SqliteConfig};
 use zihuan_core::error::Result;
 use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
 use zihuan_core::ims_bot_adapter::models::message::{collect_media_records, Message};
 
 static LATEST_MYSQL_REF: Lazy<RwLock<Option<Arc<MySqlConfig>>>> = Lazy::new(|| RwLock::new(None));
+static LATEST_RDB_POOL: Lazy<RwLock<Option<RelationalDbConnection>>> = Lazy::new(|| RwLock::new(None));
 static LATEST_REDIS_REF: Lazy<RwLock<Option<Arc<RedisConfig>>>> = Lazy::new(|| RwLock::new(None));
 
 pub fn register_mysql_persistence_ref(config: Arc<MySqlConfig>) {
@@ -25,6 +27,13 @@ pub fn register_mysql_persistence_ref(config: Arc<MySqlConfig>) {
         *guard = Some(config.clone());
     }
     register_mysql_ref(config);
+}
+
+pub fn register_rdb_persistence_pool(pool: RelationalDbConnection) {
+    if let Ok(mut guard) = LATEST_RDB_POOL.write() {
+        *guard = Some(pool.clone());
+    }
+    register_rdb_pool(pool);
 }
 
 pub fn register_redis_persistence_ref(config: Arc<RedisConfig>) {
@@ -36,6 +45,10 @@ pub fn register_redis_persistence_ref(config: Arc<RedisConfig>) {
 
 fn latest_mysql_ref() -> Option<Arc<MySqlConfig>> {
     LATEST_MYSQL_REF.read().ok().and_then(|guard| guard.clone())
+}
+
+fn latest_rdb_pool() -> Option<RelationalDbConnection> {
+    LATEST_RDB_POOL.read().ok().and_then(|guard| guard.clone())
 }
 
 fn latest_redis_ref() -> Option<Arc<RedisConfig>> {
@@ -266,8 +279,212 @@ fn persist_message_to_mysql(event: &MessageEvent, mysql_ref: &Arc<MySqlConfig>) 
     Ok(())
 }
 
+fn persist_message_to_rdb(event: &MessageEvent, connection: &RelationalDbConnection) -> Result<()> {
+    let raw_message_id = event.message_id.to_string();
+    let message_id = truncate_field_if_needed(
+        "message_id",
+        raw_message_id.clone(),
+        MESSAGE_ID_MAX_CHARS,
+        &raw_message_id,
+    );
+    let sender_id = truncate_field_if_needed(
+        "sender_id",
+        event.sender.user_id.to_string(),
+        SENDER_ID_MAX_CHARS,
+        &message_id,
+    );
+    let sender_name = if event.sender.card.is_empty() {
+        event.sender.nickname.clone()
+    } else {
+        event.sender.card.clone()
+    };
+    let sender_name = truncate_field_if_needed(
+        "sender_name",
+        sender_name,
+        SENDER_NAME_MAX_CHARS,
+        &message_id,
+    );
+    let send_time = chrono::Local::now().naive_local().to_string();
+    let group_id = truncate_optional_field_if_needed(
+        "group_id",
+        event.group_id.map(|id| id.to_string()),
+        GROUP_ID_MAX_CHARS,
+        &message_id,
+    );
+    let group_name = truncate_optional_field_if_needed(
+        "group_name",
+        event.group_name.clone(),
+        GROUP_NAME_MAX_CHARS,
+        &message_id,
+    );
+    let content = render_content(&event.message_list);
+    let at_targets: Vec<String> = event
+        .message_list
+        .iter()
+        .filter_map(|message| match message {
+            Message::At(at) => Some(at.target_id()),
+            _ => None,
+        })
+        .collect();
+    let at_target_list = truncate_optional_field_if_needed(
+        "at_target_list",
+        (!at_targets.is_empty()).then(|| at_targets.join(",")),
+        AT_TARGET_LIST_MAX_CHARS,
+        &message_id,
+    );
+    let media_json = {
+        let records = collect_media_records(&event.message_list);
+        if records.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(&records)?)
+        }
+    };
+    let media_json = truncate_optional_field_if_needed(
+        "media_json",
+        media_json,
+        MEDIA_JSON_MAX_CHARS,
+        &message_id,
+    );
+    let raw_message_json = Some(serde_json::to_string(&event.message_list)?);
+    let content_chunks = split_content_chunks(&content, CONTENT_MAX_CHARS);
+
+    info!(
+        "[message_persistence] Persisting message {} (sender={}, group={:?}, chunks={}) to relational DB",
+        message_id,
+        sender_id,
+        group_id,
+        content_chunks.len()
+    );
+
+    let message_id_for_bind = message_id.clone();
+    let sender_id_for_bind = sender_id.clone();
+    let sender_name_for_bind = sender_name.clone();
+    let send_time_for_bind = send_time.clone();
+    let group_id_for_bind = group_id.clone();
+    let group_name_for_bind = group_name.clone();
+    let at_target_list_for_bind = at_target_list.clone();
+    let media_json_for_bind = media_json.clone();
+    let raw_message_json_for_bind = raw_message_json.clone();
+    let content_chunks_for_bind = content_chunks.clone();
+    let result = match connection {
+        RelationalDbConnection::MySql(config) => {
+            let pool = mysql_pool(config)?.clone();
+            let run = async move {
+                for (chunk_index, content_chunk) in content_chunks_for_bind.iter().enumerate() {
+                    let chunk_at_target_list = if chunk_index == 0 {
+                        at_target_list_for_bind.as_ref()
+                    } else {
+                        None
+                    };
+                    let chunk_media_json = if chunk_index == 0 {
+                        media_json_for_bind.as_ref()
+                    } else {
+                        None
+                    };
+                    let chunk_raw_message_json = if chunk_index == 0 {
+                        raw_message_json_for_bind.as_ref()
+                    } else {
+                        None
+                    };
+
+                    sqlx::query(
+                        r#"
+                        INSERT INTO message_record
+                        (message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json, raw_message_json)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        "#,
+                    )
+                    .bind(&message_id_for_bind)
+                    .bind(&sender_id_for_bind)
+                    .bind(&sender_name_for_bind)
+                    .bind(&send_time_for_bind)
+                    .bind(&group_id_for_bind)
+                    .bind(&group_name_for_bind)
+                    .bind(content_chunk)
+                    .bind(chunk_at_target_list)
+                    .bind(chunk_media_json)
+                    .bind(chunk_raw_message_json)
+                    .execute(&pool)
+                    .await?;
+                }
+
+                Ok::<(), sqlx::Error>(())
+            };
+
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                block_in_place(|| handle.block_on(run))
+            } else {
+                tokio::runtime::Runtime::new()?.block_on(run)
+            }
+        }
+        RelationalDbConnection::Sqlite(config) => {
+            let pool = sqlite_pool(config)?.clone();
+            let run = async move {
+                for (chunk_index, content_chunk) in content_chunks_for_bind.iter().enumerate() {
+                    let chunk_at_target_list = if chunk_index == 0 {
+                        at_target_list_for_bind.as_ref()
+                    } else {
+                        None
+                    };
+                    let chunk_media_json = if chunk_index == 0 {
+                        media_json_for_bind.as_ref()
+                    } else {
+                        None
+                    };
+                    let chunk_raw_message_json = if chunk_index == 0 {
+                        raw_message_json_for_bind.as_ref()
+                    } else {
+                        None
+                    };
+
+                    sqlx::query(
+                        r#"
+                        INSERT INTO message_record
+                        (message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list, media_json, raw_message_json)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        "#,
+                    )
+                    .bind(&message_id_for_bind)
+                    .bind(&sender_id_for_bind)
+                    .bind(&sender_name_for_bind)
+                    .bind(&send_time_for_bind)
+                    .bind(&group_id_for_bind)
+                    .bind(&group_name_for_bind)
+                    .bind(content_chunk)
+                    .bind(chunk_at_target_list)
+                    .bind(chunk_media_json)
+                    .bind(chunk_raw_message_json)
+                    .execute(&pool)
+                    .await?;
+                }
+
+                Ok::<(), sqlx::Error>(())
+            };
+
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                block_in_place(|| handle.block_on(run))
+            } else {
+                tokio::runtime::Runtime::new()?.block_on(run)
+            }
+        }
+    };
+
+    match result {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            warn!(
+                "[message_persistence] relational DB persist failed for message {}: {}",
+                message_id, error
+            );
+            Ok(())
+        }
+    }
+}
+
 pub fn persist_message_event(
     event: &MessageEvent,
+    rdb_pool: Option<&RelationalDbConnection>,
     mysql_ref: Option<&Arc<MySqlConfig>>,
     redis_ref: Option<&Arc<RedisConfig>>,
 ) -> Result<()> {
@@ -301,10 +518,29 @@ pub fn persist_message_event(
         }
     }
 
-    if let Some(mysql_ref) = mysql_ref.cloned().or_else(latest_mysql_ref) {
+    if let Some(rdb_pool) = rdb_pool.cloned().or_else(latest_rdb_pool) {
+        register_rdb_pool(rdb_pool.clone());
+        persist_message_to_rdb(event, &rdb_pool)?;
+    } else if let Some(mysql_ref) = mysql_ref.cloned().or_else(latest_mysql_ref) {
         register_mysql_ref(mysql_ref.clone());
         persist_message_to_mysql(event, &mysql_ref)?;
     }
 
     Ok(())
+}
+
+fn mysql_pool(config: &Arc<MySqlConfig>) -> Result<&sqlx::mysql::MySqlPool> {
+    config.pool.as_ref().ok_or_else(|| {
+        zihuan_core::error::Error::ValidationError(
+            "message persistence mysql pool is not initialized".to_string(),
+        )
+    })
+}
+
+fn sqlite_pool(config: &Arc<SqliteConfig>) -> Result<&sqlx::sqlite::SqlitePool> {
+    config.pool.as_ref().ok_or_else(|| {
+        zihuan_core::error::Error::ValidationError(
+            "message persistence sqlite pool is not initialized".to_string(),
+        )
+    })
 }

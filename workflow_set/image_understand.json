@@ -42,6 +42,27 @@
           "description": "节点图输入 'qq_ims_bot_adapter'",
           "required": true,
           "hidden": false
+        },
+        {
+          "name": "content",
+          "data_type": "String",
+          "description": "节点图输入 'content'",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "message_event",
+          "data_type": "MessageEvent",
+          "description": "节点图输入 'message_event'",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "qq_ims_bot_adapter",
+          "data_type": "BotAdapterRef",
+          "description": "节点图输入 'qq_ims_bot_adapter'",
+          "required": true,
+          "hidden": false
         }
       ],
       "dynamic_input_ports": false,
@@ -56,6 +77,24 @@
       },
       "inline_values": {
         "signature": [
+          {
+            "data_type": "String",
+            "description": "触发此次工具调用的上下文文本内容",
+            "name": "content",
+            "required": true
+          },
+          {
+            "data_type": "MessageEvent",
+            "description": "当前触发此次工具调用的消息事件",
+            "name": "message_event",
+            "required": true
+          },
+          {
+            "data_type": "BotAdapterRef",
+            "description": "当前消息事件对应的 Bot Adapter 连接引用",
+            "name": "qq_ims_bot_adapter",
+            "required": true
+          },
           {
             "data_type": "String",
             "description": "触发此次工具调用的上下文文本内容",
@@ -117,7 +156,7 @@
         "signature": [
           {
             "data_type": "String",
-            "description": "",
+            "description": "图片内容描述",
             "name": "image_description",
             "required": true
           }
@@ -152,6 +191,20 @@
           "name": "s3_ref",
           "data_type": "S3Ref",
           "description": "可选：显式传入对象存储引用，优先用于多模态图片提取",
+          "required": false,
+          "hidden": false
+        },
+        {
+          "name": "message_id",
+          "data_type": "Integer",
+          "description": "可选：要恢复并分析的目标消息 ID",
+          "required": false,
+          "hidden": false
+        },
+        {
+          "name": "mysql_ref",
+          "data_type": "MySqlRef",
+          "description": "可选：显式注册给消息恢复链路的 MySQL 连接",
           "required": false,
           "hidden": false
         }
@@ -289,7 +342,7 @@
         "height": 136.0
       },
       "inline_values": {
-        "llm_ref_id": "accdea8a-48a7-4e78-b833-514298606fc1"
+        "llm_ref_id": "f63d8f3d-78fe-4de0-8780-cf8c19f0511f"
       },
       "port_bindings": {},
       "has_error": false,
@@ -612,12 +665,31 @@
       "to_port": "message_event"
     }
   ],
-  "graph_inputs": [],
+  "graph_inputs": [
+    {
+      "name": "content",
+      "data_type": "String",
+      "description": "触发此次工具调用的上下文文本内容",
+      "required": true
+    },
+    {
+      "name": "message_event",
+      "data_type": "MessageEvent",
+      "description": "当前触发此次工具调用的消息事件",
+      "required": true
+    },
+    {
+      "name": "qq_ims_bot_adapter",
+      "data_type": "BotAdapterRef",
+      "description": "当前消息事件对应的 Bot Adapter 连接引用",
+      "required": true
+    }
+  ],
   "graph_outputs": [
     {
       "name": "image_description",
       "data_type": "String",
-      "description": "",
+      "description": "图片内容描述",
       "required": true
     }
   ],

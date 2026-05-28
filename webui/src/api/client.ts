@@ -277,6 +277,7 @@ export const workflows = {
 export interface WorkflowPortDef {
   name: string;
   data_type: DataTypeMetaData;
+  description: string;
 }
 
 export interface WorkflowInfo {
@@ -391,6 +392,16 @@ export interface AgentWithRuntime extends AgentConfig {
     bot_nickname?: string | null;
     bot_avatar_url?: string | null;
   } | null;
+}
+
+export interface QqChatAgentIgnoreRule {
+  id: number;
+  agent_id: string;
+  sender_id: string | null;
+  group_id: string | null;
+  match_key: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ChatStreamEvent {
@@ -535,6 +546,25 @@ export const system = {
     },
     delete(configId: string): Promise<{ ok: boolean }> {
       return request("DELETE", `/system/agents/${configId}`);
+    },
+    listIgnoreRules(configId: string): Promise<QqChatAgentIgnoreRule[]> {
+      return request("GET", `/system/agents/${configId}/ignore-rules`);
+    },
+    createIgnoreRule(
+      configId: string,
+      payload: { sender_id?: string | null; group_id?: string | null }
+    ): Promise<QqChatAgentIgnoreRule> {
+      return request("POST", `/system/agents/${configId}/ignore-rules`, payload);
+    },
+    updateIgnoreRule(
+      configId: string,
+      ruleId: number,
+      payload: { sender_id?: string | null; group_id?: string | null }
+    ): Promise<QqChatAgentIgnoreRule> {
+      return request("PUT", `/system/agents/${configId}/ignore-rules/${ruleId}`, payload);
+    },
+    deleteIgnoreRule(configId: string, ruleId: number): Promise<{ ok: boolean }> {
+      return request("DELETE", `/system/agents/${configId}/ignore-rules/${ruleId}`);
     },
     start(configId: string): Promise<{ ok: boolean; runtime: AgentRuntimeInfo }> {
       return request("POST", `/system/agents/${configId}/start`);

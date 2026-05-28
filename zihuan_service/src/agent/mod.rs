@@ -7,6 +7,7 @@ mod agent_text_similarity;
 mod classify_intent;
 mod qq_chat_agent_core;
 mod qq_chat_agent_inbox;
+pub mod qq_chat_agent_ignore_store;
 mod qq_chat_agent_logging;
 mod tools;
 

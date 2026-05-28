@@ -1,27 +1,16 @@
 use serde::{Deserialize, Serialize};
-use serde_json::json;
-use tokio_tungstenite::connect_async;
+use std::time::Duration;
+use zihuan_core::connection_manager::ConnectionManager;
 use zihuan_core::error::{Error, Result};
 
+use crate::active_adapter_manager::ActiveAdapterManager;
 use crate::system_config::BotAdapterConnection;
-use crate::ws_action::{json_i64, next_echo, response_success};
+use crate::ws_action::{json_i64, next_echo, response_success, ws_send_action_async};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BotLoginInfo {
     pub user_id: String,
     pub nickname: String,
-}
-
-pub fn websocket_url_to_http_base(url: &str) -> String {
-    if let Some(rest) = url.strip_prefix("wss://") {
-        let host_port = rest.split('/').next().unwrap_or(rest);
-        format!("https://{}", host_port)
-    } else if let Some(rest) = url.strip_prefix("ws://") {
-        let host_port = rest.split('/').next().unwrap_or(rest);
-        format!("http://{}", host_port)
-    } else {
-        url.to_string()
-    }
 }
 
 pub fn qq_avatar_url(user_id: &str) -> Option<String> {
@@ -33,84 +22,52 @@ pub fn qq_avatar_url(user_id: &str) -> Option<String> {
     }
 }
 
+
 pub async fn fetch_login_info(connection: &BotAdapterConnection) -> Result<BotLoginInfo> {
-    match fetch_login_info_via_http(connection).await {
-        Ok(info) => Ok(info),
-        Err(http_err) => match fetch_login_info_via_websocket(connection).await {
-            Ok(info) => Ok(info),
-            Err(ws_err) => Err(Error::ValidationError(format!(
-                "failed to fetch bot login info via HTTP and WebSocket; http: {http_err}; websocket: {ws_err}"
-            ))),
-        },
-    }
+    fetch_login_info_via_websocket(connection).await
 }
 
-async fn fetch_login_info_via_http(connection: &BotAdapterConnection) -> Result<BotLoginInfo> {
-    let base_url = connection
-        .adapter_server_url
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-        .unwrap_or_else(|| websocket_url_to_http_base(&connection.bot_server_url));
-    let endpoint = format!("{}/get_login_info", base_url.trim_end_matches('/'));
+/// Fetches login info through the active bot adapter's existing WebSocket connection.
+/// This is preferred over `fetch_login_info` when the adapter is already running, because
+/// it reuses the existing WebSocket connection rather than creating a new one.
+pub async fn fetch_login_info_via_adapter_connection(
+    connection_id: &str,
+) -> Result<BotLoginInfo> {
+    let adapter = ActiveAdapterManager::shared()
+        .get_or_create(connection_id)
+        .await?;
 
-    let client = reqwest::Client::new();
-    let mut request = client.post(endpoint).json(&json!({}));
-    if let Some(token) = connection
-        .bot_server_token
-        .as_ref()
-        .map(|token| token.trim())
-        .filter(|token| !token.is_empty())
-    {
-        request = request.bearer_auth(token);
+    let max_retries = 10u32;
+    let retry_delay = Duration::from_millis(500);
+    let mut last_err = None;
+
+    for attempt in 1..=max_retries {
+        match ws_send_action_async(&adapter, "get_login_info", serde_json::json!({})).await {
+            Ok(response) => return parse_login_info(&response),
+            Err(err) => {
+                let err_msg = err.to_string();
+                if err_msg.contains("not connected yet") && attempt < max_retries {
+                    tokio::time::sleep(retry_delay).await;
+                    last_err = Some(err);
+                    continue;
+                }
+                return Err(err);
+            }
+        }
     }
 
-    let response = request.send().await?;
-    let status = response.status();
-    let body = response.text().await?;
-    let payload: serde_json::Value = serde_json::from_str(&body).map_err(|err| {
-        Error::ValidationError(format!(
-            "NapCat /get_login_info returned non-JSON HTTP {} response: {}",
-            status,
-            summarize_body_for_error(&body, &err.to_string())
-        ))
-    })?;
-
-    if !status.is_success() {
-        let message = payload
-            .get("message")
-            .and_then(|value| value.as_str())
-            .or_else(|| payload.get("wording").and_then(|value| value.as_str()))
-            .unwrap_or("unknown error");
-        return Err(Error::ValidationError(format!(
-            "NapCat /get_login_info failed with HTTP {}: {}",
-            status, message
-        )));
-    }
-
-    if !response_success(&payload) {
-        let message = payload
-            .get("message")
-            .and_then(|value| value.as_str())
-            .or_else(|| payload.get("wording").and_then(|value| value.as_str()))
-            .unwrap_or("unknown error");
-        return Err(Error::ValidationError(format!(
-            "NapCat /get_login_info returned failure: {}",
-            message
-        )));
-    }
-
-    parse_login_info(&payload)
+    Err(last_err.unwrap_or_else(|| {
+        Error::ValidationError("failed to fetch login info via adapter after retries".to_string())
+    }))
 }
 
 async fn fetch_login_info_via_websocket(connection: &BotAdapterConnection) -> Result<BotLoginInfo> {
     use futures_util::{SinkExt, StreamExt};
 
     let request = websocket_request(connection)?;
-    let (mut ws_stream, _) = connect_async(request).await?;
+    let (mut ws_stream, _) = tokio_tungstenite::connect_async(request).await?;
     let echo = next_echo();
-    let payload = json!({
+    let payload = serde_json::json!({
         "action": "get_login_info",
         "params": {},
         "echo": echo,

@@ -10,6 +10,7 @@ use super::agent_text_similarity::{
     find_best_match, token_overlap_ratio, HybridSimilarityConfig, SimilarityCandidate,
 };
 use super::classify_intent::{classify_intent_with_trace, IntentCategory};
+use super::qq_chat_agent_ignore_store::should_ignore_message_blocking;
 use super::qq_chat_agent_logging::{QqChatBrainObserver, QqChatTaskTrace};
 pub(crate) use super::tools::build_info_brain_tools;
 use super::tools::{
@@ -53,7 +54,7 @@ use zihuan_agent::brain::{
 use zihuan_core::command::{
     CommandChannel, CommandContext, DispatchResult, NewConversationRequest, SideEffectContext,
 };
-use zihuan_core::data_refs::MySqlConfig;
+use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::InferenceParam;
@@ -118,6 +119,7 @@ struct QqCommandSideEffectContext<'a> {
     target_id: &'a str,
     is_group: bool,
     group_name: Option<&'a str>,
+    rdb_pool: Option<&'a RelationalDbConnection>,
     mysql_ref: Option<&'a Arc<MySqlConfig>>,
 }
 
@@ -146,6 +148,7 @@ impl SideEffectContext for QqCommandSideEffectContext<'_> {
         send_forward_content_to_target(
             self.adapter,
             self.target_id,
+            self.rdb_pool,
             self.mysql_ref,
             self.group_name,
             self.bot_id,
@@ -1588,6 +1591,7 @@ fn send_direct_text_reply(
     trace: &QqChatTaskTrace,
     adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
     target_id: &str,
+    rdb_pool: Option<&RelationalDbConnection>,
     mysql_ref: Option<&Arc<MySqlConfig>>,
     group_name: Option<&str>,
     bot_name: &str,
@@ -1617,7 +1621,7 @@ fn send_direct_text_reply(
         return Ok(None);
     }
 
-    let persistence = build_outbound_persistence(mysql_ref, group_name, bot_name);
+    let persistence = build_outbound_persistence(rdb_pool, mysql_ref, group_name, bot_name);
     trace.mark_reply_send_started();
     if is_group {
         send_group_batches_with_persistence(adapter, target_id, &batches, &persistence);
@@ -1632,12 +1636,13 @@ fn send_persisted_batches(
     adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
     target_id: &str,
     batches: &[Vec<Message>],
+    rdb_pool: Option<&RelationalDbConnection>,
     mysql_ref: Option<&Arc<MySqlConfig>>,
     group_name: Option<&str>,
     bot_name: &str,
     is_group: bool,
 ) {
-    let persistence = build_outbound_persistence(mysql_ref, group_name, bot_name);
+    let persistence = build_outbound_persistence(rdb_pool, mysql_ref, group_name, bot_name);
     if is_group {
         send_group_batches_with_persistence(adapter, target_id, batches, &persistence);
     } else {
@@ -1683,6 +1688,7 @@ fn build_long_task_complete_content(task_id: &str, task_name: &str, result: &str
 fn send_forward_content_to_target(
     adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
     target_id: &str,
+    rdb_pool: Option<&RelationalDbConnection>,
     mysql_ref: Option<&Arc<MySqlConfig>>,
     group_name: Option<&str>,
     bot_id: &str,
@@ -1696,6 +1702,7 @@ fn send_forward_content_to_target(
         adapter,
         target_id,
         &batches,
+        rdb_pool,
         mysql_ref,
         group_name,
         bot_name,
@@ -1835,6 +1842,7 @@ struct QqLongTaskNotifier {
     target_id: String,
     sender_id: String,
     is_group: bool,
+    rdb_pool: Option<RelationalDbConnection>,
     mysql_ref: Option<Arc<MySqlConfig>>,
     group_name: Option<String>,
     bot_id: String,
@@ -1849,6 +1857,7 @@ impl LongTaskNotifier for QqLongTaskNotifier {
             &self.adapter,
             &self.target_id,
             &batches,
+            self.rdb_pool.as_ref(),
             self.mysql_ref.as_ref(),
             self.group_name.as_deref(),
             &self.bot_name,
@@ -1861,6 +1870,7 @@ impl LongTaskNotifier for QqLongTaskNotifier {
         if let Err(err) = send_forward_content_to_target(
             &self.adapter,
             &self.target_id,
+            self.rdb_pool.as_ref(),
             self.mysql_ref.as_ref(),
             self.group_name.as_deref(),
             &self.bot_id,
@@ -2052,6 +2062,7 @@ impl QqChatAgent {
         intent_llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
         math_programming_llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
         model_display_names: &[String],
+        rdb_pool: Option<&RelationalDbConnection>,
         mysql_ref: Option<&Arc<MySqlConfig>>,
         weaviate_image_ref: Option<&Arc<WeaviateRef>>,
         embedding_model: Option<&Arc<dyn EmbeddingBase>>,
@@ -2086,8 +2097,26 @@ impl QqChatAgent {
             target_id
         );
 
-        if let Err(err) = persist_message_event(event, mysql_ref, None) {
+        if let Err(err) = persist_message_event(event, rdb_pool, mysql_ref, None) {
             warn!("{LOG_PREFIX} Message persistence failed: {err}");
+        }
+
+        if let Some(rdb_pool) = rdb_pool {
+            let group_id_text = event.group_id.map(|value| value.to_string());
+            if should_ignore_message_blocking(
+                rdb_pool,
+                agent_id,
+                &sender_id,
+                group_id_text.as_deref(),
+            )? {
+                info!(
+                    "{LOG_PREFIX} Ignored inbound message: message_id={} sender={} group={:?}",
+                    event.message_id,
+                    sender_id,
+                    event.group_id
+                );
+                return Ok(());
+            }
         }
 
         if is_group {
@@ -2168,6 +2197,7 @@ impl QqChatAgent {
                     intent_llm,
                     math_programming_llm,
                     model_display_names,
+                    rdb_pool,
                     mysql_ref,
                     weaviate_image_ref,
                     embedding_model,
@@ -2200,6 +2230,7 @@ impl QqChatAgent {
                 intent_llm,
                 math_programming_llm,
                 model_display_names,
+                rdb_pool,
                 mysql_ref,
                 weaviate_image_ref,
                 embedding_model,
@@ -2254,6 +2285,7 @@ impl QqChatAgent {
         intent_llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
         math_programming_llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
         model_display_names: &[String],
+        rdb_pool: Option<&RelationalDbConnection>,
         mysql_ref: Option<&Arc<MySqlConfig>>,
         weaviate_image_ref: Option<&Arc<WeaviateRef>>,
         embedding_model: Option<&Arc<dyn EmbeddingBase>>,
@@ -2288,6 +2320,7 @@ impl QqChatAgent {
                     intent_llm,
                     math_programming_llm,
                     model_display_names,
+                    rdb_pool,
                     mysql_ref,
                     weaviate_image_ref,
                     embedding_model,
@@ -2360,6 +2393,7 @@ impl QqChatAgent {
         intent_llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
         math_programming_llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
         model_display_names: &[String],
+        rdb_pool: Option<&RelationalDbConnection>,
         mysql_ref: Option<&Arc<MySqlConfig>>,
         weaviate_image_ref: Option<&Arc<WeaviateRef>>,
         embedding_model: Option<&Arc<dyn EmbeddingBase>>,
@@ -2416,6 +2450,7 @@ impl QqChatAgent {
                     target_id,
                     is_group,
                     group_name: event.group_name.as_deref(),
+                    rdb_pool,
                     mysql_ref,
                 };
 
@@ -2432,6 +2467,7 @@ impl QqChatAgent {
                         trace,
                         adapter,
                         target_id,
+                        rdb_pool,
                         mysql_ref,
                         event.group_name.as_deref(),
                         bot_name,
@@ -2525,6 +2561,7 @@ impl QqChatAgent {
                 trace,
                 adapter,
                 target_id,
+                rdb_pool,
                 mysql_ref,
                 event.group_name.as_deref(),
                 bot_name,
@@ -2744,6 +2781,7 @@ impl QqChatAgent {
                     target_id: target_id.to_string(),
                     sender_id: sender_id.to_string(),
                     is_group,
+                    rdb_pool: rdb_pool.cloned(),
                     mysql_ref: mysql_ref.cloned(),
                     group_name: event.group_name.clone(),
                     bot_id: bot_id.to_string(),
@@ -2830,8 +2868,12 @@ impl QqChatAgent {
             if reply_result.suppress_send {
                 trace.record_reply_send(true, false, &reply_result.batches);
             } else if !reply_result.batches.is_empty() {
-                let persistence =
-                    build_outbound_persistence(mysql_ref, event.group_name.as_deref(), bot_name);
+                let persistence = build_outbound_persistence(
+                    rdb_pool,
+                    mysql_ref,
+                    event.group_name.as_deref(),
+                    bot_name,
+                );
                 if is_group {
                     send_group_batches_with_persistence(
                         adapter,
@@ -2908,6 +2950,7 @@ pub struct QqChatAgentServiceConfig {
     pub main_llm_display_name: String,
     pub intent_llm_display_name: String,
     pub math_programming_llm_display_name: String,
+    pub rdb_pool: Option<RelationalDbConnection>,
     pub mysql_ref: Option<Arc<MySqlConfig>>,
     pub weaviate_image_ref: Option<Arc<WeaviateRef>>,
     pub embedding_model: Option<Arc<dyn EmbeddingBase>>,
@@ -2957,11 +3000,8 @@ impl QqChatAgentService {
         let task_db_connection_id = self
             .config
             .qq_chat_config
-            .task_db_connection_id
-            .trim()
-            .is_empty()
-            .then(|| None)
-            .unwrap_or_else(|| Some(self.config.qq_chat_config.task_db_connection_id.clone()));
+            .resolved_rdb_id()
+            .map(ToOwned::to_owned);
 
         zihuan_core::agent_config::with_current_qq_chat_agent_config(
             self.config.qq_chat_config.clone(),
@@ -2979,6 +3019,7 @@ impl QqChatAgentService {
                     &self.config.intent_llm,
                     &self.config.math_programming_llm,
                     &model_display_names,
+                    self.config.rdb_pool.as_ref(),
                     self.config.mysql_ref.as_ref(),
                     self.config.weaviate_image_ref.as_ref(),
                     self.config.embedding_model.as_ref(),

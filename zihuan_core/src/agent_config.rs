@@ -88,11 +88,15 @@ pub struct QqChatAgentConfig {
     pub tokenizer_connection_id: Option<String>,
     pub tavily_connection_id: String,
     #[serde(default)]
-    pub task_db_connection_id: String,
+    pub rdb_id: Option<String>,
     #[serde(default)]
     pub embedding: Option<EmbeddingServiceConfig>,
     #[serde(default)]
+    #[serde(skip_serializing)]
     pub mysql_connection_id: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing)]
+    pub task_db_connection_id: Option<String>,
     #[serde(default)]
     pub weaviate_image_connection_id: Option<String>,
     #[serde(default = "default_max_message_length")]
@@ -105,6 +109,27 @@ pub struct QqChatAgentConfig {
     pub default_tools_enabled: HashMap<String, bool>,
     #[serde(default)]
     pub event_handler_threads: Option<usize>,
+}
+
+impl QqChatAgentConfig {
+    pub fn resolved_rdb_id(&self) -> Option<&str> {
+        self.rdb_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .or_else(|| {
+                self.mysql_connection_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+            })
+            .or_else(|| {
+                self.task_db_connection_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+            })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

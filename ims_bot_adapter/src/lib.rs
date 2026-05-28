@@ -37,7 +37,7 @@ pub use extract_qq_message_list_from_event::ExtractQQMessageListFromEventNode;
 pub use extract_sender_from_event::ExtractSenderFromEventNode;
 pub use extract_sender_id_from_event::ExtractSenderIdFromEventNode;
 pub use ims_bot_adapter_provider::ImsBotAdapterProviderNode;
-pub use login_info::{fetch_login_info, qq_avatar_url};
+pub use login_info::{fetch_login_info, fetch_login_info_via_adapter_connection, qq_avatar_url};
 pub use message_event_type_filter::MessageEventTypeFilterNode;
 pub use message_sender::MessageSenderNode;
 pub use send_friend_message_batches::SendFriendMessageBatchesNode;

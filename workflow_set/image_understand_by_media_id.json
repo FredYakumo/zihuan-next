@@ -25,7 +25,21 @@
         {
           "name": "media_id",
           "data_type": "String",
-          "description": "节点图输入 'media_id' — 持久化媒体 ID",
+          "description": "节点图输入 'media_id'",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "content",
+          "data_type": "String",
+          "description": "节点图输入 'content'",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "name": "message_event",
+          "data_type": "MessageEvent",
+          "description": "节点图输入 'message_event'",
           "required": true,
           "hidden": false
         },
@@ -51,8 +65,20 @@
         "signature": [
           {
             "data_type": "String",
-            "description": "持久化媒体 ID，用于从数据库查询图片",
+            "description": "用于从数据库查询图片",
             "name": "media_id",
+            "required": true
+          },
+          {
+            "data_type": "String",
+            "description": "触发此次工具调用的上下文文本内容",
+            "name": "content",
+            "required": true
+          },
+          {
+            "data_type": "MessageEvent",
+            "description": "当前触发此次工具调用的消息事件",
+            "name": "message_event",
             "required": true
           },
           {
@@ -104,7 +130,7 @@
         "signature": [
           {
             "data_type": "String",
-            "description": "",
+            "description": "图片描述",
             "name": "image_description",
             "required": true
           }
@@ -253,7 +279,7 @@
         "height": 136.0
       },
       "inline_values": {
-        "llm_ref_id": "accdea8a-48a7-4e78-b833-514298606fc1"
+        "llm_ref_id": "f63d8f3d-78fe-4de0-8780-cf8c19f0511f"
       },
       "port_bindings": {},
       "has_error": false,
@@ -576,12 +602,19 @@
       "to_port": "s3_ref"
     }
   ],
-  "graph_inputs": [],
+  "graph_inputs": [
+    {
+      "name": "media_id",
+      "data_type": "String",
+      "description": "用于从数据库查询图片",
+      "required": true
+    }
+  ],
   "graph_outputs": [
     {
       "name": "image_description",
       "data_type": "String",
-      "description": "",
+      "description": "图片描述",
       "required": true
     }
   ],
@@ -589,8 +622,8 @@
   "hyperparameters": [],
   "variables": [],
   "metadata": {
-    "name": "图像分析能力（按媒体 ID）",
-    "description": "通过持久化媒体 ID 从数据库取出图片并进行分析",
+    "name": "图像分析能力(指定图片)",
+    "description": "通过media_id从数据库取出图片并进行分析",
     "version": null
   },
   "accepts_agent_events": true

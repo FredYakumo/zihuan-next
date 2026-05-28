@@ -7,7 +7,7 @@ use sqlx::Row;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tokio::task::block_in_place;
-use zihuan_core::data_refs::MySqlConfig;
+use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection, SqliteConfig};
 use zihuan_core::error::Result;
 use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
 use zihuan_core::ims_bot_adapter::models::message::{
@@ -17,6 +17,7 @@ use zihuan_core::ims_bot_adapter::models::message::{
 static RUNTIME_MESSAGE_INDEX: Lazy<RwLock<HashMap<String, Vec<Message>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 static LATEST_MYSQL_REF: Lazy<RwLock<Option<Arc<MySqlConfig>>>> = Lazy::new(|| RwLock::new(None));
+static LATEST_RDB_POOL: Lazy<RwLock<Option<RelationalDbConnection>>> = Lazy::new(|| RwLock::new(None));
 static LATEST_REDIS_REF: Lazy<RwLock<Option<Arc<RedisConfig>>>> = Lazy::new(|| RwLock::new(None));
 
 const LOOKUP_SQL: &str = r#"
@@ -39,6 +40,7 @@ pub enum MessageRestoreSource {
     RuntimeCache,
     Redis,
     MySql,
+    Sqlite,
 }
 
 impl MessageRestoreSource {
@@ -47,6 +49,7 @@ impl MessageRestoreSource {
             MessageRestoreSource::RuntimeCache => "cache",
             MessageRestoreSource::Redis => "redis",
             MessageRestoreSource::MySql => "mysql",
+            MessageRestoreSource::Sqlite => "sqlite",
         }
     }
 }
@@ -77,6 +80,12 @@ pub fn register_mysql_ref(config: Arc<MySqlConfig>) {
     }
 }
 
+pub fn register_rdb_pool(pool: RelationalDbConnection) {
+    if let Ok(mut guard) = LATEST_RDB_POOL.write() {
+        *guard = Some(pool);
+    }
+}
+
 pub fn register_redis_ref(config: Arc<RedisConfig>) {
     if let Ok(mut guard) = LATEST_REDIS_REF.write() {
         *guard = Some(config);
@@ -99,6 +108,10 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
         Ok(guard) => guard.clone(),
         Err(_) => None,
     };
+    let rdb_pool = match LATEST_RDB_POOL.read() {
+        Ok(guard) => guard.clone(),
+        Err(_) => None,
+    };
     let redis_config = match LATEST_REDIS_REF.read() {
         Ok(guard) => guard.clone(),
         Err(_) => None,
@@ -114,19 +127,93 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
         }
     }
 
-    let Some(mysql_config) = mysql_config else {
-        return Ok(None);
-    };
+    let (rows, source): (Vec<(String, Option<String>, Option<String>)>, MessageRestoreSource) = if let Some(rdb_pool) = rdb_pool {
+        match rdb_pool {
+            RelationalDbConnection::MySql(config) => {
+                let lookup_id = message_id_str.clone();
+                let pool = mysql_pool(&config)?.clone();
+                let run = async move {
+                    sqlx::query(LOOKUP_SQL)
+                        .bind(&lookup_id)
+                        .fetch_all(&pool)
+                        .await
+                };
+                let rows = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    block_in_place(|| handle.block_on(run))?
+                } else {
+                    tokio::runtime::Runtime::new()?.block_on(run)?
+                };
 
-    let lookup_id = message_id_str.clone();
-    let rows = run_mysql_query(&mysql_config, move |pool| {
-        Box::pin(async move {
-            sqlx::query(LOOKUP_SQL)
-                .bind(&lookup_id)
-                .fetch_all(pool)
-                .await
-        })
-    })?;
+                (
+                    rows.into_iter()
+                        .map(|row| {
+                            (
+                                row.get("content"),
+                                row.get("media_json"),
+                                row.get("raw_message_json"),
+                            )
+                        })
+                        .collect(),
+                    MessageRestoreSource::MySql,
+                )
+            }
+            RelationalDbConnection::Sqlite(config) => {
+                let lookup_id = message_id_str.clone();
+                let pool = sqlite_pool(&config)?.clone();
+                let run = async move {
+                    sqlx::query(LOOKUP_SQL)
+                        .bind(&lookup_id)
+                        .fetch_all(&pool)
+                        .await
+                };
+                let rows = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    block_in_place(|| handle.block_on(run))?
+                } else {
+                    tokio::runtime::Runtime::new()?.block_on(run)?
+                };
+
+                (
+                    rows.into_iter()
+                        .map(|row| {
+                            (
+                                row.get("content"),
+                                row.get("media_json"),
+                                row.get("raw_message_json"),
+                            )
+                        })
+                        .collect(),
+                    MessageRestoreSource::Sqlite,
+                )
+            }
+        }
+    } else {
+        let Some(mysql_config) = mysql_config else {
+            return Ok(None);
+        };
+
+        let lookup_id = message_id_str.clone();
+        let rows = run_mysql_query(&mysql_config, move |pool| {
+            Box::pin(async move {
+                sqlx::query(LOOKUP_SQL)
+                    .bind(&lookup_id)
+                    .fetch_all(pool)
+                    .await
+            })
+        })?;
+
+        (
+            rows.into_iter()
+                .map(|row| {
+                    (
+                        row.get("content"),
+                        row.get("media_json"),
+                        row.get("raw_message_json"),
+                    )
+                })
+                .collect(),
+            MessageRestoreSource::MySql,
+        )
+    };
 
     if rows.is_empty() {
         return Ok(None);
@@ -135,10 +222,7 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
     let mut content = String::new();
     let mut media_json = None;
     let mut raw_message_json = None;
-    for row in rows {
-        let chunk_content: String = row.get("content");
-        let chunk_media_json: Option<String> = row.get("media_json");
-        let chunk_raw_message_json: Option<String> = row.get("raw_message_json");
+    for (chunk_content, chunk_media_json, chunk_raw_message_json) in rows {
         content.push_str(&chunk_content);
         if media_json.is_none() {
             media_json = chunk_media_json;
@@ -166,7 +250,7 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
 
     Ok(Some(RestoredMessageSnapshot {
         messages,
-        source: MessageRestoreSource::MySql,
+        source,
     }))
 }
 
@@ -188,25 +272,79 @@ pub fn restore_media_by_id(media_id: &str) -> Result<Option<PersistedMedia>> {
         Ok(guard) => guard.clone(),
         Err(_) => None,
     };
-    let Some(mysql_config) = mysql_config else {
-        return Ok(None);
+    let rdb_pool = match LATEST_RDB_POOL.read() {
+        Ok(guard) => guard.clone(),
+        Err(_) => None,
     };
 
     let like_pattern = format!("%{media_id}%");
-    let rows = run_mysql_query(&mysql_config, move |pool| {
-        let like_pattern_media = like_pattern.clone();
-        let like_pattern_raw = like_pattern.clone();
-        Box::pin(async move {
-            sqlx::query(MEDIA_LOOKUP_SQL)
-                .bind(like_pattern_media)
-                .bind(like_pattern_raw)
-                .fetch_all(pool)
-                .await
-        })
-    })?;
+    let rows: Vec<(Option<String>, Option<String>)> = if let Some(rdb_pool) = rdb_pool {
+        match rdb_pool {
+            RelationalDbConnection::MySql(config) => {
+                let like_pattern_media = like_pattern.clone();
+                let like_pattern_raw = like_pattern.clone();
+                let pool = mysql_pool(&config)?.clone();
+                let run = async move {
+                    sqlx::query(MEDIA_LOOKUP_SQL)
+                        .bind(like_pattern_media)
+                        .bind(like_pattern_raw)
+                        .fetch_all(&pool)
+                        .await
+                };
+                let rows = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    block_in_place(|| handle.block_on(run))?
+                } else {
+                    tokio::runtime::Runtime::new()?.block_on(run)?
+                };
 
-    for row in rows {
-        let raw_message_json: Option<String> = row.get("raw_message_json");
+                rows.into_iter()
+                    .map(|row| (row.get("raw_message_json"), row.get("media_json")))
+                    .collect()
+            }
+            RelationalDbConnection::Sqlite(config) => {
+                let like_pattern_media = like_pattern.clone();
+                let like_pattern_raw = like_pattern.clone();
+                let pool = sqlite_pool(&config)?.clone();
+                let run = async move {
+                    sqlx::query(MEDIA_LOOKUP_SQL)
+                        .bind(like_pattern_media)
+                        .bind(like_pattern_raw)
+                        .fetch_all(&pool)
+                        .await
+                };
+                let rows = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    block_in_place(|| handle.block_on(run))?
+                } else {
+                    tokio::runtime::Runtime::new()?.block_on(run)?
+                };
+
+                rows.into_iter()
+                    .map(|row| (row.get("raw_message_json"), row.get("media_json")))
+                    .collect()
+            }
+        }
+    } else {
+        let Some(mysql_config) = mysql_config else {
+            return Ok(None);
+        };
+        let rows = run_mysql_query(&mysql_config, move |pool| {
+            let like_pattern_media = like_pattern.clone();
+            let like_pattern_raw = like_pattern.clone();
+            Box::pin(async move {
+                sqlx::query(MEDIA_LOOKUP_SQL)
+                    .bind(like_pattern_media)
+                    .bind(like_pattern_raw)
+                    .fetch_all(pool)
+                    .await
+            })
+        })?;
+
+        rows.into_iter()
+            .map(|row| (row.get("raw_message_json"), row.get("media_json")))
+            .collect()
+    };
+
+    for (raw_message_json, media_json) in rows {
         if let Some(messages) = raw_message_json
             .as_deref()
             .and_then(rebuild_message_list_from_raw_json)
@@ -216,7 +354,6 @@ pub fn restore_media_by_id(media_id: &str) -> Result<Option<PersistedMedia>> {
             }
         }
 
-        let media_json: Option<String> = row.get("media_json");
         if let Some(media) = media_json
             .as_deref()
             .and_then(|value| find_media_in_media_json(value, media_id))
@@ -226,6 +363,22 @@ pub fn restore_media_by_id(media_id: &str) -> Result<Option<PersistedMedia>> {
     }
 
     Ok(None)
+}
+
+fn mysql_pool(config: &Arc<MySqlConfig>) -> Result<&sqlx::mysql::MySqlPool> {
+    config.pool.as_ref().ok_or_else(|| {
+        zihuan_core::error::Error::ValidationError(
+            "message restore mysql pool is not initialized".to_string(),
+        )
+    })
+}
+
+fn sqlite_pool(config: &Arc<SqliteConfig>) -> Result<&sqlx::sqlite::SqlitePool> {
+    config.pool.as_ref().ok_or_else(|| {
+        zihuan_core::error::Error::ValidationError(
+            "message restore sqlite pool is not initialized".to_string(),
+        )
+    })
 }
 
 fn restore_message_snapshot_from_redis(
