@@ -1354,10 +1354,10 @@ fn build_long_task_complete_content(
     result: &str,
 ) -> String {
     let result = result.trim();
-    let result = if result.is_empty() { "（工具未返回内容）" } else { result };
-    let mut content = format!("✅ 完成\n任务: {task_name}\n任务ID: {task_id}");
+    let result = if result.is_empty() { "没有结果" } else { result };
+    let mut content = format!("\n任务: {task_name}({task_id})");
     if !progress.is_empty() {
-        content.push_str("\n\n进展回顾:");
+        content.push_str("\n\n");
         for (index, item) in progress.iter().enumerate() {
             content.push_str(&format!("\n{}. {}", index + 1, item));
         }
