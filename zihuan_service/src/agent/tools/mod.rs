@@ -18,7 +18,7 @@ mod build_metadata {
     include!(concat!(env!("OUT_DIR"), "/build_metadata.rs"));
 }
 
-pub(crate) use common::ToolNotificationTarget;
+pub(crate) use common::{ToolNotificationTarget, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS};
 pub(crate) use editable_qq_agent_tool::EditableQqAgentTool;
 pub(crate) use image_search::SearchSimilarImagesBrainTool;
 pub(crate) use info_tools::{GetAgentPublicInfoBrainTool, GetFunctionListBrainTool};

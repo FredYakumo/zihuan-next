@@ -59,9 +59,9 @@ fn render_task_detail(task: &zihuan_core::task_context::AgentTaskInfo) -> String
     }
     if !task.progress.is_empty() {
         lines.push(String::new());
-        lines.push("进展:".to_string());
-        for item in &task.progress {
-            lines.push(format!("- {item}"));
+        lines.push(format!("进展 ({}):", task.progress.len()));
+        for (index, item) in task.progress.iter().enumerate() {
+            lines.push(format!("{}. {}", index + 1, item));
         }
     }
 

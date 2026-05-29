@@ -100,6 +100,7 @@ pub fn build_command_registry() -> Arc<CommandRegistry> {
             description: "清除对话历史，开始新对话".to_string(),
             scope: CommandScope::All,
             accepted_arg_count: 0,
+            allow_steer_bypass: false,
         },
         Arc::new(NewCommand),
     );
@@ -111,6 +112,7 @@ pub fn build_command_registry() -> Arc<CommandRegistry> {
             description: "查看最近任务状态".to_string(),
             scope: CommandScope::All,
             accepted_arg_count: 2,
+            allow_steer_bypass: true,
         },
         Arc::new(TaskCommand),
     );
@@ -122,6 +124,7 @@ pub fn build_command_registry() -> Arc<CommandRegistry> {
             description: "列出可用命令".to_string(),
             scope: CommandScope::All,
             accepted_arg_count: 0,
+            allow_steer_bypass: false,
         },
         Arc::new(HelpCommand {
             registry: reg_ptr.clone(),

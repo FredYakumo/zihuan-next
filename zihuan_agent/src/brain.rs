@@ -83,6 +83,17 @@ pub fn consume_tool_progress_notification(call_content: &str) -> bool {
     })
 }
 
+pub fn current_task_progress_message(call_content: &str) -> Option<String> {
+    let trimmed = call_content.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if !consume_tool_progress_notification(trimmed) {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
 /// Notification hook for long-running tool calls.
 ///
 /// Purpose: host runtimes can expose task lifecycle updates to the user while
@@ -237,11 +248,10 @@ impl Brain {
                     task_db_connection_id: long_ctx.task_db_connection_id.clone(),
                 });
                 let task_id = handle.task_id.clone();
-                let progress_text = call_content.trim();
-                if !progress_text.is_empty() {
+                if let Some(progress_text) = current_task_progress_message(call_content) {
                     long_ctx
                         .task_runtime
-                        .append_task_progress(&task_id, progress_text.to_string());
+                        .append_task_progress(&task_id, progress_text);
                 }
                 long_ctx
                     .notifier

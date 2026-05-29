@@ -18,7 +18,9 @@ use super::tools::{
 use crate::nodes::tool_subgraph::{
     validate_shared_inputs, validate_tool_definitions, ToolResultMode,
 };
-use crate::storage::qq_chat_history_store::clear_history;
+use crate::storage::qq_chat_history_store::{
+    clear_history, conversation_history_key, load_history,
+};
 use crate::storage::qq_chat_session_store::{
     build_outbound_persistence, release_session, try_claim_session,
 };
@@ -1817,6 +1819,55 @@ impl QqChatAgent {
             let hydrated_event = hydrate_missing_reply_sources(event, ctx.adapter);
             let inference_event = expand_event_for_inference(&hydrated_event);
             let current_message = extract_user_message_text(&inference_event, &bot_id, ctx.bot_name);
+            if let Some(command_registry) = crate::command::global_command_registry() {
+                let cmd_ctx =
+                    self.build_command_context(&sender_id, &target_id, is_group, inference_event.group_id);
+                if let Some(preview) = command_registry.preview(&cmd_ctx, &current_message) {
+                    if preview.definition.allow_steer_bypass && preview.passthrough_text.is_none() {
+                        info!(
+                            "{LOG_PREFIX} Session busy for {sender_id}, executing command via steer bypass: message_id={} command=/{}",
+                            event.message_id,
+                            preview.definition.name
+                        );
+                        if let Some(dispatch_result) =
+                            command_registry.dispatch(&cmd_ctx, &current_message)
+                        {
+                            let history_key = conversation_history_key(
+                                &bot_id,
+                                &sender_id,
+                                is_group,
+                                inference_event.group_id,
+                            );
+                            let legacy_history_key = sender_id.to_string();
+                            let mut history =
+                                load_history(ctx.cache, &history_key, &legacy_history_key);
+                            let trace = QqChatTaskTrace::new(Local::now());
+                            self.execute_command_dispatch(
+                                &trace,
+                                &cmd_ctx,
+                                dispatch_result,
+                                &hydrated_event,
+                                &inference_event,
+                                &sender_id,
+                                &target_id,
+                                &bot_id,
+                                &mut history,
+                                ctx,
+                            )?;
+                            trace.finish_with_summary();
+                            return Ok(());
+                        }
+                    } else {
+                        info!(
+                            "{LOG_PREFIX} Session busy for {sender_id}, command falls back to steer: message_id={} command=/{} allow_steer_bypass={} has_passthrough={}",
+                            event.message_id,
+                            preview.definition.name,
+                            preview.definition.allow_steer_bypass,
+                            preview.passthrough_text.is_some()
+                        );
+                    }
+                }
+            }
             let (accepted, queue_len, accepted_steer_count) = ctx.pending_steer.enqueue_with_limit(
                 &sender_id,
                 PendingSteerEvent {

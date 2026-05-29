@@ -10,11 +10,14 @@ use ims_bot_adapter::message_helpers::{
     send_group_progress_notification_with_persistence, OutboundMessagePersistence,
 };
 use ims_bot_adapter::models::event_model::MessageType;
-use zihuan_agent::brain::consume_tool_progress_notification;
+use zihuan_agent::brain::{current_task_progress_message, consume_tool_progress_notification};
 use zihuan_core::error::{Error, Result};
+use zihuan_core::task_context::current_task_id;
 use zihuan_graph_engine::{DataType, DataValue};
 
 const LOG_PREFIX: &str = "[QqChatAgent]";
+pub(crate) const QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS: &str =
+    "qq_chat_emit_tool_progress_notifications";
 
 #[derive(Clone)]
 pub(crate) struct ToolNotificationTarget {
@@ -22,6 +25,7 @@ pub(crate) struct ToolNotificationTarget {
     target_id: String,
     mention_target_id: Option<String>,
     is_group: bool,
+    emit_progress_notifications: bool,
 }
 
 impl ToolNotificationTarget {
@@ -30,20 +34,25 @@ impl ToolNotificationTarget {
         target_id: String,
         mention_target_id: Option<String>,
         is_group: bool,
+        emit_progress_notifications: bool,
     ) -> Self {
         Self {
             adapter,
             target_id,
             mention_target_id,
             is_group,
+            emit_progress_notifications,
         }
     }
 
     pub(crate) fn dashboard() -> Self {
-        Self::new(None, String::new(), None, false)
+        Self::new(None, String::new(), None, false, true)
     }
 
     pub(crate) fn notify_progress(&self, call_content: &str) {
+        if !self.emit_progress_notifications {
+            return;
+        }
         // Skip empty or already-consumed progress content to avoid duplicate notifications.
         if !consume_tool_progress_notification(call_content) {
             return;
@@ -87,12 +96,28 @@ pub(crate) fn send_editable_tool_progress_notification(
     shared_runtime_values: &Arc<Mutex<HashMap<String, DataValue>>>,
     call_content: &str,
 ) {
+    let shared_rt = shared_runtime_values.lock().unwrap();
+    if matches!(
+        shared_rt.get(QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS),
+        Some(DataValue::Boolean(false))
+    ) {
+        return;
+    }
+
+    if let Some(task_id) = current_task_id() {
+        if let Some(progress_text) = current_task_progress_message(call_content) {
+            if let Some(runtime) = crate::command::global_task_runtime() {
+                runtime.append_task_progress(&task_id, progress_text);
+            }
+        }
+        return;
+    }
+
     // Deduplicate and skip empty progress; the same content may stream in repeatedly.
     if !consume_tool_progress_notification(call_content) {
         return;
     }
 
-    let shared_rt = shared_runtime_values.lock().unwrap();
     let event = match shared_rt
         .get(zihuan_graph_engine::brain_tool_spec::QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT)
     {

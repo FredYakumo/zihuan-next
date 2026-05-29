@@ -34,6 +34,7 @@ use super::super::tools::{
     DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
     DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
     DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
+    QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
 };
 
 use crate::nodes::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
@@ -55,6 +56,113 @@ use super::{
 };
 
 impl QqChatAgent {
+    pub(crate) fn build_command_context(
+        &self,
+        sender_id: &str,
+        target_id: &str,
+        is_group: bool,
+        group_id: Option<i64>,
+    ) -> CommandContext {
+        CommandContext {
+            agent_type: "qq_chat".to_string(),
+            agent_id: self.id.clone(),
+            caller_id: sender_id.to_string(),
+            channel: CommandChannel::QqChat {
+                sender_id: sender_id.to_string(),
+                is_group,
+                group_id,
+                target_id: target_id.to_string(),
+            },
+        }
+    }
+
+    pub(crate) fn execute_command_dispatch(
+        &self,
+        trace: &QqChatTaskTrace,
+        cmd_ctx: &CommandContext,
+        dispatch_result: DispatchResult,
+        hydrated_event: &ims_bot_adapter::models::MessageEvent,
+        inference_event: &ims_bot_adapter::models::MessageEvent,
+        sender_id: &str,
+        target_id: &str,
+        bot_id: &str,
+        history: &mut Vec<OpenAIMessage>,
+        ctx: &QqChatAgentContext<'_>,
+    ) -> Result<Option<String>> {
+        let DispatchResult {
+            result,
+            passthrough_text,
+        } = dispatch_result;
+        let side_effect_ctx = QqCommandSideEffectContext {
+            command_context: cmd_ctx,
+            cache: ctx.cache,
+            adapter: ctx.adapter,
+            bot_id,
+            bot_name: ctx.bot_name,
+            target_id,
+            is_group: matches!(cmd_ctx.channel, CommandChannel::QqChat { is_group: true, .. }),
+            group_name: hydrated_event.group_name.as_deref(),
+            rdb_pool: ctx.rdb_pool,
+            mysql_ref: ctx.mysql_ref,
+        };
+
+        for effect in &result.side_effects {
+            effect.execute(&side_effect_ctx)?;
+        }
+
+        if let Some(ref echo) = result.echo_message {
+            let is_group = matches!(cmd_ctx.channel, CommandChannel::QqChat { is_group: true, .. });
+            let _ = send_direct_text_reply(
+                trace,
+                ctx.adapter,
+                target_id,
+                ctx.rdb_pool,
+                ctx.mysql_ref,
+                hydrated_event.group_name.as_deref(),
+                ctx.bot_name,
+                bot_id,
+                echo,
+                is_group,
+                sender_id,
+                &inference_event.sender.nickname,
+                inference_event.sender.card.as_str(),
+                ctx.max_message_length,
+                ctx.reply_batch_builder,
+            )?;
+        }
+
+        let has_passthrough = passthrough_text.is_some();
+        if result.inject_to_llm {
+            let user_msg_for_cmd = message_with_api_style(
+                build_user_message(
+                    inference_event,
+                    bot_id,
+                    ctx.bot_name,
+                    ctx.llm.supports_multimodal_input(),
+                    ctx.s3_ref,
+                ),
+                ctx.llm.api_style(),
+            );
+            history.push(user_msg_for_cmd);
+            history.push(message_with_api_style(
+                OpenAIMessage::assistant_text(result.reply),
+                ctx.llm.api_style(),
+            ));
+        }
+
+        if result.inject_to_llm && !has_passthrough {
+            let history_key = conversation_history_key(
+                bot_id,
+                sender_id,
+                matches!(cmd_ctx.channel, CommandChannel::QqChat { is_group: true, .. }),
+                inference_event.group_id,
+            );
+            save_history(ctx.cache, &history_key, history.clone());
+        }
+
+        Ok(passthrough_text)
+    }
+
     /// Processes a claimed QQ chat message, potentially across multiple turns due to steering.
     ///
     /// Repeatedly calls [`handle_claimed_turn`] and drains any pending steer messages after each
@@ -168,92 +276,27 @@ impl QqChatAgent {
         // Commands are dispatched synchronously; if `passthrough_text` is present it
         // replaces `current_message` and the brain loop runs with the leftover text.
         if let Some(command_registry) = crate::command::global_command_registry() {
-            let cmd_ctx = CommandContext {
-                agent_type: "qq_chat".to_string(),
-                agent_id: self.id.clone(),
-                caller_id: sender_id.to_string(),
-                channel: CommandChannel::QqChat {
-                    sender_id: sender_id.to_string(),
-                    is_group,
-                    group_id: inference_event.group_id,
-                    target_id: target_id.to_string(),
-                },
-            };
+            let cmd_ctx =
+                self.build_command_context(sender_id, target_id, is_group, inference_event.group_id);
             if let Some(DispatchResult { result, passthrough_text }) =
                 command_registry.dispatch(&cmd_ctx, &raw_user_message)
             {
-                let side_effect_ctx = QqCommandSideEffectContext {
-                    command_context: &cmd_ctx,
-                    cache: ctx.cache,
-                    adapter: ctx.adapter,
-                    bot_id,
-                    bot_name: ctx.bot_name,
+                if let Some(passthrough) = self.execute_command_dispatch(
+                    trace,
+                    &cmd_ctx,
+                    DispatchResult {
+                        result,
+                        passthrough_text,
+                    },
+                    &hydrated_event,
+                    &inference_event,
+                    sender_id,
                     target_id,
-                    is_group,
-                    group_name: event.group_name.as_deref(),
-                    rdb_pool: ctx.rdb_pool,
-                    mysql_ref: ctx.mysql_ref,
-                };
-
-                // Execute side effects
-                for effect in &result.side_effects {
-                    effect.execute(&side_effect_ctx)?;
-                }
-
-                // Send echo message to user (message_id is tracked automatically
-                // via send_direct_text_reply → build_outbound_persistence →
-                // MySQL message_record + Redis).
-                if let Some(ref echo) = result.echo_message {
-                    let _ = send_direct_text_reply(
-                        trace,
-                        ctx.adapter,
-                        target_id,
-                        ctx.rdb_pool,
-                        ctx.mysql_ref,
-                        event.group_name.as_deref(),
-                        ctx.bot_name,
-                        bot_id,
-                        echo,
-                        is_group,
-                        sender_id,
-                        &inference_event.sender.nickname,
-                        inference_event.sender.card.as_str(),
-                        ctx.max_message_length,
-                        ctx.reply_batch_builder,
-                    )?;
-                }
-
-                // Inject command reply into LLM conversation only if requested
-                let has_passthrough = passthrough_text.is_some();
-                if result.inject_to_llm {
-                    let user_msg_for_cmd = message_with_api_style(
-                        build_user_message(
-                            &inference_event,
-                            bot_id,
-                            ctx.bot_name,
-                            ctx.llm.supports_multimodal_input(),
-                            ctx.s3_ref,
-                        ),
-                        ctx.llm.api_style(),
-                    );
-                    history.push(user_msg_for_cmd);
-                    history.push(message_with_api_style(
-                        OpenAIMessage::assistant_text(result.reply),
-                        ctx.llm.api_style(),
-                    ));
-                    // Only persist now if we are NOT falling through to the
-                    // brain loop. When there is passthrough text the brain
-                    // loop will save history at the end of the turn.
-                    if !has_passthrough {
-                        save_history(ctx.cache, &history_key, history.clone());
-                    }
-                }
-
-                // If there is passthrough text (command does not consume all
-                // input), use it as the user message for the brain loop.
-                if let Some(passthrough) = passthrough_text {
+                    bot_id,
+                    &mut history,
+                    ctx,
+                )? {
                     current_message = passthrough;
-                    // Fall through to the brain loop below
                 } else {
                     return Ok(QqChatTurnResult {
                         result_summary: "已处理命令".to_string(),
@@ -394,6 +437,10 @@ impl QqChatAgent {
                 QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT.to_string(),
                 DataValue::BotAdapterRef(adapter_handle),
             );
+            locked.insert(
+                QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS.to_string(),
+                DataValue::Boolean(false),
+            );
         }
 
         let mut conversation: Vec<OpenAIMessage> = Vec::with_capacity(history.len() + 3);
@@ -437,6 +484,7 @@ impl QqChatAgent {
                         None
                     },
                     is_group,
+                    false,
                 ),
             ));
         }
@@ -461,6 +509,7 @@ impl QqChatAgent {
                         None
                     },
                     is_group,
+                    false,
                 ),
             ));
         }
@@ -477,6 +526,7 @@ impl QqChatAgent {
                         None
                     },
                     is_group,
+                    false,
                 ),
             ));
         }
@@ -496,6 +546,7 @@ impl QqChatAgent {
                         None
                     },
                     is_group,
+                    false,
                 ),
             ));
         }
@@ -679,4 +730,3 @@ impl QqChatAgent {
         Ok(QqChatTurnResult { result_summary })
     }
 }
-

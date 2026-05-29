@@ -58,6 +58,10 @@ pub struct CommandDefinition {
     /// N = consume up to N tokens as args, remainder is passthrough.
     #[serde(default)]
     pub accepted_arg_count: u8,
+    /// Whether this command may bypass steer queueing while another reply
+    /// flow is active. Defaults to false so only explicitly safe commands opt in.
+    #[serde(default)]
+    pub allow_steer_bypass: bool,
 }
 
 /// Permission rules that control who can use a command.
@@ -196,6 +200,14 @@ pub struct DispatchResult {
     pub passthrough_text: Option<String>,
 }
 
+/// Parsed command preview used by callers that need to inspect a command
+/// before deciding whether to execute it.
+pub struct CommandPreview<'a> {
+    pub definition: &'a CommandDefinition,
+    pub args: Vec<String>,
+    pub passthrough_text: Option<String>,
+}
+
 /// Trait implemented by each command handler.
 pub trait CommandHandler: Send + Sync {
     fn handle(&self, ctx: &CommandContext, args: &[String]) -> CommandResult;
@@ -311,6 +323,36 @@ impl CommandRegistry {
         );
     }
 
+    fn find_matching_entry<'a>(
+        &'a self,
+        ctx: &CommandContext,
+        raw_input: &str,
+    ) -> Option<(&'a CommandEntry, parser::ParsedCommand)> {
+        let trimmed = raw_input.trim();
+        if !trimmed.starts_with('/') {
+            return None;
+        }
+
+        let body = &trimmed[1..];
+        let command_name = body.split_whitespace().next()?.to_lowercase();
+
+        let entry = self.commands.get(&command_name).or_else(|| {
+            self.commands.values().find(|e| {
+                e.definition
+                    .aliases
+                    .iter()
+                    .any(|a| a.eq_ignore_ascii_case(&command_name))
+            })
+        })?;
+
+        if !entry.definition.scope.matches(&ctx.agent_type, &ctx.agent_id) {
+            return None;
+        }
+
+        let parsed = parser::parse_command(raw_input, entry.definition.accepted_arg_count)?;
+        Some((entry, parsed))
+    }
+
     /// Update permission rules for a registered command.
     pub fn set_permissions(&self, name: &str, rules: Vec<PermissionRule>) {
         if let Some(entry) = self.commands.get(name) {
@@ -340,39 +382,25 @@ impl CommandRegistry {
             .collect()
     }
 
+    /// Preview a command without executing its handler.
+    pub fn preview<'a>(
+        &'a self,
+        ctx: &CommandContext,
+        raw_input: &str,
+    ) -> Option<CommandPreview<'a>> {
+        let (entry, parsed) = self.find_matching_entry(ctx, raw_input)?;
+        Some(CommandPreview {
+            definition: &entry.definition,
+            args: parsed.args,
+            passthrough_text: parsed.passthrough_text,
+        })
+    }
+
     /// Try to dispatch a raw message as a command. Returns None if the message
     /// does not start with '/', or if the command is not found, or if
     /// permission is denied.
     pub fn dispatch(&self, ctx: &CommandContext, raw_input: &str) -> Option<DispatchResult> {
-        let trimmed = raw_input.trim();
-        if !trimmed.starts_with('/') {
-            return None;
-        }
-
-        // Extract command name first so we can look up accepts_params
-        let body = &trimmed[1..];
-        let command_name = body
-            .split_whitespace()
-            .next()?
-            .to_lowercase();
-
-        // Look up by name or alias
-        let entry = self.commands.get(&command_name).or_else(|| {
-            self.commands.values().find(|e| {
-                e.definition
-                    .aliases
-                    .iter()
-                    .any(|a| a.eq_ignore_ascii_case(&command_name))
-            })
-        })?;
-
-        // Check scope
-        if !entry.definition.scope.matches(&ctx.agent_type, &ctx.agent_id) {
-            return None;
-        }
-
-        // Parse with the command's accepted_arg_count
-        let parsed = parser::parse_command(raw_input, entry.definition.accepted_arg_count)?;
+        let (entry, parsed) = self.find_matching_entry(ctx, raw_input)?;
 
         // Check permission
         let permissions = entry.permissions.lock().unwrap();
@@ -405,5 +433,98 @@ impl CommandRegistry {
 impl Default for CommandRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+
+    struct TestCommand;
+
+    impl CommandHandler for TestCommand {
+        fn handle(&self, _ctx: &CommandContext, args: &[String]) -> CommandResult {
+            CommandResult {
+                reply: args.join(","),
+                side_effects: vec![],
+                echo_message: None,
+                inject_to_llm: false,
+            }
+        }
+    }
+
+    fn test_context() -> CommandContext {
+        CommandContext {
+            agent_type: "qq_chat".to_string(),
+            agent_id: "agent-1".to_string(),
+            caller_id: "caller-1".to_string(),
+            channel: CommandChannel::QqChat {
+                sender_id: "caller-1".to_string(),
+                is_group: false,
+                group_id: None,
+                target_id: "caller-1".to_string(),
+            },
+        }
+    }
+
+    #[test]
+    fn command_definition_defaults_to_no_steer_bypass() {
+        let def = CommandDefinition {
+            name: "task".to_string(),
+            aliases: vec![],
+            description: "desc".to_string(),
+            scope: CommandScope::All,
+            accepted_arg_count: 2,
+            allow_steer_bypass: false,
+        };
+        assert!(!def.allow_steer_bypass);
+    }
+
+    #[test]
+    fn preview_returns_args_and_passthrough_without_execution() {
+        let mut registry = CommandRegistry::new();
+        registry.register(
+            CommandDefinition {
+                name: "task".to_string(),
+                aliases: vec![],
+                description: "desc".to_string(),
+                scope: CommandScope::All,
+                accepted_arg_count: 2,
+                allow_steer_bypass: true,
+            },
+            Arc::new(TestCommand),
+        );
+
+        let preview = registry
+            .preview(&test_context(), "/task cancel abc123 extra words")
+            .expect("command preview should exist");
+        assert_eq!(preview.definition.name, "task");
+        assert!(preview.definition.allow_steer_bypass);
+        assert_eq!(preview.args, vec!["cancel", "abc123"]);
+        assert_eq!(preview.passthrough_text.as_deref(), Some("extra words"));
+    }
+
+    #[test]
+    fn dispatch_still_executes_handler_after_preview_refactor() {
+        let mut registry = CommandRegistry::new();
+        registry.register(
+            CommandDefinition {
+                name: "task".to_string(),
+                aliases: vec!["t".to_string()],
+                description: "desc".to_string(),
+                scope: CommandScope::All,
+                accepted_arg_count: 1,
+                allow_steer_bypass: true,
+            },
+            Arc::new(TestCommand),
+        );
+
+        let dispatched = registry
+            .dispatch(&test_context(), "/t abc123 trailing text")
+            .expect("dispatch should succeed");
+        assert_eq!(dispatched.result.reply, "abc123");
+        assert_eq!(dispatched.passthrough_text.as_deref(), Some("trailing text"));
     }
 }

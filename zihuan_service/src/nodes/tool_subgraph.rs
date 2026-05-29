@@ -10,9 +10,10 @@ use ims_bot_adapter::models::MessageType;
 use log::{info, warn};
 use serde_json::{json, Map, Value};
 
-use zihuan_agent::brain::consume_tool_progress_notification;
+use zihuan_agent::brain::{consume_tool_progress_notification, current_task_progress_message};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
+use zihuan_core::task_context::current_task_id;
 use zihuan_graph_engine::brain_tool_spec::{
     brain_tool_input_signature, fixed_tool_runtime_inputs, BrainToolDefinition, ToolParamDef,
     BRAIN_TOOL_FIXED_CONTENT_INPUT, QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
@@ -28,6 +29,8 @@ use zihuan_graph_engine::util::function::{
     data_value_from_json_with_declared_type, inject_runtime_values_into_function_inputs_node,
 };
 use zihuan_graph_engine::{DataType, DataValue, Port};
+
+use crate::agent::QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS;
 
 pub const QQ_AGENT_TOOL_OUTPUT_NAME: &str = "result";
 
@@ -294,15 +297,35 @@ pub fn build_tool_error_message(message: impl Into<String>) -> String {
     .to_string()
 }
 
+/// Sends a progress notification for a brain tool call if notifications are enabled.
+///
+/// Looks up the runtime context to determine whether the caller requested progress updates,
+/// consumes a throttle token, and then routes the notification as a group or friend message.
 fn send_brain_tool_progress_notification(
     shared_runtime_values: &Arc<Mutex<HashMap<String, DataValue>>>,
     call_content: &str,
 ) {
+    let shared_rt = shared_runtime_values.lock().unwrap();
+    if matches!(
+        shared_rt.get(QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS),
+        Some(DataValue::Boolean(false))
+    ) {
+        return;
+    }
+
+    if let Some(task_id) = current_task_id() {
+        if let Some(progress_text) = current_task_progress_message(call_content) {
+            if let Some(runtime) = crate::command::global_task_runtime() {
+                runtime.append_task_progress(&task_id, progress_text);
+            }
+        }
+        return;
+    }
+
     if !consume_tool_progress_notification(call_content) {
         return;
     }
 
-    let shared_rt = shared_runtime_values.lock().unwrap();
     let event = match shared_rt.get(QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT) {
         Some(DataValue::MessageEvent(event)) => event,
         _ => return,
