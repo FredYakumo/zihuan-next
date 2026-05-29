@@ -520,11 +520,18 @@ fn rebuild_message_list_from_raw_json(raw_message_json: &str) -> Option<Vec<Mess
     }
 }
 
-fn find_media_in_messages(messages: &[Message], media_id: &str) -> Option<PersistedMedia> {
+pub fn find_media_in_messages(messages: &[Message], media_id: &str) -> Option<PersistedMedia> {
     for message in messages {
         match message {
             Message::Image(image) if image.media.media_id == media_id => {
                 return Some(image.media.clone());
+            }
+            Message::Reply(reply) => {
+                if let Some(source_messages) = reply.message_source.as_deref() {
+                    if let Some(media) = find_media_in_messages(source_messages, media_id) {
+                        return Some(media);
+                    }
+                }
             }
             Message::Forward(forward) => {
                 for node in &forward.content {

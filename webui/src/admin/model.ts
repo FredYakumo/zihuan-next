@@ -136,6 +136,7 @@ export const QQ_CHAT_DEFAULT_TOOLS: DefaultToolOption[] = [
   { id: "get_recent_group_messages", label: "get_recent_group_messages", description: "只看群里最近几条消息，不适合按时段分析" },
   { id: "get_recent_user_messages", label: "get_recent_user_messages", description: "查询用户近期消息" },
   { id: "search_similar_images", label: "search_similar_images", description: "语义检索相似图片" },
+  { id: "image_understand", label: "image_understand", description: "按 media_id 理解图片内容" },
 ];
 
 export const HTTP_STREAM_DEFAULT_TOOLS: DefaultToolOption[] = [

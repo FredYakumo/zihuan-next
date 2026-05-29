@@ -30,11 +30,11 @@ use super::super::classify_intent::{classify_intent_with_trace, IntentCategory};
 use super::super::qq_chat_agent_logging::QqChatBrainObserver;
 use super::super::tools::{
     EditableQqAgentTool, GetAgentPublicInfoBrainTool, GetFunctionListBrainTool,
-    GetRecentGroupMessagesBrainTool, GetRecentUserMessagesBrainTool,
+    GetRecentGroupMessagesBrainTool, GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool,
     SearchSimilarImagesBrainTool, ToolNotificationTarget, WebSearchBrainTool,
     DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
     DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
-    DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
+    DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
     QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
 };
 
@@ -136,7 +136,7 @@ impl QqChatAgent {
         if result.inject_to_llm {
             let user_msg_for_cmd = message_with_api_style(
                 build_user_message(
-                    inference_event,
+                    hydrated_event,
                     bot_id,
                     ctx.bot_name,
                     ctx.llm.supports_multimodal_input(),
@@ -324,7 +324,7 @@ impl QqChatAgent {
         };
         let user_msg = message_with_api_style(
             build_user_message(
-                &inference_event,
+                &hydrated_event,
                 bot_id,
                 ctx.bot_name,
                 selected_llm.supports_multimodal_input(),
@@ -431,7 +431,7 @@ impl QqChatAgent {
             let mut locked = shared_runtime_values.lock().unwrap();
             locked.insert(
                 QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
-                DataValue::MessageEvent(inference_event.clone()),
+                DataValue::MessageEvent(hydrated_event.clone()),
             );
             let adapter_handle: zihuan_core::ims_bot_adapter::BotAdapterHandle = ctx.adapter.clone();
             locked.insert(
@@ -537,6 +537,25 @@ impl QqChatAgent {
                 ctx.weaviate_image_ref.cloned(),
                 ctx.embedding_model.cloned(),
                 ctx.tavily.clone(),
+                ctx.s3_ref.cloned(),
+                ToolNotificationTarget::new(
+                    Some(ctx.adapter.clone()),
+                    target_id.to_string(),
+                    if is_group {
+                        Some(sender_id.to_string())
+                    } else {
+                        None
+                    },
+                    is_group,
+                    false,
+                ),
+            ));
+        }
+
+        if self.is_default_tool_enabled(DEFAULT_TOOL_IMAGE_UNDERSTAND) {
+            brain = brain.with_tool(ImageUnderstandBrainTool::new(
+                Some(hydrated_event.clone()),
+                ctx.mysql_ref.cloned(),
                 ctx.s3_ref.cloned(),
                 ToolNotificationTarget::new(
                     Some(ctx.adapter.clone()),

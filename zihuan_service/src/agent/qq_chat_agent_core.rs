@@ -12,7 +12,8 @@ pub(crate) use super::tools::build_info_brain_tools;
 use super::tools::{
     DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
     DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
-    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
+    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
+    DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
     DEFAULT_TOOL_WEB_SEARCH,
 };
 use crate::nodes::tool_subgraph::{
@@ -209,6 +210,7 @@ fn default_tools_enabled_map() -> HashMap<String, bool> {
         DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
         DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
         DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
+        DEFAULT_TOOL_IMAGE_UNDERSTAND,
     ]
     .into_iter()
     .map(|name| (name.to_string(), true))
@@ -741,6 +743,66 @@ struct CurrentTurnUserInput {
     messages: Vec<Message>,
 }
 
+#[derive(Debug, Clone)]
+struct ImagePromptReference {
+    location: String,
+    media_id: String,
+}
+
+fn collect_image_prompt_references(
+    messages: &[Message],
+    current_path: &str,
+    references: &mut Vec<ImagePromptReference>,
+) {
+    for message in messages {
+        match message {
+            Message::Image(image) => {
+                let media_id = image.media.media_id.trim();
+                if media_id.is_empty() {
+                    continue;
+                }
+                references.push(ImagePromptReference {
+                    location: current_path.to_string(),
+                    media_id: media_id.to_string(),
+                });
+            }
+            Message::Reply(reply) => {
+                if let Some(source_messages) = valid_reply_source_messages(reply) {
+                    collect_image_prompt_references(
+                        source_messages,
+                        &format!("引用消息 {}", reply.id),
+                        references,
+                    );
+                }
+            }
+            Message::Forward(forward) => {
+                for (node_index, node) in forward.content.iter().enumerate() {
+                    let sender = node
+                        .nickname
+                        .as_deref()
+                        .or(node.user_id.as_deref())
+                        .unwrap_or("unknown");
+                    collect_image_prompt_references(
+                        &node.content,
+                        &format!("{} / 转发节点 {}({})", current_path, node_index + 1, sender),
+                        references,
+                    );
+                }
+            }
+            Message::PlainText(_) | Message::At(_) => {}
+        }
+    }
+}
+
+fn image_prompt_reference_lines(messages: &[Message]) -> Vec<String> {
+    let mut references = Vec::new();
+    collect_image_prompt_references(messages, "当前消息", &mut references);
+    references
+        .into_iter()
+        .map(|reference| format!("{} media_id={}", reference.location, reference.media_id))
+        .collect()
+}
+
 fn messages_have_effective_content(messages: &[Message], depth: usize) -> bool {
     if depth > 8 {
         return false;
@@ -1004,6 +1066,12 @@ pub(crate) fn build_user_message(
     lines.push(String::new());
     lines.push("[用户消息]".to_string());
     lines.push(current_input.text.clone());
+    let image_reference_lines = image_prompt_reference_lines(&current_input.messages);
+    if !image_reference_lines.is_empty() {
+        lines.push(String::new());
+        lines.push("[可分析图片]".to_string());
+        lines.extend(image_reference_lines);
+    }
 
     let user_text = lines.join("\n");
     if !llm_supports_multimodal_input {
@@ -2118,6 +2186,119 @@ impl QqChatAgentService {
                 )
             },
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use zihuan_core::ims_bot_adapter::models::event_model::{MessageEvent, MessageType, Sender};
+
+    use super::*;
+
+    fn write_temp_image_file(name: &str) -> String {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should be after epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("{}_{}.png", name, unique));
+        fs::write(&path, [0x89, 0x50, 0x4E, 0x47]).expect("write temp image");
+        format!("file://{}", path.to_string_lossy())
+    }
+
+    fn sample_image_message(media_id: &str, location: &str) -> Message {
+        Message::Image(ims_bot_adapter::models::message::ImageMessage::new(
+            PersistedMedia {
+                media_id: media_id.to_string(),
+                source: PersistedMediaSource::QqChat,
+                original_source: location.to_string(),
+                rustfs_path: String::new(),
+                name: Some("sample.png".to_string()),
+                description: None,
+                mime_type: Some("image/png".to_string()),
+            },
+        ))
+    }
+
+    fn sample_event(messages: Vec<Message>) -> MessageEvent {
+        MessageEvent {
+            message_id: 1001,
+            message_type: MessageType::Group,
+            sender: Sender {
+                user_id: 42,
+                nickname: "tester".to_string(),
+                card: String::new(),
+                role: None,
+            },
+            message_list: messages,
+            group_id: Some(7),
+            group_name: Some("test".to_string()),
+            is_group_message: true,
+        }
+    }
+
+    fn assert_contains_image_part(message: OpenAIMessage) {
+        match message.content {
+            Some(MessageContent::Parts(parts)) => {
+                assert!(parts.iter().any(|part| matches!(part, ContentPart::ImageUrl { .. })));
+            }
+            other => panic!("expected multipart user message, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_user_message_keeps_reply_images_for_multimodal_models() {
+        let file_url = write_temp_image_file("reply_image");
+        let image = sample_image_message("media-reply", &file_url);
+        let event = sample_event(vec![Message::Reply(ReplyMessage {
+            id: 55,
+            message_source: Some(vec![image]),
+        })]);
+
+        let message = build_user_message(&event, "2721394556", "bot", true, None);
+        assert_contains_image_part(message);
+    }
+
+    #[test]
+    fn build_user_message_keeps_forward_images_for_multimodal_models() {
+        let file_url = write_temp_image_file("forward_image");
+        let image = sample_image_message("media-forward", &file_url);
+        let event = sample_event(vec![Message::Forward(ForwardMessage {
+            id: Some("forward-1".to_string()),
+            content: vec![ForwardNodeMessage {
+                user_id: Some("123".to_string()),
+                nickname: Some("alice".to_string()),
+                id: None,
+                content: vec![image],
+            }],
+        })]);
+
+        let message = build_user_message(&event, "2721394556", "bot", true, None);
+        assert_contains_image_part(message);
+    }
+
+    #[test]
+    fn build_user_message_exposes_media_ids_for_text_only_models() {
+        let image = sample_image_message("media-text-only", "https://example.com/test.png");
+        let event = sample_event(vec![
+            Message::PlainText(PlainTextMessage {
+                text: "这是真的吗".to_string(),
+            }),
+            Message::Reply(ReplyMessage {
+                id: 88,
+                message_source: Some(vec![image]),
+            }),
+        ]);
+
+        let message = build_user_message(&event, "2721394556", "bot", false, None);
+        let text = message
+            .content_text_owned()
+            .expect("text-only model should receive text");
+        assert!(text.contains("[可分析图片]"));
+        assert!(text.contains("media_id=media-text-only"));
+        assert!(text.contains("引用消息 88"));
     }
 }
 

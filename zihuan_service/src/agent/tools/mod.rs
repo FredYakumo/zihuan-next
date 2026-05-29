@@ -6,9 +6,11 @@ use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::rag::TavilyRef;
 use zihuan_core::weaviate::WeaviateRef;
+use zihuan_graph_engine::object_storage::S3Ref;
 
 mod common;
 mod editable_qq_agent_tool;
+mod image_understand;
 mod image_search;
 mod info_tools;
 mod recent_messages;
@@ -20,6 +22,7 @@ mod build_metadata {
 
 pub(crate) use common::{ToolNotificationTarget, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS};
 pub(crate) use editable_qq_agent_tool::EditableQqAgentTool;
+pub(crate) use image_understand::{execute_image_understand_tool, ImageUnderstandBrainTool};
 pub(crate) use image_search::SearchSimilarImagesBrainTool;
 pub(crate) use info_tools::{GetAgentPublicInfoBrainTool, GetFunctionListBrainTool};
 pub(crate) use recent_messages::{GetRecentGroupMessagesBrainTool, GetRecentUserMessagesBrainTool};
@@ -31,6 +34,7 @@ pub(crate) const DEFAULT_TOOL_GET_FUNCTION_LIST: &str = "get_function_list";
 pub(crate) const DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES: &str = "get_recent_group_messages";
 pub(crate) const DEFAULT_TOOL_GET_RECENT_USER_MESSAGES: &str = "get_recent_user_messages";
 pub(crate) const DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES: &str = "search_similar_images";
+pub(crate) const DEFAULT_TOOL_IMAGE_UNDERSTAND: &str = "image_understand";
 const AGENT_PUBLIC_NAME: &str = "紫幻zihuan-next";
 const AGENT_GITHUB_REPOSITORY: &str = "https://github.com/FredYakumo/zihuan-next";
 const AGENT_GIT_COMMIT_ID: &str = build_metadata::ZIHUAN_GIT_COMMIT_ID;
@@ -39,6 +43,7 @@ pub(crate) fn build_info_brain_tools(
     default_tools_enabled: &HashMap<String, bool>,
     tavily_ref: Option<Arc<TavilyRef>>,
     mysql_ref: Option<Arc<MySqlConfig>>,
+    s3_ref: Option<Arc<S3Ref>>,
     weaviate_image_ref: Option<Arc<WeaviateRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
     current_message: String,
@@ -91,9 +96,18 @@ pub(crate) fn build_info_brain_tools(
                 embedding_model,
                 tavily,
                 None,
-                dashboard_target,
+                dashboard_target.clone(),
             )));
         }
+    }
+
+    if is_enabled(default_tools_enabled, DEFAULT_TOOL_IMAGE_UNDERSTAND) {
+        tools.push(Box::new(ImageUnderstandBrainTool::new(
+            None,
+            mysql_ref,
+            s3_ref,
+            dashboard_target,
+        )));
     }
 
     tools

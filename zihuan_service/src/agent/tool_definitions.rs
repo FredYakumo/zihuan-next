@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use model_inference::system_config::{AgentToolConfig, AgentToolType, NodeGraphToolConfig};
 use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::brain_tool_spec::{
-    fixed_tool_runtime_inputs, BrainToolDefinition, ToolParamDef, QQ_AGENT_TOOL_OWNER_TYPE,
+    fixed_tool_runtime_inputs, BrainToolDefinition, BrainToolImplementation, ToolParamDef,
+    QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::graph_boundary::{root_graph_to_tool_subgraph, sync_root_graph_io};
@@ -77,6 +78,8 @@ fn build_node_graph_tool_definition(
         name: tool.name.clone(),
         description: tool.description.clone(),
         run_duration: tool.run_duration,
+        implementation: BrainToolImplementation::NodeGraph,
+        built_in_kind: None,
         parameters,
         outputs,
         subgraph,

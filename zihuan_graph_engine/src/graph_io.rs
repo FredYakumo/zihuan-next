@@ -753,6 +753,9 @@ fn refresh_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
 
         for (index, tool) in tools.iter_mut().enumerate() {
             tool.ensure_defaults(index + 1);
+            if !tool.uses_subgraph() {
+                continue;
+            }
             refresh_port_types_internal(&mut tool.subgraph);
             let input_signature = brain_tool_input_signature(&node.node_type, &shared_inputs, tool);
             let outputs = normalized_tool_outputs_for_owner(&node.node_type, tool);
@@ -792,6 +795,9 @@ fn validate_embedded_subgraphs(graph: &NodeGraphDefinition) -> Vec<ValidationIss
             match serde_json::from_value::<Vec<BrainToolDefinition>>(value.clone()) {
                 Ok(tools) => {
                     for tool in tools {
+                        if !tool.uses_subgraph() {
+                            continue;
+                        }
                         let prefix = format!(
                             "{} 节点 \"{}\" 的 Tool \"{}\" 子图",
                             node.node_type, node.name, tool.name
@@ -844,6 +850,9 @@ fn auto_fix_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
 
         for (index, tool) in tools.iter_mut().enumerate() {
             tool.ensure_defaults(index + 1);
+            if !tool.uses_subgraph() {
+                continue;
+            }
             auto_fix_graph_definition(&mut tool.subgraph);
             let input_signature = brain_tool_input_signature(&node.node_type, &shared_inputs, tool);
             let outputs = normalized_tool_outputs_for_owner(&node.node_type, tool);

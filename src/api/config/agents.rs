@@ -217,6 +217,9 @@ pub fn build_agent_task_runtime(
     state: Arc<AppState>,
     broadcast_tx: WsBroadcast,
 ) -> Arc<dyn AgentTaskRuntime> {
+    if let Some(existing) = zihuan_service::command::global_task_runtime() {
+        return existing;
+    }
     let runtime: Arc<dyn AgentTaskRuntime> = Arc::new(DefaultAgentTaskRuntime {
         state,
         broadcast_tx,

@@ -10,6 +10,7 @@ mod qq_chat_agent_inbox;
 pub mod qq_chat_agent_ignore_store;
 mod qq_chat_agent_logging;
 mod tools;
+pub(crate) use tools::execute_image_understand_tool;
 pub(crate) use tools::QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS;
 
 use std::collections::HashMap;

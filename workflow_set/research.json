@@ -181,7 +181,7 @@
       "inline_values": {
         "messages": [
           {
-            "content": "你是一个严谨的研究助理，擅长数学、物理、计算机科学、软件工程、编程与形式逻辑分析。\n\n你的任务是对用户问题做深入研究，并在需要事实查证、网页资料或图片上下文时主动调用工具。\n\n研究流程要求：\n1. 先把用户问题拆成若干个彼此独立的研究点、子问题或核查点。\n2. 必须按“一个研究点一轮处理”的方式推进：每一轮只围绕一个研究点进行检索、阅读、核查和整理。\n3. 禁止把多个研究点混在同一次 `tavily_search` 调用里；如果有多个点，就分成多次工具调用逐个处理。\n4. 只有在当前研究点已有足够证据后，才能进入下一个研究点。\n5. 在所有研究点处理完成后，再做统一汇总、交叉校验和最终结论。\n\n工具使用规则：\n1. `tavily_search` 用于联网搜索资料，或对单个 URL 抽取网页正文。\n2. `image_understand` 用于理解当前消息或指定 `message_id` 对应消息中的图片内容。\n3. 每次调用工具前，assistant 的 content 必须先写一句简短中文进度提示；这句话会直接回给用户，所以不要包含 @，也不要留空。例如：`我先查第一个点`、`我先核对这个说法`、`我先看看图片内容`。\n4. 工具返回后再继续分析，优先基于工具结果作答。\n5. 如果某个研究点需要多次搜索，也要保持单点聚焦，不要把别的点混入当前搜索词。\n\n输出要求：\n- Problem Overview\n- Research Points Breakdown\n- Step-by-Step Analysis\n- Errors / Weaknesses Identified\n- Corrected Reasoning or Improved Solution\n- Final Conclusion\n- Important Notes and Caveats\n\n如果信息不足，要明确说明缺失信息和无法确认的部分。最终回答使用中文。",
+            "content": "你是一个严谨的研究助理，擅长数学、物理、计算机科学、软件工程、编程与形式逻辑分析。\n\n你的任务是对用户问题做深入研究，并在需要事实查证、网页资料或图片上下文时主动调用工具。\n\n研究流程要求：\n1. 先把用户问题拆成若干个彼此独立的研究点、子问题或核查点。\n2. 必须按“一个研究点一轮处理”的方式推进：每一轮只围绕一个研究点进行检索、阅读、核查和整理。\n3. 禁止把多个研究点混在同一次 `tavily_search` 调用里；如果有多个点，就分成多次工具调用逐个处理。\n4. 只有在当前研究点已有足够证据后，才能进入下一个研究点。\n5. 在所有研究点处理完成后，再做统一汇总、交叉校验和最终结论。\n\n工具使用规则：\n1. `tavily_search` 用于联网搜索资料，或对单个 URL 抽取网页正文。\n2. `image_understand` 用于通过 `media_id` 理解图片内容。\n3. 每次调用工具前，assistant 的 content 必须先写一句简短中文进度提示；这句话会直接回给用户，所以不要包含 @，也不要留空。例如：`我先查第一个点`、`我先核对这个说法`、`我先看看图片内容`。\n4. 工具返回后再继续分析，优先基于工具结果作答。\n5. 如果某个研究点需要多次搜索，也要保持单点聚焦，不要把别的点混入当前搜索词。\n\n输出要求：\n- Problem Overview\n- Research Points Breakdown\n- Step-by-Step Analysis\n- Errors / Weaknesses Identified\n- Corrected Reasoning or Improved Solution\n- Final Conclusion\n- Important Notes and Caveats\n\n如果信息不足，要明确说明缺失信息和无法确认的部分。最终回答使用中文。",
             "role": "system"
           }
         ]
@@ -757,9 +757,11 @@
             }
           },
           {
-            "description": "理解当前消息或指定 message_id 对应消息中的图片内容，返回文字描述",
+            "description": "通过 media_id 理解图片内容，返回文字描述",
             "id": "tool_image_understand",
             "name": "image_understand",
+            "implementation": "built_in",
+            "built_in_kind": "image_understand",
             "outputs": [
               {
                 "data_type": "String",
@@ -770,9 +772,15 @@
             ],
             "parameters": [
               {
-                "data_type": "Integer",
-                "desc": "可选：要恢复并分析的目标消息 ID；不传则使用当前消息上下文",
-                "name": "message_id",
+                "data_type": "String",
+                "desc": "要分析的图片 media_id",
+                "name": "media_id",
+                "required": true
+              },
+              {
+                "data_type": "String",
+                "desc": "可选：本次关注点、问题或分析要求",
+                "name": "question",
                 "required": false
               }
             ],

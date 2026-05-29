@@ -16,9 +16,10 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::task_context::append_current_task_progress;
 use zihuan_graph_engine::brain_tool_spec::{
-    brain_tool_input_signature, fixed_tool_runtime_inputs, BrainToolDefinition, ToolParamDef,
-    BRAIN_TOOL_FIXED_CONTENT_INPUT, QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
-    QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
+    brain_tool_input_signature, fixed_tool_runtime_inputs, BrainToolDefinition,
+    BrainToolImplementation, BuiltInBrainToolKind, ToolParamDef, BRAIN_TOOL_FIXED_CONTENT_INPUT,
+    QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
+    QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use zihuan_graph_engine::function_graph::{
     sync_function_subgraph_signature, FunctionPortDef, FUNCTION_INPUTS_NODE_ID,
@@ -32,6 +33,7 @@ use zihuan_graph_engine::util::function::{
 use zihuan_graph_engine::{DataType, DataValue, Port};
 
 use crate::agent::QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS;
+use crate::agent::execute_image_understand_tool;
 
 pub const QQ_AGENT_TOOL_OUTPUT_NAME: &str = "result";
 
@@ -207,6 +209,19 @@ fn normalize_outputs_for_mode(
     Ok(())
 }
 
+fn validate_tool_implementation(tool: &BrainToolDefinition) -> Result<()> {
+    match tool.implementation {
+        BrainToolImplementation::NodeGraph => Ok(()),
+        BrainToolImplementation::BuiltIn => match tool.builtin_kind() {
+            Some(BuiltInBrainToolKind::ImageUnderstand) => Ok(()),
+            None => Err(Error::ValidationError(format!(
+                "Tool '{}' 使用 built_in implementation 时必须声明 built_in_kind",
+                tool.name.trim()
+            ))),
+        },
+    }
+}
+
 pub fn validate_tool_definitions(
     tool_definitions: &[BrainToolDefinition],
     shared_inputs: &[FunctionPortDef],
@@ -283,8 +298,11 @@ pub fn validate_tool_definitions(
         }
 
         normalize_outputs_for_mode(&mut tool, result_mode)?;
-        let input_signature = brain_tool_input_signature(owner_node_type, shared_inputs, &tool);
-        sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &tool.outputs);
+        validate_tool_implementation(&tool)?;
+        if tool.uses_subgraph() {
+            let input_signature = brain_tool_input_signature(owner_node_type, shared_inputs, &tool);
+            sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &tool.outputs);
+        }
         normalized.push(tool);
     }
 
@@ -400,6 +418,7 @@ impl ToolSubgraphRunner {
                 )));
             }
         };
+        let builtin_arguments = Value::Object(tool_runtime_values.clone());
 
         let mut runtime_values = self.shared_runtime_values.lock().unwrap().clone();
         runtime_values.insert(
@@ -449,6 +468,41 @@ impl ToolSubgraphRunner {
 
         let input_signature =
             brain_tool_input_signature(&self.owner_node_type, &self.shared_inputs, tool);
+        if !tool.uses_subgraph() {
+            let result = match tool.builtin_kind() {
+                Some(BuiltInBrainToolKind::ImageUnderstand) => {
+                    execute_image_understand_tool(&builtin_arguments, &runtime_values)
+                }
+                None => Err(self.wrap_error(format!(
+                    "Tool '{}' missing built_in_kind",
+                    tool.name
+                ))),
+            }?;
+
+            return match self.result_mode {
+                ToolResultMode::JsonObject => {
+                    let output = tool.outputs.first().ok_or_else(|| {
+                        self.wrap_error(format!("Tool '{}' 必须声明一个 String 输出", tool.name))
+                    })?;
+                    let result_payload =
+                        Value::Object(Map::from_iter([(output.name.clone(), Value::String(result))]))
+                            .to_string();
+                    info!(
+                        "[ToolSubgraph:{}] tool '{}' succeeded with result: {}",
+                        self.node_id, tool.name, result_payload
+                    );
+                    Ok(result_payload)
+                }
+                ToolResultMode::SingleString => {
+                    info!(
+                        "[ToolSubgraph:{}] tool '{}' succeeded with result: {}",
+                        self.node_id, tool.name, result
+                    );
+                    Ok(result)
+                }
+            };
+        }
+
         let mut subgraph = tool.subgraph.clone();
         sync_function_subgraph_signature(&mut subgraph, &input_signature, &tool.outputs);
         refresh_port_types(&mut subgraph);

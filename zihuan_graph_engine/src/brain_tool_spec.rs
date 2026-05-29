@@ -14,6 +14,20 @@ pub const QQ_AGENT_TOOL_OWNER_TYPE: &str = "qq_chat_agent";
 pub const QQ_AGENT_TOOL_OWNER_TYPE_LEGACY: &str = "qq_message_agent";
 pub const QQ_AGENT_TOOL_OUTPUT_NAME: &str = "result";
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum BrainToolImplementation {
+    #[default]
+    NodeGraph,
+    BuiltIn,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BuiltInBrainToolKind {
+    ImageUnderstand,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ToolParamDef {
     pub name: String,
@@ -38,6 +52,10 @@ pub struct BrainToolDefinition {
     #[serde(default)]
     pub run_duration: ToolRunDuration,
     #[serde(default)]
+    pub implementation: BrainToolImplementation,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub built_in_kind: Option<BuiltInBrainToolKind>,
+    #[serde(default)]
     pub parameters: Vec<ToolParamDef>,
     #[serde(default)]
     pub outputs: Vec<FunctionPortDef>,
@@ -54,9 +72,17 @@ impl BrainToolDefinition {
         if self.id.trim().is_empty() {
             self.id = format!("tool_{fallback_index}");
         }
-        if self.subgraph.nodes.is_empty() {
+        if self.uses_subgraph() && self.subgraph.nodes.is_empty() {
             self.subgraph = default_function_subgraph();
         }
+    }
+
+    pub fn uses_subgraph(&self) -> bool {
+        matches!(self.implementation, BrainToolImplementation::NodeGraph)
+    }
+
+    pub fn builtin_kind(&self) -> Option<BuiltInBrainToolKind> {
+        self.built_in_kind
     }
 
     pub fn output_boundary_node_id() -> &'static str {
