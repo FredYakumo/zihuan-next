@@ -1339,10 +1339,10 @@ fn notification_text_batches(content: &str, is_group: bool, sender_id: Option<&s
 fn build_long_task_start_text(task_id: &str, call_content: &str) -> String {
     let content = call_content.trim();
     if content.is_empty() {
-        format!("⏳ 正在执行长时任务\n任务ID: {task_id}\n可使用 /task {task_id} 查看进度。")
+        format!("正在执行长时任务\n可使用 /task {task_id} 查看进度。")
     } else {
         format!(
-            "⏳ 正在执行：{content}\n任务ID: {task_id}\n可使用 /task {task_id} 查看进度。"
+            "{content}\n可使用 /task {task_id} 查看进度。"
         )
     }
 }
@@ -1377,8 +1377,7 @@ fn send_forward_content_to_target(
     content: &str,
     is_group: bool,
 ) -> Result<()> {
-    let forward = build_forward_message(content, bot_id, bot_name)?;
-    let batches = vec![vec![Message::Forward(forward)]];
+    let batches = build_forward_message_batches(content, bot_id, bot_name)?;
     send_persisted_batches(
         adapter,
         target_id,
@@ -1390,6 +1389,28 @@ fn send_forward_content_to_target(
         is_group,
     );
     Ok(())
+}
+
+fn build_forward_message_batches(
+    content: &str,
+    bot_id: &str,
+    bot_name: &str,
+) -> Result<Vec<Vec<Message>>> {
+    let chunks = split_text_by_semantic_boundaries(content, MAX_FORWARD_NODE_CHARS);
+    let mut batches = Vec::new();
+
+    for chunk in chunks {
+        let forward = build_forward_message_from_chunks(vec![chunk], bot_id, bot_name)?;
+        batches.push(vec![Message::Forward(forward)]);
+    }
+
+    if batches.is_empty() {
+        return Err(Error::ValidationError(
+            "forward content must not be blank".to_string(),
+        ));
+    }
+
+    Ok(batches)
 }
 
 pub(crate) fn build_model_name_reply(model_display_names: &[String]) -> String {

@@ -28,4 +28,4 @@ hex = "0.4"
 percent-encoding = "2.3"
 base64 = "0.22"
 uuid = { version = "1", features = ["v4"] }
-
+zihuan_nlp = { path = "../zihuan_nlp" }

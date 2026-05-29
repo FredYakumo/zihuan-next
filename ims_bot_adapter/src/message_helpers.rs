@@ -8,7 +8,7 @@ use crate::models::event_model::{MessageEvent, MessageType, Sender};
 use crate::models::message::{AtTargetMessage, Message, PlainTextMessage};
 use crate::send_qq_message_batches::send_qq_message_batches;
 use crate::ws_action::{
-    qq_message_list_to_json, response_message_id, response_success, ws_send_action,
+    response_message_id, response_success, ws_send_action,
 };
 use log::{info, warn};
 use std::sync::Arc;
@@ -16,8 +16,10 @@ use tokio::task::block_in_place;
 use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
 use zihuan_graph_engine::data_value::RedisConfig;
 use zihuan_graph_engine::message_persistence::persist_message_event;
+use zihuan_nlp::{PunctuationSegmenter, TextSegmenter};
 
 const LOG_PREFIX: &str = "[message_helpers]";
+const MAX_BATCH_TEXT_CHARS: usize = 800;
 
 #[derive(Debug, Clone, Default)]
 pub struct OutboundMessagePersistence {
@@ -141,6 +143,35 @@ fn persist_outbound_messages(
             error
         );
     }
+}
+
+fn split_text_for_qq(content: &str) -> Vec<String> {
+    PunctuationSegmenter.segment(content, MAX_BATCH_TEXT_CHARS)
+}
+
+fn plain_text_batches(content: &str) -> Vec<Vec<Message>> {
+    split_text_for_qq(content)
+        .into_iter()
+        .map(|chunk| vec![Message::PlainText(PlainTextMessage { text: chunk })])
+        .collect()
+}
+
+fn progress_notification_batches(content: &str, is_group: bool, mention_target_id: Option<&str>) -> Vec<Vec<Message>> {
+    let mut batches = plain_text_batches(content);
+    if is_group {
+        if let (Some(mention_target_id), Some(first_batch)) = (mention_target_id, batches.first_mut()) {
+            first_batch.insert(
+                0,
+                Message::At(AtTargetMessage {
+                    target: Some(mention_target_id.to_string()),
+                }),
+            );
+            if let Some(Message::PlainText(first_text)) = first_batch.get_mut(1) {
+                first_text.text = format!(" {}", first_text.text.trim_start());
+            }
+        }
+    }
+    batches
 }
 
 /// Return the bot's self QQ ID from a shared adapter handle.
@@ -331,20 +362,10 @@ pub fn send_group_progress_notification(
     if content.trim().is_empty() {
         return;
     }
-    let messages = vec![
-        Message::At(AtTargetMessage {
-            target: Some(mention_target_id.to_string()),
-        }),
-        Message::PlainText(PlainTextMessage {
-            text: content.to_string(),
-        }),
-    ];
-    let params = serde_json::json!({
-        "group_id": group_id,
-        "message": qq_message_list_to_json(&messages),
-    });
-    if let Err(e) = ws_send_action(adapter, "send_group_msg", params) {
-        warn!("{LOG_PREFIX} Failed to send group progress notification: {e}");
+    let batches = progress_notification_batches(content, true, Some(mention_target_id));
+    let results = send_qq_message_batches(adapter, "group", group_id, &batches);
+    if results.iter().filter(|result| !result.skipped).any(|result| !result.success) {
+        warn!("{LOG_PREFIX} Failed to send group progress notification");
     }
 }
 
@@ -358,34 +379,22 @@ pub fn send_group_progress_notification_with_persistence(
     if content.trim().is_empty() {
         return;
     }
-    let messages = vec![
-        Message::At(AtTargetMessage {
-            target: Some(mention_target_id.to_string()),
-        }),
-        Message::PlainText(PlainTextMessage {
-            text: content.to_string(),
-        }),
-    ];
-    let params = serde_json::json!({
-        "group_id": group_id,
-        "message": qq_message_list_to_json(&messages),
-    });
-    match ws_send_action(adapter, "send_group_msg", params) {
-        Ok(response) => {
-            if response_success(&response) {
-                persist_outbound_messages(
-                    adapter,
-                    MessageType::Group,
-                    group_id,
-                    response_message_id(&response).unwrap_or(-1),
-                    &messages,
-                    persistence,
-                );
-            }
+    let batches = progress_notification_batches(content, true, Some(mention_target_id));
+    let results = send_qq_message_batches(adapter, "group", group_id, &batches);
+    for (batch, result) in batches.iter().zip(results.iter()) {
+        if result.success && !result.skipped {
+            persist_outbound_messages(
+                adapter,
+                MessageType::Group,
+                group_id,
+                result.message_id,
+                batch,
+                persistence,
+            );
         }
-        Err(e) => {
-            warn!("{LOG_PREFIX} Failed to send group progress notification: {e}");
-        }
+    }
+    if results.iter().filter(|result| !result.skipped).any(|result| !result.success) {
+        warn!("{LOG_PREFIX} Failed to send group progress notification");
     }
 }
 
@@ -400,7 +409,11 @@ pub fn send_friend_progress_notification(
     if content.trim().is_empty() {
         return;
     }
-    send_friend_text(adapter, target_id, content);
+    let batches = plain_text_batches(content);
+    let results = send_qq_message_batches(adapter, "friend", target_id, &batches);
+    if results.iter().filter(|result| !result.skipped).any(|result| !result.success) {
+        warn!("{LOG_PREFIX} Failed to send friend progress notification");
+    }
 }
 
 pub fn send_friend_progress_notification_with_persistence(
@@ -412,5 +425,21 @@ pub fn send_friend_progress_notification_with_persistence(
     if content.trim().is_empty() {
         return;
     }
-    send_friend_text_with_persistence(adapter, target_id, content, persistence);
+    let batches = plain_text_batches(content);
+    let results = send_qq_message_batches(adapter, "friend", target_id, &batches);
+    for (batch, result) in batches.iter().zip(results.iter()) {
+        if result.success && !result.skipped {
+            persist_outbound_messages(
+                adapter,
+                MessageType::Private,
+                target_id,
+                result.message_id,
+                batch,
+                persistence,
+            );
+        }
+    }
+    if results.iter().filter(|result| !result.skipped).any(|result| !result.success) {
+        warn!("{LOG_PREFIX} Failed to send friend progress notification");
+    }
 }
