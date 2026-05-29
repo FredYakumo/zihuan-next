@@ -278,6 +278,7 @@ fn build_brain(
                 shared_inputs: Vec::new(),
                 definition: tool_def,
                 shared_runtime_values: Arc::new(Mutex::new(HashMap::new())),
+                qq_chat_agent_config: None,
                 result_mode: ToolResultMode::JsonObject,
             },
         });

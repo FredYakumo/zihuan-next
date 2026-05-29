@@ -256,6 +256,7 @@ impl Node for BrainNode {
                     shared_inputs: self.shared_inputs.clone(),
                     definition: tool_def.clone(),
                     shared_runtime_values: Arc::new(Mutex::new(shared_runtime_values.clone())),
+                    qq_chat_agent_config: None,
                     result_mode: ToolResultMode::JsonObject,
                 },
             });

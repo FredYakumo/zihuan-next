@@ -94,33 +94,6 @@
         "height": 220.0
       },
       "inline_values": {
-        "shared_inputs": [
-          {
-            "data_type": "MySqlRef",
-            "description": "",
-            "name": "mysql_ref"
-          },
-          {
-            "data_type": "WeaviateRef",
-            "description": "",
-            "name": "weaviate_ref"
-          },
-          {
-            "data_type": "EmbeddingModel",
-            "description": "",
-            "name": "embedding_model"
-          },
-          {
-            "data_type": "MessageEvent",
-            "description": "",
-            "name": "message_event"
-          },
-          {
-            "data_type": "BotAdapterRef",
-            "description": "",
-            "name": "qq_ims_bot_adapter"
-          }
-        ],
         "tools_config": [
           {
             "description": "在 MySQL 消息记录中搜索聊天消息；未使用的文本过滤条件传空字符串",
@@ -978,6 +951,33 @@
               ],
               "variables": []
             }
+          }
+        ],
+        "shared_inputs": [
+          {
+            "data_type": "MySqlRef",
+            "description": "",
+            "name": "mysql_ref"
+          },
+          {
+            "data_type": "WeaviateRef",
+            "description": "",
+            "name": "weaviate_ref"
+          },
+          {
+            "data_type": "EmbeddingModel",
+            "description": "",
+            "name": "embedding_model"
+          },
+          {
+            "data_type": "MessageEvent",
+            "description": "",
+            "name": "message_event"
+          },
+          {
+            "data_type": "BotAdapterRef",
+            "description": "",
+            "name": "qq_ims_bot_adapter"
           }
         ]
       },
@@ -2561,7 +2561,7 @@
                 "port_bindings": {},
                 "position": {
                   "x": 1130,
-                  "y": 373.33334
+                  "y": 373.3333435058594
                 },
                 "size": {
                   "height": 120,
@@ -2612,7 +2612,7 @@
                 "port_bindings": {},
                 "position": {
                   "x": 3390,
-                  "y": 373.33334
+                  "y": 373.3333435058594
                 },
                 "size": {
                   "height": 120,

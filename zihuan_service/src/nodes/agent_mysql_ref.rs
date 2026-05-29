@@ -43,7 +43,7 @@ impl Node for AgentMySqlRefNode {
         _inputs: zihuan_graph_engine::NodeInputFlow,
     ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let config = current_qq_chat_agent_config()?;
-        let mysql_connection_id = config.mysql_connection_id.as_deref();
+        let mysql_connection_id = config.resolved_rdb_id();
         let mysql_connection_id = mysql_connection_id
             .map(str::trim)
             .filter(|value| !value.is_empty())

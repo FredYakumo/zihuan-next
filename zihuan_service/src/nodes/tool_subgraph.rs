@@ -11,6 +11,7 @@ use log::{info, warn};
 use serde_json::{json, Map, Value};
 
 use zihuan_agent::brain::{consume_tool_progress_notification, current_task_progress_message};
+use zihuan_core::agent_config::{with_current_qq_chat_agent_config, QqChatAgentConfig};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::task_context::append_current_task_progress;
@@ -47,6 +48,7 @@ pub struct ToolSubgraphRunner {
     pub shared_inputs: Vec<FunctionPortDef>,
     pub definition: BrainToolDefinition,
     pub shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
+    pub qq_chat_agent_config: Option<QqChatAgentConfig>,
     pub result_mode: ToolResultMode,
 }
 
@@ -487,7 +489,11 @@ impl ToolSubgraphRunner {
             .map_err(|e| {
                 self.wrap_error(format!("Tool '{}' 注入子图运行时输入失败: {e}", tool.name))
             })?;
-        let execution_result = graph.execute_and_capture_results();
+        let execution_result = if let Some(config) = self.qq_chat_agent_config.clone() {
+            with_current_qq_chat_agent_config(config, || graph.execute_and_capture_results())
+        } else {
+            graph.execute_and_capture_results()
+        };
         if let Some(ref error_message) = execution_result.error_message {
             warn!(
                 "[ToolSubgraph:{}] tool '{}' execution failed: {error_message}",

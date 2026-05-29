@@ -16,6 +16,7 @@ use model_inference::message_content_utils::{
 use zihuan_agent::brain::{Brain, BrainStopReason, LongTaskContext};
 
 use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
+use zihuan_core::agent_config::current_qq_chat_agent_config;
 use zihuan_core::error::Result;
 use zihuan_core::llm::{OpenAIMessage, TokenUsage};
 
@@ -551,6 +552,7 @@ impl QqChatAgent {
             ));
         }
 
+        let qq_chat_agent_config = current_qq_chat_agent_config()?;
         for tool_def in &self.tool_definitions {
             brain.add_tool(EditableQqAgentTool {
                 runner: ToolSubgraphRunner {
@@ -559,6 +561,7 @@ impl QqChatAgent {
                     shared_inputs: self.shared_inputs.clone(),
                     definition: tool_def.clone(),
                     shared_runtime_values: Arc::clone(&shared_runtime_values),
+                    qq_chat_agent_config: Some(qq_chat_agent_config.clone()),
                     result_mode: ToolResultMode::SingleString,
                 },
             });
