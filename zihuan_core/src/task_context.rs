@@ -6,6 +6,7 @@ use serde::Serialize;
 
 thread_local! {
     static CURRENT_TASK_ID: RefCell<Option<String>> = const { RefCell::new(None) };
+    static CURRENT_TASK_RUNTIME: RefCell<Option<Arc<dyn AgentTaskRuntime>>> = const { RefCell::new(None) };
 }
 
 pub fn scope_task_id<T>(task_id: impl Into<String>, f: impl FnOnce() -> T) -> T {
@@ -20,6 +21,30 @@ pub fn scope_task_id<T>(task_id: impl Into<String>, f: impl FnOnce() -> T) -> T 
 
 pub fn current_task_id() -> Option<String> {
     CURRENT_TASK_ID.with(|cell| cell.borrow().clone())
+}
+
+pub fn scope_task_runtime<T>(task_runtime: Arc<dyn AgentTaskRuntime>, f: impl FnOnce() -> T) -> T {
+    CURRENT_TASK_RUNTIME.with(|cell| {
+        let previous = cell.replace(Some(task_runtime));
+        let result = f();
+        cell.replace(previous);
+        result
+    })
+}
+
+pub fn current_task_runtime() -> Option<Arc<dyn AgentTaskRuntime>> {
+    CURRENT_TASK_RUNTIME.with(|cell| cell.borrow().clone())
+}
+
+pub fn append_current_task_progress(message: String) -> bool {
+    let Some(task_id) = current_task_id() else {
+        return false;
+    };
+    let Some(runtime) = current_task_runtime() else {
+        return false;
+    };
+    runtime.append_task_progress(&task_id, message);
+    true
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

@@ -13,7 +13,7 @@ use serde_json::{json, Map, Value};
 use zihuan_agent::brain::{consume_tool_progress_notification, current_task_progress_message};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::task_context::current_task_id;
+use zihuan_core::task_context::append_current_task_progress;
 use zihuan_graph_engine::brain_tool_spec::{
     brain_tool_input_signature, fixed_tool_runtime_inputs, BrainToolDefinition, ToolParamDef,
     BRAIN_TOOL_FIXED_CONTENT_INPUT, QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
@@ -306,19 +306,16 @@ fn send_brain_tool_progress_notification(
     call_content: &str,
 ) {
     let shared_rt = shared_runtime_values.lock().unwrap();
+    if let Some(progress_text) = current_task_progress_message(call_content) {
+        if append_current_task_progress(progress_text) {
+            return;
+        }
+    }
+
     if matches!(
         shared_rt.get(QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS),
         Some(DataValue::Boolean(false))
     ) {
-        return;
-    }
-
-    if let Some(task_id) = current_task_id() {
-        if let Some(progress_text) = current_task_progress_message(call_content) {
-            if let Some(runtime) = crate::command::global_task_runtime() {
-                runtime.append_task_progress(&task_id, progress_text);
-            }
-        }
         return;
     }
 

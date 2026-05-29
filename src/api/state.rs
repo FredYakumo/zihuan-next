@@ -109,6 +109,7 @@ pub struct TaskLogEntry {
 pub struct TaskManager {
     tasks: Vec<TaskEntry>,
     db_pools: HashMap<String, RelationalDbConnection>,
+    next_task_progress_seq: Mutex<HashMap<String, i32>>,
 }
 
 impl TaskManager {
@@ -116,6 +117,7 @@ impl TaskManager {
         let mut manager = Self {
             tasks: Vec::new(),
             db_pools: HashMap::new(),
+            next_task_progress_seq: Mutex::new(HashMap::new()),
         };
         if let Err(err) = manager.load_persisted_tasks() {
             log::warn!("Failed to load persisted task records: {}", err);
@@ -402,11 +404,17 @@ impl TaskManager {
             if let Some(conn_id) = &task.task_db_connection_id {
                 if let Some(pool) = self.get_db_pool(conn_id) {
                     let task_id = task_id.to_string();
+                    let seq = {
+                        let mut guard = self.next_task_progress_seq.lock().unwrap();
+                        let next = guard.get(task_id.as_str()).copied().unwrap_or(0);
+                        guard.insert(task_id.clone(), next + 1);
+                        next
+                    };
                     tokio::spawn(async move {
                         if let Err(err) = crate::api::task_store::append_task_progress(
                             &pool,
                             &task_id,
-                            0,
+                            seq,
                             &message,
                         )
                         .await

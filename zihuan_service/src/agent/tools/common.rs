@@ -12,7 +12,7 @@ use ims_bot_adapter::message_helpers::{
 use ims_bot_adapter::models::event_model::MessageType;
 use zihuan_agent::brain::{current_task_progress_message, consume_tool_progress_notification};
 use zihuan_core::error::{Error, Result};
-use zihuan_core::task_context::current_task_id;
+use zihuan_core::task_context::append_current_task_progress;
 use zihuan_graph_engine::{DataType, DataValue};
 
 const LOG_PREFIX: &str = "[QqChatAgent]";
@@ -97,24 +97,16 @@ pub(crate) fn send_editable_tool_progress_notification(
     call_content: &str,
 ) {
     let shared_rt = shared_runtime_values.lock().unwrap();
+    if let Some(progress_text) = current_task_progress_message(call_content) {
+        if append_current_task_progress(progress_text) {
+            return;
+        }
+    }
+
     if matches!(
         shared_rt.get(QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS),
         Some(DataValue::Boolean(false))
     ) {
-        return;
-    }
-
-    if let Some(task_id) = current_task_id() {
-        if let Some(progress_text) = current_task_progress_message(call_content) {
-            if let Some(runtime) = crate::command::global_task_runtime() {
-                runtime.append_task_progress(&task_id, progress_text);
-            }
-        }
-        return;
-    }
-
-    // Deduplicate and skip empty progress; the same content may stream in repeatedly.
-    if !consume_tool_progress_notification(call_content) {
         return;
     }
 

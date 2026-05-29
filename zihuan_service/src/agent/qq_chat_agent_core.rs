@@ -48,7 +48,8 @@ use zihuan_core::llm::{ContentPart, MessageContent, OpenAIMessage};
 use zihuan_core::rag::TavilyRef;
 use zihuan_core::runtime::block_async;
 use zihuan_core::task_context::{
-    scope_task_id, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
+    scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime,
+    AgentTaskStatus,
 };
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::brain_tool_spec::{
@@ -1346,10 +1347,23 @@ fn build_long_task_start_text(task_id: &str, call_content: &str) -> String {
     }
 }
 
-fn build_long_task_complete_content(task_id: &str, task_name: &str, result: &str) -> String {
+fn build_long_task_complete_content(
+    task_id: &str,
+    task_name: &str,
+    progress: &[String],
+    result: &str,
+) -> String {
     let result = result.trim();
     let result = if result.is_empty() { "（工具未返回内容）" } else { result };
-    format!("✅ 完成\n任务: {task_name}\n任务ID: {task_id}\n\n{result}")
+    let mut content = format!("✅ 完成\n任务: {task_name}\n任务ID: {task_id}");
+    if !progress.is_empty() {
+        content.push_str("\n\n进展回顾:");
+        for (index, item) in progress.iter().enumerate() {
+            content.push_str(&format!("\n{}. {}", index + 1, item));
+        }
+    }
+    content.push_str(&format!("\n\n{result}"));
+    content
 }
 
 fn send_forward_content_to_target(
@@ -1533,7 +1547,11 @@ impl LongTaskNotifier for QqLongTaskNotifier {
     }
 
     fn on_complete(&self, task_id: &str, task_name: &str, result: &str) {
-        let content = build_long_task_complete_content(task_id, task_name, result);
+        let progress = crate::command::global_task_runtime()
+            .and_then(|runtime| runtime.query_task(task_id))
+            .map(|task| task.progress)
+            .unwrap_or_default();
+        let content = build_long_task_complete_content(task_id, task_name, &progress, result);
         if let Err(err) = send_forward_content_to_target(
             &self.adapter,
             &self.target_id,
@@ -1913,17 +1931,33 @@ impl QqChatAgent {
         });
         let trace = QqChatTaskTrace::new(task_created_at);
         let result = if let Some(task_handle) = task_handle.as_ref() {
-            scope_task_id(task_handle.task_id.clone(), || {
-                self.handle_claimed(
-                    &trace,
-                    event,
-                    time,
-                    &sender_id,
-                    &target_id,
-                    is_group,
-                    ctx,
-                )
-            })
+            if let Some(task_runtime) = ctx.task_runtime.as_ref() {
+                scope_task_runtime(Arc::clone(task_runtime), || {
+                    scope_task_id(task_handle.task_id.clone(), || {
+                        self.handle_claimed(
+                            &trace,
+                            event,
+                            time,
+                            &sender_id,
+                            &target_id,
+                            is_group,
+                            ctx,
+                        )
+                    })
+                })
+            } else {
+                scope_task_id(task_handle.task_id.clone(), || {
+                    self.handle_claimed(
+                        &trace,
+                        event,
+                        time,
+                        &sender_id,
+                        &target_id,
+                        is_group,
+                        ctx,
+                    )
+                })
+            }
         } else {
             self.handle_claimed(
                 &trace,
