@@ -48,7 +48,8 @@ pub struct HttpStreamAgentConfig {
     #[serde(default)]
     pub llm_ref_id: Option<String>,
     #[serde(default)]
-    pub tavily_connection_id: Option<String>,
+    #[serde(alias = "tavily_connection_id")]
+    pub web_search_engine_connection_id: Option<String>,
     #[serde(default)]
     pub task_db_connection_id: String,
     #[serde(default = "default_http_stream_default_tools_enabled")]

@@ -86,7 +86,7 @@ pub struct QqChatAgentConfig {
     pub embedding_model_ref_id: Option<String>,
     #[serde(default)]
     pub tokenizer_connection_id: Option<String>,
-    pub tavily_connection_id: String,
+    pub web_search_engine_connection_id: String,
     #[serde(default)]
     pub rdb_id: Option<String>,
     #[serde(default)]
@@ -183,7 +183,7 @@ mod tests {
     fn qq_chat_agent_config_defaults_max_steer_count_to_four() {
         let config: QqChatAgentConfig = serde_json::from_value(serde_json::json!({
             "ims_bot_adapter_connection_id": "bot",
-            "tavily_connection_id": "tavily"
+            "web_search_engine_connection_id": "tavily"
         }))
         .expect("config should deserialize");
 

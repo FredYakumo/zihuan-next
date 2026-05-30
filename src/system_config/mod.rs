@@ -14,7 +14,7 @@ pub mod connections {
     #[allow(unused_imports)]
     pub use storage_handler::{
         ConnectionConfig, ConnectionKind, MysqlConnection, RedisConnection, RustfsConnection,
-        TavilyConnection, WeaviateConnection,
+        WeaviateConnection,
     };
 }
 

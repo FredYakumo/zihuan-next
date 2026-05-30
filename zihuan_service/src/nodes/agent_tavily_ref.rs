@@ -27,35 +27,35 @@ impl Node for AgentTavilyRefNode {
         &self.name
     }
     fn description(&self) -> Option<&str> {
-        Some("从当前 Agent 工具调用上下文中读取 Tavily 连接，并输出 TavilyRef")
+        Some("从当前 Agent 工具调用上下文中读取 Web Search Engine 连接，并输出 WebSearchEngineRef")
     }
     fn input_ports(&self) -> Vec<Port> {
         Vec::new()
     }
 
-    node_output![port! { name = "tavily_ref", ty = TavilyRef, desc = "Agent Tavily 搜索引用" },];
+    node_output![port! { name = "web_search_engine_ref", ty = WebSearchEngineRef, desc = "Agent Web Search Engine 搜索引用" },];
 
     fn execute(
         &mut self,
         _inputs: zihuan_graph_engine::NodeInputFlow,
     ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let config = current_qq_chat_agent_config()?;
-        let tavily_connection_id = config.tavily_connection_id.trim();
-        if tavily_connection_id.is_empty() {
+        let web_search_engine_connection_id = config.web_search_engine_connection_id.trim();
+        if web_search_engine_connection_id.is_empty() {
             return Err(zihuan_core::error::Error::ValidationError(
-                "tavily_connection_id is required".to_string(),
+                "web_search_engine_connection_id is required".to_string(),
             ));
         }
         let connections = load_connections()?;
-        let tavily_ref =
-            resource_resolver::build_tavily_ref(Some(tavily_connection_id), &connections)?
+        let web_search_engine_ref =
+            resource_resolver::build_web_search_engine_ref(Some(web_search_engine_connection_id), &connections)?
                 .ok_or_else(|| {
                     zihuan_core::error::Error::ValidationError(
-                        "tavily_connection_id is required".to_string(),
+                        "web_search_engine_connection_id is required".to_string(),
                     )
                 })?;
         zihuan_graph_engine::return_with_node_output![self;
-            "tavily_ref" => DataValue::TavilyRef(tavily_ref),
+            "web_search_engine_ref" => DataValue::WebSearchEngineRef(web_search_engine_ref),
         ]
     }
 }

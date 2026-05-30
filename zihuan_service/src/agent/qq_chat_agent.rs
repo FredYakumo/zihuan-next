@@ -26,7 +26,7 @@ use log::{error, info, warn};
 use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use model_inference::system_config::{load_llm_refs, AgentConfig, LlmRefConfig};
 use storage_handler::{
-    build_mysql_ref, build_relational_db_connection_for_connection, build_s3_ref, build_tavily_ref,
+    build_mysql_ref, build_relational_db_connection_for_connection, build_s3_ref, build_web_search_engine_ref,
     build_weaviate_ref, find_connection, ConnectionConfig, ConnectionKind,
 };
 use tokio::task::JoinHandle;
@@ -36,7 +36,7 @@ use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::OpenAIMessage;
-use zihuan_core::rag::TavilyRef;
+use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::runtime::block_async;
 use zihuan_core::task_context::AgentTaskRuntime;
 use zihuan_core::weaviate::WeaviateRef;
@@ -646,7 +646,7 @@ mod tests {
 struct QqLoadedInferenceResources {
     bot_name: String,
     default_tools_enabled: HashMap<String, bool>,
-    tavily_ref: Option<Arc<TavilyRef>>,
+    web_search_engine_ref: Option<Arc<WebSearchEngineRef>>,
     mysql_ref: Option<Arc<MySqlConfig>>,
     s3_ref: Option<Arc<S3Ref>>,
     weaviate_image_ref: Option<Arc<WeaviateRef>>,
@@ -672,7 +672,7 @@ impl InferenceToolProvider for QqInferenceToolProvider {
     fn build_default_tools(&self, context: &InferenceToolContext) -> Vec<Box<dyn BrainTool>> {
         build_info_brain_tools(
             &self.resources.default_tools_enabled,
-            self.resources.tavily_ref.clone(),
+            self.resources.web_search_engine_ref.clone(),
             self.resources.mysql_ref.clone(),
             self.resources.s3_ref.clone(),
             self.resources.weaviate_image_ref.clone(),
@@ -702,16 +702,16 @@ fn load_qq_resources(
     config: &QqChatAgentConfig,
     connections: &[ConnectionConfig],
 ) -> Result<QqLoadedInferenceResources> {
-    let tavily_ref = build_tavily_ref(
-        if config.tavily_connection_id.trim().is_empty() {
+    let web_search_engine_ref = build_web_search_engine_ref(
+        if config.web_search_engine_connection_id.trim().is_empty() {
             None
         } else {
-            Some(config.tavily_connection_id.as_str())
+            Some(config.web_search_engine_connection_id.as_str())
         },
         connections,
     )
     .unwrap_or_else(|e| {
-        warn!("[inference][qq_agent] tavily connection unavailable: {e}");
+        warn!("[inference][qq_agent] web search engine connection unavailable: {e}");
         None
     });
 
@@ -768,7 +768,7 @@ fn load_qq_resources(
             config.bot_name.clone()
         },
         default_tools_enabled: config.default_tools_enabled.clone(),
-        tavily_ref,
+        web_search_engine_ref,
         mysql_ref,
         s3_ref,
         weaviate_image_ref,
@@ -865,8 +865,8 @@ pub async fn spawn(
     } else {
         config.embedding.as_ref().map(build_embedding_model)
     };
-    let tavily = build_tavily_ref(Some(&config.tavily_connection_id), &connections)?
-        .ok_or_else(|| Error::ValidationError("missing tavily connection".to_string()))?;
+    let web_search_engine = build_web_search_engine_ref(Some(&config.web_search_engine_connection_id), &connections)?
+        .ok_or_else(|| Error::ValidationError("missing web search engine connection".to_string()))?;
     let object_storage = build_s3_ref(config.rustfs_connection_id.as_deref(), &connections).await?;
     let rdb_pool = match config.resolved_rdb_id() {
         Some(connection_id) => Some(
@@ -939,7 +939,7 @@ pub async fn spawn(
         mysql_ref,
         weaviate_image_ref,
         embedding_model,
-        tavily,
+        web_search_engine,
         s3_ref: object_storage.clone(),
         max_message_length: config.max_message_length,
         compact_context_length: config.compact_context_length,

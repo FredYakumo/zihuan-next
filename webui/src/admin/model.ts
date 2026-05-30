@@ -8,7 +8,7 @@ import type {
   LlmServiceConfig,
 } from "../api/client";
 
-export type ConnectionType = "mysql" | "redis" | "weaviate" | "rustfs" | "bot_adapter" | "ims_bot_adapter" | "tavily" | "tokenizer" | "sqlite";
+export type ConnectionType = "mysql" | "redis" | "weaviate" | "rustfs" | "bot_adapter" | "ims_bot_adapter" | "web_search_engine" | "tokenizer" | "sqlite";
 export type WeaviateCollectionSchema = "message_record_semantic" | "image_semantic";
 export type AgentTypeName = "qq_chat" | "http_stream";
 export type ModelRefType = "chat_llm" | "text_embedding_local";
@@ -60,8 +60,9 @@ export interface ConnectionFormState {
   adapter_server_url: string;
   bot_server_token: string;
   qq_id: string;
-  tavily_api_token: string;
-  tavily_timeout_secs: number;
+  web_search_engine_provider: string;
+  web_search_engine_api_token: string;
+  web_search_engine_timeout_secs: number;
   tokenizer_model_name: string;
   sqlite_path: string;
 }
@@ -105,7 +106,7 @@ export interface AgentFormState {
   math_programming_llm_ref_id: string;
   embedding_model_ref_id: string;
   tokenizer_connection_id: string;
-  tavily_connection_id: string;
+  web_search_engine_connection_id: string;
   rdb_id: string;
   weaviate_image_connection_id: string;
   max_message_length: number;
@@ -114,7 +115,7 @@ export interface AgentFormState {
   default_tools_enabled: Record<string, boolean>;
   http_bind: string;
   http_api_key: string;
-  http_tavily_connection_id: string;
+  http_web_search_engine_connection_id: string;
   task_db_connection_id: string;
   tools: ToolFormState[];
 }
@@ -200,8 +201,9 @@ export function defaultConnectionForm(): ConnectionFormState {
     adapter_server_url: "",
     bot_server_token: "",
     qq_id: "",
-    tavily_api_token: "",
-    tavily_timeout_secs: 30,
+    web_search_engine_provider: "tavily",
+    web_search_engine_api_token: "",
+    web_search_engine_timeout_secs: 30,
     tokenizer_model_name: "",
     sqlite_path: "",
   };
@@ -251,7 +253,7 @@ export function defaultAgentForm(): AgentFormState {
     math_programming_llm_ref_id: "",
     embedding_model_ref_id: "",
     tokenizer_connection_id: "",
-    tavily_connection_id: "",
+    web_search_engine_connection_id: "",
     rdb_id: "",
     weaviate_image_connection_id: "",
     max_message_length: 500,
@@ -260,7 +262,7 @@ export function defaultAgentForm(): AgentFormState {
     default_tools_enabled: defaultQqChatDefaultToolsEnabled(),
     http_bind: "127.0.0.1:18080",
     http_api_key: "",
-    http_tavily_connection_id: "",
+    http_web_search_engine_connection_id: "",
     task_db_connection_id: "",
     tools: [],
   };
@@ -318,9 +320,10 @@ export function connectionFormFromConfig(connection: ConnectionConfig): Connecti
       form.bot_server_token = String(connection.kind.bot_server_token ?? "");
       form.qq_id = String(connection.kind.qq_id ?? "");
       break;
-    case "tavily":
-      form.tavily_api_token = String(connection.kind.api_token ?? "");
-      form.tavily_timeout_secs = Number(connection.kind.timeout_secs ?? 30);
+    case "web_search_engine":
+      form.web_search_engine_provider = String(connection.kind.provider ?? "tavily");
+      form.web_search_engine_api_token = String(connection.kind.api_token ?? "");
+      form.web_search_engine_timeout_secs = Number(connection.kind.timeout_secs ?? 30);
       break;
     case "tokenizer":
       form.tokenizer_model_name = String(connection.kind.model_name ?? "");
@@ -422,11 +425,12 @@ export function buildConnectionPayload(form: ConnectionFormState): {
         qq_id: form.qq_id.trim() || null,
       };
       break;
-    case "tavily":
+    case "web_search_engine":
       payload.kind = {
-        type: "tavily",
-        api_token: form.tavily_api_token.trim() || null,
-        timeout_secs: form.tavily_timeout_secs,
+        type: "web_search_engine",
+        provider: form.web_search_engine_provider,
+        api_token: form.web_search_engine_api_token.trim() || null,
+        timeout_secs: form.web_search_engine_timeout_secs,
       };
       break;
     case "tokenizer":
@@ -526,7 +530,7 @@ export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): Agen
     form.math_programming_llm_ref_id = String(agentType.math_programming_llm_ref_id ?? "");
     form.embedding_model_ref_id = String(agentType.embedding_model_ref_id ?? "");
     form.tokenizer_connection_id = String(agentType.tokenizer_connection_id ?? "");
-    form.tavily_connection_id = String(agentType.tavily_connection_id ?? "");
+    form.web_search_engine_connection_id = String(agentType.web_search_engine_connection_id ?? "");
     form.rdb_id = String(agentType.rdb_id ?? agentType.mysql_connection_id ?? agentType.task_db_connection_id ?? "");
     form.weaviate_image_connection_id = String(agentType.weaviate_image_connection_id ?? "");
     form.max_message_length = Number(agentType.max_message_length ?? 500);
@@ -544,7 +548,7 @@ export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): Agen
     form.http_bind = String(agentType.bind ?? "127.0.0.1:18080");
     form.http_api_key = String(agentType.api_key ?? "");
     form.llm_ref_id = String(agentType.llm_ref_id ?? "");
-    form.http_tavily_connection_id = String(agentType.tavily_connection_id ?? "");
+    form.http_web_search_engine_connection_id = String(agentType.web_search_engine_connection_id ?? "");
     form.task_db_connection_id = String(agentType.task_db_connection_id ?? "");
     const source = (agentType.default_tools_enabled ?? {}) as Record<string, unknown>;
     form.default_tools_enabled = defaultHttpStreamDefaultToolsEnabled();
@@ -630,7 +634,7 @@ export function buildAgentPayload(form: AgentFormState): {
         math_programming_llm_ref_id: form.math_programming_llm_ref_id || null,
         embedding_model_ref_id: form.embedding_model_ref_id || null,
         tokenizer_connection_id: form.tokenizer_connection_id || null,
-        tavily_connection_id: form.tavily_connection_id,
+        web_search_engine_connection_id: form.web_search_engine_connection_id,
         embedding: null,
         rdb_id: form.rdb_id || null,
         weaviate_image_connection_id: form.weaviate_image_connection_id || null,
@@ -649,7 +653,7 @@ export function buildAgentPayload(form: AgentFormState): {
       bind: form.http_bind.trim(),
       api_key: form.http_api_key.trim() || null,
       llm_ref_id: form.llm_ref_id || null,
-      tavily_connection_id: form.http_tavily_connection_id || null,
+      web_search_engine_connection_id: form.http_web_search_engine_connection_id || null,
       task_db_connection_id: form.task_db_connection_id || null,
       default_tools_enabled: Object.fromEntries(
         HTTP_STREAM_DEFAULT_TOOLS.map((tool) => [tool.id, form.default_tools_enabled[tool.id] !== false]),

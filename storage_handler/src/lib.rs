@@ -41,7 +41,7 @@ pub use object_storage::{
 };
 pub use redis::RedisNode;
 pub use resource_resolver::{
-    build_mysql_ref, build_redis_ref, build_s3_ref, build_sqlite_ref, build_tavily_ref,
+    build_mysql_ref, build_redis_ref, build_s3_ref, build_sqlite_ref, build_web_search_engine_ref,
     build_weaviate_ref, find_connection, resolve_connection_data_value,
 };
 pub use rdb::{
@@ -80,7 +80,7 @@ pub enum ConnectionKind {
     Weaviate(WeaviateConnection),
     Rustfs(RustfsConnection),
     BotAdapter(serde_json::Value),
-    Tavily(TavilyConnection),
+    WebSearchEngine(WebSearchEngineConnection),
     Tokenizer(TokenizerConnection),
     Sqlite(SqliteConnection),
 }
@@ -133,10 +133,11 @@ pub struct RustfsConnection {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TavilyConnection {
+pub struct WebSearchEngineConnection {
+    pub provider: String,
     #[serde(default)]
     pub api_token: Option<String>,
-    #[serde(default = "default_tavily_timeout_secs")]
+    #[serde(default = "default_web_search_engine_timeout_secs")]
     pub timeout_secs: u64,
 }
 
@@ -150,7 +151,7 @@ pub struct SqliteConnection {
     pub path: String,
 }
 
-fn default_tavily_timeout_secs() -> u64 {
+fn default_web_search_engine_timeout_secs() -> u64 {
     30
 }
 
@@ -207,7 +208,7 @@ impl ConfigRecord for ConnectionConfig {
             ConnectionKind::Weaviate(_) => ConfigKind::ConnectionWeaviate,
             ConnectionKind::Rustfs(_) => ConfigKind::ConnectionRustfs,
             ConnectionKind::BotAdapter(_) => ConfigKind::ConnectionBotAdapter,
-            ConnectionKind::Tavily(_) => ConfigKind::ConnectionTavily,
+            ConnectionKind::WebSearchEngine(_) => ConfigKind::ConnectionWebSearchEngine,
             ConnectionKind::Tokenizer(_) => ConfigKind::ConnectionTokenizer,
             ConnectionKind::Sqlite(_) => ConfigKind::ConnectionSqlite,
         }
@@ -502,16 +503,16 @@ pub fn init_node_registry() -> Result<()> {
     );
     register_node!(
         "tavily_provider",
-        "Tavily Provider",
+        "Web Search Engine Provider",
         "AI",
-        "从系统连接中选择 Tavily 配置，输出 TavilyRef 引用",
+        "从系统连接中选择 Web Search Engine 配置，输出 WebSearchEngineRef 引用",
         tavily_provider_node::TavilyProviderNode
     );
     register_node!(
         "tavily_search",
-        "Tavily 搜索",
+        "网页搜索",
         "AI",
-        "使用 TavilyRef 执行 Tavily 搜索并输出包含标题、链接和内容的 Vec<String>",
+        "使用 WebSearchEngineRef 执行网页搜索并输出包含标题、链接和内容的 Vec<String>",
         tavily_search_node::TavilySearchNode
     );
     register_node!(

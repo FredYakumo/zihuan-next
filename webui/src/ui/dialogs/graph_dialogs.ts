@@ -22,7 +22,7 @@ export const HP_TYPES = [
   "RedisRef",
   "S3Ref",
   "BotAdapterRef",
-  "TavilyRef",
+  "WebSearchEngineRef",
 ] as const;
 
 const HP_SCALAR_TYPES = HP_TYPES;
@@ -33,7 +33,7 @@ const CONNECTION_KIND_BY_HP_TYPE: Partial<Record<(typeof HP_TYPES)[number], Conn
   RedisRef: "redis",
   S3Ref: "rustfs",
   BotAdapterRef: "ims_bot_adapter",
-  TavilyRef: "tavily",
+  WebSearchEngineRef: "web_search_engine",
 };
 
 function isConnectionHyperparameterType(type: string): boolean {

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::load_connections;
-use crate::resource_resolver::build_tavily_ref;
+use crate::resource_resolver::build_web_search_engine_ref;
 use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::{
     node_output, DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port,
@@ -31,8 +31,8 @@ impl TavilyProviderNode {
             DataType::String,
             NodeConfigWidget::ConnectionSelect,
         )
-        .with_connection_kind("tavily")
-        .with_description("选择系统中的 Tavily 连接配置")
+        .with_connection_kind("web_search_engine")
+        .with_description("选择系统中的 Web Search Engine 连接配置")
     }
 
     fn selected_config_id(&self) -> Result<&str> {
@@ -54,14 +54,14 @@ impl Node for TavilyProviderNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("Tavily 搜索配置 - 从系统连接中选择并输出 TavilyRef")
+        Some("Tavily 搜索配置 - 从系统连接中选择并输出 WebSearchEngineRef")
     }
 
     fn input_ports(&self) -> Vec<Port> {
         Vec::new()
     }
 
-    node_output![port! { name = "tavily_ref", ty = DataType::TavilyRef, desc = "Tavily 搜索引用" },];
+    node_output![port! { name = "tavily_ref", ty = DataType::WebSearchEngineRef, desc = "Tavily 搜索引用" },];
 
     fn config_fields(&self) -> Vec<NodeConfigField> {
         vec![Self::connection_select_field()]
@@ -86,11 +86,11 @@ impl Node for TavilyProviderNode {
         _inputs: zihuan_graph_engine::NodeInputFlow,
     ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let config_id = self.selected_config_id()?;
-        let tavily_ref = build_tavily_ref(Some(config_id), &load_connections()?)?
+        let tavily_ref = build_web_search_engine_ref(Some(config_id), &load_connections()?)?
             .ok_or_else(|| Error::ValidationError("config_id is required".to_string()))?;
 
         zihuan_graph_engine::return_with_node_output![self;
-            "tavily_ref" => DataValue::TavilyRef(tavily_ref),
+            "tavily_ref" => DataValue::WebSearchEngineRef(tavily_ref),
         ]
     }
 }

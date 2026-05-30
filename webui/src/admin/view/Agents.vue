@@ -93,10 +93,10 @@
                 </select>
               </div>
               <div class="field">
-                <label>Tavily Connection</label>
-                <select v-model="form.tavily_connection_id">
+                <label>Web Search Engine</label>
+                <select v-model="form.web_search_engine_connection_id">
                   <option value="">请选择</option>
-                  <option v-for="item in tavilyConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                  <option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
               <div class="field">
@@ -141,10 +141,10 @@
               <div class="field"><label>Bind</label><input v-model="form.http_bind" placeholder="127.0.0.1:18080" /></div>
               <div class="field"><label>API Key</label><input v-model="form.http_api_key" /></div>
               <div class="field">
-                <label>Tavily Connection</label>
-                <select v-model="form.http_tavily_connection_id">
+                <label>Web Search Engine</label>
+                <select v-model="form.http_web_search_engine_connection_id">
                   <option value="">不使用</option>
-                  <option v-for="item in tavilyConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                  <option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
               <div class="field">
@@ -387,10 +387,10 @@
                 </select>
               </div>
               <div class="field">
-                <label>Tavily Connection</label>
-                <select v-model="form.tavily_connection_id">
+                <label>Web Search Engine</label>
+                <select v-model="form.web_search_engine_connection_id">
                   <option value="">请选择</option>
-                  <option v-for="item in tavilyConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                  <option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
               <div class="field">
@@ -457,10 +457,10 @@
               <div class="field"><label>Bind</label><input v-model="form.http_bind" placeholder="127.0.0.1:18080" /></div>
               <div class="field"><label>API Key</label><input v-model="form.http_api_key" /></div>
               <div class="field">
-                <label>Tavily Connection</label>
-                <select v-model="form.http_tavily_connection_id">
+                <label>Web Search Engine</label>
+                <select v-model="form.http_web_search_engine_connection_id">
                   <option value="">不使用</option>
-                  <option v-for="item in tavilyConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
+                  <option v-for="item in webSearchEngineConnections" :key="item.config_id" :value="item.config_id">{{ item.name }}</option>
                 </select>
               </div>
               <div class="field">
@@ -767,7 +767,7 @@ const embeddingModels = computed(() => llm.value.filter((item) => item.model.typ
 
 const botConnections = computed(() => connections.value.filter((item) => isBotAdapterConnectionType(String(item.kind.type ?? ""))));
 const rustfsConnections = computed(() => connections.value.filter((item) => item.kind.type === "rustfs"));
-const tavilyConnections = computed(() => connections.value.filter((item) => item.kind.type === "tavily"));
+const webSearchEngineConnections = computed(() => connections.value.filter((item) => item.kind.type === "web_search_engine"));
 const taskDbConnections = computed(() => connections.value.filter((item) => item.kind.type === "mysql" || item.kind.type === "sqlite"));
 const tokenizerConnections = computed(() => connections.value.filter((item) => item.kind.type === "tokenizer"));
 const imageWeaviateConnections = computed(() =>
@@ -1052,12 +1052,12 @@ async function submitForm() {
       alert("QQ Chat Agent 需要绑定 Bot Adapter");
       return;
     }
-    if (form.type === "qq_chat" && !form.tavily_connection_id) {
-      alert("QQ Chat Agent 需要绑定 Tavily 连接");
+    if (form.type === "qq_chat" && !form.web_search_engine_connection_id) {
+      alert("QQ Chat Agent 需要绑定 Web Search Engine 连接");
       return;
     }
-    if (form.type === "http_stream" && form.default_tools_enabled.web_search !== false && !form.http_tavily_connection_id) {
-      alert("启用 web_search 时，HTTP Stream Agent 需要绑定 Tavily 连接");
+    if (form.type === "http_stream" && form.default_tools_enabled.web_search !== false && !form.http_web_search_engine_connection_id) {
+      alert("启用 web_search 时，HTTP Stream Agent 需要绑定 Web Search Engine 连接");
       return;
     }
     if (form.id) {
@@ -1126,7 +1126,7 @@ function summarizeAgent(agent: AgentWithRuntime): Array<{ label: string; value: 
       { label: "Bot Adapter", value: connectionName(String(agentType.ims_bot_adapter_connection_id ?? "")) || "未绑定" },
       { label: "Bot QQ", value: String(agent.qq_chat_profile?.bot_user_id ?? "") || "未知" },
       { label: "RustFS", value: connectionName(String(agentType.rustfs_connection_id ?? "")) || "未绑定" },
-      { label: "Tavily", value: connectionName(String(agentType.tavily_connection_id ?? "")) || "未绑定" },
+      { label: "Web Search", value: connectionName(String(agentType.web_search_engine_connection_id ?? "")) || "未绑定" },
       { label: "Bot Name", value: String(agentType.bot_name ?? "") || "未设置" },
       { label: "意图分类模型", value: llmRefName(String(agentType.intent_llm_ref_id ?? "")) || llmName(agent) },
       { label: "数学编程模型", value: llmRefName(String(agentType.math_programming_llm_ref_id ?? "")) || llmName(agent) },
@@ -1140,7 +1140,7 @@ function summarizeAgent(agent: AgentWithRuntime): Array<{ label: string; value: 
     items.push(
       { label: "Bind", value: String(agentType.bind ?? "127.0.0.1:18080"), mono: true },
       { label: "API Key", value: String(agentType.api_key ?? "") ? "已配置" : "未设置" },
-      { label: "Tavily", value: connectionName(String(agentType.tavily_connection_id ?? "")) || "未绑定" },
+      { label: "Web Search", value: connectionName(String(agentType.web_search_engine_connection_id ?? "")) || "未绑定" },
       { label: "web_search", value: (agentType.default_tools_enabled as Record<string, unknown> | undefined)?.web_search === false ? "关闭" : "开启" },
     );
   }

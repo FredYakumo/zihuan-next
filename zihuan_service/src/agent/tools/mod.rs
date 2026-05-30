@@ -4,7 +4,7 @@ use std::sync::Arc;
 use zihuan_agent::brain::BrainTool;
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::llm::embedding_base::EmbeddingBase;
-use zihuan_core::rag::TavilyRef;
+use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::object_storage::S3Ref;
 
@@ -41,7 +41,7 @@ const AGENT_GIT_COMMIT_ID: &str = build_metadata::ZIHUAN_GIT_COMMIT_ID;
 
 pub(crate) fn build_info_brain_tools(
     default_tools_enabled: &HashMap<String, bool>,
-    tavily_ref: Option<Arc<TavilyRef>>,
+    web_search_engine_ref: Option<Arc<WebSearchEngineRef>>,
     mysql_ref: Option<Arc<MySqlConfig>>,
     s3_ref: Option<Arc<S3Ref>>,
     weaviate_image_ref: Option<Arc<WeaviateRef>>,
@@ -56,9 +56,9 @@ pub(crate) fn build_info_brain_tools(
     let dashboard_target = ToolNotificationTarget::dashboard();
 
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_WEB_SEARCH) {
-        if let Some(tavily) = tavily_ref.as_ref() {
+        if let Some(engine) = web_search_engine_ref.as_ref() {
             tools.push(Box::new(WebSearchBrainTool::new(
-                tavily.clone(),
+                engine.clone(),
                 dashboard_target.clone(),
             )));
         }
@@ -90,11 +90,11 @@ pub(crate) fn build_info_brain_tools(
     }
 
     if is_enabled(default_tools_enabled, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES) {
-        if let Some(tavily) = tavily_ref {
+        if let Some(engine) = web_search_engine_ref {
             tools.push(Box::new(SearchSimilarImagesBrainTool::new(
                 weaviate_image_ref,
                 embedding_model,
-                tavily,
+                engine,
                 None,
                 dashboard_target.clone(),
             )));

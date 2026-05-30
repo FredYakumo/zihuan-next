@@ -10,7 +10,7 @@ use zihuan_agent::brain::BrainTool;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::rag::{TavilyImage, TavilyRef};
+use zihuan_core::rag::{WebSearchImage, WebSearchEngineRef};
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::object_storage::S3Ref;
 
@@ -28,7 +28,7 @@ const WEAVIATE_IMAGE_MAX_GOOD_DISTANCE: f64 = 0.55;
 pub(crate) struct SearchSimilarImagesBrainTool {
     weaviate_image_ref: Option<Arc<WeaviateRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
-    tavily_ref: Arc<TavilyRef>,
+    web_search_engine_ref: Arc<WebSearchEngineRef>,
     s3_ref: Option<Arc<S3Ref>>,
 }
 
@@ -36,14 +36,14 @@ impl SearchSimilarImagesBrainTool {
     pub(crate) fn new(
         weaviate_image_ref: Option<Arc<WeaviateRef>>,
         embedding_model: Option<Arc<dyn EmbeddingBase>>,
-        tavily_ref: Arc<TavilyRef>,
+        web_search_engine_ref: Arc<WebSearchEngineRef>,
         s3_ref: Option<Arc<S3Ref>>,
         _notification_target: ToolNotificationTarget,
     ) -> Self {
         Self {
             weaviate_image_ref,
             embedding_model,
-            tavily_ref,
+            web_search_engine_ref,
             s3_ref,
         }
     }
@@ -53,7 +53,7 @@ impl BrainTool for SearchSimilarImagesBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "search_similar_images",
-            description: "搜索图片：默认优先在 Weaviate 图片 collection 做向量检索，找不到合适结果时可设置 force_web_search=true 强制使用 Tavily 联网搜索，并把联网结果回填 Weaviate",
+            description: "搜索图片：默认优先在 Weaviate 图片 collection 做向量检索，找不到合适结果时可设置 force_web_search=true 强制使用联网搜索引擎搜索，并把联网结果回填 Weaviate",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -156,8 +156,9 @@ impl BrainTool for SearchSimilarImagesBrainTool {
             }
 
             let fallback_count = limit.min(10) as i64;
-            let tavily_images: Vec<TavilyImage> = self
-                .tavily_ref
+            let web_images: Vec<WebSearchImage> = self
+                .web_search_engine_ref
+                .engine
                 .search_images(&format!("{} 图片", query), fallback_count)?;
 
             let Some(s3_ref) = self.s3_ref.as_ref() else {
@@ -168,13 +169,13 @@ impl BrainTool for SearchSimilarImagesBrainTool {
             };
 
             let mut stored_images = Vec::new();
-            for image in &tavily_images {
+            for image in &web_images {
                 let description = image.description.as_deref().unwrap_or(&image.url);
                 let rustfs_path = match upload_remote_image_to_s3(s3_ref, &image.url) {
                     Ok(path) => path,
                     Err(err) => {
                         warn!(
-                            "{LOG_PREFIX} Failed to download/upload tavily image {} into RustFS: {}",
+                            "{LOG_PREFIX} Failed to download/upload web search image {} into RustFS: {}",
                             image.url, err
                         );
                         continue;
@@ -213,7 +214,7 @@ impl BrainTool for SearchSimilarImagesBrainTool {
                             None,
                         ) {
                             warn!(
-                                "{LOG_PREFIX} Failed to persist tavily image fallback result into weaviate: {}",
+                                "{LOG_PREFIX} Failed to persist web search image fallback result into weaviate: {}",
                                 err
                             );
                         }

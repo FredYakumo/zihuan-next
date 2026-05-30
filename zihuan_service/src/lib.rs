@@ -81,16 +81,16 @@ pub fn init_node_registry() -> Result<()> {
     );
     register_node!(
         "agent_tavily_ref",
-        "读取Agent Tavily连接",
+        "读取Agent Web Search Engine连接",
         "Agent",
-        "从当前 Agent 工具调用上下文中读取 Tavily 连接并输出 TavilyRef",
+        "从当前 Agent 工具调用上下文中读取 Web Search Engine 连接并输出 WebSearchEngineRef",
         AgentTavilyRefNode
     );
     register_node!(
         "tavily_web_search",
-        "Tavily 网页搜索",
+        "网页搜索",
         "工具",
-        "使用 Tavily 搜索网页，或对单个 URL 抽取正文内容",
+        "使用 Web Search Engine 搜索网页，或对单个 URL 抽取正文内容",
         TavilyWebSearchNode
     );
 

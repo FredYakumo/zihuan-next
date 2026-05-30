@@ -104,7 +104,7 @@ pub fn data_type_to_json_schema_type(data_type: &DataType) -> &'static str {
         | DataType::MySqlRef
         | DataType::SqliteRef
         | DataType::WeaviateRef
-        | DataType::TavilyRef
+        | DataType::WebSearchEngineRef
         | DataType::SessionStateRef
         | DataType::OpenAIMessageSessionCacheRef
         | DataType::LLModel

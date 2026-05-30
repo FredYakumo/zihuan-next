@@ -6,36 +6,36 @@ use serde_json::Value;
 use zihuan_agent::brain::BrainTool;
 use zihuan_core::error::Result;
 use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::rag::TavilyRef;
+use zihuan_core::rag::WebSearchEngineRef;
 
 use super::common::{StaticFunctionToolSpec, ToolNotificationTarget};
 
 const LOG_PREFIX: &str = "[QqChatAgent]";
 
 pub(crate) struct WebSearchBrainTool {
-    tavily_ref: Arc<TavilyRef>,
+    web_search_engine_ref: Arc<WebSearchEngineRef>,
 }
 
 impl WebSearchBrainTool {
     pub(crate) fn new(
-        tavily_ref: Arc<TavilyRef>,
+        web_search_engine_ref: Arc<WebSearchEngineRef>,
         _notification_target: ToolNotificationTarget,
     ) -> Self {
-        Self { tavily_ref }
+        Self { web_search_engine_ref }
     }
 
     fn extract_url_with_fallback(&self, url: &str) -> Result<Vec<String>> {
-        match self.tavily_ref.extract_url(url) {
+        match self.web_search_engine_ref.engine.extract_url(url) {
             Ok(items) => Ok(items),
             Err(e) => {
-                warn!("{LOG_PREFIX} Tavily extract failed for url='{url}': {e}; trying direct web request");
-                self.tavily_ref.fetch_url_direct(url)
+                warn!("{LOG_PREFIX} Web search engine extract failed for url='{url}': {e}; trying direct web request");
+                self.web_search_engine_ref.engine.fetch_url_direct(url)
             }
         }
     }
 
     fn search_with_fallback(&self, query: &str, search_count: i64) -> Result<Vec<String>> {
-        match self.tavily_ref.search(query, search_count) {
+        match self.web_search_engine_ref.engine.search(query, search_count) {
             Ok(items) => Ok(items),
             Err(e) => {
                 let trimmed = query.trim();
@@ -43,8 +43,8 @@ impl WebSearchBrainTool {
                     return Err(e);
                 }
 
-                warn!("{LOG_PREFIX} Tavily search failed for url-like query='{trimmed}': {e}; trying direct web request");
-                self.tavily_ref.fetch_url_direct(trimmed)
+                warn!("{LOG_PREFIX} Web search engine search failed for url-like query='{trimmed}': {e}; trying direct web request");
+                self.web_search_engine_ref.engine.fetch_url_direct(trimmed)
             }
         }
     }
@@ -55,7 +55,7 @@ impl BrainTool for WebSearchBrainTool {
         Arc::new(StaticFunctionToolSpec {
             name: "web_search",
             description:
-                "使用 Tavily 在互联网上搜索信息，或对单个 URL 精确抽取页面内容，返回标题、链接和内容摘要",
+                "使用联网搜索引擎在互联网上搜索信息，或对单个 URL 精确抽取页面内容，返回标题、链接和内容摘要",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {

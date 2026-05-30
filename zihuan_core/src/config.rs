@@ -28,7 +28,7 @@ pub enum ConfigKind {
     ConnectionWeaviate,
     ConnectionRustfs,
     ConnectionBotAdapter,
-    ConnectionTavily,
+    ConnectionWebSearchEngine,
     ConnectionTokenizer,
     ConnectionSqlite,
     LlmRef,
@@ -45,7 +45,7 @@ impl ConfigKind {
             | Self::ConnectionWeaviate
             | Self::ConnectionRustfs
             | Self::ConnectionBotAdapter
-            | Self::ConnectionTavily
+            | Self::ConnectionWebSearchEngine
             | Self::ConnectionTokenizer
             | Self::ConnectionSqlite => ConfigCategory::Connection,
             Self::LlmRef => ConfigCategory::LlmRef,
@@ -253,7 +253,7 @@ fn infer_kind_from_legacy_object(
             Some("weaviate") => Ok(ConfigKind::ConnectionWeaviate),
             Some("rustfs") => Ok(ConfigKind::ConnectionRustfs),
             Some("bot_adapter") | Some("ims_bot_adapter") => Ok(ConfigKind::ConnectionBotAdapter),
-            Some("tavily") => Ok(ConfigKind::ConnectionTavily),
+            Some("tavily") => Ok(ConfigKind::ConnectionWebSearchEngine),
             Some("tokenizer") => Ok(ConfigKind::ConnectionTokenizer),
             Some(other) => Err(Error::ValidationError(format!(
                 "unsupported legacy connection kind '{other}'"

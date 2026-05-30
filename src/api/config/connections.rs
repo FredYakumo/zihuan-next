@@ -81,7 +81,7 @@ fn validate_connection_basics(kind: &ConnectionKind) -> Result<(), String> {
             }
             Ok(())
         }
-        ConnectionKind::Tavily(_) => Ok(()),
+        ConnectionKind::WebSearchEngine(_) => Ok(()),
         ConnectionKind::Tokenizer(tokenizer) => {
             if tokenizer.model_name.trim().is_empty() {
                 return Err("tokenizer.model_name must not be empty".to_string());

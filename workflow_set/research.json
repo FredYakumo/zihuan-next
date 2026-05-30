@@ -673,7 +673,7 @@
                   "node_type": "agent_tavily_ref",
                   "output_ports": [
                     {
-                      "data_type": "TavilyRef",
+                      "data_type": "WebSearchEngineRef",
                       "description": "Agent Tavily 搜索引用",
                       "hidden": false,
                       "name": "tavily_ref",
@@ -701,7 +701,7 @@
                   "inline_values": {},
                   "input_ports": [
                     {
-                      "data_type": "TavilyRef",
+                      "data_type": "WebSearchEngineRef",
                       "description": "Tavily 搜索引用",
                       "hidden": false,
                       "name": "tavily_ref",

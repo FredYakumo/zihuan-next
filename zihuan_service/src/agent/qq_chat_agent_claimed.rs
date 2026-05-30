@@ -475,7 +475,7 @@ impl QqChatAgent {
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_WEB_SEARCH) {
             brain = brain.with_tool(WebSearchBrainTool::new(
-                ctx.tavily.clone(),
+                ctx.web_search_engine.clone(),
                 ToolNotificationTarget::new(
                     Some(ctx.adapter.clone()),
                     target_id.to_string(),
@@ -536,7 +536,7 @@ impl QqChatAgent {
             brain = brain.with_tool(SearchSimilarImagesBrainTool::new(
                 ctx.weaviate_image_ref.cloned(),
                 ctx.embedding_model.cloned(),
-                ctx.tavily.clone(),
+                ctx.web_search_engine.clone(),
                 ctx.s3_ref.cloned(),
                 ToolNotificationTarget::new(
                     Some(ctx.adapter.clone()),

@@ -42,7 +42,7 @@ export function applyLiteGraphTheme(canvas: CanvasFacade): void {
     "S3Ref",
     "RedisRef",
     "MySqlRef",
-    "TavilyRef",
+    "WebSearchEngineRef",
     "SessionStateRef",
     "OpenAIMessageSessionCacheRef",
     "LoopControlRef",

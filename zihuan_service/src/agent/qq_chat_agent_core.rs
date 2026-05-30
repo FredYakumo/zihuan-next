@@ -46,7 +46,7 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::InferenceParam;
 use zihuan_core::llm::{ContentPart, MessageContent, OpenAIMessage};
-use zihuan_core::rag::TavilyRef;
+use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::runtime::block_async;
 use zihuan_core::task_context::{
     scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime,
@@ -1691,7 +1691,7 @@ pub(crate) struct QqChatAgentContext<'a> {
     mysql_ref: Option<&'a Arc<MySqlConfig>>,
     weaviate_image_ref: Option<&'a Arc<WeaviateRef>>,
     embedding_model: Option<&'a Arc<dyn EmbeddingBase>>,
-    tavily: &'a Arc<TavilyRef>,
+    web_search_engine: &'a Arc<WebSearchEngineRef>,
     s3_ref: Option<&'a Arc<S3Ref>>,
     max_message_length: usize,
     compact_context_length: usize,
@@ -2099,7 +2099,7 @@ pub struct QqChatAgentServiceConfig {
     pub mysql_ref: Option<Arc<MySqlConfig>>,
     pub weaviate_image_ref: Option<Arc<WeaviateRef>>,
     pub embedding_model: Option<Arc<dyn EmbeddingBase>>,
-    pub tavily: Arc<TavilyRef>,
+    pub web_search_engine: Arc<WebSearchEngineRef>,
     pub s3_ref: Option<Arc<S3Ref>>,
     pub max_message_length: usize,
     pub compact_context_length: usize,
@@ -2161,7 +2161,7 @@ impl QqChatAgentService {
             mysql_ref: self.config.mysql_ref.as_ref(),
             weaviate_image_ref: self.config.weaviate_image_ref.as_ref(),
             embedding_model: self.config.embedding_model.as_ref(),
-            tavily: &self.config.tavily,
+            web_search_engine: &self.config.web_search_engine,
             s3_ref: self.config.s3_ref.as_ref(),
             max_message_length: self.config.max_message_length,
             compact_context_length: self.config.compact_context_length,

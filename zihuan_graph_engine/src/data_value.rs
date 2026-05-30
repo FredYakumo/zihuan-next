@@ -16,7 +16,7 @@ use zihuan_core::ims_bot_adapter::models::message::ImageMessage;
 use zihuan_core::ims_bot_adapter::models::sender_model::Sender as GraphSender;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::ContentPart;
-pub use zihuan_core::rag::{TavilyImage, TavilyRef};
+pub use zihuan_core::rag::{WebSearchImage, WebSearchEngineRef};
 pub use zihuan_core::weaviate::WeaviateRef;
 
 tokio::task_local! {
@@ -672,7 +672,7 @@ pub enum DataType {
     MySqlRef,
     SqliteRef,
     WeaviateRef,
-    TavilyRef,
+    WebSearchEngineRef,
     SessionStateRef,
     OpenAIMessageSessionCacheRef,
     Password,
@@ -718,7 +718,7 @@ impl fmt::Display for DataType {
             DataType::MySqlRef => write!(f, "MySqlRef"),
             DataType::SqliteRef => write!(f, "SqliteRef"),
             DataType::WeaviateRef => write!(f, "WeaviateRef"),
-            DataType::TavilyRef => write!(f, "TavilyRef"),
+            DataType::WebSearchEngineRef => write!(f, "WebSearchEngineRef"),
             DataType::SessionStateRef => write!(f, "SessionStateRef"),
             DataType::OpenAIMessageSessionCacheRef => write!(f, "OpenAIMessageSessionCacheRef"),
             DataType::Password => write!(f, "Password"),
@@ -767,7 +767,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "MySqlRef" => Ok(DataType::MySqlRef),
                     "SqliteRef" => Ok(DataType::SqliteRef),
                     "WeaviateRef" => Ok(DataType::WeaviateRef),
-                    "TavilyRef" => Ok(DataType::TavilyRef),
+                    "WebSearchEngineRef" => Ok(DataType::WebSearchEngineRef),
                     "SessionStateRef" => Ok(DataType::SessionStateRef),
                     "OpenAIMessageSessionCacheRef" => Ok(DataType::OpenAIMessageSessionCacheRef),
                     "Password" => Ok(DataType::Password),
@@ -800,7 +800,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                             "MySqlRef",
                             "SqliteRef",
                             "WeaviateRef",
-                            "TavilyRef",
+                            "WebSearchEngineRef",
                             "SessionStateRef",
                             "OpenAIMessageSessionCacheRef",
                             "Password",
@@ -871,7 +871,7 @@ pub enum DataValue {
     MySqlRef(Arc<MySqlConfig>),
     SqliteRef(Arc<SqliteConfig>),
     WeaviateRef(Arc<WeaviateRef>),
-    TavilyRef(Arc<TavilyRef>),
+    WebSearchEngineRef(Arc<WebSearchEngineRef>),
     SessionStateRef(Arc<SessionStateRef>),
     OpenAIMessageSessionCacheRef(Arc<OpenAIMessageSessionCacheRef>),
     Password(String),
@@ -904,7 +904,7 @@ impl DataValue {
             DataValue::MySqlRef(_) => DataType::MySqlRef,
             DataValue::SqliteRef(_) => DataType::SqliteRef,
             DataValue::WeaviateRef(_) => DataType::WeaviateRef,
-            DataValue::TavilyRef(_) => DataType::TavilyRef,
+            DataValue::WebSearchEngineRef(_) => DataType::WebSearchEngineRef,
             DataValue::SessionStateRef(_) => DataType::SessionStateRef,
             DataValue::OpenAIMessageSessionCacheRef(_) => DataType::OpenAIMessageSessionCacheRef,
             DataValue::Password(_) => DataType::Password,
@@ -924,7 +924,7 @@ impl DataValue {
             DataValue::BotAdapterRef(_) => "BotAdapterRef".to_string(),
             DataValue::S3Ref(_) => "S3Ref".to_string(),
             DataValue::WeaviateRef(_) => "WeaviateRef".to_string(),
-            DataValue::TavilyRef(_) => "TavilyRef".to_string(),
+            DataValue::WebSearchEngineRef(_) => "WebSearchEngineRef".to_string(),
             DataValue::LoopControlRef(_) => "LoopControlRef".to_string(),
             DataValue::EmbeddingModel(_) => "EmbeddingModel".to_string(),
             other => {
@@ -1016,9 +1016,8 @@ impl DataValue {
                 "class_name": weaviate_ref.class_name,
                 "timeout_secs": weaviate_ref.timeout.as_secs(),
             }),
-            DataValue::TavilyRef(tavily_ref) => serde_json::json!({
-                "type": "TavilyRef",
-                "timeout_secs": tavily_ref.timeout.as_secs(),
+            DataValue::WebSearchEngineRef(_) => serde_json::json!({
+                "type": "WebSearchEngineRef",
             }),
             DataValue::SessionStateRef(session_ref) => serde_json::json!({
                 "type": "SessionStateRef",
@@ -1059,8 +1058,8 @@ impl fmt::Debug for DataValue {
             DataValue::WeaviateRef(weaviate_ref) => {
                 f.debug_tuple("WeaviateRef").field(weaviate_ref).finish()
             }
-            DataValue::TavilyRef(tavily_ref) => {
-                f.debug_tuple("TavilyRef").field(tavily_ref).finish()
+            DataValue::WebSearchEngineRef(tavily_ref) => {
+                f.debug_tuple("WebSearchEngineRef").field(tavily_ref).finish()
             }
             DataValue::SessionStateRef(session_ref) => {
                 f.debug_tuple("SessionStateRef").field(session_ref).finish()

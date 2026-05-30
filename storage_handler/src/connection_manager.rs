@@ -565,7 +565,7 @@ fn kind_name(kind: &ConnectionKind) -> &'static str {
         ConnectionKind::Weaviate(_) => "weaviate",
         ConnectionKind::Rustfs(_) => "rustfs",
         ConnectionKind::BotAdapter(_) => "bot_adapter",
-        ConnectionKind::Tavily(_) => "tavily",
+        ConnectionKind::WebSearchEngine(_) => "web_search_engine",
         ConnectionKind::Tokenizer(_) => "tokenizer",
         ConnectionKind::Sqlite(_) => "sqlite",
     }
