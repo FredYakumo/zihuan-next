@@ -781,7 +781,7 @@ fn collect_image_prompt_references(
                 if let Some(source_messages) = valid_reply_source_messages(reply) {
                     collect_image_prompt_references(
                         source_messages,
-                        &format!("引用消息 {}", reply.id),
+                        "引用消息",
                         references,
                     );
                 }
@@ -993,13 +993,13 @@ fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message> {
     for message in messages {
         match message {
             Message::Reply(reply) => {
-                push_inference_text(&mut expanded, format!("[引用消息 {} 开始]", reply.id));
+                push_inference_text(&mut expanded, "[引用消息开始]");
                 if let Some(source_messages) = valid_reply_source_messages(reply) {
                     expanded.extend(expand_messages_for_inference(source_messages));
                 } else {
                     expanded.push(message.clone());
                 }
-                push_inference_text(&mut expanded, format!("[引用消息 {} 结束]", reply.id));
+                push_inference_text(&mut expanded, "[引用消息结束]");
             }
             Message::Forward(forward) => {
                 if forward.content.is_empty() {
@@ -1007,11 +1007,7 @@ fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message> {
                     continue;
                 }
 
-                if let Some(forward_id) = forward.id.as_deref() {
-                    push_inference_text(&mut expanded, format!("[转发消息 {forward_id} 开始]"));
-                } else {
-                    push_inference_text(&mut expanded, "[转发消息开始]");
-                }
+                push_inference_text(&mut expanded, "[转发消息开始]");
 
                 for (index, node) in forward.content.iter().enumerate() {
                     let sender = node
@@ -1026,11 +1022,7 @@ fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message> {
                     expanded.extend(expand_messages_for_inference(&node.content));
                 }
 
-                if let Some(forward_id) = forward.id.as_deref() {
-                    push_inference_text(&mut expanded, format!("[转发消息 {forward_id} 结束]"));
-                } else {
-                    push_inference_text(&mut expanded, "[转发消息结束]");
-                }
+                push_inference_text(&mut expanded, "[转发消息结束]");
             }
             _ => expanded.push(message.clone()),
         }
@@ -2094,7 +2086,8 @@ mod tests {
             .expect("text-only model should receive text");
         assert!(text.contains("[可分析图片]"));
         assert!(text.contains("media_id=media-text-only"));
-        assert!(text.contains("引用消息 88"));
+        assert!(text.contains("引用消息"));
+        assert!(!text.contains("引用消息 88"));
     }
 }
 
