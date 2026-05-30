@@ -138,6 +138,7 @@ export const QQ_CHAT_DEFAULT_TOOLS: DefaultToolOption[] = [
   { id: "get_recent_user_messages", label: "get_recent_user_messages", description: "查询用户近期消息" },
   { id: "search_similar_images", label: "search_similar_images", description: "语义检索相似图片" },
   { id: "image_understand", label: "image_understand", description: "按 media_id 理解图片内容" },
+  { id: "reply_message", label: "reply_message", description: "显式引用某条消息" },
 ];
 
 export const HTTP_STREAM_DEFAULT_TOOLS: DefaultToolOption[] = [

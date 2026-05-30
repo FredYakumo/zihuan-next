@@ -2,9 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use log::{info, warn};
 
-use ims_bot_adapter::message_helpers::{
-    get_bot_id, send_friend_batches_with_persistence, send_group_batches_with_persistence,
-};
+use ims_bot_adapter::message_helpers::get_bot_id;
 
 use model_inference::inference_function::compact_message::{
     compact_message_history, estimate_messages_tokens,
@@ -28,13 +26,17 @@ use zihuan_graph_engine::DataValue;
 
 use super::super::classify_intent::{classify_intent_with_trace, IntentCategory};
 use super::super::qq_chat_agent_logging::QqChatBrainObserver;
+use super::super::qq_chat_agent_msg_send::{
+    send_planned_batches, take_reply_directive, QqSendContext,
+};
 use super::super::tools::{
     EditableQqAgentTool, GetAgentPublicInfoBrainTool, GetFunctionListBrainTool,
     GetRecentGroupMessagesBrainTool, GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool,
-    SearchSimilarImagesBrainTool, ToolNotificationTarget, WebSearchBrainTool,
+    ReplyMessageBrainTool, SearchSimilarImagesBrainTool, ToolNotificationTarget, WebSearchBrainTool,
     DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
     DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
-    DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
+    DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_REPLY_MESSAGE, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
+    DEFAULT_TOOL_WEB_SEARCH,
     QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
 };
 
@@ -571,6 +573,12 @@ impl QqChatAgent {
             ));
         }
 
+        if self.is_default_tool_enabled(DEFAULT_TOOL_REPLY_MESSAGE) {
+            brain = brain.with_tool(ReplyMessageBrainTool::new(Arc::clone(
+                &shared_runtime_values,
+            )));
+        }
+
         let qq_chat_agent_config = current_qq_chat_agent_config()?;
         for tool_def in &self.tool_definitions {
             brain.add_tool(EditableQqAgentTool {
@@ -665,6 +673,7 @@ impl QqChatAgent {
         trace.record_llm_result_parsed(final_assistant_text.as_deref());
 
         let available_media = collect_available_media_from_brain_output(&brain_output);
+        let reply_directive = take_reply_directive(&shared_runtime_values);
         let mut visible_assistant_history_text = None;
 
         if let Some(content) = final_assistant_text {
@@ -677,6 +686,7 @@ impl QqChatAgent {
                 bot_id,
                 ctx.bot_name,
                 ctx.max_message_length,
+                reply_directive,
                 Some(inference_event.message_id),
                 available_media,
                 ctx.reply_batch_builder,
@@ -686,29 +696,29 @@ impl QqChatAgent {
             if reply_result.suppress_send {
                 trace.record_reply_send(true, false, &reply_result.batches);
             } else if !reply_result.batches.is_empty() {
-                let persistence = build_outbound_persistence(
-                    ctx.rdb_pool,
-                    ctx.mysql_ref,
-                    event.group_name.as_deref(),
-                    ctx.bot_name,
-                );
-                if is_group {
-                    send_group_batches_with_persistence(
-                        ctx.adapter,
-                        target_id,
-                        &reply_result.batches,
-                        &persistence,
-                    );
-                } else {
-                    send_friend_batches_with_persistence(
-                        ctx.adapter,
-                        target_id,
-                        &reply_result.batches,
-                        &persistence,
-                    );
-                }
+                let send_ctx = QqSendContext {
+                    adapter: ctx.adapter,
+                    target_id,
+                    is_group,
+                    group_name: event.group_name.as_deref(),
+                    bot_id,
+                    bot_name: ctx.bot_name,
+                    mention_target_id: if is_group { Some(sender_id) } else { None },
+                    persistence: build_outbound_persistence(
+                        ctx.rdb_pool,
+                        ctx.mysql_ref,
+                        event.group_name.as_deref(),
+                        ctx.bot_name,
+                    ),
+                    max_text_chars: ctx.max_message_length,
+                };
+                send_planned_batches(&send_ctx, &reply_result.batches);
                 trace.record_reply_send(false, true, &reply_result.batches);
-                visible_assistant_history_text = Some(content);
+                visible_assistant_history_text = Some(if is_group {
+                    content.replace("@sender", &format!("@{}", sender_id))
+                } else {
+                    content
+                });
             } else {
                 trace.record_reply_send(false, false, &reply_result.batches);
                 warn!("{LOG_PREFIX} Brain finished with empty sendable reply content");

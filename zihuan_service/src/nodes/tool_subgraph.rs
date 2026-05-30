@@ -2,10 +2,6 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use ims_bot_adapter::adapter::shared_from_handle;
-use ims_bot_adapter::message_helpers::{
-    send_friend_progress_notification_with_persistence,
-    send_group_progress_notification_with_persistence, OutboundMessagePersistence,
-};
 use ims_bot_adapter::models::MessageType;
 use log::{info, warn};
 use serde_json::{json, Map, Value};
@@ -34,6 +30,7 @@ use zihuan_graph_engine::{DataType, DataValue, Port};
 
 use crate::agent::QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS;
 use crate::agent::execute_image_understand_tool;
+use crate::agent::qq_chat_agent_msg_send::{send_notification_text, QqSendContext};
 
 pub const QQ_AGENT_TOOL_OUTPUT_NAME: &str = "result";
 
@@ -354,24 +351,35 @@ fn send_brain_tool_progress_notification(
 
     if event.message_type == MessageType::Group {
         if let Some(group_id) = event.group_id {
-            send_group_progress_notification_with_persistence(
-                &adapter,
-                &group_id.to_string(),
-                &event.sender.user_id.to_string(),
-                call_content,
-                &OutboundMessagePersistence {
-                    group_name: event.group_name.clone(),
-                    ..OutboundMessagePersistence::default()
-                },
-            );
+            let group_id = group_id.to_string();
+            let sender_id = event.sender.user_id.to_string();
+            let send_ctx = QqSendContext {
+                adapter: &adapter,
+                target_id: &group_id,
+                is_group: true,
+                group_name: event.group_name.as_deref(),
+                bot_id: "",
+                bot_name: "",
+                mention_target_id: Some(&sender_id),
+                persistence: Default::default(),
+                max_text_chars: 250,
+            };
+            let _ = send_notification_text(&send_ctx, call_content);
         }
     } else {
-        send_friend_progress_notification_with_persistence(
-            &adapter,
-            &event.sender.user_id.to_string(),
-            call_content,
-            &OutboundMessagePersistence::default(),
-        );
+        let target_id = event.sender.user_id.to_string();
+        let send_ctx = QqSendContext {
+            adapter: &adapter,
+            target_id: &target_id,
+            is_group: false,
+            group_name: None,
+            bot_id: "",
+            bot_name: "",
+            mention_target_id: None,
+            persistence: Default::default(),
+            max_text_chars: 250,
+        };
+        let _ = send_notification_text(&send_ctx, call_content);
     }
 }
 

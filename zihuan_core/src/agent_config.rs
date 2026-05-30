@@ -161,6 +161,7 @@ fn default_qq_chat_default_tools_enabled() -> HashMap<String, bool> {
         "get_recent_user_messages",
         "search_similar_images",
         "image_understand",
+        "reply_message",
     ]
     .into_iter()
     .map(|name| (name.to_string(), true))

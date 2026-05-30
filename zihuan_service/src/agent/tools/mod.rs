@@ -14,6 +14,7 @@ mod image_understand;
 mod image_search;
 mod info_tools;
 mod recent_messages;
+mod reply_message;
 mod web_search;
 
 mod build_metadata {
@@ -26,6 +27,7 @@ pub(crate) use image_understand::{execute_image_understand_tool, ImageUnderstand
 pub(crate) use image_search::SearchSimilarImagesBrainTool;
 pub(crate) use info_tools::{GetAgentPublicInfoBrainTool, GetFunctionListBrainTool};
 pub(crate) use recent_messages::{GetRecentGroupMessagesBrainTool, GetRecentUserMessagesBrainTool};
+pub(crate) use reply_message::ReplyMessageBrainTool;
 pub(crate) use web_search::WebSearchBrainTool;
 
 pub(crate) const DEFAULT_TOOL_WEB_SEARCH: &str = "web_search";
@@ -35,6 +37,7 @@ pub(crate) const DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES: &str = "get_recent_grou
 pub(crate) const DEFAULT_TOOL_GET_RECENT_USER_MESSAGES: &str = "get_recent_user_messages";
 pub(crate) const DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES: &str = "search_similar_images";
 pub(crate) const DEFAULT_TOOL_IMAGE_UNDERSTAND: &str = "image_understand";
+pub(crate) const DEFAULT_TOOL_REPLY_MESSAGE: &str = "reply_message";
 const AGENT_PUBLIC_NAME: &str = "紫幻zihuan-next";
 const AGENT_GITHUB_REPOSITORY: &str = "https://github.com/FredYakumo/zihuan-next";
 const AGENT_GIT_COMMIT_ID: &str = build_metadata::ZIHUAN_GIT_COMMIT_ID;

@@ -9,11 +9,15 @@ use zihuan_nlp::{PunctuationSegmenter, TextSegmenter};
 use super::qq_chat_agent_ignore_store::should_ignore_message_blocking;
 pub(crate) use super::qq_chat_agent_logging::QqChatTaskTrace;
 pub(crate) use super::tools::build_info_brain_tools;
+use super::qq_chat_agent_msg_send::{
+    build_long_task_complete_content, build_long_task_start_text, send_forward_content,
+    send_notification_text, send_planned_batches, QqReplyDirective, QqSendContext,
+};
 use super::tools::{
     DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
     DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
     DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
-    DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
+    DEFAULT_TOOL_REPLY_MESSAGE, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
     DEFAULT_TOOL_WEB_SEARCH,
 };
 use crate::nodes::tool_subgraph::{
@@ -26,9 +30,7 @@ use crate::storage::qq_chat_session_store::{
     build_outbound_persistence, release_session, try_claim_session,
 };
 use ims_bot_adapter::adapter::restore_messages_for_message_id;
-use ims_bot_adapter::message_helpers::{
-    get_bot_id, send_friend_batches_with_persistence, send_group_batches_with_persistence,
-};
+use ims_bot_adapter::message_helpers::get_bot_id;
 use ims_bot_adapter::models::event_model::{MessageEvent, MessageType};
 use ims_bot_adapter::models::message::{
     AtTargetMessage, ForwardMessage, ForwardNodeMessage, Message, MessageProp, PersistedMedia,
@@ -44,7 +46,6 @@ use zihuan_core::command::{
 use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
-use zihuan_core::llm::InferenceParam;
 use zihuan_core::llm::{ContentPart, MessageContent, OpenAIMessage};
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::runtime::block_async;
@@ -64,7 +65,6 @@ use zihuan_graph_engine::DataValue;
 
 pub(crate) const LOG_PREFIX: &str = "[QqChatAgent]";
 const MAX_REPLY_CHARS: usize = 250;
-const MAX_FORWARD_NODE_CHARS: usize = 800;
 pub(crate) const LOG_TEXT_PREVIEW_CHARS: usize = 1_200;
 const LOG_TOOL_PREVIEW_CHARS: usize = 600;
 pub(crate) const DIRECT_REPLY_NO_SYSTEM_PROMPT: &str = "没有系统提示词";
@@ -129,17 +129,23 @@ impl SideEffectContext for QqCommandSideEffectContext<'_> {
     }
 
     fn send_forward_content(&self, content: &str) -> Result<()> {
-        send_forward_content_to_target(
-            self.adapter,
-            self.target_id,
-            self.rdb_pool,
-            self.mysql_ref,
-            self.group_name,
-            self.bot_id,
-            self.bot_name,
-            content,
-            self.is_group,
-        )
+        let send_ctx = QqSendContext {
+            adapter: self.adapter,
+            target_id: self.target_id,
+            is_group: self.is_group,
+            group_name: self.group_name,
+            bot_id: self.bot_id,
+            bot_name: self.bot_name,
+            mention_target_id: None,
+            persistence: build_outbound_persistence(
+                self.rdb_pool,
+                self.mysql_ref,
+                self.group_name,
+                self.bot_name,
+            ),
+            max_text_chars: MAX_REPLY_CHARS,
+        };
+        send_forward_content(&send_ctx, content)
     }
 }
 
@@ -211,6 +217,7 @@ fn default_tools_enabled_map() -> HashMap<String, bool> {
         DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
         DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
         DEFAULT_TOOL_IMAGE_UNDERSTAND,
+        DEFAULT_TOOL_REPLY_MESSAGE,
     ]
     .into_iter()
     .map(|name| (name.to_string(), true))
@@ -225,7 +232,7 @@ fn build_common_system_rules(identity_example: &str, agent_system_prompt: Option
          - 用户问“你是谁/你叫什么”时，直接用你自己的身份回答，例如：{identity_example}\n\
          - 你可以直接在最终回复里写 `@QQ号`，系统会在发送前把它转换成真正的 @ 消息段。\n\
           - 群聊中你可以用 `@sender` 来 @发送者，系统会自动替换为对方QQ号，你不必记住对方的QQ号。\n\
-         - 你可以直接写 `[Reply message_id=123456]` 引用一条消息；系统会在发送前把它转换成 reply 消息段。\n\
+         - 需要引用某条消息时，请调用 `reply_message` 工具；不要在正文里手写 Reply 标记。\n\
          - 你可以直接写 `[Image media_id=media-xxxx]` 发送图片；系统会在发送前把它转换成 image 消息段。\n\
          - 如果你决定不回复对方，直接只输出 `[no reply]`。\n\
          - 以上标记请像普通正文一样直接写在最终回复中，系统会按原位置尽量还原为对应消息段。\n\
@@ -277,7 +284,7 @@ pub(crate) fn build_group_system_prompt(
         agent_system_prompt,
     );
     rules.push_str(&format!(
-        "\n- 群聊回复时，尽量在回复中 @sender 或使用 [Reply his_message] 引用触发这条对话的消息，让对方清楚你是在回应他。"
+        "\n- 群聊回复时，尽量在回复中 @sender，或者在需要引用时先调用 `reply_message` 工具，让对方清楚你是在回应他。"
     ));
     format!(
         "你的名字叫`{bot_name}`(QQ号为`{bot_id}`)。现在时间是{time}，你正在`{group_name}`群(群号:{group_id})里聊天，群友`{sender_name}`(QQ号`{sender_id}`)向你发送了一条消息。\n\
@@ -470,8 +477,9 @@ pub struct QqAgentReplyBuildRequest {
     pub bot_id: String,
     pub bot_name: String,
     pub max_message_length: usize,
+    /// Reply target chosen by the `reply_message` tool, if any.
+    pub reply_directive: Option<QqReplyDirective>,
     /// Message ID of the event that triggered this agent invocation.
-    /// Used to resolve `[Reply his_message]` in the assistant output.
     pub trigger_message_id: Option<i64>,
     /// Media candidates discovered during the current inference turn, keyed by media_id.
     pub available_media: HashMap<String, PersistedMedia>,
@@ -495,6 +503,7 @@ pub(crate) fn build_reply_result(
     bot_id: &str,
     bot_name: &str,
     max_message_length: usize,
+    reply_directive: Option<QqReplyDirective>,
     trigger_message_id: Option<i64>,
     available_media: HashMap<String, PersistedMedia>,
     reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
@@ -514,6 +523,7 @@ pub(crate) fn build_reply_result(
             bot_id: bot_id.to_string(),
             bot_name: bot_name.to_string(),
             max_message_length,
+            reply_directive,
             trigger_message_id,
             available_media,
         });
@@ -540,6 +550,7 @@ fn build_reply_batches(
     bot_id: &str,
     bot_name: &str,
     max_message_length: usize,
+    reply_directive: Option<QqReplyDirective>,
     trigger_message_id: Option<i64>,
     available_media: HashMap<String, PersistedMedia>,
     reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
@@ -553,6 +564,7 @@ fn build_reply_batches(
         bot_id,
         bot_name,
         max_message_length,
+        reply_directive,
         trigger_message_id,
         available_media,
         reply_batch_builder,
@@ -1268,7 +1280,7 @@ fn split_text_by_semantic_boundaries(content: &str, max_chars: usize) -> Vec<Str
 
 pub(crate) fn build_output_contract_priming_message() -> OpenAIMessage {
     OpenAIMessage::assistant_text(
-        "明白。我最终只会写聊天对象真正会看到的话，必要时直接使用 @QQ号、[Reply his_message]、[Reply message_id=...]、[Image media_id=...]、[no reply] 这些标记，不写内部汇报。"
+        "明白。我最终只会写聊天对象真正会看到的话，必要时直接使用 @QQ号、[Image media_id=...]、[no reply] 这些标记；需要引用时会先调用 `reply_message` 工具，不写内部汇报。"
             .to_string(),
     )
 }
@@ -1350,6 +1362,7 @@ pub(crate) fn send_direct_text_reply(
         bot_name,
         max_message_length,
         None,
+        None,
         HashMap::new(),
         reply_batch_builder,
     )?;
@@ -1359,126 +1372,20 @@ pub(crate) fn send_direct_text_reply(
 
     let persistence = build_outbound_persistence(rdb_pool, mysql_ref, group_name, bot_name);
     trace.mark_reply_send_started();
-    if is_group {
-        send_group_batches_with_persistence(adapter, target_id, &batches, &persistence);
-    } else {
-        send_friend_batches_with_persistence(adapter, target_id, &batches, &persistence);
-    }
-    trace.record_reply_send(false, true, &batches);
-    Ok(Some(content.trim().to_string()))
-}
-
-fn send_persisted_batches(
-    adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
-    target_id: &str,
-    batches: &[Vec<Message>],
-    rdb_pool: Option<&RelationalDbConnection>,
-    mysql_ref: Option<&Arc<MySqlConfig>>,
-    group_name: Option<&str>,
-    bot_name: &str,
-    is_group: bool,
-) {
-    let persistence = build_outbound_persistence(rdb_pool, mysql_ref, group_name, bot_name);
-    if is_group {
-        send_group_batches_with_persistence(adapter, target_id, batches, &persistence);
-    } else {
-        send_friend_batches_with_persistence(adapter, target_id, batches, &persistence);
-    }
-}
-
-fn notification_text_batches(content: &str, is_group: bool, sender_id: Option<&str>) -> Vec<Vec<Message>> {
-    let mut batches = plain_text_batches(content);
-    if is_group {
-        if let (Some(sender_id), Some(first_batch)) = (sender_id, batches.first_mut()) {
-            first_batch.insert(
-                0,
-                Message::At(AtTargetMessage {
-                    target: Some(sender_id.to_string()),
-                }),
-            );
-            if let Some(Message::PlainText(first_text)) = first_batch.get_mut(1) {
-                first_text.text = format!(" {}", first_text.text.trim_start());
-            }
-        }
-    }
-    batches
-}
-
-fn build_long_task_start_text(task_id: &str, call_content: &str) -> String {
-    let content = call_content.trim();
-    if content.is_empty() {
-        format!("正在执行长时任务\n可使用 /task {task_id} 查看进度。")
-    } else {
-        format!(
-            "{content}\n可使用 /task {task_id} 查看进度。"
-        )
-    }
-}
-
-fn build_long_task_complete_content(
-    task_id: &str,
-    task_name: &str,
-    progress: &[String],
-    result: &str,
-) -> String {
-    let result = result.trim();
-    let result = if result.is_empty() { "没有结果" } else { result };
-    let mut content = format!("\n任务: {task_name}({task_id})");
-    if !progress.is_empty() {
-        content.push_str("\n\n");
-        for (index, item) in progress.iter().enumerate() {
-            content.push_str(&format!("\n{}. {}", index + 1, item));
-        }
-    }
-    content.push_str(&format!("\n\n{result}"));
-    content
-}
-
-fn send_forward_content_to_target(
-    adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
-    target_id: &str,
-    rdb_pool: Option<&RelationalDbConnection>,
-    mysql_ref: Option<&Arc<MySqlConfig>>,
-    group_name: Option<&str>,
-    bot_id: &str,
-    bot_name: &str,
-    content: &str,
-    is_group: bool,
-) -> Result<()> {
-    let batches = build_forward_message_batches(content, bot_id, bot_name)?;
-    send_persisted_batches(
+    let send_ctx = QqSendContext {
         adapter,
         target_id,
-        &batches,
-        rdb_pool,
-        mysql_ref,
-        group_name,
-        bot_name,
         is_group,
-    );
-    Ok(())
-}
-
-fn build_forward_message_batches(
-    content: &str,
-    bot_id: &str,
-    bot_name: &str,
-) -> Result<Vec<Vec<Message>>> {
-    let chunks = split_text_by_semantic_boundaries(content, MAX_FORWARD_NODE_CHARS);
-    let mut batches = Vec::new();
-
-    for chunk in chunks {
-        let forward = build_forward_message_from_chunks(vec![chunk], bot_id, bot_name)?;
-        batches.push(vec![Message::Forward(forward)]);
-    }
-
-    if batches.is_empty() {
-        return Err(Error::ValidationError(
-            "forward content must not be blank".to_string(),
-        ));
-    }
-
-    Ok(batches)
+        group_name,
+        bot_id,
+        bot_name,
+        mention_target_id: if is_group { Some(sender_id) } else { None },
+        persistence,
+        max_text_chars: max_message_length,
+    };
+    send_planned_batches(&send_ctx, &batches);
+    trace.record_reply_send(false, true, &batches);
+    Ok(Some(content.trim().to_string()))
 }
 
 pub(crate) fn build_model_name_reply(model_display_names: &[String]) -> String {
@@ -1500,113 +1407,6 @@ pub(crate) fn build_model_name_reply(model_display_names: &[String]) -> String {
     }
 }
 
-fn build_forward_message(content: &str, bot_id: &str, bot_name: &str) -> Result<ForwardMessage> {
-    build_forward_message_from_chunks(
-        split_text_by_semantic_boundaries(content, MAX_FORWARD_NODE_CHARS),
-        bot_id,
-        bot_name,
-    )
-}
-
-fn build_forward_message_from_chunks(
-    chunks: Vec<String>,
-    bot_id: &str,
-    bot_name: &str,
-) -> Result<ForwardMessage> {
-    let nodes: Vec<ForwardNodeMessage> = chunks
-        .into_iter()
-        .filter(|chunk| !chunk.trim().is_empty())
-        .map(|chunk| ForwardNodeMessage {
-            user_id: Some(bot_id.to_string()),
-            nickname: Some(bot_name.to_string()),
-            id: None,
-            content: vec![Message::PlainText(PlainTextMessage { text: chunk })],
-        })
-        .collect();
-
-    if nodes.is_empty() {
-        return Err(Error::ValidationError(
-            "forward content must not be blank".to_string(),
-        ));
-    }
-
-    Ok(ForwardMessage {
-        id: None,
-        content: nodes,
-    })
-}
-
-fn split_text_with_llm_for_forward(
-    llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-    content: &str,
-) -> Result<Vec<String>> {
-    let messages = vec![
-        OpenAIMessage::system(format!(
-            "你是一个中文长文本整理助手。你的任务是把用户给出的长文本拆成适合 QQ 转发消息节点展示的多个自然语义片段。\n\
-             你必须满足这些规则：\n\
-             1. 只输出纯 JSON 字符串数组，例如 [\"第一段\", \"第二段\"]，不要输出 markdown、代码块或解释。\n\
-             2. 不要改写原文事实，不要新增信息，不要省略关键内容。\n\
-             3. 按自然语义分段，优先保持段落、列表项、主题边界完整。\n\
-             4. 每个数组元素控制在 {MAX_FORWARD_NODE_CHARS} 字以内，尽量不要太碎。\n\
-             5. 如果原文本来就适合直接分段展示，只做分段，不要总结。"
-        )),
-        OpenAIMessage::user(content.to_string()),
-    ];
-    let param = InferenceParam {
-        messages: &messages,
-        tools: None,
-    };
-    let response = llm.inference(&param);
-    let response_text = response.content_text_owned().unwrap_or_default();
-    if response_text.starts_with("Error:") {
-        return Err(Error::StringError(format!(
-            "forward splitting LLM request failed: {response_text}"
-        )));
-    }
-    if !response.tool_calls.is_empty() {
-        return Err(Error::ValidationError(
-            "forward splitting LLM unexpectedly returned tool calls".to_string(),
-        ));
-    }
-
-    let chunks: Vec<String> = serde_json::from_str(response_text.trim()).map_err(|e| {
-        Error::ValidationError(format!(
-            "failed to parse forward splitting LLM response: {e}"
-        ))
-    })?;
-
-    let chunks: Vec<String> = chunks
-        .into_iter()
-        .map(|chunk| chunk.trim().to_string())
-        .filter(|chunk| !chunk.is_empty())
-        .collect();
-
-    if chunks.is_empty() {
-        return Err(Error::ValidationError(
-            "forward splitting LLM returned empty chunks".to_string(),
-        ));
-    }
-
-    Ok(chunks)
-}
-
-fn build_forward_message_via_llm(
-    llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-    content: &str,
-    bot_id: &str,
-    bot_name: &str,
-) -> Result<ForwardMessage> {
-    match split_text_with_llm_for_forward(llm, content) {
-        Ok(chunks) => build_forward_message_from_chunks(chunks, bot_id, bot_name),
-        Err(err) => {
-            warn!(
-                "{LOG_PREFIX} Forward splitting LLM failed, falling back to local semantic split: {err}"
-            );
-            build_forward_message(content, bot_id, bot_name)
-        }
-    }
-}
-
 pub(crate) struct QqLongTaskNotifier {
     adapter: ims_bot_adapter::adapter::SharedBotAdapter,
     target_id: String,
@@ -1622,17 +1422,23 @@ pub(crate) struct QqLongTaskNotifier {
 impl LongTaskNotifier for QqLongTaskNotifier {
     fn on_start(&self, task_id: &str, _task_name: &str, call_content: &str) {
         let text = build_long_task_start_text(task_id, call_content);
-        let batches = notification_text_batches(&text, self.is_group, Some(&self.sender_id));
-        send_persisted_batches(
-            &self.adapter,
-            &self.target_id,
-            &batches,
-            self.rdb_pool.as_ref(),
-            self.mysql_ref.as_ref(),
-            self.group_name.as_deref(),
-            &self.bot_name,
-            self.is_group,
-        );
+        let send_ctx = QqSendContext {
+            adapter: &self.adapter,
+            target_id: &self.target_id,
+            is_group: self.is_group,
+            group_name: self.group_name.as_deref(),
+            bot_id: &self.bot_id,
+            bot_name: &self.bot_name,
+            mention_target_id: Some(&self.sender_id),
+            persistence: build_outbound_persistence(
+                self.rdb_pool.as_ref(),
+                self.mysql_ref.as_ref(),
+                self.group_name.as_deref(),
+                &self.bot_name,
+            ),
+            max_text_chars: MAX_REPLY_CHARS,
+        };
+        let _ = send_notification_text(&send_ctx, &text);
     }
 
     fn on_complete(&self, task_id: &str, task_name: &str, result: &str) {
@@ -1641,17 +1447,23 @@ impl LongTaskNotifier for QqLongTaskNotifier {
             .map(|task| task.progress)
             .unwrap_or_default();
         let content = build_long_task_complete_content(task_id, task_name, &progress, result);
-        if let Err(err) = send_forward_content_to_target(
-            &self.adapter,
-            &self.target_id,
-            self.rdb_pool.as_ref(),
-            self.mysql_ref.as_ref(),
-            self.group_name.as_deref(),
-            &self.bot_id,
-            &self.bot_name,
-            &content,
-            self.is_group,
-        ) {
+        let send_ctx = QqSendContext {
+            adapter: &self.adapter,
+            target_id: &self.target_id,
+            is_group: self.is_group,
+            group_name: self.group_name.as_deref(),
+            bot_id: &self.bot_id,
+            bot_name: &self.bot_name,
+            mention_target_id: None,
+            persistence: build_outbound_persistence(
+                self.rdb_pool.as_ref(),
+                self.mysql_ref.as_ref(),
+                self.group_name.as_deref(),
+                &self.bot_name,
+            ),
+            max_text_chars: MAX_REPLY_CHARS,
+        };
+        if let Err(err) = send_forward_content(&send_ctx, &content) {
             warn!(
                 "{LOG_PREFIX} failed to send long-task completion forward message for task_id={task_id}: {err}"
             );

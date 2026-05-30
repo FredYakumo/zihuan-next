@@ -449,9 +449,9 @@
               "edges": [
                 {
                   "from_node_id": "tool_tavily_ref",
-                  "from_port": "tavily_ref",
+                  "from_port": "web_search_engine_ref",
                   "to_node_id": "tool_tavily_search_node",
-                  "to_port": "tavily_ref"
+                  "to_port": "web_search_engine_ref"
                 },
                 {
                   "from_node_id": "__function_inputs__",
@@ -674,9 +674,9 @@
                   "output_ports": [
                     {
                       "data_type": "WebSearchEngineRef",
-                      "description": "Agent Tavily 搜索引用",
+                      "description": "Agent Web Search Engine 搜索引用",
                       "hidden": false,
-                      "name": "tavily_ref",
+                      "name": "web_search_engine_ref",
                       "required": true
                     }
                   ],
@@ -702,9 +702,9 @@
                   "input_ports": [
                     {
                       "data_type": "WebSearchEngineRef",
-                      "description": "Tavily 搜索引用",
+                      "description": "Web Search Engine 搜索引用",
                       "hidden": false,
-                      "name": "tavily_ref",
+                      "name": "web_search_engine_ref",
                       "required": true
                     },
                     {
