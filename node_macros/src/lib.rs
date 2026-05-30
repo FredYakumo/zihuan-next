@@ -242,7 +242,10 @@ impl Parse for FlowInput {
             let self_token: Token![self] = input.parse()?;
             input.parse::<Token![;]>()?;
             let entries: FlowEntryList = input.parse()?;
-            Ok(FlowInput::WithSelf { self_token, entries })
+            Ok(FlowInput::WithSelf {
+                self_token,
+                entries,
+            })
         } else {
             let entries: FlowEntryList = input.parse()?;
             Ok(FlowInput::Entries(entries))

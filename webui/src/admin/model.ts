@@ -102,6 +102,7 @@ export interface AgentFormState {
   bot_name: string;
   system_prompt: string;
   llm_ref_id: string;
+  image_understand_llm_ref_id: string;
   intent_llm_ref_id: string;
   math_programming_llm_ref_id: string;
   embedding_model_ref_id: string;
@@ -250,6 +251,7 @@ export function defaultAgentForm(): AgentFormState {
     bot_name: "",
     system_prompt: "",
     llm_ref_id: "",
+    image_understand_llm_ref_id: "",
     intent_llm_ref_id: "",
     math_programming_llm_ref_id: "",
     embedding_model_ref_id: "",
@@ -527,6 +529,7 @@ export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): Agen
     form.bot_name = String(agentType.bot_name ?? "");
     form.system_prompt = String(agentType.system_prompt ?? "");
     form.llm_ref_id = String(agentType.llm_ref_id ?? "");
+    form.image_understand_llm_ref_id = String(agentType.image_understand_llm_ref_id ?? "");
     form.intent_llm_ref_id = String(agentType.intent_llm_ref_id ?? "");
     form.math_programming_llm_ref_id = String(agentType.math_programming_llm_ref_id ?? "");
     form.embedding_model_ref_id = String(agentType.embedding_model_ref_id ?? "");
@@ -631,6 +634,7 @@ export function buildAgentPayload(form: AgentFormState): {
         bot_name: form.bot_name.trim(),
         system_prompt: form.system_prompt.trim() || null,
         llm_ref_id: form.llm_ref_id || null,
+        image_understand_llm_ref_id: form.image_understand_llm_ref_id || null,
         intent_llm_ref_id: form.intent_llm_ref_id || null,
         math_programming_llm_ref_id: form.math_programming_llm_ref_id || null,
         embedding_model_ref_id: form.embedding_model_ref_id || null,

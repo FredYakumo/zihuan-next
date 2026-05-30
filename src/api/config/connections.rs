@@ -172,7 +172,9 @@ async fn refresh_relational_db_pool(
     }
     drop(tasks);
 
-    match storage_handler::build_relational_db_connection_for_kind(&connection.id, &connection.kind).await {
+    match storage_handler::build_relational_db_connection_for_kind(&connection.id, &connection.kind)
+        .await
+    {
         Ok(pool) => {
             state
                 .tasks

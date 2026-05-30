@@ -48,10 +48,7 @@ pub(crate) fn save_history(
     }
 }
 
-fn clear_history_key(
-    cache: &Arc<OpenAIMessageSessionCacheRef>,
-    history_key: &str,
-) -> Result<()> {
+fn clear_history_key(cache: &Arc<OpenAIMessageSessionCacheRef>, history_key: &str) -> Result<()> {
     block_async(cache.clear_messages(history_key))
         .map(|_| ())
         .map_err(|err| {

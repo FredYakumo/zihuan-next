@@ -413,7 +413,10 @@ impl QqChatTaskTrace {
                 inner.completion_tokens_estimated = Some(completion_tokens_estimated);
             }
             inner.total_tokens_estimated = usage.total_tokens.or_else(|| {
-                match (inner.prompt_tokens_estimated, inner.completion_tokens_estimated) {
+                match (
+                    inner.prompt_tokens_estimated,
+                    inner.completion_tokens_estimated,
+                ) {
                     (Some(prompt), Some(completion)) => Some(prompt + completion),
                     _ => None,
                 }

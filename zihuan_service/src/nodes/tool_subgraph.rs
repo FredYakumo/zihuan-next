@@ -28,9 +28,9 @@ use zihuan_graph_engine::util::function::{
 };
 use zihuan_graph_engine::{DataType, DataValue, Port};
 
-use crate::agent::QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS;
 use crate::agent::execute_image_understand_tool;
 use crate::agent::qq_chat_agent_msg_send::{send_notification_text, QqSendContext};
+use crate::agent::QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS;
 
 pub const QQ_AGENT_TOOL_OUTPUT_NAME: &str = "result";
 
@@ -481,10 +481,7 @@ impl ToolSubgraphRunner {
                 Some(BuiltInBrainToolKind::ImageUnderstand) => {
                     execute_image_understand_tool(&builtin_arguments, &runtime_values)
                 }
-                None => Err(self.wrap_error(format!(
-                    "Tool '{}' missing built_in_kind",
-                    tool.name
-                ))),
+                None => Err(self.wrap_error(format!("Tool '{}' missing built_in_kind", tool.name))),
             }?;
 
             return match self.result_mode {
@@ -492,9 +489,11 @@ impl ToolSubgraphRunner {
                     let output = tool.outputs.first().ok_or_else(|| {
                         self.wrap_error(format!("Tool '{}' 必须声明一个 String 输出", tool.name))
                     })?;
-                    let result_payload =
-                        Value::Object(Map::from_iter([(output.name.clone(), Value::String(result))]))
-                            .to_string();
+                    let result_payload = Value::Object(Map::from_iter([(
+                        output.name.clone(),
+                        Value::String(result),
+                    )]))
+                    .to_string();
                     info!(
                         "[ToolSubgraph:{}] tool '{}' succeeded with result: {}",
                         self.node_id, tool.name, result_payload

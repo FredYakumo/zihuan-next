@@ -179,13 +179,17 @@ pub fn root_graph_to_tool_subgraph(graph: &NodeGraphDefinition) -> NodeGraphDefi
         .nodes
         .iter()
         .find(|node| node.id == GRAPH_INPUTS_NODE_ID)
-        .and_then(|node| crate::function_graph::function_signature_from_inline_values(&node.inline_values))
+        .and_then(|node| {
+            crate::function_graph::function_signature_from_inline_values(&node.inline_values)
+        })
         .unwrap_or_else(|| subgraph.graph_inputs.clone());
     let output_signature = subgraph
         .nodes
         .iter()
         .find(|node| node.id == GRAPH_OUTPUTS_NODE_ID)
-        .and_then(|node| crate::function_graph::function_signature_from_inline_values(&node.inline_values))
+        .and_then(|node| {
+            crate::function_graph::function_signature_from_inline_values(&node.inline_values)
+        })
         .unwrap_or_else(|| subgraph.graph_outputs.clone());
 
     for node in &mut subgraph.nodes {

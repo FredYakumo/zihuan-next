@@ -3,11 +3,10 @@ use std::path::Path;
 use std::sync::Arc;
 
 use super::inference::{InferenceToolContext, InferenceToolProvider};
-use super::qq_chat_agent_msg_send::build_reply_batch_builder as build_unified_reply_batch_builder;
 use super::qq_chat_agent_core::{
-    build_info_brain_tools, QqAgentReplyBatchBuilder, QqChatAgentService,
-    QqChatAgentServiceConfig,
+    build_info_brain_tools, QqAgentReplyBatchBuilder, QqChatAgentService, QqChatAgentServiceConfig,
 };
+use super::qq_chat_agent_msg_send::build_reply_batch_builder as build_unified_reply_batch_builder;
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
 use crate::agent::qq_chat_agent_inbox::{QqChatAgentInbox, QqChatAgentSupervisorEvent};
 use crate::agent::tool_definitions::build_enabled_tool_definitions;
@@ -23,8 +22,9 @@ use log::{error, info, warn};
 use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use model_inference::system_config::{load_llm_refs, AgentConfig, LlmRefConfig};
 use storage_handler::{
-    build_mysql_ref, build_relational_db_connection_for_connection, build_s3_ref, build_web_search_engine_ref,
-    build_weaviate_ref, find_connection, ConnectionConfig, ConnectionKind,
+    build_mysql_ref, build_relational_db_connection_for_connection, build_s3_ref,
+    build_weaviate_ref, build_web_search_engine_ref, find_connection, ConnectionConfig,
+    ConnectionKind,
 };
 use tokio::task::JoinHandle;
 use zihuan_agent::brain::BrainTool;
@@ -129,11 +129,14 @@ fn load_qq_resources(
     });
 
     let mysql_ref = build_agent_mysql_ref(config, connections, &agent.name)?;
-    let s3_ref = block_async(build_s3_ref(config.rustfs_connection_id.as_deref(), connections))
-        .unwrap_or_else(|e| {
-            warn!("[inference][qq_agent] rustfs connection unavailable: {e}");
-            None
-        });
+    let s3_ref = block_async(build_s3_ref(
+        config.rustfs_connection_id.as_deref(),
+        connections,
+    ))
+    .unwrap_or_else(|e| {
+        warn!("[inference][qq_agent] rustfs connection unavailable: {e}");
+        None
+    });
 
     let weaviate_image_ref = tokio::task::block_in_place(|| {
         build_weaviate_ref(
@@ -278,13 +281,16 @@ pub async fn spawn(
     } else {
         config.embedding.as_ref().map(build_embedding_model)
     };
-    let web_search_engine = build_web_search_engine_ref(Some(&config.web_search_engine_connection_id), &connections)?
-        .ok_or_else(|| Error::ValidationError("missing web search engine connection".to_string()))?;
+    let web_search_engine =
+        build_web_search_engine_ref(Some(&config.web_search_engine_connection_id), &connections)?
+            .ok_or_else(|| {
+            Error::ValidationError("missing web search engine connection".to_string())
+        })?;
     let object_storage = build_s3_ref(config.rustfs_connection_id.as_deref(), &connections).await?;
     let rdb_pool = match config.resolved_rdb_id() {
-        Some(connection_id) => Some(
-            build_relational_db_connection_for_connection(connection_id, &connections).await?,
-        ),
+        Some(connection_id) => {
+            Some(build_relational_db_connection_for_connection(connection_id, &connections).await?)
+        }
         None => None,
     };
     let mysql_ref = build_agent_mysql_ref(&config, &connections, &agent.name)?;

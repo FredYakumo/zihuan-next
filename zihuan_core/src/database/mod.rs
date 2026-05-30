@@ -43,7 +43,12 @@ pub async fn ensure_tables_sqlite(conn: &mut SqliteConnection) -> Result<()> {
     sqlx::query("PRAGMA foreign_keys = ON")
         .execute(&mut *conn)
         .await
-        .map_err(|e| Error::Database(sqlx::Error::Protocol(format!("SQLite PRAGMA failed: {}", e))))?;
+        .map_err(|e| {
+            Error::Database(sqlx::Error::Protocol(format!(
+                "SQLite PRAGMA failed: {}",
+                e
+            )))
+        })?;
 
     for (ddl, indexes) in ddl::SQLITE_TABLES {
         sqlx::query(ddl).execute(&mut *conn).await.map_err(|e| {

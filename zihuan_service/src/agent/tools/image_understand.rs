@@ -7,13 +7,15 @@ use model_inference::system_config::load_llm_refs;
 use serde_json::Value;
 use storage_handler::RuntimeStorageConnectionManager;
 use zihuan_agent::brain::BrainTool;
-use zihuan_core::agent_config::current_qq_chat_agent_config;
+use zihuan_core::agent_config::{current_qq_chat_agent_config, image_understand_llm_ref_id};
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::{ContentPart, InferenceParam, OpenAIMessage};
 use zihuan_core::runtime::block_async;
-use zihuan_graph_engine::message_restore::{find_media_in_messages, register_mysql_ref, restore_media_by_id};
+use zihuan_graph_engine::message_restore::{
+    find_media_in_messages, register_mysql_ref, restore_media_by_id,
+};
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
 
@@ -23,7 +25,6 @@ use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotifi
 
 const LOG_PREFIX: &str = "[QqChatAgent]";
 pub(crate) const DEFAULT_TOOL_IMAGE_UNDERSTAND: &str = "image_understand";
-const MULTIMODAL_LLM_REF_ID: &str = "llm-multimodal-default";
 
 pub(crate) struct ImageUnderstandBrainTool {
     current_event: Option<ims_bot_adapter::models::MessageEvent>,
@@ -88,14 +89,18 @@ pub(crate) fn execute_image_understand_tool(
     arguments: &Value,
     runtime_values: &HashMap<String, DataValue>,
 ) -> Result<String> {
-    let message_event = runtime_values.get("message_event").and_then(|value| match value {
-        DataValue::MessageEvent(event) => Some(event),
-        _ => None,
-    });
-    let mysql_ref = runtime_values.get("mysql_ref").and_then(|value| match value {
-        DataValue::MySqlRef(mysql_ref) => Some(mysql_ref.clone()),
-        _ => None,
-    });
+    let message_event = runtime_values
+        .get("message_event")
+        .and_then(|value| match value {
+            DataValue::MessageEvent(event) => Some(event),
+            _ => None,
+        });
+    let mysql_ref = runtime_values
+        .get("mysql_ref")
+        .and_then(|value| match value {
+            DataValue::MySqlRef(mysql_ref) => Some(mysql_ref.clone()),
+            _ => None,
+        });
     let s3_ref = runtime_values.get("s3_ref").and_then(|value| match value {
         DataValue::S3Ref(s3_ref) => Some(s3_ref.clone()),
         _ => None,
@@ -116,7 +121,8 @@ fn execute_image_understand(
 
     let persisted_media = resolve_image_understand_media(&media_id, current_event, mysql_ref)?;
     let s3_ref = resolve_image_understand_s3_ref(s3_ref)?;
-    let description = analyze_persisted_media(&persisted_media, focus_text.as_deref(), s3_ref.as_deref())?;
+    let description =
+        analyze_persisted_media(&persisted_media, focus_text.as_deref(), s3_ref.as_deref())?;
     Ok(description)
 }
 
@@ -138,7 +144,10 @@ fn resolve_image_understand_media(
     }
 
     restore_media_by_id(media_id)?.ok_or_else(|| {
-        Error::ValidationError(format!("image_understand could not find media_id '{}'", media_id))
+        Error::ValidationError(format!(
+            "image_understand could not find media_id '{}'",
+            media_id
+        ))
     })
 }
 
@@ -178,22 +187,20 @@ fn analyze_persisted_media(
     s3_ref: Option<&S3Ref>,
 ) -> Result<String> {
     let image_message = ImageMessage::new(media.clone());
-    let resolved =
-        ims_bot_adapter::multimodal_image_url::resolve_image_message_part(&image_message, s3_ref, false, LOG_PREFIX)
-            .ok_or_else(|| {
-                Error::ValidationError(format!(
-                    "image_understand failed to resolve image bytes for media_id='{}'",
-                    media.media_id
-                ))
-            })?;
+    let resolved = ims_bot_adapter::multimodal_image_url::resolve_image_message_part(
+        &image_message,
+        s3_ref,
+        false,
+        LOG_PREFIX,
+    )
+    .ok_or_else(|| {
+        Error::ValidationError(format!(
+            "image_understand failed to resolve image bytes for media_id='{}'",
+            media.media_id
+        ))
+    })?;
 
     let llm = load_multimodal_llm()?;
-    if !llm.supports_multimodal_input() {
-        return Err(Error::ValidationError(format!(
-            "llm_ref '{}' does not support multimodal input",
-            MULTIMODAL_LLM_REF_ID
-        )));
-    }
 
     let prompt = match focus_text.map(str::trim).filter(|value| !value.is_empty()) {
         Some(text) => format!(
@@ -205,8 +212,7 @@ fn analyze_persisted_media(
 
     let messages = vec![
         OpenAIMessage::system(
-            "你是一个图片理解助手。只输出简洁、客观的中文描述，不要输出多余寒暄。"
-                .to_string(),
+            "你是一个图片理解助手。只输出简洁、客观的中文描述，不要输出多余寒暄。".to_string(),
         ),
         OpenAIMessage::user_with_parts(vec![ContentPart::text(prompt), resolved.part]),
     ];
@@ -227,16 +233,44 @@ fn analyze_persisted_media(
 }
 
 fn load_multimodal_llm() -> Result<Arc<dyn zihuan_core::llm::llm_base::LLMBase>> {
+    let agent_config = current_qq_chat_agent_config()?;
     let llm_refs = load_llm_refs()?;
-    let llm_config = resolve_llm_service_config(
-        Some(MULTIMODAL_LLM_REF_ID),
-        &llm_refs,
-        DEFAULT_TOOL_IMAGE_UNDERSTAND,
-    )?;
+    let llm_ref_id = image_understand_llm_ref_id(&agent_config)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            Error::ValidationError(
+                "image_understand requires a main llm_ref_id or a dedicated image_understand_llm_ref_id"
+                    .to_string(),
+            )
+        })?;
+    let llm_config =
+        resolve_llm_service_config(Some(llm_ref_id), &llm_refs, DEFAULT_TOOL_IMAGE_UNDERSTAND)?;
+    if !llm_config.supports_multimodal_input {
+        let error_message = if agent_config
+            .image_understand_llm_ref_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_some()
+        {
+            format!(
+                "image_understand_llm_ref_id '{}' does not support multimodal input",
+                llm_ref_id
+            )
+        } else {
+            format!(
+                "main llm_ref_id '{}' does not support multimodal input; please choose a multimodal model for image_understand_llm_ref_id",
+                llm_ref_id
+            )
+        };
+        return Err(Error::ValidationError(error_message));
+    }
+
     build_llm_model(&llm_config).map_err(|error| {
         warn!(
             "{LOG_PREFIX} image_understand failed to build multimodal llm '{}': {}",
-            MULTIMODAL_LLM_REF_ID, error
+            llm_ref_id, error
         );
         error
     })

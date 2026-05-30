@@ -203,7 +203,10 @@ pub fn parse_responses_api_message(api_resp: &Value) -> Option<OpenAIMessage> {
         }
     }
 
-    if content.is_empty() && reasoning_content.is_empty() && tool_calls.is_empty() && usage.is_none()
+    if content.is_empty()
+        && reasoning_content.is_empty()
+        && tool_calls.is_empty()
+        && usage.is_none()
     {
         return None;
     }
@@ -1094,7 +1097,10 @@ pub async fn parse_chat_completions_sse_stream(
             .collect::<Vec<_>>()
     };
 
-    if content.is_empty() && reasoning_content.is_empty() && tool_calls.is_empty() && usage.is_none()
+    if content.is_empty()
+        && reasoning_content.is_empty()
+        && tool_calls.is_empty()
+        && usage.is_none()
     {
         return OpenAIMessage::assistant_text("");
     }

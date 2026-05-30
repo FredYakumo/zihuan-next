@@ -282,16 +282,19 @@ fn resolve_chat_agent(
     agent_manager: &zihuan_service::agent::AgentManager,
     agent_id: &str,
 ) -> std::result::Result<ChatAgentInfo, Value> {
-    let running_agent = agent_manager
-        .running_agent(agent_id)
-        .ok_or_else(|| json!({ "type": "error", "error": format!("agent '{}' is not running", agent_id) }))?;
+    let running_agent = agent_manager.running_agent(agent_id).ok_or_else(
+        || json!({ "type": "error", "error": format!("agent '{}' is not running", agent_id) }),
+    )?;
     let agent = running_agent.agent_config().clone();
 
     let connections = crate::system_config::load_connections()
         .map_err(|err| json!({ "type": "error", "error": err.to_string() }))?;
     let agent_snapshot = extract_agent_snapshot(&agent, &connections);
 
-    Ok(ChatAgentInfo { agent, agent_snapshot })
+    Ok(ChatAgentInfo {
+        agent,
+        agent_snapshot,
+    })
 }
 
 /// Attempt to match and execute a dashboard slash-command against the user's latest message.
@@ -467,7 +470,11 @@ async fn emit_immediate_output(
             "index": 0,
             "token": content,
         });
-        if sender.send_data(format!("data: {delta_event}\n\n")).await.is_err() {
+        if sender
+            .send_data(format!("data: {delta_event}\n\n"))
+            .await
+            .is_err()
+        {
             return false;
         }
     }
@@ -760,8 +767,8 @@ async fn execute_chat_streaming(
         }
     };
 
-    let assistant_message_id = requires_assistant_message
-        .then(|| format!("msg_{}", Uuid::new_v4().simple()));
+    let assistant_message_id =
+        requires_assistant_message.then(|| format!("msg_{}", Uuid::new_v4().simple()));
 
     if !send_sse(
         &mut sender,
@@ -802,8 +809,8 @@ async fn execute_chat_streaming(
         return;
     }
 
-    let assistant_message_id = assistant_message_id
-        .expect("assistant_message_id must exist when inference is required");
+    let assistant_message_id =
+        assistant_message_id.expect("assistant_message_id must exist when inference is required");
 
     let (token_tx, mut token_rx) = mpsc::unbounded_channel::<String>();
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<Value>();
@@ -824,9 +831,21 @@ async fn execute_chat_streaming(
     });
 
     if stream.unwrap_or(true) {
-        relay_inference_stream(&mut sender, &assistant_message_id, &mut token_rx, &mut event_rx).await;
+        relay_inference_stream(
+            &mut sender,
+            &assistant_message_id,
+            &mut token_rx,
+            &mut event_rx,
+        )
+        .await;
     } else {
-        relay_collected_text(&mut sender, &assistant_message_id, &mut token_rx, &mut event_rx).await;
+        relay_collected_text(
+            &mut sender,
+            &assistant_message_id,
+            &mut token_rx,
+            &mut event_rx,
+        )
+        .await;
     }
 
     let output_messages = match inference_handle.await {

@@ -53,10 +53,14 @@ impl Node for TavilyWebSearchNode {
         let web_search_engine_ref = inputs
             .get("web_search_engine_ref")
             .and_then(|value| match value {
-                DataValue::WebSearchEngineRef(web_search_engine_ref) => Some(web_search_engine_ref.clone()),
+                DataValue::WebSearchEngineRef(web_search_engine_ref) => {
+                    Some(web_search_engine_ref.clone())
+                }
                 _ => None,
             })
-            .ok_or_else(|| Error::InvalidNodeInput("web_search_engine_ref is required".to_string()))?;
+            .ok_or_else(|| {
+                Error::InvalidNodeInput("web_search_engine_ref is required".to_string())
+            })?;
 
         let query = inputs
             .get("query")

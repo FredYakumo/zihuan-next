@@ -3,9 +3,7 @@ use std::time::Duration;
 
 use zihuan_core::data_refs::{MySqlConfig, SqliteConfig};
 use zihuan_core::error::{Error, Result};
-use zihuan_core::rag::{
-    BraveSearch, TavilySearch, WebSearchEngine, WebSearchEngineRef,
-};
+use zihuan_core::rag::{BraveSearch, TavilySearch, WebSearchEngine, WebSearchEngineRef};
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::data_value::RedisConfig;
 use zihuan_graph_engine::object_storage::S3Ref;
@@ -136,11 +134,24 @@ pub fn build_web_search_engine_ref(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| Error::ValidationError("web_search_engine.api_token must not be empty".to_string()))?;
+        .ok_or_else(|| {
+            Error::ValidationError("web_search_engine.api_token must not be empty".to_string())
+        })?;
     let engine_ref = match engine.provider.as_str() {
-        "tavily" => Arc::new(TavilySearch::new(api_token.to_string(), Duration::from_secs(engine.timeout_secs))) as Arc<dyn WebSearchEngine>,
-        "brave" => Arc::new(BraveSearch::new(api_token.to_string(), Duration::from_secs(engine.timeout_secs))) as Arc<dyn WebSearchEngine>,
-        other => return Err(Error::ValidationError(format!("unsupported web search engine provider: {}", other))),
+        "tavily" => Arc::new(TavilySearch::new(
+            api_token.to_string(),
+            Duration::from_secs(engine.timeout_secs),
+        )) as Arc<dyn WebSearchEngine>,
+        "brave" => Arc::new(BraveSearch::new(
+            api_token.to_string(),
+            Duration::from_secs(engine.timeout_secs),
+        )) as Arc<dyn WebSearchEngine>,
+        other => {
+            return Err(Error::ValidationError(format!(
+                "unsupported web search engine provider: {}",
+                other
+            )))
+        }
     };
     Ok(Some(Arc::new(WebSearchEngineRef::new(engine_ref))))
 }

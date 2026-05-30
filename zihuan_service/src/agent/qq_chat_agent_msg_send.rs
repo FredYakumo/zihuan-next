@@ -135,20 +135,18 @@ pub(crate) fn plan_model_reply(
     for segment in segments {
         match segment {
             ReplySegment::Text(text) => {
-                for chunk in split_plain_text_for_forward(
-                    &text,
-                    request.max_message_length,
-                    segmenter,
-                ) {
+                for chunk in
+                    split_plain_text_for_forward(&text, request.max_message_length, segmenter)
+                {
                     text_chunk_count += 1;
                     expanded_segments.push(PlannedSegment::Text(chunk));
                 }
             }
-            ReplySegment::At(target) => expanded_segments.push(PlannedSegment::At(
-                AtTargetMessage {
+            ReplySegment::At(target) => {
+                expanded_segments.push(PlannedSegment::At(AtTargetMessage {
                     target: Some(target),
-                },
-            )),
+                }))
+            }
             ReplySegment::Image(image) => {
                 image_count += 1;
                 expanded_segments.push(PlannedSegment::Image(image));
@@ -157,10 +155,8 @@ pub(crate) fn plan_model_reply(
         }
     }
 
-    let reply_message = resolve_reply_message(
-        request.reply_directive.as_ref(),
-        request.trigger_message_id,
-    );
+    let reply_message =
+        resolve_reply_message(request.reply_directive.as_ref(), request.trigger_message_id);
     let forced_forward = text_chunk_count >= 3 || image_count > 1;
     let mut batches = if forced_forward {
         build_forced_forward_batches(
@@ -246,7 +242,11 @@ pub(crate) fn build_long_task_complete_content(
     result: &str,
 ) -> String {
     let result = result.trim();
-    let result = if result.is_empty() { "没有结果" } else { result };
+    let result = if result.is_empty() {
+        "没有结果"
+    } else {
+        result
+    };
     let mut content = format!("\n任务: {task_name}({task_id})");
     if !progress.is_empty() {
         content.push_str("\n\n");
@@ -799,8 +799,7 @@ fn parse_at_segment(chars: &[char], start: usize) -> Option<(String, usize)> {
         if !boundary.is_whitespace()
             && !matches!(
                 boundary,
-                ',' | '，' | '。' | ':' | '：' | '!' | '！' | '?' | '？' | ')' | '）' | ']'
-                    | '】'
+                ',' | '，' | '。' | ':' | '：' | '!' | '！' | '?' | '？' | ')' | '）' | ']' | '】'
             )
         {
             return None;
@@ -911,8 +910,11 @@ mod tests {
 
     #[test]
     fn three_text_chunks_become_forward() {
-        let plan = plan_model_reply(&sample_request("第一段。第二段。第三段。"), &PunctuationSegmenter)
-            .expect("plan reply");
+        let plan = plan_model_reply(
+            &sample_request("第一段。第二段。第三段。"),
+            &PunctuationSegmenter,
+        )
+        .expect("plan reply");
         assert!(matches!(
             plan.batches.as_slice(),
             [batch] if matches!(batch.as_slice(), [Message::Forward(_)])

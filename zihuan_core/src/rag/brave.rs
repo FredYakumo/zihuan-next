@@ -99,10 +99,7 @@ impl BraveSearch {
             .collect())
     }
 
-    async fn fetch_url_direct_async(
-        &self,
-        url: &str,
-    ) -> crate::error::Result<Vec<String>> {
+    async fn fetch_url_direct_async(&self, url: &str) -> crate::error::Result<Vec<String>> {
         let response = self
             .client
             .get(url)

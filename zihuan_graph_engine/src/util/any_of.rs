@@ -44,9 +44,7 @@ impl Node for AnyOfNode {
             .or_else(|| inputs.get("second"))
             .cloned()
             .ok_or_else(|| {
-                zihuan_core::validation_error!(
-                    "AnyOfNode 至少需要一个输入 (first 或 second)"
-                )
+                zihuan_core::validation_error!("AnyOfNode 至少需要一个输入 (first 或 second)")
             })?;
 
         crate::return_with_node_output![self;

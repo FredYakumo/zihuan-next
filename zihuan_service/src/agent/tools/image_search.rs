@@ -10,7 +10,7 @@ use zihuan_agent::brain::BrainTool;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::rag::{WebSearchImage, WebSearchEngineRef};
+use zihuan_core::rag::{WebSearchEngineRef, WebSearchImage};
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::object_storage::S3Ref;
 

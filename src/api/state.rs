@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex, RwLock};
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use zihuan_graph_engine::graph_io::NodeGraphDefinition;
 use zihuan_core::data_refs::RelationalDbConnection;
+use zihuan_graph_engine::graph_io::NodeGraphDefinition;
 
 use zihuan_service::AgentManager;
 
@@ -214,8 +214,14 @@ impl TaskManager {
                 let entry_ref = entry.clone();
                 let pool_ref = pool.clone();
                 tokio::spawn(async move {
-                    if let Err(err) = crate::api::task_store::insert_task_entry(&pool_ref, &entry_ref).await {
-                        log::warn!("Failed to insert task_entry '{}' into DB: {}", entry_ref.id, err);
+                    if let Err(err) =
+                        crate::api::task_store::insert_task_entry(&pool_ref, &entry_ref).await
+                    {
+                        log::warn!(
+                            "Failed to insert task_entry '{}' into DB: {}",
+                            entry_ref.id,
+                            err
+                        );
                     }
                 });
             }
@@ -412,10 +418,7 @@ impl TaskManager {
                     };
                     tokio::spawn(async move {
                         if let Err(err) = crate::api::task_store::append_task_progress(
-                            &pool,
-                            &task_id,
-                            seq,
-                            &message,
+                            &pool, &task_id, seq, &message,
                         )
                         .await
                         {

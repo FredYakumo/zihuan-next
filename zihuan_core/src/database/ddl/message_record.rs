@@ -26,9 +26,7 @@ pub const SQLITE_DDL: &str = "CREATE TABLE IF NOT EXISTS message_record (
         raw_message_json TEXT
     )";
 
-pub const MYSQL_INDEXES: &[&str] = &[
-    "CREATE INDEX idx_message_record_message_id ON message_record (message_id)",
-];
-pub const SQLITE_INDEXES: &[&str] = &[
-    "CREATE INDEX IF NOT EXISTS idx_message_record_message_id ON message_record (message_id)",
-];
+pub const MYSQL_INDEXES: &[&str] =
+    &["CREATE INDEX idx_message_record_message_id ON message_record (message_id)"];
+pub const SQLITE_INDEXES: &[&str] =
+    &["CREATE INDEX IF NOT EXISTS idx_message_record_message_id ON message_record (message_id)"];

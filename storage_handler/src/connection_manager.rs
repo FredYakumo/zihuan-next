@@ -260,10 +260,13 @@ impl RuntimeStorageConnectionManager {
                     sqlite.path,
                 );
                 let db_url = format!("sqlite://{}?mode=rwc", sqlite.path);
-                let pool_options = SqlitePoolOptions::new().max_connections(4).min_connections(1);
-                let (pool, handle, runtime) =
-                    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                        let pool = pool_options.connect(&db_url).await.map_err(|err| {
+                let pool_options = SqlitePoolOptions::new()
+                    .max_connections(4)
+                    .min_connections(1);
+                let (pool, handle, runtime) = if let Ok(handle) =
+                    tokio::runtime::Handle::try_current()
+                {
+                    let pool = pool_options.connect(&db_url).await.map_err(|err| {
                             Error::Database(sqlx::Error::Configuration(Box::new(
                                 std::io::Error::other(format!(
                                     "failed to create sqlite pool for connection '{}' (config_id={}, path={}): {}",
@@ -274,11 +277,11 @@ impl RuntimeStorageConnectionManager {
                                 )),
                             )))
                         })?;
-                        (pool, handle, None)
-                    } else {
-                        let runtime = Arc::new(tokio::runtime::Runtime::new()?);
-                        let handle = runtime.handle().clone();
-                        let pool = handle.block_on(pool_options.connect(&db_url)).map_err(|err| {
+                    (pool, handle, None)
+                } else {
+                    let runtime = Arc::new(tokio::runtime::Runtime::new()?);
+                    let handle = runtime.handle().clone();
+                    let pool = handle.block_on(pool_options.connect(&db_url)).map_err(|err| {
                             Error::Database(sqlx::Error::Configuration(Box::new(
                                 std::io::Error::other(format!(
                                     "failed to create sqlite pool for connection '{}' (config_id={}, path={}): {}",
@@ -289,8 +292,8 @@ impl RuntimeStorageConnectionManager {
                                 )),
                             )))
                         })?;
-                        (pool, handle, Some(runtime))
-                    };
+                    (pool, handle, Some(runtime))
+                };
                 if let Err(e) = ensure_tables_for_connection(&connection.kind).await {
                     log::warn!(
                         "[storage_instance_manager] ensure tables failed for sqlite connection '{}' (id={}): {}",

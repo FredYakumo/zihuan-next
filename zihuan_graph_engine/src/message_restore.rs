@@ -17,7 +17,8 @@ use zihuan_core::ims_bot_adapter::models::message::{
 static RUNTIME_MESSAGE_INDEX: Lazy<RwLock<HashMap<String, Vec<Message>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 static LATEST_MYSQL_REF: Lazy<RwLock<Option<Arc<MySqlConfig>>>> = Lazy::new(|| RwLock::new(None));
-static LATEST_RDB_POOL: Lazy<RwLock<Option<RelationalDbConnection>>> = Lazy::new(|| RwLock::new(None));
+static LATEST_RDB_POOL: Lazy<RwLock<Option<RelationalDbConnection>>> =
+    Lazy::new(|| RwLock::new(None));
 static LATEST_REDIS_REF: Lazy<RwLock<Option<Arc<RedisConfig>>>> = Lazy::new(|| RwLock::new(None));
 
 const LOOKUP_SQL: &str = r#"
@@ -127,7 +128,10 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
         }
     }
 
-    let (rows, source): (Vec<(String, Option<String>, Option<String>)>, MessageRestoreSource) = if let Some(rdb_pool) = rdb_pool {
+    let (rows, source): (
+        Vec<(String, Option<String>, Option<String>)>,
+        MessageRestoreSource,
+    ) = if let Some(rdb_pool) = rdb_pool {
         match rdb_pool {
             RelationalDbConnection::MySql(config) => {
                 let lookup_id = message_id_str.clone();
@@ -248,10 +252,7 @@ pub fn restore_message_snapshot(message_id: i64) -> Result<Option<RestoredMessag
         guard.insert(message_id_str, messages.clone());
     }
 
-    Ok(Some(RestoredMessageSnapshot {
-        messages,
-        source,
-    }))
+    Ok(Some(RestoredMessageSnapshot { messages, source }))
 }
 
 pub fn restore_media_by_id(media_id: &str) -> Result<Option<PersistedMedia>> {

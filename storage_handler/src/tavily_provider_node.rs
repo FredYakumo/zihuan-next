@@ -61,7 +61,9 @@ impl Node for TavilyProviderNode {
         Vec::new()
     }
 
-    node_output![port! { name = "tavily_ref", ty = DataType::WebSearchEngineRef, desc = "Tavily 搜索引用" },];
+    node_output![
+        port! { name = "tavily_ref", ty = DataType::WebSearchEngineRef, desc = "Tavily 搜索引用" },
+    ];
 
     fn config_fields(&self) -> Vec<NodeConfigField> {
         vec![Self::connection_select_field()]

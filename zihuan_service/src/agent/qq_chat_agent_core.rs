@@ -8,16 +8,15 @@ use zihuan_nlp::{PunctuationSegmenter, TextSegmenter};
 
 use super::qq_chat_agent_ignore_store::should_ignore_message_blocking;
 pub(crate) use super::qq_chat_agent_logging::QqChatTaskTrace;
-pub(crate) use super::tools::build_info_brain_tools;
 use super::qq_chat_agent_msg_send::{
     build_long_task_complete_content, build_long_task_start_text, send_forward_content,
     send_notification_text, send_planned_batches, QqReplyDirective, QqSendContext,
 };
+pub(crate) use super::tools::build_info_brain_tools;
 use super::tools::{
-    DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
-    DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
-    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
-    DEFAULT_TOOL_REPLY_MESSAGE, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
+    DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
+    DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
+    DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_REPLY_MESSAGE, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
     DEFAULT_TOOL_WEB_SEARCH,
 };
 use crate::nodes::tool_subgraph::{
@@ -1256,7 +1255,10 @@ pub(crate) fn extract_user_message_text(
     build_current_turn_user_input(event, bot_id, bot_name).text
 }
 
-pub(crate) fn message_with_api_style(mut message: OpenAIMessage, api_style: Option<&str>) -> OpenAIMessage {
+pub(crate) fn message_with_api_style(
+    mut message: OpenAIMessage,
+    api_style: Option<&str>,
+) -> OpenAIMessage {
     if let Some(api_style) = api_style {
         message.api_style = Some(api_style.to_string());
     }
@@ -1333,7 +1335,6 @@ pub(crate) fn collect_available_media_from_brain_output(
 
     media_by_id
 }
-
 
 pub(crate) fn send_direct_text_reply(
     trace: &QqChatTaskTrace,
@@ -1712,9 +1713,7 @@ impl QqChatAgent {
             )? {
                 info!(
                     "{LOG_PREFIX} Ignored inbound message: message_id={} sender={} group={:?}",
-                    event.message_id,
-                    sender_id,
-                    event.group_id
+                    event.message_id, sender_id, event.group_id
                 );
                 return Ok(());
             }
@@ -1737,10 +1736,15 @@ impl QqChatAgent {
             let bot_id = get_bot_id(ctx.adapter);
             let hydrated_event = hydrate_missing_reply_sources(event, ctx.adapter);
             let inference_event = expand_event_for_inference(&hydrated_event);
-            let current_message = extract_user_message_text(&inference_event, &bot_id, ctx.bot_name);
+            let current_message =
+                extract_user_message_text(&inference_event, &bot_id, ctx.bot_name);
             if let Some(command_registry) = crate::command::global_command_registry() {
-                let cmd_ctx =
-                    self.build_command_context(&sender_id, &target_id, is_group, inference_event.group_id);
+                let cmd_ctx = self.build_command_context(
+                    &sender_id,
+                    &target_id,
+                    is_group,
+                    inference_event.group_id,
+                );
                 if let Some(preview) = command_registry.preview(&cmd_ctx, &current_message) {
                     if preview.definition.allow_steer_bypass && preview.passthrough_text.is_none() {
                         info!(
@@ -1836,39 +1840,17 @@ impl QqChatAgent {
                 scope_task_runtime(Arc::clone(task_runtime), || {
                     scope_task_id(task_handle.task_id.clone(), || {
                         self.handle_claimed(
-                            &trace,
-                            event,
-                            time,
-                            &sender_id,
-                            &target_id,
-                            is_group,
-                            ctx,
+                            &trace, event, time, &sender_id, &target_id, is_group, ctx,
                         )
                     })
                 })
             } else {
                 scope_task_id(task_handle.task_id.clone(), || {
-                    self.handle_claimed(
-                        &trace,
-                        event,
-                        time,
-                        &sender_id,
-                        &target_id,
-                        is_group,
-                        ctx,
-                    )
+                    self.handle_claimed(&trace, event, time, &sender_id, &target_id, is_group, ctx)
                 })
             }
         } else {
-            self.handle_claimed(
-                &trace,
-                event,
-                time,
-                &sender_id,
-                &target_id,
-                is_group,
-                ctx,
-            )
+            self.handle_claimed(&trace, event, time, &sender_id, &target_id, is_group, ctx)
         };
         trace.finish_with_summary();
 
@@ -2054,7 +2036,9 @@ mod tests {
     fn assert_contains_image_part(message: OpenAIMessage) {
         match message.content {
             Some(MessageContent::Parts(parts)) => {
-                assert!(parts.iter().any(|part| matches!(part, ContentPart::ImageUrl { .. })));
+                assert!(parts
+                    .iter()
+                    .any(|part| matches!(part, ContentPart::ImageUrl { .. })));
             }
             other => panic!("expected multipart user message, got {other:?}"),
         }

@@ -16,10 +16,8 @@ pub const SQLITE_DDL: &str = "CREATE TABLE IF NOT EXISTS task_progress (
         FOREIGN KEY (task_id) REFERENCES task_entry(id) ON DELETE CASCADE
     )";
 
-pub const MYSQL_INDEXES: &[&str] = &[
-    "CREATE INDEX ix_task_progress_task_id_seq ON task_progress (task_id, seq)",
-];
+pub const MYSQL_INDEXES: &[&str] =
+    &["CREATE INDEX ix_task_progress_task_id_seq ON task_progress (task_id, seq)"];
 
-pub const SQLITE_INDEXES: &[&str] = &[
-    "CREATE INDEX IF NOT EXISTS ix_task_progress_task_id_seq ON task_progress (task_id, seq)",
-];
+pub const SQLITE_INDEXES: &[&str] =
+    &["CREATE INDEX IF NOT EXISTS ix_task_progress_task_id_seq ON task_progress (task_id, seq)"];

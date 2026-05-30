@@ -495,7 +495,8 @@ fn agent_from_record(record: StoredConfigRecord) -> Result<AgentConfig> {
             .map(ToOwned::to_owned);
 
         if rdb_id.is_none() {
-            if let (Some(mysql_id), Some(task_id)) = (&mysql_connection_id, &task_db_connection_id) {
+            if let (Some(mysql_id), Some(task_id)) = (&mysql_connection_id, &task_db_connection_id)
+            {
                 if mysql_id != task_id {
                     warn!(
                         "[config_center] qq_chat agent '{}' has conflicting legacy mysql_connection_id='{}' and task_db_connection_id='{}'; using mysql_connection_id",

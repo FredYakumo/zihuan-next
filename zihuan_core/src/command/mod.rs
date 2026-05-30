@@ -69,9 +69,16 @@ pub struct CommandDefinition {
 #[serde(tag = "rule_type", rename_all = "snake_case")]
 pub enum PermissionRule {
     Everyone,
-    QqUsers { allowed_ids: Vec<String> },
-    ApiKeys { allowed_keys: Vec<String> },
-    Custom { custom_type: String, allow_list: Vec<String> },
+    QqUsers {
+        allowed_ids: Vec<String>,
+    },
+    ApiKeys {
+        allowed_keys: Vec<String>,
+    },
+    Custom {
+        custom_type: String,
+        allow_list: Vec<String>,
+    },
 }
 
 /// Stored permission binding for a command (persisted via config system).
@@ -307,11 +314,7 @@ impl CommandRegistry {
     }
 
     /// Register a command with its handler.
-    pub fn register(
-        &mut self,
-        def: CommandDefinition,
-        handler: Arc<dyn CommandHandler>,
-    ) {
+    pub fn register(&mut self, def: CommandDefinition, handler: Arc<dyn CommandHandler>) {
         let name = def.name.clone();
         self.commands.insert(
             name,
@@ -345,7 +348,11 @@ impl CommandRegistry {
             })
         })?;
 
-        if !entry.definition.scope.matches(&ctx.agent_type, &ctx.agent_id) {
+        if !entry
+            .definition
+            .scope
+            .matches(&ctx.agent_type, &ctx.agent_id)
+        {
             return None;
         }
 
@@ -364,10 +371,7 @@ impl CommandRegistry {
 
     /// List all registered commands (read-only metadata).
     pub fn list_commands(&self) -> Vec<&CommandDefinition> {
-        self.commands
-            .values()
-            .map(|e| &e.definition)
-            .collect()
+        self.commands.values().map(|e| &e.definition).collect()
     }
 
     /// List all command permissions (for admin API).
@@ -525,6 +529,9 @@ mod tests {
             .dispatch(&test_context(), "/t abc123 trailing text")
             .expect("dispatch should succeed");
         assert_eq!(dispatched.result.reply, "abc123");
-        assert_eq!(dispatched.passthrough_text.as_deref(), Some("trailing text"));
+        assert_eq!(
+            dispatched.passthrough_text.as_deref(),
+            Some("trailing text")
+        );
     }
 }

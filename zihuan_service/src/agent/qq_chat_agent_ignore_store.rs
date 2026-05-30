@@ -146,9 +146,8 @@ pub async fn should_ignore_message(
 ) -> Result<bool> {
     let sender_match_key = format!("sender:{}", sender_id.trim());
     let group_match_key = group_id.map(|value| format!("group:{}", value.trim()));
-    let group_sender_match_key = group_id.map(|value| {
-        format!("group:{}|sender:{}", value.trim(), sender_id.trim())
-    });
+    let group_sender_match_key =
+        group_id.map(|value| format!("group:{}|sender:{}", value.trim(), sender_id.trim()));
 
     match connection {
         RelationalDbConnection::MySql(config) => {

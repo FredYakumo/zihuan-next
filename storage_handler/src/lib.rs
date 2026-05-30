@@ -5,8 +5,8 @@ mod message_store;
 pub mod mysql;
 pub mod object_storage;
 mod qq_message_list_weaviate_persistence;
-pub mod redis;
 pub mod rdb;
+pub mod redis;
 pub mod resource_resolver;
 pub mod rustfs;
 pub mod sqlite;
@@ -33,21 +33,21 @@ pub use connection_manager::{
 pub use db_schema::ensure_tables_for_connection;
 pub use message_store::{MessageRecord, MessageStore};
 pub use mysql::MySqlNode;
-pub use sqlite::SqliteNode;
 pub use object_storage::{
     enrich_event_images, enrich_message_images, save_image_to_object_storage,
     upload_remote_image_to_s3, ImageCacheAdapter, ImageObjectStorageInput, ObjectStorageConfig,
     PendingImageUpload, SavedImageObject,
 };
-pub use redis::RedisNode;
-pub use resource_resolver::{
-    build_mysql_ref, build_redis_ref, build_s3_ref, build_sqlite_ref, build_web_search_engine_ref,
-    build_weaviate_ref, find_connection, resolve_connection_data_value,
-};
 pub use rdb::{
     build_relational_db_connection_for_connection, build_relational_db_connection_for_kind,
 };
+pub use redis::RedisNode;
+pub use resource_resolver::{
+    build_mysql_ref, build_redis_ref, build_s3_ref, build_sqlite_ref, build_weaviate_ref,
+    build_web_search_engine_ref, find_connection, resolve_connection_data_value,
+};
 pub use rustfs::RustfsNode;
+pub use sqlite::SqliteNode;
 pub use weaviate::WeaviateNode;
 pub use weaviate_persistence::{
     build_image_record_properties, deterministic_media_object_id, deterministic_message_object_id,

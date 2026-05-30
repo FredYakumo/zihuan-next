@@ -42,12 +42,11 @@ impl Node for PreviewQQMessageListNode {
         } else {
             node_output_flow![]
         };
-        
+
         let outputs = inputs.get("messages").cloned().map_or_else(
             || node_output_flow![],
             |messages| node_output_flow!["messages" => messages],
         );
-
 
         self.validate_outputs(&outputs)?;
         Ok(outputs)

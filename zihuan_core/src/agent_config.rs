@@ -65,6 +65,13 @@ pub fn llm_ref_id_for_kind<'a>(config: &'a QqChatAgentConfig, llm_kind: &str) ->
     }
 }
 
+pub fn image_understand_llm_ref_id<'a>(config: &'a QqChatAgentConfig) -> Option<&'a str> {
+    config
+        .image_understand_llm_ref_id
+        .as_deref()
+        .or(config.llm_ref_id.as_deref())
+}
+
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,6 +85,8 @@ pub struct QqChatAgentConfig {
     pub system_prompt: Option<String>,
     #[serde(default)]
     pub llm_ref_id: Option<String>,
+    #[serde(default)]
+    pub image_understand_llm_ref_id: Option<String>,
     #[serde(default)]
     pub intent_llm_ref_id: Option<String>,
     #[serde(default)]

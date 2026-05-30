@@ -265,10 +265,11 @@ impl Brain {
                     result_summary: Some(result.clone()),
                     error_message: None,
                 });
-                long_ctx
-                    .notifier
-                    .on_complete(&task_id, &task_name, &result);
-                info!("[Brain] tool '{}' completed as long task_id={}", tool_name, task_id);
+                long_ctx.notifier.on_complete(&task_id, &task_name, &result);
+                info!(
+                    "[Brain] tool '{}' completed as long task_id={}",
+                    tool_name, task_id
+                );
                 return result;
             }
         }
@@ -368,8 +369,10 @@ impl Brain {
                 if let Some(observer) = self.observer.as_ref() {
                     observer.on_tool_start(&tc.function.name, &tc.id, &tc.function.arguments);
                 }
-                let matching_tool =
-                    self.tools.iter().find(|t| t.spec().name() == tc.function.name);
+                let matching_tool = self
+                    .tools
+                    .iter()
+                    .find(|t| t.spec().name() == tc.function.name);
                 let result = if let Some(tool) = matching_tool {
                     self.execute_tool_call(
                         tool,
@@ -526,8 +529,10 @@ impl Brain {
                 if let Some(observer) = self.observer.as_ref() {
                     observer.on_tool_start(&tc.function.name, &tc.id, &tc.function.arguments);
                 }
-                let matching_tool =
-                    self.tools.iter().find(|t| t.spec().name() == tc.function.name);
+                let matching_tool = self
+                    .tools
+                    .iter()
+                    .find(|t| t.spec().name() == tc.function.name);
                 let result = if let Some(tool) = matching_tool {
                     self.execute_tool_call(
                         tool,

@@ -106,10 +106,7 @@ impl TavilySearch {
             .collect())
     }
 
-    async fn extract_url_async(
-        &self,
-        url: &str,
-    ) -> crate::error::Result<Vec<String>> {
+    async fn extract_url_async(&self, url: &str) -> crate::error::Result<Vec<String>> {
         let response = self
             .client
             .post("https://api.tavily.com/extract")
@@ -154,10 +151,7 @@ impl TavilySearch {
             .collect())
     }
 
-    async fn fetch_url_direct_async(
-        &self,
-        url: &str,
-    ) -> crate::error::Result<Vec<String>> {
+    async fn fetch_url_direct_async(&self, url: &str) -> crate::error::Result<Vec<String>> {
         let response = self
             .client
             .get(url)

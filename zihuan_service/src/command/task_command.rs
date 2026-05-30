@@ -43,7 +43,11 @@ fn render_task_detail(task: &zihuan_core::task_context::AgentTaskInfo) -> String
             finished_at.format("%Y-%m-%d %H:%M:%S")
         ));
     }
-    if let Some(summary) = task.result_summary.as_deref().filter(|value| !value.trim().is_empty()) {
+    if let Some(summary) = task
+        .result_summary
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
         lines.push(String::new());
         lines.push("结果:".to_string());
         lines.push(summary.to_string());
@@ -110,7 +114,10 @@ impl CommandHandler for TaskCommand {
     }
 }
 
-fn list_tasks(runtime: &dyn zihuan_core::task_context::AgentTaskRuntime, ctx: &CommandContext) -> CommandResult {
+fn list_tasks(
+    runtime: &dyn zihuan_core::task_context::AgentTaskRuntime,
+    ctx: &CommandContext,
+) -> CommandResult {
     let mut tasks = runtime.list_tasks(&ctx.caller_id);
     tasks.sort_by(|left, right| right.created_at.cmp(&left.created_at));
     if tasks.is_empty() {
@@ -126,7 +133,10 @@ fn list_tasks(runtime: &dyn zihuan_core::task_context::AgentTaskRuntime, ctx: &C
             status_label(task.status)
         ));
     }
-    lines.push("使用 /task 查看最近任务，/task <id> 查看指定任务，/task cancel <id> 取消任务。".to_string());
+    lines.push(
+        "使用 /task 查看最近任务，/task <id> 查看指定任务，/task cancel <id> 取消任务。"
+            .to_string(),
+    );
     let reply = lines.join("\n");
     simple_result(reply, None)
 }
@@ -150,16 +160,21 @@ fn show_task_detail(
                     echo_message: None,
                     inject_to_llm: false,
                 };
-                result.add_side_effect(move |effect_ctx: &dyn zihuan_core::command::SideEffectContext| {
-                    effect_ctx.send_forward_content(&detail)
-                });
+                result.add_side_effect(
+                    move |effect_ctx: &dyn zihuan_core::command::SideEffectContext| {
+                        effect_ctx.send_forward_content(&detail)
+                    },
+                );
                 result
             } else {
                 simple_result(detail.clone(), Some(detail))
             }
         }
         None => {
-            let reply = format!("未找到任务 '{}'。使用 /task list 查看你的任务列表。", task_id);
+            let reply = format!(
+                "未找到任务 '{}'。使用 /task list 查看你的任务列表。",
+                task_id
+            );
             simple_result(reply, None)
         }
     }
@@ -181,9 +196,11 @@ fn show_latest_task(
                     echo_message: None,
                     inject_to_llm: false,
                 };
-                result.add_side_effect(move |effect_ctx: &dyn zihuan_core::command::SideEffectContext| {
-                    effect_ctx.send_forward_content(&detail)
-                });
+                result.add_side_effect(
+                    move |effect_ctx: &dyn zihuan_core::command::SideEffectContext| {
+                        effect_ctx.send_forward_content(&detail)
+                    },
+                );
                 result
             } else {
                 simple_result(detail.clone(), Some(detail))
@@ -205,18 +222,31 @@ fn cancel_task(
             }
             if task.status != zihuan_core::task_context::AgentTaskStatus::Running {
                 return simple_result(
-                    format!("任务 '{}' 当前状态为 {}，无法取消。", task.task_name, status_label(task.status)),
+                    format!(
+                        "任务 '{}' 当前状态为 {}，无法取消。",
+                        task.task_name,
+                        status_label(task.status)
+                    ),
                     None,
                 );
             }
             if runtime.cancel_task(task_id) {
-                simple_result(format!("已发送取消请求，任务 '{}' 将停止。", task.task_name), None)
+                simple_result(
+                    format!("已发送取消请求，任务 '{}' 将停止。", task.task_name),
+                    None,
+                )
             } else {
-                simple_result(format!("取消任务 '{}' 失败，任务可能已结束。", task.task_name), None)
+                simple_result(
+                    format!("取消任务 '{}' 失败，任务可能已结束。", task.task_name),
+                    None,
+                )
             }
         }
         None => {
-            let reply = format!("未找到任务 '{}'。使用 /task list 查看你的任务列表。", task_id);
+            let reply = format!(
+                "未找到任务 '{}'。使用 /task list 查看你的任务列表。",
+                task_id
+            );
             simple_result(reply, None)
         }
     }

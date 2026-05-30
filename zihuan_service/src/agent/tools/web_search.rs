@@ -21,7 +21,9 @@ impl WebSearchBrainTool {
         web_search_engine_ref: Arc<WebSearchEngineRef>,
         _notification_target: ToolNotificationTarget,
     ) -> Self {
-        Self { web_search_engine_ref }
+        Self {
+            web_search_engine_ref,
+        }
     }
 
     fn extract_url_with_fallback(&self, url: &str) -> Result<Vec<String>> {
@@ -35,7 +37,11 @@ impl WebSearchBrainTool {
     }
 
     fn search_with_fallback(&self, query: &str, search_count: i64) -> Result<Vec<String>> {
-        match self.web_search_engine_ref.engine.search(query, search_count) {
+        match self
+            .web_search_engine_ref
+            .engine
+            .search(query, search_count)
+        {
             Ok(items) => Ok(items),
             Err(e) => {
                 let trimmed = query.trim();

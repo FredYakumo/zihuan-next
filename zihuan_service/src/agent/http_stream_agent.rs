@@ -124,7 +124,11 @@ fn load_http_stream_resources(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let web_search_engine_ref = build_web_search_engine_ref(web_search_engine_connection_id, connections).unwrap_or_else(|error| {
+    let web_search_engine_ref = build_web_search_engine_ref(
+        web_search_engine_connection_id,
+        connections,
+    )
+    .unwrap_or_else(|error| {
         log::warn!("[inference][http_stream] web search engine connection unavailable: {error}");
         None
     });
@@ -367,7 +371,8 @@ async fn execute_http_stream_completion(
                 },
             };
 
-            if let Some(dispatch_result) = command_registry.dispatch(&command_context, &raw_user_text)
+            if let Some(dispatch_result) =
+                command_registry.dispatch(&command_context, &raw_user_text)
             {
                 let side_effect_context = HttpStreamCommandSideEffectContext {
                     command_context: command_context.clone(),
@@ -572,10 +577,7 @@ fn http_stream_command_caller_id(api_key: Option<&str>) -> String {
 }
 
 fn mask_http_stream_api_key(api_key: Option<&str>) -> String {
-    let Some(api_key) = api_key
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    else {
+    let Some(api_key) = api_key.map(str::trim).filter(|value| !value.is_empty()) else {
         return "anonymous".to_string();
     };
 

@@ -7,7 +7,9 @@ use crate::nodes::tool_subgraph::{
     shared_inputs_ports, validate_shared_inputs, validate_tool_definitions, SubgraphFunctionTool,
     ToolResultMode, ToolSubgraphRunner,
 };
-use zihuan_agent::brain::{Brain, BrainStopReason, BrainTool, ToolRunDuration, MAX_TOOL_ITERATIONS};
+use zihuan_agent::brain::{
+    Brain, BrainStopReason, BrainTool, ToolRunDuration, MAX_TOOL_ITERATIONS,
+};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::OpenAIMessage;

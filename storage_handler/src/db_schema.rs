@@ -48,8 +48,7 @@ pub async fn ensure_tables_for_connection(kind: &ConnectionKind) -> Result<()> {
                 zihuan_core::error::Error::Database(sqlx::Error::Configuration(Box::new(
                     std::io::Error::other(format!(
                         "failed to connect to SQLite for schema setup (path={}): {}",
-                        sqlite.path,
-                        e
+                        sqlite.path, e
                     )),
                 )))
             })?;

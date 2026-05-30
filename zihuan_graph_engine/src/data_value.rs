@@ -16,7 +16,7 @@ use zihuan_core::ims_bot_adapter::models::message::ImageMessage;
 use zihuan_core::ims_bot_adapter::models::sender_model::Sender as GraphSender;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::ContentPart;
-pub use zihuan_core::rag::{WebSearchImage, WebSearchEngineRef};
+pub use zihuan_core::rag::{WebSearchEngineRef, WebSearchImage};
 pub use zihuan_core::weaviate::WeaviateRef;
 
 tokio::task_local! {
@@ -1058,9 +1058,10 @@ impl fmt::Debug for DataValue {
             DataValue::WeaviateRef(weaviate_ref) => {
                 f.debug_tuple("WeaviateRef").field(weaviate_ref).finish()
             }
-            DataValue::WebSearchEngineRef(tavily_ref) => {
-                f.debug_tuple("WebSearchEngineRef").field(tavily_ref).finish()
-            }
+            DataValue::WebSearchEngineRef(tavily_ref) => f
+                .debug_tuple("WebSearchEngineRef")
+                .field(tavily_ref)
+                .finish(),
             DataValue::SessionStateRef(session_ref) => {
                 f.debug_tuple("SessionStateRef").field(session_ref).finish()
             }

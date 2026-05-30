@@ -109,13 +109,9 @@ pub fn build_router(
                                 .delete(config::commands::delete_command_permission),
                         ),
                 )
-                .push(
-                    Router::with_path("commands")
-                        .push(
-                            Router::with_path("registry")
-                                .get(config::commands::get_registered_commands),
-                        ),
-                ),
+                .push(Router::with_path("commands").push(
+                    Router::with_path("registry").get(config::commands::get_registered_commands),
+                )),
         )
         // Graph management
         .push(

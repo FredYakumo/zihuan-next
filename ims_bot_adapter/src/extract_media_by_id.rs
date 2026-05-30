@@ -88,7 +88,6 @@ impl Node for ExtractMediaByIdNode {
 
         let persisted_media = restore_media_by_id(media_id)?.ok_or_else(|| {
             Error::ValidationError(format!("media_id {media_id} not found in database"))
-            
         })?;
 
         let image_message = ImageMessage::new(persisted_media);

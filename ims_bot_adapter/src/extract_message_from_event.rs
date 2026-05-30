@@ -11,7 +11,9 @@ use zihuan_core::ims_bot_adapter::logging::{
 use zihuan_core::llm::{ContentPart, OpenAIMessage};
 use zihuan_graph_engine::message_restore::register_mysql_ref;
 use zihuan_graph_engine::object_storage::S3Ref;
-use zihuan_graph_engine::{DataType, DataValue, Node, NodeInputFlow, Port, node_input, node_output};
+use zihuan_graph_engine::{
+    node_input, node_output, DataType, DataValue, Node, NodeInputFlow, Port,
+};
 
 use crate::models::message::Message;
 use crate::multimodal_image_url::{
@@ -466,8 +468,7 @@ impl Node for ExtractMessageFromEventNode {
             _ => None,
         });
 
-        let (bot_id, adapter_object_storage) = if tokio::runtime::Handle::try_current().is_ok()
-        {
+        let (bot_id, adapter_object_storage) = if tokio::runtime::Handle::try_current().is_ok() {
             block_in_place(|| {
                 let adapter = ims_bot_adapter_ref.blocking_lock();
                 (

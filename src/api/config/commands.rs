@@ -5,7 +5,9 @@ use uuid::Uuid;
 use zihuan_core::command::{CommandPermission, PermissionRule};
 use zihuan_core::config::{ConfigKind, ConfigRepository, FsConfigRepository, StoredConfigRecord};
 
-use super::{now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found};
+use super::{
+    now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found,
+};
 
 // DTOs — Data Transfer Objects for the command-permission REST API.
 //

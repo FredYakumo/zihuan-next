@@ -33,7 +33,9 @@ impl Node for AgentTavilyRefNode {
         Vec::new()
     }
 
-    node_output![port! { name = "web_search_engine_ref", ty = WebSearchEngineRef, desc = "Agent Web Search Engine 搜索引用" },];
+    node_output![
+        port! { name = "web_search_engine_ref", ty = WebSearchEngineRef, desc = "Agent Web Search Engine 搜索引用" },
+    ];
 
     fn execute(
         &mut self,
@@ -47,13 +49,15 @@ impl Node for AgentTavilyRefNode {
             ));
         }
         let connections = load_connections()?;
-        let web_search_engine_ref =
-            resource_resolver::build_web_search_engine_ref(Some(web_search_engine_connection_id), &connections)?
-                .ok_or_else(|| {
-                    zihuan_core::error::Error::ValidationError(
-                        "web_search_engine_connection_id is required".to_string(),
-                    )
-                })?;
+        let web_search_engine_ref = resource_resolver::build_web_search_engine_ref(
+            Some(web_search_engine_connection_id),
+            &connections,
+        )?
+        .ok_or_else(|| {
+            zihuan_core::error::Error::ValidationError(
+                "web_search_engine_connection_id is required".to_string(),
+            )
+        })?;
         zihuan_graph_engine::return_with_node_output![self;
             "web_search_engine_ref" => DataValue::WebSearchEngineRef(web_search_engine_ref),
         ]

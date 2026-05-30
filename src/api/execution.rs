@@ -25,7 +25,9 @@ pub struct DeleteTasksRequest {
     pub task_ids: Vec<String>,
 }
 
-fn validate_duplicate_port_names(graph: &zihuan_graph_engine::graph_io::NodeGraphDefinition) -> Result<(), String> {
+fn validate_duplicate_port_names(
+    graph: &zihuan_graph_engine::graph_io::NodeGraphDefinition,
+) -> Result<(), String> {
     for node in &graph.nodes {
         let mut seen = std::collections::HashSet::new();
         for port in &node.input_ports {
@@ -208,17 +210,16 @@ pub async fn rerun_task(req: &mut Request, res: &mut Response, depot: &mut Depot
         )
     };
 
-    let mut graph =
-        match zihuan_graph_engine::load_graph_definition_from_json(&file_path) {
-            Ok(graph) => graph,
-            Err(e) => {
-                res.status_code(StatusCode::UNPROCESSABLE_ENTITY);
-                res.render(Json(
-                    serde_json::json!({"error": format!("Failed to reload graph: {e}")}),
-                ));
-                return;
-            }
-        };
+    let mut graph = match zihuan_graph_engine::load_graph_definition_from_json(&file_path) {
+        Ok(graph) => graph,
+        Err(e) => {
+            res.status_code(StatusCode::UNPROCESSABLE_ENTITY);
+            res.render(Json(
+                serde_json::json!({"error": format!("Failed to reload graph: {e}")}),
+            ));
+            return;
+        }
+    };
     if let Err(msg) = validate_duplicate_port_names(&graph) {
         res.status_code(StatusCode::BAD_REQUEST);
         res.render(Json(serde_json::json!({"error": msg})));

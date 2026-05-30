@@ -22,7 +22,6 @@ pub fn qq_avatar_url(user_id: &str) -> Option<String> {
     }
 }
 
-
 pub async fn fetch_login_info(connection: &BotAdapterConnection) -> Result<BotLoginInfo> {
     fetch_login_info_via_websocket(connection).await
 }
@@ -30,9 +29,7 @@ pub async fn fetch_login_info(connection: &BotAdapterConnection) -> Result<BotLo
 /// Fetches login info through the active bot adapter's existing WebSocket connection.
 /// This is preferred over `fetch_login_info` when the adapter is already running, because
 /// it reuses the existing WebSocket connection rather than creating a new one.
-pub async fn fetch_login_info_via_adapter_connection(
-    connection_id: &str,
-) -> Result<BotLoginInfo> {
+pub async fn fetch_login_info_via_adapter_connection(connection_id: &str) -> Result<BotLoginInfo> {
     let adapter = ActiveAdapterManager::shared()
         .get_or_create(connection_id)
         .await?;

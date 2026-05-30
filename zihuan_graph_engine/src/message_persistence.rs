@@ -19,7 +19,8 @@ use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
 use zihuan_core::ims_bot_adapter::models::message::{collect_media_records, Message};
 
 static LATEST_MYSQL_REF: Lazy<RwLock<Option<Arc<MySqlConfig>>>> = Lazy::new(|| RwLock::new(None));
-static LATEST_RDB_POOL: Lazy<RwLock<Option<RelationalDbConnection>>> = Lazy::new(|| RwLock::new(None));
+static LATEST_RDB_POOL: Lazy<RwLock<Option<RelationalDbConnection>>> =
+    Lazy::new(|| RwLock::new(None));
 static LATEST_REDIS_REF: Lazy<RwLock<Option<Arc<RedisConfig>>>> = Lazy::new(|| RwLock::new(None));
 
 pub fn register_mysql_persistence_ref(config: Arc<MySqlConfig>) {

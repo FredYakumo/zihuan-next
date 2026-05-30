@@ -13,8 +13,8 @@ use model_inference::message_content_utils::{
 
 use zihuan_agent::brain::{Brain, BrainStopReason, LongTaskContext};
 
-use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
 use zihuan_core::agent_config::current_qq_chat_agent_config;
+use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
 use zihuan_core::error::Result;
 use zihuan_core::llm::{OpenAIMessage, TokenUsage};
 
@@ -32,30 +32,26 @@ use super::super::qq_chat_agent_msg_send::{
 use super::super::tools::{
     EditableQqAgentTool, GetAgentPublicInfoBrainTool, GetFunctionListBrainTool,
     GetRecentGroupMessagesBrainTool, GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool,
-    ReplyMessageBrainTool, SearchSimilarImagesBrainTool, ToolNotificationTarget, WebSearchBrainTool,
-    DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
+    ReplyMessageBrainTool, SearchSimilarImagesBrainTool, ToolNotificationTarget,
+    WebSearchBrainTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
     DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
     DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_REPLY_MESSAGE, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
-    DEFAULT_TOOL_WEB_SEARCH,
-    QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
+    DEFAULT_TOOL_WEB_SEARCH, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
 };
 
 use crate::nodes::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
-use crate::storage::qq_chat_history_store::{
-    conversation_history_key, load_history, save_history,
-};
+use crate::storage::qq_chat_history_store::{conversation_history_key, load_history, save_history};
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
 
 use super::{
     build_group_system_prompt, build_merged_follow_up_event, build_model_name_reply,
     build_output_contract_priming_message, build_private_system_prompt, build_reply_result,
-    build_user_message, collect_available_media_from_brain_output,
-    expand_event_for_inference, extract_user_message_text, hydrate_missing_reply_sources,
-    message_with_api_style, sender_display_name, send_direct_text_reply,
-    summarize_task_text, truncate_for_log, DIRECT_REPLY_NO_SYSTEM_PROMPT, LOG_PREFIX,
-    LOG_TEXT_PREVIEW_CHARS, QqChatAgent, QqChatAgentContext, QqChatHandleReport,
-    QqLongTaskNotifier, QqChatSteerHook, QqChatTaskTrace, QqChatTurnResult,
-    QqCommandSideEffectContext,
+    build_user_message, collect_available_media_from_brain_output, expand_event_for_inference,
+    extract_user_message_text, hydrate_missing_reply_sources, message_with_api_style,
+    send_direct_text_reply, sender_display_name, summarize_task_text, truncate_for_log,
+    QqChatAgent, QqChatAgentContext, QqChatHandleReport, QqChatSteerHook, QqChatTaskTrace,
+    QqChatTurnResult, QqCommandSideEffectContext, QqLongTaskNotifier,
+    DIRECT_REPLY_NO_SYSTEM_PROMPT, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 
 impl QqChatAgent {
@@ -103,7 +99,10 @@ impl QqChatAgent {
             bot_id,
             bot_name: ctx.bot_name,
             target_id,
-            is_group: matches!(cmd_ctx.channel, CommandChannel::QqChat { is_group: true, .. }),
+            is_group: matches!(
+                cmd_ctx.channel,
+                CommandChannel::QqChat { is_group: true, .. }
+            ),
             group_name: hydrated_event.group_name.as_deref(),
             rdb_pool: ctx.rdb_pool,
             mysql_ref: ctx.mysql_ref,
@@ -114,7 +113,10 @@ impl QqChatAgent {
         }
 
         if let Some(ref echo) = result.echo_message {
-            let is_group = matches!(cmd_ctx.channel, CommandChannel::QqChat { is_group: true, .. });
+            let is_group = matches!(
+                cmd_ctx.channel,
+                CommandChannel::QqChat { is_group: true, .. }
+            );
             let _ = send_direct_text_reply(
                 trace,
                 ctx.adapter,
@@ -157,7 +159,10 @@ impl QqChatAgent {
             let history_key = conversation_history_key(
                 bot_id,
                 sender_id,
-                matches!(cmd_ctx.channel, CommandChannel::QqChat { is_group: true, .. }),
+                matches!(
+                    cmd_ctx.channel,
+                    CommandChannel::QqChat { is_group: true, .. }
+                ),
                 inference_event.group_id,
             );
             save_history(ctx.cache, &history_key, history.clone());
@@ -279,10 +284,16 @@ impl QqChatAgent {
         // Commands are dispatched synchronously; if `passthrough_text` is present it
         // replaces `current_message` and the brain loop runs with the leftover text.
         if let Some(command_registry) = crate::command::global_command_registry() {
-            let cmd_ctx =
-                self.build_command_context(sender_id, target_id, is_group, inference_event.group_id);
-            if let Some(DispatchResult { result, passthrough_text }) =
-                command_registry.dispatch(&cmd_ctx, &raw_user_message)
+            let cmd_ctx = self.build_command_context(
+                sender_id,
+                target_id,
+                is_group,
+                inference_event.group_id,
+            );
+            if let Some(DispatchResult {
+                result,
+                passthrough_text,
+            }) = command_registry.dispatch(&cmd_ctx, &raw_user_message)
             {
                 if let Some(passthrough) = self.execute_command_dispatch(
                     trace,
@@ -339,9 +350,7 @@ impl QqChatAgent {
 
         let direct_reply = match intent {
             IntentCategory::AskSystemPrompt => Some(DIRECT_REPLY_NO_SYSTEM_PROMPT.to_string()),
-            IntentCategory::AskModelName => {
-                Some(build_model_name_reply(ctx.model_display_names))
-            }
+            IntentCategory::AskModelName => Some(build_model_name_reply(ctx.model_display_names)),
             IntentCategory::AskToolList => crate::command::build_help_text(),
             _ => None,
         };
@@ -435,7 +444,8 @@ impl QqChatAgent {
                 QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
                 DataValue::MessageEvent(hydrated_event.clone()),
             );
-            let adapter_handle: zihuan_core::ims_bot_adapter::BotAdapterHandle = ctx.adapter.clone();
+            let adapter_handle: zihuan_core::ims_bot_adapter::BotAdapterHandle =
+                ctx.adapter.clone();
             locked.insert(
                 QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT.to_string(),
                 DataValue::BotAdapterRef(adapter_handle),

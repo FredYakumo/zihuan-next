@@ -7,9 +7,7 @@ use crate::adapter::SharedBotAdapter;
 use crate::models::event_model::{MessageEvent, MessageType, Sender};
 use crate::models::message::{AtTargetMessage, Message, PlainTextMessage};
 use crate::send_qq_message_batches::send_qq_message_batches;
-use crate::ws_action::{
-    response_message_id, response_success, ws_send_action,
-};
+use crate::ws_action::{response_message_id, response_success, ws_send_action};
 use log::{info, warn};
 use std::sync::Arc;
 use tokio::task::block_in_place;
@@ -156,10 +154,16 @@ fn plain_text_batches(content: &str) -> Vec<Vec<Message>> {
         .collect()
 }
 
-fn progress_notification_batches(content: &str, is_group: bool, mention_target_id: Option<&str>) -> Vec<Vec<Message>> {
+fn progress_notification_batches(
+    content: &str,
+    is_group: bool,
+    mention_target_id: Option<&str>,
+) -> Vec<Vec<Message>> {
     let mut batches = plain_text_batches(content);
     if is_group {
-        if let (Some(mention_target_id), Some(first_batch)) = (mention_target_id, batches.first_mut()) {
+        if let (Some(mention_target_id), Some(first_batch)) =
+            (mention_target_id, batches.first_mut())
+        {
             first_batch.insert(
                 0,
                 Message::At(AtTargetMessage {
@@ -364,7 +368,11 @@ pub fn send_group_progress_notification(
     }
     let batches = progress_notification_batches(content, true, Some(mention_target_id));
     let results = send_qq_message_batches(adapter, "group", group_id, &batches);
-    if results.iter().filter(|result| !result.skipped).any(|result| !result.success) {
+    if results
+        .iter()
+        .filter(|result| !result.skipped)
+        .any(|result| !result.success)
+    {
         warn!("{LOG_PREFIX} Failed to send group progress notification");
     }
 }
@@ -393,7 +401,11 @@ pub fn send_group_progress_notification_with_persistence(
             );
         }
     }
-    if results.iter().filter(|result| !result.skipped).any(|result| !result.success) {
+    if results
+        .iter()
+        .filter(|result| !result.skipped)
+        .any(|result| !result.success)
+    {
         warn!("{LOG_PREFIX} Failed to send group progress notification");
     }
 }
@@ -411,7 +423,11 @@ pub fn send_friend_progress_notification(
     }
     let batches = plain_text_batches(content);
     let results = send_qq_message_batches(adapter, "friend", target_id, &batches);
-    if results.iter().filter(|result| !result.skipped).any(|result| !result.success) {
+    if results
+        .iter()
+        .filter(|result| !result.skipped)
+        .any(|result| !result.success)
+    {
         warn!("{LOG_PREFIX} Failed to send friend progress notification");
     }
 }
@@ -439,7 +455,11 @@ pub fn send_friend_progress_notification_with_persistence(
             );
         }
     }
-    if results.iter().filter(|result| !result.skipped).any(|result| !result.success) {
+    if results
+        .iter()
+        .filter(|result| !result.skipped)
+        .any(|result| !result.success)
+    {
         warn!("{LOG_PREFIX} Failed to send friend progress notification");
     }
 }

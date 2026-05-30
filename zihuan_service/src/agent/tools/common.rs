@@ -6,14 +6,12 @@ use serde_json::Value;
 
 use ims_bot_adapter::adapter::{shared_from_handle, SharedBotAdapter};
 use ims_bot_adapter::models::event_model::MessageType;
-use zihuan_agent::brain::{current_task_progress_message, consume_tool_progress_notification};
+use zihuan_agent::brain::{consume_tool_progress_notification, current_task_progress_message};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::task_context::append_current_task_progress;
 use zihuan_graph_engine::{DataType, DataValue};
 
-use crate::agent::qq_chat_agent_msg_send::{
-    send_notification_text, QqSendContext,
-};
+use crate::agent::qq_chat_agent_msg_send::{send_notification_text, QqSendContext};
 
 const LOG_PREFIX: &str = "[QqChatAgent]";
 pub(crate) const QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS: &str =

@@ -2,8 +2,8 @@ use ims_bot_adapter::active_adapter_manager::ActiveAdapterManager;
 use serde_json::Value;
 use std::collections::HashMap;
 use storage_handler::{
-    build_mysql_ref, build_redis_ref, build_s3_ref, build_web_search_engine_ref,
-    build_weaviate_ref, load_connections, ConnectionConfig,
+    build_mysql_ref, build_redis_ref, build_s3_ref, build_weaviate_ref,
+    build_web_search_engine_ref, load_connections, ConnectionConfig,
 };
 use zihuan_core::error::Result;
 use zihuan_graph_engine::data_value::DataType;

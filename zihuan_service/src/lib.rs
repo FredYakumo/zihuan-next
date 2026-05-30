@@ -15,11 +15,11 @@ pub fn init_node_registry() -> Result<()> {
     use nodes::agent_embedding_model_node::AgentEmbeddingModelNode;
     use nodes::agent_image_db_ref::AgentImageDbRefNode;
     use nodes::agent_llm_node::AgentLlmNode;
-    use nodes::agent_task_progress_node::AgentTaskProgressNode;
-    use nodes::agent_tool_task_node::AgentToolTaskNode;
     use nodes::agent_mysql_ref::AgentMySqlRefNode;
     use nodes::agent_rustfs_ref::AgentRustfsRefNode;
+    use nodes::agent_task_progress_node::AgentTaskProgressNode;
     use nodes::agent_tavily_ref::AgentTavilyRefNode;
+    use nodes::agent_tool_task_node::AgentToolTaskNode;
     use nodes::brain_node::BrainNode;
     use nodes::tavily_web_search::TavilyWebSearchNode;
 

@@ -1,13 +1,16 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Local};
-use zihuan_core::data_refs::RelationalDbConnection;
 use sqlx::Row;
+use zihuan_core::data_refs::RelationalDbConnection;
 
 use crate::api::state::{TaskEntry, TaskLogEntry, TaskStatus, TaskType};
 use zihuan_core::error::{Error, Result};
 
-pub async fn insert_task_entry(connection: &RelationalDbConnection, entry: &TaskEntry) -> Result<()> {
+pub async fn insert_task_entry(
+    connection: &RelationalDbConnection,
+    entry: &TaskEntry,
+) -> Result<()> {
     let task_type = task_type_str(&entry.task_type);
     let start_time = entry.start_time.naive_utc().to_string();
     let status = task_status_str(&entry.status);
@@ -186,60 +189,59 @@ pub async fn delete_task_entry(connection: &RelationalDbConnection, task_id: &st
 
 pub async fn mark_orphan_running_stopped(connection: &RelationalDbConnection) -> Result<u64> {
     let affected = match connection {
-        RelationalDbConnection::MySql(config) => {
-            sqlx::query(
-                "UPDATE task_entry SET is_running = 0, status = 'stopped' WHERE is_running = 1",
-            )
-            .execute(mysql_pool(config)?)
-            .await
-            .map_err(Error::Database)?
-            .rows_affected()
-        }
-        RelationalDbConnection::Sqlite(config) => {
-            sqlx::query(
-                "UPDATE task_entry SET is_running = 0, status = 'stopped' WHERE is_running = 1",
-            )
-            .execute(sqlite_pool(config)?)
-            .await
-            .map_err(Error::Database)?
-            .rows_affected()
-        }
+        RelationalDbConnection::MySql(config) => sqlx::query(
+            "UPDATE task_entry SET is_running = 0, status = 'stopped' WHERE is_running = 1",
+        )
+        .execute(mysql_pool(config)?)
+        .await
+        .map_err(Error::Database)?
+        .rows_affected(),
+        RelationalDbConnection::Sqlite(config) => sqlx::query(
+            "UPDATE task_entry SET is_running = 0, status = 'stopped' WHERE is_running = 1",
+        )
+        .execute(sqlite_pool(config)?)
+        .await
+        .map_err(Error::Database)?
+        .rows_affected(),
     };
 
     Ok(affected)
 }
 
-pub async fn cleanup_expired_tasks(connection: &RelationalDbConnection, ttl_hours: u64) -> Result<u64> {
+pub async fn cleanup_expired_tasks(
+    connection: &RelationalDbConnection,
+    ttl_hours: u64,
+) -> Result<u64> {
     let cutoff = chrono::Utc::now() - chrono::Duration::hours(ttl_hours as i64);
     let cutoff_str = cutoff.naive_utc().to_string();
 
     let affected = match connection {
-        RelationalDbConnection::MySql(config) => {
-            sqlx::query(
-                "DELETE FROM task_entry WHERE is_running = 0 AND end_time IS NOT NULL AND end_time < ?",
-            )
-            .bind(&cutoff_str)
-            .execute(mysql_pool(config)?)
-            .await
-            .map_err(Error::Database)?
-            .rows_affected()
-        }
-        RelationalDbConnection::Sqlite(config) => {
-            sqlx::query(
-                "DELETE FROM task_entry WHERE is_running = 0 AND end_time IS NOT NULL AND end_time < ?",
-            )
-            .bind(&cutoff_str)
-            .execute(sqlite_pool(config)?)
-            .await
-            .map_err(Error::Database)?
-            .rows_affected()
-        }
+        RelationalDbConnection::MySql(config) => sqlx::query(
+            "DELETE FROM task_entry WHERE is_running = 0 AND end_time IS NOT NULL AND end_time < ?",
+        )
+        .bind(&cutoff_str)
+        .execute(mysql_pool(config)?)
+        .await
+        .map_err(Error::Database)?
+        .rows_affected(),
+        RelationalDbConnection::Sqlite(config) => sqlx::query(
+            "DELETE FROM task_entry WHERE is_running = 0 AND end_time IS NOT NULL AND end_time < ?",
+        )
+        .bind(&cutoff_str)
+        .execute(sqlite_pool(config)?)
+        .await
+        .map_err(Error::Database)?
+        .rows_affected(),
     };
 
     Ok(affected)
 }
 
-pub async fn append_task_log(connection: &RelationalDbConnection, task_id: &str, entry: &TaskLogEntry) -> Result<()> {
+pub async fn append_task_log(
+    connection: &RelationalDbConnection,
+    task_id: &str,
+    entry: &TaskLogEntry,
+) -> Result<()> {
     match connection {
         RelationalDbConnection::MySql(config) => {
             sqlx::query(
@@ -270,7 +272,10 @@ pub async fn append_task_log(connection: &RelationalDbConnection, task_id: &str,
     Ok(())
 }
 
-pub async fn read_task_logs(connection: &RelationalDbConnection, task_id: &str) -> Result<Vec<TaskLogEntry>> {
+pub async fn read_task_logs(
+    connection: &RelationalDbConnection,
+    task_id: &str,
+) -> Result<Vec<TaskLogEntry>> {
     match connection {
         RelationalDbConnection::MySql(config) => {
             let rows = sqlx::query(
@@ -311,58 +316,66 @@ pub async fn read_task_logs(connection: &RelationalDbConnection, task_id: &str) 
     }
 }
 
-pub async fn append_task_progress(connection: &RelationalDbConnection, task_id: &str, seq: i32, message: &str) -> Result<()> {
+pub async fn append_task_progress(
+    connection: &RelationalDbConnection,
+    task_id: &str,
+    seq: i32,
+    message: &str,
+) -> Result<()> {
     match connection {
         RelationalDbConnection::MySql(config) => {
-            sqlx::query(
-                "INSERT INTO task_progress (task_id, seq, message) VALUES (?, ?, ?)",
-            )
-            .bind(task_id)
-            .bind(seq)
-            .bind(message)
-            .execute(mysql_pool(config)?)
-            .await
-            .map_err(Error::Database)?;
+            sqlx::query("INSERT INTO task_progress (task_id, seq, message) VALUES (?, ?, ?)")
+                .bind(task_id)
+                .bind(seq)
+                .bind(message)
+                .execute(mysql_pool(config)?)
+                .await
+                .map_err(Error::Database)?;
         }
         RelationalDbConnection::Sqlite(config) => {
-            sqlx::query(
-                "INSERT INTO task_progress (task_id, seq, message) VALUES (?, ?, ?)",
-            )
-            .bind(task_id)
-            .bind(seq)
-            .bind(message)
-            .execute(sqlite_pool(config)?)
-            .await
-            .map_err(Error::Database)?;
+            sqlx::query("INSERT INTO task_progress (task_id, seq, message) VALUES (?, ?, ?)")
+                .bind(task_id)
+                .bind(seq)
+                .bind(message)
+                .execute(sqlite_pool(config)?)
+                .await
+                .map_err(Error::Database)?;
         }
     }
 
     Ok(())
 }
 
-pub async fn read_task_progress(connection: &RelationalDbConnection, task_id: &str) -> Result<Vec<String>> {
+pub async fn read_task_progress(
+    connection: &RelationalDbConnection,
+    task_id: &str,
+) -> Result<Vec<String>> {
     match connection {
         RelationalDbConnection::MySql(config) => {
-            let rows = sqlx::query(
-                "SELECT message FROM task_progress WHERE task_id = ? ORDER BY seq ASC",
-            )
-            .bind(task_id)
-            .fetch_all(mysql_pool(config)?)
-            .await
-            .map_err(Error::Database)?;
+            let rows =
+                sqlx::query("SELECT message FROM task_progress WHERE task_id = ? ORDER BY seq ASC")
+                    .bind(task_id)
+                    .fetch_all(mysql_pool(config)?)
+                    .await
+                    .map_err(Error::Database)?;
 
-            Ok(rows.into_iter().map(|row| row.get::<String, _>(0)).collect())
+            Ok(rows
+                .into_iter()
+                .map(|row| row.get::<String, _>(0))
+                .collect())
         }
         RelationalDbConnection::Sqlite(config) => {
-            let rows = sqlx::query(
-                "SELECT message FROM task_progress WHERE task_id = ? ORDER BY seq ASC",
-            )
-            .bind(task_id)
-            .fetch_all(sqlite_pool(config)?)
-            .await
-            .map_err(Error::Database)?;
+            let rows =
+                sqlx::query("SELECT message FROM task_progress WHERE task_id = ? ORDER BY seq ASC")
+                    .bind(task_id)
+                    .fetch_all(sqlite_pool(config)?)
+                    .await
+                    .map_err(Error::Database)?;
 
-            Ok(rows.into_iter().map(|row| row.get::<String, _>(0)).collect())
+            Ok(rows
+                .into_iter()
+                .map(|row| row.get::<String, _>(0))
+                .collect())
         }
     }
 }

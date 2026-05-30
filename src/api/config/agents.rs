@@ -31,7 +31,8 @@ use zihuan_service::agent::qq_chat_agent_ignore_store::{
 use crate::api::state::{AppState, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
 use crate::system_config;
-use model_inference::system_config::{AgentConfig, AgentToolConfig, AgentType};
+use model_inference::system_config::load_llm_refs;
+use model_inference::system_config::{AgentConfig, AgentToolConfig, AgentType, LlmRefConfig};
 use zihuan_core::agent_config::QqChatAgentConfig;
 use zihuan_core::error::{Error as CoreError, Result as CoreResult};
 use zihuan_service::AgentRuntimeInfo;
@@ -412,9 +413,7 @@ fn render_ignore_rule_error(res: &mut Response, err: CoreError) {
                 render_unprocessable_entity(res, message);
             }
         }
-        CoreError::StaticStrError(message) => {
-            render_unprocessable_entity(res, message.to_string())
-        }
+        CoreError::StaticStrError(message) => render_unprocessable_entity(res, message.to_string()),
         other => render_internal_error(res, other),
     }
 }
@@ -432,11 +431,7 @@ pub async fn list_agent_ignore_rules(req: &mut Request, res: &mut Response, _dep
 }
 
 #[handler]
-pub async fn create_agent_ignore_rule(
-    req: &mut Request,
-    res: &mut Response,
-    _depot: &mut Depot,
-) {
+pub async fn create_agent_ignore_rule(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
     let id = req.param::<String>("id").unwrap_or_default();
     let body: IgnoreRuleMutationRequest = match req.parse_json().await {
         Ok(body) => body,
@@ -457,11 +452,7 @@ pub async fn create_agent_ignore_rule(
 }
 
 #[handler]
-pub async fn update_agent_ignore_rule(
-    req: &mut Request,
-    res: &mut Response,
-    _depot: &mut Depot,
-) {
+pub async fn update_agent_ignore_rule(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
     let id = req.param::<String>("id").unwrap_or_default();
     let rule_id = req.param::<i64>("rule_id").unwrap_or_default();
     let body: IgnoreRuleMutationRequest = match req.parse_json().await {
@@ -483,11 +474,7 @@ pub async fn update_agent_ignore_rule(
 }
 
 #[handler]
-pub async fn delete_agent_ignore_rule(
-    req: &mut Request,
-    res: &mut Response,
-    _depot: &mut Depot,
-) {
+pub async fn delete_agent_ignore_rule(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
     let id = req.param::<String>("id").unwrap_or_default();
     let rule_id = req.param::<i64>("rule_id").unwrap_or_default();
     match resolve_agent_rdb_connection(&id).await {
@@ -519,6 +506,15 @@ pub async fn create_agent(req: &mut Request, res: &mut Response, _depot: &mut De
         Err(err) => return render_internal_error(res, err),
     };
     if let Err(message) = validate_agent_connection_schemas(&body.agent_type, &connections) {
+        return render_unprocessable_entity(res, message);
+    }
+    let llm_refs = match load_llm_refs() {
+        Ok(llm_refs) => llm_refs,
+        Err(err) => return render_internal_error(res, err),
+    };
+    if let Err(message) =
+        validate_qq_chat_image_understand_llm(&body.agent_type, &llm_refs, &body.name)
+    {
         return render_unprocessable_entity(res, message);
     }
 
@@ -569,6 +565,15 @@ pub async fn update_agent(req: &mut Request, res: &mut Response, _depot: &mut De
     if let Err(message) = validate_agent_connection_schemas(&body.agent_type, &connections) {
         return render_unprocessable_entity(res, message);
     }
+    let llm_refs = match load_llm_refs() {
+        Ok(llm_refs) => llm_refs,
+        Err(err) => return render_internal_error(res, err),
+    };
+    if let Err(message) =
+        validate_qq_chat_image_understand_llm(&body.agent_type, &llm_refs, &body.name)
+    {
+        return render_unprocessable_entity(res, message);
+    }
 
     let Some(agent) = agents.iter_mut().find(|item| item.id == id) else {
         return render_not_found(res, "Agent not found");
@@ -612,6 +617,15 @@ pub async fn start_agent(req: &mut Request, res: &mut Response, depot: &mut Depo
         Err(err) => return render_internal_error(res, err),
     };
     if let Err(message) = validate_agent_connection_schemas(&agent.agent_type, &connections) {
+        return render_unprocessable_entity(res, message);
+    }
+    let llm_refs = match load_llm_refs() {
+        Ok(llm_refs) => llm_refs,
+        Err(err) => return render_internal_error(res, err),
+    };
+    if let Err(message) =
+        validate_qq_chat_image_understand_llm(&agent.agent_type, &llm_refs, &agent.name)
+    {
         return render_unprocessable_entity(res, message);
     }
 
@@ -705,7 +719,73 @@ fn validate_agent_connection_schemas(
         config.weaviate_image_connection_id.as_deref(),
         WeaviateCollectionSchema::ImageSemantic,
         "weaviate_image_connection_id",
-    )
+    )?;
+    Ok(())
+}
+
+fn validate_qq_chat_image_understand_llm(
+    agent_type: &AgentType,
+    llm_refs: &[LlmRefConfig],
+    agent_name: &str,
+) -> Result<(), String> {
+    let AgentType::QqChat(config) = agent_type else {
+        return Ok(());
+    };
+    let llm_ref_id = config
+        .llm_ref_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| format!("agent '{}' is missing llm_ref_id", agent_name))?;
+    let resolved_llm_ref_id = config
+        .image_understand_llm_ref_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(llm_ref_id);
+
+    let llm_ref = llm_refs
+        .iter()
+        .find(|item| item.id == resolved_llm_ref_id || item.config_id == resolved_llm_ref_id)
+        .ok_or_else(|| {
+            format!(
+                "agent '{}' references missing llm_ref '{}'",
+                agent_name, resolved_llm_ref_id
+            )
+        })?;
+    if !llm_ref.enabled {
+        return Err(format!(
+            "agent '{}' references disabled llm_ref '{}'",
+            agent_name, llm_ref.name
+        ));
+    }
+    match &llm_ref.model {
+        model_inference::system_config::ModelRefSpec::ChatLlm { llm } => {
+            if llm.supports_multimodal_input {
+                Ok(())
+            } else if config
+                .image_understand_llm_ref_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .is_some()
+            {
+                Err(format!(
+                    "image_understand_llm_ref_id '{}' does not support multimodal input",
+                    llm_ref.name
+                ))
+            } else {
+                Err(format!(
+                    "main llm_ref_id '{}' does not support multimodal input; please choose a multimodal model for image_understand_llm_ref_id",
+                    llm_ref.name
+                ))
+            }
+        }
+        model_inference::system_config::ModelRefSpec::TextEmbeddingLocal { .. } => Err(format!(
+            "agent '{}' references non-chat model_ref '{}' as image_understand_llm_ref_id",
+            agent_name, llm_ref.name
+        )),
+    }
 }
 
 fn validate_rdb_connection(

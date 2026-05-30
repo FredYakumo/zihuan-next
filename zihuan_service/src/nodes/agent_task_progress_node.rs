@@ -1,7 +1,5 @@
 use zihuan_core::error::Result;
-use zihuan_graph_engine::{
-    node_input, node_output, DataType, DataValue, Node, Port,
-};
+use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
 
 pub struct AgentTaskProgressNode {
     id: String,

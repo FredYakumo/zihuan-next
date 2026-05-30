@@ -10,8 +10,8 @@ use zihuan_graph_engine::object_storage::S3Ref;
 
 mod common;
 mod editable_qq_agent_tool;
-mod image_understand;
 mod image_search;
+mod image_understand;
 mod info_tools;
 mod recent_messages;
 mod reply_message;
@@ -23,8 +23,8 @@ mod build_metadata {
 
 pub(crate) use common::{ToolNotificationTarget, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS};
 pub(crate) use editable_qq_agent_tool::EditableQqAgentTool;
-pub(crate) use image_understand::{execute_image_understand_tool, ImageUnderstandBrainTool};
 pub(crate) use image_search::SearchSimilarImagesBrainTool;
+pub(crate) use image_understand::{execute_image_understand_tool, ImageUnderstandBrainTool};
 pub(crate) use info_tools::{GetAgentPublicInfoBrainTool, GetFunctionListBrainTool};
 pub(crate) use recent_messages::{GetRecentGroupMessagesBrainTool, GetRecentUserMessagesBrainTool};
 pub(crate) use reply_message::ReplyMessageBrainTool;
