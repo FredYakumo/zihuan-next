@@ -59,6 +59,7 @@ use zihuan_graph_engine::brain_tool_spec::{
 use zihuan_graph_engine::data_value::{OpenAIMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::message_persistence::persist_message_event;
+use zihuan_graph_engine::message_restore::register_media;
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
 
@@ -251,18 +252,17 @@ fn build_common_system_rules(identity_example: &str, agent_system_prompt: Option
 /// System prompt template (shared, private variant).
 pub(crate) fn build_private_system_prompt(
     bot_name: &str,
-    bot_id: &str,
     time: &str,
     sender_id: &str,
     sender_name: &str,
     agent_system_prompt: Option<&str>,
 ) -> String {
     let rules = build_common_system_rules(
-        &format!("我是{bot_name}，QQ号 {bot_id}。"),
+        &format!("我是{bot_name}。"),
         agent_system_prompt,
     );
     format!(
-        "你的名字叫`{bot_name}`(QQ号为`{bot_id}`)。现在时间是{time}，你的QQ好友`{sender_name}`(QQ号`{sender_id}`)向你发送了一条消息。\n\
+        "你的名字叫`{bot_name}`。现在时间是{time}，你的QQ好友`{sender_name}`(QQ号`{sender_id}`)向你发送了一条消息。\n\
          {rules}"
     )
 }
@@ -270,7 +270,6 @@ pub(crate) fn build_private_system_prompt(
 /// System prompt template (group variant).
 pub(crate) fn build_group_system_prompt(
     bot_name: &str,
-    bot_id: &str,
     time: &str,
     sender_id: &str,
     sender_name: &str,
@@ -279,14 +278,14 @@ pub(crate) fn build_group_system_prompt(
     agent_system_prompt: Option<&str>,
 ) -> String {
     let mut rules = build_common_system_rules(
-        &format!("我是{bot_name}，QQ号 {bot_id}。"),
+        &format!("我是{bot_name}。"),
         agent_system_prompt,
     );
     rules.push_str(&format!(
         "\n- 群聊回复时，尽量在回复中 @sender，或者在需要引用时先调用 `reply_message` 工具，让对方清楚你是在回应他。"
     ));
     format!(
-        "你的名字叫`{bot_name}`(QQ号为`{bot_id}`)。现在时间是{time}，你正在`{group_name}`群(群号:{group_id})里聊天，群友`{sender_name}`(QQ号`{sender_id}`)向你发送了一条消息。\n\
+        "你的名字叫`{bot_name}`。现在时间是{time}，你正在`{group_name}`群(群号:{group_id})里聊天，群友`{sender_name}`(QQ号`{sender_id}`)向你发送了一条消息。\n\
          {rules}"
     )
 }
@@ -1320,6 +1319,7 @@ pub(crate) fn collect_available_media_from_brain_output(
 
         for item in images {
             if let Some(media) = persisted_media_from_tool_value(item) {
+                register_media(media.clone());
                 media_by_id.insert(media.media_id.clone(), media);
             }
         }

@@ -16,6 +16,8 @@ use zihuan_core::ims_bot_adapter::models::message::{
 
 static RUNTIME_MESSAGE_INDEX: Lazy<RwLock<HashMap<String, Vec<Message>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
+static RUNTIME_MEDIA_INDEX: Lazy<RwLock<HashMap<String, PersistedMedia>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
 static LATEST_MYSQL_REF: Lazy<RwLock<Option<Arc<MySqlConfig>>>> = Lazy::new(|| RwLock::new(None));
 static LATEST_RDB_POOL: Lazy<RwLock<Option<RelationalDbConnection>>> =
     Lazy::new(|| RwLock::new(None));
@@ -72,6 +74,12 @@ pub struct CachedMessageSnapshotPayload {
 pub fn cache_message_snapshot(event: &MessageEvent) {
     if let Ok(mut guard) = RUNTIME_MESSAGE_INDEX.write() {
         guard.insert(event.message_id.to_string(), event.message_list.clone());
+    }
+}
+
+pub fn register_media(media: PersistedMedia) {
+    if let Ok(mut guard) = RUNTIME_MEDIA_INDEX.write() {
+        guard.insert(media.media_id.clone(), media);
     }
 }
 
@@ -259,6 +267,12 @@ pub fn restore_media_by_id(media_id: &str) -> Result<Option<PersistedMedia>> {
     let media_id = media_id.trim();
     if media_id.is_empty() {
         return Ok(None);
+    }
+
+    if let Ok(guard) = RUNTIME_MEDIA_INDEX.read() {
+        if let Some(media) = guard.get(media_id) {
+            return Ok(Some(media.clone()));
+        }
     }
 
     if let Ok(guard) = RUNTIME_MESSAGE_INDEX.read() {

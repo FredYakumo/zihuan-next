@@ -412,7 +412,6 @@ impl QqChatAgent {
             let group_name = inference_event.group_name.as_deref().unwrap_or("未知");
             build_group_system_prompt(
                 ctx.bot_name,
-                bot_id,
                 time,
                 sender_id,
                 &sender_display_name(
@@ -426,7 +425,6 @@ impl QqChatAgent {
         } else {
             build_private_system_prompt(
                 ctx.bot_name,
-                bot_id,
                 time,
                 sender_id,
                 &sender_display_name(

@@ -8,6 +8,7 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
 use zihuan_core::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
 use zihuan_graph_engine::object_storage::S3Ref;
+use zihuan_graph_engine::message_restore::register_media;
 
 use crate::adapter::SharedBotAdapter;
 use crate::login_info::qq_avatar_url;
@@ -16,8 +17,6 @@ use crate::models::MessageEvent;
 use crate::ws_action::ws_send_action;
 
 const LOG_PREFIX: &str = "[qq_profile]";
-
-// ---- Query field constants ----
 
 const FIELD_QQ: &str = "qq号";
 const FIELD_SEX: &str = "性别";
@@ -36,8 +35,6 @@ const VALID_QUERY_FIELDS: &[&str] = &[
 const AVATAR_S3_KEY_PREFIX: &str = "qq_avatar";
 const AVATAR_CONTENT_TYPE: &str = "image/jpeg";
 
-// ---- Shared helper types ----
-
 #[derive(Debug, Clone, Default)]
 struct StrangerInfo {
     user_id: String,
@@ -50,8 +47,6 @@ struct StrangerInfo {
 struct MemberInfo {
     role: String,
 }
-
-// ---- get_bot_profile tool ----
 
 pub struct GetBotProfileBrainTool {
     adapter: SharedBotAdapter,
@@ -102,8 +97,6 @@ impl BrainTool for GetBotProfileBrainTool {
     }
 }
 
-// ---- get_qq_user_profile tool ----
-
 pub struct GetQqUserProfileBrainTool {
     adapter: SharedBotAdapter,
     event: MessageEvent,
@@ -153,8 +146,6 @@ impl BrainTool for GetQqUserProfileBrainTool {
     }
 }
 
-// ---- Parameter schemas ----
-
 fn query_field_schema() -> Value {
     serde_json::json!({
         "type": "string",
@@ -170,7 +161,7 @@ fn query_schema() -> Value {
             "query": {
                 "type": "array",
                 "items": query_field_schema(),
-                "description": "要查询的字段列表，可选值：qq号、性别、年龄、头像media_id、身份。支持多选，自动去重。",
+                "description": "要查询的字段列表，可选值：qq号、性别、年龄、头像media_id、身份。支持多选。",
                 "minItems": 1
             }
         },
@@ -190,7 +181,7 @@ fn user_profile_schema() -> Value {
             "query": {
                 "type": "array",
                 "items": query_field_schema(),
-                "description": "要查询的字段列表，可选值：qq号、性别、年龄、头像media_id、身份。支持多选，自动去重。",
+                "description": "要查询的字段列表，可选值：qq号、性别、年龄、头像media_id、身份。支持多选。",
                 "minItems": 1
             }
         },
@@ -198,8 +189,6 @@ fn user_profile_schema() -> Value {
         "additionalProperties": false
     })
 }
-
-// ---- Argument helpers ----
 
 fn parse_query_fields(arguments: &Value) -> Result<Vec<String>> {
     let raw = arguments
@@ -270,14 +259,13 @@ fn error_tool_result(error: &Error) -> String {
     .to_string()
 }
 
-// ---- Bot ID helper ----
-
 fn bot_qq_id(adapter: &SharedBotAdapter) -> Result<String> {
     Ok(get_bot_id(adapter))
 }
 
-// ---- Core query execution ----
-
+/// Orchestrates a complete profile query: fetches stranger info from NapCat,
+/// resolves group identity for group messages, and optionally downloads/caches
+/// the avatar to S3.
 fn execute_profile_query(
     adapter: &SharedBotAdapter,
     event: &MessageEvent,
@@ -311,8 +299,9 @@ fn execute_profile_query(
     Ok(serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string()))
 }
 
-// ---- NapCat API helpers ----
-
+/// Calls NapCat `get_stranger_info` action. Falls back to `get_login_info`
+/// (if S3 is available) when the stranger response is empty — this handles
+/// the case where the bot queries its own profile.
 fn fetch_stranger_info(
     adapter: &SharedBotAdapter,
     user_id: &str,
@@ -408,8 +397,11 @@ fn fetch_group_member_info(
     })
 }
 
-// ---- Avatar caching with S3 ----
-
+/// Resolves a QQ avatar to a persisted media ID, with S3-backed caching.
+///
+/// On cache miss, downloads the avatar from QQ's CDN via `qq_avatar_url`,
+/// uploads to S3, and returns the media ID. The S3 key is deterministic:
+/// `qq_avatar/{user_id}.jpg`.
 fn resolve_avatar_media_id(
     user_id: &str,
     s3_ref: &Option<Arc<S3Ref>>,
@@ -432,6 +424,7 @@ fn resolve_avatar_media_id(
     };
 
     if cached.is_some() {
+        register_media(media.clone());
         return Some(media.media_id);
     }
 
@@ -461,6 +454,7 @@ fn resolve_avatar_media_id(
     }) {
         Ok(_) => {
             info!("{LOG_PREFIX} avatar uploaded to S3 for user_id={user_id} key={key}");
+            register_media(media.clone());
             Some(media.media_id)
         }
         Err(e) => {
@@ -484,8 +478,6 @@ fn avatar_media_from_s3_key(key: &str) -> PersistedMedia {
         Some(AVATAR_CONTENT_TYPE.to_string()),
     )
 }
-
-// ---- Result builder ----
 
 fn build_profile_result(
     query: &[String],
@@ -516,8 +508,6 @@ fn build_profile_result(
 
     Value::Object(result)
 }
-
-// ---- Helpers ----
 
 fn is_group_event(event: &MessageEvent) -> bool {
     matches!(
