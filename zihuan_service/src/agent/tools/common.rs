@@ -244,27 +244,4 @@ pub(crate) fn extract_string_list_output(
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct StaticFunctionToolSpec {
-    pub(crate) name: &'static str,
-    pub(crate) description: &'static str,
-    pub(crate) parameters: Value,
-}
-
-impl zihuan_core::llm::tooling::FunctionTool for StaticFunctionToolSpec {
-    fn name(&self) -> &str {
-        self.name
-    }
-
-    fn description(&self) -> &str {
-        self.description
-    }
-
-    fn parameters(&self) -> Value {
-        self.parameters.clone()
-    }
-
-    fn call(&self, _arguments: Value) -> Result<Value> {
-        Ok(Value::Null)
-    }
-}
+pub(crate) use zihuan_core::llm::tooling::StaticFunctionToolSpec;

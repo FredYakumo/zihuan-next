@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 zihuan_core = { path = "../zihuan_core" }
+zihuan_agent = { path = "../zihuan_agent" }
 zihuan_graph_engine = { path = "../zihuan_graph_engine" }
 node_macros = { path = "../node_macros" }
 storage_handler = { path = "../storage_handler" }
@@ -19,7 +20,7 @@ log = "0.4"
 futures-util = "0.3"
 http = "1.0"
 once_cell = "1.20"
-reqwest = { version = "0.12.25", features = ["json"] }
+reqwest = { version = "0.12.25", features = ["blocking", "json"] }
 sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "mysql", "sqlite", "any", "chrono"] }
 chrono = { version = "0.4", features = ["serde"] }
 hmac = "0.12"

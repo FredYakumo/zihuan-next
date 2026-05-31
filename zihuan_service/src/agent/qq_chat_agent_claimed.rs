@@ -29,6 +29,8 @@ use super::super::qq_chat_agent_logging::QqChatBrainObserver;
 use super::super::qq_chat_agent_msg_send::{
     send_planned_batches, take_reply_directive, QqSendContext,
 };
+use ims_bot_adapter::tools::qq_profile::{GetBotProfileBrainTool, GetQqUserProfileBrainTool};
+
 use super::super::tools::{
     EditableQqAgentTool, GetAgentPublicInfoBrainTool, GetFunctionListBrainTool,
     GetRecentGroupMessagesBrainTool, GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool,
@@ -588,6 +590,17 @@ impl QqChatAgent {
                 &shared_runtime_values,
             )));
         }
+
+        brain = brain.with_tool(GetBotProfileBrainTool::new(
+            ctx.adapter.clone(),
+            hydrated_event.clone(),
+            ctx.s3_ref.cloned(),
+        ));
+        brain = brain.with_tool(GetQqUserProfileBrainTool::new(
+            ctx.adapter.clone(),
+            hydrated_event.clone(),
+            ctx.s3_ref.cloned(),
+        ));
 
         let qq_chat_agent_config = current_qq_chat_agent_config()?;
         for tool_def in &self.tool_definitions {

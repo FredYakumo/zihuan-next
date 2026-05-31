@@ -20,6 +20,7 @@ pub mod send_group_message_batches;
 pub mod send_message;
 pub mod send_qq_message_batches;
 pub mod system_config;
+pub mod tools;
 pub mod ws_action;
 
 use zihuan_core::error::Result;
