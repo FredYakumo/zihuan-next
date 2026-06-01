@@ -642,10 +642,12 @@ impl QqChatAgent {
         let exact_token_usage = {
             let mut prompt_tokens = 0usize;
             let mut cached_prompt_tokens = 0usize;
+            let mut prompt_cache_miss_tokens = 0usize;
             let mut completion_tokens = 0usize;
             let mut total_tokens = 0usize;
             let mut has_usage = false;
             let mut cached_prompt_tokens_seen = false;
+            let mut prompt_cache_miss_tokens_seen = false;
             let mut total_tokens_seen = false;
 
             for message in &brain_output {
@@ -656,6 +658,10 @@ impl QqChatAgent {
                     if let Some(value) = usage.cached_prompt_tokens {
                         cached_prompt_tokens = cached_prompt_tokens.saturating_add(value);
                         cached_prompt_tokens_seen = true;
+                    }
+                    if let Some(value) = usage.prompt_cache_miss_tokens {
+                        prompt_cache_miss_tokens = prompt_cache_miss_tokens.saturating_add(value);
+                        prompt_cache_miss_tokens_seen = true;
                     }
                     if let Some(value) = usage.completion_tokens {
                         completion_tokens = completion_tokens.saturating_add(value);
@@ -673,6 +679,11 @@ impl QqChatAgent {
                     prompt_tokens: Some(prompt_tokens),
                     cached_prompt_tokens: if cached_prompt_tokens_seen {
                         Some(cached_prompt_tokens)
+                    } else {
+                        None
+                    },
+                    prompt_cache_miss_tokens: if prompt_cache_miss_tokens_seen {
+                        Some(prompt_cache_miss_tokens)
                     } else {
                         None
                     },

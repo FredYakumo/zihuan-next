@@ -75,24 +75,53 @@ fn parse_tool_calls(tool_calls_value: &Value) -> Vec<ToolCalls> {
 fn parse_token_usage(value: Option<&Value>) -> Option<TokenUsage> {
     let value = value?;
 
+    let cached_prompt_tokens = value
+        .get("prompt_tokens_details")
+        .and_then(|details| details.get("cached_tokens"))
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize)
+        .or_else(|| {
+            value
+                .get("input_tokens_details")
+                .and_then(|details| details.get("cached_tokens"))
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+        })
+        .or_else(|| {
+            value
+                .get("prompt_cache_hit_tokens")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+        })
+        .or_else(|| {
+            value
+                .get("cache_hit_tokens")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+        });
+
+    let prompt_cache_miss_tokens = value
+        .get("prompt_cache_miss_tokens")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize)
+        .or_else(|| {
+            value
+                .get("cache_miss_tokens")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+        });
+
+    let prompt_tokens = value
+        .get("prompt_tokens")
+        .and_then(|v| v.as_u64())
+        .or_else(|| value.get("input_tokens").and_then(|v| v.as_u64()))
+        .map(|v| v as usize)
+        .or_else(|| cached_prompt_tokens.zip(prompt_cache_miss_tokens).map(|(hit, miss)| hit + miss));
+
     Some(TokenUsage {
-        prompt_tokens: value
-            .get("prompt_tokens")
-            .and_then(|v| v.as_u64())
-            .or_else(|| value.get("input_tokens").and_then(|v| v.as_u64()))
-            .map(|v| v as usize),
-        cached_prompt_tokens: value
-            .get("prompt_tokens_details")
-            .and_then(|details| details.get("cached_tokens"))
-            .and_then(|v| v.as_u64())
-            .map(|v| v as usize)
-            .or_else(|| {
-                value
-                    .get("input_tokens_details")
-                    .and_then(|details| details.get("cached_tokens"))
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as usize)
-            }),
+        prompt_tokens,
+        cached_prompt_tokens,
+        prompt_cache_miss_tokens,
         completion_tokens: value
             .get("completion_tokens")
             .and_then(|v| v.as_u64())
@@ -1400,6 +1429,7 @@ mod tests {
         let chat = parse_token_usage(Some(&chat_usage)).expect("chat usage");
         assert_eq!(chat.prompt_tokens, Some(10));
         assert_eq!(chat.cached_prompt_tokens, Some(4));
+        assert_eq!(chat.prompt_cache_miss_tokens, None);
         assert_eq!(chat.completion_tokens, Some(3));
         assert_eq!(chat.total_tokens, Some(13));
 
@@ -1408,11 +1438,13 @@ mod tests {
             "output_tokens": 5,
             "input_tokens_details": {
                 "cached_tokens": 7
-            }
+            },
+            "prompt_cache_miss_tokens": 5
         });
         let responses = parse_token_usage(Some(&responses_usage)).expect("responses usage");
         assert_eq!(responses.prompt_tokens, Some(12));
         assert_eq!(responses.cached_prompt_tokens, Some(7));
+        assert_eq!(responses.prompt_cache_miss_tokens, Some(5));
         assert_eq!(responses.completion_tokens, Some(5));
     }
 }

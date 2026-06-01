@@ -110,7 +110,12 @@ impl CommandHandler for TaskCommand {
             return cancel_task(runtime, ctx, task_id);
         }
 
-        show_task_detail(runtime, ctx, &args.join(" "))
+        let task_id = args.first().map(String::as_str).unwrap_or("");
+        if task_id.is_empty() {
+            return simple_result("用法: /task <任务ID>".to_string(), None);
+        }
+
+        show_task_detail(runtime, ctx, task_id)
     }
 }
 
@@ -146,12 +151,8 @@ fn show_task_detail(
     ctx: &CommandContext,
     task_id: &str,
 ) -> CommandResult {
-    match runtime.query_task(task_id) {
+    match runtime.query_owned_task(task_id, &ctx.caller_id) {
         Some(task) => {
-            if task.owner_id.as_deref() != Some(&ctx.caller_id) {
-                return simple_result("你没有权限查看此任务，或任务不存在。".to_string(), None);
-            }
-
             let detail = render_task_detail(&task);
             if matches!(ctx.channel, CommandChannel::QqChat { .. }) {
                 let mut result = CommandResult {
@@ -215,11 +216,8 @@ fn cancel_task(
     ctx: &CommandContext,
     task_id: &str,
 ) -> CommandResult {
-    match runtime.query_task(task_id) {
+    match runtime.query_owned_task(task_id, &ctx.caller_id) {
         Some(task) => {
-            if task.owner_id.as_deref() != Some(&ctx.caller_id) {
-                return simple_result("你没有权限取消此任务，或任务不存在。".to_string(), None);
-            }
             if task.status != zihuan_core::task_context::AgentTaskStatus::Running {
                 return simple_result(
                     format!(

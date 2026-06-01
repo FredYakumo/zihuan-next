@@ -132,6 +132,12 @@ pub trait AgentTaskRuntime: Send + Sync {
     /// Look up a task by id.
     fn query_task(&self, task_id: &str) -> Option<AgentTaskInfo>;
 
+    /// Look up a task by id, but only return it when it belongs to `owner_id`.
+    fn query_owned_task(&self, task_id: &str, owner_id: &str) -> Option<AgentTaskInfo> {
+        self.query_task(task_id)
+            .filter(|task| task.owner_id.as_deref() == Some(owner_id))
+    }
+
     /// List all tasks belonging to `owner_id`.
     fn list_tasks(&self, owner_id: &str) -> Vec<AgentTaskInfo>;
 
