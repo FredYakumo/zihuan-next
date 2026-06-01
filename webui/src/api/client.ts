@@ -335,6 +335,7 @@ export interface LlmServiceConfig {
     | "open_ai_responses_image_url_object_compat";
   stream: boolean;
   supports_multimodal_input: boolean;
+  include_reasoning_content: boolean;
   timeout_secs: number;
   retry_count: number;
 }

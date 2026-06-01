@@ -7,8 +7,8 @@ use zihuan_agent::brain::BrainTool;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::models::message::{PersistedMedia, PersistedMediaSource};
 use zihuan_core::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
-use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::message_restore::register_media;
+use zihuan_graph_engine::object_storage::S3Ref;
 
 use crate::adapter::SharedBotAdapter;
 use crate::login_info::qq_avatar_url;
@@ -55,11 +55,7 @@ pub struct GetBotProfileBrainTool {
 }
 
 impl GetBotProfileBrainTool {
-    pub fn new(
-        adapter: SharedBotAdapter,
-        event: MessageEvent,
-        s3_ref: Option<Arc<S3Ref>>,
-    ) -> Self {
+    pub fn new(adapter: SharedBotAdapter, event: MessageEvent, s3_ref: Option<Arc<S3Ref>>) -> Self {
         Self {
             adapter,
             event,
@@ -81,13 +77,7 @@ impl BrainTool for GetBotProfileBrainTool {
         let result = (|| -> Result<String> {
             let query = parse_query_fields(arguments)?;
             let bot_id = bot_qq_id(&self.adapter)?;
-            execute_profile_query(
-                &self.adapter,
-                &self.event,
-                &self.s3_ref,
-                &bot_id,
-                &query,
-            )
+            execute_profile_query(&self.adapter, &self.event, &self.s3_ref, &bot_id, &query)
         })();
 
         match result {
@@ -104,11 +94,7 @@ pub struct GetQqUserProfileBrainTool {
 }
 
 impl GetQqUserProfileBrainTool {
-    pub fn new(
-        adapter: SharedBotAdapter,
-        event: MessageEvent,
-        s3_ref: Option<Arc<S3Ref>>,
-    ) -> Self {
+    pub fn new(adapter: SharedBotAdapter, event: MessageEvent, s3_ref: Option<Arc<S3Ref>>) -> Self {
         Self {
             adapter,
             event,
@@ -130,13 +116,7 @@ impl BrainTool for GetQqUserProfileBrainTool {
         let result = (|| -> Result<String> {
             let user_id = required_string_argument(arguments, "id", "id 是必填参数")?;
             let query = parse_query_fields(arguments)?;
-            execute_profile_query(
-                &self.adapter,
-                &self.event,
-                &self.s3_ref,
-                &user_id,
-                &query,
-            )
+            execute_profile_query(&self.adapter, &self.event, &self.s3_ref, &user_id, &query)
         })();
 
         match result {
@@ -222,9 +202,7 @@ fn parse_query_fields(arguments: &Value) -> Result<Vec<String>> {
     }
 
     if fields.is_empty() {
-        return Err(Error::ValidationError(
-            "query 数组不能为空".to_string(),
-        ));
+        return Err(Error::ValidationError("query 数组不能为空".to_string()));
     }
 
     Ok(fields)
@@ -277,12 +255,10 @@ fn execute_profile_query(
 
     let identity = if is_group_event(event) {
         match event.group_id {
-            Some(group_id) => {
-                match fetch_group_member_info(adapter, group_id, user_id) {
-                    Ok(member) => member.role,
-                    Err(_) => "unknown".to_string(),
-                }
-            }
+            Some(group_id) => match fetch_group_member_info(adapter, group_id, user_id) {
+                Ok(member) => member.role,
+                Err(_) => "unknown".to_string(),
+            },
             None => "unknown".to_string(),
         }
     } else {
@@ -313,11 +289,9 @@ fn fetch_stranger_info(
         serde_json::json!({ "user_id": user_id }),
     )?;
 
-    let data = response
-        .get("data")
-        .ok_or_else(|| {
-            Error::ValidationError("get_stranger_info 响应缺少 data 字段".to_string())
-        })?;
+    let data = response.get("data").ok_or_else(|| {
+        Error::ValidationError("get_stranger_info 响应缺少 data 字段".to_string())
+    })?;
 
     let result = StrangerInfo {
         user_id: user_id.to_string(),
@@ -357,13 +331,13 @@ fn fallback_get_login_info(
             let user_id = data
                 .get("user_id")
                 .and_then(|v| v.as_i64().map(|id| id.to_string()))
-                .or_else(|| data.get("user_id").and_then(|v| v.as_str().map(ToOwned::to_owned)))
+                .or_else(|| {
+                    data.get("user_id")
+                        .and_then(|v| v.as_str().map(ToOwned::to_owned))
+                })
                 .unwrap_or_default();
             let nickname = string_field_or(data, "nickname", "");
-            Ok(Some(crate::login_info::BotLoginInfo {
-                user_id,
-                nickname,
-            }))
+            Ok(Some(crate::login_info::BotLoginInfo { user_id, nickname }))
         }
         Err(e) => {
             warn!("{LOG_PREFIX} get_login_info fallback also failed: {e}");
@@ -386,11 +360,9 @@ fn fetch_group_member_info(
         }),
     )?;
 
-    let data = response
-        .get("data")
-        .ok_or_else(|| {
-            Error::ValidationError("get_group_member_info 响应缺少 data 字段".to_string())
-        })?;
+    let data = response.get("data").ok_or_else(|| {
+        Error::ValidationError("get_group_member_info 响应缺少 data 字段".to_string())
+    })?;
 
     Ok(MemberInfo {
         role: string_field_or(data, "role", "member"),
@@ -402,10 +374,7 @@ fn fetch_group_member_info(
 /// On cache miss, downloads the avatar from QQ's CDN via `qq_avatar_url`,
 /// uploads to S3, and returns the media ID. The S3 key is deterministic:
 /// `qq_avatar/{user_id}.jpg`.
-fn resolve_avatar_media_id(
-    user_id: &str,
-    s3_ref: &Option<Arc<S3Ref>>,
-) -> Option<String> {
+fn resolve_avatar_media_id(user_id: &str, s3_ref: &Option<Arc<S3Ref>>) -> Option<String> {
     let s3 = s3_ref.as_ref()?;
     let key = avatar_s3_key(user_id);
     let media = avatar_media_from_s3_key(&key);

@@ -641,15 +641,21 @@ impl QqChatAgent {
         let completion_tokens_estimated = estimate_messages_tokens(&brain_output);
         let exact_token_usage = {
             let mut prompt_tokens = 0usize;
+            let mut cached_prompt_tokens = 0usize;
             let mut completion_tokens = 0usize;
             let mut total_tokens = 0usize;
             let mut has_usage = false;
+            let mut cached_prompt_tokens_seen = false;
             let mut total_tokens_seen = false;
 
             for message in &brain_output {
                 if let Some(usage) = message.usage.as_ref() {
                     if let Some(value) = usage.prompt_tokens {
                         prompt_tokens = prompt_tokens.saturating_add(value);
+                    }
+                    if let Some(value) = usage.cached_prompt_tokens {
+                        cached_prompt_tokens = cached_prompt_tokens.saturating_add(value);
+                        cached_prompt_tokens_seen = true;
                     }
                     if let Some(value) = usage.completion_tokens {
                         completion_tokens = completion_tokens.saturating_add(value);
@@ -665,6 +671,11 @@ impl QqChatAgent {
             if has_usage {
                 Some(TokenUsage {
                     prompt_tokens: Some(prompt_tokens),
+                    cached_prompt_tokens: if cached_prompt_tokens_seen {
+                        Some(cached_prompt_tokens)
+                    } else {
+                        None
+                    },
                     completion_tokens: Some(completion_tokens),
                     total_tokens: if total_tokens_seen {
                         Some(total_tokens)

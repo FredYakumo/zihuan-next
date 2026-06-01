@@ -58,6 +58,7 @@ struct QqChatTaskTraceInner {
     prompt_tokens_estimated: Option<usize>,
     completion_tokens_estimated: Option<usize>,
     total_tokens_estimated: Option<usize>,
+    cached_prompt_tokens: Option<usize>,
     exact_usage_available: bool,
     reply_suppress_send: Option<bool>,
     reply_sent: Option<bool>,
@@ -92,6 +93,7 @@ impl QqChatTaskTrace {
                 prompt_tokens_estimated: None,
                 completion_tokens_estimated: None,
                 total_tokens_estimated: None,
+                cached_prompt_tokens: None,
                 exact_usage_available: false,
                 reply_suppress_send: None,
                 reply_sent: None,
@@ -407,6 +409,9 @@ impl QqChatTaskTrace {
             if let Some(prompt_tokens) = usage.prompt_tokens {
                 inner.prompt_tokens_estimated = Some(prompt_tokens);
             }
+            if let Some(cached_prompt_tokens) = usage.cached_prompt_tokens {
+                inner.cached_prompt_tokens = Some(cached_prompt_tokens);
+            }
             if let Some(completion_tokens) = usage.completion_tokens {
                 inner.completion_tokens_estimated = Some(completion_tokens);
             } else {
@@ -559,6 +564,19 @@ impl QqChatTaskTrace {
                 .map(|value| value.to_string())
                 .unwrap_or_else(|| "unavailable".to_string()),
             inner.exact_usage_available
+        ));
+        lines.push(format!(
+            "缓存命中 token cached_prompt_tokens={} cache_hit_rate={}",
+            inner
+                .cached_prompt_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            match (inner.cached_prompt_tokens, inner.prompt_tokens_estimated) {
+                (Some(cached), Some(prompt)) if prompt > 0 => {
+                    format!("{:.2}%", (cached as f64 / prompt as f64) * 100.0)
+                }
+                _ => "unavailable".to_string(),
+            }
         ));
         lines.push(format!(
             "历史消息队列数量={}，token总数={}",

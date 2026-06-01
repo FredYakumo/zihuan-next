@@ -73,6 +73,10 @@ fn default_llm_api_style() -> LlmApiStyle {
     LlmApiStyle::OpenAiChatCompletions
 }
 
+fn default_include_reasoning_content() -> bool {
+    false
+}
+
 fn default_http_stream_default_tools_enabled() -> std::collections::HashMap<String, bool> {
     [("web_search".to_string(), true)].into_iter().collect()
 }
@@ -89,6 +93,8 @@ pub struct LlmServiceConfig {
     pub stream: bool,
     #[serde(default)]
     pub supports_multimodal_input: bool,
+    #[serde(default = "default_include_reasoning_content")]
+    pub include_reasoning_content: bool,
     #[serde(default = "default_timeout_secs")]
     pub timeout_secs: u64,
     #[serde(default = "default_retry_count")]

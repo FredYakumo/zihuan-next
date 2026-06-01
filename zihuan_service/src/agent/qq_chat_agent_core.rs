@@ -257,10 +257,7 @@ pub(crate) fn build_private_system_prompt(
     sender_name: &str,
     agent_system_prompt: Option<&str>,
 ) -> String {
-    let rules = build_common_system_rules(
-        &format!("我是{bot_name}。"),
-        agent_system_prompt,
-    );
+    let rules = build_common_system_rules(&format!("我是{bot_name}。"), agent_system_prompt);
     format!(
         "你的名字叫`{bot_name}`。现在时间是{time}，你的QQ好友`{sender_name}`(QQ号`{sender_id}`)向你发送了一条消息。\n\
          {rules}"
@@ -277,10 +274,7 @@ pub(crate) fn build_group_system_prompt(
     group_id: &str,
     agent_system_prompt: Option<&str>,
 ) -> String {
-    let mut rules = build_common_system_rules(
-        &format!("我是{bot_name}。"),
-        agent_system_prompt,
-    );
+    let mut rules = build_common_system_rules(&format!("我是{bot_name}。"), agent_system_prompt);
     rules.push_str(&format!(
         "\n- 群聊回复时，尽量在回复中 @sender，或者在需要引用时先调用 `reply_message` 工具，让对方清楚你是在回应他。"
     ));
@@ -778,11 +772,7 @@ fn collect_image_prompt_references(
             }
             Message::Reply(reply) => {
                 if let Some(source_messages) = valid_reply_source_messages(reply) {
-                    collect_image_prompt_references(
-                        source_messages,
-                        "引用消息",
-                        references,
-                    );
+                    collect_image_prompt_references(source_messages, "引用消息", references);
                 }
             }
             Message::Forward(forward) => {

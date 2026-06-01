@@ -42,6 +42,10 @@
                 <input id="llm-stream-enabled" v-model="form.llm.stream" type="checkbox" />
                 <label for="llm-stream-enabled">默认启用 stream 请求参数</label>
               </div>
+              <div class="field-full field-check">
+                <input id="llm-reasoning-content-enabled" v-model="form.llm.include_reasoning_content" type="checkbox" />
+                <label for="llm-reasoning-content-enabled">推理时回灌 reasoning_content</label>
+              </div>
               <div class="field">
                 <label>后端格式</label>
                 <select v-model="form.llm.api_style">
@@ -147,6 +151,17 @@
                   </label>
                 </div>
                 <div class="key-value connection-card-edit-row">
+                  <strong>Reasoning</strong>
+                  <label class="connection-card-inline-check">
+                    <input
+                      :id="`llm-reasoning-content-enabled-${item.config_id}`"
+                      v-model="form.llm.include_reasoning_content"
+                      type="checkbox"
+                    />
+                    <span>{{ form.llm.include_reasoning_content ? "已回灌" : "不回灌" }}</span>
+                  </label>
+                </div>
+                <div class="key-value connection-card-edit-row">
                   <strong>后端格式</strong>
                   <select v-model="form.llm.api_style" class="connection-card-inline-input">
                     <option value="candle">Candle（待实现）</option>
@@ -214,6 +229,7 @@
                 <div class="key-value"><strong>Endpoint</strong><span class="mono">{{ item.model.llm.api_endpoint }}</span></div>
                 <div class="key-value"><strong>Stream</strong><span>{{ item.model.llm.stream ? "是" : "否" }}</span></div>
                 <div class="key-value"><strong>多模态</strong><span>{{ item.model.llm.supports_multimodal_input ? "是" : "否" }}</span></div>
+                <div class="key-value"><strong>回灌 Reasoning</strong><span>{{ item.model.llm.include_reasoning_content ? "是" : "否" }}</span></div>
                 <div class="key-value"><strong>Timeout</strong><span>{{ item.model.llm.timeout_secs }}s</span></div>
                 <div class="key-value"><strong>Retry</strong><span>{{ item.model.llm.retry_count }} 次</span></div>
               </template>

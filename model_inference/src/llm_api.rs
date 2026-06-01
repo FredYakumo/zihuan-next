@@ -42,6 +42,7 @@ pub struct LLMAPI {
     api_style: LlmApiStyle,
     stream: bool,
     supports_multimodal_input: bool,
+    include_reasoning_content: bool,
     pub timeout: Duration,
     retry_count: u32,
 }
@@ -54,6 +55,7 @@ impl LLMAPI {
         api_style: LlmApiStyle,
         stream: bool,
         supports_multimodal_input: bool,
+        include_reasoning_content: bool,
         timeout: Duration,
     ) -> Self {
         Self {
@@ -63,6 +65,7 @@ impl LLMAPI {
             api_style,
             stream,
             supports_multimodal_input,
+            include_reasoning_content,
             timeout,
             retry_count: DEFAULT_RETRY_COUNT,
         }
@@ -101,7 +104,7 @@ impl LLMAPI {
         request_format: RequestFormat,
     ) -> String {
         let mut context = format!(
-            "model={} endpoint={} api_style={:?} format={} timeout_secs={} messages={} tools={} multimodal={}",
+            "model={} endpoint={} api_style={:?} format={} timeout_secs={} messages={} tools={} multimodal={} include_reasoning_content={}",
             self.model_name,
             self.endpoint_label(),
             self.api_style,
@@ -109,7 +112,8 @@ impl LLMAPI {
             self.timeout.as_secs(),
             request_context.message_count,
             request_context.tool_count,
-            request_context.has_multimodal_input
+            request_context.has_multimodal_input,
+            self.include_reasoning_content
         );
 
         if let Some((current, total)) = attempt {
@@ -342,6 +346,7 @@ impl LLMBase for LLMAPI {
             &self.api_style,
             param,
             self.stream,
+            self.include_reasoning_content,
             request_format,
         );
         let max_attempts = self.retry_count.saturating_add(1);
@@ -438,6 +443,7 @@ impl LLMAPI {
             &self.api_style,
             param,
             true,
+            self.include_reasoning_content,
             request_format,
         );
 

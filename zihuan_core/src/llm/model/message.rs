@@ -16,6 +16,8 @@ pub struct TokenUsage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_tokens: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_prompt_tokens: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completion_tokens: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_tokens: Option<usize>,

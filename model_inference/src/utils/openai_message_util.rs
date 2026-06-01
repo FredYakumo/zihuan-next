@@ -79,10 +79,24 @@ fn parse_token_usage(value: Option<&Value>) -> Option<TokenUsage> {
         prompt_tokens: value
             .get("prompt_tokens")
             .and_then(|v| v.as_u64())
+            .or_else(|| value.get("input_tokens").and_then(|v| v.as_u64()))
             .map(|v| v as usize),
+        cached_prompt_tokens: value
+            .get("prompt_tokens_details")
+            .and_then(|details| details.get("cached_tokens"))
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize)
+            .or_else(|| {
+                value
+                    .get("input_tokens_details")
+                    .and_then(|details| details.get("cached_tokens"))
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize)
+            }),
         completion_tokens: value
             .get("completion_tokens")
             .and_then(|v| v.as_u64())
+            .or_else(|| value.get("output_tokens").and_then(|v| v.as_u64()))
             .map(|v| v as usize),
         total_tokens: value
             .get("total_tokens")
@@ -557,6 +571,7 @@ fn serialize_message_content(
 
 fn build_messages_json(
     param: &InferenceParam<'_>,
+    include_reasoning_content: bool,
     request_format: OpenAIRequestFormat,
 ) -> Vec<Value> {
     param
@@ -572,8 +587,10 @@ fn build_messages_json(
                 "content": content_value,
             });
 
-            if let Some(reasoning_content) = &msg.reasoning_content {
-                msg_obj["reasoning_content"] = json!(reasoning_content);
+            if include_reasoning_content {
+                if let Some(reasoning_content) = &msg.reasoning_content {
+                    msg_obj["reasoning_content"] = json!(reasoning_content);
+                }
             }
 
             if !msg.tool_calls.is_empty() {
@@ -620,6 +637,7 @@ pub fn build_request_body(
     api_style: &LlmApiStyle,
     param: &InferenceParam<'_>,
     stream: bool,
+    include_reasoning_content: bool,
     request_format: OpenAIRequestFormat,
 ) -> Value {
     if matches!(
@@ -631,7 +649,9 @@ pub fn build_request_body(
         let input = param
             .messages
             .iter()
-            .flat_map(|msg| build_responses_input_items(msg, request_format))
+            .flat_map(|msg| {
+                build_responses_input_items(msg, include_reasoning_content, request_format)
+            })
             .collect::<Vec<_>>();
         let tools = param.tools.as_ref().map(|ts| {
             ts.iter()
@@ -661,7 +681,7 @@ pub fn build_request_body(
         return request_body;
     }
 
-    let messages = build_messages_json(param, request_format);
+    let messages = build_messages_json(param, include_reasoning_content, request_format);
     let tools: Option<Vec<Value>> = param
         .tools
         .as_ref()
@@ -689,6 +709,7 @@ pub fn build_request_body(
 
 fn build_responses_input_items(
     msg: &OpenAIMessage,
+    _include_reasoning_content: bool,
     request_format: OpenAIRequestFormat,
 ) -> Vec<Value> {
     match msg.role {
@@ -1292,5 +1313,106 @@ pub async fn parse_responses_sse_stream(
         tool_calls,
         tool_call_id: None,
         usage,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_request_body_omits_reasoning_content_by_default() {
+        let messages = vec![OpenAIMessage {
+            role: MessageRole::Assistant,
+            api_style: None,
+            content: Some(MessageContent::Text("hello".to_string())),
+            reasoning_content: Some("hidden reasoning".to_string()),
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+            usage: None,
+        }];
+        let param = InferenceParam {
+            messages: &messages,
+            tools: None,
+        };
+
+        let body = build_request_body(
+            "demo",
+            &crate::system_config::LlmApiStyle::OpenAiChatCompletions,
+            &param,
+            false,
+            false,
+            OpenAIRequestFormat::DefaultOpenAI,
+        );
+
+        let message = body["messages"]
+            .as_array()
+            .and_then(|items| items.first())
+            .expect("message should exist");
+        assert!(message.get("reasoning_content").is_none());
+    }
+
+    #[test]
+    fn build_request_body_can_include_reasoning_content() {
+        let messages = vec![OpenAIMessage {
+            role: MessageRole::Assistant,
+            api_style: None,
+            content: Some(MessageContent::Text("hello".to_string())),
+            reasoning_content: Some("hidden reasoning".to_string()),
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+            usage: None,
+        }];
+        let param = InferenceParam {
+            messages: &messages,
+            tools: None,
+        };
+
+        let body = build_request_body(
+            "demo",
+            &crate::system_config::LlmApiStyle::OpenAiChatCompletions,
+            &param,
+            false,
+            true,
+            OpenAIRequestFormat::DefaultOpenAI,
+        );
+
+        let message = body["messages"]
+            .as_array()
+            .and_then(|items| items.first())
+            .expect("message should exist");
+        assert_eq!(
+            message.get("reasoning_content").and_then(|v| v.as_str()),
+            Some("hidden reasoning")
+        );
+    }
+
+    #[test]
+    fn parse_token_usage_reads_cached_tokens_and_responses_style_tokens() {
+        let chat_usage = serde_json::json!({
+            "prompt_tokens": 10,
+            "completion_tokens": 3,
+            "total_tokens": 13,
+            "prompt_tokens_details": {
+                "cached_tokens": 4
+            }
+        });
+        let chat = parse_token_usage(Some(&chat_usage)).expect("chat usage");
+        assert_eq!(chat.prompt_tokens, Some(10));
+        assert_eq!(chat.cached_prompt_tokens, Some(4));
+        assert_eq!(chat.completion_tokens, Some(3));
+        assert_eq!(chat.total_tokens, Some(13));
+
+        let responses_usage = serde_json::json!({
+            "input_tokens": 12,
+            "output_tokens": 5,
+            "input_tokens_details": {
+                "cached_tokens": 7
+            }
+        });
+        let responses = parse_token_usage(Some(&responses_usage)).expect("responses usage");
+        assert_eq!(responses.prompt_tokens, Some(12));
+        assert_eq!(responses.cached_prompt_tokens, Some(7));
+        assert_eq!(responses.completion_tokens, Some(5));
     }
 }

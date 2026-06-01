@@ -162,6 +162,7 @@ export function defaultLlmConfig(): LlmServiceConfig {
     api_style: "open_ai_chat_completions",
     stream: false,
     supports_multimodal_input: false,
+    include_reasoning_content: false,
     timeout_secs: 30,
     retry_count: 2,
   };
@@ -472,6 +473,7 @@ export function llmFormFromConfig(config: LlmConfig): LlmFormState {
       api_style: (config.model.llm.api_style ?? "open_ai_chat_completions") as LlmApiStyle,
       stream: Boolean(config.model.llm.stream ?? false),
       supports_multimodal_input: Boolean(config.model.llm.supports_multimodal_input ?? false),
+      include_reasoning_content: Boolean(config.model.llm.include_reasoning_content ?? false),
       timeout_secs: config.model.llm.timeout_secs,
       retry_count: config.model.llm.retry_count,
     },
