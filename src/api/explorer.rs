@@ -550,7 +550,11 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
     };
 
     if collection_schema == WeaviateCollectionSchema::AgentMemory {
-        let access = AgentMemoryAccessContext { admin: true, ..Default::default() };
+        let access = AgentMemoryAccessContext {
+            admin: true,
+            skip_expiry_extend: true,
+            ..Default::default()
+        };
         let items = if let Some(query) = query {
             let embedding_model_ref_id = match req.query::<String>("embedding_model_ref_id") {
                 Some(id) => id,

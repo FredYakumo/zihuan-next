@@ -94,10 +94,38 @@
         "height": 220.0
       },
       "inline_values": {
+        "shared_inputs": [
+          {
+            "data_type": "MySqlRef",
+            "description": "",
+            "name": "mysql_ref"
+          },
+          {
+            "data_type": "WeaviateRef",
+            "description": "",
+            "name": "weaviate_ref"
+          },
+          {
+            "data_type": "EmbeddingModel",
+            "description": "",
+            "name": "embedding_model"
+          },
+          {
+            "data_type": "MessageEvent",
+            "description": "",
+            "name": "message_event"
+          },
+          {
+            "data_type": "BotAdapterRef",
+            "description": "",
+            "name": "qq_ims_bot_adapter"
+          }
+        ],
         "tools_config": [
           {
             "description": "在 MySQL 消息记录中搜索聊天消息；未使用的文本过滤条件传空字符串",
             "id": "tool_search_messages",
+            "implementation": "node_graph",
             "name": "search_messages",
             "outputs": [
               {
@@ -425,8 +453,8 @@
                   ],
                   "port_bindings": {},
                   "position": {
-                    "x": 60,
-                    "y": 120
+                    "x": 60.0,
+                    "y": 120.0
                   },
                   "size": {
                     "height": 279.1146545410156,
@@ -476,12 +504,12 @@
                   "output_ports": [],
                   "port_bindings": {},
                   "position": {
-                    "x": 970,
-                    "y": 110
+                    "x": 970.0,
+                    "y": 110.0
                   },
                   "size": {
-                    "height": 120,
-                    "width": 220
+                    "height": 120.0,
+                    "width": 220.0
                   }
                 },
                 {
@@ -566,12 +594,12 @@
                   ],
                   "port_bindings": {},
                   "position": {
-                    "x": 450,
-                    "y": 110
+                    "x": 450.0,
+                    "y": 110.0
                   },
                   "size": {
-                    "height": 200,
-                    "width": 280
+                    "height": 200.0,
+                    "width": 280.0
                   }
                 }
               ],
@@ -581,6 +609,7 @@
           {
             "description": "只在本地图片数据库中搜索相似图片；如果 has_results=false，表示数据库里没有找到相似图片",
             "id": "tool_search_images",
+            "implementation": "node_graph",
             "name": "search_images",
             "outputs": [
               {
@@ -799,12 +828,12 @@
                   ],
                   "port_bindings": {},
                   "position": {
-                    "x": 60,
-                    "y": 120
+                    "x": 60.0,
+                    "y": 120.0
                   },
                   "size": {
-                    "height": 120,
-                    "width": 220
+                    "height": 120.0,
+                    "width": 220.0
                   }
                 },
                 {
@@ -859,12 +888,12 @@
                   "output_ports": [],
                   "port_bindings": {},
                   "position": {
-                    "x": 820,
-                    "y": 120
+                    "x": 820.0,
+                    "y": 120.0
                   },
                   "size": {
-                    "height": 120,
-                    "width": 220
+                    "height": 120.0,
+                    "width": 220.0
                   }
                 },
                 {
@@ -940,44 +969,17 @@
                   ],
                   "port_bindings": {},
                   "position": {
-                    "x": 340,
-                    "y": 120
+                    "x": 340.0,
+                    "y": 120.0
                   },
                   "size": {
-                    "height": 170,
-                    "width": 300
+                    "height": 170.0,
+                    "width": 300.0
                   }
                 }
               ],
               "variables": []
             }
-          }
-        ],
-        "shared_inputs": [
-          {
-            "data_type": "MySqlRef",
-            "description": "",
-            "name": "mysql_ref"
-          },
-          {
-            "data_type": "WeaviateRef",
-            "description": "",
-            "name": "weaviate_ref"
-          },
-          {
-            "data_type": "EmbeddingModel",
-            "description": "",
-            "name": "embedding_model"
-          },
-          {
-            "data_type": "MessageEvent",
-            "description": "",
-            "name": "message_event"
-          },
-          {
-            "data_type": "BotAdapterRef",
-            "description": "",
-            "name": "qq_ims_bot_adapter"
           }
         ]
       },
@@ -1500,12 +1502,12 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1090,
-                  "y": 840
+                  "x": 1090.0,
+                  "y": 840.0
                 },
                 "size": {
-                  "height": 120,
-                  "width": 200
+                  "height": 120.0,
+                  "width": 200.0
                 }
               },
               {
@@ -1538,12 +1540,12 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 540,
-                  "y": 220
+                  "x": 540.0,
+                  "y": 220.0
                 },
                 "size": {
-                  "height": 120,
-                  "width": 200
+                  "height": 120.0,
+                  "width": 200.0
                 }
               },
               {
@@ -1584,12 +1586,12 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1470,
-                  "y": 770
+                  "x": 1470.0,
+                  "y": 770.0
                 },
                 "size": {
-                  "height": 120,
-                  "width": 200
+                  "height": 120.0,
+                  "width": 200.0
                 }
               },
               {
@@ -1639,12 +1641,12 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 260,
-                  "y": 410
+                  "x": 260.0,
+                  "y": 410.0
                 },
                 "size": {
-                  "height": 120,
-                  "width": 220
+                  "height": 120.0,
+                  "width": 220.0
                 }
               },
               {
@@ -1686,12 +1688,12 @@
                 "output_ports": [],
                 "port_bindings": {},
                 "position": {
-                  "x": 2120,
-                  "y": 490
+                  "x": 2120.0,
+                  "y": 490.0
                 },
                 "size": {
-                  "height": 120,
-                  "width": 220
+                  "height": 120.0,
+                  "width": 220.0
                 }
               },
               {
@@ -1734,8 +1736,8 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 540,
-                  "y": 610
+                  "x": 540.0,
+                  "y": 610.0
                 },
                 "size": {
                   "height": 128.93289184570312,
@@ -1794,12 +1796,12 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 890,
-                  "y": 350
+                  "x": 890.0,
+                  "y": 350.0
                 },
                 "size": {
-                  "height": 120,
-                  "width": 200
+                  "height": 120.0,
+                  "width": 200.0
                 }
               },
               {
@@ -1840,12 +1842,12 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1480,
-                  "y": 480
+                  "x": 1480.0,
+                  "y": 480.0
                 },
                 "size": {
-                  "height": 120,
-                  "width": 200
+                  "height": 120.0,
+                  "width": 200.0
                 }
               },
               {
@@ -1886,12 +1888,12 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1810,
-                  "y": 480
+                  "x": 1810.0,
+                  "y": 480.0
                 },
                 "size": {
-                  "height": 120,
-                  "width": 200
+                  "height": 120.0,
+                  "width": 200.0
                 }
               }
             ],
@@ -2140,12 +2142,12 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2040,
-                  "y": 170
+                  "x": 2040.0,
+                  "y": 170.0
                 },
                 "size": {
-                  "height": 472,
-                  "width": 420
+                  "height": 472.0,
+                  "width": 420.0
                 }
               },
               {
@@ -2188,12 +2190,12 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2600,
-                  "y": 260
+                  "x": 2600.0,
+                  "y": 260.0
                 },
                 "size": {
-                  "height": 110,
-                  "width": 220
+                  "height": 110.0,
+                  "width": 220.0
                 }
               },
               {
@@ -2229,12 +2231,12 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 3090,
-                  "y": 280
+                  "x": 3090.0,
+                  "y": 280.0
                 },
                 "size": {
-                  "height": 90,
-                  "width": 180
+                  "height": 90.0,
+                  "width": 180.0
                 }
               },
               {
@@ -2277,12 +2279,12 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2110,
-                  "y": 820
+                  "x": 2110.0,
+                  "y": 820.0
                 },
                 "size": {
-                  "height": 110,
-                  "width": 220
+                  "height": 110.0,
+                  "width": 220.0
                 }
               },
               {
@@ -2318,12 +2320,12 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2530,
-                  "y": 510
+                  "x": 2530.0,
+                  "y": 510.0
                 },
                 "size": {
-                  "height": 90,
-                  "width": 180
+                  "height": 90.0,
+                  "width": 180.0
                 }
               },
               {
@@ -2370,12 +2372,12 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 2940,
-                  "y": 500
+                  "x": 2940.0,
+                  "y": 500.0
                 },
                 "size": {
-                  "height": 100,
-                  "width": 220
+                  "height": 100.0,
+                  "width": 220.0
                 }
               },
               {
@@ -2409,12 +2411,12 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1510,
-                  "y": 350
+                  "x": 1510.0,
+                  "y": 350.0
                 },
                 "size": {
-                  "height": 120,
-                  "width": 200
+                  "height": 120.0,
+                  "width": 200.0
                 }
               },
               {
@@ -2440,12 +2442,12 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1730,
-                  "y": 170
+                  "x": 1730.0,
+                  "y": 170.0
                 },
                 "size": {
-                  "height": 120,
-                  "width": 200
+                  "height": 120.0,
+                  "width": 200.0
                 }
               },
               {
@@ -2479,12 +2481,12 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1510,
-                  "y": 650
+                  "x": 1510.0,
+                  "y": 650.0
                 },
                 "size": {
-                  "height": 120,
-                  "width": 200
+                  "height": 120.0,
+                  "width": 200.0
                 }
               },
               {
@@ -2560,12 +2562,12 @@
                 ],
                 "port_bindings": {},
                 "position": {
-                  "x": 1130,
+                  "x": 1130.0,
                   "y": 373.3333435058594
                 },
                 "size": {
-                  "height": 120,
-                  "width": 220
+                  "height": 120.0,
+                  "width": 220.0
                 }
               },
               {
@@ -2611,12 +2613,12 @@
                 "output_ports": [],
                 "port_bindings": {},
                 "position": {
-                  "x": 3390,
+                  "x": 3390.0,
                   "y": 373.3333435058594
                 },
                 "size": {
-                  "height": 120,
-                  "width": 220
+                  "height": 120.0,
+                  "width": 220.0
                 }
               }
             ],
@@ -2826,7 +2828,7 @@
   "variables": [],
   "metadata": {
     "name": "QQ 消息深度搜索",
-    "description": "供 qq_chat_agent 手动挂载的 workflow_set 工具。它会在消息记录和本地图片库中深度检索，不会回退到联网搜图。",
+    "description": "在本群/好友的历史聊天记录中深度检索，此工具是一个超长耗时的任务，仅当用户明确想查找过去的聊天记录、之前分享过的图片、或已发生的历史事件时才调用。",
     "version": "1.0.0"
   },
   "accepts_agent_events": true

@@ -44,6 +44,16 @@ pub trait WeaviateClient {
 
     fn update_object(&self, class_name: &str, id: &str, properties: Value) -> Result<Value>;
 
+    fn update_object_with_vector(
+        &self,
+        class_name: &str,
+        id: &str,
+        properties: Value,
+        vector: Vec<f32>,
+    ) -> Result<Value>;
+
+    fn get_object_vector(&self, class_name: &str, id: &str) -> Result<Option<Vec<f32>>>;
+
     fn query_hybrid(
         &self,
         class_name: &str,
@@ -201,6 +211,25 @@ impl WeaviateClient for WeaviateRef {
             "id": id,
             "properties": properties,
         }))
+    }
+
+    fn update_object_with_vector(
+        &self,
+        class_name: &str,
+        id: &str,
+        properties: Value,
+        vector: Vec<f32>,
+    ) -> Result<Value> {
+        self.put_json(&format!("/v1/objects/{class_name}/{id}"), json!({
+            "class": class_name,
+            "id": id,
+            "properties": properties,
+            "vector": vector,
+        }))
+    }
+
+    fn get_object_vector(&self, class_name: &str, id: &str) -> Result<Option<Vec<f32>>> {
+        self.get_object_vector(class_name, id)
     }
 
     fn query_hybrid(

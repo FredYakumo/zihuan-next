@@ -217,6 +217,32 @@ impl WeaviateRef {
         )))
     }
 
+    pub fn get_object_vector(&self, class_name: &str, id: &str) -> Result<Option<Vec<f32>>> {
+        crate::runtime::block_async(self.get_object_vector_async(class_name, id))
+    }
+
+    pub async fn get_object_vector_async(
+        &self,
+        class_name: &str,
+        id: &str,
+    ) -> Result<Option<Vec<f32>>> {
+        let query = format!(
+            r#"{{ Get {{ {class_name}(where: {{path: ["_id"], operator: Equal, valueText: "{id}"}}) {{ _additional {{ vector }} }} }} }}"#
+        );
+        let response = self.execute_graphql_query(&query)?;
+        let items = response
+            .get("data")
+            .and_then(|d| d.get("Get"))
+            .and_then(|g| g.get(class_name))
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        match items.first() {
+            Some(item) => Ok(parse_vector_from_additional(item)),
+            None => Ok(None),
+        }
+    }
+
     pub async fn send_json_async(builder: RequestBuilder) -> Result<Value> {
         let response = builder.send().await?;
         let status = response.status();
@@ -313,4 +339,13 @@ pub fn graphql_value(value: &Value) -> String {
         }
         Value::Null => "null".to_string(),
     }
+}
+
+fn parse_vector_from_additional(item: &Value) -> Option<Vec<f32>> {
+    item.get("_additional")?
+        .get("vector")?
+        .as_array()?
+        .iter()
+        .map(|v| v.as_f64().map(|f| f as f32))
+        .collect()
 }

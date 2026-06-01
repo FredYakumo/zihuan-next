@@ -489,6 +489,40 @@ impl QqChatAgent {
             shared_runtime_values: Arc::clone(&shared_runtime_values),
         }));
 
+        if let (Some(memory_ref), Some(embedding_model)) =
+            (ctx.weaviate_memory_ref.cloned(), ctx.embedding_model.cloned())
+        {
+            let memory_resources = AgentMemoryToolResources {
+                memory_ref,
+                embedding_model,
+                llm: Arc::clone(ctx.llm),
+                access: AgentMemoryAccessContext {
+                    sender_id: Some(sender_id.to_string()),
+                    group_id: if is_group {
+                        Some(target_id.to_string())
+                    } else {
+                        hydrated_event.group_id.map(|value| value.to_string())
+                    },
+                    is_group,
+                    admin: false,
+                    skip_expiry_extend: false,
+                },
+            };
+            if self.is_default_tool_enabled(DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS) {
+                brain = brain.with_tool(ListAvailableMemoryKeysBrainTool::new(
+                    memory_resources.clone(),
+                ));
+            }
+            if self.is_default_tool_enabled(DEFAULT_TOOL_SEARCH_MEMORY_CONTENT) {
+                brain = brain.with_tool(SearchMemoryContentBrainTool::new(
+                    memory_resources.clone(),
+                ));
+            }
+            if self.is_default_tool_enabled(DEFAULT_TOOL_REMEMBER_CONTENT) {
+                brain = brain.with_tool(RememberContentBrainTool::new(memory_resources));
+            }
+        }
+
         if self.is_default_tool_enabled(DEFAULT_TOOL_WEB_SEARCH) {
             brain = brain.with_tool(WebSearchBrainTool::new(
                 ctx.web_search_engine.clone(),
@@ -591,39 +625,6 @@ impl QqChatAgent {
             brain = brain.with_tool(ReplyMessageBrainTool::new(Arc::clone(
                 &shared_runtime_values,
             )));
-        }
-
-        if let (Some(memory_ref), Some(embedding_model)) =
-            (ctx.weaviate_memory_ref.cloned(), ctx.embedding_model.cloned())
-        {
-            let memory_resources = AgentMemoryToolResources {
-                memory_ref,
-                embedding_model,
-                llm: Arc::clone(ctx.llm),
-                access: AgentMemoryAccessContext {
-                    sender_id: Some(sender_id.to_string()),
-                    group_id: if is_group {
-                        Some(target_id.to_string())
-                    } else {
-                        hydrated_event.group_id.map(|value| value.to_string())
-                    },
-                    is_group,
-                    admin: false,
-                },
-            };
-            if self.is_default_tool_enabled(DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS) {
-                brain = brain.with_tool(ListAvailableMemoryKeysBrainTool::new(
-                    memory_resources.clone(),
-                ));
-            }
-            if self.is_default_tool_enabled(DEFAULT_TOOL_SEARCH_MEMORY_CONTENT) {
-                brain = brain.with_tool(SearchMemoryContentBrainTool::new(
-                    memory_resources.clone(),
-                ));
-            }
-            if self.is_default_tool_enabled(DEFAULT_TOOL_REMEMBER_CONTENT) {
-                brain = brain.with_tool(RememberContentBrainTool::new(memory_resources));
-            }
         }
 
         brain = brain.with_tool(GetBotProfileBrainTool::new(

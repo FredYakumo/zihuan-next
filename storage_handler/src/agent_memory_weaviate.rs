@@ -21,6 +21,10 @@ pub struct AgentMemoryAccessContext {
     /// When true, bypasses all scope restrictions. Use only for admin/dashboard contexts.
     #[serde(default)]
     pub admin: bool,
+    /// When true, search hits do not trigger expiry extension. Use for
+    /// read-only UI views that must not mutate stored records.
+    #[serde(default)]
+    pub skip_expiry_extend: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,16 +103,19 @@ pub fn update_memory_record_with_vector(
     let existing = get_memory_record(weaviate_ref, object_id)?;
     let now = Utc::now().to_rfc3339();
     let properties = build_memory_properties(input, &existing.created_at, Some(&now))?;
-    let response = if let Some(vector) = vector {
-        weaviate_ref.upsert_object(
-            &weaviate_ref.class_name,
-            properties,
-            Some(vector),
-            Some(object_id),
-        )?
-    } else {
-        weaviate_ref.update_object(&weaviate_ref.class_name, object_id, properties)?
-    };
+    let preserve_vector = vector.unwrap_or_else(|| {
+        weaviate_ref
+            .get_object_vector(&weaviate_ref.class_name, object_id)
+            .ok()
+            .flatten()
+            .unwrap_or_default()
+    });
+    let response = weaviate_ref.update_object_with_vector(
+        &weaviate_ref.class_name,
+        object_id,
+        properties,
+        preserve_vector,
+    )?;
     parse_memory_record_with_fallback(response, Some(object_id))
 }
 
@@ -150,7 +157,9 @@ pub fn search_memory_content(
         access,
     );
     hits.truncate(top_n);
-    extend_expiry_for_hits(weaviate_ref, &hits)?;
+    if !access.skip_expiry_extend {
+        extend_expiry_for_hits(weaviate_ref, &hits)?;
+    }
     Ok(hits)
 }
 
@@ -165,7 +174,9 @@ pub fn search_memory_content_by_vector(
         access,
     );
     hits.truncate(top_n);
-    extend_expiry_for_hits(weaviate_ref, &hits)?;
+    if !access.skip_expiry_extend {
+        extend_expiry_for_hits(weaviate_ref, &hits)?;
+    }
     Ok(hits)
 }
 

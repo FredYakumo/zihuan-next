@@ -131,14 +131,6 @@
                                         :value="item.config_id">{{ item.name }}</option>
                                 </select>
                             </div>
-                            <div class="field">
-                                <label>Weaviate Memory Connection</label>
-                                <select v-model="form.weaviate_memory_connection_id">
-                                    <option value="">不使用</option>
-                                    <option v-for="item in memoryWeaviateConnections" :key="item.config_id"
-                                        :value="item.config_id">{{ item.name }}</option>
-                                </select>
-                            </div>
                             <div class="field"><label>Max Message Length</label><input
                                     v-model.number="form.max_message_length" type="number" min="1" /></div>
                             <div class="field">
@@ -473,6 +465,14 @@
                                 <select v-model="form.weaviate_image_connection_id">
                                     <option value="">不使用</option>
                                     <option v-for="item in imageWeaviateConnections" :key="item.config_id"
+                                        :value="item.config_id">{{ item.name }}</option>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label>Weaviate Memory Connection</label>
+                                <select v-model="form.weaviate_memory_connection_id">
+                                    <option value="">不使用</option>
+                                    <option v-for="item in memoryWeaviateConnections" :key="item.config_id"
                                         :value="item.config_id">{{ item.name }}</option>
                                 </select>
                             </div>

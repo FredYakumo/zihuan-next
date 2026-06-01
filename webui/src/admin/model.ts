@@ -135,7 +135,7 @@ export function isBotAdapterConnectionType(type: string): type is "bot_adapter" 
 }
 
 export const QQ_CHAT_DEFAULT_TOOLS: DefaultToolOption[] = [
-  { id: "web_search", label: "web_search", description: "联网搜索（Tavily）" },
+  { id: "web_search", label: "web_search", description: "联网搜索" },
   { id: "get_agent_public_info", label: "get_agent_public_info", description: "返回智能体公开信息" },
   { id: "get_function_list", label: "get_function_list", description: "获取功能列表" },
   { id: "get_recent_group_messages", label: "get_recent_group_messages", description: "只看群里最近几条消息，不适合按时段分析" },
@@ -149,7 +149,7 @@ export const QQ_CHAT_DEFAULT_TOOLS: DefaultToolOption[] = [
 ];
 
 export const HTTP_STREAM_DEFAULT_TOOLS: DefaultToolOption[] = [
-  { id: "web_search", label: "web_search", description: "联网搜索（Tavily）" },
+  { id: "web_search", label: "web_search", description: "联网搜索" },
   { id: "list_available_memory_keys", label: "list_available_memory_keys", description: "列出当前可访问的记忆标题" },
   { id: "search_memory_content", label: "search_memory_content", description: "搜索当前可访问的记忆内容" },
   { id: "remember_content", label: "remember_content", description: "把内容整理后写入记忆" },

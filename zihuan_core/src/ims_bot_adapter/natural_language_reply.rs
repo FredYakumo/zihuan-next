@@ -23,6 +23,7 @@ enum QQMessageJsonContentItem {
     At { target: String },
 }
 
+#[deprecated]
 pub fn qq_message_json_output_system_prompt() -> &'static str {
     concat!(
         "请你输出发送QQ消息的字符串，你必须只输出纯 JSON 数组，不能输出 markdown、代码块、解释、前后缀文本。\n",
