@@ -752,7 +752,9 @@ fn validate_qq_chat_agent_llms(
 
             let llm_ref = llm_refs
                 .iter()
-                .find(|item| item.id == resolved_llm_ref_id || item.config_id == resolved_llm_ref_id)
+                .find(|item| {
+                    item.id == resolved_llm_ref_id || item.config_id == resolved_llm_ref_id
+                })
                 .ok_or_else(|| {
                     format!(
                         "agent '{}' references missing llm_ref '{}'",
@@ -787,10 +789,12 @@ fn validate_qq_chat_agent_llms(
                         ))
                     }
                 }
-                model_inference::system_config::ModelRefSpec::TextEmbeddingLocal { .. } => Err(format!(
+                model_inference::system_config::ModelRefSpec::TextEmbeddingLocal { .. } => {
+                    Err(format!(
                     "agent '{}' references non-chat model_ref '{}' as image_understand_llm_ref_id",
                     agent_name, llm_ref.name
-                )),
+                ))
+                }
             }?;
 
             validate_chat_llm_ref(
@@ -824,9 +828,8 @@ fn validate_chat_llm_ref(
     agent_name: &str,
     field_name: &str,
 ) -> Result<(), String> {
-    let llm_ref_id = llm_ref_id.ok_or_else(|| {
-        format!("agent '{}' is missing {}", agent_name, field_name)
-    })?;
+    let llm_ref_id =
+        llm_ref_id.ok_or_else(|| format!("agent '{}' is missing {}", agent_name, field_name))?;
     let llm_ref = llm_refs
         .iter()
         .find(|item| item.id == llm_ref_id || item.config_id == llm_ref_id)

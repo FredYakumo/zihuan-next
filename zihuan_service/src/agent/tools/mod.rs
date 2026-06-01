@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use storage_handler::AgentMemoryAccessContext;
 use zihuan_agent::brain::BrainTool;
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::llm::embedding_base::EmbeddingBase;
@@ -8,7 +9,6 @@ use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::object_storage::S3Ref;
-use storage_handler::AgentMemoryAccessContext;
 
 mod agent_memory;
 mod agent_state;

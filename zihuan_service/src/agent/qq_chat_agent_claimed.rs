@@ -28,19 +28,17 @@ use super::super::qq_chat_agent_logging::QqChatBrainObserver;
 use ims_bot_adapter::tools::qq_profile::{GetBotProfileBrainTool, GetQqUserProfileBrainTool};
 
 use super::super::tools::{
-    AgentMemoryToolResources, CurrentTimeBrainTool, EditableQqAgentTool,
+    take_last_reply_result, AgentMemoryToolResources, CurrentTimeBrainTool, EditableQqAgentTool,
     GetAgentPublicInfoBrainTool, GetFunctionListBrainTool, GetRecentGroupMessagesBrainTool,
-    GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool,
-    ListAvailableMemoryKeysBrainTool, RememberContentBrainTool,
-    RunMathProgrammingSubagentBrainTool, SearchMemoryContentBrainTool,
-    SearchSimilarImagesBrainTool, SendNaturalLanguageReplyBrainTool, take_last_reply_result,
-    ToolNotificationTarget, UpdateAgentStateBrainTool, WebSearchBrainTool,
-    DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
-    DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
-    DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS,
-    DEFAULT_TOOL_REMEMBER_CONTENT, DEFAULT_TOOL_SEARCH_MEMORY_CONTENT,
-    DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
-    QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
+    GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool, ListAvailableMemoryKeysBrainTool,
+    RememberContentBrainTool, RunMathProgrammingSubagentBrainTool, SearchMemoryContentBrainTool,
+    SearchSimilarImagesBrainTool, SendNaturalLanguageReplyBrainTool, ToolNotificationTarget,
+    UpdateAgentStateBrainTool, WebSearchBrainTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
+    DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
+    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
+    DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS, DEFAULT_TOOL_REMEMBER_CONTENT,
+    DEFAULT_TOOL_SEARCH_MEMORY_CONTENT, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
+    DEFAULT_TOOL_WEB_SEARCH, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
 };
 use storage_handler::AgentMemoryAccessContext;
 
@@ -50,12 +48,11 @@ use crate::storage::qq_chat_history_store::{conversation_history_key, load_histo
 use super::{
     build_agent_state_snapshot_message, build_group_system_prompt, build_merged_follow_up_event,
     build_output_contract_priming_message, build_private_system_prompt, build_user_message,
-    expand_event_for_inference,
-    extract_user_message_text, hydrate_missing_reply_sources, message_with_api_style,
-    send_direct_text_reply, sender_display_name, summarize_task_text, truncate_for_log,
-    QqChatAgent, QqChatAgentContext, QqChatHandleReport, QqChatSteerHook, QqChatTaskTrace,
-    QqChatTurnResult, QqCommandSideEffectContext, QqLongTaskNotifier,
-    LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
+    expand_event_for_inference, extract_user_message_text, hydrate_missing_reply_sources,
+    message_with_api_style, send_direct_text_reply, sender_display_name, summarize_task_text,
+    truncate_for_log, QqChatAgent, QqChatAgentContext, QqChatHandleReport, QqChatSteerHook,
+    QqChatTaskTrace, QqChatTurnResult, QqCommandSideEffectContext, QqLongTaskNotifier, LOG_PREFIX,
+    LOG_TEXT_PREVIEW_CHARS,
 };
 
 impl QqChatAgent {
@@ -331,6 +328,9 @@ impl QqChatAgent {
                 .cloned()
                 .unwrap_or_default()
         };
+        let emotion_dimensions = current_qq_chat_agent_config()?.resolved_emotion_dimensions();
+        let mut current_session_state = current_session_state;
+        current_session_state.sync_emotion_dimensions(&emotion_dimensions);
         let turn_session_state = Arc::new(Mutex::new(current_session_state));
 
         let user_msg = message_with_api_style(
@@ -386,7 +386,10 @@ impl QqChatAgent {
             )
         };
         let system_msg = OpenAIMessage::system(system_prompt);
-        let state_msg = build_agent_state_snapshot_message(&turn_session_state.lock().unwrap());
+        let state_msg = build_agent_state_snapshot_message(
+            &turn_session_state.lock().unwrap(),
+            &emotion_dimensions,
+        );
         let priming_msg = build_output_contract_priming_message();
 
         let shared_runtime_values = Arc::new(Mutex::new(ctx.shared_runtime_values.clone()));
@@ -439,9 +442,10 @@ impl QqChatAgent {
             shared_runtime_values: Arc::clone(&shared_runtime_values),
         }));
 
-        if let (Some(memory_ref), Some(embedding_model)) =
-            (ctx.weaviate_memory_ref.cloned(), ctx.embedding_model.cloned())
-        {
+        if let (Some(memory_ref), Some(embedding_model)) = (
+            ctx.weaviate_memory_ref.cloned(),
+            ctx.embedding_model.cloned(),
+        ) {
             let memory_resources = AgentMemoryToolResources {
                 memory_ref,
                 embedding_model,
@@ -464,9 +468,8 @@ impl QqChatAgent {
                 ));
             }
             if self.is_default_tool_enabled(DEFAULT_TOOL_SEARCH_MEMORY_CONTENT) {
-                brain = brain.with_tool(SearchMemoryContentBrainTool::new(
-                    memory_resources.clone(),
-                ));
+                brain =
+                    brain.with_tool(SearchMemoryContentBrainTool::new(memory_resources.clone()));
             }
             if self.is_default_tool_enabled(DEFAULT_TOOL_REMEMBER_CONTENT) {
                 brain = brain.with_tool(RememberContentBrainTool::new(memory_resources));
@@ -498,7 +501,10 @@ impl QqChatAgent {
             brain = brain.with_tool(GetFunctionListBrainTool);
         }
 
-        brain = brain.with_tool(UpdateAgentStateBrainTool::new(Arc::clone(&turn_session_state)));
+        brain = brain.with_tool(UpdateAgentStateBrainTool::new(
+            Arc::clone(&turn_session_state),
+            emotion_dimensions.clone(),
+        ));
         brain = brain.with_tool(RunMathProgrammingSubagentBrainTool::new(Arc::clone(
             ctx.math_programming_llm,
         )));
@@ -516,6 +522,7 @@ impl QqChatAgent {
             ctx.natural_language_reply_system_prompt
                 .map(ToOwned::to_owned),
             Arc::clone(&turn_session_state),
+            emotion_dimensions.clone(),
             Arc::clone(&shared_runtime_values),
             ctx.reply_batch_builder.cloned(),
             ctx.max_message_length,
@@ -730,8 +737,7 @@ impl QqChatAgent {
             .map(|text| text.trim().to_string())
             .filter(|text| !text.is_empty());
 
-        if visible_assistant_history_text.is_none()
-            && matches!(stop_reason, BrainStopReason::Done)
+        if visible_assistant_history_text.is_none() && matches!(stop_reason, BrainStopReason::Done)
         {
             info!(
                 "{LOG_PREFIX} Brain finished without reply tool output; requesting one more internal reflection for sender={sender_id}"
@@ -793,10 +799,10 @@ impl QqChatAgent {
             ));
         }
         save_history(ctx.cache, &history_key, history);
-        ctx.session_state_store
-            .lock()
-            .unwrap()
-            .insert(history_key.clone(), turn_session_state.lock().unwrap().clone());
+        ctx.session_state_store.lock().unwrap().insert(
+            history_key.clone(),
+            turn_session_state.lock().unwrap().clone(),
+        );
 
         let result_summary = if let Some(ref assistant_text) = visible_assistant_history_text {
             format!(

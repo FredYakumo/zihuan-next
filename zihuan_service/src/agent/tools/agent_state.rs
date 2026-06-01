@@ -2,7 +2,8 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 use zihuan_agent::brain::BrainTool;
-use zihuan_agent::session_state::QqChatAgentSessionState;
+use zihuan_agent::session_state::{EmotionAdjustmentDirection, QqChatAgentSessionState};
+use zihuan_core::agent_config::QqChatEmotionDimensionConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 
@@ -10,11 +11,18 @@ use super::common::{optional_string_argument, StaticFunctionToolSpec};
 
 pub(crate) struct UpdateAgentStateBrainTool {
     session_state: Arc<Mutex<QqChatAgentSessionState>>,
+    emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
 }
 
 impl UpdateAgentStateBrainTool {
-    pub(crate) fn new(session_state: Arc<Mutex<QqChatAgentSessionState>>) -> Self {
-        Self { session_state }
+    pub(crate) fn new(
+        session_state: Arc<Mutex<QqChatAgentSessionState>>,
+        emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
+    ) -> Self {
+        Self {
+            session_state,
+            emotion_dimensions,
+        }
     }
 }
 
@@ -22,16 +30,21 @@ impl BrainTool for UpdateAgentStateBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "update_agent_state",
-            description: "更新当前 QQ Chat Agent 的会话状态。v1 仅允许更新 emotion_state。",
+            description: "调整当前 QQ Chat Agent 的某个情绪维度。只说明升高还是降低，具体幅度由后端配置决定。",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "emotion_state": {
+                    "dimension": {
                         "type": "string",
-                        "description": "当前情绪状态，例如 calm、happy、angry、sad"
+                        "description": "要调整的情绪维度名称，例如 开心、烦恼、生气"
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["increase", "decrease"],
+                        "description": "对该情绪维度进行提升或降低"
                     }
                 },
-                "required": ["emotion_state"],
+                "required": ["dimension", "direction"],
                 "additionalProperties": false
             }),
         })
@@ -39,13 +52,31 @@ impl BrainTool for UpdateAgentStateBrainTool {
 
     fn execute(&self, _call_content: &str, arguments: &Value) -> String {
         let result = (|| -> Result<String> {
-            let emotion_state = optional_string_argument(arguments, "emotion_state")
-                .ok_or_else(|| Error::ValidationError("emotion_state is required".to_string()))?;
+            let dimension = optional_string_argument(arguments, "dimension")
+                .ok_or_else(|| Error::ValidationError("dimension is required".to_string()))?;
+            let direction = optional_string_argument(arguments, "direction")
+                .ok_or_else(|| Error::ValidationError("direction is required".to_string()))?;
+            let direction = match direction.as_str() {
+                "increase" => EmotionAdjustmentDirection::Increase,
+                "decrease" => EmotionAdjustmentDirection::Decrease,
+                other => {
+                    return Err(Error::ValidationError(format!(
+                        "unsupported direction '{}'",
+                        other
+                    )))
+                }
+            };
             let mut session_state = self.session_state.lock().unwrap();
-            session_state.emotion_state = emotion_state.clone();
+            let current_value = session_state.apply_emotion_adjustment(
+                &self.emotion_dimensions,
+                &dimension,
+                direction,
+            )?;
             Ok(serde_json::json!({
                 "ok": true,
-                "emotion_state": emotion_state,
+                "dimension": dimension,
+                "direction": direction,
+                "current_value": current_value,
             })
             .to_string())
         })();

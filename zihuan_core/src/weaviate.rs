@@ -194,11 +194,7 @@ impl WeaviateRef {
     }
 
     pub async fn put_json_async(&self, path: &str, body: Value) -> Result<Value> {
-        Self::send_json_async(
-            self.authorized(self.client.put(self.url(path)))
-                .json(&body),
-        )
-        .await
+        Self::send_json_async(self.authorized(self.client.put(self.url(path))).json(&body)).await
     }
 
     pub async fn delete_empty_async(&self, path: &str) -> Result<()> {
@@ -326,7 +322,11 @@ pub fn graphql_value(value: &Value) -> String {
         Value::Bool(b) => b.to_string(),
         Value::Number(n) => n.to_string(),
         Value::Array(items) => {
-            let rendered = items.iter().map(graphql_value).collect::<Vec<_>>().join(", ");
+            let rendered = items
+                .iter()
+                .map(graphql_value)
+                .collect::<Vec<_>>()
+                .join(", ");
             format!("[{}]", rendered)
         }
         Value::Object(map) => {

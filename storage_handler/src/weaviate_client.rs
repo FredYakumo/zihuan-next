@@ -66,12 +66,8 @@ pub trait WeaviateClient {
         include_distance: bool,
     ) -> Result<Value>;
 
-    fn query_all(
-        &self,
-        class_name: &str,
-        limit: usize,
-        property_names: &[String],
-    ) -> Result<Value>;
+    fn query_all(&self, class_name: &str, limit: usize, property_names: &[String])
+        -> Result<Value>;
 
     fn query_with_args(
         &self,
@@ -206,11 +202,14 @@ impl WeaviateClient for WeaviateRef {
     }
 
     fn update_object(&self, class_name: &str, id: &str, properties: Value) -> Result<Value> {
-        self.put_json(&format!("/v1/objects/{class_name}/{id}"), json!({
-            "class": class_name,
-            "id": id,
-            "properties": properties,
-        }))
+        self.put_json(
+            &format!("/v1/objects/{class_name}/{id}"),
+            json!({
+                "class": class_name,
+                "id": id,
+                "properties": properties,
+            }),
+        )
     }
 
     fn update_object_with_vector(
@@ -220,12 +219,15 @@ impl WeaviateClient for WeaviateRef {
         properties: Value,
         vector: Vec<f32>,
     ) -> Result<Value> {
-        self.put_json(&format!("/v1/objects/{class_name}/{id}"), json!({
-            "class": class_name,
-            "id": id,
-            "properties": properties,
-            "vector": vector,
-        }))
+        self.put_json(
+            &format!("/v1/objects/{class_name}/{id}"),
+            json!({
+                "class": class_name,
+                "id": id,
+                "properties": properties,
+                "vector": vector,
+            }),
+        )
     }
 
     fn get_object_vector(&self, class_name: &str, id: &str) -> Result<Option<Vec<f32>>> {
@@ -368,4 +370,3 @@ fn query_hybrid_impl(
     );
     weaviate_ref.execute_graphql_query(&graphql)
 }
-

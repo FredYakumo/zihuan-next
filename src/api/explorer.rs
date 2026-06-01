@@ -8,16 +8,14 @@ use sqlx::Row as SqlxRow;
 
 use crate::system_config::load_connections;
 use storage_handler::{
-    create_memory_record_with_vector, delete_memory_record, get_memory_record, list_recent_memory_keys,
-    search_memory_content_by_vector, update_memory_record_with_vector, AgentMemoryAccessContext,
-    AgentMemoryUpsert,
-    resource_resolver, weaviate::build_weaviate_ref as build_storage_weaviate_ref, ConnectionKind,
-    WeaviateClient, WeaviateCollectionSchema,
+    create_memory_record_with_vector, delete_memory_record, get_memory_record,
+    list_recent_memory_keys, resource_resolver, search_memory_content_by_vector,
+    update_memory_record_with_vector, weaviate::build_weaviate_ref as build_storage_weaviate_ref,
+    AgentMemoryAccessContext, AgentMemoryUpsert, ConnectionKind, WeaviateClient,
+    WeaviateCollectionSchema,
 };
 
 use super::config::{render_bad_request, render_internal_error};
-
-
 
 #[derive(Serialize)]
 struct MysqlExploreResponse {
@@ -561,7 +559,8 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
                 None => {
                     return render_bad_request(
                         res,
-                        "embedding_model_ref_id is required for agent_memory semantic search".into(),
+                        "embedding_model_ref_id is required for agent_memory semantic search"
+                            .into(),
                     )
                 }
             };
@@ -574,7 +573,9 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
             };
             let vector = match tokio::task::block_in_place(|| embedding_model.inference(&query)) {
                 Ok(vector) if !vector.is_empty() => vector,
-                Ok(_) => return render_internal_error(res, "embedding model returned an empty vector"),
+                Ok(_) => {
+                    return render_internal_error(res, "embedding model returned an empty vector")
+                }
                 Err(err) => return render_internal_error(res, err),
             };
             match search_memory_content_by_vector(&weaviate_ref, &access, &vector, limit) {

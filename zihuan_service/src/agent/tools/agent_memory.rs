@@ -10,11 +10,11 @@ use storage_handler::{
 };
 use zihuan_agent::brain::BrainTool;
 use zihuan_core::error::{Error, Result};
+use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::{InferenceParam, OpenAIMessage};
 use zihuan_core::weaviate::WeaviateRef;
-use zihuan_core::llm::embedding_base::EmbeddingBase;
 
 use super::common::{
     optional_string_argument, optional_string_list_argument, sanitize_positive_limit,
@@ -46,7 +46,8 @@ impl BrainTool for ListAvailableMemoryKeysBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "list_available_memory_keys",
-            description: "列出当前上下文可访问的记忆标题，返回最近更新的记忆条目；可选按 query 过滤结果",
+            description:
+                "列出当前上下文可访问的记忆标题，返回最近更新的记忆条目；可选按 query 过滤结果",
             parameters: json!({
                 "type": "object",
                 "properties": {

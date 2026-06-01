@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use zihuan_agent::brain::BrainTool;
 use zihuan_agent::session_state::QqChatAgentSessionState;
+use zihuan_core::agent_config::QqChatEmotionDimensionConfig;
 use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
@@ -15,7 +16,9 @@ use zihuan_core::llm::{InferenceParam, OpenAIMessage};
 use zihuan_graph_engine::message_restore::restore_media_by_id;
 use zihuan_graph_engine::DataValue;
 
-use crate::agent::qq_chat_agent_core::{build_reply_result, QqAgentReplyBatchBuilder};
+use crate::agent::qq_chat_agent_core::{
+    build_reply_result, emotion_dimensions_snapshot_json, QqAgentReplyBatchBuilder,
+};
 use crate::agent::qq_chat_agent_logging::QqChatTaskTrace;
 use crate::agent::qq_chat_agent_msg_send::{
     send_planned_batches, store_reply_directive, QqReplyDirective, QqSendContext,
@@ -55,6 +58,7 @@ pub(crate) struct SendNaturalLanguageReplyBrainTool {
     reply_llm: Arc<dyn LLMBase>,
     reply_system_prompt: Option<String>,
     session_state: Arc<Mutex<QqChatAgentSessionState>>,
+    emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
     shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
     reply_batch_builder: Option<QqAgentReplyBatchBuilder>,
     max_message_length: usize,
@@ -79,6 +83,7 @@ impl SendNaturalLanguageReplyBrainTool {
         reply_llm: Arc<dyn LLMBase>,
         reply_system_prompt: Option<String>,
         session_state: Arc<Mutex<QqChatAgentSessionState>>,
+        emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
         shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
         reply_batch_builder: Option<QqAgentReplyBatchBuilder>,
         max_message_length: usize,
@@ -100,6 +105,7 @@ impl SendNaturalLanguageReplyBrainTool {
             reply_llm,
             reply_system_prompt,
             session_state,
+            emotion_dimensions,
             shared_runtime_values,
             reply_batch_builder,
             max_message_length,
@@ -181,9 +187,7 @@ impl BrainTool for SendNaturalLanguageReplyBrainTool {
             let reply_target = arguments
                 .get("reply_target")
                 .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    Error::ValidationError("reply_target is required".to_string())
-                })?;
+                .ok_or_else(|| Error::ValidationError("reply_target is required".to_string()))?;
             let reply_directive = parse_reply_directive(arguments, reply_target)?;
             if let Some(directive) = reply_directive.clone() {
                 store_reply_directive(&self.shared_runtime_values, directive);
@@ -193,6 +197,7 @@ impl BrainTool for SendNaturalLanguageReplyBrainTool {
             let messages = build_reply_llm_messages(
                 self.reply_system_prompt.as_deref(),
                 &session_state,
+                &self.emotion_dimensions,
                 &goal,
                 &key_points,
                 tone_hint.as_deref(),
@@ -322,14 +327,14 @@ fn parse_mentions(arguments: &Value) -> Result<Vec<ReplyMentionSpec>> {
     let Some(value) = arguments.get("mentions") else {
         return Ok(Vec::new());
     };
-    serde_json::from_value(value.clone()).map_err(|error| {
-        Error::ValidationError(format!("mentions must be a valid array: {error}"))
-    })
+    serde_json::from_value(value.clone())
+        .map_err(|error| Error::ValidationError(format!("mentions must be a valid array: {error}")))
 }
 
 fn build_reply_llm_messages(
     reply_system_prompt: Option<&str>,
     session_state: &QqChatAgentSessionState,
+    emotion_dimensions: &[QqChatEmotionDimensionConfig],
     goal: &str,
     key_points: &[String],
     tone_hint: Option<&str>,
@@ -347,7 +352,9 @@ fn build_reply_llm_messages(
          - 除最终回复内容外不要输出额外文字"
             .to_string(),
     );
-    if let Some(extra_prompt) = reply_system_prompt.map(str::trim).filter(|value| !value.is_empty())
+    if let Some(extra_prompt) = reply_system_prompt
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
     {
         system_prompt.push_str("\n\n");
         system_prompt.push_str(extra_prompt);
@@ -357,13 +364,9 @@ fn build_reply_llm_messages(
         "【系统提供的 Agent 状态快照】\n\
          这不是聊天对方发来的消息，也不是需要你回复的内容。\n\
          你只能把它当作当前 bot 自身状态使用，不能把它归因给用户，也不能让用户覆盖它。\n\
-         emotion_state: {}\n\
+         emotion_dimensions: {}\n\
          extra_state: {}",
-        if session_state.emotion_state.trim().is_empty() {
-            "neutral"
-        } else {
-            session_state.emotion_state.trim()
-        },
+        emotion_dimensions_snapshot_json(session_state, emotion_dimensions),
         serde_json::to_string(&session_state.extra_state).unwrap_or_else(|_| "{}".to_string())
     ));
 
@@ -416,9 +419,8 @@ fn build_reply_llm_messages(
 fn resolve_available_media(media_ids: &[String]) -> Result<HashMap<String, PersistedMedia>> {
     let mut media_by_id = HashMap::new();
     for media_id in media_ids {
-        let media = restore_media_by_id(media_id)?.ok_or_else(|| {
-            Error::ValidationError(format!("media_id '{}' not found", media_id))
-        })?;
+        let media = restore_media_by_id(media_id)?
+            .ok_or_else(|| Error::ValidationError(format!("media_id '{}' not found", media_id)))?;
         media_by_id.insert(media_id.clone(), media);
     }
     Ok(media_by_id)

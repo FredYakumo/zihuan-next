@@ -196,10 +196,7 @@ fn agent_uses_llm_ref(agent: &AgentConfig, llm_ref_id: &str) -> bool {
         AgentType::QqChat(config) => {
             config.llm_ref_id.as_deref() == Some(llm_ref_id)
                 || config.math_programming_llm_ref_id.as_deref() == Some(llm_ref_id)
-                || config
-                    .natural_language_reply_llm_ref_id
-                    .as_deref()
-                    == Some(llm_ref_id)
+                || config.natural_language_reply_llm_ref_id.as_deref() == Some(llm_ref_id)
                 || config.embedding_model_ref_id.as_deref() == Some(llm_ref_id)
         }
         AgentType::HttpStream(config) => config.llm_ref_id.as_deref() == Some(llm_ref_id),

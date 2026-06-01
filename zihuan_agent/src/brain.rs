@@ -10,9 +10,7 @@ use tokio::sync::mpsc;
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::tooling::ToolCalls;
-use zihuan_core::llm::{
-    ContentPart, InferenceParam, MessageContent, MessageRole, OpenAIMessage,
-};
+use zihuan_core::llm::{ContentPart, InferenceParam, MessageContent, MessageRole, OpenAIMessage};
 use zihuan_core::task_context::{
     scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime,
     AgentTaskStatus,

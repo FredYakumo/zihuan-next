@@ -149,11 +149,7 @@ async fn resolve_connection_hyperparameter(
         DataType::RedisRef => build_redis_ref(Some(connection_id), connections)
             .map(|value| value.map(|value| (DataValue::RedisRef(value), None))),
         DataType::WeaviateRef => tokio::task::block_in_place(|| {
-            build_weaviate_ref(
-                Some(connection_id),
-                connections,
-                None,
-            )
+            build_weaviate_ref(Some(connection_id), connections, None)
         })
         .map(|value| value.map(|value| (DataValue::WeaviateRef(value), None))),
         DataType::S3Ref => build_s3_ref(Some(connection_id), connections)

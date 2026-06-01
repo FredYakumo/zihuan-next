@@ -200,7 +200,13 @@ fn load_qq_resources(
         .llm_ref_id
         .as_deref()
         .filter(|value| !value.trim().is_empty())
-        .map(|llm_ref_id| resolve_llm_service_config(Some(llm_ref_id), &load_llm_refs().unwrap_or_default(), &agent.name))
+        .map(|llm_ref_id| {
+            resolve_llm_service_config(
+                Some(llm_ref_id),
+                &load_llm_refs().unwrap_or_default(),
+                &agent.name,
+            )
+        })
         .transpose()?
         .map(|llm_config| build_llm_model(&llm_config))
         .transpose()
@@ -293,9 +299,7 @@ pub async fn spawn(
     )?;
     let math_programming_llm = build_llm_model(&math_programming_llm_config)?;
     let natural_language_reply_llm_config = resolve_llm_service_config(
-        config
-            .natural_language_reply_llm_ref_id
-            .as_deref(),
+        config.natural_language_reply_llm_ref_id.as_deref(),
         &llm_refs,
         &agent.name,
     )?;

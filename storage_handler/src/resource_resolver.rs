@@ -184,11 +184,7 @@ pub async fn resolve_connection_data_value(
                 .map(|value| value.map(DataValue::RedisRef))
         }
         zihuan_graph_engine::DataType::WeaviateRef => {
-            build_weaviate_ref(
-                Some(connection_id),
-                connections,
-                None,
-            )
+            build_weaviate_ref(Some(connection_id), connections, None)
                 .map(|value| value.map(DataValue::WeaviateRef))
         }
         zihuan_graph_engine::DataType::S3Ref => build_s3_ref(Some(connection_id), connections)

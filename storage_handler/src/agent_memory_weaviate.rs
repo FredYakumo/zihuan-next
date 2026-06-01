@@ -77,12 +77,8 @@ pub fn create_memory_record_with_vector(
 ) -> Result<AgentMemoryRecord> {
     let now = Utc::now().to_rfc3339();
     let properties = build_memory_properties(input, &now, Some(&now))?;
-    let response = weaviate_ref.upsert_object(
-        &weaviate_ref.class_name,
-        properties,
-        vector,
-        None,
-    )?;
+    let response =
+        weaviate_ref.upsert_object(&weaviate_ref.class_name, properties, vector, None)?;
     parse_memory_record_with_fallback(response, None)
 }
 
@@ -195,10 +191,7 @@ pub fn normalize_memory_scope_lists(items: &[String]) -> Vec<String> {
     result
 }
 
-pub fn memory_is_accessible(
-    record: &AgentMemoryRecord,
-    access: &AgentMemoryAccessContext,
-) -> bool {
+pub fn memory_is_accessible(record: &AgentMemoryRecord, access: &AgentMemoryAccessContext) -> bool {
     if is_memory_expired(record) {
         return false;
     }
@@ -208,14 +201,24 @@ pub fn memory_is_accessible(
     }
 
     if !record.group_id_list.is_empty() {
-        let Some(group_id) = access.group_id.as_deref().map(str::trim).filter(|value| !value.is_empty()) else {
+        let Some(group_id) = access
+            .group_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
             return false;
         };
         return record.group_id_list.iter().any(|value| value == group_id);
     }
 
     if !record.sender_id_list.is_empty() {
-        let Some(sender_id) = access.sender_id.as_deref().map(str::trim).filter(|value| !value.is_empty()) else {
+        let Some(sender_id) = access
+            .sender_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
             return false;
         };
         return record.sender_id_list.iter().any(|value| value == sender_id);
@@ -248,7 +251,11 @@ pub fn extend_expiry_for_hits(
         let remaining = current_expiry - now;
         let doubled = now + remaining + remaining;
         let max_expiry = now + Duration::days(365);
-        let next_expiry = if doubled > max_expiry { max_expiry } else { doubled };
+        let next_expiry = if doubled > max_expiry {
+            max_expiry
+        } else {
+            doubled
+        };
         let payload = AgentMemoryUpsert {
             key: hit.record.key.clone(),
             value: hit.record.value.clone(),
@@ -277,14 +284,9 @@ fn list_memory_records(
     weaviate_ref: &WeaviateRef,
     limit: usize,
 ) -> Result<Vec<AgentMemorySearchHit>> {
-    let args = format!(
-        "limit: {limit}, sort: [{{ path: [\"updated_at\"], order: desc }}]"
-    );
-    let response = weaviate_ref.query_with_args(
-        &weaviate_ref.class_name,
-        &args,
-        &memory_property_names(),
-    )?;
+    let args = format!("limit: {limit}, sort: [{{ path: [\"updated_at\"], order: desc }}]");
+    let response =
+        weaviate_ref.query_with_args(&weaviate_ref.class_name, &args, &memory_property_names())?;
     parse_memory_hits(response)
 }
 
@@ -354,13 +356,17 @@ fn parse_memory_hit(value: Value) -> Result<AgentMemorySearchHit> {
     Ok(AgentMemorySearchHit { record, distance })
 }
 
-fn parse_memory_record_with_fallback(value: Value, fallback_id: Option<&str>) -> Result<AgentMemoryRecord> {
+fn parse_memory_record_with_fallback(
+    value: Value,
+    fallback_id: Option<&str>,
+) -> Result<AgentMemoryRecord> {
     let object_id = value
         .get("id")
         .and_then(Value::as_str)
         .map(ToOwned::to_owned)
         .or_else(|| {
-            value.get("_additional")
+            value
+                .get("_additional")
                 .and_then(|extra| extra.get("id"))
                 .and_then(Value::as_str)
                 .map(ToOwned::to_owned)
@@ -390,11 +396,15 @@ fn build_memory_properties(
 ) -> Result<Value> {
     let key = input.key.trim();
     if key.is_empty() {
-        return Err(Error::ValidationError("memory title must not be empty".to_string()));
+        return Err(Error::ValidationError(
+            "memory title must not be empty".to_string(),
+        ));
     }
     let value = input.value.trim();
     if value.is_empty() {
-        return Err(Error::ValidationError("memory value must not be empty".to_string()));
+        return Err(Error::ValidationError(
+            "memory value must not be empty".to_string(),
+        ));
     }
     let sender_id_list = normalize_memory_scope_lists(&input.sender_id_list);
     let group_id_list = normalize_memory_scope_lists(&input.group_id_list);

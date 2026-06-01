@@ -20,8 +20,8 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::{MessageRole, OpenAIMessage};
-use zihuan_core::runtime::block_async;
 use zihuan_core::rag::WebSearchEngineRef;
+use zihuan_core::runtime::block_async;
 use zihuan_core::task_context::{
     AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
 };
@@ -33,11 +33,11 @@ use super::inference::{infer_agent_response, resolve_agent_model_name};
 use super::inference::{InferenceToolContext, InferenceToolProvider};
 use super::tool_definitions::build_enabled_tool_definitions;
 use super::tools::build_info_brain_tools;
+use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
 use crate::resource_resolver::{
     build_llm_model, resolve_llm_service_config, resolve_local_embedding_model_name,
 };
 use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
-use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
 
 #[derive(Clone)]
 struct HttpStreamRuntimeState {
@@ -162,18 +162,14 @@ fn load_http_stream_resources(
         .filter(|value| !value.trim().is_empty())
         .and_then(|model_ref_id| {
             match resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, "http_stream") {
-                Ok(Some(_)) => {
-                    block_async(
-                        RuntimeEmbeddingModelManager::shared()
-                            .get_or_create_embedding_model(model_ref_id),
-                    )
-                    .ok()
-                }
+                Ok(Some(_)) => block_async(
+                    RuntimeEmbeddingModelManager::shared()
+                        .get_or_create_embedding_model(model_ref_id),
+                )
+                .ok(),
                 Ok(None) => None,
                 Err(error) => {
-                    log::warn!(
-                        "[inference][http_stream] embedding model ref unavailable: {error}"
-                    );
+                    log::warn!("[inference][http_stream] embedding model ref unavailable: {error}");
                     None
                 }
             }

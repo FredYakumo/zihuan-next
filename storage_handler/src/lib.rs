@@ -27,17 +27,17 @@ use zihuan_core::config::{
 };
 use zihuan_core::error::Result;
 
-pub use connection_manager::{
-    cleanup_runtime_storage_instances, close_runtime_storage_instance,
-    close_runtime_storage_instances_for_config, list_runtime_storage_instances,
-    MessageStoreConnectionAccess, RuntimeStorageConnectionManager, StorageRuntimeHandle,
-};
 pub use agent_memory_weaviate::{
     create_memory_record, create_memory_record_with_vector, delete_memory_record,
     extend_expiry_for_hits, get_memory_record, is_memory_expired, list_recent_memory_keys,
     memory_is_accessible, normalize_memory_scope_lists, search_memory_content,
     search_memory_content_by_vector, update_memory_record, update_memory_record_with_vector,
     AgentMemoryAccessContext, AgentMemoryRecord, AgentMemorySearchHit, AgentMemoryUpsert,
+};
+pub use connection_manager::{
+    cleanup_runtime_storage_instances, close_runtime_storage_instance,
+    close_runtime_storage_instances_for_config, list_runtime_storage_instances,
+    MessageStoreConnectionAccess, RuntimeStorageConnectionManager, StorageRuntimeHandle,
 };
 pub use db_schema::ensure_tables_for_connection;
 pub use message_store::{MessageRecord, MessageStore};
