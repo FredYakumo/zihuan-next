@@ -48,6 +48,65 @@ pub struct LLMAPI {
 }
 
 impl LLMAPI {
+    fn format_cache_hit_rate(
+        &self,
+        cached_prompt_tokens: Option<usize>,
+        prompt_tokens: Option<usize>,
+    ) -> String {
+        match (cached_prompt_tokens, prompt_tokens) {
+            (Some(cached), Some(prompt)) if prompt > 0 => {
+                format!("{:.2}%", (cached as f64 / prompt as f64) * 100.0)
+            }
+            _ => "unavailable".to_string(),
+        }
+    }
+
+    fn log_usage(
+        &self,
+        request_context: &RequestContext,
+        request_format: RequestFormat,
+        usage: &zihuan_core::llm::TokenUsage,
+    ) {
+        let prompt_tokens = usage.prompt_tokens.or_else(|| {
+            usage
+                .cached_prompt_tokens
+                .zip(usage.prompt_cache_miss_tokens)
+                .map(|(hit, miss)| hit + miss)
+        });
+        log::info!(
+            "[LLMAPI] usage model={} endpoint={} api_style={:?} format={} messages={} tools={} multimodal={} include_reasoning_content={} prompt_tokens={} cached_prompt_tokens={} prompt_cache_miss_tokens={} completion_tokens={} total_tokens={} cache_hit_rate={}",
+            self.model_name,
+            self.endpoint_label(),
+            self.api_style,
+            request_format.label(),
+            request_context.message_count,
+            request_context.tool_count,
+            request_context.has_multimodal_input,
+            self.include_reasoning_content,
+            usage
+                .prompt_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            usage
+                .cached_prompt_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            usage
+                .prompt_cache_miss_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            usage
+                .completion_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            usage
+                .total_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            self.format_cache_hit_rate(usage.cached_prompt_tokens, prompt_tokens),
+        );
+    }
+
     pub fn new(
         model_name: String,
         api_endpoint: String,
@@ -371,6 +430,9 @@ impl LLMBase for LLMAPI {
                 request_format,
             ) {
                 Ok(msg) => {
+                    if let Some(usage) = msg.usage.as_ref() {
+                        self.log_usage(&request_context, request_format, usage);
+                    }
                     debug!(
                         "Successfully parsed API response: {}",
                         self.format_request_context(
@@ -486,7 +548,11 @@ impl LLMAPI {
             true => parse_responses_sse_stream(response, token_tx).await,
             _ => parse_chat_completions_sse_stream(response, token_tx).await,
         };
-        self.tag_response_api_style(message)
+        let message = self.tag_response_api_style(message);
+        if let Some(usage) = message.usage.as_ref() {
+            self.log_usage(&request_context, request_format, usage);
+        }
+        message
     }
 }
 

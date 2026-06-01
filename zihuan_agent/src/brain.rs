@@ -40,6 +40,18 @@ fn truncate_for_log(text: &str, max_chars: usize) -> String {
     format!("{truncated}...(truncated,total_chars={total_chars})")
 }
 
+fn format_cache_hit_rate(
+    cached_prompt_tokens: Option<usize>,
+    prompt_tokens: Option<usize>,
+) -> String {
+    match (cached_prompt_tokens, prompt_tokens) {
+        (Some(cached), Some(prompt)) if prompt > 0 => {
+            format!("{:.2}%", (cached as f64 / prompt as f64) * 100.0)
+        }
+        _ => "unavailable".to_string(),
+    }
+}
+
 struct ToolProgressScopeGuard;
 
 impl ToolProgressScopeGuard {
@@ -276,6 +288,46 @@ impl Brain {
         tool.execute(call_content, arguments)
     }
 
+    fn log_llm_usage(&self, response: &OpenAIMessage) {
+        let Some(usage) = response.usage.as_ref() else {
+            return;
+        };
+
+        info!(
+            "[Brain] llm usage model={} prompt_tokens={} cached_prompt_tokens={} prompt_cache_miss_tokens={} completion_tokens={} total_tokens={} cache_hit_rate={}",
+            self.llm.get_model_name(),
+            usage
+                .prompt_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            usage
+                .cached_prompt_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            usage
+                .prompt_cache_miss_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            usage
+                .completion_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            usage
+                .total_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            format_cache_hit_rate(
+                usage.cached_prompt_tokens,
+                usage.prompt_tokens.or_else(|| {
+                    usage
+                        .cached_prompt_tokens
+                        .zip(usage.prompt_cache_miss_tokens)
+                        .map(|(hit, miss)| hit + miss)
+                }),
+            ),
+        );
+    }
+
     /// Run the inference loop and return `(new_messages, stop_reason)`.
     ///
     /// `new_messages` contains all assistant and tool-result messages produced
@@ -318,6 +370,8 @@ impl Brain {
                     return (output, BrainStopReason::TransportError(msg));
                 }
             }
+
+            self.log_llm_usage(&response);
 
             if response.tool_calls.is_empty() {
                 if let Some(observer) = self.observer.as_ref() {
@@ -471,6 +525,8 @@ impl Brain {
                     return (output, BrainStopReason::TransportError(msg));
                 }
             }
+
+            self.log_llm_usage(&response);
 
             if response.tool_calls.is_empty() {
                 let response_preview = response.content_text_owned().unwrap_or_default();
