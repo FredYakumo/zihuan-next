@@ -29,7 +29,7 @@ impl BrainTool for ReplyMessageBrainTool {
         Arc::new(StaticFunctionToolSpec {
             name: "reply_message",
             description:
-                "让本轮最终回复引用一条 QQ 消息。可选指定 message_id；如果不传，则默认引用触发当前对话的那条消息。",
+                "设置本轮最终回复要引用的 QQ 消息；可选指定 message_id，不传则默认引用当前触发消息。",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {

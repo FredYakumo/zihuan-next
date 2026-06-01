@@ -9,7 +9,7 @@ import type {
 } from "../api/client";
 
 export type ConnectionType = "mysql" | "redis" | "weaviate" | "rustfs" | "bot_adapter" | "ims_bot_adapter" | "web_search_engine" | "tokenizer" | "sqlite";
-export type WeaviateCollectionSchema = "message_record_semantic" | "image_semantic";
+export type WeaviateCollectionSchema = "image_semantic" | "agent_memory";
 export type AgentTypeName = "qq_chat" | "http_stream";
 export type ModelRefType = "chat_llm" | "text_embedding_local";
 export type ToolRunDuration = "Short" | "Long";
@@ -110,6 +110,7 @@ export interface AgentFormState {
   web_search_engine_connection_id: string;
   rdb_id: string;
   weaviate_image_connection_id: string;
+  weaviate_memory_connection_id: string;
   max_message_length: number;
   compact_context_length: number;
   max_steer_count: number;
@@ -117,6 +118,8 @@ export interface AgentFormState {
   http_bind: string;
   http_api_key: string;
   http_web_search_engine_connection_id: string;
+  http_embedding_model_ref_id: string;
+  http_weaviate_memory_connection_id: string;
   task_db_connection_id: string;
   tools: ToolFormState[];
 }
@@ -140,10 +143,16 @@ export const QQ_CHAT_DEFAULT_TOOLS: DefaultToolOption[] = [
   { id: "search_similar_images", label: "search_similar_images", description: "语义检索相似图片" },
   { id: "image_understand", label: "image_understand", description: "按 media_id 理解图片内容" },
   { id: "reply_message", label: "reply_message", description: "显式引用某条消息" },
+  { id: "list_available_memory_keys", label: "list_available_memory_keys", description: "列出当前可访问的记忆标题" },
+  { id: "search_memory_content", label: "search_memory_content", description: "搜索当前可访问的记忆内容" },
+  { id: "remember_content", label: "remember_content", description: "把内容整理后写入记忆" },
 ];
 
 export const HTTP_STREAM_DEFAULT_TOOLS: DefaultToolOption[] = [
   { id: "web_search", label: "web_search", description: "联网搜索（Tavily）" },
+  { id: "list_available_memory_keys", label: "list_available_memory_keys", description: "列出当前可访问的记忆标题" },
+  { id: "search_memory_content", label: "search_memory_content", description: "搜索当前可访问的记忆内容" },
+  { id: "remember_content", label: "remember_content", description: "把内容整理后写入记忆" },
 ];
 
 export function defaultQqChatDefaultToolsEnabled(): Record<string, boolean> {
@@ -190,7 +199,7 @@ export function defaultConnectionForm(): ConnectionFormState {
     weaviate_username: "",
     weaviate_password: "",
     weaviate_api_key: "",
-    weaviate_collection_schema: "message_record_semantic",
+    weaviate_collection_schema: "agent_memory",
     rustfs_endpoint: "",
     rustfs_username: "",
     rustfs_password: "",
@@ -260,6 +269,7 @@ export function defaultAgentForm(): AgentFormState {
     web_search_engine_connection_id: "",
     rdb_id: "",
     weaviate_image_connection_id: "",
+    weaviate_memory_connection_id: "",
     max_message_length: 500,
     compact_context_length: 0,
     max_steer_count: 4,
@@ -267,6 +277,8 @@ export function defaultAgentForm(): AgentFormState {
     http_bind: "127.0.0.1:18080",
     http_api_key: "",
     http_web_search_engine_connection_id: "",
+    http_embedding_model_ref_id: "",
+    http_weaviate_memory_connection_id: "",
     task_db_connection_id: "",
     tools: [],
   };
@@ -302,8 +314,8 @@ export function connectionFormFromConfig(connection: ConnectionConfig): Connecti
       form.weaviate_username = String(connection.kind.username ?? "");
       form.weaviate_password = String(connection.kind.password ?? "");
       form.weaviate_api_key = String(connection.kind.api_key ?? "");
-      form.weaviate_collection_schema = String(
-        connection.kind.collection_schema ?? "message_record_semantic",
+    form.weaviate_collection_schema = String(
+        connection.kind.collection_schema ?? "agent_memory",
       ) as WeaviateCollectionSchema;
       break;
     case "rustfs":
@@ -539,6 +551,7 @@ export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): Agen
     form.web_search_engine_connection_id = String(agentType.web_search_engine_connection_id ?? "");
     form.rdb_id = String(agentType.rdb_id ?? agentType.mysql_connection_id ?? agentType.task_db_connection_id ?? "");
     form.weaviate_image_connection_id = String(agentType.weaviate_image_connection_id ?? "");
+    form.weaviate_memory_connection_id = String(agentType.weaviate_memory_connection_id ?? "");
     form.max_message_length = Number(agentType.max_message_length ?? 500);
     form.compact_context_length = Number(agentType.compact_context_length ?? 0);
     form.max_steer_count = Number(agentType.max_steer_count ?? 4);
@@ -555,6 +568,8 @@ export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): Agen
     form.http_api_key = String(agentType.api_key ?? "");
     form.llm_ref_id = String(agentType.llm_ref_id ?? "");
     form.http_web_search_engine_connection_id = String(agentType.web_search_engine_connection_id ?? "");
+    form.http_embedding_model_ref_id = String(agentType.embedding_model_ref_id ?? "");
+    form.http_weaviate_memory_connection_id = String(agentType.weaviate_memory_connection_id ?? "");
     form.task_db_connection_id = String(agentType.task_db_connection_id ?? "");
     const source = (agentType.default_tools_enabled ?? {}) as Record<string, unknown>;
     form.default_tools_enabled = defaultHttpStreamDefaultToolsEnabled();
@@ -645,6 +660,7 @@ export function buildAgentPayload(form: AgentFormState): {
         embedding: null,
         rdb_id: form.rdb_id || null,
         weaviate_image_connection_id: form.weaviate_image_connection_id || null,
+        weaviate_memory_connection_id: form.weaviate_memory_connection_id || null,
         max_message_length: form.max_message_length,
         compact_context_length: form.compact_context_length,
         max_steer_count: form.max_steer_count,
@@ -660,7 +676,9 @@ export function buildAgentPayload(form: AgentFormState): {
       bind: form.http_bind.trim(),
       api_key: form.http_api_key.trim() || null,
       llm_ref_id: form.llm_ref_id || null,
+      embedding_model_ref_id: form.http_embedding_model_ref_id || null,
       web_search_engine_connection_id: form.http_web_search_engine_connection_id || null,
+      weaviate_memory_connection_id: form.http_weaviate_memory_connection_id || null,
       task_db_connection_id: form.task_db_connection_id || null,
       default_tools_enabled: Object.fromEntries(
         HTTP_STREAM_DEFAULT_TOOLS.map((tool) => [tool.id, form.default_tools_enabled[tool.id] !== false]),

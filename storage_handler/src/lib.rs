@@ -1,3 +1,4 @@
+mod agent_memory_weaviate;
 mod connection_manager;
 mod db_schema;
 mod image_weaviate_persistence;
@@ -13,6 +14,7 @@ pub mod sqlite;
 mod tavily_provider_node;
 mod tavily_search_node;
 pub mod weaviate;
+mod weaviate_client;
 mod weaviate_image_search_node;
 mod weaviate_persistence;
 mod weaviate_schema;
@@ -29,6 +31,13 @@ pub use connection_manager::{
     cleanup_runtime_storage_instances, close_runtime_storage_instance,
     close_runtime_storage_instances_for_config, list_runtime_storage_instances,
     MessageStoreConnectionAccess, RuntimeStorageConnectionManager, StorageRuntimeHandle,
+};
+pub use agent_memory_weaviate::{
+    create_memory_record, create_memory_record_with_vector, delete_memory_record,
+    extend_expiry_for_hits, get_memory_record, is_memory_expired, list_recent_memory_keys,
+    memory_is_accessible, normalize_memory_scope_lists, search_memory_content,
+    search_memory_content_by_vector, update_memory_record, update_memory_record_with_vector,
+    AgentMemoryAccessContext, AgentMemoryRecord, AgentMemorySearchHit, AgentMemoryUpsert,
 };
 pub use db_schema::ensure_tables_for_connection;
 pub use message_store::{MessageRecord, MessageStore};
@@ -49,6 +58,7 @@ pub use resource_resolver::{
 pub use rustfs::RustfsNode;
 pub use sqlite::SqliteNode;
 pub use weaviate::WeaviateNode;
+pub use weaviate_client::WeaviateClient;
 pub use weaviate_persistence::{
     build_image_record_properties, deterministic_media_object_id, deterministic_message_object_id,
     upsert_image_record, upsert_message_event, upsert_qq_message_list,
@@ -395,7 +405,7 @@ fn migrate_connection_spec(record: &StoredConfigRecord) -> (Value, bool) {
     object.insert(
         "collection_schema".to_string(),
         serde_json::to_value(inferred)
-            .unwrap_or_else(|_| Value::String("message_record_semantic".to_string())),
+            .unwrap_or_else(|_| Value::String("agent_memory".to_string())),
     );
     (spec, true)
 }
@@ -411,7 +421,7 @@ pub fn infer_weaviate_collection_schema(
     {
         WeaviateCollectionSchema::ImageSemantic
     } else {
-        WeaviateCollectionSchema::MessageRecordSemantic
+        WeaviateCollectionSchema::AgentMemory
     }
 }
 

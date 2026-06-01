@@ -4,10 +4,13 @@ use std::sync::Arc;
 use zihuan_agent::brain::BrainTool;
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::llm::embedding_base::EmbeddingBase;
+use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::object_storage::S3Ref;
+use storage_handler::AgentMemoryAccessContext;
 
+mod agent_memory;
 mod common;
 mod current_time;
 mod editable_qq_agent_tool;
@@ -23,6 +26,10 @@ mod build_metadata {
 }
 
 pub(crate) use common::{ToolNotificationTarget, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS};
+pub(crate) use agent_memory::{
+    AgentMemoryToolResources, ListAvailableMemoryKeysBrainTool, RememberContentBrainTool,
+    SearchMemoryContentBrainTool,
+};
 pub(crate) use current_time::CurrentTimeBrainTool;
 pub(crate) use editable_qq_agent_tool::EditableQqAgentTool;
 pub(crate) use image_search::SearchSimilarImagesBrainTool;
@@ -40,6 +47,9 @@ pub(crate) const DEFAULT_TOOL_GET_RECENT_USER_MESSAGES: &str = "get_recent_user_
 pub(crate) const DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES: &str = "search_similar_images";
 pub(crate) const DEFAULT_TOOL_IMAGE_UNDERSTAND: &str = "image_understand";
 pub(crate) const DEFAULT_TOOL_REPLY_MESSAGE: &str = "reply_message";
+pub(crate) const DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS: &str = "list_available_memory_keys";
+pub(crate) const DEFAULT_TOOL_SEARCH_MEMORY_CONTENT: &str = "search_memory_content";
+pub(crate) const DEFAULT_TOOL_REMEMBER_CONTENT: &str = "remember_content";
 const AGENT_PUBLIC_NAME: &str = "紫幻zihuan-next";
 const AGENT_GITHUB_REPOSITORY: &str = "https://github.com/FredYakumo/zihuan-next";
 const AGENT_GIT_COMMIT_ID: &str = build_metadata::ZIHUAN_GIT_COMMIT_ID;
@@ -50,7 +60,10 @@ pub(crate) fn build_info_brain_tools(
     mysql_ref: Option<Arc<MySqlConfig>>,
     s3_ref: Option<Arc<S3Ref>>,
     weaviate_image_ref: Option<Arc<WeaviateRef>>,
+    weaviate_memory_ref: Option<Arc<WeaviateRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
+    llm: Option<Arc<dyn LLMBase>>,
+    memory_access: AgentMemoryAccessContext,
     current_message: String,
 ) -> Vec<Box<dyn BrainTool>> {
     fn is_enabled(map: &HashMap<String, bool>, name: &str) -> bool {
@@ -98,7 +111,7 @@ pub(crate) fn build_info_brain_tools(
         if let Some(engine) = web_search_engine_ref {
             tools.push(Box::new(SearchSimilarImagesBrainTool::new(
                 weaviate_image_ref,
-                embedding_model,
+                embedding_model.clone(),
                 engine,
                 None,
                 dashboard_target.clone(),
@@ -113,6 +126,33 @@ pub(crate) fn build_info_brain_tools(
             s3_ref,
             dashboard_target,
         )));
+    }
+
+    if let (Some(memory_ref), Some(embedding_model), Some(llm)) =
+        (weaviate_memory_ref, embedding_model.clone(), llm)
+    {
+        let memory_resources = AgentMemoryToolResources {
+            memory_ref,
+            embedding_model,
+            llm,
+            access: memory_access,
+        };
+        if is_enabled(
+            default_tools_enabled,
+            DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS,
+        ) {
+            tools.push(Box::new(ListAvailableMemoryKeysBrainTool::new(
+                memory_resources.clone(),
+            )));
+        }
+        if is_enabled(default_tools_enabled, DEFAULT_TOOL_SEARCH_MEMORY_CONTENT) {
+            tools.push(Box::new(SearchMemoryContentBrainTool::new(
+                memory_resources.clone(),
+            )));
+        }
+        if is_enabled(default_tools_enabled, DEFAULT_TOOL_REMEMBER_CONTENT) {
+            tools.push(Box::new(RememberContentBrainTool::new(memory_resources)));
+        }
     }
 
     tools

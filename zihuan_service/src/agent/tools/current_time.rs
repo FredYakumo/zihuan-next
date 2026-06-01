@@ -12,7 +12,7 @@ impl BrainTool for CurrentTimeBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "get_current_time",
-            description: "获取当前本地时间。只有在确实需要知道现在几点、今天日期或生成带时间语义的回答时才调用。",
+            description: "返回当前时间。涉及到时间和时效性的时候使用",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {},

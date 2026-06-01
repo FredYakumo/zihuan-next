@@ -108,6 +108,8 @@ pub struct QqChatAgentConfig {
     pub task_db_connection_id: Option<String>,
     #[serde(default)]
     pub weaviate_image_connection_id: Option<String>,
+    #[serde(default)]
+    pub weaviate_memory_connection_id: Option<String>,
     #[serde(default = "default_max_message_length")]
     pub max_message_length: usize,
     #[serde(default)]
@@ -171,6 +173,9 @@ fn default_qq_chat_default_tools_enabled() -> HashMap<String, bool> {
         "search_similar_images",
         "image_understand",
         "reply_message",
+        "list_available_memory_keys",
+        "search_memory_content",
+        "remember_content",
     ]
     .into_iter()
     .map(|name| (name.to_string(), true))

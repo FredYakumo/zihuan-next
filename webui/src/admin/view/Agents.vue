@@ -123,6 +123,22 @@
                                         :value="item.config_id">{{ item.name }}</option>
                                 </select>
                             </div>
+                            <div class="field">
+                                <label>Weaviate Memory Connection</label>
+                                <select v-model="form.weaviate_memory_connection_id">
+                                    <option value="">不使用</option>
+                                    <option v-for="item in memoryWeaviateConnections" :key="item.config_id"
+                                        :value="item.config_id">{{ item.name }}</option>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label>Weaviate Memory Connection</label>
+                                <select v-model="form.weaviate_memory_connection_id">
+                                    <option value="">不使用</option>
+                                    <option v-for="item in memoryWeaviateConnections" :key="item.config_id"
+                                        :value="item.config_id">{{ item.name }}</option>
+                                </select>
+                            </div>
                             <div class="field"><label>Max Message Length</label><input
                                     v-model.number="form.max_message_length" type="number" min="1" /></div>
                             <div class="field">
@@ -175,6 +191,22 @@
                                     如需持久化，请在 <a href="#/connections" style="color: var(--primary);">连接管理</a> 中新建 MySQL 或
                                     SQLite 连接。
                                 </div>
+                            </div>
+                            <div class="field">
+                                <label>Memory Embedding Model</label>
+                                <select v-model="form.http_embedding_model_ref_id">
+                                    <option value="">不使用</option>
+                                    <option v-for="item in embeddingModels" :key="item.config_id"
+                                        :value="item.config_id">{{ item.name }}</option>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label>Weaviate Memory Connection</label>
+                                <select v-model="form.http_weaviate_memory_connection_id">
+                                    <option value="">不使用</option>
+                                    <option v-for="item in memoryWeaviateConnections" :key="item.config_id"
+                                        :value="item.config_id">{{ item.name }}</option>
+                                </select>
                             </div>
                         </template>
                     </div>
@@ -531,6 +563,22 @@
                                     SQLite 连接。
                                 </div>
                             </div>
+                            <div class="field">
+                                <label>Memory Embedding Model</label>
+                                <select v-model="form.http_embedding_model_ref_id">
+                                    <option value="">不使用</option>
+                                    <option v-for="item in embeddingModels" :key="item.config_id"
+                                        :value="item.config_id">{{ item.name }}</option>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label>Weaviate Memory Connection</label>
+                                <select v-model="form.http_weaviate_memory_connection_id">
+                                    <option value="">不使用</option>
+                                    <option v-for="item in memoryWeaviateConnections" :key="item.config_id"
+                                        :value="item.config_id">{{ item.name }}</option>
+                                </select>
+                            </div>
 
                             <div class="editor-card" style="margin-top: 12px;">
                                 <div class="split-header">
@@ -851,6 +899,9 @@ const tokenizerConnections = computed(() => connections.value.filter((item) => i
 const imageWeaviateConnections = computed(() =>
     connections.value.filter((item) => item.kind.type === "weaviate" && item.kind.collection_schema === "image_semantic"),
 );
+const memoryWeaviateConnections = computed(() =>
+    connections.value.filter((item) => item.kind.type === "weaviate" && item.kind.collection_schema === "agent_memory"),
+);
 const ignoreRulesDisabledReason = computed(() => {
     if (!editingAgentId.value) {
         return "请先保存当前 Agent，再管理 Ignore Rules。";
@@ -1160,6 +1211,14 @@ async function submitForm() {
             alert("启用 web_search 时，HTTP Stream Agent 需要绑定 Web Search Engine 连接");
             return;
         }
+        if (form.type === "qq_chat" && form.weaviate_memory_connection_id && !form.embedding_model_ref_id) {
+            alert("QQ Chat Agent 启用记忆库时需要绑定文本向量模型");
+            return;
+        }
+        if (form.type === "http_stream" && form.http_weaviate_memory_connection_id && !form.http_embedding_model_ref_id) {
+            alert("HTTP Stream Agent 启用记忆库时需要绑定文本向量模型");
+            return;
+        }
         if (form.id) {
             await system.agents.update(form.id, payload);
         } else {
@@ -1238,6 +1297,7 @@ function summarizeAgent(agent: AgentWithRuntime): Array<{ label: string; value: 
             { label: "意图分类模型", value: llmRefName(String(agentType.intent_llm_ref_id ?? "")) || llmName(agent) },
             { label: "数学编程模型", value: llmRefName(String(agentType.math_programming_llm_ref_id ?? "")) || llmName(agent) },
             { label: "文本向量模型", value: llmRefName(String(agentType.embedding_model_ref_id ?? "")) || "未绑定" },
+            { label: "记忆 Weaviate", value: connectionName(String(agentType.weaviate_memory_connection_id ?? "")) || "未绑定" },
             { label: "分词 Tokenizer", value: connectionName(String(agentType.tokenizer_connection_id ?? "")) || "未绑定" },
             { label: "System Prompt", value: String(agentType.system_prompt ?? "").trim() ? "已配置" : "未设置" },
             { label: "Max Message", value: String(agentType.max_message_length ?? 500) },
@@ -1248,6 +1308,8 @@ function summarizeAgent(agent: AgentWithRuntime): Array<{ label: string; value: 
             { label: "Bind", value: String(agentType.bind ?? "127.0.0.1:18080"), mono: true },
             { label: "API Key", value: String(agentType.api_key ?? "") ? "已配置" : "未设置" },
             { label: "Web Search", value: connectionName(String(agentType.web_search_engine_connection_id ?? "")) || "未绑定" },
+            { label: "记忆向量模型", value: llmRefName(String(agentType.embedding_model_ref_id ?? "")) || "未绑定" },
+            { label: "记忆 Weaviate", value: connectionName(String(agentType.weaviate_memory_connection_id ?? "")) || "未绑定" },
             { label: "web_search", value: (agentType.default_tools_enabled as Record<string, unknown> | undefined)?.web_search === false ? "关闭" : "开启" },
         );
     }

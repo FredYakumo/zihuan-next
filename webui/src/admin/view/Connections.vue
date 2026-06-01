@@ -108,8 +108,8 @@
               <div class="field-full">
                 <label>Collection Schema</label>
                 <select v-model="form.weaviate_collection_schema">
-                  <option value="message_record_semantic">消息记录语义</option>
                   <option value="image_semantic">图片语义</option>
+                  <option value="agent_memory">Agent 记忆</option>
                 </select>
               </div>
             </template>
@@ -298,8 +298,8 @@
                 <div class="key-value connection-card-edit-row">
                   <strong>Schema</strong>
                   <select v-model="form.weaviate_collection_schema" class="connection-card-inline-input">
-                    <option value="message_record_semantic">消息记录语义</option>
                     <option value="image_semantic">图片语义</option>
+                    <option value="agent_memory">Agent 记忆</option>
                   </select>
                 </div>
               </template>
@@ -701,7 +701,7 @@ function summarizeConnection(connection: ConnectionConfig): Array<{ label: strin
 
 function formatWeaviateSchema(schema: string): string {
   if (schema === "image_semantic") return "图片语义";
-  if (schema === "message_record_semantic") return "消息记录语义";
+  if (schema === "agent_memory") return "Agent 记忆";
   return schema || "未设置";
 }
 

@@ -206,6 +206,16 @@ pub fn build_router(
                 .push(Router::with_path("mysql").get(explorer::query_mysql))
                 .push(Router::with_path("redis").get(explorer::query_redis))
                 .push(Router::with_path("weaviate").get(explorer::query_weaviate))
+                .push(
+                    Router::with_path("agent-memory")
+                        .post(explorer::create_agent_memory)
+                        .push(
+                            Router::with_path("<object_id>")
+                                .get(explorer::get_agent_memory)
+                                .put(explorer::update_agent_memory)
+                                .delete(explorer::delete_agent_memory),
+                        ),
+                )
                 .push(Router::with_path("rustfs").get(explorer::query_rustfs)),
         );
 

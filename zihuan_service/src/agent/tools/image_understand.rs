@@ -73,7 +73,7 @@ impl BrainTool for ImageUnderstandBrainTool {
 pub(crate) fn build_image_understand_spec() -> StaticFunctionToolSpec {
     StaticFunctionToolSpec {
         name: DEFAULT_TOOL_IMAGE_UNDERSTAND,
-        description: "通过 media_id 分析图片内容，返回简洁文字描述",
+            description: "根据 media_id 理解图片内容，并返回简洁、客观的文字描述",
         parameters: serde_json::json!({
             "type": "object",
             "properties": {

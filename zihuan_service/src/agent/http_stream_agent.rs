@@ -7,14 +7,20 @@ use model_inference::system_config::{
 use salvo::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use salvo::http::{HeaderValue, StatusCode};
 use salvo::prelude::*;
-use storage_handler::{build_web_search_engine_ref, ConnectionConfig};
+use storage_handler::{
+    build_weaviate_ref, build_web_search_engine_ref, AgentMemoryAccessContext, ConnectionConfig,
+    WeaviateCollectionSchema,
+};
 use tokio::task::JoinHandle;
 use zihuan_agent::brain::BrainTool;
 use zihuan_core::command::{
     CommandChannel, CommandContext, NewConversationRequest, SideEffectContext,
 };
 use zihuan_core::error::{Error, Result};
+use zihuan_core::llm::embedding_base::EmbeddingBase;
+use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::{MessageRole, OpenAIMessage};
+use zihuan_core::runtime::block_async;
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::task_context::{
     AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
@@ -26,7 +32,11 @@ use zihuan_graph_engine::data_value::EXECUTION_TASK_ID;
 use super::inference::{infer_agent_response, resolve_agent_model_name};
 use super::inference::{InferenceToolContext, InferenceToolProvider};
 use super::tool_definitions::build_enabled_tool_definitions;
-use super::tools::{ToolNotificationTarget, WebSearchBrainTool, DEFAULT_TOOL_WEB_SEARCH};
+use super::tools::build_info_brain_tools;
+use crate::resource_resolver::{
+    build_llm_model, resolve_llm_service_config, resolve_local_embedding_model_name,
+};
+use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
 
 #[derive(Clone)]
@@ -70,6 +80,9 @@ enum HttpStreamCompletion {
 struct HttpStreamLoadedInferenceResources {
     web_search_engine_ref: Option<Arc<WebSearchEngineRef>>,
     default_tools_enabled: std::collections::HashMap<String, bool>,
+    weaviate_memory_ref: Option<Arc<zihuan_core::weaviate::WeaviateRef>>,
+    embedding_model: Option<Arc<dyn EmbeddingBase>>,
+    memory_llm: Option<Arc<dyn LLMBase>>,
 }
 
 pub struct HttpStreamInferenceToolProvider {
@@ -79,24 +92,18 @@ pub struct HttpStreamInferenceToolProvider {
 
 impl InferenceToolProvider for HttpStreamInferenceToolProvider {
     fn build_default_tools(&self, _context: &InferenceToolContext) -> Vec<Box<dyn BrainTool>> {
-        let web_search_enabled = *self
-            .resources
-            .default_tools_enabled
-            .get(DEFAULT_TOOL_WEB_SEARCH)
-            .unwrap_or(&true);
-
-        if !web_search_enabled {
-            return Vec::new();
-        }
-
-        let Some(web_search_engine_ref) = self.resources.web_search_engine_ref.as_ref() else {
-            return Vec::new();
-        };
-
-        vec![Box::new(WebSearchBrainTool::new(
-            web_search_engine_ref.clone(),
-            ToolNotificationTarget::dashboard(),
-        ))]
+        build_info_brain_tools(
+            &self.resources.default_tools_enabled,
+            self.resources.web_search_engine_ref.clone(),
+            None,
+            None,
+            None,
+            self.resources.weaviate_memory_ref.clone(),
+            self.resources.embedding_model.clone(),
+            self.resources.memory_llm.clone(),
+            AgentMemoryAccessContext::default(),
+            String::new(),
+        )
     }
 
     fn tool_definitions(&self) -> Vec<BrainToolDefinition> {
@@ -133,9 +140,61 @@ fn load_http_stream_resources(
         None
     });
 
+    let weaviate_memory_ref = tokio::task::block_in_place(|| {
+        build_weaviate_ref(
+            config
+                .weaviate_memory_connection_id
+                .as_deref()
+                .filter(|value| !value.trim().is_empty()),
+            connections,
+            Some(WeaviateCollectionSchema::AgentMemory),
+        )
+    })
+    .unwrap_or_else(|error| {
+        log::warn!("[inference][http_stream] weaviate memory connection unavailable: {error}");
+        None
+    });
+
+    let llm_refs = load_llm_refs().unwrap_or_default();
+    let embedding_model = config
+        .embedding_model_ref_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .and_then(|model_ref_id| {
+            match resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, "http_stream") {
+                Ok(Some(_)) => {
+                    block_async(
+                        RuntimeEmbeddingModelManager::shared()
+                            .get_or_create_embedding_model(model_ref_id),
+                    )
+                    .ok()
+                }
+                Ok(None) => None,
+                Err(error) => {
+                    log::warn!(
+                        "[inference][http_stream] embedding model ref unavailable: {error}"
+                    );
+                    None
+                }
+            }
+        });
+
+    let memory_llm = config
+        .llm_ref_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(|llm_ref_id| resolve_llm_service_config(Some(llm_ref_id), &llm_refs, "http_stream"))
+        .transpose()
+        .ok()
+        .flatten()
+        .and_then(|llm_config| build_llm_model(&llm_config).ok());
+
     HttpStreamLoadedInferenceResources {
         web_search_engine_ref,
         default_tools_enabled: config.default_tools_enabled.clone(),
+        weaviate_memory_ref,
+        embedding_model,
+        memory_llm,
     }
 }
 

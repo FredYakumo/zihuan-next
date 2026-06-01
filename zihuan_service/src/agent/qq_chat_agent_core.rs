@@ -17,7 +17,8 @@ use super::tools::{
     DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
     DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
     DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_REPLY_MESSAGE, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
-    DEFAULT_TOOL_WEB_SEARCH,
+    DEFAULT_TOOL_WEB_SEARCH, DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS,
+    DEFAULT_TOOL_REMEMBER_CONTENT, DEFAULT_TOOL_SEARCH_MEMORY_CONTENT,
 };
 use crate::nodes::tool_subgraph::{
     validate_shared_inputs, validate_tool_definitions, ToolResultMode,
@@ -218,6 +219,9 @@ fn default_tools_enabled_map() -> HashMap<String, bool> {
         DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
         DEFAULT_TOOL_IMAGE_UNDERSTAND,
         DEFAULT_TOOL_REPLY_MESSAGE,
+        DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS,
+        DEFAULT_TOOL_SEARCH_MEMORY_CONTENT,
+        DEFAULT_TOOL_REMEMBER_CONTENT,
     ]
     .into_iter()
     .map(|name| (name.to_string(), true))
@@ -1483,6 +1487,7 @@ pub(crate) struct QqChatAgentContext<'a> {
     rdb_pool: Option<&'a RelationalDbConnection>,
     mysql_ref: Option<&'a Arc<MySqlConfig>>,
     weaviate_image_ref: Option<&'a Arc<WeaviateRef>>,
+    weaviate_memory_ref: Option<&'a Arc<WeaviateRef>>,
     embedding_model: Option<&'a Arc<dyn EmbeddingBase>>,
     web_search_engine: &'a Arc<WebSearchEngineRef>,
     s3_ref: Option<&'a Arc<S3Ref>>,
@@ -1872,6 +1877,7 @@ pub struct QqChatAgentServiceConfig {
     pub rdb_pool: Option<RelationalDbConnection>,
     pub mysql_ref: Option<Arc<MySqlConfig>>,
     pub weaviate_image_ref: Option<Arc<WeaviateRef>>,
+    pub weaviate_memory_ref: Option<Arc<WeaviateRef>>,
     pub embedding_model: Option<Arc<dyn EmbeddingBase>>,
     pub web_search_engine: Arc<WebSearchEngineRef>,
     pub s3_ref: Option<Arc<S3Ref>>,
@@ -1934,6 +1940,7 @@ impl QqChatAgentService {
             rdb_pool: self.config.rdb_pool.as_ref(),
             mysql_ref: self.config.mysql_ref.as_ref(),
             weaviate_image_ref: self.config.weaviate_image_ref.as_ref(),
+            weaviate_memory_ref: self.config.weaviate_memory_ref.as_ref(),
             embedding_model: self.config.embedding_model.as_ref(),
             web_search_engine: &self.config.web_search_engine,
             s3_ref: self.config.s3_ref.as_ref(),

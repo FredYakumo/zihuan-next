@@ -32,15 +32,19 @@ use super::super::qq_chat_agent_msg_send::{
 use ims_bot_adapter::tools::qq_profile::{GetBotProfileBrainTool, GetQqUserProfileBrainTool};
 
 use super::super::tools::{
-    CurrentTimeBrainTool, EditableQqAgentTool, GetAgentPublicInfoBrainTool,
-    GetFunctionListBrainTool, GetRecentGroupMessagesBrainTool, GetRecentUserMessagesBrainTool,
-    ImageUnderstandBrainTool, ReplyMessageBrainTool, SearchSimilarImagesBrainTool,
-    ToolNotificationTarget, WebSearchBrainTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
-    DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
-    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
-    DEFAULT_TOOL_REPLY_MESSAGE, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
-    QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
+    AgentMemoryToolResources, CurrentTimeBrainTool, EditableQqAgentTool,
+    GetAgentPublicInfoBrainTool, GetFunctionListBrainTool, GetRecentGroupMessagesBrainTool,
+    GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool,
+    ListAvailableMemoryKeysBrainTool, RememberContentBrainTool, ReplyMessageBrainTool,
+    SearchMemoryContentBrainTool, SearchSimilarImagesBrainTool, ToolNotificationTarget,
+    WebSearchBrainTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
+    DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
+    DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS,
+    DEFAULT_TOOL_REMEMBER_CONTENT, DEFAULT_TOOL_REPLY_MESSAGE,
+    DEFAULT_TOOL_SEARCH_MEMORY_CONTENT, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
+    DEFAULT_TOOL_WEB_SEARCH, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
 };
+use storage_handler::AgentMemoryAccessContext;
 
 use crate::nodes::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 use crate::storage::qq_chat_history_store::{conversation_history_key, load_history, save_history};
@@ -587,6 +591,39 @@ impl QqChatAgent {
             brain = brain.with_tool(ReplyMessageBrainTool::new(Arc::clone(
                 &shared_runtime_values,
             )));
+        }
+
+        if let (Some(memory_ref), Some(embedding_model)) =
+            (ctx.weaviate_memory_ref.cloned(), ctx.embedding_model.cloned())
+        {
+            let memory_resources = AgentMemoryToolResources {
+                memory_ref,
+                embedding_model,
+                llm: Arc::clone(ctx.llm),
+                access: AgentMemoryAccessContext {
+                    sender_id: Some(sender_id.to_string()),
+                    group_id: if is_group {
+                        Some(target_id.to_string())
+                    } else {
+                        hydrated_event.group_id.map(|value| value.to_string())
+                    },
+                    is_group,
+                    admin: false,
+                },
+            };
+            if self.is_default_tool_enabled(DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS) {
+                brain = brain.with_tool(ListAvailableMemoryKeysBrainTool::new(
+                    memory_resources.clone(),
+                ));
+            }
+            if self.is_default_tool_enabled(DEFAULT_TOOL_SEARCH_MEMORY_CONTENT) {
+                brain = brain.with_tool(SearchMemoryContentBrainTool::new(
+                    memory_resources.clone(),
+                ));
+            }
+            if self.is_default_tool_enabled(DEFAULT_TOOL_REMEMBER_CONTENT) {
+                brain = brain.with_tool(RememberContentBrainTool::new(memory_resources));
+            }
         }
 
         brain = brain.with_tool(GetBotProfileBrainTool::new(

@@ -10,8 +10,8 @@ use crate::error::{Error, Result};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WeaviateCollectionSchema {
-    MessageRecordSemantic,
     ImageSemantic,
+    AgentMemory,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,7 +28,7 @@ pub struct WeaviateRef {
     pub password: Option<String>,
     pub api_key: Option<String>,
     pub timeout: Duration,
-    client: Client,
+    pub client: Client,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -129,184 +129,11 @@ impl WeaviateRef {
         self.post_json("/v1/graphql", json!({ "query": query }))
     }
 
-    pub fn list_collections(&self) -> Result<Vec<String>> {
-        let schema = self.schema()?;
-        let classes = schema
-            .get("classes")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-
-        Ok(classes
-            .into_iter()
-            .filter_map(|class| {
-                class
-                    .get("class")
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
-            })
-            .collect())
-    }
-
-    pub fn collection_exists(&self, class_name: &str) -> Result<bool> {
-        Ok(self
-            .list_collections()?
-            .iter()
-            .any(|existing| existing == class_name))
-    }
-
-    pub fn create_collection(&self, collection: &WeaviateCollectionConfig) -> Result<Value> {
-        self.post_json("/v1/schema", serde_json::to_value(collection)?)
-    }
-
-    pub fn ensure_collection(&self, collection: &WeaviateCollectionConfig) -> Result<()> {
-        if self.collection_exists(&collection.class_name)? {
-            return Ok(());
-        }
-
-        self.create_collection(collection)?;
-        Ok(())
-    }
-
-    pub fn find_collection_schema(&self, class_name: &str) -> Result<Option<Value>> {
-        let schema = self.schema()?;
-        let classes = schema
-            .get("classes")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-
-        Ok(classes.into_iter().find(|class| {
-            class
-                .get("class")
-                .and_then(Value::as_str)
-                .map(|name| name == class_name)
-                .unwrap_or(false)
-        }))
-    }
-
-    pub fn delete_collection(&self, class_name: &str) -> Result<()> {
-        self.delete_empty(&format!("/v1/schema/{class_name}"))
-    }
-
-    pub fn upsert_object(
-        &self,
-        class_name: &str,
-        properties: Value,
-        vector: Option<Vec<f32>>,
-        id: Option<&str>,
-    ) -> Result<Value> {
-        let mut payload = json!({
-            "class": class_name,
-            "properties": properties,
-        });
-        if let Some(id) = id.filter(|value| !value.trim().is_empty()) {
-            payload["id"] = Value::String(id.to_string());
-        }
-        if let Some(vector) = vector {
-            payload["vector"] = serde_json::to_value(vector)?;
-        }
-        self.post_json("/v1/objects", payload)
-    }
-
-    pub fn upsert_object_with_vectors(
-        &self,
-        class_name: &str,
-        properties: Value,
-        vectors: HashMap<String, Vec<f32>>,
-        id: Option<&str>,
-    ) -> Result<Value> {
-        let mut payload = json!({
-            "class": class_name,
-            "properties": properties,
-        });
-        if let Some(id) = id.filter(|value| !value.trim().is_empty()) {
-            payload["id"] = Value::String(id.to_string());
-        }
-        if !vectors.is_empty() {
-            payload["vectors"] = serde_json::to_value(vectors)?;
-        }
-        self.post_json("/v1/objects", payload)
-    }
-
-    pub fn batch_upsert_objects(&self, objects: &[WeaviateObjectInput]) -> Result<Value> {
-        self.post_json("/v1/batch/objects", json!({ "objects": objects }))
-    }
-
-    pub fn get_object(&self, class_name: &str, id: &str) -> Result<Value> {
-        self.get_json(&format!("/v1/objects/{class_name}/{id}"))
-    }
-
-    pub fn delete_object(&self, class_name: &str, id: &str) -> Result<()> {
-        self.delete_empty(&format!("/v1/objects/{class_name}/{id}"))
-    }
-
-    pub fn query_all(
-        &self,
-        class_name: &str,
-        limit: usize,
-        property_names: &[String],
-    ) -> Result<Value> {
-        let mut requested_fields = property_names
-            .iter()
-            .filter(|value| !value.trim().is_empty())
-            .cloned()
-            .collect::<Vec<_>>();
-        requested_fields.push("_additional { id }".to_string());
-        let fields = requested_fields.join(" ");
-        let graphql = format!("{{ Get {{ {class_name}(limit: {limit}) {{ {fields} }} }} }}");
-        self.execute_graphql_query(&graphql)
-    }
-
-    pub fn query_near_vector(
-        &self,
-        class_name: &str,
-        vector: &[f32],
-        target_vector: Option<&str>,
-        limit: usize,
-        property_names: &[String],
-        include_distance: bool,
-        include_vector: bool,
-    ) -> Result<Value> {
-        let mut requested_fields = property_names
-            .iter()
-            .filter(|value| !value.trim().is_empty())
-            .cloned()
-            .collect::<Vec<_>>();
-        let mut additional_fields = vec!["id".to_string()];
-        if include_distance {
-            additional_fields.push("distance".to_string());
-        }
-        if include_vector {
-            additional_fields.push("vector".to_string());
-        }
-        requested_fields.push(format!("_additional {{ {} }}", additional_fields.join(" ")));
-        let vector_body = vector
-            .iter()
-            .map(|value| {
-                let mut rendered = value.to_string();
-                if !rendered.contains('.') && !rendered.contains('e') && !rendered.contains('E') {
-                    rendered.push_str(".0");
-                }
-                rendered
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        let fields = requested_fields.join(" ");
-        let target_clause = target_vector
-            .map(|tv| format!(r#", targetVectors: ["{}"]"#, tv))
-            .unwrap_or_default();
-        let graphql = format!(
-            "{{ Get {{ {class_name}(nearVector: {{ vector: [{vector_body}]{target_clause} }}, limit: {limit}) {{ {fields} }} }} }}"
-        );
-        self.execute_graphql_query(&graphql)
-    }
-
-    fn url(&self, path: &str) -> String {
+    pub fn url(&self, path: &str) -> String {
         format!("{}{}", self.base_url, path)
     }
 
-    fn authorized(&self, builder: RequestBuilder) -> RequestBuilder {
+    pub fn authorized(&self, builder: RequestBuilder) -> RequestBuilder {
         if let Some(api_key) = &self.api_key {
             builder.bearer_auth(api_key)
         } else if self.username.is_some() || self.password.is_some() {
@@ -319,19 +146,23 @@ impl WeaviateRef {
         }
     }
 
-    fn get_json(&self, path: &str) -> Result<Value> {
+    pub fn get_json(&self, path: &str) -> Result<Value> {
         crate::runtime::block_async(self.get_json_async(path))
     }
 
-    fn post_json(&self, path: &str, body: Value) -> Result<Value> {
+    pub fn post_json(&self, path: &str, body: Value) -> Result<Value> {
         crate::runtime::block_async(self.post_json_async(path, body))
     }
 
-    fn delete_empty(&self, path: &str) -> Result<()> {
+    pub fn put_json(&self, path: &str, body: Value) -> Result<Value> {
+        crate::runtime::block_async(self.put_json_async(path, body))
+    }
+
+    pub fn delete_empty(&self, path: &str) -> Result<()> {
         crate::runtime::block_async(self.delete_empty_async(path))
     }
 
-    async fn ready_async(&self) -> Result<bool> {
+    pub async fn ready_async(&self) -> Result<bool> {
         let response = self
             .authorized(self.client.get(self.url("/v1/.well-known/ready")))
             .send()
@@ -350,11 +181,11 @@ impl WeaviateRef {
         )))
     }
 
-    async fn get_json_async(&self, path: &str) -> Result<Value> {
+    pub async fn get_json_async(&self, path: &str) -> Result<Value> {
         Self::send_json_async(self.authorized(self.client.get(self.url(path)))).await
     }
 
-    async fn post_json_async(&self, path: &str, body: Value) -> Result<Value> {
+    pub async fn post_json_async(&self, path: &str, body: Value) -> Result<Value> {
         Self::send_json_async(
             self.authorized(self.client.post(self.url(path)))
                 .json(&body),
@@ -362,7 +193,15 @@ impl WeaviateRef {
         .await
     }
 
-    async fn delete_empty_async(&self, path: &str) -> Result<()> {
+    pub async fn put_json_async(&self, path: &str, body: Value) -> Result<Value> {
+        Self::send_json_async(
+            self.authorized(self.client.put(self.url(path)))
+                .json(&body),
+        )
+        .await
+    }
+
+    pub async fn delete_empty_async(&self, path: &str) -> Result<()> {
         let response = self
             .authorized(self.client.delete(self.url(path)))
             .send()
@@ -378,7 +217,7 @@ impl WeaviateRef {
         )))
     }
 
-    async fn send_json_async(builder: RequestBuilder) -> Result<Value> {
+    pub async fn send_json_async(builder: RequestBuilder) -> Result<Value> {
         let response = builder.send().await?;
         let status = response.status();
         let body = response.text().await?;
@@ -445,4 +284,33 @@ fn normalize_owned_optional_string(value: Option<String>) -> Option<String> {
     value
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+pub fn gql_escape(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+}
+
+pub fn graphql_value(value: &Value) -> String {
+    match value {
+        Value::String(s) => format!("\"{}\"", gql_escape(s)),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => n.to_string(),
+        Value::Array(items) => {
+            let rendered = items.iter().map(graphql_value).collect::<Vec<_>>().join(", ");
+            format!("[{}]", rendered)
+        }
+        Value::Object(map) => {
+            let rendered = map
+                .iter()
+                .map(|(k, v)| format!("{}: {}", k, graphql_value(v)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{{{}}}", rendered)
+        }
+        Value::Null => "null".to_string(),
+    }
 }

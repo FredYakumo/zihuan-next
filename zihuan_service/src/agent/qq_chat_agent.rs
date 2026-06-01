@@ -24,7 +24,7 @@ use model_inference::system_config::{load_llm_refs, AgentConfig, LlmRefConfig};
 use storage_handler::{
     build_mysql_ref, build_relational_db_connection_for_connection, build_s3_ref,
     build_weaviate_ref, build_web_search_engine_ref, find_connection, ConnectionConfig,
-    ConnectionKind,
+    ConnectionKind, WeaviateCollectionSchema,
 };
 use tokio::task::JoinHandle;
 use zihuan_agent::brain::BrainTool;
@@ -32,6 +32,7 @@ use zihuan_core::agent_config::QqChatAgentConfig;
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
+use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::OpenAIMessage;
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::runtime::block_async;
@@ -63,7 +64,9 @@ struct QqLoadedInferenceResources {
     mysql_ref: Option<Arc<MySqlConfig>>,
     s3_ref: Option<Arc<S3Ref>>,
     weaviate_image_ref: Option<Arc<WeaviateRef>>,
+    weaviate_memory_ref: Option<Arc<WeaviateRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
+    memory_llm: Option<Arc<dyn LLMBase>>,
 }
 
 pub struct QqInferenceToolProvider {
@@ -89,7 +92,10 @@ impl InferenceToolProvider for QqInferenceToolProvider {
             self.resources.mysql_ref.clone(),
             self.resources.s3_ref.clone(),
             self.resources.weaviate_image_ref.clone(),
+            self.resources.weaviate_memory_ref.clone(),
             self.resources.embedding_model.clone(),
+            self.resources.memory_llm.clone(),
+            storage_handler::AgentMemoryAccessContext::default(),
             context.last_user_text.clone(),
         )
     }
@@ -152,11 +158,25 @@ fn load_qq_resources(
                 config.weaviate_image_connection_id.as_deref()
             },
             connections,
-            true,
+            Some(WeaviateCollectionSchema::ImageSemantic),
         )
     })
     .unwrap_or_else(|e| {
         warn!("[inference][qq_agent] weaviate image connection unavailable: {e}");
+        None
+    });
+    let weaviate_memory_ref = tokio::task::block_in_place(|| {
+        build_weaviate_ref(
+            config
+                .weaviate_memory_connection_id
+                .as_deref()
+                .filter(|value| !value.trim().is_empty()),
+            connections,
+            Some(WeaviateCollectionSchema::AgentMemory),
+        )
+    })
+    .unwrap_or_else(|e| {
+        warn!("[inference][qq_agent] weaviate memory connection unavailable: {e}");
         None
     });
 
@@ -176,6 +196,18 @@ fn load_qq_resources(
     } else {
         config.embedding.as_ref().map(build_embedding_model)
     };
+    let memory_llm = config
+        .llm_ref_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(|llm_ref_id| resolve_llm_service_config(Some(llm_ref_id), &load_llm_refs().unwrap_or_default(), &agent.name))
+        .transpose()?
+        .map(|llm_config| build_llm_model(&llm_config))
+        .transpose()
+        .unwrap_or_else(|err| {
+            warn!("[inference][qq_agent] memory llm unavailable: {err}");
+            None
+        });
 
     Ok(QqLoadedInferenceResources {
         bot_name: if config.bot_name.trim().is_empty() {
@@ -188,7 +220,9 @@ fn load_qq_resources(
         mysql_ref,
         s3_ref,
         weaviate_image_ref,
+        weaviate_memory_ref,
         embedding_model,
+        memory_llm,
     })
 }
 
@@ -299,7 +333,17 @@ pub async fn spawn(
         build_weaviate_ref(
             config.weaviate_image_connection_id.as_deref(),
             &connections,
-            true,
+            Some(WeaviateCollectionSchema::ImageSemantic),
+        )
+    })?;
+    let weaviate_memory_ref = tokio::task::block_in_place(|| {
+        build_weaviate_ref(
+            config
+                .weaviate_memory_connection_id
+                .as_deref()
+                .filter(|value| !value.trim().is_empty()),
+            &connections,
+            Some(WeaviateCollectionSchema::AgentMemory),
         )
     })?;
     let tool_definitions = build_enabled_tool_definitions(&agent.tools)?;
@@ -357,6 +401,7 @@ pub async fn spawn(
         rdb_pool,
         mysql_ref,
         weaviate_image_ref,
+        weaviate_memory_ref,
         embedding_model,
         web_search_engine,
         s3_ref: object_storage.clone(),
