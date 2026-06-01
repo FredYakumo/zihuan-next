@@ -77,6 +77,10 @@ pub struct QqChatEmotionDimensionConfig {
     pub increase_weight: f64,
     #[serde(default = "default_emotion_adjust_weight")]
     pub decrease_weight: f64,
+    #[serde(default)]
+    pub positive_prompt: Option<String>,
+    #[serde(default)]
+    pub negative_prompt: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -166,6 +170,8 @@ impl QqChatAgentConfig {
                 name: name.to_string(),
                 increase_weight: sanitize_emotion_adjust_weight(dimension.increase_weight),
                 decrease_weight: sanitize_emotion_adjust_weight(dimension.decrease_weight),
+                positive_prompt: dimension.positive_prompt.clone(),
+                negative_prompt: dimension.negative_prompt.clone(),
             });
         }
         if dimensions.is_empty() {
@@ -220,6 +226,8 @@ fn default_qq_chat_emotion_dimensions() -> Vec<QqChatEmotionDimensionConfig> {
             name: name.to_string(),
             increase_weight: default_emotion_adjust_weight(),
             decrease_weight: default_emotion_adjust_weight(),
+            positive_prompt: None,
+            negative_prompt: None,
         })
         .collect()
 }

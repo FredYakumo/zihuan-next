@@ -370,12 +370,17 @@ fn build_reply_llm_messages(
         serde_json::to_string(&session_state.extra_state).unwrap_or_else(|_| "{}".to_string())
     ));
 
+    let resolved_emotion = resolve_emotion_prompt(session_state, emotion_dimensions);
+
     let mut task_message = format!("回复目标：{goal}\n\n必须覆盖的要点：");
     for (index, item) in key_points.iter().enumerate() {
         task_message.push_str(&format!("\n{}. {}", index + 1, item));
     }
     if let Some(tone_hint) = tone_hint {
         task_message.push_str(&format!("\n\n语气提示：{tone_hint}"));
+    }
+    if let Some(emotion_prompt) = &resolved_emotion {
+        task_message.push_str(&format!("\n\n当前情绪风格指引：{emotion_prompt}"));
     }
     task_message.push_str(&format!(
         "\n\n当前会话类型：{}",
@@ -414,6 +419,118 @@ fn build_reply_llm_messages(
         state_message,
         OpenAIMessage::user(task_message),
     ]
+}
+
+fn resolve_emotion_prompt(
+    session_state: &QqChatAgentSessionState,
+    emotion_dimensions: &[QqChatEmotionDimensionConfig],
+) -> Option<String> {
+    const NEUTRAL_THRESHOLD: f64 = 0.3;
+    const STRONG_THRESHOLD: f64 = 1.0;
+
+    let parts: Vec<String> = session_state
+        .ordered_emotion_dimensions(emotion_dimensions)
+        .into_iter()
+        .filter_map(|(name, value)| {
+            let abs_value = value.abs();
+            if abs_value < NEUTRAL_THRESHOLD {
+                return None;
+            }
+
+            let config = emotion_dimensions
+                .iter()
+                .find(|d| d.name.trim() == name.trim())?;
+
+            let coordinate = (50.0 + value * 50.0).round() as i64;
+            let is_positive = value >= 0.0;
+
+            if abs_value >= STRONG_THRESHOLD {
+                // Strongly one direction — use full prompt
+                let prompt: String = if is_positive {
+                    config
+                        .positive_prompt
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or(&name)
+                        .to_string()
+                } else {
+                    let p = config
+                        .negative_prompt
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty());
+                    match p {
+                        Some(s) => s.to_string(),
+                        None => format!("不{name}"),
+                    }
+                };
+
+                Some(format!("{prompt}（坐标{coordinate}/100）"))
+            } else {
+                // Mixed — mainly dominant, slightly weaker
+                let dominant = if is_positive {
+                    config
+                        .positive_prompt
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or(&name)
+                        .to_string()
+                } else {
+                    config
+                        .negative_prompt
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or("")
+                        .to_string()
+                };
+                let dominant = if dominant.is_empty() {
+                    format!("不{name}")
+                } else {
+                    dominant
+                };
+
+                let weaker = if is_positive {
+                    config
+                        .negative_prompt
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or("")
+                        .to_string()
+                } else {
+                    config
+                        .positive_prompt
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or(&name)
+                        .to_string()
+                };
+                let weaker = if weaker.is_empty() {
+                    if is_positive {
+                        format!("不{name}")
+                    } else {
+                        name.clone()
+                    }
+                } else {
+                    weaker
+                };
+
+                Some(format!(
+                    "主要是{dominant}，稍微偏向{weaker} {abs_value:.1}点（坐标{coordinate}/100）",
+                ))
+            }
+        })
+        .collect();
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("；"))
+    }
 }
 
 fn resolve_available_media(media_ids: &[String]) -> Result<HashMap<String, PersistedMedia>> {

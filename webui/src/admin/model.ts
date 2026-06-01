@@ -145,6 +145,8 @@ export type QqChatEmotionDimensionFormItem = {
   name: string;
   increase_weight?: number;
   decrease_weight?: number;
+  positive_prompt?: string;
+  negative_prompt?: string;
 };
 
 export function isBotAdapterConnectionType(
@@ -238,7 +240,6 @@ export function defaultQqChatEmotionDimensions(): QqChatEmotionDimensionFormItem
     { name: "激动", increase_weight: 1, decrease_weight: 1 },
   ];
 }
-
 export function defaultHttpStreamDefaultToolsEnabled(): Record<
   string,
   boolean
@@ -894,10 +895,19 @@ function normalizeQqChatEmotionDimensions(
       throw new Error(`情绪维度 '${name}' 的 decrease_weight 必须大于 0`);
     }
 
+    const positivePrompt = String(
+      (item as Record<string, unknown>).positive_prompt ?? "",
+    ).trim();
+    const negativePrompt = String(
+      (item as Record<string, unknown>).negative_prompt ?? "",
+    ).trim();
+
     return {
       name,
       increase_weight: increaseWeight,
       decrease_weight: decreaseWeight,
+      ...(positivePrompt ? { positive_prompt: positivePrompt } : {}),
+      ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
     };
   });
 

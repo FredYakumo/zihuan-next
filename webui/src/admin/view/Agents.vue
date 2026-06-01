@@ -1277,6 +1277,20 @@
                       emotionDimensionDraft.decrease_weight
                     }}</span>
                   </div>
+                  <div class="field-full">
+                    <label>正向风格提示词（可选）</label>
+                    <input
+                      v-model="emotionDimensionDraft.positive_prompt"
+                      placeholder="维度值正向时的语言风格，留空用维度名称"
+                    />
+                  </div>
+                  <div class="field-full">
+                    <label>负向风格提示词（可选）</label>
+                    <input
+                      v-model="emotionDimensionDraft.negative_prompt"
+                      placeholder="维度值负向时的语言风格，留空用「不+维度名称」"
+                    />
+                  </div>
                 </div>
                 <div class="emotion-dim-card-actions">
                   <button
@@ -1359,6 +1373,20 @@
                         emotionDimensionDraft.decrease_weight
                       }}</span>
                     </div>
+                    <div class="field-full">
+                      <label>正向风格提示词（可选）</label>
+                      <input
+                        v-model="emotionDimensionDraft.positive_prompt"
+                        placeholder="维度值正向时的语言风格提示，留空用维度名称"
+                      />
+                    </div>
+                    <div class="field-full">
+                      <label>负向风格提示词（可选）</label>
+                      <input
+                        v-model="emotionDimensionDraft.negative_prompt"
+                        placeholder="维度值负向时的语言风格提示，留空用「不+维度名称」"
+                      />
+                    </div>
                   </div>
                   <div class="emotion-dim-card-actions">
                     <button
@@ -1437,6 +1465,16 @@
                       <span class="emotion-dim-bar-value">{{
                         dimension.decrease_weight ?? 1
                       }}</span>
+                    </div>
+                  </div>
+                  <div v-if="dimension.positive_prompt || dimension.negative_prompt" class="emotion-dim-prompts" style="margin-top: 8px">
+                    <div v-if="dimension.positive_prompt" class="emotion-dim-prompt-line">
+                      <span class="emotion-dim-prompt-label">正向</span>
+                      <span class="emotion-dim-prompt-text">{{ dimension.positive_prompt }}</span>
+                    </div>
+                    <div v-if="dimension.negative_prompt" class="emotion-dim-prompt-line">
+                      <span class="emotion-dim-prompt-label">负向</span>
+                      <span class="emotion-dim-prompt-text">{{ dimension.negative_prompt }}</span>
                     </div>
                   </div>
                 </template>
@@ -1757,10 +1795,14 @@ const emotionDimensionDraft = reactive<{
   name: string;
   increase_weight: number;
   decrease_weight: number;
+  positive_prompt: string;
+  negative_prompt: string;
 }>({
   name: "",
   increase_weight: 1,
   decrease_weight: 1,
+  positive_prompt: "",
+  negative_prompt: "",
 });
 const emotionDimensionEditingIndex = ref<number | null>(null);
 const qqChatDefaultTools = QQ_CHAT_DEFAULT_TOOLS;
@@ -1934,6 +1976,8 @@ function resetEmotionDimensionDraft() {
   emotionDimensionDraft.name = "";
   emotionDimensionDraft.increase_weight = 1;
   emotionDimensionDraft.decrease_weight = 1;
+  emotionDimensionDraft.positive_prompt = "";
+  emotionDimensionDraft.negative_prompt = "";
 }
 
 function startAddEmotionDimension() {
@@ -1971,6 +2015,8 @@ function buildEmotionDimensionPayload(): QqChatEmotionDimensionFormItem | null {
     name,
     increase_weight: emotionDimensionDraft.increase_weight,
     decrease_weight: emotionDimensionDraft.decrease_weight,
+    positive_prompt: emotionDimensionDraft.positive_prompt.trim() || undefined,
+    negative_prompt: emotionDimensionDraft.negative_prompt.trim() || undefined,
   };
 }
 
@@ -2003,6 +2049,8 @@ function editEmotionDimension(index: number) {
   emotionDimensionDraft.name = dimension.name;
   emotionDimensionDraft.increase_weight = Number(dimension.increase_weight ?? 1);
   emotionDimensionDraft.decrease_weight = Number(dimension.decrease_weight ?? 1);
+  emotionDimensionDraft.positive_prompt = dimension.positive_prompt ?? "";
+  emotionDimensionDraft.negative_prompt = dimension.negative_prompt ?? "";
 }
 
 function cancelEditEmotionDimension() {
@@ -2779,5 +2827,33 @@ onMounted(() => {
   background: var(--admin-accent, #5b8def);
   border: 2px solid var(--admin-bg-panel);
   cursor: pointer;
+}
+
+/* ── Prompt display in dimension card ── */
+
+.emotion-dim-prompts {
+  border-top: 1px dashed var(--admin-border);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.emotion-dim-prompt-line {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.emotion-dim-prompt-label {
+  flex-shrink: 0;
+  width: 32px;
+  text-align: right;
+  color: var(--admin-muted);
+}
+
+.emotion-dim-prompt-text {
+  color: color-mix(in srgb, var(--admin-ink) 74%, transparent);
 }
 </style>
