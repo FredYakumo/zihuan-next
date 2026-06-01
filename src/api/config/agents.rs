@@ -512,9 +512,7 @@ pub async fn create_agent(req: &mut Request, res: &mut Response, _depot: &mut De
         Ok(llm_refs) => llm_refs,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) =
-        validate_qq_chat_image_understand_llm(&body.agent_type, &llm_refs, &body.name)
-    {
+    if let Err(message) = validate_qq_chat_agent_llms(&body.agent_type, &llm_refs, &body.name) {
         return render_unprocessable_entity(res, message);
     }
 
@@ -569,9 +567,7 @@ pub async fn update_agent(req: &mut Request, res: &mut Response, _depot: &mut De
         Ok(llm_refs) => llm_refs,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) =
-        validate_qq_chat_image_understand_llm(&body.agent_type, &llm_refs, &body.name)
-    {
+    if let Err(message) = validate_qq_chat_agent_llms(&body.agent_type, &llm_refs, &body.name) {
         return render_unprocessable_entity(res, message);
     }
 
@@ -623,9 +619,7 @@ pub async fn start_agent(req: &mut Request, res: &mut Response, depot: &mut Depo
         Ok(llm_refs) => llm_refs,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) =
-        validate_qq_chat_image_understand_llm(&agent.agent_type, &llm_refs, &agent.name)
-    {
+    if let Err(message) = validate_qq_chat_agent_llms(&agent.agent_type, &llm_refs, &agent.name) {
         return render_unprocessable_entity(res, message);
     }
 
@@ -736,7 +730,7 @@ fn validate_agent_connection_schemas(
     }
 }
 
-fn validate_qq_chat_image_understand_llm(
+fn validate_qq_chat_agent_llms(
     agent_type: &AgentType,
     llm_refs: &[LlmRefConfig],
     agent_name: &str,
@@ -799,6 +793,17 @@ fn validate_qq_chat_image_understand_llm(
                 )),
             }?;
 
+            validate_chat_llm_ref(
+                llm_refs,
+                config
+                    .natural_language_reply_llm_ref_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty()),
+                agent_name,
+                "natural_language_reply_llm_ref_id",
+            )?;
+
             validate_embedding_model_ref(
                 llm_refs,
                 config.embedding_model_ref_id.as_deref(),
@@ -810,6 +815,39 @@ fn validate_qq_chat_image_understand_llm(
             config.embedding_model_ref_id.as_deref(),
             agent_name,
         ),
+    }
+}
+
+fn validate_chat_llm_ref(
+    llm_refs: &[LlmRefConfig],
+    llm_ref_id: Option<&str>,
+    agent_name: &str,
+    field_name: &str,
+) -> Result<(), String> {
+    let llm_ref_id = llm_ref_id.ok_or_else(|| {
+        format!("agent '{}' is missing {}", agent_name, field_name)
+    })?;
+    let llm_ref = llm_refs
+        .iter()
+        .find(|item| item.id == llm_ref_id || item.config_id == llm_ref_id)
+        .ok_or_else(|| {
+            format!(
+                "agent '{}' references missing {} '{}'",
+                agent_name, field_name, llm_ref_id
+            )
+        })?;
+    if !llm_ref.enabled {
+        return Err(format!(
+            "agent '{}' references disabled {} '{}'",
+            agent_name, field_name, llm_ref.name
+        ));
+    }
+    match llm_ref.model {
+        model_inference::system_config::ModelRefSpec::ChatLlm { .. } => Ok(()),
+        model_inference::system_config::ModelRefSpec::TextEmbeddingLocal { .. } => Err(format!(
+            "agent '{}' references non-chat model_ref '{}' as {}",
+            agent_name, llm_ref.name, field_name
+        )),
     }
 }
 

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use super::inference::{InferenceToolContext, InferenceToolProvider};
 use super::qq_chat_agent_core::{
@@ -283,15 +283,6 @@ pub async fn spawn(
     let llm_config =
         resolve_llm_service_config(config.llm_ref_id.as_deref(), &llm_refs, &agent.name)?;
     let llm = build_llm_model(&llm_config)?;
-    let intent_llm_config = resolve_llm_service_config(
-        config
-            .intent_llm_ref_id
-            .as_deref()
-            .or(config.llm_ref_id.as_deref()),
-        &llm_refs,
-        &agent.name,
-    )?;
-    let intent_llm = build_llm_model(&intent_llm_config)?;
     let math_programming_llm_config = resolve_llm_service_config(
         config
             .math_programming_llm_ref_id
@@ -301,6 +292,14 @@ pub async fn spawn(
         &agent.name,
     )?;
     let math_programming_llm = build_llm_model(&math_programming_llm_config)?;
+    let natural_language_reply_llm_config = resolve_llm_service_config(
+        config
+            .natural_language_reply_llm_ref_id
+            .as_deref(),
+        &llm_refs,
+        &agent.name,
+    )?;
+    let natural_language_reply_llm = build_llm_model(&natural_language_reply_llm_config)?;
     let embedding_model = if let Some(model_ref_id) = config.embedding_model_ref_id.as_deref() {
         let model_name =
             resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, &agent.name)?;
@@ -375,20 +374,12 @@ pub async fn spawn(
             agent.id
         ))),
         llm,
-        intent_llm,
         math_programming_llm,
+        natural_language_reply_llm,
         main_llm_display_name: resolve_llm_ref_display_name(
             config.llm_ref_id.as_deref(),
             &llm_refs,
             &llm_config.model_name,
-        ),
-        intent_llm_display_name: resolve_llm_ref_display_name(
-            config
-                .intent_llm_ref_id
-                .as_deref()
-                .or(config.llm_ref_id.as_deref()),
-            &llm_refs,
-            &intent_llm_config.model_name,
         ),
         math_programming_llm_display_name: resolve_llm_ref_display_name(
             config
@@ -397,6 +388,11 @@ pub async fn spawn(
                 .or(config.llm_ref_id.as_deref()),
             &llm_refs,
             &math_programming_llm_config.model_name,
+        ),
+        natural_language_reply_llm_display_name: resolve_llm_ref_display_name(
+            config.natural_language_reply_llm_ref_id.as_deref(),
+            &llm_refs,
+            &natural_language_reply_llm_config.model_name,
         ),
         rdb_pool,
         mysql_ref,
@@ -413,6 +409,7 @@ pub async fn spawn(
         shared_inputs: Vec::<FunctionPortDef>::new(),
         tool_definitions,
         shared_runtime_values: HashMap::new(),
+        session_state_store: Arc::new(Mutex::new(HashMap::new())),
         task_runtime,
     })?);
 

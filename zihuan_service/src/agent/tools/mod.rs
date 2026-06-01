@@ -11,12 +11,15 @@ use zihuan_graph_engine::object_storage::S3Ref;
 use storage_handler::AgentMemoryAccessContext;
 
 mod agent_memory;
+mod agent_state;
 mod common;
 mod current_time;
 mod editable_qq_agent_tool;
 mod image_search;
 mod image_understand;
 mod info_tools;
+mod math_programming;
+mod natural_language_reply;
 mod recent_messages;
 mod reply_message;
 mod web_search;
@@ -25,16 +28,21 @@ mod build_metadata {
     include!(concat!(env!("OUT_DIR"), "/build_metadata.rs"));
 }
 
-pub(crate) use common::{ToolNotificationTarget, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS};
 pub(crate) use agent_memory::{
     AgentMemoryToolResources, ListAvailableMemoryKeysBrainTool, RememberContentBrainTool,
     SearchMemoryContentBrainTool,
 };
+pub(crate) use agent_state::UpdateAgentStateBrainTool;
+pub(crate) use common::{ToolNotificationTarget, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS};
 pub(crate) use current_time::CurrentTimeBrainTool;
 pub(crate) use editable_qq_agent_tool::EditableQqAgentTool;
 pub(crate) use image_search::SearchSimilarImagesBrainTool;
 pub(crate) use image_understand::{execute_image_understand_tool, ImageUnderstandBrainTool};
 pub(crate) use info_tools::{GetAgentPublicInfoBrainTool, GetFunctionListBrainTool};
+pub(crate) use math_programming::RunMathProgrammingSubagentBrainTool;
+pub(crate) use natural_language_reply::{
+    take_last_reply_result, QqNaturalLanguageReplyResult, SendNaturalLanguageReplyBrainTool,
+};
 pub(crate) use recent_messages::{GetRecentGroupMessagesBrainTool, GetRecentUserMessagesBrainTool};
 pub(crate) use reply_message::ReplyMessageBrainTool;
 pub(crate) use web_search::WebSearchBrainTool;
@@ -46,7 +54,6 @@ pub(crate) const DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES: &str = "get_recent_grou
 pub(crate) const DEFAULT_TOOL_GET_RECENT_USER_MESSAGES: &str = "get_recent_user_messages";
 pub(crate) const DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES: &str = "search_similar_images";
 pub(crate) const DEFAULT_TOOL_IMAGE_UNDERSTAND: &str = "image_understand";
-pub(crate) const DEFAULT_TOOL_REPLY_MESSAGE: &str = "reply_message";
 pub(crate) const DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS: &str = "list_available_memory_keys";
 pub(crate) const DEFAULT_TOOL_SEARCH_MEMORY_CONTENT: &str = "search_memory_content";
 pub(crate) const DEFAULT_TOOL_REMEMBER_CONTENT: &str = "remember_content";

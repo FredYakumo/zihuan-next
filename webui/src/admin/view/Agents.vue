@@ -47,20 +47,25 @@
                         </div>
                         <template v-if="form.type === 'qq_chat'">
                             <div class="field">
-                                <label>意图分类模型</label>
-                                <select v-model="form.intent_llm_ref_id">
-                                    <option value="">回退主模型</option>
-                                    <option v-for="item in chatModels" :key="item.config_id" :value="item.config_id">{{
-                                        item.name }}</option>
-                                </select>
-                            </div>
-                            <div class="field">
                                 <label>数学编程模型</label>
                                 <select v-model="form.math_programming_llm_ref_id">
                                     <option value="">回退主模型</option>
                                     <option v-for="item in chatModels" :key="item.config_id" :value="item.config_id">{{
                                         item.name }}</option>
                                 </select>
+                            </div>
+                            <div class="field">
+                                <label>自然语言回复模型</label>
+                                <select v-model="form.natural_language_reply_llm_ref_id">
+                                    <option value="">请选择</option>
+                                    <option v-for="item in chatModels" :key="item.config_id" :value="item.config_id">{{
+                                        item.name }}</option>
+                                </select>
+                            </div>
+                            <div class="field-full">
+                                <label>自然语言回复 Prompt</label>
+                                <textarea v-model="form.natural_language_reply_system_prompt"
+                                    placeholder="可选。专门给自然语言回复模型使用的系统提示词。" />
                             </div>
                             <div class="field">
                                 <label>文本向量模型</label>
@@ -391,20 +396,25 @@
                         </div>
                         <template v-if="form.type === 'qq_chat'">
                             <div class="field">
-                                <label>意图分类模型</label>
-                                <select v-model="form.intent_llm_ref_id">
-                                    <option value="">回退主模型</option>
-                                    <option v-for="item in chatModels" :key="item.config_id" :value="item.config_id">{{
-                                        item.name }}</option>
-                                </select>
-                            </div>
-                            <div class="field">
                                 <label>数学编程模型</label>
                                 <select v-model="form.math_programming_llm_ref_id">
                                     <option value="">回退主模型</option>
                                     <option v-for="item in chatModels" :key="item.config_id" :value="item.config_id">{{
                                         item.name }}</option>
                                 </select>
+                            </div>
+                            <div class="field">
+                                <label>自然语言回复模型</label>
+                                <select v-model="form.natural_language_reply_llm_ref_id">
+                                    <option value="">请选择</option>
+                                    <option v-for="item in chatModels" :key="item.config_id" :value="item.config_id">{{
+                                        item.name }}</option>
+                                </select>
+                            </div>
+                            <div class="field-full">
+                                <label>自然语言回复 Prompt</label>
+                                <textarea v-model="form.natural_language_reply_system_prompt"
+                                    placeholder="可选。专门给自然语言回复模型使用的系统提示词。" style="min-height: 100px;" />
                             </div>
                             <div class="field">
                                 <label>文本向量模型</label>
@@ -1294,12 +1304,13 @@ function summarizeAgent(agent: AgentWithRuntime): Array<{ label: string; value: 
                     llmRefName(String(agentType.llm_ref_id ?? "")) ||
                     "未绑定",
             },
-            { label: "意图分类模型", value: llmRefName(String(agentType.intent_llm_ref_id ?? "")) || llmName(agent) },
             { label: "数学编程模型", value: llmRefName(String(agentType.math_programming_llm_ref_id ?? "")) || llmName(agent) },
+            { label: "自然语言回复模型", value: llmRefName(String(agentType.natural_language_reply_llm_ref_id ?? "")) || "未绑定" },
             { label: "文本向量模型", value: llmRefName(String(agentType.embedding_model_ref_id ?? "")) || "未绑定" },
             { label: "记忆 Weaviate", value: connectionName(String(agentType.weaviate_memory_connection_id ?? "")) || "未绑定" },
             { label: "分词 Tokenizer", value: connectionName(String(agentType.tokenizer_connection_id ?? "")) || "未绑定" },
             { label: "System Prompt", value: String(agentType.system_prompt ?? "").trim() ? "已配置" : "未设置" },
+            { label: "Reply Prompt", value: String(agentType.natural_language_reply_system_prompt ?? "").trim() ? "已配置" : "未设置" },
             { label: "Max Message", value: String(agentType.max_message_length ?? 500) },
             { label: "Max Steer", value: String(agentType.max_steer_count ?? 4) },
         );

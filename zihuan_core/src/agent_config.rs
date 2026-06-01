@@ -6,8 +6,8 @@ use crate::error::{Error, Result};
 
 pub const LLM_KIND_FIELD: &str = "llm_kind";
 pub const LLM_KIND_MAIN: &str = "main";
-pub const LLM_KIND_INTENT: &str = "intent";
 pub const LLM_KIND_MATH_PROGRAMMING: &str = "math_programming";
+pub const LLM_KIND_NATURAL_LANGUAGE_REPLY: &str = "natural_language_reply";
 
 thread_local! {
     static CURRENT_QQ_CHAT_AGENT_CONFIG: RefCell<Vec<QqChatAgentConfig>> = const { RefCell::new(Vec::new()) };
@@ -41,11 +41,14 @@ pub fn normalize_llm_kind(llm_kind: Option<&str>) -> Result<&'static str> {
         .unwrap_or(LLM_KIND_MAIN)
     {
         LLM_KIND_MAIN => Ok(LLM_KIND_MAIN),
-        LLM_KIND_INTENT => Ok(LLM_KIND_INTENT),
         LLM_KIND_MATH_PROGRAMMING => Ok(LLM_KIND_MATH_PROGRAMMING),
+        LLM_KIND_NATURAL_LANGUAGE_REPLY => Ok(LLM_KIND_NATURAL_LANGUAGE_REPLY),
         other => Err(Error::ValidationError(format!(
             "unsupported llm_kind '{}', expected one of: {}, {}, {}",
-            other, LLM_KIND_MAIN, LLM_KIND_INTENT, LLM_KIND_MATH_PROGRAMMING
+            other,
+            LLM_KIND_MAIN,
+            LLM_KIND_MATH_PROGRAMMING,
+            LLM_KIND_NATURAL_LANGUAGE_REPLY
         ))),
     }
 }
@@ -53,14 +56,11 @@ pub fn normalize_llm_kind(llm_kind: Option<&str>) -> Result<&'static str> {
 pub fn llm_ref_id_for_kind<'a>(config: &'a QqChatAgentConfig, llm_kind: &str) -> Option<&'a str> {
     match llm_kind {
         LLM_KIND_MAIN => config.llm_ref_id.as_deref(),
-        LLM_KIND_INTENT => config
-            .intent_llm_ref_id
-            .as_deref()
-            .or(config.llm_ref_id.as_deref()),
         LLM_KIND_MATH_PROGRAMMING => config
             .math_programming_llm_ref_id
             .as_deref()
             .or(config.llm_ref_id.as_deref()),
+        LLM_KIND_NATURAL_LANGUAGE_REPLY => config.natural_language_reply_llm_ref_id.as_deref(),
         _ => None,
     }
 }
@@ -88,9 +88,11 @@ pub struct QqChatAgentConfig {
     #[serde(default)]
     pub image_understand_llm_ref_id: Option<String>,
     #[serde(default)]
-    pub intent_llm_ref_id: Option<String>,
-    #[serde(default)]
     pub math_programming_llm_ref_id: Option<String>,
+    #[serde(default)]
+    pub natural_language_reply_llm_ref_id: Option<String>,
+    #[serde(default)]
+    pub natural_language_reply_system_prompt: Option<String>,
     #[serde(default)]
     pub embedding_model_ref_id: Option<String>,
     #[serde(default)]
@@ -172,7 +174,6 @@ fn default_qq_chat_default_tools_enabled() -> HashMap<String, bool> {
         "get_recent_user_messages",
         "search_similar_images",
         "image_understand",
-        "reply_message",
         "list_available_memory_keys",
         "search_memory_content",
         "remember_content",

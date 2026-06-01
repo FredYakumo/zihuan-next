@@ -103,8 +103,9 @@ export interface AgentFormState {
   system_prompt: string;
   llm_ref_id: string;
   image_understand_llm_ref_id: string;
-  intent_llm_ref_id: string;
   math_programming_llm_ref_id: string;
+  natural_language_reply_llm_ref_id: string;
+  natural_language_reply_system_prompt: string;
   embedding_model_ref_id: string;
   tokenizer_connection_id: string;
   web_search_engine_connection_id: string;
@@ -142,7 +143,6 @@ export const QQ_CHAT_DEFAULT_TOOLS: DefaultToolOption[] = [
   { id: "get_recent_user_messages", label: "get_recent_user_messages", description: "查询用户近期消息" },
   { id: "search_similar_images", label: "search_similar_images", description: "语义检索相似图片" },
   { id: "image_understand", label: "image_understand", description: "按 media_id 理解图片内容" },
-  { id: "reply_message", label: "reply_message", description: "显式引用某条消息" },
   { id: "list_available_memory_keys", label: "list_available_memory_keys", description: "列出当前可访问的记忆标题" },
   { id: "search_memory_content", label: "search_memory_content", description: "搜索当前可访问的记忆内容" },
   { id: "remember_content", label: "remember_content", description: "把内容整理后写入记忆" },
@@ -262,8 +262,9 @@ export function defaultAgentForm(): AgentFormState {
     system_prompt: "",
     llm_ref_id: "",
     image_understand_llm_ref_id: "",
-    intent_llm_ref_id: "",
     math_programming_llm_ref_id: "",
+    natural_language_reply_llm_ref_id: "",
+    natural_language_reply_system_prompt: "",
     embedding_model_ref_id: "",
     tokenizer_connection_id: "",
     web_search_engine_connection_id: "",
@@ -544,8 +545,9 @@ export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): Agen
     form.system_prompt = String(agentType.system_prompt ?? "");
     form.llm_ref_id = String(agentType.llm_ref_id ?? "");
     form.image_understand_llm_ref_id = String(agentType.image_understand_llm_ref_id ?? "");
-    form.intent_llm_ref_id = String(agentType.intent_llm_ref_id ?? "");
     form.math_programming_llm_ref_id = String(agentType.math_programming_llm_ref_id ?? "");
+    form.natural_language_reply_llm_ref_id = String(agentType.natural_language_reply_llm_ref_id ?? "");
+    form.natural_language_reply_system_prompt = String(agentType.natural_language_reply_system_prompt ?? "");
     form.embedding_model_ref_id = String(agentType.embedding_model_ref_id ?? "");
     form.tokenizer_connection_id = String(agentType.tokenizer_connection_id ?? "");
     form.web_search_engine_connection_id = String(agentType.web_search_engine_connection_id ?? "");
@@ -652,8 +654,9 @@ export function buildAgentPayload(form: AgentFormState): {
         system_prompt: form.system_prompt.trim() || null,
         llm_ref_id: form.llm_ref_id || null,
         image_understand_llm_ref_id: form.image_understand_llm_ref_id || null,
-        intent_llm_ref_id: form.intent_llm_ref_id || null,
         math_programming_llm_ref_id: form.math_programming_llm_ref_id || null,
+        natural_language_reply_llm_ref_id: form.natural_language_reply_llm_ref_id || null,
+        natural_language_reply_system_prompt: form.natural_language_reply_system_prompt.trim() || null,
         embedding_model_ref_id: form.embedding_model_ref_id || null,
         tokenizer_connection_id: form.tokenizer_connection_id || null,
         web_search_engine_connection_id: form.web_search_engine_connection_id,
