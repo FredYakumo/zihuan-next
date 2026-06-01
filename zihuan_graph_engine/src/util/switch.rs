@@ -36,10 +36,7 @@ impl Node for SwitchNode {
 
     node_output![port! { name = "output", ty = Any, desc = "Forwarded output value" },];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();
@@ -50,6 +47,7 @@ impl Node for SwitchNode {
             }
         }
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }

@@ -10,7 +10,7 @@ use ims_bot_adapter::{
     list_runtime_bot_adapter_instances, parse_ims_bot_adapter_connection,
     sync_enabled_bot_adapters,
 };
-use log::info;
+use log::{info, warn};
 use model_inference::nn::embedding::embedding_runtime_manager::{
     close_runtime_embedding_instance, list_runtime_embedding_instances,
 };
@@ -23,6 +23,7 @@ use zihuan_core::weaviate::{WeaviateEnsureCollectionResult, WeaviateRef};
 use super::{
     now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found,
 };
+use crate::api::state::AppState;
 
 #[derive(Deserialize)]
 pub struct CreateConnectionRequest {
@@ -80,10 +81,16 @@ fn validate_connection_basics(kind: &ConnectionKind) -> Result<(), String> {
             }
             Ok(())
         }
-        ConnectionKind::Tavily(_) => Ok(()),
+        ConnectionKind::WebSearchEngine(_) => Ok(()),
         ConnectionKind::Tokenizer(tokenizer) => {
             if tokenizer.model_name.trim().is_empty() {
                 return Err("tokenizer.model_name must not be empty".to_string());
+            }
+            Ok(())
+        }
+        ConnectionKind::Sqlite(sqlite) => {
+            if sqlite.path.trim().is_empty() {
+                return Err("sqlite.path must not be empty".to_string());
             }
             Ok(())
         }
@@ -149,6 +156,41 @@ fn render_connection_validation_error(res: &mut Response, err: ConnectionValidat
     }
 }
 
+async fn refresh_relational_db_pool(
+    state: &std::sync::Arc<AppState>,
+    connection: &ConnectionConfig,
+) {
+    let mut tasks = state.tasks.lock().unwrap();
+    if !connection.enabled
+        || !matches!(
+            connection.kind,
+            ConnectionKind::Mysql(_) | ConnectionKind::Sqlite(_)
+        )
+    {
+        tasks.unregister_db_pool(&connection.id);
+        return;
+    }
+    drop(tasks);
+
+    match storage_handler::build_relational_db_connection_for_kind(&connection.id, &connection.kind)
+        .await
+    {
+        Ok(pool) => {
+            state
+                .tasks
+                .lock()
+                .unwrap()
+                .register_db_pool(connection.id.clone(), pool);
+        }
+        Err(err) => {
+            warn!(
+                "[connections] failed to refresh relational DB pool for '{}' (id={}): {}",
+                connection.name, connection.id, err
+            );
+        }
+    }
+}
+
 #[handler]
 pub async fn list_connections(_req: &mut Request, res: &mut Response, _depot: &mut Depot) {
     match system_config::load_connections() {
@@ -193,7 +235,8 @@ pub async fn list_active_bot_adapters(_req: &mut Request, res: &mut Response, _d
 }
 
 #[handler]
-pub async fn create_connection(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+pub async fn create_connection(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+    let state = depot.obtain::<std::sync::Arc<AppState>>().unwrap().clone();
     let body: CreateConnectionRequest = match req.parse_json().await {
         Ok(body) => body,
         Err(err) => return render_bad_request(res, err.to_string()),
@@ -224,6 +267,16 @@ pub async fn create_connection(req: &mut Request, res: &mut Response, _depot: &m
     match system_config::save_connections(connections) {
         Ok(()) => {
             let _ = close_runtime_storage_instances_for_config(&connection.id);
+
+            // Ensure database tables exist for MySQL/SQLite connections.
+            if let Err(e) = storage_handler::ensure_tables_for_connection(&connection.kind).await {
+                warn!(
+                    "[connections] table creation failed for '{}' (id={}): {}",
+                    connection.name, connection.id, e
+                );
+            }
+            refresh_relational_db_pool(&state, &connection).await;
+
             let refreshed = system_config::load_connections().unwrap_or_default();
             sync_enabled_bot_adapters(&refreshed).await;
             info!(
@@ -240,7 +293,8 @@ pub async fn create_connection(req: &mut Request, res: &mut Response, _depot: &m
 }
 
 #[handler]
-pub async fn update_connection(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+pub async fn update_connection(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+    let state = depot.obtain::<std::sync::Arc<AppState>>().unwrap().clone();
     let id = req.param::<String>("id").unwrap_or_default();
     let body: UpdateConnectionRequest = match req.parse_json().await {
         Ok(body) => body,
@@ -271,6 +325,16 @@ pub async fn update_connection(req: &mut Request, res: &mut Response, _depot: &m
     match system_config::save_connections(connections) {
         Ok(()) => {
             let _ = close_runtime_storage_instances_for_config(&response.id);
+
+            // Ensure database tables exist for MySQL/SQLite connections.
+            if let Err(e) = storage_handler::ensure_tables_for_connection(&response.kind).await {
+                warn!(
+                    "[connections] table creation failed for '{}' (id={}): {}",
+                    response.name, response.id, e
+                );
+            }
+            refresh_relational_db_pool(&state, &response).await;
+
             let refreshed = system_config::load_connections().unwrap_or_default();
             sync_enabled_bot_adapters(&refreshed).await;
             info!(
@@ -287,7 +351,8 @@ pub async fn update_connection(req: &mut Request, res: &mut Response, _depot: &m
 }
 
 #[handler]
-pub async fn delete_connection(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+pub async fn delete_connection(req: &mut Request, res: &mut Response, depot: &mut Depot) {
+    let state = depot.obtain::<std::sync::Arc<AppState>>().unwrap().clone();
     let id = req.param::<String>("id").unwrap_or_default();
     let mut connections = match system_config::load_connections() {
         Ok(connections) => connections,
@@ -302,6 +367,7 @@ pub async fn delete_connection(req: &mut Request, res: &mut Response, _depot: &m
 
     match system_config::save_connections(connections) {
         Ok(()) => {
+            state.tasks.lock().unwrap().unregister_db_pool(&id);
             let refreshed = system_config::load_connections().unwrap_or_default();
             sync_enabled_bot_adapters(&refreshed).await;
             info!("[connections] deleted connection (id={})", id);

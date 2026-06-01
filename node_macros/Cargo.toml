@@ -10,3 +10,7 @@ proc-macro = true
 proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full"] }
+
+[dev-dependencies]
+trybuild = "1"
+zihuan_graph_engine = { path = "../zihuan_graph_engine" }

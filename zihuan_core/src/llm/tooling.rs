@@ -34,3 +34,32 @@ pub struct ToolCalls {
     pub type_name: String,
     pub function: ToolCallsFuncSpec,
 }
+
+/// A static [`FunctionTool`] implementation backed by compile-time constants.
+///
+/// Useful for simple built-in tools where the name, description, and parameter
+/// schema are known at compile time and no argument forwarding is required.
+#[derive(Debug)]
+pub struct StaticFunctionToolSpec {
+    pub name: &'static str,
+    pub description: &'static str,
+    pub parameters: Value,
+}
+
+impl FunctionTool for StaticFunctionToolSpec {
+    fn name(&self) -> &str {
+        self.name
+    }
+
+    fn description(&self) -> &str {
+        self.description
+    }
+
+    fn parameters(&self) -> Value {
+        self.parameters.clone()
+    }
+
+    fn call(&self, _arguments: Value) -> Result<Value> {
+        Ok(Value::Null)
+    }
+}

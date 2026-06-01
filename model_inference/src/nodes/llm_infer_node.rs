@@ -38,8 +38,8 @@ impl Node for LLMInferNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let model = match inputs.get("llm_model") {
@@ -75,15 +75,11 @@ impl Node for LLMInferNode {
         };
         let response_message = model.inference(&param);
 
-        let mut outputs = HashMap::new();
-        outputs.insert(
-            "response".to_string(),
-            DataValue::Vec(
+        zihuan_graph_engine::return_with_node_output![self;
+            "response" => DataValue::Vec(
                 Box::new(DataType::OpenAIMessage),
                 vec![DataValue::OpenAIMessage(response_message)],
             ),
-        );
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        ]
     }
 }

@@ -1,6 +1,7 @@
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
+use node_macros::node_output_flow;
 use std::collections::HashMap;
-use zihuan_core::error::Result;
+use zihuan_core::{error::Result, validation_error};
 
 /// Extracts the `content` field of an `OpenAIMessage` as a plain string.
 pub struct MessageContentNode {
@@ -36,10 +37,7 @@ impl Node for MessageContentNode {
         port! { name = "content", ty = String, desc = "OpenAIMessage 的 content 字符串，若为 None 则输出空字符串" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let content = inputs
@@ -48,14 +46,10 @@ impl Node for MessageContentNode {
                 DataValue::OpenAIMessage(m) => m.content_text_owned(),
                 _ => None,
             })
-            .ok_or(zihuan_core::error::Error::ValidationError(
-                "OpenAIMessage content is None".to_string(),
-            ))?;
+            .ok_or(validation_error!("OpenAIMessage content is None",))?;
 
-        let mut outputs = HashMap::new();
-        outputs.insert("content".to_string(), DataValue::String(content));
-
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "content" => DataValue::String(content),
+        ]
     }
 }

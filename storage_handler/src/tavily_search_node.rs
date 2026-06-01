@@ -27,11 +27,11 @@ impl Node for TavilySearchNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("使用 TavilyRef 执行搜索，输出包含标题、链接和内容的 Vec<String>")
+        Some("使用 WebSearchEngineRef 执行搜索，输出包含标题、链接和内容的 Vec<String>")
     }
 
     node_input![
-        port! { name = "tavily_ref", ty = DataType::TavilyRef, desc = "Tavily 搜索引用" },
+        port! { name = "tavily_ref", ty = DataType::WebSearchEngineRef, desc = "Tavily 搜索引用" },
         port! { name = "query", ty = String, desc = "搜索关键词或问题" },
         port! { name = "search_count", ty = Integer, desc = "返回结果数量，必须大于 0" },
     ];
@@ -42,12 +42,12 @@ impl Node for TavilySearchNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let tavily_ref = match inputs.get("tavily_ref") {
-            Some(DataValue::TavilyRef(value)) => value.clone(),
+            Some(DataValue::WebSearchEngineRef(value)) => value.clone(),
             _ => {
                 return Err(Error::ValidationError(
                     "Missing required input: tavily_ref".to_string(),
@@ -95,6 +95,7 @@ impl Node for TavilySearchNode {
             ),
         )]);
 
+        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }

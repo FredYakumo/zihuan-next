@@ -71,10 +71,7 @@ impl BrainTool for GetRecentGroupMessagesBrainTool {
             parameters: schema,
         })
     }
-
-    fn execute(&self, call_content: &str, arguments: &Value) -> String {
-        self.notification_target.notify_progress(call_content);
-
+    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
         let result = (|| -> Result<Value> {
             let group_id = if self.notification_target.target_id().is_empty() {
                 optional_string_argument(arguments, "group_id")
@@ -96,14 +93,17 @@ impl BrainTool for GetRecentGroupMessagesBrainTool {
                 MAX_HISTORY_TOOL_LIMIT,
             );
             let mut node = MessageMySQLGetGroupHistoryNode::new("__tool__", "__tool__");
-            let outputs = node.execute(HashMap::from([
-                (
-                    "mysql_ref".to_string(),
-                    DataValue::MySqlRef(mysql_ref.clone()),
-                ),
-                ("group_id".to_string(), DataValue::String(group_id)),
-                ("limit".to_string(), DataValue::Integer(limit as i64)),
-            ]))?;
+            let outputs = node.execute(
+                HashMap::from([
+                    (
+                        "mysql_ref".to_string(),
+                        DataValue::MySqlRef(mysql_ref.clone()),
+                    ),
+                    ("group_id".to_string(), DataValue::String(group_id)),
+                    ("limit".to_string(), DataValue::Integer(limit as i64)),
+                ])
+                .into(),
+            )?;
             let items = extract_string_list_output(&outputs, "messages")?;
             Ok(serde_json::json!({
                 "ok": true,
@@ -120,7 +120,7 @@ impl BrainTool for GetRecentGroupMessagesBrainTool {
 
 pub(crate) struct GetRecentUserMessagesBrainTool {
     mysql_ref: Option<Arc<MySqlConfig>>,
-    notification_target: ToolNotificationTarget,
+    _notification_target: ToolNotificationTarget,
 }
 
 impl GetRecentUserMessagesBrainTool {
@@ -130,7 +130,7 @@ impl GetRecentUserMessagesBrainTool {
     ) -> Self {
         Self {
             mysql_ref,
-            notification_target,
+            _notification_target: notification_target,
         }
     }
 }
@@ -152,9 +152,7 @@ impl BrainTool for GetRecentUserMessagesBrainTool {
         })
     }
 
-    fn execute(&self, call_content: &str, arguments: &Value) -> String {
-        self.notification_target.notify_progress(call_content);
-
+    fn execute(&self, _call_content: &str, arguments: &Value) -> String {
         let result = (|| -> Result<Value> {
             let mysql_ref = self.mysql_ref.as_ref().ok_or_else(|| {
                 Error::ValidationError("mysql_ref is required for message lookup".to_string())
@@ -179,7 +177,7 @@ impl BrainTool for GetRecentUserMessagesBrainTool {
             if let Some(group_id) = group_id {
                 payload.insert("group_id".to_string(), DataValue::String(group_id));
             }
-            let outputs = node.execute(payload)?;
+            let outputs = node.execute(payload.into())?;
             let items = extract_string_list_output(&outputs, "messages")?;
             Ok(serde_json::json!({
                 "ok": true,

@@ -27,6 +27,7 @@ export class CanvasInteractions {
 
   bind(): void {
     (LiteGraph as any).release_link_on_empty_shows_menu = true;
+    this.bindClipboardShortcuts();
 
     const dispatchConnectionDrop = (
       sourceNode: any,
@@ -104,6 +105,20 @@ export class CanvasInteractions {
 
       this.showCanvasContextMenu(e, gx, gy);
     }, { capture: true });
+  }
+
+  private bindClipboardShortcuts(): void {
+    const lCanvas = this.canvas.lCanvas as any;
+    lCanvas.copyToClipboard = () => {
+      this.copySelectedNodes();
+    };
+    lCanvas.pasteFromClipboard = () => {
+      if (this.canvas.nodeClipboard.length === 0) return;
+      const graphMouse = lCanvas.graph_mouse as [number, number] | undefined;
+      const graphX = graphMouse?.[0] ?? 0;
+      const graphY = graphMouse?.[1] ?? 0;
+      this.pasteNodes(graphX, graphY).catch(console.error);
+    };
   }
 
   private createContextMenu(event: MouseEvent): {
@@ -184,19 +199,22 @@ export class CanvasInteractions {
     const typeId = await showAddNodeDialog(this.canvas.nodeTypes);
     if (!typeId) return;
 
-    let newNodeId: string;
+    let newNodeDef: NodeDefinition;
     try {
-      const result = await graphs.addNode(sid, typeId, undefined, graphX, graphY);
-      newNodeId = result.id;
+      newNodeDef = await graphs.addNode(sid, typeId, undefined, graphX, graphY);
     } catch (e) {
       console.error("[Canvas] addNode failed:", e);
       return;
     }
-    await this.canvas.reloadCurrentSession();
+    if (this.canvas.state.graph) {
+      const updatedGraph = { ...this.canvas.state.graph, nodes: [...this.canvas.state.graph.nodes, newNodeDef] };
+      this.canvas.state.graph = updatedGraph;
+      this.canvas.addLGraphNodeDirect(newNodeDef);
+    } else {
+      await this.canvas.reloadCurrentSession();
+    }
     this.canvas.state.dirty = true;
     this.canvas.onGraphDirty?.();
-
-    const newNodeDef = this.canvas.state.graph?.nodes.find((node) => node.id === newNodeId);
     if (!newNodeDef) return;
 
     const candidatePorts: PortSelectOption[] = [];
@@ -218,7 +236,7 @@ export class CanvasInteractions {
     if (!chosenPort) return;
 
     const srcNode = this.canvas.nodeMap.get(sourceNodeId);
-    const newNode = this.canvas.nodeMap.get(newNodeId);
+    const newNode = this.canvas.nodeMap.get(newNodeDef.id);
     if (!srcNode || !newNode) return;
     if (isFromOutput) {
       const outSlot = (srcNode.outputs as any[]).findIndex((output: any) => output.name === sourcePortName);
@@ -334,9 +352,28 @@ export class CanvasInteractions {
     for (const def of this.canvas.nodeClipboard) {
       const dx = (def.position?.x ?? 0) - minX;
       const dy = (def.position?.y ?? 0) - minY;
-      await graphs.addNode(sid, def.node_type, def.name, graphX + dx + offset, graphY + dy + offset);
+      const newNode = await graphs.addNode(sid, def.node_type, def.name, graphX + dx + offset, graphY + dy + offset);
+      if (Object.keys(def.inline_values ?? {}).length > 0 || Object.keys(def.port_bindings ?? {}).length > 0) {
+        const updates: { inline_values?: Record<string, unknown>; port_bindings?: Record<string, { kind: string; name: string }> } = {};
+        if (Object.keys(def.inline_values ?? {}).length > 0) {
+          updates.inline_values = def.inline_values;
+        }
+        if (Object.keys(def.port_bindings ?? {}).length > 0) {
+          updates.port_bindings = def.port_bindings;
+        }
+        await graphs.updateNode(sid, newNode.id, updates);
+      }
     }
-    await this.canvas.reloadCurrentSession();
+
+    const refreshedGraph = await graphs.get(sid);
+
+    if (this.canvas.state.graph) {
+      this.canvas.state.graph = refreshedGraph;
+      this.canvas.history.push(refreshedGraph);
+      this.canvas.rebuildCanvas(refreshedGraph);
+    } else {
+      await this.canvas.reloadCurrentSession();
+    }
     this.canvas.state.dirty = true;
   }
 

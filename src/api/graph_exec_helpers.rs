@@ -2,8 +2,8 @@ use ims_bot_adapter::active_adapter_manager::ActiveAdapterManager;
 use serde_json::Value;
 use std::collections::HashMap;
 use storage_handler::{
-    build_mysql_ref, build_redis_ref, build_s3_ref, build_tavily_ref, build_weaviate_ref,
-    load_connections, ConnectionConfig,
+    build_mysql_ref, build_redis_ref, build_s3_ref, build_weaviate_ref,
+    build_web_search_engine_ref, load_connections, ConnectionConfig,
 };
 use zihuan_core::error::Result;
 use zihuan_graph_engine::data_value::DataType;
@@ -158,8 +158,10 @@ async fn resolve_connection_hyperparameter(
         DataType::BotAdapterRef => build_ims_bot_adapter_ref(connection_id)
             .await
             .map(|value| value.map(|value| (value, None))),
-        DataType::TavilyRef => build_tavily_ref(Some(connection_id), connections)
-            .map(|value| value.map(|value| (DataValue::TavilyRef(value), None))),
+        DataType::WebSearchEngineRef => {
+            build_web_search_engine_ref(Some(connection_id), connections)
+                .map(|value| value.map(|value| (DataValue::WebSearchEngineRef(value), None)))
+        }
         _ => Ok(None),
     }
 }

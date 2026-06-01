@@ -1,5 +1,4 @@
-use crate::{node_input, node_output, DataType, DataValue, Node, Port};
-use std::collections::HashMap;
+use crate::{node_input, node_output, node_output_flow, DataType, Node, Port};
 use zihuan_core::error::Result;
 
 /// Waits for two inputs, then forwards the second one unchanged.
@@ -37,18 +36,15 @@ impl Node for AndThenNode {
 
     node_output![port! { name = "output", ty = Any, desc = "second 的原样输出" },];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let output = inputs.get("second").cloned().ok_or_else(|| {
             zihuan_core::error::Error::ValidationError("second 输入不存在".to_string())
         })?;
 
-        let outputs = HashMap::from([("output".to_string(), output)]);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "output" => output,
+        ]
     }
 }

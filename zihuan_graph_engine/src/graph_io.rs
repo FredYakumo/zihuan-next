@@ -1,3 +1,13 @@
+/// Graph serialization and integrity management.
+///
+/// Key functions:
+/// - `load_graph_definition_from_json` — Load graph from JSON file
+/// - `save_graph_definition_to_json` — Persist to JSON
+/// - `validate_graph_definition` / `auto_fix_graph_definition` — Registry validation and auto-repair
+/// - `find_cycle_node_ids` — Cycle detection (Tarjan SCC)
+/// - `auto_layout` — Topological hierarchical layout
+///
+/// Handles `function` and Brain Tool subgraphs recursively.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -15,7 +25,7 @@ use crate::function_graph::{
     sync_function_node_definition, sync_function_subgraph_signature,
 };
 use crate::graph_boundary::sync_root_graph_io;
-use crate::{DataValue, Node, NodeGraph, Port};
+use crate::{DataValue, Node, NodeConfigFlow, NodeGraph, NodeOutputFlow, Port};
 use zihuan_core::error::Result;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -108,14 +118,10 @@ pub struct NodeGraphDefinition {
     pub variables: Vec<GraphVariable>,
     #[serde(default)]
     pub metadata: GraphMetadata,
+    #[serde(default)]
+    pub accepts_agent_events: bool,
     #[serde(skip)]
-    pub execution_results: HashMap<String, HashMap<String, DataValue>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct LoadedGraphDefinition {
-    pub graph: NodeGraphDefinition,
-    pub migrated: bool,
+    pub execution_results: HashMap<String, NodeOutputFlow>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -134,7 +140,7 @@ pub struct NodeDefinition {
     pub size: Option<GraphSize>,
     #[serde(default)]
     pub inline_values: HashMap<String, Value>,
-    #[serde(default, deserialize_with = "deserialize_port_bindings")]
+    #[serde(default)]
     pub port_bindings: HashMap<String, PortBinding>,
     #[serde(default)]
     pub has_error: bool,
@@ -142,32 +148,6 @@ pub struct NodeDefinition {
     pub has_cycle: bool,
     #[serde(default)]
     pub disabled: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-enum PortBindingDef {
-    Legacy(String),
-    Structured(PortBinding),
-}
-
-fn deserialize_port_bindings<'de, D>(
-    deserializer: D,
-) -> std::result::Result<HashMap<String, PortBinding>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let bindings = HashMap::<String, PortBindingDef>::deserialize(deserializer)?;
-    Ok(bindings
-        .into_iter()
-        .map(|(port_name, binding)| {
-            let binding = match binding {
-                PortBindingDef::Legacy(name) => PortBinding::hyperparameter(name),
-                PortBindingDef::Structured(binding) => binding,
-            };
-            (port_name, binding)
-        })
-        .collect())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,81 +173,11 @@ pub struct GraphSize {
 pub type CycleEdgeKey = (String, String, String, String);
 
 pub fn load_graph_definition_from_json(path: impl AsRef<Path>) -> Result<NodeGraphDefinition> {
-    Ok(load_graph_definition_from_json_with_migration(path)?.graph)
-}
-
-pub fn load_graph_definition_from_json_with_migration(
-    path: impl AsRef<Path>,
-) -> Result<LoadedGraphDefinition> {
     let content = fs::read_to_string(path.as_ref())?;
-    // Backward-compat: replace removed type names before parsing so old saved graphs load cleanly.
-    // refresh_port_types() will then overwrite these with the live registry types.
-    let content = content
-        .replace(
-            "\"data_type\": \"MessageList\"",
-            "\"data_type\": {\"Vec\":\"OpenAIMessage\"}",
-        )
-        .replace(
-            "\"data_type\":\"MessageList\"",
-            "\"data_type\":{\"Vec\":\"OpenAIMessage\"}",
-        )
-        .replace(
-            "\"data_type\": \"QQMessageList\"",
-            "\"data_type\": {\"Vec\":\"QQMessage\"}",
-        )
-        .replace(
-            "\"data_type\":\"QQMessageList\"",
-            "\"data_type\":{\"Vec\":\"QQMessage\"}",
-        )
-        // Also migrate old "List" variant name (renamed to "Vec")
-        .replace("\"data_type\": {\"List\":", "\"data_type\": {\"Vec\":")
-        .replace("\"data_type\":{\"List\":", "\"data_type\":{\"Vec\":")
-        // Rename legacy QQ agent node type id to unified name.
-        .replace(
-            "\"node_type\": \"qq_message_agent\"",
-            "\"node_type\": \"qq_chat_agent\"",
-        )
-        .replace(
-            "\"node_type\":\"qq_message_agent\"",
-            "\"node_type\":\"qq_chat_agent\"",
-        )
-        .replace(
-            "\"node_type\": \"weaviate_image_collection\"",
-            "\"node_type\": \"weaviate\"",
-        )
-        .replace(
-            "\"node_type\":\"weaviate_image_collection\"",
-            "\"node_type\":\"weaviate\"",
-        );
     let mut graph: NodeGraphDefinition = serde_json::from_str(&content)?;
-    migrate_runtime_connection_config_keys(&mut graph);
-    let before_refresh = serde_json::to_value(&graph).ok();
     refresh_port_types(&mut graph);
     sync_root_graph_io(&mut graph);
-    let migrated = before_refresh
-        .and_then(|before| {
-            serde_json::to_value(&graph)
-                .ok()
-                .map(|after| before != after)
-        })
-        .unwrap_or(false);
-    Ok(LoadedGraphDefinition { graph, migrated })
-}
-
-fn migrate_runtime_connection_config_keys(graph: &mut NodeGraphDefinition) {
-    const CONFIG_AWARE_NODES: &[&str] =
-        &["mysql", "rustfs", "weaviate", "ims_bot_adapter_provider"];
-
-    for node in &mut graph.nodes {
-        if !CONFIG_AWARE_NODES.contains(&node.node_type.as_str()) {
-            continue;
-        }
-        if !node.inline_values.contains_key("config_id") {
-            if let Some(value) = node.inline_values.get("connection_id").cloned() {
-                node.inline_values.insert("config_id".to_string(), value);
-            }
-        }
-    }
+    Ok(graph)
 }
 
 /// Refresh port `data_type` fields in a loaded graph by looking up the canonical types from
@@ -384,7 +294,7 @@ pub fn refresh_node_dynamic_ports(node: &mut NodeDefinition) {
         )
         .collect();
 
-    let inline_values: HashMap<String, DataValue> = node
+    let inline_values: NodeConfigFlow = node
         .inline_values
         .iter()
         .filter_map(|(port_name, json_val)| {
@@ -393,7 +303,8 @@ pub fn refresh_node_dynamic_ports(node: &mut NodeDefinition) {
                 .and_then(|data_type| json_to_data_value(json_val, data_type))
                 .map(|value| (port_name.clone(), value))
         })
-        .collect();
+        .collect::<HashMap<_, _>>()
+        .into();
 
     if runtime_node.apply_inline_config(&inline_values).is_err() {
         node.has_error = true;
@@ -841,6 +752,9 @@ fn refresh_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
 
         for (index, tool) in tools.iter_mut().enumerate() {
             tool.ensure_defaults(index + 1);
+            if !tool.uses_subgraph() {
+                continue;
+            }
             refresh_port_types_internal(&mut tool.subgraph);
             let input_signature = brain_tool_input_signature(&node.node_type, &shared_inputs, tool);
             let outputs = normalized_tool_outputs_for_owner(&node.node_type, tool);
@@ -880,6 +794,9 @@ fn validate_embedded_subgraphs(graph: &NodeGraphDefinition) -> Vec<ValidationIss
             match serde_json::from_value::<Vec<BrainToolDefinition>>(value.clone()) {
                 Ok(tools) => {
                     for tool in tools {
+                        if !tool.uses_subgraph() {
+                            continue;
+                        }
                         let prefix = format!(
                             "{} 节点 \"{}\" 的 Tool \"{}\" 子图",
                             node.node_type, node.name, tool.name
@@ -932,6 +849,9 @@ fn auto_fix_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
 
         for (index, tool) in tools.iter_mut().enumerate() {
             tool.ensure_defaults(index + 1);
+            if !tool.uses_subgraph() {
+                continue;
+            }
             auto_fix_graph_definition(&mut tool.subgraph);
             let input_signature = brain_tool_input_signature(&node.node_type, &shared_inputs, tool);
             let outputs = normalized_tool_outputs_for_owner(&node.node_type, tool);
@@ -1375,6 +1295,7 @@ pub fn build_definition_from_graph(graph: &NodeGraph) -> NodeGraphDefinition {
         hyperparameters: Vec::new(),
         variables: Vec::new(),
         metadata: Default::default(),
+        accepts_agent_events: false,
         execution_results: HashMap::new(),
     }
 }

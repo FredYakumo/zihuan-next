@@ -36,10 +36,7 @@ impl Node for CurrentTimeNode {
         port! { name = "time", ty = String, desc = "当前本地时间字符串，格式为 YYYY-MM-DD HH:MM:SS" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();
@@ -48,6 +45,7 @@ impl Node for CurrentTimeNode {
             DataValue::String(Local::now().format("%Y-%m-%d %H:%M:%S").to_string()),
         );
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }

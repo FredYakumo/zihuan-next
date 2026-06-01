@@ -42,10 +42,7 @@ impl Node for SessionStateReleaseNode {
         port! { name = "released", ty = Boolean, desc = "是否成功释放当前 sender_id 的占用" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let session_ref: Arc<SessionStateRef> = inputs
@@ -103,8 +100,8 @@ impl Node for SessionStateReleaseNode {
             released
         );
 
-        let outputs = HashMap::from([("released".to_string(), DataValue::Boolean(released))]);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "released" => DataValue::Boolean(released),
+        ]
     }
 }

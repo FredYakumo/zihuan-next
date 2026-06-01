@@ -62,10 +62,11 @@ At execution time:
    - edges
    - bound runtime variables
    - inline values
-5. inputs are validated
-6. `execute(...)` is called
-7. outputs are validated and stored
-8. optional execution callbacks are emitted
+5. the collected values are assembled into a `NodeInputFlow`
+6. inputs are validated
+7. `execute(...)` is called and returns a `NodeOutputFlow`
+8. outputs are validated and stored
+9. optional execution callbacks are emitted
 
 ## Dynamic Ports
 

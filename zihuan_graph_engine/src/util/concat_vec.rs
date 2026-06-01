@@ -38,10 +38,7 @@ impl Node for ConcatVecNode {
         port! { name = "vec", ty = Vec(Any), desc = "拼接后的列表，元素类型与输入列表一致" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let (vec1_type, vec1_items) = match inputs.get("vec1") {
@@ -73,13 +70,8 @@ impl Node for ConcatVecNode {
         merged.extend(vec1_items.iter().cloned());
         merged.extend(vec2_items.iter().cloned());
 
-        let mut outputs = HashMap::new();
-        outputs.insert(
-            "vec".to_string(),
-            DataValue::Vec(Box::new(vec1_type), merged),
-        );
-
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "vec" => DataValue::Vec(Box::new(vec1_type), merged),
+        ]
     }
 }

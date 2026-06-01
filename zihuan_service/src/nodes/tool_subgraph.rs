@@ -2,21 +2,20 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use ims_bot_adapter::adapter::shared_from_handle;
-use ims_bot_adapter::message_helpers::{
-    send_friend_progress_notification_with_persistence,
-    send_group_progress_notification_with_persistence, OutboundMessagePersistence,
-};
 use ims_bot_adapter::models::MessageType;
 use log::{info, warn};
 use serde_json::{json, Map, Value};
 
-use zihuan_agent::brain::consume_tool_progress_notification;
+use zihuan_agent::brain::{consume_tool_progress_notification, current_task_progress_message};
+use zihuan_core::agent_config::{with_current_qq_chat_agent_config, QqChatAgentConfig};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
+use zihuan_core::task_context::append_current_task_progress;
 use zihuan_graph_engine::brain_tool_spec::{
-    brain_tool_input_signature, fixed_tool_runtime_inputs, BrainToolDefinition, ToolParamDef,
-    BRAIN_TOOL_FIXED_CONTENT_INPUT, QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
-    QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
+    brain_tool_input_signature, fixed_tool_runtime_inputs, BrainToolDefinition,
+    BrainToolImplementation, BuiltInBrainToolKind, ToolParamDef, BRAIN_TOOL_FIXED_CONTENT_INPUT,
+    QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
+    QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use zihuan_graph_engine::function_graph::{
     sync_function_subgraph_signature, FunctionPortDef, FUNCTION_INPUTS_NODE_ID,
@@ -28,6 +27,10 @@ use zihuan_graph_engine::util::function::{
     data_value_from_json_with_declared_type, inject_runtime_values_into_function_inputs_node,
 };
 use zihuan_graph_engine::{DataType, DataValue, Port};
+
+use crate::agent::execute_image_understand_tool;
+use crate::agent::qq_chat_agent_msg_send::{send_notification_text, QqSendContext};
+use crate::agent::QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS;
 
 pub const QQ_AGENT_TOOL_OUTPUT_NAME: &str = "result";
 
@@ -44,6 +47,7 @@ pub struct ToolSubgraphRunner {
     pub shared_inputs: Vec<FunctionPortDef>,
     pub definition: BrainToolDefinition,
     pub shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
+    pub qq_chat_agent_config: Option<QqChatAgentConfig>,
     pub result_mode: ToolResultMode,
 }
 
@@ -95,8 +99,9 @@ pub fn data_type_to_json_schema_type(data_type: &DataType) -> &'static str {
         | DataType::S3Ref
         | DataType::RedisRef
         | DataType::MySqlRef
+        | DataType::SqliteRef
         | DataType::WeaviateRef
-        | DataType::TavilyRef
+        | DataType::WebSearchEngineRef
         | DataType::SessionStateRef
         | DataType::OpenAIMessageSessionCacheRef
         | DataType::LLModel
@@ -201,6 +206,19 @@ fn normalize_outputs_for_mode(
     Ok(())
 }
 
+fn validate_tool_implementation(tool: &BrainToolDefinition) -> Result<()> {
+    match tool.implementation {
+        BrainToolImplementation::NodeGraph => Ok(()),
+        BrainToolImplementation::BuiltIn => match tool.builtin_kind() {
+            Some(BuiltInBrainToolKind::ImageUnderstand) => Ok(()),
+            None => Err(Error::ValidationError(format!(
+                "Tool '{}' 使用 built_in implementation 时必须声明 built_in_kind",
+                tool.name.trim()
+            ))),
+        },
+    }
+}
+
 pub fn validate_tool_definitions(
     tool_definitions: &[BrainToolDefinition],
     shared_inputs: &[FunctionPortDef],
@@ -277,8 +295,11 @@ pub fn validate_tool_definitions(
         }
 
         normalize_outputs_for_mode(&mut tool, result_mode)?;
-        let input_signature = brain_tool_input_signature(owner_node_type, shared_inputs, &tool);
-        sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &tool.outputs);
+        validate_tool_implementation(&tool)?;
+        if tool.uses_subgraph() {
+            let input_signature = brain_tool_input_signature(owner_node_type, shared_inputs, &tool);
+            sync_function_subgraph_signature(&mut tool.subgraph, &input_signature, &tool.outputs);
+        }
         normalized.push(tool);
     }
 
@@ -293,15 +314,32 @@ pub fn build_tool_error_message(message: impl Into<String>) -> String {
     .to_string()
 }
 
+/// Sends a progress notification for a brain tool call if notifications are enabled.
+///
+/// Looks up the runtime context to determine whether the caller requested progress updates,
+/// consumes a throttle token, and then routes the notification as a group or friend message.
 fn send_brain_tool_progress_notification(
     shared_runtime_values: &Arc<Mutex<HashMap<String, DataValue>>>,
     call_content: &str,
 ) {
+    let shared_rt = shared_runtime_values.lock().unwrap();
+    if let Some(progress_text) = current_task_progress_message(call_content) {
+        if append_current_task_progress(progress_text) {
+            return;
+        }
+    }
+
+    if matches!(
+        shared_rt.get(QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS),
+        Some(DataValue::Boolean(false))
+    ) {
+        return;
+    }
+
     if !consume_tool_progress_notification(call_content) {
         return;
     }
 
-    let shared_rt = shared_runtime_values.lock().unwrap();
     let event = match shared_rt.get(QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT) {
         Some(DataValue::MessageEvent(event)) => event,
         _ => return,
@@ -313,24 +351,35 @@ fn send_brain_tool_progress_notification(
 
     if event.message_type == MessageType::Group {
         if let Some(group_id) = event.group_id {
-            send_group_progress_notification_with_persistence(
-                &adapter,
-                &group_id.to_string(),
-                &event.sender.user_id.to_string(),
-                call_content,
-                &OutboundMessagePersistence {
-                    group_name: event.group_name.clone(),
-                    ..OutboundMessagePersistence::default()
-                },
-            );
+            let group_id = group_id.to_string();
+            let sender_id = event.sender.user_id.to_string();
+            let send_ctx = QqSendContext {
+                adapter: &adapter,
+                target_id: &group_id,
+                is_group: true,
+                group_name: event.group_name.as_deref(),
+                bot_id: "",
+                bot_name: "",
+                mention_target_id: Some(&sender_id),
+                persistence: Default::default(),
+                max_text_chars: 250,
+            };
+            let _ = send_notification_text(&send_ctx, call_content);
         }
     } else {
-        send_friend_progress_notification_with_persistence(
-            &adapter,
-            &event.sender.user_id.to_string(),
-            call_content,
-            &OutboundMessagePersistence::default(),
-        );
+        let target_id = event.sender.user_id.to_string();
+        let send_ctx = QqSendContext {
+            adapter: &adapter,
+            target_id: &target_id,
+            is_group: false,
+            group_name: None,
+            bot_id: "",
+            bot_name: "",
+            mention_target_id: None,
+            persistence: Default::default(),
+            max_text_chars: 250,
+        };
+        let _ = send_notification_text(&send_ctx, call_content);
     }
 }
 
@@ -377,6 +426,7 @@ impl ToolSubgraphRunner {
                 )));
             }
         };
+        let builtin_arguments = Value::Object(tool_runtime_values.clone());
 
         let mut runtime_values = self.shared_runtime_values.lock().unwrap().clone();
         runtime_values.insert(
@@ -426,6 +476,40 @@ impl ToolSubgraphRunner {
 
         let input_signature =
             brain_tool_input_signature(&self.owner_node_type, &self.shared_inputs, tool);
+        if !tool.uses_subgraph() {
+            let result = match tool.builtin_kind() {
+                Some(BuiltInBrainToolKind::ImageUnderstand) => {
+                    execute_image_understand_tool(&builtin_arguments, &runtime_values)
+                }
+                None => Err(self.wrap_error(format!("Tool '{}' missing built_in_kind", tool.name))),
+            }?;
+
+            return match self.result_mode {
+                ToolResultMode::JsonObject => {
+                    let output = tool.outputs.first().ok_or_else(|| {
+                        self.wrap_error(format!("Tool '{}' 必须声明一个 String 输出", tool.name))
+                    })?;
+                    let result_payload = Value::Object(Map::from_iter([(
+                        output.name.clone(),
+                        Value::String(result),
+                    )]))
+                    .to_string();
+                    info!(
+                        "[ToolSubgraph:{}] tool '{}' succeeded with result: {}",
+                        self.node_id, tool.name, result_payload
+                    );
+                    Ok(result_payload)
+                }
+                ToolResultMode::SingleString => {
+                    info!(
+                        "[ToolSubgraph:{}] tool '{}' succeeded with result: {}",
+                        self.node_id, tool.name, result
+                    );
+                    Ok(result)
+                }
+            };
+        }
+
         let mut subgraph = tool.subgraph.clone();
         sync_function_subgraph_signature(&mut subgraph, &input_signature, &tool.outputs);
         refresh_port_types(&mut subgraph);
@@ -462,10 +546,15 @@ impl ToolSubgraphRunner {
 
         let mut graph = build_node_graph_from_definition(&subgraph)
             .map_err(|e| self.wrap_error(format!("Tool '{}' 子图构建失败: {e}", tool.name)))?;
-        inject_runtime_values_into_function_inputs_node(&mut graph, runtime_values).map_err(
-            |e| self.wrap_error(format!("Tool '{}' 注入子图运行时输入失败: {e}", tool.name)),
-        )?;
-        let execution_result = graph.execute_and_capture_results();
+        inject_runtime_values_into_function_inputs_node(&mut graph, runtime_values.into())
+            .map_err(|e| {
+                self.wrap_error(format!("Tool '{}' 注入子图运行时输入失败: {e}", tool.name))
+            })?;
+        let execution_result = if let Some(config) = self.qq_chat_agent_config.clone() {
+            with_current_qq_chat_agent_config(config, || graph.execute_and_capture_results())
+        } else {
+            graph.execute_and_capture_results()
+        };
         if let Some(ref error_message) = execution_result.error_message {
             warn!(
                 "[ToolSubgraph:{}] tool '{}' execution failed: {error_message}",

@@ -11,7 +11,7 @@ candle-transformers = { path = "third_party/candle-transformers" }
 name = "zihuan_next"
 version = "0.1.0"
 edition = "2021"
-description = "A bot for daily helper and coding helper, support for adapter qq bot, web, edge devices"
+description = "A Rust-based node-graph workflow platform for AI agents, synchronous graph execution, and service-hosted runtimes such as QQ chat agents and HTTP stream agents."
 authors = ["FredYakumo"]
 
 [features]
@@ -35,7 +35,7 @@ redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
 reqwest = { version = "0.12.25", features = ["blocking", "json"] }
 thiserror = "2.0.17"
 clap = { version = "4.5", features = ["derive", "env"] }
-sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "mysql", "chrono"] }
+sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "mysql", "sqlite", "any", "chrono"] }
 chrono = { version = "0.4", features = ["serde"] }
 once_cell = "1.20"
 salvo = { version = "0.75", features = ["websocket", "serve-static", "cors", "affix-state"] }

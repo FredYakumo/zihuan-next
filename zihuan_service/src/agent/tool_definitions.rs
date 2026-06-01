@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use model_inference::system_config::{AgentToolConfig, AgentToolType, NodeGraphToolConfig};
 use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::brain_tool_spec::{
-    fixed_tool_runtime_inputs, BrainToolDefinition, ToolParamDef, QQ_AGENT_TOOL_OWNER_TYPE,
+    fixed_tool_runtime_inputs, BrainToolDefinition, BrainToolImplementation, ToolParamDef,
+    QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::graph_boundary::{root_graph_to_tool_subgraph, sync_root_graph_io};
@@ -76,6 +77,9 @@ fn build_node_graph_tool_definition(
         id: tool.id.clone(),
         name: tool.name.clone(),
         description: tool.description.clone(),
+        run_duration: tool.run_duration,
+        implementation: BrainToolImplementation::NodeGraph,
+        built_in_kind: None,
         parameters,
         outputs,
         subgraph,
@@ -104,8 +108,7 @@ fn load_graph_from_path(
             path.display()
         )));
     }
-    let loaded = zihuan_graph_engine::load_graph_definition_from_json_with_migration(&path)?;
-    Ok(loaded.graph)
+    zihuan_graph_engine::load_graph_definition_from_json(&path)
 }
 
 fn validate_tool_graph_contract(
@@ -114,7 +117,8 @@ fn validate_tool_graph_contract(
     parameters: &[ToolParamDef],
     outputs: &[FunctionPortDef],
 ) -> Result<()> {
-    if graph.graph_inputs.is_empty() {
+    let has_effective_inputs = !graph.graph_inputs.is_empty() || graph.accepts_agent_events;
+    if !has_effective_inputs {
         return Err(Error::ValidationError(format!(
             "agent tool '{}' 引用的节点图未定义输入列表",
             tool.name

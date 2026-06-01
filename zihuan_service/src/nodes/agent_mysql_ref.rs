@@ -40,10 +40,10 @@ impl Node for AgentMySqlRefNode {
 
     fn execute(
         &mut self,
-        _inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        _inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let config = current_qq_chat_agent_config()?;
-        let mysql_connection_id = config.mysql_connection_id.as_deref();
+        let mysql_connection_id = config.resolved_rdb_id();
         let mysql_connection_id = mysql_connection_id
             .map(str::trim)
             .filter(|value| !value.is_empty())
@@ -55,9 +55,8 @@ impl Node for AgentMySqlRefNode {
         let mysql_ref = zihuan_core::runtime::block_async(
             RuntimeStorageConnectionManager::shared().get_or_create_mysql_ref(mysql_connection_id),
         )?;
-        Ok(HashMap::from([(
-            "mysql_ref".to_string(),
-            DataValue::MySqlRef(mysql_ref),
-        )]))
+        zihuan_graph_engine::return_with_node_output![self;
+            "mysql_ref" => DataValue::MySqlRef(mysql_ref),
+        ]
     }
 }

@@ -7,5 +7,6 @@ pub mod util;
 pub use llm_base::StreamingLLMBase;
 pub use model::{
     ContentPart, InferenceParam, MediaUrlSpec, MessageContent, MessageRole, OpenAIMessage,
+    TokenUsage,
 };
 pub use util::{role_to_str, str_to_role, SystemMessage, UserMessage};

@@ -30,11 +30,11 @@ impl Node for TavilyWebSearchNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("使用 Tavily 搜索网页，或对单个 URL 抽取正文内容")
+        Some("使用 Web Search Engine 搜索网页，或对单个 URL 抽取正文内容")
     }
 
     node_input![
-        port! { name = "tavily_ref", ty = TavilyRef, desc = "Tavily 搜索引用" },
+        port! { name = "web_search_engine_ref", ty = WebSearchEngineRef, desc = "Web Search Engine 搜索引用" },
         port! { name = "query", ty = String, desc = "搜索关键词或问题", optional },
         port! { name = "url", ty = String, desc = "要单独抽取的网页 URL", optional },
         port! { name = "search_count", ty = Integer, desc = "搜索结果数量，默认 3", optional },
@@ -46,17 +46,21 @@ impl Node for TavilyWebSearchNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
-        let tavily_ref = inputs
-            .get("tavily_ref")
+        let web_search_engine_ref = inputs
+            .get("web_search_engine_ref")
             .and_then(|value| match value {
-                DataValue::TavilyRef(tavily_ref) => Some(tavily_ref.clone()),
+                DataValue::WebSearchEngineRef(web_search_engine_ref) => {
+                    Some(web_search_engine_ref.clone())
+                }
                 _ => None,
             })
-            .ok_or_else(|| Error::InvalidNodeInput("tavily_ref is required".to_string()))?;
+            .ok_or_else(|| {
+                Error::InvalidNodeInput("web_search_engine_ref is required".to_string())
+            })?;
 
         let query = inputs
             .get("query")
@@ -89,18 +93,18 @@ impl Node for TavilyWebSearchNode {
         }
 
         let results = if !url.is_empty() {
-            match tavily_ref.extract_url(&url) {
+            match web_search_engine_ref.extract_url(&url) {
                 Ok(items) => items,
                 Err(error) => {
                     warn!(
                         "[TavilyWebSearchNode:{}] extract failed for url='{}': {}; trying direct web request",
                         self.id, url, error
                     );
-                    tavily_ref.fetch_url_direct(&url)?
+                    web_search_engine_ref.fetch_url_direct(&url)?
                 }
             }
         } else {
-            match tavily_ref.search(&query, search_count) {
+            match web_search_engine_ref.search(&query, search_count) {
                 Ok(items) => items,
                 Err(error) => {
                     if Url::parse(&query).is_err() {
@@ -111,7 +115,7 @@ impl Node for TavilyWebSearchNode {
                         "[TavilyWebSearchNode:{}] search failed for url-like query='{}': {}; trying direct web request",
                         self.id, query, error
                     );
-                    tavily_ref.fetch_url_direct(&query)?
+                    web_search_engine_ref.fetch_url_direct(&query)?
                 }
             }
         };
@@ -124,6 +128,7 @@ impl Node for TavilyWebSearchNode {
                 results.into_iter().map(DataValue::String).collect(),
             ),
         );
+        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }

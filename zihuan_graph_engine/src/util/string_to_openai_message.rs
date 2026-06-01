@@ -39,10 +39,7 @@ impl Node for StringToOpenAIMessageNode {
 
     node_output![port! { name = "message", ty = OpenAIMessage, desc = "封装后的 OpenAIMessage" },];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let content = match inputs.get("content") {
@@ -56,20 +53,16 @@ impl Node for StringToOpenAIMessageNode {
             None => str_to_role("system"),
         };
 
-        let mut outputs = HashMap::new();
-        outputs.insert(
-            "message".to_string(),
-            DataValue::OpenAIMessage(OpenAIMessage {
+        crate::return_with_node_output![self;
+            "message" => DataValue::OpenAIMessage(OpenAIMessage {
                 role,
                 api_style: None,
                 content: Some(MessageContent::Text(content)),
                 reasoning_content: None,
                 tool_calls: Vec::new(),
                 tool_call_id: None,
+                usage: None,
             }),
-        );
-
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        ]
     }
 }

@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use super::inference::{InferenceToolContext, InferenceToolProvider};
 use super::qq_chat_agent_core::{
-    build_info_brain_tools, QqAgentReplyBatchBuilder, QqAgentReplyBuildRequest,
-    QqAgentReplyBuildResult, QqChatAgentService, QqChatAgentServiceConfig,
+    build_info_brain_tools, QqAgentReplyBatchBuilder, QqChatAgentService, QqChatAgentServiceConfig,
 };
+use super::qq_chat_agent_msg_send::build_reply_batch_builder as build_unified_reply_batch_builder;
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
 use crate::agent::qq_chat_agent_inbox::{QqChatAgentInbox, QqChatAgentSupervisorEvent};
 use crate::agent::tool_definitions::build_enabled_tool_definitions;
@@ -17,17 +17,14 @@ use crate::resource_resolver::{
 use chrono::Local;
 use ims_bot_adapter::adapter::BotAdapter;
 use ims_bot_adapter::event::EventHandler;
-use ims_bot_adapter::models::message::{
-    AtTargetMessage, ForwardMessage, ForwardNodeMessage, ImageMessage, Message, PersistedMedia,
-    PersistedMediaSource, PlainTextMessage, ReplyMessage,
-};
 use ims_bot_adapter::{build_ims_bot_adapter, parse_ims_bot_adapter_connection};
 use log::{error, info, warn};
 use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 use model_inference::system_config::{load_llm_refs, AgentConfig, LlmRefConfig};
 use storage_handler::{
-    build_mysql_ref, build_s3_ref, build_tavily_ref, build_weaviate_ref, find_connection,
-    ConnectionConfig, ConnectionKind,
+    build_mysql_ref, build_relational_db_connection_for_connection, build_s3_ref,
+    build_weaviate_ref, build_web_search_engine_ref, find_connection, ConnectionConfig,
+    ConnectionKind,
 };
 use tokio::task::JoinHandle;
 use zihuan_agent::brain::BrainTool;
@@ -36,32 +33,19 @@ use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::OpenAIMessage;
-use zihuan_core::rag::TavilyRef;
+use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::runtime::block_async;
 use zihuan_core::task_context::AgentTaskRuntime;
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
 use zihuan_graph_engine::data_value::{OpenAIMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
-use zihuan_graph_engine::message_restore::{register_mysql_ref, restore_media_by_id};
+use zihuan_graph_engine::message_restore::{register_mysql_ref, register_rdb_pool};
+use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_nlp::{build_segmenter, TextSegmenter};
 
-#[derive(Debug, Clone)]
-enum ReplySegment {
-    Text(String),
-    Message(Message),
-    NoReply,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-struct SplitRepairState {
-    in_code_fence: bool,
-    in_double_quote: bool,
-    in_cn_quote: bool,
-}
-
 fn build_reply_batch_builder(segmenter: Arc<dyn TextSegmenter>) -> QqAgentReplyBatchBuilder {
-    Arc::new(move |request| build_reply_batches_from_model_text(request, segmenter.as_ref()))
+    build_unified_reply_batch_builder(segmenter)
 }
 
 #[doc(hidden)]
@@ -71,582 +55,13 @@ pub fn expand_message_event_for_tool_input(
     super::qq_chat_agent_core::expand_event_for_inference(event)
 }
 
-fn build_reply_batches_from_model_text(
-    request: &QqAgentReplyBuildRequest,
-    segmenter: &dyn TextSegmenter,
-) -> Result<QqAgentReplyBuildResult> {
-    let resolved_text;
-    let text = if let Some(mid) = request.trigger_message_id {
-        resolved_text = resolve_reply_his_message_aliases(&request.assistant_text, mid);
-        &resolved_text
-    } else {
-        &request.assistant_text
-    };
-    let sender_resolved_text;
-    let text = if request.is_group {
-        sender_resolved_text = text.replace("@sender", &format!("@{}", request.sender_id));
-        &sender_resolved_text
-    } else {
-        text
-    };
-    let segments = parse_reply_segments(text);
-    if segments
-        .iter()
-        .any(|segment| matches!(segment, ReplySegment::NoReply))
-    {
-        return Ok(QqAgentReplyBuildResult {
-            batches: Vec::new(),
-            suppress_send: true,
-        });
-    }
-
-    let mut batches = Vec::new();
-    let mut current_batch = Vec::new();
-    let mut current_text_chars = 0usize;
-    let mut pending_reply: Option<ReplyMessage> = None;
-
-    for segment in segments {
-        match segment {
-            ReplySegment::Text(text) => {
-                let text = text.trim().to_string();
-                if text.is_empty() {
-                    continue;
-                }
-
-                let text_chars = text.chars().count();
-                if text_chars > request.max_message_length {
-                    flush_batch(&mut batches, &mut current_batch);
-                    if pending_reply.is_some() {
-                        let text_batches = build_plain_text_batches_from_text(
-                            &text,
-                            request.max_message_length,
-                            segmenter,
-                        );
-                        if let Some(reply) = pending_reply.take() {
-                            append_reply_to_text_batches(&mut batches, text_batches, reply);
-                        } else {
-                            batches.extend(text_batches);
-                        }
-                    } else if let Some(forward) = build_forward_from_text(
-                        &text,
-                        request.max_message_length,
-                        &request.bot_id,
-                        &request.bot_name,
-                        segmenter,
-                    )? {
-                        batches.push(vec![Message::Forward(forward)]);
-                    }
-                    current_text_chars = 0;
-                    continue;
-                }
-
-                if current_text_chars > 0
-                    && current_text_chars + text_chars > request.max_message_length
-                {
-                    flush_batch(&mut batches, &mut current_batch);
-                    current_text_chars = 0;
-                }
-
-                current_text_chars += text_chars;
-                current_batch.push(Message::PlainText(PlainTextMessage { text }));
-            }
-            ReplySegment::Message(Message::At(at)) => {
-                current_batch.push(Message::At(at));
-            }
-            ReplySegment::Message(Message::Reply(reply)) => {
-                if pending_reply.is_none() {
-                    pending_reply = Some(reply);
-                }
-            }
-            ReplySegment::Message(message) => {
-                flush_batch(&mut batches, &mut current_batch);
-                current_text_chars = 0;
-                batches.push(vec![message]);
-            }
-            ReplySegment::NoReply => {}
-        }
-    }
-
-    flush_batch(&mut batches, &mut current_batch);
-    if let Some(reply) = pending_reply {
-        attach_reply_to_first_batch(&mut batches, reply);
-    }
-    ensure_space_after_at(&mut batches);
-    resolve_media_references(&mut batches, &request.available_media)?;
-    Ok(QqAgentReplyBuildResult {
-        batches,
-        suppress_send: false,
-    })
-}
-
-fn resolve_media_references(
-    batches: &mut [Vec<Message>],
-    available_media: &HashMap<String, PersistedMedia>,
-) -> Result<()> {
-    for batch in batches {
-        for message in batch {
-            resolve_message_media_reference(message, available_media)?;
-        }
-    }
-    Ok(())
-}
-
-fn resolve_message_media_reference(
-    message: &mut Message,
-    available_media: &HashMap<String, PersistedMedia>,
-) -> Result<()> {
-    match message {
-        Message::Image(image) => {
-            if image.rustfs_path().is_some() || image.original_source().is_some() {
-                return Ok(());
-            }
-
-            let media_id = image.media.media_id.trim();
-            if media_id.is_empty() {
-                return Err(Error::ValidationError(
-                    "outbound image marker is missing media_id".to_string(),
-                ));
-            }
-
-            if let Some(media) = available_media.get(media_id) {
-                image.media = media.clone();
-                return Ok(());
-            }
-
-            if let Some(media) = restore_media_by_id(media_id)? {
-                image.media = media;
-                return Ok(());
-            }
-
-            return Err(Error::ValidationError(format!(
-                "failed to resolve outbound image media_id '{}'",
-                media_id
-            )));
-        }
-        Message::Forward(forward) => {
-            for node in &mut forward.content {
-                for nested in &mut node.content {
-                    resolve_message_media_reference(nested, available_media)?;
-                }
-            }
-            Ok(())
-        }
-        _ => Ok(()),
-    }
-}
-
-fn resolve_reply_his_message_aliases(text: &str, trigger_message_id: i64) -> String {
-    text.replace(
-        "[Reply his_message]",
-        &format!("[Reply message_id={trigger_message_id}]"),
-    )
-    .replace(
-        "[Reply his message]",
-        &format!("[Reply message_id={trigger_message_id}]"),
-    )
-}
-
-fn ensure_space_after_at(batches: &mut [Vec<Message>]) {
-    for batch in batches {
-        for i in 0..batch.len().saturating_sub(1) {
-            if matches!(batch[i], Message::At(_)) {
-                if let Message::PlainText(pt) = &mut batch[i + 1] {
-                    if !pt.text.starts_with(' ') {
-                        pt.text.insert(0, ' ');
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn flush_batch(batches: &mut Vec<Vec<Message>>, current_batch: &mut Vec<Message>) {
-    if !current_batch.is_empty() {
-        batches.push(std::mem::take(current_batch));
-    }
-}
-
-fn build_plain_text_batches_from_text(
-    text: &str,
-    max_chars: usize,
-    segmenter: &dyn TextSegmenter,
-) -> Vec<Vec<Message>> {
-    split_plain_text_for_forward(text, max_chars, segmenter)
-        .into_iter()
-        .map(|chunk| vec![Message::PlainText(PlainTextMessage { text: chunk })])
-        .collect()
-}
-
-fn append_reply_to_text_batches(
-    batches: &mut Vec<Vec<Message>>,
-    mut text_batches: Vec<Vec<Message>>,
-    reply: ReplyMessage,
-) {
-    if let Some(first_batch) = text_batches.first_mut() {
-        first_batch.insert(0, Message::Reply(reply));
-    }
-    batches.extend(text_batches);
-}
-
-fn attach_reply_to_first_batch(batches: &mut Vec<Vec<Message>>, reply: ReplyMessage) {
-    if let Some(first_batch) = batches
-        .iter_mut()
-        .find(|batch| !matches!(batch.as_slice(), [Message::Forward(_)]))
-    {
-        first_batch.insert(0, Message::Reply(reply));
-    } else {
-        warn!(
-            "dropping reply marker because all outbound batches are forward messages and QQ does not support reply+forward in one batch"
-        );
-    }
-}
-
-fn build_forward_from_text(
-    text: &str,
-    max_chars: usize,
-    bot_id: &str,
-    bot_name: &str,
-    segmenter: &dyn TextSegmenter,
-) -> Result<Option<ForwardMessage>> {
-    let chunks = split_plain_text_for_forward(text, max_chars, segmenter);
-    if chunks.is_empty() {
-        return Ok(None);
-    }
-
-    let content = chunks
-        .into_iter()
-        .map(|chunk| ForwardNodeMessage {
-            user_id: Some(bot_id.to_string()),
-            nickname: Some(bot_name.to_string()),
-            id: None,
-            content: vec![Message::PlainText(PlainTextMessage { text: chunk })],
-        })
-        .collect();
-
-    Ok(Some(ForwardMessage { id: None, content }))
-}
-
-fn split_plain_text_for_forward(
-    text: &str,
-    max_chars: usize,
-    segmenter: &dyn TextSegmenter,
-) -> Vec<String> {
-    let normalized = text.replace("\r\n", "\n");
-    let trimmed = normalized.trim();
-    if trimmed.is_empty() || max_chars == 0 {
-        return Vec::new();
-    }
-
-    let raw_chunks = segmenter.segment(trimmed, max_chars);
-    let mut carry_prefix = String::new();
-    let mut state = SplitRepairState::default();
-    let mut chunks = Vec::new();
-
-    for (idx, raw_chunk) in raw_chunks.iter().enumerate() {
-        let mut chunk = carry_prefix.clone();
-        chunk.push_str(raw_chunk);
-        let analysis = analyze_chunk_state(&chunk, state);
-        let has_more = idx + 1 < raw_chunks.len();
-        let mut finalized = chunk.trim().to_string();
-        carry_prefix.clear();
-
-        if has_more {
-            if analysis.in_code_fence {
-                finalized.push_str("\n```");
-                carry_prefix.push_str("```\n");
-            }
-            if analysis.in_cn_quote {
-                finalized.push('”');
-                carry_prefix.push('“');
-            }
-            if analysis.in_double_quote {
-                finalized.push('"');
-                carry_prefix.push('"');
-            }
-        }
-
-        let finalized = finalized.trim().to_string();
-        if !finalized.is_empty() {
-            chunks.push(finalized);
-        }
-        state = analysis;
-    }
-
-    chunks
-}
-
-fn analyze_chunk_state(chunk: &str, mut state: SplitRepairState) -> SplitRepairState {
-    let mut iter = chunk.chars().peekable();
-    while let Some(ch) = iter.next() {
-        if ch == '`' {
-            let mut count = 1usize;
-            while matches!(iter.peek(), Some('`')) {
-                iter.next();
-                count += 1;
-            }
-            if count >= 3 {
-                state.in_code_fence = !state.in_code_fence;
-                continue;
-            }
-        }
-
-        if state.in_code_fence {
-            continue;
-        }
-
-        match ch {
-            '"' => state.in_double_quote = !state.in_double_quote,
-            '“' => state.in_cn_quote = true,
-            '”' => state.in_cn_quote = false,
-            _ => {}
-        }
-    }
-    state
-}
-
-fn parse_reply_segments(text: &str) -> Vec<ReplySegment> {
-    let mut segments = Vec::new();
-    let mut buffer = String::new();
-    let chars: Vec<char> = text.chars().collect();
-    let mut index = 0usize;
-
-    while index < chars.len() {
-        if chars[index] == '@' && is_mention_prefix_boundary(&chars, index) {
-            if let Some((target, next_index)) = parse_at_segment(&chars, index) {
-                push_text_segment(&mut segments, &mut buffer);
-                segments.push(ReplySegment::Message(Message::At(AtTargetMessage {
-                    target: Some(target),
-                })));
-                index = next_index;
-                continue;
-            }
-        }
-
-        if chars[index] == '[' {
-            if let Some((segment, next_index)) = parse_bracket_segment(&chars, index) {
-                push_text_segment(&mut segments, &mut buffer);
-                segments.push(segment);
-                index = next_index;
-                continue;
-            }
-        }
-
-        buffer.push(chars[index]);
-        index += 1;
-    }
-
-    push_text_segment(&mut segments, &mut buffer);
-    merge_adjacent_text_segments(segments)
-}
-
-fn push_text_segment(segments: &mut Vec<ReplySegment>, buffer: &mut String) {
-    if !buffer.is_empty() {
-        segments.push(ReplySegment::Text(std::mem::take(buffer)));
-    }
-}
-
-fn merge_adjacent_text_segments(segments: Vec<ReplySegment>) -> Vec<ReplySegment> {
-    let mut merged = Vec::new();
-    for segment in segments {
-        match segment {
-            ReplySegment::Text(text) => {
-                if let Some(ReplySegment::Text(last)) = merged.last_mut() {
-                    last.push_str(&text);
-                } else {
-                    merged.push(ReplySegment::Text(text));
-                }
-            }
-            other => merged.push(other),
-        }
-    }
-    merged
-}
-
-fn is_mention_prefix_boundary(chars: &[char], index: usize) -> bool {
-    if index == 0 {
-        return true;
-    }
-
-    !chars[index - 1].is_ascii_alphanumeric()
-}
-
-fn parse_at_segment(chars: &[char], start: usize) -> Option<(String, usize)> {
-    let mut end = start + 1;
-    while end < chars.len() && chars[end].is_ascii_digit() {
-        end += 1;
-    }
-
-    if end == start + 1 {
-        return None;
-    }
-
-    if end < chars.len() {
-        let boundary = chars[end];
-        if !boundary.is_whitespace()
-            && !matches!(
-                boundary,
-                ',' | '，' | '。' | ':' | '：' | '!' | '！' | '?' | '？' | ')' | '）' | ']' | '】'
-            )
-        {
-            return None;
-        }
-    }
-
-    Some((chars[start + 1..end].iter().collect(), end))
-}
-
-fn parse_bracket_segment(chars: &[char], start: usize) -> Option<(ReplySegment, usize)> {
-    let mut end = start + 1;
-    while end < chars.len() {
-        if chars[end] == ']' {
-            let inner: String = chars[start + 1..end].iter().collect();
-            let inner = inner.trim();
-            if let Some(control) = parse_bracket_control(inner) {
-                return Some((control, end + 1));
-            }
-            if let Some(message) = parse_bracket_message(inner) {
-                return Some((ReplySegment::Message(message), end + 1));
-            }
-            return None;
-        }
-        end += 1;
-    }
-    None
-}
-
-fn parse_bracket_message(inner: &str) -> Option<Message> {
-    if let Some(value) = inner.strip_prefix("Reply message_id=") {
-        let message_id = value.trim().parse::<i64>().ok()?;
-        return Some(Message::Reply(ReplyMessage {
-            id: message_id,
-            message_source: None,
-        }));
-    }
-
-    if let Some(value) = inner
-        .strip_prefix("Image media_id=")
-        .or_else(|| inner.strip_prefix("Image: media_id="))
-    {
-        let media_id = parse_tag_value(value)?;
-        return Some(Message::Image(ImageMessage::new(PersistedMedia {
-            media_id,
-            source: PersistedMediaSource::Upload,
-            original_source: String::new(),
-            rustfs_path: String::new(),
-            name: None,
-            description: None,
-            mime_type: None,
-        })));
-    }
-
-    None
-}
-
-fn parse_bracket_control(inner: &str) -> Option<ReplySegment> {
-    if inner.eq_ignore_ascii_case("no reply") {
-        return Some(ReplySegment::NoReply);
-    }
-    None
-}
-
-fn parse_tag_value(value: &str) -> Option<String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    if trimmed.len() >= 2 {
-        let quoted = trimmed
-            .strip_prefix('"')
-            .and_then(|value| value.strip_suffix('"'))
-            .or_else(|| {
-                trimmed
-                    .strip_prefix('\'')
-                    .and_then(|value| value.strip_suffix('\''))
-            });
-        if let Some(value) = quoted {
-            let inner = value.trim();
-            if !inner.is_empty() {
-                return Some(inner.to_string());
-            }
-        }
-    }
-
-    Some(trimmed.to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_bracket_message_supports_media_id_marker() {
-        let parsed = parse_bracket_message("Image media_id=media-123").expect("parse image tag");
-        match parsed {
-            Message::Image(image) => {
-                assert_eq!(image.media.media_id, "media-123");
-                assert_eq!(image.media.rustfs_path, "");
-                assert_eq!(image.media.original_source, "");
-            }
-            other => panic!("expected image message, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn parse_bracket_message_supports_legacy_colon_media_id_marker() {
-        let parsed =
-            parse_bracket_message("Image: media_id=media-legacy").expect("parse legacy image tag");
-        match parsed {
-            Message::Image(image) => {
-                assert_eq!(image.media.media_id, "media-legacy");
-            }
-            other => panic!("expected image message, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn resolve_media_references_prefers_current_turn_media() {
-        let mut batches = vec![vec![Message::Image(ImageMessage::new(PersistedMedia {
-            media_id: "media-123".to_string(),
-            source: PersistedMediaSource::Upload,
-            original_source: String::new(),
-            rustfs_path: String::new(),
-            name: None,
-            description: None,
-            mime_type: None,
-        }))]];
-        let available_media = HashMap::from([(
-            "media-123".to_string(),
-            PersistedMedia {
-                media_id: "media-123".to_string(),
-                source: PersistedMediaSource::WebSearch,
-                original_source: "https://example.com/demo.jpg".to_string(),
-                rustfs_path: "tavily/demo.jpg".to_string(),
-                name: None,
-                description: Some("demo".to_string()),
-                mime_type: Some("image/jpeg".to_string()),
-            },
-        )]);
-
-        resolve_media_references(&mut batches, &available_media).expect("resolve media");
-
-        match &batches[0][0] {
-            Message::Image(image) => {
-                assert_eq!(image.media.media_id, "media-123");
-                assert_eq!(image.media.rustfs_path, "tavily/demo.jpg");
-                assert_eq!(image.media.original_source, "https://example.com/demo.jpg");
-            }
-            other => panic!("expected image message, got {other:?}"),
-        }
-    }
-}
-
 #[derive(Clone)]
 struct QqLoadedInferenceResources {
     bot_name: String,
     default_tools_enabled: HashMap<String, bool>,
-    tavily_ref: Option<Arc<TavilyRef>>,
+    web_search_engine_ref: Option<Arc<WebSearchEngineRef>>,
     mysql_ref: Option<Arc<MySqlConfig>>,
+    s3_ref: Option<Arc<S3Ref>>,
     weaviate_image_ref: Option<Arc<WeaviateRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
 }
@@ -670,8 +85,9 @@ impl InferenceToolProvider for QqInferenceToolProvider {
     fn build_default_tools(&self, context: &InferenceToolContext) -> Vec<Box<dyn BrainTool>> {
         build_info_brain_tools(
             &self.resources.default_tools_enabled,
-            self.resources.tavily_ref.clone(),
+            self.resources.web_search_engine_ref.clone(),
             self.resources.mysql_ref.clone(),
+            self.resources.s3_ref.clone(),
             self.resources.weaviate_image_ref.clone(),
             self.resources.embedding_model.clone(),
             context.last_user_text.clone(),
@@ -699,32 +115,28 @@ fn load_qq_resources(
     config: &QqChatAgentConfig,
     connections: &[ConnectionConfig],
 ) -> Result<QqLoadedInferenceResources> {
-    let tavily_ref = build_tavily_ref(
-        if config.tavily_connection_id.trim().is_empty() {
+    let web_search_engine_ref = build_web_search_engine_ref(
+        if config.web_search_engine_connection_id.trim().is_empty() {
             None
         } else {
-            Some(config.tavily_connection_id.as_str())
+            Some(config.web_search_engine_connection_id.as_str())
         },
         connections,
     )
     .unwrap_or_else(|e| {
-        warn!("[inference][qq_agent] tavily connection unavailable: {e}");
+        warn!("[inference][qq_agent] web search engine connection unavailable: {e}");
         None
     });
 
-    let mysql_connection_id = config
-        .mysql_connection_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let mysql_ref =
-        block_async(build_mysql_ref(mysql_connection_id, connections)).map_err(|err| {
-            let connection_label = mysql_connection_id.unwrap_or("<none>");
-            Error::ValidationError(format!(
-            "agent '{}' failed to initialize mysql dependency from mysql_connection_id='{}': {}",
-            agent.name, connection_label, err
-        ))
-        })?;
+    let mysql_ref = build_agent_mysql_ref(config, connections, &agent.name)?;
+    let s3_ref = block_async(build_s3_ref(
+        config.rustfs_connection_id.as_deref(),
+        connections,
+    ))
+    .unwrap_or_else(|e| {
+        warn!("[inference][qq_agent] rustfs connection unavailable: {e}");
+        None
+    });
 
     let weaviate_image_ref = tokio::task::block_in_place(|| {
         build_weaviate_ref(
@@ -772,10 +184,32 @@ fn load_qq_resources(
             config.bot_name.clone()
         },
         default_tools_enabled: config.default_tools_enabled.clone(),
-        tavily_ref,
+        web_search_engine_ref,
         mysql_ref,
+        s3_ref,
         weaviate_image_ref,
         embedding_model,
+    })
+}
+
+fn build_agent_mysql_ref(
+    config: &QqChatAgentConfig,
+    connections: &[ConnectionConfig],
+    agent_name: &str,
+) -> Result<Option<Arc<MySqlConfig>>> {
+    let Some(connection_id) = config.resolved_rdb_id() else {
+        return Ok(None);
+    };
+    let connection = find_connection(connections, connection_id)?;
+    if !matches!(connection.kind, ConnectionKind::Mysql(_)) {
+        return Ok(None);
+    }
+
+    block_async(build_mysql_ref(Some(connection_id), connections)).map_err(|err| {
+        Error::ValidationError(format!(
+            "agent '{}' failed to initialize mysql dependency from rdb_id='{}': {}",
+            agent_name, connection_id, err
+        ))
     })
 }
 
@@ -847,10 +281,19 @@ pub async fn spawn(
     } else {
         config.embedding.as_ref().map(build_embedding_model)
     };
-    let tavily = build_tavily_ref(Some(&config.tavily_connection_id), &connections)?
-        .ok_or_else(|| Error::ValidationError("missing tavily connection".to_string()))?;
+    let web_search_engine =
+        build_web_search_engine_ref(Some(&config.web_search_engine_connection_id), &connections)?
+            .ok_or_else(|| {
+            Error::ValidationError("missing web search engine connection".to_string())
+        })?;
     let object_storage = build_s3_ref(config.rustfs_connection_id.as_deref(), &connections).await?;
-    let mysql_ref = build_mysql_ref(config.mysql_connection_id.as_deref(), &connections).await?;
+    let rdb_pool = match config.resolved_rdb_id() {
+        Some(connection_id) => {
+            Some(build_relational_db_connection_for_connection(connection_id, &connections).await?)
+        }
+        None => None,
+    };
+    let mysql_ref = build_agent_mysql_ref(&config, &connections, &agent.name)?;
     let redis_ref = resolve_inbox_redis_ref(&connections)?;
     let weaviate_image_ref = tokio::task::block_in_place(|| {
         build_weaviate_ref(
@@ -864,6 +307,9 @@ pub async fn spawn(
 
     if let Some(ref mysql) = mysql_ref {
         register_mysql_ref(mysql.clone());
+    }
+    if let Some(ref rdb_pool) = rdb_pool {
+        register_rdb_pool(rdb_pool.clone());
     }
 
     let service = Arc::new(QqChatAgentService::new(QqChatAgentServiceConfig {
@@ -908,10 +354,11 @@ pub async fn spawn(
             &llm_refs,
             &math_programming_llm_config.model_name,
         ),
+        rdb_pool,
         mysql_ref,
         weaviate_image_ref,
         embedding_model,
-        tavily,
+        web_search_engine,
         s3_ref: object_storage.clone(),
         max_message_length: config.max_message_length,
         compact_context_length: config.compact_context_length,

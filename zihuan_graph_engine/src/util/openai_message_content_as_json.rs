@@ -41,10 +41,7 @@ impl Node for OpenAIMessageContentAsJsonNode {
         port! { name = "failed", ty = String, desc = "解析失败时输出原始 content 字符串" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let message = match inputs.get("message") {
@@ -56,13 +53,15 @@ impl Node for OpenAIMessageContentAsJsonNode {
             .content_text_owned()
             .ok_or_else(|| Error::ValidationError("OpenAIMessage content is None".to_string()))?;
 
-        let outputs = match serde_json::from_str(&content) {
+        match serde_json::from_str(&content) {
             Ok(json) => {
                 info!(
                     "[{}] OpenAIMessage content parsed as JSON successfully",
                     self.id
                 );
-                HashMap::from([("json".to_string(), DataValue::Json(json))])
+                crate::return_with_node_output![self;
+                    "json" => DataValue::Json(json),
+                ]
             }
             Err(err) => {
                 // Streaming fallback: the LLM may emit multiple JSON values separated by
@@ -92,11 +91,9 @@ impl Node for OpenAIMessageContentAsJsonNode {
                         "[{}] OpenAIMessage content contained multiple JSON values; merged into one array. Original parse error: {}. Raw content: {:?}",
                         self.id, err, content
                     );
-                    return {
-                        let outputs = HashMap::from([("json".to_string(), DataValue::Json(json))]);
-                        self.validate_outputs(&outputs)?;
-                        Ok(outputs)
-                    };
+                    return crate::return_with_node_output![self;
+                        "json" => DataValue::Json(json),
+                    ];
                 }
 
                 // Bracket-closing fallback: the LLM may have truncated the output before
@@ -118,21 +115,19 @@ impl Node for OpenAIMessageContentAsJsonNode {
                         "[{}] OpenAIMessage content was truncated (missing closing bracket(s)); auto-closed to recover. Original parse error: {}. Raw content: {:?}",
                         self.id, err, content
                     );
-                    return {
-                        let outputs = HashMap::from([("json".to_string(), DataValue::Json(json))]);
-                        self.validate_outputs(&outputs)?;
-                        Ok(outputs)
-                    };
+                    return crate::return_with_node_output![self;
+                        "json" => DataValue::Json(json),
+                    ];
                 }
 
                 warn!(
                     "[{}] Failed to parse OpenAIMessage content as JSON: {}. Raw content: {:?}",
                     self.id, err, content
                 );
-                HashMap::from([("failed".to_string(), DataValue::String(content))])
+                crate::return_with_node_output![self;
+                    "failed" => DataValue::String(content),
+                ]
             }
-        };
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        }
     }
 }

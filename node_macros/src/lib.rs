@@ -11,17 +11,68 @@ use syn::{
     token, Expr, Ident, LitBool, LitStr, Result, Token,
 };
 
+/// Define a node's input ports via `port!{ ... }` entries.
+///
+/// Usage: `node_input![port! { name = "foo", ty = String, desc = "..." }, ...]`
+///
+/// Generates an `fn input_ports(&self) -> Vec<Port>` with duplicate-name
+/// detection at compile time.
 #[proc_macro]
 pub fn node_input(input: TokenStream) -> TokenStream {
     expand_node_ports(input, PortKind::Input)
 }
 
+/// Define a node's output ports via `port!{ ... }` entries.
+///
+/// Usage: `node_output![port! { name = "foo", ty = String, desc = "..." }, ...]`
+///
+/// Generates an `fn output_ports(&self) -> Vec<Port>` with duplicate-name
+/// detection at compile time.
 #[proc_macro]
 pub fn node_output(input: TokenStream) -> TokenStream {
     expand_node_ports(input, PortKind::Output)
 }
 
+/// Build a `NodeInputFlow` from `"key" => value` pairs.
+///
+/// Usage: `node_input_flow!["port_name" => data_value, ...]`
+///
+/// Expands to a `NodeInputFlow`.
+#[proc_macro]
+pub fn node_input_flow(input: TokenStream) -> TokenStream {
+    expand_node_flow(input, FlowKind::Input)
+}
+
+/// Build a `NodeOutputFlow` from `"key" => value` pairs.
+///
+/// Usage: `node_output_flow!["port_name" => data_value, ...]`
+///
+/// Expands to a `NodeOutputFlow`.
+/// No validation is performed — use [`return_with_node_output!`] if you also
+/// want the output validated against the node's declared output ports.
+#[proc_macro]
+pub fn node_output_flow(input: TokenStream) -> TokenStream {
+    expand_node_flow(input, FlowKind::Output)
+}
+
+/// Build a validated `NodeOutputFlow` and wrap it in `Ok(...)`.
+///
+/// Usage: `return_with_node_output![self; "key" => value, ...]`
+///
+/// Expands to a block that constructs the flow, calls
+/// [`self.validate_outputs`](zihuan_graph_engine::Node::validate_outputs),
+/// and evaluates to `Ok(flow)`.
+#[proc_macro]
+pub fn return_with_node_output(input: TokenStream) -> TokenStream {
+    expand_return_with_node_output(input)
+}
+
 enum PortKind {
+    Input,
+    Output,
+}
+
+enum FlowKind {
     Input,
     Output,
 }
@@ -65,6 +116,101 @@ fn expand_node_ports(input: TokenStream, kind: PortKind) -> TokenStream {
     expanded.into()
 }
 
+fn expand_node_flow(input: TokenStream, kind: FlowKind) -> TokenStream {
+    let entries = parse_macro_input!(input as FlowEntryList);
+
+    let mut seen_names: HashSet<String> = HashSet::new();
+    for entry in &entries.entries {
+        if !seen_names.insert(entry.key.value()) {
+            return syn::Error::new(
+                entry.key.span(),
+                format!("Duplicate flow key '{}'", entry.key.value()),
+            )
+            .to_compile_error()
+            .into();
+        }
+    }
+
+    let flow_type = match kind {
+        FlowKind::Input => quote! { ::zihuan_graph_engine::NodeInputFlow },
+        FlowKind::Output => quote! { ::zihuan_graph_engine::NodeOutputFlow },
+    };
+
+    let entry_tokens: Vec<_> = entries
+        .entries
+        .into_iter()
+        .map(|entry| {
+            let key = entry.key;
+            let value = entry.value;
+            quote! { (#key.to_string(), #value) }
+        })
+        .collect();
+
+    quote! {
+        #flow_type::from(::std::collections::HashMap::from([
+            #(#entry_tokens),*
+        ]))
+    }
+    .into()
+}
+
+/// Build a validated `NodeOutputFlow` and wrap it in `Ok(...)`.
+///
+/// Usage: `return_with_node_output![self; "key" => val, ...]`
+///
+/// Expands to a block that constructs the flow, calls `self.validate_outputs`,
+/// and evaluates to `Ok(flow)`.
+fn expand_return_with_node_output(input: TokenStream) -> TokenStream {
+    let parsed = parse_macro_input!(input as FlowInput);
+
+    let entries = match parsed {
+        FlowInput::WithSelf { entries, .. } => entries,
+        FlowInput::Entries(_) => {
+            return syn::Error::new(
+                proc_macro2::Span::call_site(),
+                "`return_with_node_output!` requires `self;` prefix: `return_with_node_output![self; \"key\" => val]`",
+            )
+            .to_compile_error()
+            .into();
+        }
+    };
+
+    let mut seen_names: HashSet<String> = HashSet::new();
+    for entry in &entries.entries {
+        if !seen_names.insert(entry.key.value()) {
+            return syn::Error::new(
+                entry.key.span(),
+                format!("Duplicate flow key '{}'", entry.key.value()),
+            )
+            .to_compile_error()
+            .into();
+        }
+    }
+
+    let entry_tokens: Vec<_> = entries
+        .entries
+        .into_iter()
+        .map(|entry| {
+            let key = entry.key;
+            let value = entry.value;
+            quote! { (#key.to_string(), #value) }
+        })
+        .collect();
+
+    quote! {
+        {
+            let __flow = ::zihuan_graph_engine::NodeOutputFlow::from(
+                ::std::collections::HashMap::from([
+                    #(#entry_tokens),*
+                ])
+            );
+            self.validate_outputs(&__flow)?;
+            ::std::result::Result::Ok(__flow)
+        }
+    }
+    .into()
+}
+
 struct PortList {
     ports: Vec<PortSpec>,
 }
@@ -75,6 +221,63 @@ impl Parse for PortList {
             .into_iter()
             .collect();
         Ok(Self { ports })
+    }
+}
+
+struct FlowEntryList {
+    entries: Vec<FlowEntry>,
+}
+
+enum FlowInput {
+    WithSelf {
+        self_token: Token![self],
+        entries: FlowEntryList,
+    },
+    Entries(FlowEntryList),
+}
+
+impl Parse for FlowInput {
+    fn parse(input: ParseStream) -> Result<Self> {
+        if input.peek(Token![self]) && input.peek2(Token![;]) {
+            let self_token: Token![self] = input.parse()?;
+            input.parse::<Token![;]>()?;
+            let entries: FlowEntryList = input.parse()?;
+            Ok(FlowInput::WithSelf {
+                self_token,
+                entries,
+            })
+        } else {
+            let entries: FlowEntryList = input.parse()?;
+            Ok(FlowInput::Entries(entries))
+        }
+    }
+}
+
+impl Parse for FlowEntryList {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let entries = Punctuated::<FlowEntry, Token![,]>::parse_terminated(input)?
+            .into_iter()
+            .collect();
+        Ok(Self { entries })
+    }
+}
+
+struct FlowEntry {
+    key: LitStr,
+    value: Expr,
+}
+
+impl Parse for FlowEntry {
+    fn parse(input: ParseStream) -> Result<Self> {
+        if !input.peek(LitStr) {
+            return Err(input.error("expected string literal key"));
+        }
+
+        let key: LitStr = input.parse()?;
+        input.parse::<Token![=>]>()?;
+        let value: Expr = input.parse()?;
+
+        Ok(Self { key, value })
     }
 }
 

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use zihuan_graph_engine::load_graph_definition_from_json_with_migration;
+use zihuan_graph_engine::load_graph_definition_from_json;
 
 fn workflow_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -11,11 +11,8 @@ fn workflow_path(name: &str) -> PathBuf {
 
 #[test]
 fn deep_search_workflow_uses_optional_group_id_node() {
-    let loaded =
-        load_graph_definition_from_json_with_migration(workflow_path("deep_search_qq_message"))
-            .expect("workflow should load");
-
-    let graph = loaded.graph;
+    let graph = load_graph_definition_from_json(workflow_path("deep_search_qq_message"))
+        .expect("workflow should load");
     let prompt_node = graph
         .nodes
         .iter()
@@ -32,11 +29,9 @@ fn deep_search_workflow_uses_optional_group_id_node() {
 
 #[test]
 fn deep_search_workflow_prompt_mentions_private_empty_group_id() {
-    let loaded =
-        load_graph_definition_from_json_with_migration(workflow_path("deep_search_qq_message"))
-            .expect("workflow should load");
+    let graph = load_graph_definition_from_json(workflow_path("deep_search_qq_message"))
+        .expect("workflow should load");
 
-    let graph = loaded.graph;
     let prompt_node = graph
         .nodes
         .iter()

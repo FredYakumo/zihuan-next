@@ -1,15 +1,15 @@
 use reqwest::Client;
 use serde::Deserialize;
-use serde_json::Value;
 use std::fmt;
 use std::time::Duration;
 
 use crate::runtime::block_async;
 
-#[derive(Clone)]
-pub struct TavilyRef {
-    pub api_token: String,
-    pub timeout: Duration,
+use super::web_search_engine::{strip_html_tags, WebSearchEngine, WebSearchImage};
+
+pub struct TavilySearch {
+    api_token: String,
+    timeout: Duration,
     client: Client,
 }
 
@@ -30,7 +30,7 @@ struct TavilyExtractResponse {
     #[serde(default)]
     results: Vec<TavilyExtractItem>,
     #[serde(default)]
-    failed_results: Vec<Value>,
+    failed_results: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,18 +40,12 @@ struct TavilyExtractItem {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct TavilyImage {
-    pub url: String,
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
 struct TavilyImageSearchResponse {
     #[serde(default)]
-    images: Vec<TavilyImage>,
+    images: Vec<WebSearchImage>,
 }
 
-impl TavilyRef {
+impl TavilySearch {
     pub fn new(api_token: impl Into<String>, timeout: Duration) -> Self {
         let client = Client::builder()
             .timeout(timeout)
@@ -62,10 +56,6 @@ impl TavilyRef {
             timeout,
             client,
         }
-    }
-
-    pub fn search(&self, query: &str, search_count: i64) -> crate::error::Result<Vec<String>> {
-        block_async(self.search_async(query, search_count))
     }
 
     async fn search_async(
@@ -116,10 +106,6 @@ impl TavilyRef {
             .collect())
     }
 
-    pub fn extract_url(&self, url: &str) -> crate::error::Result<Vec<String>> {
-        block_async(self.extract_url_async(url))
-    }
-
     async fn extract_url_async(&self, url: &str) -> crate::error::Result<Vec<String>> {
         let response = self
             .client
@@ -165,10 +151,6 @@ impl TavilyRef {
             .collect())
     }
 
-    pub fn fetch_url_direct(&self, url: &str) -> crate::error::Result<Vec<String>> {
-        block_async(self.fetch_url_direct_async(url))
-    }
-
     async fn fetch_url_direct_async(&self, url: &str) -> crate::error::Result<Vec<String>> {
         let response = self
             .client
@@ -196,19 +178,11 @@ impl TavilyRef {
         )])
     }
 
-    pub fn search_images(
-        &self,
-        query: &str,
-        max_results: i64,
-    ) -> crate::error::Result<Vec<TavilyImage>> {
-        block_async(self.search_images_async(query, max_results))
-    }
-
     async fn search_images_async(
         &self,
         query: &str,
         max_results: i64,
-    ) -> crate::error::Result<Vec<TavilyImage>> {
+    ) -> crate::error::Result<Vec<WebSearchImage>> {
         let response = self
             .client
             .post("https://api.tavily.com/search")
@@ -245,41 +219,31 @@ impl TavilyRef {
     }
 }
 
-fn strip_html_tags(input: &str) -> String {
-    let mut output = String::with_capacity(input.len());
-    let mut in_tag = false;
-    let mut previous_was_whitespace = false;
-
-    for ch in input.chars() {
-        match ch {
-            '<' => in_tag = true,
-            '>' => {
-                in_tag = false;
-                if !previous_was_whitespace {
-                    output.push(' ');
-                    previous_was_whitespace = true;
-                }
-            }
-            _ if in_tag => {}
-            _ if ch.is_whitespace() => {
-                if !previous_was_whitespace {
-                    output.push(' ');
-                    previous_was_whitespace = true;
-                }
-            }
-            _ => {
-                output.push(ch);
-                previous_was_whitespace = false;
-            }
-        }
+impl WebSearchEngine for TavilySearch {
+    fn search(&self, query: &str, search_count: i64) -> crate::error::Result<Vec<String>> {
+        block_async(self.search_async(query, search_count))
     }
 
-    output.trim().to_string()
+    fn extract_url(&self, url: &str) -> crate::error::Result<Vec<String>> {
+        block_async(self.extract_url_async(url))
+    }
+
+    fn fetch_url_direct(&self, url: &str) -> crate::error::Result<Vec<String>> {
+        block_async(self.fetch_url_direct_async(url))
+    }
+
+    fn search_images(
+        &self,
+        query: &str,
+        max_results: i64,
+    ) -> crate::error::Result<Vec<WebSearchImage>> {
+        block_async(self.search_images_async(query, max_results))
+    }
 }
 
-impl fmt::Debug for TavilyRef {
+impl fmt::Debug for TavilySearch {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TavilyRef")
+        f.debug_struct("TavilySearch")
             .field("api_token", &"<redacted>")
             .field("timeout", &self.timeout)
             .finish()

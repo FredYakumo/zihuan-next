@@ -1,5 +1,6 @@
 use model_inference::system_config::{AgentToolConfig, AgentToolType, NodeGraphToolConfig};
 use serde_json::Value;
+use zihuan_core::tool_runtime::ToolRunDuration;
 use zihuan_graph_engine::function_graph::FUNCTION_INPUTS_NODE_ID;
 use zihuan_graph_engine::DataType;
 use zihuan_service::agent::tool_definitions::build_enabled_tool_definitions;
@@ -12,6 +13,7 @@ fn image_understand_workflow_derives_optional_message_id_parameter() {
         name: "image_understand".to_string(),
         description: "test".to_string(),
         enabled: true,
+        run_duration: ToolRunDuration::Short,
         tool_type: AgentToolType::NodeGraph(NodeGraphToolConfig::FilePath {
             path: format!(
                 "{}/../workflow_set/image_understand.json",

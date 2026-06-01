@@ -8,13 +8,14 @@ use log::info;
 use once_cell::sync::Lazy;
 use reqwest::blocking::Client;
 use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
+use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 use zihuan_core::connection_manager::{
     ConnectionManager as ConnectionManagerTrait, RuntimeConnectionInstanceSummary,
     RuntimeConnectionStatus,
 };
-use zihuan_core::data_refs::MySqlConfig;
+use zihuan_core::data_refs::{MySqlConfig, SqliteConfig};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::data_value::RedisConfig;
@@ -24,8 +25,8 @@ use crate::resource_resolver::find_connection;
 use crate::rustfs::build_s3_ref as build_s3_direct_ref;
 use crate::weaviate::build_weaviate_ref as build_weaviate_direct_ref;
 use crate::{
-    load_connections, ConnectionKind, DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS,
-    DEFAULT_MYSQL_MAX_CONNECTIONS,
+    db_schema::ensure_tables_for_connection, load_connections, ConnectionKind,
+    DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS, DEFAULT_MYSQL_MAX_CONNECTIONS,
 };
 
 const STORAGE_INSTANCE_IDLE_TIMEOUT_SECS: i64 = 15 * 60;
@@ -34,6 +35,7 @@ const DEFAULT_WEAVIATE_TIMEOUT_SECS: u64 = 30;
 #[derive(Clone)]
 pub enum StorageRuntimeHandle {
     MySql(Arc<MySqlConfig>),
+    Sqlite(Arc<SqliteConfig>),
     S3(Arc<S3Ref>),
     Weaviate(Arc<WeaviateRef>),
 }
@@ -41,6 +43,7 @@ pub enum StorageRuntimeHandle {
 #[derive(Clone)]
 enum StorageRuntimePayload {
     MySql(Arc<MySqlConfig>),
+    Sqlite(Arc<SqliteConfig>),
     S3(Arc<S3Ref>),
     Weaviate(Arc<WeaviateRef>),
 }
@@ -49,6 +52,7 @@ impl StorageRuntimePayload {
     fn clone_handle(&self) -> StorageRuntimeHandle {
         match self {
             Self::MySql(value) => StorageRuntimeHandle::MySql(value.clone()),
+            Self::Sqlite(value) => StorageRuntimeHandle::Sqlite(value.clone()),
             Self::S3(value) => StorageRuntimeHandle::S3(value.clone()),
             Self::Weaviate(value) => StorageRuntimeHandle::Weaviate(value.clone()),
         }
@@ -57,7 +61,7 @@ impl StorageRuntimePayload {
     fn has_external_mysql_refs(&self) -> bool {
         match self {
             Self::MySql(value) => Arc::strong_count(value) > 1,
-            Self::S3(_) | Self::Weaviate(_) => false,
+            Self::Sqlite(_) | Self::S3(_) | Self::Weaviate(_) => false,
         }
     }
 }
@@ -92,6 +96,16 @@ impl RuntimeStorageConnectionManager {
             StorageRuntimeHandle::MySql(value) => Ok(value),
             _ => Err(Error::ValidationError(format!(
                 "config '{}' is not a mysql runtime connection",
+                config_id
+            ))),
+        }
+    }
+
+    pub async fn get_or_create_sqlite_ref(&self, config_id: &str) -> Result<Arc<SqliteConfig>> {
+        match self.get_or_create(config_id).await? {
+            StorageRuntimeHandle::Sqlite(value) => Ok(value),
+            _ => Err(Error::ValidationError(format!(
+                "config '{}' is not a sqlite runtime connection",
                 config_id
             ))),
         }
@@ -189,6 +203,12 @@ impl RuntimeStorageConnectionManager {
                         })?;
                     (pool, handle, Some(runtime))
                 };
+                if let Err(e) = ensure_tables_for_connection(&connection.kind).await {
+                    log::warn!(
+                        "[storage_instance_manager] ensure tables failed for mysql connection '{}' (id={}): {}",
+                        connection.name, connection.id, e
+                    );
+                }
                 let config = Arc::new(MySqlConfig {
                     url: Some(mysql.url.clone()),
                     reconnect_max_attempts: None,
@@ -231,6 +251,64 @@ impl RuntimeStorageConnectionManager {
                     StorageRuntimePayload::Weaviate(weaviate_ref),
                     "weaviate".to_string(),
                     None,
+                )
+            }
+            ConnectionKind::Sqlite(sqlite) => {
+                info!(
+                    "[storage_instance_manager] creating sqlite pool config_id={} path={}",
+                    connection.canonical_config_id(),
+                    sqlite.path,
+                );
+                let db_url = format!("sqlite://{}?mode=rwc", sqlite.path);
+                let pool_options = SqlitePoolOptions::new()
+                    .max_connections(4)
+                    .min_connections(1);
+                let (pool, handle, runtime) = if let Ok(handle) =
+                    tokio::runtime::Handle::try_current()
+                {
+                    let pool = pool_options.connect(&db_url).await.map_err(|err| {
+                            Error::Database(sqlx::Error::Configuration(Box::new(
+                                std::io::Error::other(format!(
+                                    "failed to create sqlite pool for connection '{}' (config_id={}, path={}): {}",
+                                    connection.name,
+                                    connection.canonical_config_id(),
+                                    sqlite.path,
+                                    err
+                                )),
+                            )))
+                        })?;
+                    (pool, handle, None)
+                } else {
+                    let runtime = Arc::new(tokio::runtime::Runtime::new()?);
+                    let handle = runtime.handle().clone();
+                    let pool = handle.block_on(pool_options.connect(&db_url)).map_err(|err| {
+                            Error::Database(sqlx::Error::Configuration(Box::new(
+                                std::io::Error::other(format!(
+                                    "failed to create sqlite pool for connection '{}' (config_id={}, path={}): {}",
+                                    connection.name,
+                                    connection.canonical_config_id(),
+                                    sqlite.path,
+                                    err
+                                )),
+                            )))
+                        })?;
+                    (pool, handle, Some(runtime))
+                };
+                if let Err(e) = ensure_tables_for_connection(&connection.kind).await {
+                    log::warn!(
+                        "[storage_instance_manager] ensure tables failed for sqlite connection '{}' (id={}): {}",
+                        connection.name, connection.id, e
+                    );
+                }
+                let config = Arc::new(SqliteConfig {
+                    path: sqlite.path.clone(),
+                    pool: Some(pool),
+                    runtime_handle: Some(handle),
+                });
+                (
+                    StorageRuntimePayload::Sqlite(config),
+                    "sqlite".to_string(),
+                    runtime,
                 )
             }
             other => {
@@ -490,8 +568,9 @@ fn kind_name(kind: &ConnectionKind) -> &'static str {
         ConnectionKind::Weaviate(_) => "weaviate",
         ConnectionKind::Rustfs(_) => "rustfs",
         ConnectionKind::BotAdapter(_) => "bot_adapter",
-        ConnectionKind::Tavily(_) => "tavily",
+        ConnectionKind::WebSearchEngine(_) => "web_search_engine",
         ConnectionKind::Tokenizer(_) => "tokenizer",
+        ConnectionKind::Sqlite(_) => "sqlite",
     }
 }
 

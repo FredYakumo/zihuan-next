@@ -1,4 +1,4 @@
-use log::info;
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use zihuan_core::agent_config::QqChatAgentConfig;
@@ -6,6 +6,7 @@ use zihuan_core::config::{
     ConfigCategory, ConfigCenter, ConfigKind, ConfigRecord, StoredConfigRecord,
 };
 use zihuan_core::error::Result;
+use zihuan_core::tool_runtime::ToolRunDuration;
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::graph_io::NodeGraphDefinition;
 
@@ -47,7 +48,10 @@ pub struct HttpStreamAgentConfig {
     #[serde(default)]
     pub llm_ref_id: Option<String>,
     #[serde(default)]
-    pub tavily_connection_id: Option<String>,
+    #[serde(alias = "tavily_connection_id")]
+    pub web_search_engine_connection_id: Option<String>,
+    #[serde(default)]
+    pub task_db_connection_id: String,
     #[serde(default = "default_http_stream_default_tools_enabled")]
     pub default_tools_enabled: std::collections::HashMap<String, bool>,
 }
@@ -69,6 +73,10 @@ fn default_llm_api_style() -> LlmApiStyle {
     LlmApiStyle::OpenAiChatCompletions
 }
 
+fn default_include_reasoning_content() -> bool {
+    false
+}
+
 fn default_http_stream_default_tools_enabled() -> std::collections::HashMap<String, bool> {
     [("web_search".to_string(), true)].into_iter().collect()
 }
@@ -85,6 +93,8 @@ pub struct LlmServiceConfig {
     pub stream: bool,
     #[serde(default)]
     pub supports_multimodal_input: bool,
+    #[serde(default = "default_include_reasoning_content")]
+    pub include_reasoning_content: bool,
     #[serde(default = "default_timeout_secs")]
     pub timeout_secs: u64,
     #[serde(default = "default_retry_count")]
@@ -106,6 +116,8 @@ pub struct AgentToolConfig {
     pub description: String,
     #[serde(default)]
     pub enabled: bool,
+    #[serde(default)]
+    pub run_duration: ToolRunDuration,
     pub tool_type: AgentToolType,
 }
 
@@ -466,11 +478,49 @@ fn agent_from_record(record: StoredConfigRecord) -> Result<AgentConfig> {
     let spec = record.spec.as_object().ok_or_else(|| {
         zihuan_core::string_error!("agent config '{}' spec must be an object", record.config_id)
     })?;
+    let mut agent_type =
+        serde_json::from_value(spec.get("agent_type").cloned().unwrap_or(Value::Null))?;
+    if let AgentType::QqChat(config) = &mut agent_type {
+        let rdb_id = config
+            .rdb_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned);
+        let mysql_connection_id = config
+            .mysql_connection_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned);
+        let task_db_connection_id = config
+            .task_db_connection_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned);
+
+        if rdb_id.is_none() {
+            if let (Some(mysql_id), Some(task_id)) = (&mysql_connection_id, &task_db_connection_id)
+            {
+                if mysql_id != task_id {
+                    warn!(
+                        "[config_center] qq_chat agent '{}' has conflicting legacy mysql_connection_id='{}' and task_db_connection_id='{}'; using mysql_connection_id",
+                        record.config_id,
+                        mysql_id,
+                        task_id
+                    );
+                }
+            }
+            config.rdb_id = mysql_connection_id.or(task_db_connection_id);
+        }
+    }
+
     Ok(AgentConfig {
         id: record.config_id.clone(),
         config_id: record.config_id.clone(),
         name: record.name,
-        agent_type: serde_json::from_value(spec.get("agent_type").cloned().unwrap_or(Value::Null))?,
+        agent_type,
         enabled: record.enabled,
         auto_start: spec
             .get("auto_start")

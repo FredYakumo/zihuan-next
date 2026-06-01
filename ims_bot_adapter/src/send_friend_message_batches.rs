@@ -1,7 +1,6 @@
 use crate::send_qq_message_batches::{execute_fixed_target_batch_send, TARGET_TYPE_FRIEND};
-use std::collections::HashMap;
 use zihuan_core::error::Result;
-use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
+use zihuan_graph_engine::{node_input, node_output, DataType, Node, Port};
 
 const LOG_PREFIX: &str = "[SendFriendMessageBatchesNode]";
 
@@ -47,11 +46,10 @@ impl Node for SendFriendMessageBatchesNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
         let outputs = execute_fixed_target_batch_send(&inputs, TARGET_TYPE_FRIEND, LOG_PREFIX)?;
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        Ok(outputs.into())
     }
 }

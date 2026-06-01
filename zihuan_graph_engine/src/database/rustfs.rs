@@ -46,10 +46,7 @@ impl Node for RustfsNode {
 
     node_output![port! { name = "s3_ref", ty = S3Ref, desc = "对象存储引用" },];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let endpoint = read_required_string(&inputs, "endpoint")?;
@@ -91,9 +88,9 @@ impl Node for RustfsNode {
         let s3_ref_for_init = Arc::clone(&s3_ref);
         block_async(async move { s3_ref_for_init.ensure_bucket_exists().await })?;
 
-        let outputs = HashMap::from([("s3_ref".to_string(), DataValue::S3Ref(s3_ref))]);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "s3_ref" => DataValue::S3Ref(s3_ref),
+        ]
     }
 }
 

@@ -67,6 +67,7 @@ impl Node for StringToOpenAIMessageNode {
                 reasoning_content: None,
                 tool_calls: Vec::new(),
                 tool_call_id: None,
+                usage: None,
             }),
         );
 

@@ -28,11 +28,13 @@ pub enum ConfigKind {
     ConnectionWeaviate,
     ConnectionRustfs,
     ConnectionBotAdapter,
-    ConnectionTavily,
+    ConnectionWebSearchEngine,
     ConnectionTokenizer,
+    ConnectionSqlite,
     LlmRef,
     AgentQqChat,
     AgentHttpStream,
+    CommandPermission,
 }
 
 impl ConfigKind {
@@ -43,10 +45,12 @@ impl ConfigKind {
             | Self::ConnectionWeaviate
             | Self::ConnectionRustfs
             | Self::ConnectionBotAdapter
-            | Self::ConnectionTavily
-            | Self::ConnectionTokenizer => ConfigCategory::Connection,
+            | Self::ConnectionWebSearchEngine
+            | Self::ConnectionTokenizer
+            | Self::ConnectionSqlite => ConfigCategory::Connection,
             Self::LlmRef => ConfigCategory::LlmRef,
             Self::AgentQqChat | Self::AgentHttpStream => ConfigCategory::Agent,
+            Self::CommandPermission => ConfigCategory::Agent,
         }
     }
 }
@@ -112,6 +116,8 @@ pub struct ConfigCollections {
     pub llm_refs: Vec<StoredConfigRecord>,
     #[serde(default)]
     pub agents: Vec<StoredConfigRecord>,
+    #[serde(default)]
+    pub command_permissions: Vec<StoredConfigRecord>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -247,7 +253,7 @@ fn infer_kind_from_legacy_object(
             Some("weaviate") => Ok(ConfigKind::ConnectionWeaviate),
             Some("rustfs") => Ok(ConfigKind::ConnectionRustfs),
             Some("bot_adapter") | Some("ims_bot_adapter") => Ok(ConfigKind::ConnectionBotAdapter),
-            Some("tavily") => Ok(ConfigKind::ConnectionTavily),
+            Some("tavily") => Ok(ConfigKind::ConnectionWebSearchEngine),
             Some("tokenizer") => Ok(ConfigKind::ConnectionTokenizer),
             Some(other) => Err(Error::ValidationError(format!(
                 "unsupported legacy connection kind '{other}'"

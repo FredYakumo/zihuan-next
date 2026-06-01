@@ -43,6 +43,7 @@ export interface CanvasFacade {
   flushPendingWidgetMutations(): Promise<void>;
   flushPendingGraphMutations(): Promise<void>;
   rebuildCanvas(def: NodeGraphDefinition): void;
+  addLGraphNodeDirect(nodeDef: NodeDefinition): void;
   enterSubgraph(
     parentNodeDef: NodeDefinition,
     mode: "function" | "brain-tool",

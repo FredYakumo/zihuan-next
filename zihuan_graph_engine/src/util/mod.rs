@@ -1,4 +1,5 @@
 pub mod and_then;
+pub mod any_of;
 pub mod array_get;
 pub mod at_qq_target_message;
 pub mod binary_to_image_content_part;
@@ -91,10 +92,7 @@ pub mod openai_message_session_cache_clear {
             port! { name = "cleared", ty = Boolean, desc = "是否成功清空至少一条历史消息" },
         ];
 
-        fn execute(
-            &mut self,
-            inputs: HashMap<String, DataValue>,
-        ) -> Result<HashMap<String, DataValue>> {
+        fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
             self.validate_inputs(&inputs)?;
 
             let cache_ref: Arc<OpenAIMessageSessionCacheRef> = inputs
@@ -128,6 +126,7 @@ pub mod openai_message_session_cache_clear {
             let mut outputs = HashMap::new();
             outputs.insert("cleared".to_string(), DataValue::Boolean(cleared));
 
+            let outputs = crate::NodeOutputFlow::from(outputs);
             self.validate_outputs(&outputs)?;
             Ok(outputs)
         }
@@ -135,6 +134,7 @@ pub mod openai_message_session_cache_clear {
 }
 
 pub use and_then::AndThenNode;
+pub use any_of::AnyOfNode;
 pub use array_get::ArrayGetNode;
 pub use at_qq_target_message::AtQQTargetMessageNode;
 pub use binary_to_image_content_part::BinaryToImageContentPartNode;

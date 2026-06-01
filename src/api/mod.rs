@@ -10,6 +10,7 @@ pub mod log;
 pub mod registry;
 pub mod settings;
 pub mod state;
+pub mod task_store;
 pub mod themes;
 pub mod ws;
 
@@ -85,9 +86,32 @@ pub fn build_router(
                                 .put(config::agents::update_agent)
                                 .delete(config::agents::delete_agent)
                                 .push(Router::with_path("start").post(config::agents::start_agent))
-                                .push(Router::with_path("stop").post(config::agents::stop_agent)),
+                                .push(Router::with_path("stop").post(config::agents::stop_agent))
+                                .push(
+                                    Router::with_path("ignore-rules")
+                                        .get(config::agents::list_agent_ignore_rules)
+                                        .post(config::agents::create_agent_ignore_rule)
+                                        .push(
+                                            Router::with_path("<rule_id>")
+                                                .put(config::agents::update_agent_ignore_rule)
+                                                .delete(config::agents::delete_agent_ignore_rule),
+                                        ),
+                                ),
                         ),
-                ),
+                )
+                .push(
+                    Router::with_path("command-permissions")
+                        .get(config::commands::list_command_permissions)
+                        .post(config::commands::create_command_permission)
+                        .push(
+                            Router::with_path("<id>")
+                                .put(config::commands::update_command_permission)
+                                .delete(config::commands::delete_command_permission),
+                        ),
+                )
+                .push(Router::with_path("commands").push(
+                    Router::with_path("registry").get(config::commands::get_registered_commands),
+                )),
         )
         // Graph management
         .push(

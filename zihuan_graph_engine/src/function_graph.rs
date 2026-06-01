@@ -75,6 +75,7 @@ pub fn default_function_subgraph() -> NodeGraphDefinition {
         hyperparameters: Vec::new(),
         variables: Vec::new(),
         metadata: Default::default(),
+        accepts_agent_events: false,
         execution_results: HashMap::new(),
     }
 }

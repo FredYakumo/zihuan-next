@@ -119,7 +119,7 @@ impl Node for JsonExtractNode {
         Self::output_ports_from_fields(&self.field_definitions)
     }
 
-    fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
+    fn apply_inline_config(&mut self, inline_values: &crate::NodeConfigFlow) -> Result<()> {
         match inline_values.get(FIELDS_CONFIG_PORT) {
             Some(DataValue::Json(value)) => {
                 if value.is_null() {
@@ -142,10 +142,7 @@ impl Node for JsonExtractNode {
         }
     }
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         if let Some(DataValue::Json(value)) = inputs.get(FIELDS_CONFIG_PORT) {
@@ -184,6 +181,7 @@ impl Node for JsonExtractNode {
             outputs.insert(field.name.clone(), typed_value);
         }
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }

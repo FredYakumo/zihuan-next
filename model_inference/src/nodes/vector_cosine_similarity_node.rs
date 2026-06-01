@@ -42,8 +42,8 @@ impl Node for VectorCosineSimilarityNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let left = parse_float_vector(inputs.get("left"))?;
@@ -51,13 +51,9 @@ impl Node for VectorCosineSimilarityNode {
         let similarity = cosine_similarity(&left, &right)
             .map_err(|error| Error::StringError(error.to_string()))?;
 
-        let outputs = HashMap::from([(
-            "similarity".to_string(),
-            DataValue::Float(similarity as f64),
-        )]);
-
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        zihuan_graph_engine::return_with_node_output![self;
+            "similarity" => DataValue::Float(similarity as f64),
+        ]
     }
 }
 

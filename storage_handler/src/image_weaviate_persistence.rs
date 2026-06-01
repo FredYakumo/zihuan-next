@@ -55,8 +55,8 @@ impl Node for ImageWeaviatePersistenceNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let object_storage_path = required_string(&inputs, "object_storage_path")?;
@@ -139,14 +139,10 @@ impl Node for ImageWeaviatePersistenceNode {
             }
         };
 
-        let mut outputs = HashMap::new();
-        outputs.insert("success".to_string(), DataValue::Boolean(success));
-        outputs.insert(
-            "object_storage_path".to_string(),
-            DataValue::String(object_storage_path),
-        );
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        zihuan_graph_engine::return_with_node_output![self;
+            "success" => DataValue::Boolean(success),
+            "object_storage_path" => DataValue::String(object_storage_path),
+        ]
     }
 }
 

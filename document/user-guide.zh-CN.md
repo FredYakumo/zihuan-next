@@ -137,10 +137,6 @@ Web 应用当前提供两个浏览器入口：
 workflow_set/
 ```
 
-### `config.yaml`
-
-`config.yaml` 只给 Python Alembic 迁移使用，Rust 运行时不会读取它。
-
 ## 6. 配置连接与 Agent
 
 在管理界面中可以：
@@ -226,19 +222,9 @@ cargo build -p zihuan_graph_cli --release
 
 CLI 会加载图、构建 `NodeGraph`、执行一次并退出。
 
-## 9. 可选：初始化 MySQL 表结构
+数据库表在通过 Connections 界面添加 MySQL/SQLite 连接时自动创建，无需手动迁移。
 
-只有在使用 MySQL 消息存储时才需要：
-
-```bash
-cp config.yaml.example config.yaml
-uv sync
-uv run alembic upgrade head
-```
-
-迁移连接会根据 `config.yaml` 中的 `MYSQL_*` 字段生成。
-
-## 10. 可选：为本地 Embedding 启用 GPU 构建
+## 9. 可选：为本地 Embedding 启用 GPU 构建
 
 CUDA：
 

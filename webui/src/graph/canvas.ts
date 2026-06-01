@@ -116,6 +116,10 @@ export class ZihuanCanvas implements CanvasFacade {
     this.graphOps.rebuildCanvas(def);
   }
 
+  addLGraphNodeDirect(nodeDef: NodeDefinition): void {
+    this.graphOps.addLGraphNodeDirect(nodeDef);
+  }
+
   async syncPositions(): Promise<void> {
     await this.graphOps.syncPositions();
   }

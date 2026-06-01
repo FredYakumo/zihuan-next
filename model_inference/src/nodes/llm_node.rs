@@ -23,6 +23,7 @@ pub fn build_llm(config: LlmServiceConfig) -> Result<Arc<dyn LLMBase>> {
                 config.api_style,
                 config.stream,
                 config.supports_multimodal_input,
+                config.include_reasoning_content,
                 std::time::Duration::from_secs(config.timeout_secs),
             )
             .with_retry_count(config.retry_count);
@@ -121,7 +122,10 @@ impl Node for LlmNode {
         vec![Self::llm_ref_select_field()]
     }
 
-    fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
+    fn apply_inline_config(
+        &mut self,
+        inline_values: &zihuan_graph_engine::NodeConfigFlow,
+    ) -> Result<()> {
         self.llm_ref_id = inline_values
             .get(LLM_REF_ID_FIELD)
             .and_then(|value| match value {
@@ -133,13 +137,12 @@ impl Node for LlmNode {
 
     fn execute(
         &mut self,
-        _inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        _inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let llm_config = self.resolve_llm_config()?;
         let llm = build_llm(llm_config)?;
-        let mut outputs = HashMap::new();
-        outputs.insert("llm_model".to_string(), DataValue::LLModel(llm));
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        zihuan_graph_engine::return_with_node_output![self;
+            "llm_model" => DataValue::LLModel(llm),
+        ]
     }
 }

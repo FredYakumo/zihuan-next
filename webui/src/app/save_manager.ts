@@ -69,7 +69,10 @@ export class SaveManager {
     if (!name) return;
     try {
       const result = await workflowsApi.save(sid, name);
-      const displayName = tabNameFrom(result.path, name);
+      // 优先使用 metadata 中的中文名称，fallback 到文件名
+      const metadata = await graphs.getMetadata(sid);
+      const baseName = tabNameFrom(result.path, name);
+      const displayName = metadata.name?.trim() || baseName;
       this.options.tabs.updateTab(sid, {
         name: displayName,
         isWorkflowSet: true,
@@ -92,7 +95,10 @@ export class SaveManager {
 
     try {
       const result = await workflowsApi.save(sid, name);
-      const displayName = tabNameFrom(result.path, name);
+      // 优先使用 metadata 中的中文名称，fallback 到文件名
+      const metadata = await graphs.getMetadata(sid);
+      const baseName = tabNameFrom(result.path, name);
+      const displayName = metadata.name?.trim() || baseName;
       this.options.tabs.updateTab(sid, {
         name: displayName,
         isWorkflowSet: true,
@@ -157,7 +163,10 @@ export class SaveManager {
     tab: { name: string; workflowPath?: string },
   ): Promise<void> {
     const result = await graphs.saveFile(sid, tab.workflowPath);
-    const displayName = tabNameFrom(result.path, tab.name);
+    // 优先使用 metadata 中的中文名称，fallback 到文件名
+    const metadata = await graphs.getMetadata(sid);
+    const baseName = tabNameFrom(result.path, tab.name);
+    const displayName = metadata.name?.trim() || baseName;
     this.options.tabs.updateTab(sid, {
       name: displayName,
       dirty: false,

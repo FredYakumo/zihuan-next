@@ -137,10 +137,6 @@ Workflow-set files are stored under:
 workflow_set/
 ```
 
-### `config.yaml`
-
-`config.yaml` is only for Python Alembic migrations. The Rust runtime does not use it.
-
 ## 6. Set Up Connections And Agents
 
 In the admin UI:
@@ -226,19 +222,9 @@ Run by workflow-set name:
 
 The CLI loads the graph, builds a `NodeGraph`, executes it once, and exits.
 
-## 9. Optional: MySQL Schema Migration
+Database tables are created automatically when a MySQL or SQLite connection is added via the Connections UI. No manual migration step is required.
 
-Only required for MySQL-backed message storage.
-
-```bash
-cp config.yaml.example config.yaml
-uv sync
-uv run alembic upgrade head
-```
-
-The migration connection is built from `MYSQL_*` fields in `config.yaml`.
-
-## 10. Optional: GPU Build For Local Embeddings
+## 9. Optional: GPU Build For Local Embeddings
 
 CUDA:
 

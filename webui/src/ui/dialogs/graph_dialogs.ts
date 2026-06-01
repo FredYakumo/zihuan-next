@@ -1,8 +1,15 @@
 import { graphs, system, type ConnectionConfig } from "../../api/client";
 import type { GraphMetadata, GraphVariable, HyperParameter } from "../../api/types";
+import type { FunctionPortDef } from "./types";
 import { ensureDialogStyles, openOverlay, showErrorDialog } from "./base";
 import { dataTypeSelect } from "./data_types";
 import { buildPortListEditor } from "./shared";
+
+const AGENT_EVENT_RESERVED_PORTS: FunctionPortDef[] = [
+  { name: "content", data_type: "String", description: "触发此次工具调用的上下文文本内容" },
+  { name: "message_event", data_type: "MessageEvent", description: "当前触发此次工具调用的消息事件" },
+  { name: "qq_ims_bot_adapter", data_type: "BotAdapterRef", description: "当前消息事件对应的 Bot Adapter 连接引用" },
+];
 
 export const HP_TYPES = [
   "String",
@@ -15,7 +22,7 @@ export const HP_TYPES = [
   "RedisRef",
   "S3Ref",
   "BotAdapterRef",
-  "TavilyRef",
+  "WebSearchEngineRef",
 ] as const;
 
 const HP_SCALAR_TYPES = HP_TYPES;
@@ -26,7 +33,7 @@ const CONNECTION_KIND_BY_HP_TYPE: Partial<Record<(typeof HP_TYPES)[number], Conn
   RedisRef: "redis",
   S3Ref: "rustfs",
   BotAdapterRef: "ims_bot_adapter",
-  TavilyRef: "tavily",
+  WebSearchEngineRef: "web_search_engine",
 };
 
 function isConnectionHyperparameterType(type: string): boolean {
@@ -198,10 +205,24 @@ export async function openGraphIODialog(
 
   const hint = document.createElement("div");
   hint.className = "zh-hint";
-  hint.textContent = "这里定义主节点图的固定输入和输出列表；保存后会自动同步不可删除的“节点图输入/节点图输出”边界节点。";
+  hint.textContent = "定义节点图的固定输入和输出端口。";
   dialog.appendChild(hint);
 
   const graph = await graphs.get(sessionId);
+
+  const agentEventWrap = document.createElement("label");
+  agentEventWrap.className = "zh-agent-event-wrap";
+  agentEventWrap.style.cssText = "display:flex;align-items:center;gap:8px;margin:10px 0;padding:8px 10px;background:var(--accent-subtle);border:1px solid var(--accent);border-radius:4px;cursor:pointer;";
+  const agentEventCb = document.createElement("input");
+  agentEventCb.type = "checkbox";
+  agentEventCb.checked = graph.accepts_agent_events ?? false;
+  agentEventCb.style.cssText = "flex-shrink:0;width:16px;height:16px;margin:0;";
+  const agentEventLabel = document.createElement("span");
+  agentEventLabel.textContent = "接受Agent事件输入(选择后该节点图只能作为Agent的工具子图执行)";
+  agentEventLabel.style.cssText = "font-size:13px;line-height:1.4;";
+  agentEventWrap.appendChild(agentEventCb);
+  agentEventWrap.appendChild(agentEventLabel);
+  dialog.appendChild(agentEventWrap);
 
   const inputsSection = document.createElement("div");
   const inputsLabel = document.createElement("div");
@@ -209,7 +230,23 @@ export async function openGraphIODialog(
   inputsLabel.textContent = "输入列表";
   inputsSection.appendChild(inputsLabel);
   dialog.appendChild(inputsSection);
-  const readInputs = buildPortListEditor(inputsSection, graph.graph_inputs ?? [], true);
+  const inputsWrap = document.createElement("div");
+  inputsSection.appendChild(inputsWrap);
+
+  let readInputs = () => [] as FunctionPortDef[];
+  function rebuildInputs() {
+    inputsWrap.innerHTML = "";
+    const reserved = agentEventCb.checked ? AGENT_EVENT_RESERVED_PORTS : [];
+    readInputs = buildPortListEditor(
+      inputsWrap,
+      graph.graph_inputs ?? [],
+      true,
+      ["BotAdapterRef", "MessageEvent"],
+      reserved,
+    );
+  }
+  agentEventCb.addEventListener("change", () => rebuildInputs());
+  rebuildInputs();
 
   const outputsSection = document.createElement("div");
   outputsSection.style.marginTop = "12px";
@@ -236,6 +273,7 @@ export async function openGraphIODialog(
         ...graph,
         graph_inputs: readInputs(),
         graph_outputs: readOutputs(),
+        accepts_agent_events: agentEventCb.checked,
       });
       await onSaved();
       close();

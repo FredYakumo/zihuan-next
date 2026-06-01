@@ -8,10 +8,11 @@ import type {
   LlmServiceConfig,
 } from "../api/client";
 
-export type ConnectionType = "mysql" | "redis" | "weaviate" | "rustfs" | "bot_adapter" | "ims_bot_adapter" | "tavily" | "tokenizer";
+export type ConnectionType = "mysql" | "redis" | "weaviate" | "rustfs" | "bot_adapter" | "ims_bot_adapter" | "web_search_engine" | "tokenizer" | "sqlite";
 export type WeaviateCollectionSchema = "message_record_semantic" | "image_semantic";
 export type AgentTypeName = "qq_chat" | "http_stream";
 export type ModelRefType = "chat_llm" | "text_embedding_local";
+export type ToolRunDuration = "Short" | "Long";
 export type LlmApiStyle =
   | "candle"
   | "open_ai_chat_completions"
@@ -59,9 +60,11 @@ export interface ConnectionFormState {
   adapter_server_url: string;
   bot_server_token: string;
   qq_id: string;
-  tavily_api_token: string;
-  tavily_timeout_secs: number;
+  web_search_engine_provider: string;
+  web_search_engine_api_token: string;
+  web_search_engine_timeout_secs: number;
   tokenizer_model_name: string;
+  sqlite_path: string;
 }
 
 export interface LlmFormState {
@@ -78,6 +81,7 @@ export interface ToolFormState {
   name: string;
   description: string;
   enabled: boolean;
+  runDuration: ToolRunDuration;
   targetType: ToolTargetType;
   workflowName: string;
   filePath: string;
@@ -98,12 +102,13 @@ export interface AgentFormState {
   bot_name: string;
   system_prompt: string;
   llm_ref_id: string;
+  image_understand_llm_ref_id: string;
   intent_llm_ref_id: string;
   math_programming_llm_ref_id: string;
   embedding_model_ref_id: string;
   tokenizer_connection_id: string;
-  tavily_connection_id: string;
-  mysql_connection_id: string;
+  web_search_engine_connection_id: string;
+  rdb_id: string;
   weaviate_image_connection_id: string;
   max_message_length: number;
   compact_context_length: number;
@@ -111,7 +116,8 @@ export interface AgentFormState {
   default_tools_enabled: Record<string, boolean>;
   http_bind: string;
   http_api_key: string;
-  http_tavily_connection_id: string;
+  http_web_search_engine_connection_id: string;
+  task_db_connection_id: string;
   tools: ToolFormState[];
 }
 
@@ -132,6 +138,8 @@ export const QQ_CHAT_DEFAULT_TOOLS: DefaultToolOption[] = [
   { id: "get_recent_group_messages", label: "get_recent_group_messages", description: "只看群里最近几条消息，不适合按时段分析" },
   { id: "get_recent_user_messages", label: "get_recent_user_messages", description: "查询用户近期消息" },
   { id: "search_similar_images", label: "search_similar_images", description: "语义检索相似图片" },
+  { id: "image_understand", label: "image_understand", description: "按 media_id 理解图片内容" },
+  { id: "reply_message", label: "reply_message", description: "显式引用某条消息" },
 ];
 
 export const HTTP_STREAM_DEFAULT_TOOLS: DefaultToolOption[] = [
@@ -154,6 +162,7 @@ export function defaultLlmConfig(): LlmServiceConfig {
     api_style: "open_ai_chat_completions",
     stream: false,
     supports_multimodal_input: false,
+    include_reasoning_content: false,
     timeout_secs: 30,
     retry_count: 2,
   };
@@ -195,9 +204,11 @@ export function defaultConnectionForm(): ConnectionFormState {
     adapter_server_url: "",
     bot_server_token: "",
     qq_id: "",
-    tavily_api_token: "",
-    tavily_timeout_secs: 30,
+    web_search_engine_provider: "tavily",
+    web_search_engine_api_token: "",
+    web_search_engine_timeout_secs: 30,
     tokenizer_model_name: "",
+    sqlite_path: "",
   };
 }
 
@@ -218,6 +229,7 @@ export function defaultToolForm(): ToolFormState {
     name: "",
     description: "",
     enabled: true,
+    runDuration: "Short",
     targetType: "workflow_set",
     workflowName: "",
     filePath: "",
@@ -240,12 +252,13 @@ export function defaultAgentForm(): AgentFormState {
     bot_name: "",
     system_prompt: "",
     llm_ref_id: "",
+    image_understand_llm_ref_id: "",
     intent_llm_ref_id: "",
     math_programming_llm_ref_id: "",
     embedding_model_ref_id: "",
     tokenizer_connection_id: "",
-    tavily_connection_id: "",
-    mysql_connection_id: "",
+    web_search_engine_connection_id: "",
+    rdb_id: "",
     weaviate_image_connection_id: "",
     max_message_length: 500,
     compact_context_length: 0,
@@ -253,7 +266,8 @@ export function defaultAgentForm(): AgentFormState {
     default_tools_enabled: defaultQqChatDefaultToolsEnabled(),
     http_bind: "127.0.0.1:18080",
     http_api_key: "",
-    http_tavily_connection_id: "",
+    http_web_search_engine_connection_id: "",
+    task_db_connection_id: "",
     tools: [],
   };
 }
@@ -310,12 +324,16 @@ export function connectionFormFromConfig(connection: ConnectionConfig): Connecti
       form.bot_server_token = String(connection.kind.bot_server_token ?? "");
       form.qq_id = String(connection.kind.qq_id ?? "");
       break;
-    case "tavily":
-      form.tavily_api_token = String(connection.kind.api_token ?? "");
-      form.tavily_timeout_secs = Number(connection.kind.timeout_secs ?? 30);
+    case "web_search_engine":
+      form.web_search_engine_provider = String(connection.kind.provider ?? "tavily");
+      form.web_search_engine_api_token = String(connection.kind.api_token ?? "");
+      form.web_search_engine_timeout_secs = Number(connection.kind.timeout_secs ?? 30);
       break;
     case "tokenizer":
       form.tokenizer_model_name = String(connection.kind.model_name ?? "");
+      break;
+    case "sqlite":
+      form.sqlite_path = String(connection.kind.path ?? "");
       break;
   }
   return form;
@@ -411,17 +429,24 @@ export function buildConnectionPayload(form: ConnectionFormState): {
         qq_id: form.qq_id.trim() || null,
       };
       break;
-    case "tavily":
+    case "web_search_engine":
       payload.kind = {
-        type: "tavily",
-        api_token: form.tavily_api_token.trim() || null,
-        timeout_secs: form.tavily_timeout_secs,
+        type: "web_search_engine",
+        provider: form.web_search_engine_provider,
+        api_token: form.web_search_engine_api_token.trim() || null,
+        timeout_secs: form.web_search_engine_timeout_secs,
       };
       break;
     case "tokenizer":
       payload.kind = {
         type: "tokenizer",
         model_name: form.tokenizer_model_name.trim(),
+      };
+      break;
+    case "sqlite":
+      payload.kind = {
+        type: "sqlite",
+        path: form.sqlite_path.trim(),
       };
       break;
   }
@@ -448,6 +473,7 @@ export function llmFormFromConfig(config: LlmConfig): LlmFormState {
       api_style: (config.model.llm.api_style ?? "open_ai_chat_completions") as LlmApiStyle,
       stream: Boolean(config.model.llm.stream ?? false),
       supports_multimodal_input: Boolean(config.model.llm.supports_multimodal_input ?? false),
+      include_reasoning_content: Boolean(config.model.llm.include_reasoning_content ?? false),
       timeout_secs: config.model.llm.timeout_secs,
       retry_count: config.model.llm.retry_count,
     },
@@ -460,6 +486,7 @@ export function toolFormFromConfig(tool: AgentToolConfig): ToolFormState {
   form.name = tool.name;
   form.description = tool.description;
   form.enabled = tool.enabled;
+  form.runDuration = (tool.run_duration ?? "Short") as ToolRunDuration;
   const nodeGraph = tool.tool_type as Record<string, unknown>;
   const targetType = String(nodeGraph.target_type ?? "workflow_set") as ToolTargetType;
   form.targetType = targetType;
@@ -504,12 +531,13 @@ export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): Agen
     form.bot_name = String(agentType.bot_name ?? "");
     form.system_prompt = String(agentType.system_prompt ?? "");
     form.llm_ref_id = String(agentType.llm_ref_id ?? "");
+    form.image_understand_llm_ref_id = String(agentType.image_understand_llm_ref_id ?? "");
     form.intent_llm_ref_id = String(agentType.intent_llm_ref_id ?? "");
     form.math_programming_llm_ref_id = String(agentType.math_programming_llm_ref_id ?? "");
     form.embedding_model_ref_id = String(agentType.embedding_model_ref_id ?? "");
     form.tokenizer_connection_id = String(agentType.tokenizer_connection_id ?? "");
-    form.tavily_connection_id = String(agentType.tavily_connection_id ?? "");
-    form.mysql_connection_id = String(agentType.mysql_connection_id ?? "");
+    form.web_search_engine_connection_id = String(agentType.web_search_engine_connection_id ?? "");
+    form.rdb_id = String(agentType.rdb_id ?? agentType.mysql_connection_id ?? agentType.task_db_connection_id ?? "");
     form.weaviate_image_connection_id = String(agentType.weaviate_image_connection_id ?? "");
     form.max_message_length = Number(agentType.max_message_length ?? 500);
     form.compact_context_length = Number(agentType.compact_context_length ?? 0);
@@ -526,7 +554,8 @@ export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): Agen
     form.http_bind = String(agentType.bind ?? "127.0.0.1:18080");
     form.http_api_key = String(agentType.api_key ?? "");
     form.llm_ref_id = String(agentType.llm_ref_id ?? "");
-    form.http_tavily_connection_id = String(agentType.tavily_connection_id ?? "");
+    form.http_web_search_engine_connection_id = String(agentType.web_search_engine_connection_id ?? "");
+    form.task_db_connection_id = String(agentType.task_db_connection_id ?? "");
     const source = (agentType.default_tools_enabled ?? {}) as Record<string, unknown>;
     form.default_tools_enabled = defaultHttpStreamDefaultToolsEnabled();
     for (const tool of HTTP_STREAM_DEFAULT_TOOLS) {
@@ -573,6 +602,7 @@ export function buildToolPayload(form: ToolFormState): AgentToolConfig {
     name: form.name.trim(),
     description: form.description.trim(),
     enabled: form.enabled,
+    run_duration: form.runDuration,
     tool_type: toolType,
   };
 }
@@ -606,13 +636,14 @@ export function buildAgentPayload(form: AgentFormState): {
         bot_name: form.bot_name.trim(),
         system_prompt: form.system_prompt.trim() || null,
         llm_ref_id: form.llm_ref_id || null,
+        image_understand_llm_ref_id: form.image_understand_llm_ref_id || null,
         intent_llm_ref_id: form.intent_llm_ref_id || null,
         math_programming_llm_ref_id: form.math_programming_llm_ref_id || null,
         embedding_model_ref_id: form.embedding_model_ref_id || null,
         tokenizer_connection_id: form.tokenizer_connection_id || null,
-        tavily_connection_id: form.tavily_connection_id,
+        web_search_engine_connection_id: form.web_search_engine_connection_id,
         embedding: null,
-        mysql_connection_id: form.mysql_connection_id || null,
+        rdb_id: form.rdb_id || null,
         weaviate_image_connection_id: form.weaviate_image_connection_id || null,
         max_message_length: form.max_message_length,
         compact_context_length: form.compact_context_length,
@@ -629,7 +660,8 @@ export function buildAgentPayload(form: AgentFormState): {
       bind: form.http_bind.trim(),
       api_key: form.http_api_key.trim() || null,
       llm_ref_id: form.llm_ref_id || null,
-      tavily_connection_id: form.http_tavily_connection_id || null,
+      web_search_engine_connection_id: form.http_web_search_engine_connection_id || null,
+      task_db_connection_id: form.task_db_connection_id || null,
       default_tools_enabled: Object.fromEntries(
         HTTP_STREAM_DEFAULT_TOOLS.map((tool) => [tool.id, form.default_tools_enabled[tool.id] !== false]),
       ),

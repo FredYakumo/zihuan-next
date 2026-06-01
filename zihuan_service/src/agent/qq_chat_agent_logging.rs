@@ -11,7 +11,7 @@ use super::classify_intent::IntentClassificationTrace;
 use ims_bot_adapter::models::message::Message;
 use zihuan_agent::brain::{BrainObserver, BrainStopReason};
 use zihuan_core::llm::tooling::ToolCalls;
-use zihuan_core::llm::OpenAIMessage;
+use zihuan_core::llm::{OpenAIMessage, TokenUsage};
 
 const LOG_PREFIX: &str = "[QqChatAgent]";
 const LOG_TEXT_PREVIEW_CHARS: usize = 1_200;
@@ -58,6 +58,8 @@ struct QqChatTaskTraceInner {
     prompt_tokens_estimated: Option<usize>,
     completion_tokens_estimated: Option<usize>,
     total_tokens_estimated: Option<usize>,
+    cached_prompt_tokens: Option<usize>,
+    prompt_cache_miss_tokens: Option<usize>,
     exact_usage_available: bool,
     reply_suppress_send: Option<bool>,
     reply_sent: Option<bool>,
@@ -92,6 +94,8 @@ impl QqChatTaskTrace {
                 prompt_tokens_estimated: None,
                 completion_tokens_estimated: None,
                 total_tokens_estimated: None,
+                cached_prompt_tokens: None,
+                prompt_cache_miss_tokens: None,
                 exact_usage_available: false,
                 reply_suppress_send: None,
                 reply_sent: None,
@@ -397,8 +401,40 @@ impl QqChatTaskTrace {
         inner.reply_sent = Some(reply_sent);
     }
 
-    pub(crate) fn record_token_usage(&self, completion_tokens_estimated: usize) {
+    pub(crate) fn record_token_usage(
+        &self,
+        completion_tokens_estimated: usize,
+        exact_usage: Option<TokenUsage>,
+    ) {
         let mut inner = self.inner.lock().unwrap();
+        if let Some(usage) = exact_usage {
+            if let Some(prompt_tokens) = usage.prompt_tokens {
+                inner.prompt_tokens_estimated = Some(prompt_tokens);
+            }
+            if let Some(cached_prompt_tokens) = usage.cached_prompt_tokens {
+                inner.cached_prompt_tokens = Some(cached_prompt_tokens);
+            }
+            if let Some(prompt_cache_miss_tokens) = usage.prompt_cache_miss_tokens {
+                inner.prompt_cache_miss_tokens = Some(prompt_cache_miss_tokens);
+            }
+            if let Some(completion_tokens) = usage.completion_tokens {
+                inner.completion_tokens_estimated = Some(completion_tokens);
+            } else {
+                inner.completion_tokens_estimated = Some(completion_tokens_estimated);
+            }
+            inner.total_tokens_estimated = usage.total_tokens.or_else(|| {
+                match (
+                    inner.prompt_tokens_estimated,
+                    inner.completion_tokens_estimated,
+                ) {
+                    (Some(prompt), Some(completion)) => Some(prompt + completion),
+                    _ => None,
+                }
+            });
+            inner.exact_usage_available = true;
+            return;
+        }
+
         inner.completion_tokens_estimated = Some(completion_tokens_estimated);
         inner.total_tokens_estimated = inner
             .prompt_tokens_estimated
@@ -533,6 +569,23 @@ impl QqChatTaskTrace {
                 .map(|value| value.to_string())
                 .unwrap_or_else(|| "unavailable".to_string()),
             inner.exact_usage_available
+        ));
+        lines.push(format!(
+            "缓存命中 token cached_prompt_tokens={} prompt_cache_miss_tokens={} cache_hit_rate={}",
+            inner
+                .cached_prompt_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            inner
+                .prompt_cache_miss_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            match (inner.cached_prompt_tokens, inner.prompt_tokens_estimated) {
+                (Some(cached), Some(prompt)) if prompt > 0 => {
+                    format!("{:.2}%", (cached as f64 / prompt as f64) * 100.0)
+                }
+                _ => "unavailable".to_string(),
+            }
         ));
         lines.push(format!(
             "历史消息队列数量={}，token总数={}",

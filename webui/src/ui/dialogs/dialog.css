@@ -35,6 +35,13 @@
 .zh-dialog .zh-port-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
 .zh-dialog .zh-port-row input { flex: 1; margin-bottom: 0; }
 .zh-dialog .zh-port-row select { flex: 1; margin-bottom: 0; }
+.zh-dialog .zh-port-row-reserved { opacity: 0.82; }
+.zh-dialog .zh-port-row-reserved input:disabled,
+.zh-dialog .zh-port-row-reserved select:disabled {
+	color: var(--text-dim);
+	background: var(--input-bg);
+	cursor: not-allowed;
+}
 .zh-dialog .zh-tool-card {
 	border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 10px; background: var(--tool-card-bg);
 }

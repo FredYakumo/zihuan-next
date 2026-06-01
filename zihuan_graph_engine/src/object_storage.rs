@@ -30,7 +30,8 @@ impl S3Ref {
         }
 
         // 生成带鉴权的预签名 URL，过期时间为 1 小时
-        self.generate_presigned_url(key, Duration::from_secs(3600)).await
+        self.generate_presigned_url(key, Duration::from_secs(3600))
+            .await
     }
 
     fn build_public_url(&self, key: &str) -> Result<String> {
@@ -72,9 +73,7 @@ impl S3Ref {
                     })?,
             )
             .await
-            .map_err(|e| {
-                Error::ValidationError(format!("presign URL generation failed: {e}"))
-            })?;
+            .map_err(|e| Error::ValidationError(format!("presign URL generation failed: {e}")))?;
 
         Ok(presigned_request.uri().to_string())
     }

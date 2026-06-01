@@ -38,7 +38,6 @@ zihuan_next/
 ├── custom_themes/
 │   ├── my_theme.json
 │   └── another_theme.json
-├── config.yaml
 └── ...
 ```
 

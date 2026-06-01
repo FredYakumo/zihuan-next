@@ -19,6 +19,31 @@ pub const GRAPH_OUTPUTS_NODE_ID: &str = "__graph_outputs__";
 const DEFAULT_BOUNDARY_WIDTH: f32 = 220.0;
 const DEFAULT_BOUNDARY_HEIGHT: f32 = 120.0;
 
+fn agent_event_ports() -> Vec<crate::function_graph::FunctionPortDef> {
+    use crate::function_graph::FunctionPortDef;
+    use crate::DataType;
+    vec![
+        FunctionPortDef {
+            name: "content".to_string(),
+            data_type: DataType::String,
+            description: "触发此次工具调用的上下文文本内容".to_string(),
+            required: true,
+        },
+        FunctionPortDef {
+            name: "message_event".to_string(),
+            data_type: DataType::MessageEvent,
+            description: "当前触发此次工具调用的消息事件".to_string(),
+            required: true,
+        },
+        FunctionPortDef {
+            name: "qq_ims_bot_adapter".to_string(),
+            data_type: DataType::BotAdapterRef,
+            description: "当前消息事件对应的 Bot Adapter 连接引用".to_string(),
+            required: true,
+        },
+    ]
+}
+
 pub fn default_root_graph_definition() -> NodeGraphDefinition {
     let mut graph = NodeGraphDefinition::default();
     sync_root_graph_io_signature(&mut graph, &[], &[]);
@@ -88,10 +113,16 @@ pub fn sync_root_graph_io_signature(
         changed = true;
     }
 
+    let effective_inputs: Vec<_> = if graph.accepts_agent_events {
+        inputs.iter().cloned().chain(agent_event_ports()).collect()
+    } else {
+        inputs.to_vec()
+    };
+
     changed |= upsert_boundary_node(
         graph,
         GRAPH_INPUTS_NODE_ID,
-        build_graph_inputs_node_definition(inputs),
+        build_graph_inputs_node_definition(&effective_inputs),
     );
     changed |= upsert_boundary_node(
         graph,
@@ -144,8 +175,22 @@ pub fn sync_root_graph_io_signature(
 
 pub fn root_graph_to_tool_subgraph(graph: &NodeGraphDefinition) -> NodeGraphDefinition {
     let mut subgraph = graph.clone();
-    let input_signature = subgraph.graph_inputs.clone();
-    let output_signature = subgraph.graph_outputs.clone();
+    let input_signature = subgraph
+        .nodes
+        .iter()
+        .find(|node| node.id == GRAPH_INPUTS_NODE_ID)
+        .and_then(|node| {
+            crate::function_graph::function_signature_from_inline_values(&node.inline_values)
+        })
+        .unwrap_or_else(|| subgraph.graph_inputs.clone());
+    let output_signature = subgraph
+        .nodes
+        .iter()
+        .find(|node| node.id == GRAPH_OUTPUTS_NODE_ID)
+        .and_then(|node| {
+            crate::function_graph::function_signature_from_inline_values(&node.inline_values)
+        })
+        .unwrap_or_else(|| subgraph.graph_outputs.clone());
 
     for node in &mut subgraph.nodes {
         if node.id == GRAPH_INPUTS_NODE_ID {

@@ -1,5 +1,4 @@
-use crate::{node_input, node_output, DataType, DataValue, Node, Port};
-use std::collections::HashMap;
+use crate::{node_input, node_output, node_output_flow, DataType, Node, Port};
 use zihuan_core::error::Result;
 
 pub struct PreviewQQMessageListNode {
@@ -35,16 +34,19 @@ impl Node for PreviewQQMessageListNode {
 
     node_output![];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
-        let mut outputs = HashMap::new();
-        if let Some(value) = inputs.get("messages") {
-            outputs.insert("messages".to_string(), value.clone());
-        }
+        let outputs = if let Some(value) = inputs.get("messages") {
+            node_output_flow!["messages" => value.clone()]
+        } else {
+            node_output_flow![]
+        };
+
+        let outputs = inputs.get("messages").cloned().map_or_else(
+            || node_output_flow![],
+            |messages| node_output_flow!["messages" => messages],
+        );
 
         self.validate_outputs(&outputs)?;
         Ok(outputs)

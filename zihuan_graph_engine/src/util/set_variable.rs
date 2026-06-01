@@ -68,7 +68,7 @@ impl Node for SetVariableNode {
         Vec::new()
     }
 
-    fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
+    fn apply_inline_config(&mut self, inline_values: &crate::NodeConfigFlow) -> Result<()> {
         self.variable_name =
             inline_values
                 .get(SET_VARIABLE_NAME_PORT)
@@ -101,10 +101,7 @@ impl Node for SetVariableNode {
         self.runtime_variable_store = Some(store);
     }
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let variable_name = self
@@ -121,6 +118,6 @@ impl Node for SetVariableNode {
             .ok_or_else(|| Error::ValidationError("运行期变量存储未初始化".to_string()))?;
 
         store.write().unwrap().insert(variable_name, value);
-        Ok(HashMap::new())
+        Ok(crate::NodeOutputFlow::new())
     }
 }

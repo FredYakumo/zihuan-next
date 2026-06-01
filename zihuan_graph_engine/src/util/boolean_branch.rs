@@ -41,10 +41,7 @@ impl Node for BooleanBranchNode {
         port! { name = "branch_taken", ty = String, desc = "实际走到的分支：true 或 false" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let condition = match inputs.get("condition") {
@@ -60,22 +57,16 @@ impl Node for BooleanBranchNode {
             zihuan_core::error::Error::ValidationError("input 输入不存在".to_string())
         })?;
 
-        let mut outputs = HashMap::new();
         if condition {
-            outputs.insert("true_output".to_string(), input);
-            outputs.insert(
-                "branch_taken".to_string(),
-                DataValue::String("true".to_string()),
-            );
+            crate::return_with_node_output![self;
+                "true_output" => input,
+                "branch_taken" => DataValue::String("true".to_string()),
+            ]
         } else {
-            outputs.insert("false_output".to_string(), input);
-            outputs.insert(
-                "branch_taken".to_string(),
-                DataValue::String("false".to_string()),
-            );
+            crate::return_with_node_output![self;
+                "false_output" => input,
+                "branch_taken" => DataValue::String("false".to_string()),
+            ]
         }
-
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
     }
 }

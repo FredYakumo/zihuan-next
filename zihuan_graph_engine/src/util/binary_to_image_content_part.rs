@@ -44,10 +44,7 @@ impl Node for BinaryToImageContentPartNode {
         port! { name = "content_part", ty = ContentPart, desc = "封装后的多模态 ContentPart" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let bytes = match inputs.get("bytes") {
@@ -86,10 +83,8 @@ impl Node for BinaryToImageContentPartNode {
             }
         };
 
-        let mut outputs = HashMap::new();
-        outputs.insert("content_part".to_string(), DataValue::ContentPart(part));
-
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "content_part" => DataValue::ContentPart(part),
+        ]
     }
 }

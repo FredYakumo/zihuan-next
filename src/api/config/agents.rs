@@ -1,3 +1,11 @@
+//! REST API handlers for agent management.
+//!
+//! This module provides CRUD endpoints for agent configurations (create, read, update, delete),
+//! start/stop lifecycle control, and runtime status queries. It also defines the
+//! [`DefaultAgentTaskRuntime`] — the in-process implementation of [`AgentTaskRuntime`] that tracks
+//! background agent tasks, reports progress, and broadcasts status changes to WebSocket clients.
+
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use salvo::prelude::*;
@@ -6,18 +14,27 @@ use serde::{Deserialize, Serialize};
 use storage_handler::{ConnectionConfig, ConnectionKind, WeaviateCollectionSchema};
 use uuid::Uuid;
 use zihuan_core::task_context::{
-    AgentTaskHandle, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
+    AgentTaskHandle, AgentTaskInfo, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime,
+    AgentTaskStatus,
 };
 
-use ims_bot_adapter::{fetch_login_info, parse_ims_bot_adapter_connection, qq_avatar_url};
+use ims_bot_adapter::{
+    fetch_login_info, fetch_login_info_via_adapter_connection, parse_ims_bot_adapter_connection,
+    qq_avatar_url,
+};
 use log::{info, warn};
+use zihuan_service::agent::qq_chat_agent_ignore_store::{
+    create_ignore_rule, delete_ignore_rule, list_ignore_rules, update_ignore_rule,
+    QqChatAgentIgnoreRuleUpsert,
+};
 
 use crate::api::state::{AppState, TaskStatus};
 use crate::api::ws::{ServerMessage, WsBroadcast};
 use crate::system_config;
-use model_inference::system_config::{AgentConfig, AgentToolConfig, AgentType};
+use model_inference::system_config::load_llm_refs;
+use model_inference::system_config::{AgentConfig, AgentToolConfig, AgentType, LlmRefConfig};
 use zihuan_core::agent_config::QqChatAgentConfig;
-use zihuan_core::error::Result as CoreResult;
+use zihuan_core::error::{Error as CoreError, Result as CoreResult};
 use zihuan_service::AgentRuntimeInfo;
 
 use super::{
@@ -41,9 +58,18 @@ struct QqChatProfile {
     bot_avatar_url: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct IgnoreRuleMutationRequest {
+    #[serde(default)]
+    pub sender_id: Option<String>,
+    #[serde(default)]
+    pub group_id: Option<String>,
+}
+
 struct DefaultAgentTaskRuntime {
     state: Arc<AppState>,
     broadcast_tx: WsBroadcast,
+    background_tasks: Arc<std::sync::Mutex<HashMap<String, AgentTaskInfo>>>,
 }
 
 impl AgentTaskRuntime for DefaultAgentTaskRuntime {
@@ -52,37 +78,75 @@ impl AgentTaskRuntime for DefaultAgentTaskRuntime {
             request.agent_id.clone(),
             request.task_name.clone(),
             request.user_ip.clone(),
+            request.owner_id.clone(),
+            request.task_db_connection_id.clone(),
         );
 
         let _ = self.broadcast_tx.send(ServerMessage::TaskStarted {
             task_id: task_id.clone(),
-            graph_name: request.task_name,
-            graph_session_id: request.agent_id,
+            graph_name: request.task_name.clone(),
+            graph_session_id: request.agent_id.clone(),
         });
 
         let state = Arc::clone(&self.state);
         let broadcast_tx = self.broadcast_tx.clone();
+        let bg_tasks = Arc::clone(&self.background_tasks);
+        let owner = request.owner_id.clone();
+        let created_at = chrono::Local::now();
+
+        {
+            let mut bg = self.background_tasks.lock().unwrap();
+            bg.insert(
+                task_id.clone(),
+                AgentTaskInfo {
+                    task_id: task_id.clone(),
+                    task_name: request.task_name,
+                    owner_id: owner,
+                    agent_id: request.agent_id,
+                    status: AgentTaskStatus::Running,
+                    created_at,
+                    finished_at: None,
+                    progress: vec![],
+                    result_summary: None,
+                    error_message: None,
+                },
+            );
+        }
+
         AgentTaskHandle::new(task_id.clone(), move |result: AgentTaskResult| {
-            let status = match result.status.unwrap_or_else(|| {
+            let status = result.status.unwrap_or_else(|| {
                 if result.error_message.is_some() {
                     AgentTaskStatus::Failed
                 } else {
                     AgentTaskStatus::Success
                 }
-            }) {
+            });
+
+            let task_status = match status {
                 AgentTaskStatus::Success => TaskStatus::Success,
                 AgentTaskStatus::Failed => TaskStatus::Failed,
                 AgentTaskStatus::Stopped => TaskStatus::Stopped,
+                AgentTaskStatus::Running => TaskStatus::Running,
             };
 
             state.tasks.lock().unwrap().finish_task(
                 &task_id,
-                status.clone(),
+                task_status.clone(),
                 result.error_message.clone(),
                 result.result_summary.clone(),
             );
 
-            match status {
+            {
+                let mut bg = bg_tasks.lock().unwrap();
+                if let Some(info) = bg.get_mut(&task_id) {
+                    info.status = status;
+                    info.finished_at = Some(chrono::Local::now());
+                    info.result_summary = result.result_summary.clone();
+                    info.error_message = result.error_message.clone();
+                }
+            }
+
+            match task_status {
                 TaskStatus::Stopped => {
                     let _ = broadcast_tx.send(ServerMessage::TaskStopped {
                         task_id: task_id.clone(),
@@ -106,16 +170,64 @@ impl AgentTaskRuntime for DefaultAgentTaskRuntime {
             }
         })
     }
+
+    fn spawn_task(
+        &self,
+        request: AgentTaskRequest,
+        runner: Box<dyn FnOnce() + Send + 'static>,
+    ) -> Arc<AgentTaskHandle> {
+        let handle = self.start_task(request);
+        let handle_clone = Arc::clone(&handle);
+        tokio::spawn(async move {
+            runner();
+        });
+        handle_clone
+    }
+
+    fn query_task(&self, task_id: &str) -> Option<AgentTaskInfo> {
+        self.background_tasks.lock().unwrap().get(task_id).cloned()
+    }
+
+    fn list_tasks(&self, owner_id: &str) -> Vec<AgentTaskInfo> {
+        self.background_tasks
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|info| info.owner_id.as_deref() == Some(owner_id))
+            .cloned()
+            .collect()
+    }
+
+    fn append_task_progress(&self, task_id: &str, message: String) {
+        if let Some(info) = self.background_tasks.lock().unwrap().get_mut(task_id) {
+            info.progress.push(message.clone());
+        }
+        self.state
+            .tasks
+            .lock()
+            .unwrap()
+            .append_task_progress(task_id, message);
+    }
+
+    fn cancel_task(&self, task_id: &str) -> bool {
+        self.state.tasks.lock().unwrap().stop_task(task_id)
+    }
 }
 
 pub fn build_agent_task_runtime(
     state: Arc<AppState>,
     broadcast_tx: WsBroadcast,
 ) -> Arc<dyn AgentTaskRuntime> {
-    Arc::new(DefaultAgentTaskRuntime {
+    if let Some(existing) = zihuan_service::command::global_task_runtime() {
+        return existing;
+    }
+    let runtime: Arc<dyn AgentTaskRuntime> = Arc::new(DefaultAgentTaskRuntime {
         state,
         broadcast_tx,
-    })
+        background_tasks: Arc::new(std::sync::Mutex::new(HashMap::new())),
+    });
+    zihuan_service::command::set_global_task_runtime(Arc::clone(&runtime));
+    runtime
 }
 
 pub async fn start_agent_runtime(
@@ -223,7 +335,7 @@ async fn resolve_qq_chat_profile(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
 
-    match fetch_login_info(&bot_connection).await {
+    match fetch_login_info_via_adapter_connection(&connection.id).await {
         Ok(info) => Some(QqChatProfile {
             bot_user_id: Some(info.user_id.clone()),
             bot_nickname: if info.nickname.trim().is_empty() {
@@ -233,17 +345,144 @@ async fn resolve_qq_chat_profile(
             },
             bot_avatar_url: qq_avatar_url(&info.user_id),
         }),
-        Err(err) => {
+        Err(adapter_err) => {
             warn!(
-                "[agents] failed to fetch bot login info for connection '{}': {}",
-                connection.id, err
+                "[agents] failed to fetch bot login info via adapter for connection '{}': {}; falling back to direct fetch",
+                connection.id, adapter_err
             );
-            fallback_user_id.map(|user_id| QqChatProfile {
-                bot_user_id: Some(user_id.clone()),
-                bot_nickname: None,
-                bot_avatar_url: qq_avatar_url(&user_id),
-            })
+            match fetch_login_info(&bot_connection).await {
+                Ok(info) => Some(QqChatProfile {
+                    bot_user_id: Some(info.user_id.clone()),
+                    bot_nickname: if info.nickname.trim().is_empty() {
+                        None
+                    } else {
+                        Some(info.nickname)
+                    },
+                    bot_avatar_url: qq_avatar_url(&info.user_id),
+                }),
+                Err(err) => {
+                    warn!(
+                        "[agents] failed to fetch bot login info for connection '{}': {}",
+                        connection.id, err
+                    );
+                    fallback_user_id.map(|user_id| QqChatProfile {
+                        bot_user_id: Some(user_id.clone()),
+                        bot_nickname: None,
+                        bot_avatar_url: qq_avatar_url(&user_id),
+                    })
+                }
+            }
         }
+    }
+}
+
+fn resolve_qq_chat_agent_config<'a>(
+    agents: &'a [AgentConfig],
+    agent_id: &str,
+) -> Result<&'a QqChatAgentConfig, String> {
+    let agent = agents
+        .iter()
+        .find(|item| item.id == agent_id)
+        .ok_or_else(|| "Agent not found".to_string())?;
+    let AgentType::QqChat(config) = &agent.agent_type else {
+        return Err("Agent is not a QQ chat agent".to_string());
+    };
+    Ok(config)
+}
+
+async fn resolve_agent_rdb_connection(
+    agent_id: &str,
+) -> CoreResult<zihuan_core::data_refs::RelationalDbConnection> {
+    let agents = system_config::load_agents()?;
+    let config = resolve_qq_chat_agent_config(&agents, agent_id)
+        .map_err(|err| zihuan_core::string_error!("{}", err))?;
+    let rdb_id = config.resolved_rdb_id().ok_or_else(|| {
+        zihuan_core::string_error!("QQ chat agent '{}' has no rdb_id configured", agent_id)
+    })?;
+    let connections = system_config::load_connections()?;
+    storage_handler::build_relational_db_connection_for_connection(rdb_id, &connections).await
+}
+
+fn render_ignore_rule_error(res: &mut Response, err: CoreError) {
+    match err {
+        CoreError::ValidationError(message) => render_unprocessable_entity(res, message),
+        CoreError::StringError(message) => {
+            if message.eq_ignore_ascii_case("agent not found") {
+                render_not_found(res, &message);
+            } else {
+                render_unprocessable_entity(res, message);
+            }
+        }
+        CoreError::StaticStrError(message) => render_unprocessable_entity(res, message.to_string()),
+        other => render_internal_error(res, other),
+    }
+}
+
+#[handler]
+pub async fn list_agent_ignore_rules(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let id = req.param::<String>("id").unwrap_or_default();
+    match resolve_agent_rdb_connection(&id).await {
+        Ok(connection) => match list_ignore_rules(&connection, &id).await {
+            Ok(items) => res.render(Json(items)),
+            Err(err) => render_ignore_rule_error(res, err),
+        },
+        Err(err) => render_ignore_rule_error(res, err),
+    }
+}
+
+#[handler]
+pub async fn create_agent_ignore_rule(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let id = req.param::<String>("id").unwrap_or_default();
+    let body: IgnoreRuleMutationRequest = match req.parse_json().await {
+        Ok(body) => body,
+        Err(err) => return render_bad_request(res, err.to_string()),
+    };
+
+    let payload = QqChatAgentIgnoreRuleUpsert {
+        sender_id: body.sender_id,
+        group_id: body.group_id,
+    };
+    match resolve_agent_rdb_connection(&id).await {
+        Ok(connection) => match create_ignore_rule(&connection, &id, &payload).await {
+            Ok(item) => res.render(Json(item)),
+            Err(err) => render_ignore_rule_error(res, err),
+        },
+        Err(err) => render_ignore_rule_error(res, err),
+    }
+}
+
+#[handler]
+pub async fn update_agent_ignore_rule(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let id = req.param::<String>("id").unwrap_or_default();
+    let rule_id = req.param::<i64>("rule_id").unwrap_or_default();
+    let body: IgnoreRuleMutationRequest = match req.parse_json().await {
+        Ok(body) => body,
+        Err(err) => return render_bad_request(res, err.to_string()),
+    };
+
+    let payload = QqChatAgentIgnoreRuleUpsert {
+        sender_id: body.sender_id,
+        group_id: body.group_id,
+    };
+    match resolve_agent_rdb_connection(&id).await {
+        Ok(connection) => match update_ignore_rule(&connection, &id, rule_id, &payload).await {
+            Ok(item) => res.render(Json(item)),
+            Err(err) => render_ignore_rule_error(res, err),
+        },
+        Err(err) => render_ignore_rule_error(res, err),
+    }
+}
+
+#[handler]
+pub async fn delete_agent_ignore_rule(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let id = req.param::<String>("id").unwrap_or_default();
+    let rule_id = req.param::<i64>("rule_id").unwrap_or_default();
+    match resolve_agent_rdb_connection(&id).await {
+        Ok(connection) => match delete_ignore_rule(&connection, &id, rule_id).await {
+            Ok(()) => res.render(Json(ok_response())),
+            Err(err) => render_ignore_rule_error(res, err),
+        },
+        Err(err) => render_ignore_rule_error(res, err),
     }
 }
 
@@ -267,6 +506,15 @@ pub async fn create_agent(req: &mut Request, res: &mut Response, _depot: &mut De
         Err(err) => return render_internal_error(res, err),
     };
     if let Err(message) = validate_agent_connection_schemas(&body.agent_type, &connections) {
+        return render_unprocessable_entity(res, message);
+    }
+    let llm_refs = match load_llm_refs() {
+        Ok(llm_refs) => llm_refs,
+        Err(err) => return render_internal_error(res, err),
+    };
+    if let Err(message) =
+        validate_qq_chat_image_understand_llm(&body.agent_type, &llm_refs, &body.name)
+    {
         return render_unprocessable_entity(res, message);
     }
 
@@ -317,6 +565,15 @@ pub async fn update_agent(req: &mut Request, res: &mut Response, _depot: &mut De
     if let Err(message) = validate_agent_connection_schemas(&body.agent_type, &connections) {
         return render_unprocessable_entity(res, message);
     }
+    let llm_refs = match load_llm_refs() {
+        Ok(llm_refs) => llm_refs,
+        Err(err) => return render_internal_error(res, err),
+    };
+    if let Err(message) =
+        validate_qq_chat_image_understand_llm(&body.agent_type, &llm_refs, &body.name)
+    {
+        return render_unprocessable_entity(res, message);
+    }
 
     let Some(agent) = agents.iter_mut().find(|item| item.id == id) else {
         return render_not_found(res, "Agent not found");
@@ -360,6 +617,15 @@ pub async fn start_agent(req: &mut Request, res: &mut Response, depot: &mut Depo
         Err(err) => return render_internal_error(res, err),
     };
     if let Err(message) = validate_agent_connection_schemas(&agent.agent_type, &connections) {
+        return render_unprocessable_entity(res, message);
+    }
+    let llm_refs = match load_llm_refs() {
+        Ok(llm_refs) => llm_refs,
+        Err(err) => return render_internal_error(res, err),
+    };
+    if let Err(message) =
+        validate_qq_chat_image_understand_llm(&agent.agent_type, &llm_refs, &agent.name)
+    {
         return render_unprocessable_entity(res, message);
     }
 
@@ -447,12 +713,102 @@ fn validate_agent_connection_schemas(
     let AgentType::QqChat(config) = agent_type else {
         return Ok(());
     };
+    validate_rdb_connection(connections, config.resolved_rdb_id())?;
     validate_weaviate_connection_schema(
         connections,
         config.weaviate_image_connection_id.as_deref(),
         WeaviateCollectionSchema::ImageSemantic,
         "weaviate_image_connection_id",
-    )
+    )?;
+    Ok(())
+}
+
+fn validate_qq_chat_image_understand_llm(
+    agent_type: &AgentType,
+    llm_refs: &[LlmRefConfig],
+    agent_name: &str,
+) -> Result<(), String> {
+    let AgentType::QqChat(config) = agent_type else {
+        return Ok(());
+    };
+    let llm_ref_id = config
+        .llm_ref_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| format!("agent '{}' is missing llm_ref_id", agent_name))?;
+    let resolved_llm_ref_id = config
+        .image_understand_llm_ref_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(llm_ref_id);
+
+    let llm_ref = llm_refs
+        .iter()
+        .find(|item| item.id == resolved_llm_ref_id || item.config_id == resolved_llm_ref_id)
+        .ok_or_else(|| {
+            format!(
+                "agent '{}' references missing llm_ref '{}'",
+                agent_name, resolved_llm_ref_id
+            )
+        })?;
+    if !llm_ref.enabled {
+        return Err(format!(
+            "agent '{}' references disabled llm_ref '{}'",
+            agent_name, llm_ref.name
+        ));
+    }
+    match &llm_ref.model {
+        model_inference::system_config::ModelRefSpec::ChatLlm { llm } => {
+            if llm.supports_multimodal_input {
+                Ok(())
+            } else if config
+                .image_understand_llm_ref_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .is_some()
+            {
+                Err(format!(
+                    "image_understand_llm_ref_id '{}' does not support multimodal input",
+                    llm_ref.name
+                ))
+            } else {
+                Err(format!(
+                    "main llm_ref_id '{}' does not support multimodal input; please choose a multimodal model for image_understand_llm_ref_id",
+                    llm_ref.name
+                ))
+            }
+        }
+        model_inference::system_config::ModelRefSpec::TextEmbeddingLocal { .. } => Err(format!(
+            "agent '{}' references non-chat model_ref '{}' as image_understand_llm_ref_id",
+            agent_name, llm_ref.name
+        )),
+    }
+}
+
+fn validate_rdb_connection(
+    connections: &[ConnectionConfig],
+    connection_id: Option<&str>,
+) -> Result<(), String> {
+    let Some(connection_id) = connection_id else {
+        return Ok(());
+    };
+    let connection = connections
+        .iter()
+        .find(|item| item.id == connection_id || item.config_id == connection_id)
+        .ok_or_else(|| format!("rdb_id '{}' not found", connection_id))?;
+    if !matches!(
+        connection.kind,
+        ConnectionKind::Mysql(_) | ConnectionKind::Sqlite(_)
+    ) {
+        return Err(format!(
+            "rdb_id '{}' is not a MySQL or SQLite connection",
+            connection.name
+        ));
+    }
+    Ok(())
 }
 
 fn validate_weaviate_connection_schema(

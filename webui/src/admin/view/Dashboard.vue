@@ -26,28 +26,34 @@
           <div class="chat-agent-picker">
             <div class="chat-agent-picker-title">选择 Agent</div>
             <div class="chat-agent-cards">
-              <button
-                v-for="agent in agents"
-                :key="agent.config_id"
-                class="chat-agent-card"
-                :class="{ active: selectedAgentId === agent.config_id, inactive: agent.runtime.status !== 'running' }"
-                @click="selectedAgentId = agent.config_id"
-              >
-                <img
-                  v-if="agentAvatarUrl(agent)"
-                  class="chat-agent-card-avatar"
-                  :src="agentAvatarUrl(agent)"
-                  alt="agent avatar"
-                />
-                <div v-else class="chat-agent-card-avatar chat-agent-card-avatar--fallback">
-                  {{ agentInitial(agent.name) }}
-                </div>
-                <div class="chat-agent-card-meta">
-                  <strong>{{ agent.name }}</strong>
-                  <span>{{ readableAgentType(agent.agent_type.type) }}</span>
-                </div>
-                <span v-if="agent.runtime.status !== 'running'" class="agent-status-badge">未运行</span>
-              </button>
+              <div v-if="agentsLoading && agents.length === 0" class="chat-agent-loading" aria-live="polite">
+                <span class="chat-agent-loading-spinner"></span>
+                <span>Agent 加载中...</span>
+              </div>
+              <template v-else>
+                <button
+                  v-for="agent in agents"
+                  :key="agent.config_id"
+                  class="chat-agent-card"
+                  :class="{ active: selectedAgentId === agent.config_id, inactive: agent.runtime.status !== 'running' }"
+                  @click="selectedAgentId = agent.config_id"
+                >
+                  <img
+                    v-if="agentAvatarUrl(agent)"
+                    class="chat-agent-card-avatar"
+                    :src="agentAvatarUrl(agent)"
+                    alt="agent avatar"
+                  />
+                  <div v-else class="chat-agent-card-avatar chat-agent-card-avatar--fallback">
+                    {{ agentInitial(agent.name) }}
+                  </div>
+                  <div class="chat-agent-card-meta">
+                    <strong>{{ agent.name }}</strong>
+                    <span>{{ readableAgentType(agent.agent_type.type) }}</span>
+                  </div>
+                  <span v-if="agent.runtime.status !== 'running'" class="agent-status-badge">未运行</span>
+                </button>
+              </template>
             </div>
           </div>
           <button class="btn ghost" @click="reloadSessions">刷新历史</button>
@@ -260,8 +266,16 @@ type ToolDetail = {
   toolCall: ChatToolCall;
   result: string;
 };
+type PendingNewConversationCommand = {
+  passthroughText: string | null;
+};
+type StreamState = {
+  assistantMessageId: string | null;
+  pendingNewConversation: PendingNewConversationCommand | null;
+};
 
 const agents = ref<AgentWithRuntime[]>([]);
+const agentsLoading = ref(false);
 const sessions = ref<ChatSessionSummary[]>([]);
 const activeSessionId = ref("");
 const selectedAgentId = ref("");
@@ -293,6 +307,18 @@ const selectedAgentAvatarFallback = computed(() => {
   const name = selectedAgent.value?.name ?? "Bot";
   return agentInitial(name);
 });
+
+function parseNewConversationCommand(input: string): PendingNewConversationCommand | null {
+  const match = input.trim().match(/^\/(new|clear|reset)(?:\s+([\s\S]*))?$/i);
+  if (!match) {
+    return null;
+  }
+
+  const passthroughText = (match[2] ?? "").trim();
+  return {
+    passthroughText: passthroughText.length > 0 ? passthroughText : null,
+  };
+}
 
 function messageAvatarUrl(record: ChatHistoryRecord): string {
   if (record.agent_avatar_url) {
@@ -484,7 +510,7 @@ function startNewSession() {
   activeSessionId.value = "";
   messages.value = [];
   activeToolCallId.value = "";
-  expandedLiveToolCalls.value.clear();
+  expandedLiveToolCalls.value = new Set();
 }
 
 watch(selectedAgentId, async () => {
@@ -507,22 +533,83 @@ async function removeSession(sessionId: string) {
   }
 }
 
-function applyStreamEvent(event: ChatStreamEvent, assistantTempId: string) {
+function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
+  if (event.type === "error") {
+    if (streamState.assistantMessageId) {
+      const message = messages.value.find((item) => item.id === streamState.assistantMessageId);
+      if (message) {
+        message.streaming = false;
+        if (!message.content) {
+          message.content = `推理失败: ${event.error ?? "未知错误"}`;
+        }
+      }
+    } else if (event.error) {
+      console.error(event.error);
+    }
+    return;
+  }
+
   if (event.type === "start") {
+    if (streamState.pendingNewConversation) {
+      startNewSession();
+      if (event.session_id) {
+        activeSessionId.value = event.session_id;
+      }
+
+      const passthroughText = streamState.pendingNewConversation.passthroughText;
+      if (passthroughText) {
+        messages.value.push({
+          id: `local-user-${crypto.randomUUID()}`,
+          role: "user",
+          content: passthroughText,
+          timestamp: new Date().toISOString(),
+          toolCalls: [],
+          toolCallId: null,
+          linkedToolCall: null,
+        });
+
+        const assistantMessageId = event.message_id ?? `local-assistant-${crypto.randomUUID()}`;
+        messages.value.push({
+          id: assistantMessageId,
+          role: "assistant",
+          content: "",
+          streaming: true,
+          timestamp: new Date().toISOString(),
+          toolCalls: [],
+          toolCallId: null,
+          linkedToolCall: null,
+        });
+        streamState.assistantMessageId = assistantMessageId;
+      } else {
+        streamState.assistantMessageId = event.message_id ?? null;
+      }
+
+      streamState.pendingNewConversation = null;
+      scrollToBottom();
+      return;
+    }
+
     if (event.session_id) {
       activeSessionId.value = event.session_id;
     }
     if (event.message_id) {
-      const message = messages.value.find((item) => item.id === assistantTempId);
+      const currentAssistantId = streamState.assistantMessageId;
+      const message = currentAssistantId
+        ? messages.value.find((item) => item.id === currentAssistantId || item.id === event.message_id)
+        : undefined;
       if (message) {
         message.id = event.message_id;
       }
+      streamState.assistantMessageId = event.message_id;
     }
   }
 
   if (event.type === "delta") {
-    const targetId = event.message_id || assistantTempId;
-    const message = messages.value.find((item) => item.id === targetId || item.id === assistantTempId);
+    const targetId = event.message_id || streamState.assistantMessageId;
+    if (!targetId) {
+      return;
+    }
+    const message = messages.value.find((item) => item.id === targetId);
     if (message) {
       message.content += event.token ?? "";
       message.streaming = true;
@@ -531,15 +618,22 @@ function applyStreamEvent(event: ChatStreamEvent, assistantTempId: string) {
   }
 
   if (event.type === "done") {
-    const message = messages.value.find((item) => item.id === (event.message_id || assistantTempId) || item.id === assistantTempId);
+    const targetId = event.message_id || streamState.assistantMessageId;
+    if (!targetId) {
+      return;
+    }
+    const message = messages.value.find((item) => item.id === targetId);
     if (message) {
       message.streaming = false;
     }
   }
 
   if (event.type === "tool_call_start" && event.call_id && event.name) {
-    const targetId = event.message_id || assistantTempId;
-    const message = messages.value.find((item) => item.id === targetId || item.id === assistantTempId);
+    const targetId = event.message_id || streamState.assistantMessageId;
+    if (!targetId) {
+      return;
+    }
+    const message = messages.value.find((item) => item.id === targetId);
     if (message) {
       if (!message.liveToolCalls) {
         message.liveToolCalls = [];
@@ -555,8 +649,11 @@ function applyStreamEvent(event: ChatStreamEvent, assistantTempId: string) {
   }
 
   if (event.type === "tool_call_result" && event.call_id) {
-    const targetId = event.message_id || assistantTempId;
-    const message = messages.value.find((item) => item.id === targetId || item.id === assistantTempId);
+    const targetId = event.message_id || streamState.assistantMessageId;
+    if (!targetId) {
+      return;
+    }
+    const message = messages.value.find((item) => item.id === targetId);
     if (message?.liveToolCalls) {
       const liveCall = message.liveToolCalls.find((item) => item.call_id === event.call_id);
       if (liveCall) {
@@ -574,33 +671,49 @@ async function sendMessage() {
   }
 
   const userText = draftMessage.value.trim();
+  const pendingNewConversation = parseNewConversationCommand(userText);
+  const requestMessages = [
+    ...toApiMessages(),
+    {
+      role: "user",
+      content: userText,
+    },
+  ];
+
   draftMessage.value = "";
   sending.value = true;
 
-  const userMessage = {
-    id: `local-user-${crypto.randomUUID()}`,
-    role: "user" as const,
-    content: userText,
-    timestamp: new Date().toISOString(),
-    toolCalls: [],
-    toolCallId: null,
-    linkedToolCall: null,
+  const streamState: StreamState = {
+    assistantMessageId: null,
+    pendingNewConversation,
   };
-  messages.value.push(userMessage);
-  const requestMessages = toApiMessages();
 
-  const assistantTempId = `local-assistant-${crypto.randomUUID()}`;
-  messages.value.push({
-    id: assistantTempId,
-    role: "assistant",
-    content: "",
-    streaming: true,
-    timestamp: new Date().toISOString(),
-    toolCalls: [],
-    toolCallId: null,
-    linkedToolCall: null,
-  });
-  scrollToBottom();
+  if (!pendingNewConversation) {
+    const userMessage = {
+      id: `local-user-${crypto.randomUUID()}`,
+      role: "user" as const,
+      content: userText,
+      timestamp: new Date().toISOString(),
+      toolCalls: [],
+      toolCallId: null,
+      linkedToolCall: null,
+    };
+    messages.value.push(userMessage);
+
+    const assistantTempId = `local-assistant-${crypto.randomUUID()}`;
+    messages.value.push({
+      id: assistantTempId,
+      role: "assistant",
+      content: "",
+      streaming: true,
+      timestamp: new Date().toISOString(),
+      toolCalls: [],
+      toolCallId: null,
+      linkedToolCall: null,
+    });
+    streamState.assistantMessageId = assistantTempId;
+    scrollToBottom();
+  }
 
   try {
     await chat.stream(
@@ -610,19 +723,23 @@ async function sendMessage() {
         stream: true,
         messages: requestMessages,
       },
-      (event) => applyStreamEvent(event, assistantTempId),
+      (event) => applyStreamEvent(event, streamState),
     );
     await reloadSessions();
     if (activeSessionId.value) {
       await openSession(activeSessionId.value);
     }
   } catch (error) {
-    const message = messages.value.find((item) => item.id === assistantTempId);
+    const message = streamState.assistantMessageId
+      ? messages.value.find((item) => item.id === streamState.assistantMessageId)
+      : undefined;
     if (message) {
       message.streaming = false;
       if (!message.content) {
         message.content = `推理失败: ${(error as Error).message}`;
       }
+    } else {
+      alert(`推理失败: ${(error as Error).message}`);
     }
   } finally {
     sending.value = false;
@@ -630,18 +747,23 @@ async function sendMessage() {
 }
 
 async function load() {
-  const [connections, llm, loadedAgents] = await Promise.all([
-    system.connections.list(),
-    system.llm.list(),
-    system.agents.list(),
-  ]);
-  stats.connections = connections.length;
-  stats.llm = llm.length;
-  stats.agents = loadedAgents.length;
-  agents.value = loadedAgents;
+  agentsLoading.value = true;
+  try {
+    const [connections, llm, loadedAgents] = await Promise.all([
+      system.connections.list(),
+      system.llm.list(),
+      system.agents.list(),
+    ]);
+    stats.connections = connections.length;
+    stats.llm = llm.length;
+    stats.agents = loadedAgents.length;
+    agents.value = loadedAgents;
 
-  if (!selectedAgentId.value || !loadedAgents.some((agent) => agent.config_id === selectedAgentId.value)) {
-    selectedAgentId.value = loadedAgents[0]?.config_id ?? "";
+    if (!selectedAgentId.value || !loadedAgents.some((agent) => agent.config_id === selectedAgentId.value)) {
+      selectedAgentId.value = loadedAgents[0]?.config_id ?? "";
+    }
+  } finally {
+    agentsLoading.value = false;
   }
 
   await reloadSessions();
@@ -737,6 +859,24 @@ onMounted(() => {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.chat-agent-loading {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--admin-subtle);
+}
+
+.chat-agent-loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid color-mix(in srgb, var(--admin-accent) 28%, transparent);
+  border-top-color: var(--admin-accent);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+  flex-shrink: 0;
 }
 
 .chat-agent-card {

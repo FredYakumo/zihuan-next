@@ -1,4 +1,4 @@
-use crate::{DataType, DataValue, Node, NodeConfigField};
+use crate::{DataType, DataValue, Node, NodeConfigField, NodeConfigFlow};
 use once_cell::sync::Lazy;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -178,7 +178,7 @@ pub fn build_node_graph_from_definition(
 
         // Parse inline values
         if !node_def.inline_values.is_empty() {
-            let mut values = HashMap::new();
+            let mut values = NodeConfigFlow::new();
             let ports: HashMap<String, DataType> = node
                 .input_ports()
                 .into_iter()
@@ -216,7 +216,7 @@ pub fn build_node_graph_from_definition(
     // Second pass: nodes with dynamic input ports (e.g. FormatStringNode) only expose
     // their full port list after apply_inline_config. Re-collect any inline values that
     // were skipped in the first pass because the ports didn't exist yet.
-    let extra_inline: Vec<(String, HashMap<String, DataValue>)> = definition
+    let extra_inline: Vec<(String, NodeConfigFlow)> = definition
         .nodes
         .iter()
         .filter_map(|node_def| {
@@ -240,7 +240,7 @@ pub fn build_node_graph_from_definition(
                         .map(|field| (field.key, field.data_type)),
                 )
                 .collect();
-            let mut extra = HashMap::new();
+            let mut extra = NodeConfigFlow::new();
             for (port_name, json_val) in &node_def.inline_values {
                 if !already_set.contains(port_name.as_str()) {
                     if let Some(data_type) = ports.get(port_name) {
@@ -342,6 +342,7 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
                 reasoning_content: None,
                 tool_calls: Vec::new(),
                 tool_call_id: None,
+                usage: None,
             }))
         }
 
@@ -396,7 +397,7 @@ fn infer_any_data_value(json: &Value) -> Option<DataValue> {
 /// in-crate tests that need the registry populated.
 pub fn init_node_registry() -> zihuan_core::error::Result<()> {
     use crate::util::{
-        AndThenNode, ArrayGetNode, AtQQTargetMessageNode, BinaryToImageContentPartNode,
+        AndThenNode, AnyOfNode, ArrayGetNode, AtQQTargetMessageNode, BinaryToImageContentPartNode,
         BooleanBranchNode, BooleanNotNode, BuildMultimodalUserMessageNode, ConcatVecNode,
         ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode,
         FunctionInputsNode, FunctionNode, FunctionOutputsNode, GraphInputsNode, GraphOutputsNode,
@@ -418,6 +419,13 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         "工具",
         "等待两个输入都到齐后，原样透传第二个输入",
         AndThenNode
+    );
+    register_node!(
+        "any_of",
+        "Any Of",
+        "工具",
+        "任意一个输入到齐后就原样透传该输入，适用于多个输入中只需要一个到齐即可继续执行的场景",
+        AnyOfNode
     );
     register_node!(
         "format_string",

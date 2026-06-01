@@ -4,14 +4,18 @@ use log::info;
 use model_inference::system_config::{
     load_agents, load_llm_refs, AgentConfig, AgentType, HttpStreamAgentConfig,
 };
-use storage_handler::{build_tavily_ref, ConnectionConfig};
 use salvo::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use salvo::http::{HeaderValue, StatusCode};
 use salvo::prelude::*;
+use storage_handler::{build_web_search_engine_ref, ConnectionConfig};
 use tokio::task::JoinHandle;
 use zihuan_agent::brain::BrainTool;
+use zihuan_core::command::{
+    CommandChannel, CommandContext, NewConversationRequest, SideEffectContext,
+};
 use zihuan_core::error::{Error, Result};
-use zihuan_core::rag::TavilyRef;
+use zihuan_core::llm::{MessageRole, OpenAIMessage};
+use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::task_context::{
     AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
 };
@@ -29,6 +33,21 @@ use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
 struct HttpStreamRuntimeState {
     owner_agent: AgentConfig,
     task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
+    task_db_connection_id: Option<String>,
+}
+
+struct HttpStreamCommandSideEffectContext {
+    command_context: CommandContext,
+}
+
+impl SideEffectContext for HttpStreamCommandSideEffectContext {
+    fn command_context(&self) -> &CommandContext {
+        &self.command_context
+    }
+
+    fn start_new_conversation(&self, _request: &NewConversationRequest) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -49,7 +68,7 @@ enum HttpStreamCompletion {
 
 #[derive(Clone, Default)]
 struct HttpStreamLoadedInferenceResources {
-    tavily_ref: Option<Arc<TavilyRef>>,
+    web_search_engine_ref: Option<Arc<WebSearchEngineRef>>,
     default_tools_enabled: std::collections::HashMap<String, bool>,
 }
 
@@ -70,12 +89,12 @@ impl InferenceToolProvider for HttpStreamInferenceToolProvider {
             return Vec::new();
         }
 
-        let Some(tavily_ref) = self.resources.tavily_ref.as_ref() else {
+        let Some(web_search_engine_ref) = self.resources.web_search_engine_ref.as_ref() else {
             return Vec::new();
         };
 
         vec![Box::new(WebSearchBrainTool::new(
-            tavily_ref.clone(),
+            web_search_engine_ref.clone(),
             ToolNotificationTarget::dashboard(),
         ))]
     }
@@ -100,18 +119,22 @@ fn load_http_stream_resources(
     config: &HttpStreamAgentConfig,
     connections: &[ConnectionConfig],
 ) -> HttpStreamLoadedInferenceResources {
-    let tavily_connection_id = config
-        .tavily_connection_id
+    let web_search_engine_connection_id = config
+        .web_search_engine_connection_id
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let tavily_ref = build_tavily_ref(tavily_connection_id, connections).unwrap_or_else(|error| {
-        log::warn!("[inference][http_stream] tavily connection unavailable: {error}");
+    let web_search_engine_ref = build_web_search_engine_ref(
+        web_search_engine_connection_id,
+        connections,
+    )
+    .unwrap_or_else(|error| {
+        log::warn!("[inference][http_stream] web search engine connection unavailable: {error}");
         None
     });
 
     HttpStreamLoadedInferenceResources {
-        tavily_ref,
+        web_search_engine_ref,
         default_tools_enabled: config.default_tools_enabled.clone(),
     }
 }
@@ -134,9 +157,14 @@ pub async fn spawn(
             ))
         })?;
 
+    let task_db_connection_id = Some(config.task_db_connection_id.trim())
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+
     let runtime_state = Arc::new(HttpStreamRuntimeState {
         owner_agent: agent.clone(),
         task_runtime,
+        task_db_connection_id,
     });
     let auth_token = normalize_optional_token(config.api_key.clone());
     let router = Router::new()
@@ -255,14 +283,23 @@ async fn http_stream_chat_completions(req: &mut Request, res: &mut Response, dep
             agent_id: runtime.owner_agent.id.clone(),
             agent_name: runtime.owner_agent.name.clone(),
             user_ip: request_ip.clone(),
+            owner_id: None,
+            task_db_connection_id: runtime.task_db_connection_id.clone(),
         })
     });
 
     let task_id = task_handle.as_ref().map(|handle| handle.task_id.clone());
-    let execution = async move { execute_http_stream_completion(runtime.as_ref(), body).await };
+    let provided_api_key = bearer_token(req.headers().get(AUTHORIZATION)).map(ToOwned::to_owned);
     let result = match task_id {
-        Some(task_id) => EXECUTION_TASK_ID.scope(task_id, execution).await,
-        None => execution.await,
+        Some(task_id) => {
+            EXECUTION_TASK_ID
+                .scope(
+                    task_id,
+                    execute_http_stream_completion(runtime.as_ref(), body, provided_api_key),
+                )
+                .await
+        }
+        None => execute_http_stream_completion(runtime.as_ref(), body, provided_api_key).await,
     };
 
     match result {
@@ -302,10 +339,11 @@ async fn http_stream_chat_completions(req: &mut Request, res: &mut Response, dep
 async fn execute_http_stream_completion(
     runtime: &HttpStreamRuntimeState,
     request: ChatCompletionsRequest,
+    provided_api_key: Option<String>,
 ) -> Result<HttpStreamCompletion> {
     let ChatCompletionsRequest {
         model,
-        messages,
+        mut messages,
         stream,
         agent_id,
     } = request;
@@ -315,6 +353,68 @@ async fn execute_http_stream_completion(
     let model_name = resolve_agent_model_name(&target_agent, &llm_refs)?;
     let completion_id = format!("chatcmpl-{}", uuid::Uuid::new_v4().simple());
     let created = chrono::Utc::now().timestamp();
+
+    if let Some(command_registry) = crate::command::global_command_registry() {
+        let raw_user_text = messages
+            .iter()
+            .rev()
+            .find(|message| matches!(message.role, MessageRole::User))
+            .and_then(OpenAIMessage::content_text_owned);
+
+        if let Some(raw_user_text) = raw_user_text {
+            let command_context = CommandContext {
+                agent_type: "http_stream".to_string(),
+                agent_id: target_agent.id.clone(),
+                caller_id: http_stream_command_caller_id(provided_api_key.as_deref()),
+                channel: CommandChannel::HttpStream {
+                    api_key: mask_http_stream_api_key(provided_api_key.as_deref()),
+                },
+            };
+
+            if let Some(dispatch_result) =
+                command_registry.dispatch(&command_context, &raw_user_text)
+            {
+                let side_effect_context = HttpStreamCommandSideEffectContext {
+                    command_context: command_context.clone(),
+                };
+                for effect in &dispatch_result.result.side_effects {
+                    effect.execute(&side_effect_context)?;
+                }
+
+                if let Some(passthrough_text) = dispatch_result.passthrough_text {
+                    if dispatch_result.result.inject_to_llm {
+                        messages.push(OpenAIMessage::assistant_text(dispatch_result.result.reply));
+                        messages.push(OpenAIMessage::user(passthrough_text));
+                    } else {
+                        messages = vec![OpenAIMessage::user(passthrough_text)];
+                    }
+                } else {
+                    let final_message = OpenAIMessage::assistant_text(dispatch_result.result.reply);
+                    let model_name = model.unwrap_or(model_name);
+                    if stream {
+                        return Ok(HttpStreamCompletion::Sse(build_sse_response(
+                            &completion_id,
+                            created,
+                            &model_name,
+                            &final_message,
+                        )));
+                    }
+
+                    return Ok(HttpStreamCompletion::Json(serde_json::json!({
+                        "id": completion_id,
+                        "object": "chat.completion",
+                        "created": created,
+                        "model": model_name,
+                        "choices": [{
+                            "index": 0,
+                            "message": final_message,
+                            "finish_reason": "stop"
+                        }]
+                    })));
+                }
+            }
+        }
+    }
 
     let final_message = infer_agent_response(&target_agent, &llm_refs, messages)?;
 
@@ -466,6 +566,31 @@ fn normalize_optional_token(value: Option<String>) -> Option<String> {
     value
         .map(|token| token.trim().to_string())
         .filter(|token| !token.is_empty())
+}
+
+fn http_stream_command_caller_id(api_key: Option<&str>) -> String {
+    api_key
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| "http_stream_anonymous".to_string())
+}
+
+fn mask_http_stream_api_key(api_key: Option<&str>) -> String {
+    let Some(api_key) = api_key.map(str::trim).filter(|value| !value.is_empty()) else {
+        return "anonymous".to_string();
+    };
+
+    let chars = api_key.chars().collect::<Vec<_>>();
+    if chars.len() <= 8 {
+        let prefix: String = chars.iter().take(2).collect();
+        let suffix: String = chars.iter().skip(chars.len().saturating_sub(2)).collect();
+        return format!("{prefix}***{suffix}");
+    }
+
+    let prefix: String = chars.iter().take(4).collect();
+    let suffix: String = chars.iter().skip(chars.len() - 4).collect();
+    format!("{prefix}***{suffix}")
 }
 
 fn validate_http_stream_config(config: &HttpStreamAgentConfig) -> Result<()> {

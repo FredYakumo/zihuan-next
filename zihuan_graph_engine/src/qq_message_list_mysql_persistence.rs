@@ -74,10 +74,7 @@ impl Node for QQMessageListMySQLPersistenceNode {
         port! { name = "qq_message_list", ty = Vec(QQMessage),  desc = "透传输入的消息列表" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         // ── Extract qq_message_list ──────────────────────────────────────────
         let (msg_item_type, msg_items) = inputs
             .get("qq_message_list")
@@ -191,11 +188,10 @@ impl Node for QQMessageListMySQLPersistenceNode {
             }
             None => {
                 error!("[QQMessageListMySQLPersistenceNode] mysql_ref has no active pool");
-                let mut outputs = HashMap::new();
-                outputs.insert("success".to_string(), DataValue::Boolean(false));
-                outputs.insert("qq_message_list".to_string(), passthrough);
-                self.validate_outputs(&outputs)?;
-                return Ok(outputs);
+                return crate::return_with_node_output![self;
+                    "success" => DataValue::Boolean(false),
+                    "qq_message_list" => passthrough,
+                ];
             }
         };
 
@@ -355,10 +351,9 @@ impl Node for QQMessageListMySQLPersistenceNode {
             );
         }
 
-        let mut outputs = HashMap::new();
-        outputs.insert("success".to_string(), DataValue::Boolean(success));
-        outputs.insert("qq_message_list".to_string(), passthrough);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "success" => DataValue::Boolean(success),
+            "qq_message_list" => passthrough,
+        ]
     }
 }

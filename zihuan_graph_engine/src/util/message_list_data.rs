@@ -42,10 +42,7 @@ impl Node for MessageListDataNode {
         port! { name = "messages", ty = Vec(OpenAIMessage), desc = "Output Vec<OpenAIMessage> from UI data source" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();
@@ -58,6 +55,7 @@ impl Node for MessageListDataNode {
             });
         outputs.insert("messages".to_string(), value);
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }

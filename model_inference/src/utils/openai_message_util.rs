@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 use zihuan_core::llm::tooling::{ToolCalls, ToolCallsFuncSpec};
 use zihuan_core::llm::{
     role_to_str, str_to_role, ContentPart, InferenceParam, MessageContent, MessageRole,
-    OpenAIMessage,
+    OpenAIMessage, TokenUsage,
 };
 
 #[derive(Default)]
@@ -72,6 +72,72 @@ fn parse_tool_calls(tool_calls_value: &Value) -> Vec<ToolCalls> {
         .unwrap_or_default()
 }
 
+fn parse_token_usage(value: Option<&Value>) -> Option<TokenUsage> {
+    let value = value?;
+
+    let cached_prompt_tokens = value
+        .get("prompt_tokens_details")
+        .and_then(|details| details.get("cached_tokens"))
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize)
+        .or_else(|| {
+            value
+                .get("input_tokens_details")
+                .and_then(|details| details.get("cached_tokens"))
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+        })
+        .or_else(|| {
+            value
+                .get("prompt_cache_hit_tokens")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+        })
+        .or_else(|| {
+            value
+                .get("cache_hit_tokens")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+        });
+
+    let prompt_cache_miss_tokens = value
+        .get("prompt_cache_miss_tokens")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize)
+        .or_else(|| {
+            value
+                .get("cache_miss_tokens")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+        });
+
+    let prompt_tokens = value
+        .get("prompt_tokens")
+        .and_then(|v| v.as_u64())
+        .or_else(|| value.get("input_tokens").and_then(|v| v.as_u64()))
+        .map(|v| v as usize)
+        .or_else(|| {
+            cached_prompt_tokens
+                .zip(prompt_cache_miss_tokens)
+                .map(|(hit, miss)| hit + miss)
+        });
+
+    Some(TokenUsage {
+        prompt_tokens,
+        cached_prompt_tokens,
+        prompt_cache_miss_tokens,
+        completion_tokens: value
+            .get("completion_tokens")
+            .and_then(|v| v.as_u64())
+            .or_else(|| value.get("output_tokens").and_then(|v| v.as_u64()))
+            .map(|v| v as usize),
+        total_tokens: value
+            .get("total_tokens")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize),
+    })
+}
+
 pub fn parse_chat_completions_api_message(api_resp: &Value) -> Option<OpenAIMessage> {
     let choices = api_resp.get("choices")?.as_array()?;
     let choice = choices.first()?;
@@ -104,6 +170,7 @@ pub fn parse_chat_completions_api_message(api_resp: &Value) -> Option<OpenAIMess
         reasoning_content,
         tool_calls,
         tool_call_id,
+        usage: parse_token_usage(api_resp.get("usage")),
     })
 }
 
@@ -113,6 +180,7 @@ pub fn parse_responses_api_message(api_resp: &Value) -> Option<OpenAIMessage> {
     let mut content = String::new();
     let mut reasoning_content = String::new();
     let mut tool_calls = Vec::new();
+    let usage = parse_token_usage(api_resp.get("usage"));
 
     for item in output_items {
         match item.get("type").and_then(|value| value.as_str()) {
@@ -182,7 +250,11 @@ pub fn parse_responses_api_message(api_resp: &Value) -> Option<OpenAIMessage> {
         }
     }
 
-    if content.is_empty() && reasoning_content.is_empty() && tool_calls.is_empty() {
+    if content.is_empty()
+        && reasoning_content.is_empty()
+        && tool_calls.is_empty()
+        && usage.is_none()
+    {
         return None;
     }
 
@@ -201,6 +273,7 @@ pub fn parse_responses_api_message(api_resp: &Value) -> Option<OpenAIMessage> {
         },
         tool_calls,
         tool_call_id: None,
+        usage,
     })
 }
 
@@ -289,6 +362,7 @@ pub fn parse_chat_completions_sse_message(response_text: &str) -> Option<OpenAIM
     let mut reasoning_content = String::new();
     let mut streamed_tool_calls: BTreeMap<usize, StreamToolCallDelta> = BTreeMap::new();
     let mut final_tool_calls: Option<Vec<ToolCalls>> = None;
+    let mut usage: Option<TokenUsage> = None;
 
     for line in response_text.lines() {
         let line = line.trim();
@@ -304,6 +378,10 @@ pub fn parse_chat_completions_sse_message(response_text: &str) -> Option<OpenAIM
         let Ok(chunk) = serde_json::from_str::<Value>(payload) else {
             continue;
         };
+
+        if let Some(parsed_usage) = parse_token_usage(chunk.get("usage")) {
+            usage = Some(parsed_usage);
+        }
 
         let choice = chunk
             .get("choices")
@@ -429,6 +507,7 @@ pub fn parse_chat_completions_sse_message(response_text: &str) -> Option<OpenAIM
         },
         tool_calls,
         tool_call_id: None,
+        usage,
     })
 }
 
@@ -525,6 +604,7 @@ fn serialize_message_content(
 
 fn build_messages_json(
     param: &InferenceParam<'_>,
+    include_reasoning_content: bool,
     request_format: OpenAIRequestFormat,
 ) -> Vec<Value> {
     param
@@ -540,8 +620,10 @@ fn build_messages_json(
                 "content": content_value,
             });
 
-            if let Some(reasoning_content) = &msg.reasoning_content {
-                msg_obj["reasoning_content"] = json!(reasoning_content);
+            if include_reasoning_content {
+                if let Some(reasoning_content) = &msg.reasoning_content {
+                    msg_obj["reasoning_content"] = json!(reasoning_content);
+                }
             }
 
             if !msg.tool_calls.is_empty() {
@@ -588,6 +670,7 @@ pub fn build_request_body(
     api_style: &LlmApiStyle,
     param: &InferenceParam<'_>,
     stream: bool,
+    include_reasoning_content: bool,
     request_format: OpenAIRequestFormat,
 ) -> Value {
     if matches!(
@@ -599,7 +682,9 @@ pub fn build_request_body(
         let input = param
             .messages
             .iter()
-            .flat_map(|msg| build_responses_input_items(msg, request_format))
+            .flat_map(|msg| {
+                build_responses_input_items(msg, include_reasoning_content, request_format)
+            })
             .collect::<Vec<_>>();
         let tools = param.tools.as_ref().map(|ts| {
             ts.iter()
@@ -629,7 +714,7 @@ pub fn build_request_body(
         return request_body;
     }
 
-    let messages = build_messages_json(param, request_format);
+    let messages = build_messages_json(param, include_reasoning_content, request_format);
     let tools: Option<Vec<Value>> = param
         .tools
         .as_ref()
@@ -641,6 +726,12 @@ pub fn build_request_body(
         "stream": stream,
     });
 
+    if stream {
+        request_body["stream_options"] = json!({
+            "include_usage": true,
+        });
+    }
+
     if let Some(tool_list) = tools {
         request_body["tools"] = json!(tool_list);
         request_body["tool_choice"] = json!("auto");
@@ -651,6 +742,7 @@ pub fn build_request_body(
 
 fn build_responses_input_items(
     msg: &OpenAIMessage,
+    _include_reasoning_content: bool,
     request_format: OpenAIRequestFormat,
 ) -> Vec<Value> {
     match msg.role {
@@ -766,6 +858,7 @@ pub fn parse_responses_sse_message(response_text: &str) -> Option<OpenAIMessage>
     let mut streamed_tool_calls: BTreeMap<String, StreamToolCallDelta> = BTreeMap::new();
     let mut tool_call_aliases: BTreeMap<String, String> = BTreeMap::new();
     let mut completed_message = None;
+    let mut usage: Option<TokenUsage> = None;
 
     for line in response_text.lines() {
         let line = line.trim();
@@ -781,6 +874,10 @@ pub fn parse_responses_sse_message(response_text: &str) -> Option<OpenAIMessage>
         let Ok(chunk) = serde_json::from_str::<Value>(payload) else {
             continue;
         };
+
+        if let Some(parsed_usage) = parse_token_usage(chunk.get("usage")) {
+            usage = Some(parsed_usage);
+        }
 
         match chunk.get("type").and_then(|value| value.as_str()) {
             Some("response.output_text.delta") => {
@@ -884,7 +981,7 @@ pub fn parse_responses_sse_message(response_text: &str) -> Option<OpenAIMessage>
 
     let tool_calls = collect_responses_stream_tool_calls(streamed_tool_calls);
 
-    if content.is_empty() && tool_calls.is_empty() {
+    if content.is_empty() && tool_calls.is_empty() && usage.is_none() {
         None
     } else {
         Some(OpenAIMessage {
@@ -898,6 +995,7 @@ pub fn parse_responses_sse_message(response_text: &str) -> Option<OpenAIMessage>
             reasoning_content: None,
             tool_calls,
             tool_call_id: None,
+            usage,
         })
     }
 }
@@ -913,6 +1011,7 @@ pub async fn parse_chat_completions_sse_stream(
     let mut reasoning_content = String::new();
     let mut streamed_tool_calls: BTreeMap<usize, StreamToolCallDelta> = BTreeMap::new();
     let mut final_tool_calls: Option<Vec<ToolCalls>> = None;
+    let mut usage: Option<TokenUsage> = None;
 
     let mut stream = response.bytes_stream();
     let mut sse_buffer = String::new();
@@ -944,6 +1043,10 @@ pub async fn parse_chat_completions_sse_stream(
             let Ok(chunk_data) = serde_json::from_str::<Value>(payload) else {
                 continue;
             };
+
+            if let Some(parsed_usage) = parse_token_usage(chunk_data.get("usage")) {
+                usage = Some(parsed_usage);
+            }
 
             let choice = chunk_data
                 .get("choices")
@@ -1048,7 +1151,11 @@ pub async fn parse_chat_completions_sse_stream(
             .collect::<Vec<_>>()
     };
 
-    if content.is_empty() && reasoning_content.is_empty() && tool_calls.is_empty() {
+    if content.is_empty()
+        && reasoning_content.is_empty()
+        && tool_calls.is_empty()
+        && usage.is_none()
+    {
         return OpenAIMessage::assistant_text("");
     }
 
@@ -1067,6 +1174,7 @@ pub async fn parse_chat_completions_sse_stream(
         },
         tool_calls,
         tool_call_id: None,
+        usage,
     }
 }
 
@@ -1080,6 +1188,7 @@ pub async fn parse_responses_sse_stream(
     let mut streamed_tool_calls: BTreeMap<String, StreamToolCallDelta> = BTreeMap::new();
     let mut tool_call_aliases: BTreeMap<String, String> = BTreeMap::new();
     let mut completed_message = None;
+    let mut usage: Option<TokenUsage> = None;
 
     let mut stream = response.bytes_stream();
     let mut sse_buffer = String::new();
@@ -1111,6 +1220,10 @@ pub async fn parse_responses_sse_stream(
             let Ok(chunk_data) = serde_json::from_str::<Value>(payload) else {
                 continue;
             };
+
+            if let Some(parsed_usage) = parse_token_usage(chunk_data.get("usage")) {
+                usage = Some(parsed_usage);
+            }
 
             match chunk_data.get("type").and_then(|value| value.as_str()) {
                 Some("response.output_text.delta") => {
@@ -1232,5 +1345,110 @@ pub async fn parse_responses_sse_stream(
         reasoning_content: None,
         tool_calls,
         tool_call_id: None,
+        usage,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_request_body_omits_reasoning_content_by_default() {
+        let messages = vec![OpenAIMessage {
+            role: MessageRole::Assistant,
+            api_style: None,
+            content: Some(MessageContent::Text("hello".to_string())),
+            reasoning_content: Some("hidden reasoning".to_string()),
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+            usage: None,
+        }];
+        let param = InferenceParam {
+            messages: &messages,
+            tools: None,
+        };
+
+        let body = build_request_body(
+            "demo",
+            &crate::system_config::LlmApiStyle::OpenAiChatCompletions,
+            &param,
+            false,
+            false,
+            OpenAIRequestFormat::DefaultOpenAI,
+        );
+
+        let message = body["messages"]
+            .as_array()
+            .and_then(|items| items.first())
+            .expect("message should exist");
+        assert!(message.get("reasoning_content").is_none());
+    }
+
+    #[test]
+    fn build_request_body_can_include_reasoning_content() {
+        let messages = vec![OpenAIMessage {
+            role: MessageRole::Assistant,
+            api_style: None,
+            content: Some(MessageContent::Text("hello".to_string())),
+            reasoning_content: Some("hidden reasoning".to_string()),
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+            usage: None,
+        }];
+        let param = InferenceParam {
+            messages: &messages,
+            tools: None,
+        };
+
+        let body = build_request_body(
+            "demo",
+            &crate::system_config::LlmApiStyle::OpenAiChatCompletions,
+            &param,
+            false,
+            true,
+            OpenAIRequestFormat::DefaultOpenAI,
+        );
+
+        let message = body["messages"]
+            .as_array()
+            .and_then(|items| items.first())
+            .expect("message should exist");
+        assert_eq!(
+            message.get("reasoning_content").and_then(|v| v.as_str()),
+            Some("hidden reasoning")
+        );
+    }
+
+    #[test]
+    fn parse_token_usage_reads_cached_tokens_and_responses_style_tokens() {
+        let chat_usage = serde_json::json!({
+            "prompt_tokens": 10,
+            "completion_tokens": 3,
+            "total_tokens": 13,
+            "prompt_tokens_details": {
+                "cached_tokens": 4
+            }
+        });
+        let chat = parse_token_usage(Some(&chat_usage)).expect("chat usage");
+        assert_eq!(chat.prompt_tokens, Some(10));
+        assert_eq!(chat.cached_prompt_tokens, Some(4));
+        assert_eq!(chat.prompt_cache_miss_tokens, None);
+        assert_eq!(chat.completion_tokens, Some(3));
+        assert_eq!(chat.total_tokens, Some(13));
+
+        let responses_usage = serde_json::json!({
+            "input_tokens": 12,
+            "output_tokens": 5,
+            "input_tokens_details": {
+                "cached_tokens": 7
+            },
+            "prompt_cache_miss_tokens": 5
+        });
+        let responses = parse_token_usage(Some(&responses_usage)).expect("responses usage");
+        assert_eq!(responses.prompt_tokens, Some(12));
+        assert_eq!(responses.cached_prompt_tokens, Some(7));
+        assert_eq!(responses.prompt_cache_miss_tokens, Some(5));
+        assert_eq!(responses.completion_tokens, Some(5));
     }
 }

@@ -1,6 +1,5 @@
 use crate::data_value::SessionStateRef;
-use crate::{node_input, node_output, DataType, DataValue, Node, Port};
-use std::collections::HashMap;
+use crate::{node_input, node_output, node_output_flow, DataType, DataValue, Node, Port};
 use std::sync::Arc;
 use tokio::task::block_in_place;
 use zihuan_core::error::Result;
@@ -42,10 +41,7 @@ impl Node for SessionStateGetNode {
         port! { name = "state_json", ty = Json, desc = "当前 sender_id 的附加 JSON 状态" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let session_ref: Arc<SessionStateRef> = inputs
@@ -74,14 +70,9 @@ impl Node for SessionStateGetNode {
             tokio::runtime::Runtime::new()?.block_on(read_state)
         };
 
-        let outputs = HashMap::from([
-            (
-                "in_session".to_string(),
-                DataValue::Boolean(state.in_session),
-            ),
-            ("state_json".to_string(), DataValue::Json(state.state_json)),
-        ]);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "in_session" => DataValue::Boolean(state.in_session),
+            "state_json" => DataValue::Json(state.state_json),
+        ]
     }
 }

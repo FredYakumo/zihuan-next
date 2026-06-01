@@ -182,9 +182,9 @@ pub async fn add_node(req: &mut Request, res: &mut Response, depot: &mut Depot) 
     let mut sessions = state.sessions.write().unwrap();
     match sessions.get_mut(&id) {
         Some(s) => {
-            s.graph.nodes.push(node_def);
+            s.graph.nodes.push(node_def.clone());
             s.dirty = true;
-            res.render(Json(serde_json::json!({"id": node_id})));
+            res.render(Json(&node_def));
         }
         None => {
             res.status_code(StatusCode::NOT_FOUND);

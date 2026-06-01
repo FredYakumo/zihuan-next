@@ -33,10 +33,7 @@ impl Node for BooleanNotNode {
 
     node_output![port! { name = "result", ty = Boolean, desc = "取反后的布尔值" },];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let input = match inputs.get("input") {
@@ -48,10 +45,8 @@ impl Node for BooleanNotNode {
             }
         };
 
-        let mut outputs = HashMap::new();
-        outputs.insert("result".to_string(), DataValue::Boolean(!input));
-
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "result" => DataValue::Boolean(!input),
+        ]
     }
 }

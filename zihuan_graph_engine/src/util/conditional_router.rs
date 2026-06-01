@@ -1,5 +1,4 @@
-use crate::{node_input, node_output, DataType, DataValue, Node, Port};
-use std::collections::HashMap;
+use crate::{node_input, node_output, node_output_flow, DataType, DataValue, Node, Port};
 use zihuan_core::error::Result;
 
 /// Routes one of two inputs to the output based on a boolean condition.
@@ -41,10 +40,7 @@ impl Node for ConditionalRouterNode {
         port! { name = "branch_taken", ty = String, desc = "实际走到的分支：primary 或 fallback" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let condition = match inputs.get("condition") {
@@ -72,14 +68,9 @@ impl Node for ConditionalRouterNode {
             )
         };
 
-        let mut outputs = HashMap::new();
-        outputs.insert("result".to_string(), result);
-        outputs.insert(
-            "branch_taken".to_string(),
-            DataValue::String(branch_taken.to_string()),
-        );
-
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "result" => result,
+            "branch_taken" => DataValue::String(branch_taken.to_string()),
+        ]
     }
 }

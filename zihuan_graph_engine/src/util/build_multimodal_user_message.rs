@@ -42,10 +42,7 @@ impl Node for BuildMultimodalUserMessageNode {
         port! { name = "message", ty = OpenAIMessage, desc = "封装后的多模态 OpenAIMessage" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let text = match inputs.get("text") {
@@ -94,12 +91,11 @@ impl Node for BuildMultimodalUserMessageNode {
             reasoning_content: None,
             tool_calls: Vec::new(),
             tool_call_id: None,
+            usage: None,
         };
 
-        let mut outputs = HashMap::new();
-        outputs.insert("message".to_string(), DataValue::OpenAIMessage(message));
-
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "message" => DataValue::OpenAIMessage(message),
+        ]
     }
 }

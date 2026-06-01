@@ -35,10 +35,7 @@ impl Node for AtQQTargetMessageNode {
 
     node_output![port! { name = "result", ty = QQMessage, desc = "输出 QQMessage At 消息段" },];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let id = match inputs.get("id") {
@@ -52,10 +49,8 @@ impl Node for AtQQTargetMessageNode {
 
         let qq_message = Message::At(AtTargetMessage { target: Some(id) });
 
-        let mut outputs = HashMap::new();
-        outputs.insert("result".to_string(), DataValue::QQMessage(qq_message));
-
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "result" => DataValue::QQMessage(qq_message),
+        ]
     }
 }

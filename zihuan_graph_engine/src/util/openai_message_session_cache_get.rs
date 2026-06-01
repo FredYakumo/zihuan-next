@@ -41,10 +41,7 @@ impl Node for OpenAIMessageSessionCacheGetNode {
         port! { name = "messages", ty = Vec(OpenAIMessage), desc = "读取到的历史 Vec<OpenAIMessage>" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let cache_ref: Arc<OpenAIMessageSessionCacheRef> = inputs
@@ -96,16 +93,11 @@ impl Node for OpenAIMessageSessionCacheGetNode {
             cached_messages
         };
 
-        let mut outputs = HashMap::new();
-        outputs.insert(
-            "messages".to_string(),
-            DataValue::Vec(
+        crate::return_with_node_output![self;
+            "messages" => DataValue::Vec(
                 Box::new(DataType::OpenAIMessage),
                 messages.into_iter().map(DataValue::OpenAIMessage).collect(),
             ),
-        );
-
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        ]
     }
 }

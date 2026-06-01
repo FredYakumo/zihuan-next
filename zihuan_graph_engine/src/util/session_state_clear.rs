@@ -1,6 +1,5 @@
 use crate::data_value::SessionStateRef;
-use crate::{node_input, node_output, DataType, DataValue, Node, Port};
-use std::collections::HashMap;
+use crate::{node_input, node_output, node_output_flow, DataType, DataValue, Node, Port};
 use std::sync::Arc;
 use tokio::task::block_in_place;
 use zihuan_core::error::Result;
@@ -39,10 +38,7 @@ impl Node for SessionStateClearNode {
 
     node_output![port! { name = "cleared", ty = Boolean, desc = "是否清除了状态" },];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let session_ref: Arc<SessionStateRef> = inputs
@@ -71,8 +67,8 @@ impl Node for SessionStateClearNode {
             tokio::runtime::Runtime::new()?.block_on(clear_state)
         };
 
-        let outputs = HashMap::from([("cleared".to_string(), DataValue::Boolean(cleared))]);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "cleared" => DataValue::Boolean(cleared),
+        ]
     }
 }

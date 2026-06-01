@@ -306,7 +306,7 @@ Current shape:
 
 Graph structure, inline values, variables, and embedded subgraphs live in graph JSON files or workflow-set files under `workflow_set/`.
 
-`config.yaml` is only used by the Python Alembic migration flow for MySQL schema setup.
+Database tables are created automatically when a MySQL or SQLite connection is added via the Connections UI.
 
 ## Documentation
 

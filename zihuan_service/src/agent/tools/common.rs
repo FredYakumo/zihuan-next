@@ -5,16 +5,17 @@ use log::warn;
 use serde_json::Value;
 
 use ims_bot_adapter::adapter::{shared_from_handle, SharedBotAdapter};
-use ims_bot_adapter::message_helpers::{
-    send_friend_progress_notification_with_persistence,
-    send_group_progress_notification_with_persistence, OutboundMessagePersistence,
-};
 use ims_bot_adapter::models::event_model::MessageType;
-use zihuan_agent::brain::consume_tool_progress_notification;
+use zihuan_agent::brain::{consume_tool_progress_notification, current_task_progress_message};
 use zihuan_core::error::{Error, Result};
+use zihuan_core::task_context::append_current_task_progress;
 use zihuan_graph_engine::{DataType, DataValue};
 
+use crate::agent::qq_chat_agent_msg_send::{send_notification_text, QqSendContext};
+
 const LOG_PREFIX: &str = "[QqChatAgent]";
+pub(crate) const QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS: &str =
+    "qq_chat_emit_tool_progress_notifications";
 
 #[derive(Clone)]
 pub(crate) struct ToolNotificationTarget {
@@ -22,6 +23,7 @@ pub(crate) struct ToolNotificationTarget {
     target_id: String,
     mention_target_id: Option<String>,
     is_group: bool,
+    emit_progress_notifications: bool,
 }
 
 impl ToolNotificationTarget {
@@ -30,20 +32,25 @@ impl ToolNotificationTarget {
         target_id: String,
         mention_target_id: Option<String>,
         is_group: bool,
+        emit_progress_notifications: bool,
     ) -> Self {
         Self {
             adapter,
             target_id,
             mention_target_id,
             is_group,
+            emit_progress_notifications,
         }
     }
 
     pub(crate) fn dashboard() -> Self {
-        Self::new(None, String::new(), None, false)
+        Self::new(None, String::new(), None, false, true)
     }
 
     pub(crate) fn notify_progress(&self, call_content: &str) {
+        if !self.emit_progress_notifications {
+            return;
+        }
         // Skip empty or already-consumed progress content to avoid duplicate notifications.
         if !consume_tool_progress_notification(call_content) {
             return;
@@ -53,21 +60,32 @@ impl ToolNotificationTarget {
         };
         if self.is_group {
             if let Some(mid) = self.mention_target_id.as_deref() {
-                send_group_progress_notification_with_persistence(
+                let send_ctx = QqSendContext {
                     adapter,
-                    &self.target_id,
-                    mid,
-                    call_content,
-                    &OutboundMessagePersistence::default(),
-                );
+                    target_id: &self.target_id,
+                    is_group: true,
+                    group_name: None,
+                    bot_id: "",
+                    bot_name: "",
+                    mention_target_id: Some(mid),
+                    persistence: Default::default(),
+                    max_text_chars: 250,
+                };
+                let _ = send_notification_text(&send_ctx, call_content);
             }
         } else {
-            send_friend_progress_notification_with_persistence(
+            let send_ctx = QqSendContext {
                 adapter,
-                &self.target_id,
-                call_content,
-                &OutboundMessagePersistence::default(),
-            );
+                target_id: &self.target_id,
+                is_group: false,
+                group_name: None,
+                bot_id: "",
+                bot_name: "",
+                mention_target_id: None,
+                persistence: Default::default(),
+                max_text_chars: 250,
+            };
+            let _ = send_notification_text(&send_ctx, call_content);
         }
     }
 
@@ -87,12 +105,20 @@ pub(crate) fn send_editable_tool_progress_notification(
     shared_runtime_values: &Arc<Mutex<HashMap<String, DataValue>>>,
     call_content: &str,
 ) {
-    // Deduplicate and skip empty progress; the same content may stream in repeatedly.
-    if !consume_tool_progress_notification(call_content) {
+    let shared_rt = shared_runtime_values.lock().unwrap();
+    if let Some(progress_text) = current_task_progress_message(call_content) {
+        if append_current_task_progress(progress_text) {
+            return;
+        }
+    }
+
+    if matches!(
+        shared_rt.get(QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS),
+        Some(DataValue::Boolean(false))
+    ) {
         return;
     }
 
-    let shared_rt = shared_runtime_values.lock().unwrap();
     let event = match shared_rt
         .get(zihuan_graph_engine::brain_tool_spec::QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT)
     {
@@ -118,29 +144,39 @@ pub(crate) fn send_editable_tool_progress_notification(
 
     if event.message_type == MessageType::Group {
         if let Some(group_id) = event.group_id {
+            let group_id = group_id.to_string();
             let sender_id = event.sender.user_id.to_string();
-            send_group_progress_notification_with_persistence(
-                &adapter,
-                &group_id.to_string(),
-                &sender_id,
-                call_content,
-                &OutboundMessagePersistence {
-                    group_name: event.group_name.clone(),
-                    ..OutboundMessagePersistence::default()
-                },
-            );
+            let send_ctx = QqSendContext {
+                adapter: &adapter,
+                target_id: &group_id,
+                is_group: true,
+                group_name: event.group_name.as_deref(),
+                bot_id: "",
+                bot_name: "",
+                mention_target_id: Some(&sender_id),
+                persistence: Default::default(),
+                max_text_chars: 250,
+            };
+            let _ = send_notification_text(&send_ctx, call_content);
         } else {
             warn!(
                 "{LOG_PREFIX} editable tool progress notification skipped: group message missing group_id"
             );
         }
     } else {
-        send_friend_progress_notification_with_persistence(
-            &adapter,
-            &event.sender.user_id.to_string(),
-            call_content,
-            &OutboundMessagePersistence::default(),
-        );
+        let target_id = event.sender.user_id.to_string();
+        let send_ctx = QqSendContext {
+            adapter: &adapter,
+            target_id: &target_id,
+            is_group: false,
+            group_name: None,
+            bot_id: "",
+            bot_name: "",
+            mention_target_id: None,
+            persistence: Default::default(),
+            max_text_chars: 250,
+        };
+        let _ = send_notification_text(&send_ctx, call_content);
     }
 }
 
@@ -208,27 +244,4 @@ pub(crate) fn extract_string_list_output(
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct StaticFunctionToolSpec {
-    pub(crate) name: &'static str,
-    pub(crate) description: &'static str,
-    pub(crate) parameters: Value,
-}
-
-impl zihuan_core::llm::tooling::FunctionTool for StaticFunctionToolSpec {
-    fn name(&self) -> &str {
-        self.name
-    }
-
-    fn description(&self) -> &str {
-        self.description
-    }
-
-    fn parameters(&self) -> Value {
-        self.parameters.clone()
-    }
-
-    fn call(&self, _arguments: Value) -> Result<Value> {
-        Ok(Value::Null)
-    }
-}
+pub(crate) use zihuan_core::llm::tooling::StaticFunctionToolSpec;

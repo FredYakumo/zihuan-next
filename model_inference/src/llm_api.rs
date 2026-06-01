@@ -42,11 +42,71 @@ pub struct LLMAPI {
     api_style: LlmApiStyle,
     stream: bool,
     supports_multimodal_input: bool,
+    include_reasoning_content: bool,
     pub timeout: Duration,
     retry_count: u32,
 }
 
 impl LLMAPI {
+    fn format_cache_hit_rate(
+        &self,
+        cached_prompt_tokens: Option<usize>,
+        prompt_tokens: Option<usize>,
+    ) -> String {
+        match (cached_prompt_tokens, prompt_tokens) {
+            (Some(cached), Some(prompt)) if prompt > 0 => {
+                format!("{:.2}%", (cached as f64 / prompt as f64) * 100.0)
+            }
+            _ => "unavailable".to_string(),
+        }
+    }
+
+    fn log_usage(
+        &self,
+        request_context: &RequestContext,
+        request_format: RequestFormat,
+        usage: &zihuan_core::llm::TokenUsage,
+    ) {
+        let prompt_tokens = usage.prompt_tokens.or_else(|| {
+            usage
+                .cached_prompt_tokens
+                .zip(usage.prompt_cache_miss_tokens)
+                .map(|(hit, miss)| hit + miss)
+        });
+        log::info!(
+            "[LLMAPI] usage model={} endpoint={} api_style={:?} format={} messages={} tools={} multimodal={} include_reasoning_content={} prompt_tokens={} cached_prompt_tokens={} prompt_cache_miss_tokens={} completion_tokens={} total_tokens={} cache_hit_rate={}",
+            self.model_name,
+            self.endpoint_label(),
+            self.api_style,
+            request_format.label(),
+            request_context.message_count,
+            request_context.tool_count,
+            request_context.has_multimodal_input,
+            self.include_reasoning_content,
+            usage
+                .prompt_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            usage
+                .cached_prompt_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            usage
+                .prompt_cache_miss_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            usage
+                .completion_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            usage
+                .total_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            self.format_cache_hit_rate(usage.cached_prompt_tokens, prompt_tokens),
+        );
+    }
+
     pub fn new(
         model_name: String,
         api_endpoint: String,
@@ -54,6 +114,7 @@ impl LLMAPI {
         api_style: LlmApiStyle,
         stream: bool,
         supports_multimodal_input: bool,
+        include_reasoning_content: bool,
         timeout: Duration,
     ) -> Self {
         Self {
@@ -63,6 +124,7 @@ impl LLMAPI {
             api_style,
             stream,
             supports_multimodal_input,
+            include_reasoning_content,
             timeout,
             retry_count: DEFAULT_RETRY_COUNT,
         }
@@ -101,7 +163,7 @@ impl LLMAPI {
         request_format: RequestFormat,
     ) -> String {
         let mut context = format!(
-            "model={} endpoint={} api_style={:?} format={} timeout_secs={} messages={} tools={} multimodal={}",
+            "model={} endpoint={} api_style={:?} format={} timeout_secs={} messages={} tools={} multimodal={} include_reasoning_content={}",
             self.model_name,
             self.endpoint_label(),
             self.api_style,
@@ -109,7 +171,8 @@ impl LLMAPI {
             self.timeout.as_secs(),
             request_context.message_count,
             request_context.tool_count,
-            request_context.has_multimodal_input
+            request_context.has_multimodal_input,
+            self.include_reasoning_content
         );
 
         if let Some((current, total)) = attempt {
@@ -342,6 +405,7 @@ impl LLMBase for LLMAPI {
             &self.api_style,
             param,
             self.stream,
+            self.include_reasoning_content,
             request_format,
         );
         let max_attempts = self.retry_count.saturating_add(1);
@@ -366,6 +430,9 @@ impl LLMBase for LLMAPI {
                 request_format,
             ) {
                 Ok(msg) => {
+                    if let Some(usage) = msg.usage.as_ref() {
+                        self.log_usage(&request_context, request_format, usage);
+                    }
                     debug!(
                         "Successfully parsed API response: {}",
                         self.format_request_context(
@@ -438,6 +505,7 @@ impl LLMAPI {
             &self.api_style,
             param,
             true,
+            self.include_reasoning_content,
             request_format,
         );
 
@@ -480,7 +548,11 @@ impl LLMAPI {
             true => parse_responses_sse_stream(response, token_tx).await,
             _ => parse_chat_completions_sse_stream(response, token_tx).await,
         };
-        self.tag_response_api_style(message)
+        let message = self.tag_response_api_style(message);
+        if let Some(usage) = message.usage.as_ref() {
+            self.log_usage(&request_context, request_format, usage);
+        }
+        message
     }
 }
 

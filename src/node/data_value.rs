@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as TokioMutex;
 pub use zihuan_core::data_refs::MySqlConfig;
-pub use zihuan_core::rag::TavilyRef;
+pub use zihuan_core::rag::WebSearchEngineRef;
 
 tokio::task_local! {
     pub static SESSION_CLAIM_CONTEXT: Arc<SessionClaimContext>;
@@ -558,7 +558,7 @@ pub enum DataType {
     BotAdapterRef,
     RedisRef,
     MySqlRef,
-    TavilyRef,
+    WebSearchEngineRef,
     SessionStateRef,
     OpenAIMessageSessionCacheRef,
     Password,
@@ -595,7 +595,7 @@ impl fmt::Display for DataType {
             DataType::BotAdapterRef => write!(f, "BotAdapterRef"),
             DataType::RedisRef => write!(f, "RedisRef"),
             DataType::MySqlRef => write!(f, "MySqlRef"),
-            DataType::TavilyRef => write!(f, "TavilyRef"),
+            DataType::WebSearchEngineRef => write!(f, "WebSearchEngineRef"),
             DataType::SessionStateRef => write!(f, "SessionStateRef"),
             DataType::OpenAIMessageSessionCacheRef => write!(f, "OpenAIMessageSessionCacheRef"),
             DataType::Password => write!(f, "Password"),
@@ -636,7 +636,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "BotAdapterRef" => Ok(DataType::BotAdapterRef),
                     "RedisRef" => Ok(DataType::RedisRef),
                     "MySqlRef" => Ok(DataType::MySqlRef),
-                    "TavilyRef" => Ok(DataType::TavilyRef),
+                    "WebSearchEngineRef" => Ok(DataType::WebSearchEngineRef),
                     "SessionStateRef" => Ok(DataType::SessionStateRef),
                     "OpenAIMessageSessionCacheRef" => Ok(DataType::OpenAIMessageSessionCacheRef),
                     "Password" => Ok(DataType::Password),
@@ -661,7 +661,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                             "BotAdapterRef",
                             "RedisRef",
                             "MySqlRef",
-                            "TavilyRef",
+                            "WebSearchEngineRef",
                             "SessionStateRef",
                             "OpenAIMessageSessionCacheRef",
                             "Password",
@@ -724,7 +724,7 @@ pub enum DataValue {
     BotAdapterRef(zihuan_core::ims_bot_adapter::BotAdapterHandle),
     RedisRef(Arc<RedisConfig>),
     MySqlRef(Arc<MySqlConfig>),
-    TavilyRef(Arc<TavilyRef>),
+    WebSearchEngineRef(Arc<WebSearchEngineRef>),
     SessionStateRef(Arc<SessionStateRef>),
     OpenAIMessageSessionCacheRef(Arc<OpenAIMessageSessionCacheRef>),
     Password(String),
@@ -749,7 +749,7 @@ impl DataValue {
             DataValue::BotAdapterRef(_) => DataType::BotAdapterRef,
             DataValue::RedisRef(_) => DataType::RedisRef,
             DataValue::MySqlRef(_) => DataType::MySqlRef,
-            DataValue::TavilyRef(_) => DataType::TavilyRef,
+            DataValue::WebSearchEngineRef(_) => DataType::WebSearchEngineRef,
             DataValue::SessionStateRef(_) => DataType::SessionStateRef,
             DataValue::OpenAIMessageSessionCacheRef(_) => DataType::OpenAIMessageSessionCacheRef,
             DataValue::Password(_) => DataType::Password,
@@ -765,7 +765,7 @@ impl DataValue {
             DataValue::Float(value) => value.to_string(),
             DataValue::Boolean(value) => value.to_string(),
             DataValue::BotAdapterRef(_) => "BotAdapterRef".to_string(),
-            DataValue::TavilyRef(_) => "TavilyRef".to_string(),
+            DataValue::WebSearchEngineRef(_) => "WebSearchEngineRef".to_string(),
             DataValue::LoopControlRef(_) => "LoopControlRef".to_string(),
             other => {
                 serde_json::to_string(&other.to_json()).unwrap_or_else(|_| format!("{other:?}"))
@@ -831,9 +831,8 @@ impl DataValue {
                 "reconnect_max_attempts": config.reconnect_max_attempts,
                 "reconnect_interval_secs": config.reconnect_interval_secs,
             }),
-            DataValue::TavilyRef(tavily_ref) => serde_json::json!({
-                "type": "TavilyRef",
-                "timeout_secs": tavily_ref.timeout.as_secs(),
+            DataValue::WebSearchEngineRef(_) => serde_json::json!({
+                "type": "WebSearchEngineRef",
             }),
             DataValue::SessionStateRef(session_ref) => serde_json::json!({
                 "type": "SessionStateRef",
@@ -865,7 +864,7 @@ impl fmt::Debug for DataValue {
             DataValue::BotAdapterRef(_) => f.debug_tuple("BotAdapterRef").finish(),
             DataValue::RedisRef(config) => f.debug_tuple("RedisRef").field(config).finish(),
             DataValue::MySqlRef(config) => f.debug_tuple("MySqlRef").field(config).finish(),
-            DataValue::TavilyRef(tavily_ref) => f.debug_tuple("TavilyRef").field(tavily_ref).finish(),
+            DataValue::WebSearchEngineRef(_) => f.debug_tuple("WebSearchEngineRef").finish(),
             DataValue::SessionStateRef(session_ref) => {
                 f.debug_tuple("SessionStateRef").field(session_ref).finish()
             }

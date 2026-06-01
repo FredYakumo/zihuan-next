@@ -194,10 +194,7 @@ impl Node for RedisNode {
 
     node_output![port! { name = "redis_ref", ty = RedisRef, desc = "Redis连接配置引用" },];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         let host = inputs
             .get("redis_host")
             .and_then(|v| match v {
@@ -264,9 +261,8 @@ impl Node for RedisNode {
         self.initialize_run(Some(&config))?;
         register_redis_persistence_ref(config.clone());
 
-        let mut outputs = HashMap::new();
-        outputs.insert("redis_ref".to_string(), DataValue::RedisRef(config));
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "redis_ref" => DataValue::RedisRef(config),
+        ]
     }
 }

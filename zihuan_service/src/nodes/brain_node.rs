@@ -3,11 +3,14 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 
+use crate::agent::CurrentTimeBrainTool;
 use crate::nodes::tool_subgraph::{
     shared_inputs_ports, validate_shared_inputs, validate_tool_definitions, SubgraphFunctionTool,
     ToolResultMode, ToolSubgraphRunner,
 };
-use zihuan_agent::brain::{Brain, BrainStopReason, BrainTool, MAX_TOOL_ITERATIONS};
+use zihuan_agent::brain::{
+    Brain, BrainStopReason, BrainTool, ToolRunDuration, MAX_TOOL_ITERATIONS,
+};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::OpenAIMessage;
@@ -25,6 +28,10 @@ struct SubgraphBrainTool {
 impl BrainTool for SubgraphBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         self.runner.spec()
+    }
+
+    fn run_duration(&self) -> ToolRunDuration {
+        self.runner.definition.run_duration
     }
 
     fn execute(&self, call_content: &str, arguments: &Value) -> String {
@@ -94,7 +101,9 @@ impl BrainNode {
             .collect()
     }
 
-    fn parse_messages_input(inputs: &HashMap<String, DataValue>) -> Result<Vec<OpenAIMessage>> {
+    fn parse_messages_input(
+        inputs: &zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<Vec<OpenAIMessage>> {
         match inputs.get("messages") {
             Some(DataValue::Vec(_, items)) => Ok(items
                 .iter()
@@ -114,7 +123,7 @@ impl BrainNode {
 
     fn parse_shared_inputs_input(
         &self,
-        inputs: &HashMap<String, DataValue>,
+        inputs: &zihuan_graph_engine::NodeInputFlow,
     ) -> Result<HashMap<String, DataValue>> {
         let mut values = HashMap::new();
         for port in &self.shared_inputs {
@@ -168,7 +177,10 @@ impl Node for BrainNode {
         true
     }
 
-    fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
+    fn apply_inline_config(
+        &mut self,
+        inline_values: &zihuan_graph_engine::NodeConfigFlow,
+    ) -> Result<()> {
         match inline_values.get(BRAIN_SHARED_INPUTS_PORT) {
             Some(DataValue::Json(value)) => {
                 if value.is_null() {
@@ -214,8 +226,8 @@ impl Node for BrainNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         if let Some(DataValue::Json(value)) = inputs.get(BRAIN_SHARED_INPUTS_PORT) {
@@ -239,6 +251,7 @@ impl Node for BrainNode {
         let shared_runtime_values = self.parse_shared_inputs_input(&inputs)?;
 
         let mut brain = Brain::new(model);
+        brain.add_tool(CurrentTimeBrainTool);
         for tool_def in &self.tool_definitions {
             brain.add_tool(SubgraphBrainTool {
                 runner: ToolSubgraphRunner {
@@ -247,6 +260,7 @@ impl Node for BrainNode {
                     shared_inputs: self.shared_inputs.clone(),
                     definition: tool_def.clone(),
                     shared_runtime_values: Arc::new(Mutex::new(shared_runtime_values.clone())),
+                    qq_chat_agent_config: None,
                     result_mode: ToolResultMode::JsonObject,
                 },
             });
@@ -277,6 +291,7 @@ impl Node for BrainNode {
                     .collect(),
             ),
         );
+        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }

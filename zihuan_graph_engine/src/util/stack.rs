@@ -33,10 +33,7 @@ impl Node for StackNode {
 
     node_output![port! { name = "array", ty = Vec(Any), desc = "包含单个元素的 List" },];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let element = inputs.get("element").cloned().ok_or_else(|| {
@@ -50,6 +47,7 @@ impl Node for StackNode {
             DataValue::Vec(Box::new(element_type), vec![element]),
         );
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }

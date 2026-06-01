@@ -59,7 +59,7 @@ impl Node for FunctionOutputsNode {
         true
     }
 
-    fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
+    fn apply_inline_config(&mut self, inline_values: &crate::NodeConfigFlow) -> Result<()> {
         match inline_values.get(FUNCTION_SIGNATURE_PORT) {
             Some(DataValue::Json(value)) => self.apply_signature_json(value),
             Some(other) => Err(Error::ValidationError(format!(
@@ -70,14 +70,11 @@ impl Node for FunctionOutputsNode {
         }
     }
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         if let Some(DataValue::Json(value)) = inputs.get(FUNCTION_SIGNATURE_PORT) {
             self.apply_signature_json(value)?;
         }
         self.validate_inputs(&inputs)?;
-        Ok(HashMap::new())
+        Ok(crate::NodeOutputFlow::new())
     }
 }

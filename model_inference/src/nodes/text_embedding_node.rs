@@ -42,8 +42,8 @@ impl Node for TextEmbeddingNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let embedding_model = match inputs.get("embedding_model") {
@@ -68,12 +68,9 @@ impl Node for TextEmbeddingNode {
         let dimension = embedding.len() as i64;
         let vector = DataValue::Vector(embedding);
 
-        let outputs = HashMap::from([
-            ("embedding".to_string(), vector),
-            ("dimension".to_string(), DataValue::Integer(dimension)),
-        ]);
-
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        zihuan_graph_engine::return_with_node_output![self;
+            "embedding" => vector,
+            "dimension" => DataValue::Integer(dimension),
+        ]
     }
 }

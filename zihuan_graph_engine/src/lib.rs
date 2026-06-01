@@ -1,5 +1,8 @@
+extern crate self as zihuan_graph_engine;
+
 use serde_json::{json, Value};
 use std::backtrace::Backtrace;
+use std::collections::{HashMap, HashSet};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, RwLock,
@@ -66,13 +69,13 @@ impl NodeConfigField {
 
 #[derive(Debug, Clone)]
 pub struct ExecutionResult {
-    pub node_results: HashMap<String, HashMap<String, DataValue>>,
+    pub node_results: HashMap<String, NodeOutputFlow>,
     pub error_node_id: Option<String>,
     pub error_message: Option<String>,
 }
 
 impl ExecutionResult {
-    pub fn success(node_results: HashMap<String, HashMap<String, DataValue>>) -> Self {
+    pub fn success(node_results: HashMap<String, NodeOutputFlow>) -> Self {
         Self {
             node_results,
             error_node_id: None,
@@ -81,7 +84,7 @@ impl ExecutionResult {
     }
 
     pub fn with_error(
-        node_results: HashMap<String, HashMap<String, DataValue>>,
+        node_results: HashMap<String, NodeOutputFlow>,
         error_node_id: String,
         error_message: String,
     ) -> Self {
@@ -94,10 +97,9 @@ impl ExecutionResult {
 }
 
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
 use zihuan_core::error::Result;
 
-type OutputPool = HashMap<String, HashMap<String, DataValue>>;
+type OutputPool = HashMap<String, NodeOutputFlow>;
 type InputSourceMap = HashMap<String, HashMap<String, (String, String)>>;
 
 pub mod brain_tool_spec;
@@ -119,20 +121,155 @@ pub mod qq_message_list_mysql_persistence;
 pub mod registry;
 pub mod util;
 
-pub type RuntimeVariableStore = Arc<RwLock<HashMap<String, DataValue>>>;
+pub type RuntimeVariableStore = Arc<RwLock<RuntimeValueFlow>>;
 
 #[allow(unused_imports)]
 pub use data_value::{DataType, DataValue};
+pub use flow::{NodeConfigFlow, NodeInputFlow, NodeOutputFlow, RuntimeValueFlow};
 #[allow(unused_imports)]
 pub use graph_io::{
-    ensure_positions, load_graph_definition_from_json,
-    load_graph_definition_from_json_with_migration, save_graph_definition_to_json, EdgeDefinition,
-    GraphPosition, LoadedGraphDefinition, NodeDefinition, NodeGraphDefinition,
+    ensure_positions, load_graph_definition_from_json, save_graph_definition_to_json,
+    EdgeDefinition, GraphPosition, NodeDefinition, NodeGraphDefinition,
 };
 #[allow(unused_imports)]
-pub use node_macros::{node_input, node_output};
+pub use node_macros::{
+    node_input, node_input_flow, node_output, node_output_flow, return_with_node_output,
+};
 #[allow(unused_imports)]
 pub use registry::build_node_graph_from_definition;
+
+pub mod flow {
+    use std::collections::HashMap;
+    use std::ops::{Deref, DerefMut};
+
+    use zihuan_core::error::{Error, Result};
+
+    use crate::DataValue;
+
+    type FlowValues = HashMap<String, DataValue>;
+
+    macro_rules! define_value_flow {
+        ($name:ident, $missing_label:literal) => {
+            #[derive(Debug, Clone, Default)]
+            pub struct $name {
+                values: FlowValues,
+            }
+
+            impl $name {
+                pub fn new() -> Self {
+                    Self::default()
+                }
+
+                pub fn get(&self, key: &str) -> Option<&DataValue> {
+                    self.values.get(key)
+                }
+
+                pub fn get_required(&self, key: &str) -> Result<&DataValue> {
+                    self.values
+                        .get(key)
+                        .ok_or_else(|| Error::ValidationError(format!($missing_label, key)))
+                }
+
+                pub fn get_optional(&self, key: &str) -> Option<&DataValue> {
+                    self.get(key)
+                }
+
+                pub fn contains(&self, key: &str) -> bool {
+                    self.values.contains_key(key)
+                }
+
+                pub fn insert(
+                    &mut self,
+                    key: impl Into<String>,
+                    value: DataValue,
+                ) -> Option<DataValue> {
+                    self.values.insert(key.into(), value)
+                }
+
+                pub fn iter(&self) -> impl Iterator<Item = (&String, &DataValue)> {
+                    self.values.iter()
+                }
+
+                pub fn into_inner(self) -> FlowValues {
+                    self.values
+                }
+
+                pub fn as_map(&self) -> &FlowValues {
+                    &self.values
+                }
+            }
+
+            impl From<FlowValues> for $name {
+                fn from(values: FlowValues) -> Self {
+                    Self { values }
+                }
+            }
+
+            impl From<$name> for FlowValues {
+                fn from(flow: $name) -> Self {
+                    flow.values
+                }
+            }
+
+            impl Deref for $name {
+                type Target = FlowValues;
+
+                fn deref(&self) -> &Self::Target {
+                    &self.values
+                }
+            }
+        };
+    }
+    define_value_flow!(NodeInputFlow, "Required input port '{}' is missing");
+    define_value_flow!(NodeOutputFlow, "Required output port '{}' is missing");
+    define_value_flow!(NodeConfigFlow, "Required config field '{}' is missing");
+    define_value_flow!(RuntimeValueFlow, "Required runtime value '{}' is missing");
+
+    impl DerefMut for NodeOutputFlow {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.values
+        }
+    }
+
+    impl IntoIterator for NodeOutputFlow {
+        type Item = (String, DataValue);
+        type IntoIter = std::collections::hash_map::IntoIter<String, DataValue>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            self.values.into_iter()
+        }
+    }
+
+    impl DerefMut for NodeConfigFlow {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.values
+        }
+    }
+
+    impl DerefMut for RuntimeValueFlow {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.values
+        }
+    }
+
+    impl IntoIterator for NodeConfigFlow {
+        type Item = (String, DataValue);
+        type IntoIter = std::collections::hash_map::IntoIter<String, DataValue>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            self.values.into_iter()
+        }
+    }
+
+    impl IntoIterator for RuntimeValueFlow {
+        type Item = (String, DataValue);
+        type IntoIter = std::collections::hash_map::IntoIter<String, DataValue>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            self.values.into_iter()
+        }
+    }
+}
 
 /// Node input/output ports
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -212,8 +349,7 @@ pub trait Node: Send + Sync {
     /// Execute the node's main logic
     /// inputs: input port name -> data value
     /// returns: output port name -> data value
-    fn execute(&mut self, inputs: HashMap<String, DataValue>)
-        -> Result<HashMap<String, DataValue>>;
+    fn execute(&mut self, inputs: NodeInputFlow) -> Result<NodeOutputFlow>;
 
     /// Called once at the start of each graph execution.
     ///
@@ -225,13 +361,13 @@ pub trait Node: Send + Sync {
 
     /// Restore node-specific configuration from parsed inline values after the
     /// graph has been loaded from JSON.
-    fn apply_inline_config(&mut self, _inline_values: &HashMap<String, DataValue>) -> Result<()> {
+    fn apply_inline_config(&mut self, _inline_values: &NodeConfigFlow) -> Result<()> {
         Ok(())
     }
 
     /// Inject runtime values for a function-input boundary node without forcing
     /// opaque runtime references through a JSON round-trip.
-    fn set_function_runtime_values(&mut self, _values: HashMap<String, DataValue>) -> Result<()> {
+    fn set_function_runtime_values(&mut self, _values: RuntimeValueFlow) -> Result<()> {
         Err(zihuan_core::error::Error::ValidationError(
             "Node does not accept function runtime values".to_string(),
         ))
@@ -251,64 +387,90 @@ pub trait Node: Send + Sync {
         })
     }
 
-    fn validate_inputs(&self, inputs: &HashMap<String, DataValue>) -> Result<()> {
+    /// Validate incoming data against the node's declared input ports.
+    ///
+    /// # Logic
+    /// - Iterate over every port returned by `self.input_ports()`.
+    /// - Look up the port name in the provided `inputs` map.
+    ///   - If a value is present, ensure its [`DataType`] is compatible with
+    ///     the port's declared `data_type` via `is_compatible_with`.
+    ///   - If the value is missing and the port is marked `required`, fail.
+    /// - Return `Ok(())` when all checks pass.
+    fn validate_inputs(&self, inputs: &NodeInputFlow) -> Result<()> {
         let input_ports = self.input_ports();
 
         for port in &input_ports {
-            match inputs.get(&port.name) {
-                Some(value) => {
-                    // Validate data type
-                    let actual_type = value.data_type();
-                    if !port.data_type.is_compatible_with(&actual_type) {
-                        return Err(zihuan_core::error::Error::ValidationError(format!(
-                            "Input port '{}' expects type {}, got {}",
-                            port.name, port.data_type, actual_type
-                        )));
-                    }
-                }
-                None => {
-                    if port.required {
-                        return Err(zihuan_core::error::Error::ValidationError(format!(
+            inputs.get(&port.name).map_or_else(
+                || {
+                    (!port.required).then_some(()).ok_or_else(|| {
+                        zihuan_core::validation_error!(
                             "Required input port '{}' is missing",
                             port.name
-                        )));
-                    }
-                }
-            }
+                        )
+                    })
+                },
+                |value| {
+                    let actual_type = value.data_type();
+                    port.data_type
+                        .is_compatible_with(&actual_type)
+                        .then_some(())
+                        .ok_or_else(|| {
+                            zihuan_core::validation_error!(
+                                "Input port '{}' expects type {}, got {}",
+                                port.name,
+                                port.data_type,
+                                actual_type
+                            )
+                        })
+                },
+            )?;
         }
 
         Ok(())
     }
 
-    fn validate_outputs(&self, outputs: &HashMap<String, DataValue>) -> Result<()> {
-        let output_ports = self.output_ports();
-
-        for port in &output_ports {
-            if let Some(value) = outputs.get(&port.name) {
-                let actual_type = value.data_type();
-                if !port.data_type.is_compatible_with(&actual_type) {
-                    return Err(zihuan_core::error::Error::ValidationError(format!(
-                        "Output port '{}' expects type {}, got {}",
-                        port.name, port.data_type, actual_type
-                    )));
-                }
-            }
-        }
-
-        Ok(())
+    /// Validate outgoing data against the node's declared output ports.
+    ///
+    /// # Logic
+    /// - Iterate over every port returned by `self.output_ports()`.
+    /// - If the port name exists in the provided `outputs` map, ensure the
+    ///   value's [`DataType`] is compatible with the port's declared
+    ///   `data_type` via `is_compatible_with`.
+    /// - Missing entries are allowed (a node may choose not to emit every
+    ///   output on every execution), so they are silently skipped.
+    /// - Return `Ok(())` when all present outputs pass the type check.
+    fn validate_outputs(&self, outputs: &NodeOutputFlow) -> Result<()> {
+        self.output_ports().iter().try_for_each(|port| {
+            outputs
+                .get(&port.name)
+                .map(|value| {
+                    let actual_type = value.data_type();
+                    port.data_type
+                        .is_compatible_with(&actual_type)
+                        .then_some(())
+                        .ok_or_else(|| {
+                            zihuan_core::validation_error!(
+                                "Output port '{}' expects type {}, got {}",
+                                port.name,
+                                port.data_type,
+                                actual_type
+                            )
+                        })
+                })
+                .transpose()
+                .map(|_| ())
+        })
     }
 }
 
 /// NodeGraph manages multiple nodes
 pub struct NodeGraph {
     pub nodes: HashMap<String, Box<dyn Node>>,
-    pub inline_values: HashMap<String, HashMap<String, DataValue>>,
+    pub inline_values: HashMap<String, NodeConfigFlow>,
     runtime_variable_store: RuntimeVariableStore,
     stop_flag: Arc<AtomicBool>,
     execution_task_id: Option<String>,
-    execution_callback: Option<
-        Arc<dyn Fn(&str, &HashMap<String, DataValue>, &HashMap<String, DataValue>) + Send + Sync>,
-    >,
+    execution_callback: Option<Arc<dyn Fn(&str, &NodeInputFlow, &NodeOutputFlow) + Send + Sync>>,
     edges: Vec<EdgeDefinition>,
     definition: Option<NodeGraphDefinition>,
 }
@@ -318,7 +480,7 @@ impl NodeGraph {
         Self {
             nodes: HashMap::new(),
             inline_values: HashMap::new(),
-            runtime_variable_store: Arc::new(RwLock::new(HashMap::new())),
+            runtime_variable_store: Arc::new(RwLock::new(RuntimeValueFlow::new())),
             stop_flag: Arc::new(AtomicBool::new(false)),
             execution_task_id: None,
             execution_callback: None,
@@ -329,10 +491,7 @@ impl NodeGraph {
 
     pub fn set_execution_callback<F>(&mut self, callback: F)
     where
-        F: Fn(&str, &HashMap<String, DataValue>, &HashMap<String, DataValue>)
-            + Send
-            + Sync
-            + 'static,
+        F: Fn(&str, &NodeInputFlow, &NodeOutputFlow) + Send + Sync + 'static,
     {
         self.execution_callback = Some(Arc::new(callback));
     }
@@ -392,7 +551,7 @@ impl NodeGraph {
         stage: &str,
         err: zihuan_core::error::Error,
     ) -> zihuan_core::error::Error {
-        zihuan_core::error::Error::ValidationError(format!(
+        zihuan_core::validation_error!(
             "[NODE_ERROR:{}] Node '{}' (type='{}', category='{}', stage='{}') failed: {}{}",
             node_id,
             node.name(),
@@ -401,7 +560,7 @@ impl NodeGraph {
             stage,
             err,
             Self::format_debug_backtrace(),
-        ))
+        )
     }
 
     pub fn set_runtime_variable_store(&mut self, store: RuntimeVariableStore) {
@@ -417,7 +576,7 @@ impl NodeGraph {
             return;
         };
 
-        let mut values = HashMap::new();
+        let mut values = RuntimeValueFlow::new();
         for variable in &definition.variables {
             let Some(initial_value) = variable.initial_value.as_ref() else {
                 continue;
@@ -450,10 +609,10 @@ impl NodeGraph {
     pub fn add_node(&mut self, node: Box<dyn Node>) -> Result<()> {
         let id = node.id().to_string();
         if self.nodes.contains_key(&id) {
-            return Err(zihuan_core::error::Error::ValidationError(format!(
+            return Err(zihuan_core::validation_error!(
                 "Node with id '{}' already exists",
                 id
-            )));
+            ));
         }
         self.nodes.insert(id, node);
         Ok(())
@@ -467,7 +626,7 @@ impl NodeGraph {
             node.set_runtime_variable_store(self.runtime_variable_store.clone());
             node.on_graph_start().map_err(|e| {
                 let node_ref: &dyn Node = node.as_ref();
-                zihuan_core::error::Error::ValidationError(format!(
+                zihuan_core::validation_error!(
                     "[NODE_ERROR:{}] Node '{}' (type='{}', category='{}', stage='on_graph_start') failed: {}{}",
                     node_id,
                     node_ref.name(),
@@ -475,7 +634,7 @@ impl NodeGraph {
                     Self::node_type_label(node_ref),
                     e,
                     Self::format_debug_backtrace(),
-                ))
+                )
             })?;
         }
 
@@ -493,10 +652,12 @@ impl NodeGraph {
             for port in node.output_ports() {
                 if let Some(existing) = output_producers.insert(port.name.clone(), node_id.clone())
                 {
-                    return Err(zihuan_core::error::Error::ValidationError(format!(
+                    return Err(zihuan_core::validation_error!(
                         "Output port '{}' is produced by both '{}' and '{}'",
-                        port.name, existing, node_id
-                    )));
+                        port.name,
+                        existing,
+                        node_id
+                    ));
                 }
             }
         }
@@ -593,10 +754,7 @@ impl NodeGraph {
             }
             let Some(inputs) = ({
                 let node = self.nodes.get(&node_id).ok_or_else(|| {
-                    zihuan_core::error::Error::ValidationError(format!(
-                        "Node '{}' not found during execution",
-                        node_id
-                    ))
+                    zihuan_core::validation_error!("Node '{}' not found during execution", node_id)
                 })?;
                 self.collect_inputs_if_available(
                     node.as_ref(),
@@ -610,20 +768,21 @@ impl NodeGraph {
             };
 
             let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
-                zihuan_core::error::Error::ValidationError(format!(
-                    "Node '{}' not found during execution",
-                    node_id
-                ))
+                zihuan_core::validation_error!("Node '{}' not found during execution", node_id)
             })?;
             let outputs = node
                 .execute(inputs)
                 .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
-            for (key, value) in outputs {
+            node.validate_outputs(&outputs).map_err(|e| {
+                Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e)
+            })?;
+            for (key, value) in outputs.into_inner() {
                 if data_pool.contains_key(&key) {
-                    return Err(zihuan_core::error::Error::ValidationError(format!(
+                    return Err(zihuan_core::validation_error!(
                         "Output key '{}' from node '{}' conflicts with existing data",
-                        key, node_id
-                    )));
+                        key,
+                        node_id
+                    ));
                 }
                 data_pool.insert(key, value);
             }
@@ -634,7 +793,7 @@ impl NodeGraph {
 
     /// Execute the graph and capture results for each node
     pub fn execute_and_capture_results(&mut self) -> ExecutionResult {
-        let mut node_results: HashMap<String, HashMap<String, DataValue>> = HashMap::new();
+        let mut node_results: HashMap<String, NodeOutputFlow> = HashMap::new();
 
         // Try to execute, if error occurs, return early with error info
         match self.execute_and_capture_results_internal(&mut node_results) {
@@ -671,7 +830,7 @@ impl NodeGraph {
 
     fn execute_and_capture_results_internal(
         &mut self,
-        node_results: &mut HashMap<String, HashMap<String, DataValue>>,
+        node_results: &mut HashMap<String, NodeOutputFlow>,
     ) -> Result<()> {
         self.prepare_for_execution()?;
 
@@ -684,10 +843,12 @@ impl NodeGraph {
             for port in node.output_ports() {
                 if let Some(existing) = output_producers.insert(port.name.clone(), node_id.clone())
                 {
-                    return Err(zihuan_core::error::Error::ValidationError(format!(
+                    return Err(zihuan_core::validation_error!(
                         "Output port '{}' is produced by both '{}' and '{}'",
-                        port.name, existing, node_id
-                    )));
+                        port.name,
+                        existing,
+                        node_id
+                    ));
                 }
             }
         }
@@ -784,10 +945,7 @@ impl NodeGraph {
             }
             let Some(inputs) = ({
                 let node = self.nodes.get(&node_id).ok_or_else(|| {
-                    zihuan_core::error::Error::ValidationError(format!(
-                        "Node '{}' not found during execution",
-                        node_id
-                    ))
+                    zihuan_core::validation_error!("Node '{}' not found during execution", node_id)
                 })?;
                 self.collect_inputs_if_available(
                     node.as_ref(),
@@ -801,10 +959,7 @@ impl NodeGraph {
             };
 
             let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
-                zihuan_core::error::Error::ValidationError(format!(
-                    "Node '{}' not found during execution",
-                    node_id
-                ))
+                zihuan_core::validation_error!("Node '{}' not found during execution", node_id)
             })?;
 
             let inputs_clone = if self.execution_callback.is_some() {
@@ -816,6 +971,9 @@ impl NodeGraph {
             let outputs = node
                 .execute(inputs.clone())
                 .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
+            node.validate_outputs(&outputs).map_err(|e| {
+                Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e)
+            })?;
 
             if let Some(cb) = &self.execution_callback {
                 if let Some(inp) = inputs_clone {
@@ -823,16 +981,19 @@ impl NodeGraph {
                 }
             }
 
-            let mut result = inputs;
-            result.extend(outputs.iter().map(|(k, v)| (k.clone(), v.clone())));
+            let mut result = NodeOutputFlow::from(inputs.clone().into_inner());
+            for (key, value) in outputs.iter() {
+                result.insert(key.clone(), value.clone());
+            }
             node_results.insert(node_id.clone(), result);
 
-            for (key, value) in outputs {
+            for (key, value) in outputs.into_inner() {
                 if data_pool.contains_key(&key) {
-                    return Err(zihuan_core::error::Error::ValidationError(format!(
+                    return Err(zihuan_core::validation_error!(
                         "Output key '{}' from node '{}' conflicts with existing data",
-                        key, node_id
-                    )));
+                        key,
+                        node_id
+                    ));
                 }
                 data_pool.insert(key, value);
             }
@@ -894,10 +1055,7 @@ impl NodeGraph {
                 continue;
             }
             let node = self.nodes.get(node_id).ok_or_else(|| {
-                zihuan_core::error::Error::ValidationError(format!(
-                    "Node '{}' not found during execution",
-                    node_id
-                ))
+                zihuan_core::validation_error!("Node '{}' not found during execution", node_id)
             })?;
 
             let has_inline = self.inline_values.get(node_id);
@@ -939,10 +1097,7 @@ impl NodeGraph {
             }
             let inputs = {
                 let node = self.nodes.get(&node_id).ok_or_else(|| {
-                    zihuan_core::error::Error::ValidationError(format!(
-                        "Node '{}' not found during execution",
-                        node_id
-                    ))
+                    zihuan_core::validation_error!("Node '{}' not found during execution", node_id)
                 })?;
                 self.collect_inputs_with_edges_if_available(
                     node.as_ref(),
@@ -964,13 +1119,15 @@ impl NodeGraph {
             };
             let outputs = {
                 let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
-                    zihuan_core::error::Error::ValidationError(format!(
-                        "Node '{}' not found during execution",
-                        node_id
-                    ))
+                    zihuan_core::validation_error!("Node '{}' not found during execution", node_id)
                 })?;
-                node.execute(inputs)
-                    .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?
+                let outputs = node
+                    .execute(inputs)
+                    .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
+                node.validate_outputs(&outputs).map_err(|e| {
+                    Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e)
+                })?;
+                outputs
             };
 
             if let Some(cb) = &self.execution_callback {
@@ -987,7 +1144,7 @@ impl NodeGraph {
 
     fn execute_and_capture_results_with_edges(
         &mut self,
-        node_results: &mut HashMap<String, HashMap<String, DataValue>>,
+        node_results: &mut HashMap<String, NodeOutputFlow>,
     ) -> Result<()> {
         let (connected_nodes, dependents, dependencies, input_sources) = self.build_edge_maps()?;
 
@@ -1041,10 +1198,7 @@ impl NodeGraph {
                 continue;
             }
             let node = self.nodes.get(node_id).ok_or_else(|| {
-                zihuan_core::error::Error::ValidationError(format!(
-                    "Node '{}' not found during execution",
-                    node_id
-                ))
+                zihuan_core::validation_error!("Node '{}' not found during execution", node_id)
             })?;
 
             let has_inline = self.inline_values.get(node_id);
@@ -1086,10 +1240,7 @@ impl NodeGraph {
             }
             let inputs = {
                 let node = self.nodes.get(&node_id).ok_or_else(|| {
-                    zihuan_core::error::Error::ValidationError(format!(
-                        "Node '{}' not found during execution",
-                        node_id
-                    ))
+                    zihuan_core::validation_error!("Node '{}' not found during execution", node_id)
                 })?;
                 self.collect_inputs_with_edges_if_available(
                     node.as_ref(),
@@ -1111,13 +1262,15 @@ impl NodeGraph {
             };
             let outputs = {
                 let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
-                    zihuan_core::error::Error::ValidationError(format!(
-                        "Node '{}' not found during execution",
-                        node_id
-                    ))
+                    zihuan_core::validation_error!("Node '{}' not found during execution", node_id)
                 })?;
-                node.execute(inputs.clone())
-                    .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?
+                let outputs = node
+                    .execute(inputs.clone())
+                    .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
+                node.validate_outputs(&outputs).map_err(|e| {
+                    Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e)
+                })?;
+                outputs
             };
 
             if let Some(cb) = &self.execution_callback {
@@ -1126,8 +1279,10 @@ impl NodeGraph {
                 }
             }
 
-            let mut result = inputs;
-            result.extend(outputs.iter().map(|(k, v)| (k.clone(), v.clone())));
+            let mut result = NodeOutputFlow::from(inputs.clone().into_inner());
+            for (key, value) in outputs.iter() {
+                result.insert(key.clone(), value.clone());
+            }
             node_results.insert(node_id.clone(), result);
 
             self.insert_outputs(&mut data_pool, &node_id, outputs);
@@ -1151,16 +1306,10 @@ impl NodeGraph {
 
         for edge in &self.edges {
             let from_node = self.nodes.get(&edge.from_node_id).ok_or_else(|| {
-                zihuan_core::error::Error::ValidationError(format!(
-                    "Node '{}' not found for edge",
-                    edge.from_node_id
-                ))
+                zihuan_core::validation_error!("Node '{}' not found for edge", edge.from_node_id)
             })?;
             let to_node = self.nodes.get(&edge.to_node_id).ok_or_else(|| {
-                zihuan_core::error::Error::ValidationError(format!(
-                    "Node '{}' not found for edge",
-                    edge.to_node_id
-                ))
+                zihuan_core::validation_error!("Node '{}' not found for edge", edge.to_node_id)
             })?;
 
             let from_port = from_node
@@ -1168,10 +1317,11 @@ impl NodeGraph {
                 .into_iter()
                 .find(|p| p.name == edge.from_port)
                 .ok_or_else(|| {
-                    zihuan_core::error::Error::ValidationError(format!(
+                    zihuan_core::validation_error!(
                         "Output port '{}' not found on node '{}'",
-                        edge.from_port, edge.from_node_id
-                    ))
+                        edge.from_port,
+                        edge.from_node_id
+                    )
                 })?;
 
             let to_port = to_node
@@ -1179,17 +1329,18 @@ impl NodeGraph {
                 .into_iter()
                 .find(|p| p.name == edge.to_port)
                 .ok_or_else(|| {
-                    zihuan_core::error::Error::ValidationError(format!(
+                    zihuan_core::validation_error!(
                         "Input port '{}' not found on node '{}'",
-                        edge.to_port, edge.to_node_id
-                    ))
+                        edge.to_port,
+                        edge.to_node_id
+                    )
                 })?;
 
             if !from_port.data_type.is_compatible_with(&to_port.data_type) {
-                return Err(zihuan_core::error::Error::ValidationError(format!(
+                return Err(zihuan_core::validation_error!(
                     "端口类型不匹配：\"{}\"的输出端口\"{}\" -> \"{}\"的输入端口\"{}\" [NODE_ERROR:{}]",
                     from_node.name(), edge.from_port, to_node.name(), edge.to_port, edge.to_node_id
-                )));
+                ));
             }
 
             connected_nodes.insert(edge.from_node_id.clone());
@@ -1206,10 +1357,11 @@ impl NodeGraph {
 
             let entry = input_sources.entry(edge.to_node_id.clone()).or_default();
             if entry.contains_key(&edge.to_port) {
-                return Err(zihuan_core::error::Error::ValidationError(format!(
+                return Err(zihuan_core::validation_error!(
                     "Input port '{}' on node '{}' has multiple connections",
-                    edge.to_port, edge.to_node_id
-                )));
+                    edge.to_port,
+                    edge.to_node_id
+                ));
             }
             entry.insert(
                 edge.to_port.clone(),
@@ -1226,9 +1378,9 @@ impl NodeGraph {
         data_pool: &OutputPool,
         input_sources: &InputSourceMap,
         node_id: &str,
-        inline_values: Option<&HashMap<String, DataValue>>,
-    ) -> Result<Option<HashMap<String, DataValue>>> {
-        let mut inputs: HashMap<String, DataValue> = HashMap::new();
+        inline_values: Option<&NodeConfigFlow>,
+    ) -> Result<Option<NodeInputFlow>> {
+        let mut inputs = NodeInputFlow::new();
         let sources = input_sources.get(node_id);
 
         for port in node.input_ports() {
@@ -1264,14 +1416,9 @@ impl NodeGraph {
         Ok(Some(inputs))
     }
 
-    fn insert_outputs(
-        &self,
-        pool: &mut OutputPool,
-        node_id: &str,
-        outputs: HashMap<String, DataValue>,
-    ) {
+    fn insert_outputs(&self, pool: &mut OutputPool, node_id: &str, outputs: NodeOutputFlow) {
         let entry = pool.entry(node_id.to_string()).or_default();
-        for (key, value) in outputs {
+        for (key, value) in outputs.into_inner() {
             entry.insert(key, value);
         }
     }
@@ -1282,9 +1429,9 @@ impl NodeGraph {
         data_pool: &HashMap<String, DataValue>,
         output_producers: &HashMap<String, String>,
         node_id: &str,
-        inline_values: Option<&HashMap<String, DataValue>>,
-    ) -> Result<Option<HashMap<String, DataValue>>> {
-        let mut inputs: HashMap<String, DataValue> = HashMap::new();
+        inline_values: Option<&NodeConfigFlow>,
+    ) -> Result<Option<NodeInputFlow>> {
+        let mut inputs = NodeInputFlow::new();
         for port in node.input_ports() {
             let bound_variable_value = self.runtime_bound_variable_value(node_id, &port.name);
             if let Some(value) = data_pool.get(&port.name) {

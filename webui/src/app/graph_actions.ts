@@ -223,8 +223,15 @@ export class GraphActions {
       : this.options.canvas.graphCenterPos();
     try {
       await this.options.canvas.flushPendingGraphMutations();
-      await graphs.addNode(sid, typeId, undefined, pos.x, pos.y);
-      await this.options.canvas.reloadCurrentSession();
+      const nodeDef = await graphs.addNode(sid, typeId, undefined, pos.x, pos.y);
+      // Add the node to the graph state and canvas directly without full reload
+      if (this.options.canvas.state.graph) {
+        const updatedGraph = { ...this.options.canvas.state.graph, nodes: [...this.options.canvas.state.graph.nodes, nodeDef] };
+        this.options.canvas.state.graph = updatedGraph;
+        this.options.canvas.addLGraphNodeDirect(nodeDef);
+      } else {
+        await this.options.canvas.reloadCurrentSession();
+      }
       this.options.tabs.setTabDirty(this.options.canvas.rootSessionId ?? sid, true);
     } catch (e) {
       console.error("addNode error:", e);

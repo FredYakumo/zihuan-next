@@ -25,6 +25,32 @@ pub struct DeleteTasksRequest {
     pub task_ids: Vec<String>,
 }
 
+fn validate_duplicate_port_names(
+    graph: &zihuan_graph_engine::graph_io::NodeGraphDefinition,
+) -> Result<(), String> {
+    for node in &graph.nodes {
+        let mut seen = std::collections::HashSet::new();
+        for port in &node.input_ports {
+            if !seen.insert(&port.name) {
+                return Err(format!(
+                    "节点 '{}' 存在重复的输入端口名称: '{}'",
+                    node.name, port.name
+                ));
+            }
+        }
+        seen.clear();
+        for port in &node.output_ports {
+            if !seen.insert(&port.name) {
+                return Err(format!(
+                    "节点 '{}' 存在重复的输出端口名称: '{}'",
+                    node.name, port.name
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 #[handler]
 pub async fn execute_graph(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
@@ -49,6 +75,20 @@ pub async fn execute_graph(req: &mut Request, res: &mut Response, depot: &mut De
             is_workflow_set_path(file_path.as_deref()),
         )
     };
+
+    if let Err(msg) = validate_duplicate_port_names(&graph_def) {
+        res.status_code(StatusCode::BAD_REQUEST);
+        res.render(Json(serde_json::json!({"error": msg})));
+        return;
+    }
+
+    if graph_def.accepts_agent_events {
+        res.status_code(StatusCode::BAD_REQUEST);
+        res.render(Json(serde_json::json!({
+            "error": "此节点图接受 Agent 事件，不能直接运行，只能作为 Agent 工具子图执行。"
+        })));
+        return;
+    }
 
     let task_id = start_graph_task(
         Arc::clone(&state),
@@ -170,19 +210,30 @@ pub async fn rerun_task(req: &mut Request, res: &mut Response, depot: &mut Depot
         )
     };
 
-    let loaded =
-        match zihuan_graph_engine::load_graph_definition_from_json_with_migration(&file_path) {
-            Ok(loaded) => loaded,
-            Err(e) => {
-                res.status_code(StatusCode::UNPROCESSABLE_ENTITY);
-                res.render(Json(
-                    serde_json::json!({"error": format!("Failed to reload graph: {e}")}),
-                ));
-                return;
-            }
-        };
+    let mut graph = match zihuan_graph_engine::load_graph_definition_from_json(&file_path) {
+        Ok(graph) => graph,
+        Err(e) => {
+            res.status_code(StatusCode::UNPROCESSABLE_ENTITY);
+            res.render(Json(
+                serde_json::json!({"error": format!("Failed to reload graph: {e}")}),
+            ));
+            return;
+        }
+    };
+    if let Err(msg) = validate_duplicate_port_names(&graph) {
+        res.status_code(StatusCode::BAD_REQUEST);
+        res.render(Json(serde_json::json!({"error": msg})));
+        return;
+    }
 
-    let mut graph = loaded.graph;
+    if graph.accepts_agent_events {
+        res.status_code(StatusCode::BAD_REQUEST);
+        res.render(Json(serde_json::json!({
+            "error": "此节点图接受 Agent 事件，不能直接运行，只能作为 Agent 工具子图执行。"
+        })));
+        return;
+    }
+
     zihuan_graph_engine::ensure_positions(&mut graph);
     let session_id = format!("rerun-{}", Uuid::new_v4());
     let task_id = start_graph_task(

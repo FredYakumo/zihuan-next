@@ -40,8 +40,8 @@ impl Node for MessageEventTypeFilterNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let event = match inputs.get("message_event") {
             Some(DataValue::MessageEvent(e)) => e.clone(),
             _ => return Err("message_event input is required".into()),
@@ -57,7 +57,7 @@ impl Node for MessageEventTypeFilterNode {
             _ => event.message_type == MessageType::Private,
         };
 
-        let mut outputs = HashMap::new();
+        let mut outputs = zihuan_graph_engine::node_output_flow![];
         if matches {
             outputs.insert("true_event".to_string(), DataValue::MessageEvent(event));
         } else {

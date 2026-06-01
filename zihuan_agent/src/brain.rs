@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use log::{info, warn};
@@ -11,6 +11,11 @@ use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::tooling::ToolCalls;
 use zihuan_core::llm::{ContentPart, InferenceParam, MessageContent, MessageRole, OpenAIMessage};
+use zihuan_core::task_context::{
+    scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime,
+    AgentTaskStatus,
+};
+pub use zihuan_core::tool_runtime::ToolRunDuration;
 
 pub const MAX_TOOL_ITERATIONS: usize = 25;
 const LOG_PREVIEW_CHARS: usize = 600;
@@ -33,6 +38,18 @@ fn truncate_for_log(text: &str, max_chars: usize) -> String {
 
     let truncated: String = text.chars().take(max_chars).collect();
     format!("{truncated}...(truncated,total_chars={total_chars})")
+}
+
+fn format_cache_hit_rate(
+    cached_prompt_tokens: Option<usize>,
+    prompt_tokens: Option<usize>,
+) -> String {
+    match (cached_prompt_tokens, prompt_tokens) {
+        (Some(cached), Some(prompt)) if prompt > 0 => {
+            format!("{:.2}%", (cached as f64 / prompt as f64) * 100.0)
+        }
+        _ => "unavailable".to_string(),
+    }
 }
 
 struct ToolProgressScopeGuard;
@@ -79,6 +96,41 @@ pub fn consume_tool_progress_notification(call_content: &str) -> bool {
     })
 }
 
+pub fn current_task_progress_message(call_content: &str) -> Option<String> {
+    let trimmed = call_content.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if !consume_tool_progress_notification(trimmed) {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
+/// Notification hook for long-running tool calls.
+///
+/// Purpose: host runtimes can expose task lifecycle updates to the user while
+/// the Brain still waits synchronously for the real tool result.
+pub trait LongTaskNotifier: Send + Sync + 'static {
+    fn on_start(&self, _task_id: &str, _task_name: &str, _call_content: &str) {}
+
+    fn on_complete(&self, _task_id: &str, _task_name: &str, _result: &str) {}
+}
+
+/// Context required to track long-running tools inside the Brain loop.
+///
+/// Purpose: carries the task runtime and notifier needed when a tool opts into
+/// [`ToolRunDuration::Long`]. The Brain still returns the actual tool result to
+/// the LLM in the same turn.
+pub struct LongTaskContext {
+    pub task_runtime: Arc<dyn AgentTaskRuntime>,
+    pub owner_id: Option<String>,
+    pub agent_id: String,
+    pub agent_name: String,
+    pub notifier: Arc<dyn LongTaskNotifier>,
+    pub task_db_connection_id: Option<String>,
+}
+
 /// A tool that [`Brain`] can invoke during an inference loop.
 pub trait BrainTool: Send + Sync + 'static {
     /// Returns the LLM-facing function specification (name, description, parameters).
@@ -86,6 +138,12 @@ pub trait BrainTool: Send + Sync + 'static {
     /// Execute the tool call. `call_content` is the assistant's text for this turn
     /// (used e.g. to send a progress notification before doing the actual work).
     fn execute(&self, call_content: &str, arguments: &Value) -> String;
+    /// Declares whether this tool should be treated as short or long running.
+    /// Long tools may emit task lifecycle updates, but still execute
+    /// synchronously so the LLM receives the real result immediately.
+    fn run_duration(&self) -> ToolRunDuration {
+        ToolRunDuration::Short
+    }
 }
 
 pub trait BrainObserver: Send + Sync + 'static {
@@ -131,9 +189,10 @@ pub enum BrainStopReason {
 /// then call [`Brain::run`] with the initial conversation messages.
 pub struct Brain {
     llm: Arc<dyn LLMBase>,
-    tools: Vec<Box<dyn BrainTool>>,
+    tools: Vec<Arc<dyn BrainTool>>,
     observer: Option<Arc<dyn BrainObserver>>,
     iteration_hook: Option<Arc<dyn BrainIterationHook>>,
+    long_task_context: Option<LongTaskContext>,
 }
 
 impl Brain {
@@ -143,18 +202,24 @@ impl Brain {
             tools: Vec::new(),
             observer: None,
             iteration_hook: None,
+            long_task_context: None,
         }
     }
 
     /// Register a tool, consuming and returning `self` for builder-style chaining.
     pub fn with_tool(mut self, tool: impl BrainTool) -> Self {
-        self.tools.push(Box::new(tool));
+        self.tools.push(Arc::new(tool));
         self
     }
 
     /// Register a tool in-place.
     pub fn add_tool(&mut self, tool: impl BrainTool) {
-        self.tools.push(Box::new(tool));
+        self.tools.push(Arc::new(tool));
+    }
+
+    /// Attach a long-task execution context.
+    pub fn set_long_task_context(&mut self, ctx: LongTaskContext) {
+        self.long_task_context = Some(ctx);
     }
 
     pub fn with_observer(mut self, observer: Arc<dyn BrainObserver>) -> Self {
@@ -173,6 +238,94 @@ impl Brain {
 
     pub fn set_iteration_hook(&mut self, hook: Arc<dyn BrainIterationHook>) {
         self.iteration_hook = Some(hook);
+    }
+
+    /// Execute a single tool call, creating a tracked task entry when the tool's
+    /// run duration is `Long` and a [`LongTaskContext`] is available.
+    fn execute_tool_call(
+        &self,
+        tool: &Arc<dyn BrainTool>,
+        call_content: &str,
+        arguments: &Value,
+        tool_name: &str,
+    ) -> String {
+        if tool.run_duration() == ToolRunDuration::Long {
+            if let Some(long_ctx) = &self.long_task_context {
+                let task_name = format!("工具: {tool_name}");
+                let handle = long_ctx.task_runtime.start_task(AgentTaskRequest {
+                    task_name: task_name.clone(),
+                    agent_id: long_ctx.agent_id.clone(),
+                    agent_name: long_ctx.agent_name.clone(),
+                    user_ip: None,
+                    owner_id: long_ctx.owner_id.clone(),
+                    task_db_connection_id: long_ctx.task_db_connection_id.clone(),
+                });
+                let task_id = handle.task_id.clone();
+                if let Some(progress_text) = current_task_progress_message(call_content) {
+                    long_ctx
+                        .task_runtime
+                        .append_task_progress(&task_id, progress_text);
+                }
+                long_ctx
+                    .notifier
+                    .on_start(&task_id, &task_name, call_content);
+                let result = scope_task_runtime(Arc::clone(&long_ctx.task_runtime), || {
+                    scope_task_id(task_id.clone(), || tool.execute(call_content, arguments))
+                });
+                handle.finish(AgentTaskResult {
+                    status: Some(AgentTaskStatus::Success),
+                    result_summary: Some(result.clone()),
+                    error_message: None,
+                });
+                long_ctx.notifier.on_complete(&task_id, &task_name, &result);
+                info!(
+                    "[Brain] tool '{}' completed as long task_id={}",
+                    tool_name, task_id
+                );
+                return result;
+            }
+        }
+        tool.execute(call_content, arguments)
+    }
+
+    fn log_llm_usage(&self, response: &OpenAIMessage) {
+        let Some(usage) = response.usage.as_ref() else {
+            return;
+        };
+
+        info!(
+            "[Brain] llm usage model={} prompt_tokens={} cached_prompt_tokens={} prompt_cache_miss_tokens={} completion_tokens={} total_tokens={} cache_hit_rate={}",
+            self.llm.get_model_name(),
+            usage
+                .prompt_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            usage
+                .cached_prompt_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            usage
+                .prompt_cache_miss_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            usage
+                .completion_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            usage
+                .total_tokens
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unavailable".to_string()),
+            format_cache_hit_rate(
+                usage.cached_prompt_tokens,
+                usage.prompt_tokens.or_else(|| {
+                    usage
+                        .cached_prompt_tokens
+                        .zip(usage.prompt_cache_miss_tokens)
+                        .map(|(hit, miss)| hit + miss)
+                }),
+            ),
+        );
     }
 
     /// Run the inference loop and return `(new_messages, stop_reason)`.
@@ -217,6 +370,8 @@ impl Brain {
                     return (output, BrainStopReason::TransportError(msg));
                 }
             }
+
+            self.log_llm_usage(&response);
 
             if response.tool_calls.is_empty() {
                 if let Some(observer) = self.observer.as_ref() {
@@ -268,19 +423,25 @@ impl Brain {
                 if let Some(observer) = self.observer.as_ref() {
                     observer.on_tool_start(&tc.function.name, &tc.id, &tc.function.arguments);
                 }
-                let result = self
+                let matching_tool = self
                     .tools
                     .iter()
-                    .find(|t| t.spec().name() == tc.function.name)
-                    .map(|t| t.execute(&tool_call_content, &tc.function.arguments))
-                    .unwrap_or_else(|| {
-                        warn!(
-                            "[Brain] Tool '{}' not found for call id={} arguments={}",
-                            tc.function.name, tc.id, tc.function.arguments
-                        );
-                        serde_json::json!({"error": format!("Tool '{}' not found", tc.function.name)})
-                            .to_string()
-                    });
+                    .find(|t| t.spec().name() == tc.function.name);
+                let result = if let Some(tool) = matching_tool {
+                    self.execute_tool_call(
+                        tool,
+                        &tool_call_content,
+                        &tc.function.arguments,
+                        &tc.function.name,
+                    )
+                } else {
+                    warn!(
+                        "[Brain] Tool '{}' not found for call id={} arguments={}",
+                        tc.function.name, tc.id, tc.function.arguments
+                    );
+                    serde_json::json!({"error": format!("Tool '{}' not found", tc.function.name)})
+                        .to_string()
+                };
 
                 info!(
                     "[Brain] tool call id={} name={} result: {}",
@@ -365,6 +526,8 @@ impl Brain {
                 }
             }
 
+            self.log_llm_usage(&response);
+
             if response.tool_calls.is_empty() {
                 let response_preview = response.content_text_owned().unwrap_or_default();
                 if !response_preview.is_empty() {
@@ -422,19 +585,25 @@ impl Brain {
                 if let Some(observer) = self.observer.as_ref() {
                     observer.on_tool_start(&tc.function.name, &tc.id, &tc.function.arguments);
                 }
-                let result = self
+                let matching_tool = self
                     .tools
                     .iter()
-                    .find(|t| t.spec().name() == tc.function.name)
-                    .map(|t| t.execute(&tool_call_content, &tc.function.arguments))
-                    .unwrap_or_else(|| {
-                        warn!(
-                            "[Brain] Tool '{}' not found for call id={} arguments={}",
-                            tc.function.name, tc.id, tc.function.arguments
-                        );
-                        serde_json::json!({"error": format!("Tool '{}' not found", tc.function.name)})
-                            .to_string()
-                    });
+                    .find(|t| t.spec().name() == tc.function.name);
+                let result = if let Some(tool) = matching_tool {
+                    self.execute_tool_call(
+                        tool,
+                        &tool_call_content,
+                        &tc.function.arguments,
+                        &tc.function.name,
+                    )
+                } else {
+                    warn!(
+                        "[Brain] Tool '{}' not found for call id={} arguments={}",
+                        tc.function.name, tc.id, tc.function.arguments
+                    );
+                    serde_json::json!({"error": format!("Tool '{}' not found", tc.function.name)})
+                        .to_string()
+                };
 
                 info!(
                     "[Brain] tool call id={} name={} result: {}",
@@ -581,6 +750,7 @@ mod tests {
                         },
                     }],
                     tool_call_id: None,
+                    usage: None,
                 }
             } else {
                 OpenAIMessage::assistant_text("最终回复")

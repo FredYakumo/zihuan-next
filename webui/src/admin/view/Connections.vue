@@ -27,8 +27,9 @@
                 <option value="weaviate">Weaviate</option>
                 <option value="rustfs">RustFS</option>
                 <option value="bot_adapter">Bot Adapter</option>
-                <option value="tavily">Tavily</option>
+                <option value="web_search_engine">Web Search Engine</option>
                 <option value="tokenizer">Tokenizer</option>
+                <option value="sqlite">SQLite</option>
               </select>
             </div>
 
@@ -133,9 +134,16 @@
               <div class="field-full"><label>Token</label><input v-model="form.bot_server_token" /></div>
             </template>
 
-            <template v-else-if="form.type === 'tavily'">
-              <div class="field-full"><label>API Token（可选）</label><input v-model="form.tavily_api_token" type="password" placeholder="可选" /></div>
-              <div class="field"><label>Timeout</label><input v-model.number="form.tavily_timeout_secs" type="number" min="1" /></div>
+            <template v-else-if="form.type === 'web_search_engine'">
+              <div class="field">
+                <label>Provider</label>
+                <select v-model="form.web_search_engine_provider">
+                  <option value="tavily">Tavily</option>
+                  <option value="brave">Brave</option>
+                </select>
+              </div>
+              <div class="field-full"><label>API Token（可选）</label><input v-model="form.web_search_engine_api_token" type="password" placeholder="可选" /></div>
+              <div class="field"><label>Timeout</label><input v-model.number="form.web_search_engine_timeout_secs" type="number" min="1" /></div>
             </template>
 
             <template v-else-if="form.type === 'tokenizer'">
@@ -145,6 +153,13 @@
                   <option value="">请选择</option>
                   <option v-for="model in tokenizerModels" :key="model" :value="model">{{ model }}</option>
                 </select>
+              </div>
+            </template>
+
+            <template v-else-if="form.type === 'sqlite'">
+              <div class="field-full">
+                <label>数据库文件路径</label>
+                <input v-model="form.sqlite_path" placeholder="/path/to/database.db" />
               </div>
             </template>
           </div>
@@ -200,8 +215,9 @@
                   <option value="weaviate">Weaviate</option>
                   <option value="rustfs">RustFS</option>
                   <option value="bot_adapter">Bot Adapter</option>
-                  <option value="tavily">Tavily</option>
+                  <option value="web_search_engine">Web Search Engine</option>
                   <option value="tokenizer">Tokenizer</option>
+                  <option value="sqlite">SQLite</option>
                 </select>
               </div>
               <div class="key-value connection-card-edit-row">
@@ -341,14 +357,21 @@
                 </div>
               </template>
 
-              <template v-else-if="form.type === 'tavily'">
+              <template v-else-if="form.type === 'web_search_engine'">
+                <div class="key-value connection-card-edit-row">
+                  <strong>Provider</strong>
+                  <select v-model="form.web_search_engine_provider" class="connection-card-inline-input">
+                    <option value="tavily">Tavily</option>
+                    <option value="brave">Brave</option>
+                  </select>
+                </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>API Token（可选）</strong>
-                  <input v-model="form.tavily_api_token" class="connection-card-inline-input" type="password" placeholder="可选" />
+                  <input v-model="form.web_search_engine_api_token" class="connection-card-inline-input" type="password" placeholder="可选" />
                 </div>
                 <div class="key-value connection-card-edit-row">
                   <strong>Timeout</strong>
-                  <input v-model.number="form.tavily_timeout_secs" class="connection-card-inline-input" type="number" min="1" />
+                  <input v-model.number="form.web_search_engine_timeout_secs" class="connection-card-inline-input" type="number" min="1" />
                 </div>
               </template>
 
@@ -359,6 +382,13 @@
                     <option value="">请选择</option>
                     <option v-for="model in tokenizerModels" :key="model" :value="model">{{ model }}</option>
                   </select>
+                </div>
+              </template>
+
+              <template v-else-if="form.type === 'sqlite'">
+                <div class="key-value connection-card-edit-row">
+                  <strong>文件路径</strong>
+                  <input v-model="form.sqlite_path" class="connection-card-inline-input" placeholder="/path/to/database.db" />
                 </div>
               </template>
             </div>
@@ -425,8 +455,9 @@ const connectionTypes: ConnectionTypeOption[] = [
   { value: "weaviate", label: "Weaviate", hint: "向量检索" },
   { value: "rustfs", label: "RustFS", hint: "对象存储" },
   { value: "bot_adapter", label: "Bot Adapter", hint: "Bot 服务接入" },
-  { value: "tavily", label: "Tavily", hint: "Tavily 搜索配置" },
+  { value: "web_search_engine", label: "Web Search Engine", hint: "网页搜索引擎配置" },
   { value: "tokenizer", label: "Tokenizer", hint: "分词模型" },
+  { value: "sqlite", label: "SQLite", hint: "SQLite 数据库" },
 ];
 
 const connections = ref<ConnectionConfig[]>([]);
@@ -651,9 +682,10 @@ function summarizeConnection(connection: ConnectionConfig): Array<{ label: strin
         { label: "HTTP", value: String(kind.adapter_server_url ?? "") || "未设置（默认由 WS 推导）" },
         { label: "QQ", value: String(kind.qq_id ?? "") || "未设置" },
       ];
-    case "tavily":
+    case "web_search_engine":
       return [
         ...base,
+        { label: "Provider", value: String(kind.provider ?? "tavily") },
         { label: "API Token", value: String(kind.api_token ?? "") ? "已配置" : "未设置" },
         { label: "Timeout", value: String(kind.timeout_secs ?? 30) },
       ];

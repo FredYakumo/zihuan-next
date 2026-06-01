@@ -54,8 +54,8 @@ impl Node for QQMessageListWeaviatePersistenceNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let (msg_item_type, msg_items) = inputs
             .get("qq_message_list")
             .and_then(|v| match v {
@@ -116,11 +116,10 @@ impl Node for QQMessageListWeaviatePersistenceNode {
             }
         };
 
-        let mut outputs = HashMap::new();
-        outputs.insert("success".to_string(), DataValue::Boolean(success));
-        outputs.insert("qq_message_list".to_string(), passthrough);
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        zihuan_graph_engine::return_with_node_output![self;
+            "success" => DataValue::Boolean(success),
+            "qq_message_list" => passthrough,
+        ]
     }
 }
 

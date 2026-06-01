@@ -42,7 +42,7 @@ impl FunctionNode {
         Error::ValidationError(format!("[NODE_ERROR:{}] {}", self.id, message.into()))
     }
 
-    fn parse_config_input(&mut self, inputs: &HashMap<String, DataValue>) -> Result<()> {
+    fn parse_config_input(&mut self, inputs: &crate::NodeConfigFlow) -> Result<()> {
         if let Some(DataValue::Json(value)) = inputs.get(FUNCTION_CONFIG_PORT) {
             let config = embedded_function_config_from_value(value)
                 .ok_or_else(|| self.wrap_error("function_config 不是有效的函数配置 JSON"))?;
@@ -51,10 +51,7 @@ impl FunctionNode {
         Ok(())
     }
 
-    fn runtime_values_from_inputs(
-        &self,
-        inputs: &HashMap<String, DataValue>,
-    ) -> HashMap<String, DataValue> {
+    fn runtime_values_from_inputs(&self, inputs: &crate::NodeInputFlow) -> crate::RuntimeValueFlow {
         self.config
             .inputs
             .iter()
@@ -63,7 +60,8 @@ impl FunctionNode {
                     .get(&port.name)
                     .map(|value| (port.name.clone(), value.clone()))
             })
-            .collect()
+            .collect::<HashMap<_, _>>()
+            .into()
     }
 
     fn ensure_subgraph_is_runnable(&self) -> Result<()> {
@@ -73,7 +71,7 @@ impl FunctionNode {
 
     fn collect_declared_outputs(
         &self,
-        node_results: &HashMap<String, HashMap<String, DataValue>>,
+        node_results: &HashMap<String, crate::NodeOutputFlow>,
     ) -> Result<HashMap<String, DataValue>> {
         // No declared outputs → nothing to collect, skip boundary node lookup entirely.
         if self.config.outputs.is_empty() {
@@ -139,7 +137,7 @@ impl Node for FunctionNode {
         true
     }
 
-    fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
+    fn apply_inline_config(&mut self, inline_values: &crate::NodeConfigFlow) -> Result<()> {
         match inline_values.get(FUNCTION_CONFIG_PORT) {
             Some(DataValue::Json(value)) => {
                 let config = embedded_function_config_from_value(value)
@@ -154,11 +152,9 @@ impl Node for FunctionNode {
         }
     }
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
-        self.parse_config_input(&inputs)?;
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
+        let inline_config = inputs.as_map().clone().into();
+        self.parse_config_input(&inline_config)?;
         self.validate_inputs(&inputs)?;
         self.ensure_subgraph_is_runnable()?;
 
@@ -197,6 +193,7 @@ impl Node for FunctionNode {
         }
 
         let outputs = self.collect_declared_outputs(&execution_result.node_results)?;
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
@@ -216,7 +213,7 @@ pub fn data_value_from_json_with_declared_type(
 
 pub fn inject_runtime_values_into_function_inputs_node(
     graph: &mut crate::NodeGraph,
-    runtime_values: HashMap<String, DataValue>,
+    runtime_values: crate::RuntimeValueFlow,
 ) -> Result<()> {
     let function_inputs_node = graph
         .nodes

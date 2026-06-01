@@ -95,7 +95,10 @@ impl Node for MySqlNode {
         vec![Self::connection_select_field()]
     }
 
-    fn apply_inline_config(&mut self, inline_values: &HashMap<String, DataValue>) -> Result<()> {
+    fn apply_inline_config(
+        &mut self,
+        inline_values: &zihuan_graph_engine::NodeConfigFlow,
+    ) -> Result<()> {
         self.config_id = inline_values
             .get(CONFIG_ID_FIELD)
             .or_else(|| inline_values.get(LEGACY_CONNECTION_ID_FIELD))
@@ -108,16 +111,15 @@ impl Node for MySqlNode {
 
     fn execute(
         &mut self,
-        _inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        _inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let config_id = self.selected_config_id()?;
         let config = zihuan_core::runtime::block_async(
             RuntimeStorageConnectionManager::shared().get_or_create_mysql_ref(config_id),
         )?;
         register_mysql_ref(config.clone());
-        Ok(HashMap::from([(
-            "mysql_ref".to_string(),
-            DataValue::MySqlRef(config),
-        )]))
+        zihuan_graph_engine::return_with_node_output![self;
+            "mysql_ref" => DataValue::MySqlRef(config),
+        ]
     }
 }

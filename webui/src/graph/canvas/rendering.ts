@@ -42,7 +42,7 @@ export function applyLiteGraphTheme(canvas: CanvasFacade): void {
     "S3Ref",
     "RedisRef",
     "MySqlRef",
-    "TavilyRef",
+    "WebSearchEngineRef",
     "SessionStateRef",
     "OpenAIMessageSessionCacheRef",
     "LoopControlRef",
@@ -320,6 +320,22 @@ function bindDrawNodeWidgets(canvas: CanvasFacade) {
                 ctx.textAlign = "right";
                 ctx.fillText("▾", valueRightX, inlineRowCenterY);
               }
+            }
+          } else if (widget.type === "toggle") {
+            const checkboxSize = Math.min(widgetHeight - 4, 14);
+            const rightX = widgetWidth - margin - 8;
+            const x = rightX - checkboxSize;
+            const y = inlineRowCenterY - checkboxSize / 2;
+            ctx.strokeStyle = widget.disabled ? c.widgetDisabled : c.widgetText;
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(x, y, checkboxSize, checkboxSize);
+            if (widget.value) {
+              ctx.fillStyle = widget.disabled ? c.widgetDisabled : c.widgetText;
+              ctx.beginPath();
+              ctx.moveTo(x + 2, y + checkboxSize / 2);
+              ctx.lineTo(x + checkboxSize * 0.45, y + checkboxSize - 2);
+              ctx.lineTo(x + checkboxSize - 2, y + 2);
+              ctx.stroke();
             }
           }
         } else {

@@ -1,4 +1,4 @@
-use crate::{node_input, node_output, DataType, DataValue, Node, Port};
+use crate::{node_input, node_output, DataType, Node, Port};
 use std::collections::HashMap;
 use zihuan_core::error::Result;
 
@@ -35,10 +35,7 @@ impl Node for PreviewMessageListNode {
 
     node_output![];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let mut outputs = HashMap::new();
@@ -46,6 +43,7 @@ impl Node for PreviewMessageListNode {
             outputs.insert("messages".to_string(), value.clone());
         }
 
+        let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }

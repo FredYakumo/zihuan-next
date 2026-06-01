@@ -50,8 +50,8 @@ impl Node for WeaviateImageSearchNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let weaviate_ref = match inputs.get("weaviate_ref") {
@@ -162,6 +162,7 @@ impl Node for WeaviateImageSearchNode {
             ),
         ]);
 
+        let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }

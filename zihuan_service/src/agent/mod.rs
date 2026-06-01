@@ -6,9 +6,14 @@ pub mod tool_definitions;
 mod agent_text_similarity;
 mod classify_intent;
 mod qq_chat_agent_core;
+pub mod qq_chat_agent_ignore_store;
 mod qq_chat_agent_inbox;
 mod qq_chat_agent_logging;
+pub(crate) mod qq_chat_agent_msg_send;
 mod tools;
+pub(crate) use tools::execute_image_understand_tool;
+pub(crate) use tools::CurrentTimeBrainTool;
+pub(crate) use tools::QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -21,10 +26,10 @@ use storage_handler::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
+use zihuan_agent::brain::BrainObserver;
 use zihuan_core::error::Result;
 use zihuan_core::llm::OpenAIMessage;
 use zihuan_core::task_context::AgentTaskRuntime;
-use zihuan_agent::brain::BrainObserver;
 
 use self::inference::{InferenceToolProvider, LoadedInferenceAgent};
 

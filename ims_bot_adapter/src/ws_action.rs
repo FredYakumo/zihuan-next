@@ -315,7 +315,6 @@ fn remote_image_object_key(url: &str) -> String {
     )
 }
 
-
 fn candidate_object_storage_locators(locator: &str) -> Vec<String> {
     let mut locators = vec![locator.trim().to_string()];
 

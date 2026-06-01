@@ -41,10 +41,7 @@ impl Node for OpenAIMessageSessionCacheNode {
 
     node_output![port! { name = "success", ty = Boolean, desc = "是否成功写入 Redis 或内存缓存" },];
 
-    fn execute(
-        &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+    fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let cache_ref: Arc<OpenAIMessageSessionCacheRef> = inputs
@@ -94,10 +91,8 @@ impl Node for OpenAIMessageSessionCacheNode {
 
         cache_ref.append_messages_blocking(&sender_id, messages)?;
 
-        let mut outputs = HashMap::new();
-        outputs.insert("success".to_string(), DataValue::Boolean(true));
-
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        crate::return_with_node_output![self;
+            "success" => DataValue::Boolean(true),
+        ]
     }
 }

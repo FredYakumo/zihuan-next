@@ -45,8 +45,8 @@ impl Node for TopKSimilarityNode {
 
     fn execute(
         &mut self,
-        inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let candidates = parse_vector_list(inputs.get("vectors"))?;
@@ -81,23 +81,11 @@ impl Node for TopKSimilarityNode {
             .map(|(index, _)| DataValue::Vector(candidates[index].clone()))
             .collect::<Vec<_>>();
 
-        let outputs = HashMap::from([
-            (
-                "indices".to_string(),
-                DataValue::Vec(Box::new(DataType::Integer), indices),
-            ),
-            (
-                "scores".to_string(),
-                DataValue::Vec(Box::new(DataType::Float), scores),
-            ),
-            (
-                "vectors".to_string(),
-                DataValue::Vec(Box::new(DataType::Vector), matched_vectors),
-            ),
-        ]);
-
-        self.validate_outputs(&outputs)?;
-        Ok(outputs)
+        zihuan_graph_engine::return_with_node_output![self;
+            "indices" => DataValue::Vec(Box::new(DataType::Integer), indices),
+            "scores" => DataValue::Vec(Box::new(DataType::Float), scores),
+            "vectors" => DataValue::Vec(Box::new(DataType::Vector), matched_vectors),
+        ]
     }
 }
 

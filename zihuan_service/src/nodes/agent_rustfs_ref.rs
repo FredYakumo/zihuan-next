@@ -40,8 +40,8 @@ impl Node for AgentRustfsRefNode {
 
     fn execute(
         &mut self,
-        _inputs: HashMap<String, DataValue>,
-    ) -> Result<HashMap<String, DataValue>> {
+        _inputs: zihuan_graph_engine::NodeInputFlow,
+    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let config = current_qq_chat_agent_config()?;
         let rustfs_connection_id = config.rustfs_connection_id.as_deref();
         let rustfs_connection_id = rustfs_connection_id
@@ -55,9 +55,8 @@ impl Node for AgentRustfsRefNode {
         let s3_ref = zihuan_core::runtime::block_async(
             RuntimeStorageConnectionManager::shared().get_or_create_s3_ref(rustfs_connection_id),
         )?;
-        Ok(HashMap::from([(
-            "s3_ref".to_string(),
-            DataValue::S3Ref(s3_ref),
-        )]))
+        zihuan_graph_engine::return_with_node_output![self;
+            "s3_ref" => DataValue::S3Ref(s3_ref),
+        ]
     }
 }

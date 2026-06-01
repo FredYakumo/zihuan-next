@@ -65,6 +65,13 @@ pub fn llm_ref_id_for_kind<'a>(config: &'a QqChatAgentConfig, llm_kind: &str) ->
     }
 }
 
+pub fn image_understand_llm_ref_id<'a>(config: &'a QqChatAgentConfig) -> Option<&'a str> {
+    config
+        .image_understand_llm_ref_id
+        .as_deref()
+        .or(config.llm_ref_id.as_deref())
+}
+
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,6 +86,8 @@ pub struct QqChatAgentConfig {
     #[serde(default)]
     pub llm_ref_id: Option<String>,
     #[serde(default)]
+    pub image_understand_llm_ref_id: Option<String>,
+    #[serde(default)]
     pub intent_llm_ref_id: Option<String>,
     #[serde(default)]
     pub math_programming_llm_ref_id: Option<String>,
@@ -86,11 +95,17 @@ pub struct QqChatAgentConfig {
     pub embedding_model_ref_id: Option<String>,
     #[serde(default)]
     pub tokenizer_connection_id: Option<String>,
-    pub tavily_connection_id: String,
+    pub web_search_engine_connection_id: String,
+    #[serde(default)]
+    pub rdb_id: Option<String>,
     #[serde(default)]
     pub embedding: Option<EmbeddingServiceConfig>,
     #[serde(default)]
+    #[serde(skip_serializing)]
     pub mysql_connection_id: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing)]
+    pub task_db_connection_id: Option<String>,
     #[serde(default)]
     pub weaviate_image_connection_id: Option<String>,
     #[serde(default = "default_max_message_length")]
@@ -103,6 +118,27 @@ pub struct QqChatAgentConfig {
     pub default_tools_enabled: HashMap<String, bool>,
     #[serde(default)]
     pub event_handler_threads: Option<usize>,
+}
+
+impl QqChatAgentConfig {
+    pub fn resolved_rdb_id(&self) -> Option<&str> {
+        self.rdb_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .or_else(|| {
+                self.mysql_connection_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+            })
+            .or_else(|| {
+                self.task_db_connection_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+            })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,6 +169,8 @@ fn default_qq_chat_default_tools_enabled() -> HashMap<String, bool> {
         "get_recent_group_messages",
         "get_recent_user_messages",
         "search_similar_images",
+        "image_understand",
+        "reply_message",
     ]
     .into_iter()
     .map(|name| (name.to_string(), true))
@@ -155,7 +193,7 @@ mod tests {
     fn qq_chat_agent_config_defaults_max_steer_count_to_four() {
         let config: QqChatAgentConfig = serde_json::from_value(serde_json::json!({
             "ims_bot_adapter_connection_id": "bot",
-            "tavily_connection_id": "tavily"
+            "web_search_engine_connection_id": "tavily"
         }))
         .expect("config should deserialize");
 
