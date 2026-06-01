@@ -12,6 +12,7 @@ mod qq_chat_agent_logging;
 pub(crate) mod qq_chat_agent_msg_send;
 mod tools;
 pub(crate) use tools::execute_image_understand_tool;
+pub(crate) use tools::CurrentTimeBrainTool;
 pub(crate) use tools::QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS;
 
 use std::collections::HashMap;

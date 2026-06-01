@@ -32,13 +32,14 @@ use super::super::qq_chat_agent_msg_send::{
 use ims_bot_adapter::tools::qq_profile::{GetBotProfileBrainTool, GetQqUserProfileBrainTool};
 
 use super::super::tools::{
-    EditableQqAgentTool, GetAgentPublicInfoBrainTool, GetFunctionListBrainTool,
-    GetRecentGroupMessagesBrainTool, GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool,
-    ReplyMessageBrainTool, SearchSimilarImagesBrainTool, ToolNotificationTarget,
-    WebSearchBrainTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
-    DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
-    DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_REPLY_MESSAGE, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
-    DEFAULT_TOOL_WEB_SEARCH, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
+    CurrentTimeBrainTool, EditableQqAgentTool, GetAgentPublicInfoBrainTool,
+    GetFunctionListBrainTool, GetRecentGroupMessagesBrainTool, GetRecentUserMessagesBrainTool,
+    ImageUnderstandBrainTool, ReplyMessageBrainTool, SearchSimilarImagesBrainTool,
+    ToolNotificationTarget, WebSearchBrainTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
+    DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
+    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
+    DEFAULT_TOOL_REPLY_MESSAGE, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
+    QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS,
 };
 
 use crate::nodes::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
@@ -264,7 +265,7 @@ impl QqChatAgent {
         &self,
         trace: &QqChatTaskTrace,
         event: &ims_bot_adapter::models::MessageEvent,
-        time: &str,
+        _time: &str,
         sender_id: &str,
         target_id: &str,
         is_group: bool,
@@ -412,7 +413,6 @@ impl QqChatAgent {
             let group_name = inference_event.group_name.as_deref().unwrap_or("未知");
             build_group_system_prompt(
                 ctx.bot_name,
-                time,
                 sender_id,
                 &sender_display_name(
                     &inference_event.sender.nickname,
@@ -425,7 +425,6 @@ impl QqChatAgent {
         } else {
             build_private_system_prompt(
                 ctx.bot_name,
-                time,
                 sender_id,
                 &sender_display_name(
                     &inference_event.sender.nickname,
@@ -468,6 +467,7 @@ impl QqChatAgent {
 
         let consumed_steer_messages = Arc::new(Mutex::new(Vec::new()));
         let mut brain = Brain::new(selected_llm.clone());
+        brain.add_tool(CurrentTimeBrainTool);
         brain.set_observer(Arc::new(QqChatBrainObserver {
             trace: trace.clone(),
         }));

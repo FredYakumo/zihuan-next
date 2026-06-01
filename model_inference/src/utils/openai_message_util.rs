@@ -116,7 +116,11 @@ fn parse_token_usage(value: Option<&Value>) -> Option<TokenUsage> {
         .and_then(|v| v.as_u64())
         .or_else(|| value.get("input_tokens").and_then(|v| v.as_u64()))
         .map(|v| v as usize)
-        .or_else(|| cached_prompt_tokens.zip(prompt_cache_miss_tokens).map(|(hit, miss)| hit + miss));
+        .or_else(|| {
+            cached_prompt_tokens
+                .zip(prompt_cache_miss_tokens)
+                .map(|(hit, miss)| hit + miss)
+        });
 
     Some(TokenUsage {
         prompt_tokens,
