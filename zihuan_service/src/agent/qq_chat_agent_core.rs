@@ -646,6 +646,14 @@ pub(crate) fn hydrate_missing_reply_sources(
     hydrated
 }
 
+/// Collect readable text from reply-quoted source messages.
+///
+/// Only processes `Message::Reply` entries that have valid source messages (confirmed by
+/// `valid_reply_source_messages`). Each source is rendered to human-readable text via
+/// `render_messages_readable`; empty results are discarded.
+///
+/// Used by `CurrentTurnUserInput::new` to build `[引用内容]` blocks that are appended to
+/// the user message text, so the model sees quoted context inline.
 fn collect_reply_reference_text(messages: &[Message]) -> Vec<String> {
     messages
         .iter()
@@ -782,7 +790,7 @@ pub(crate) fn build_user_message(
     let mut lines =
         build_state_system_prefix_lines(session_state, emotion_dimensions, character_instructions);
 
-    let current_input = build_current_turn_user_input(event, bot_id, bot_name);
+    let current_input = CurrentTurnUserInput::new(event, bot_id, bot_name);
     let sender_name = sender_display_name(&event.sender.nickname, &event.sender.card);
     let mut metadata_lines = Vec::new();
     metadata_lines.push("[消息元信息]".to_string());
@@ -957,7 +965,7 @@ fn build_merged_steer_user_message(
     let mut image_stats = MultimodalImageStats::default();
 
     for (index, event) in events.iter().enumerate() {
-        let current_input = build_current_turn_user_input(event, bot_id, bot_name);
+        let current_input = CurrentTurnUserInput::new(event, bot_id, bot_name);
         if index > 0 {
             text_buffer.push_str("\n\n");
         }
@@ -1019,7 +1027,7 @@ pub(crate) fn extract_user_message_text(
     bot_id: &str,
     bot_name: &str,
 ) -> String {
-    build_current_turn_user_input(event, bot_id, bot_name).text
+    CurrentTurnUserInput::new(event, bot_id, bot_name).text
 }
 
 pub(crate) fn message_with_api_style(
