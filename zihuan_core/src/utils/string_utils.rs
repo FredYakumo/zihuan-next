@@ -125,3 +125,32 @@ pub fn extract_string_field(value: &Value, key: &str) -> Option<String> {
         .and_then(Value::as_str)
         .map(ToOwned::to_owned)
 }
+
+/// Parses an `@`-mention segment from a character array, extracting a sequence of
+/// ASCII digits following the `@` sign. Returns the parsed digit string and the
+/// index after the mention, or `None` if the segment is not followed by valid
+/// boundary characters (whitespace, punctuation, or end-of-input).
+pub fn parse_at_segment(chars: &[char], start: usize) -> Option<(String, usize)> {
+    let mut end = start + 1;
+    while end < chars.len() && chars[end].is_ascii_digit() {
+        end += 1;
+    }
+
+    if end == start + 1 {
+        return None;
+    }
+
+    if end < chars.len() {
+        let boundary = chars[end];
+        if !boundary.is_whitespace()
+            && !matches!(
+                boundary,
+                ',' | '，' | '。' | ':' | '：' | '!' | '！' | '?' | '？' | ')' | '）' | ']' | '】'
+            )
+        {
+            return None;
+        }
+    }
+
+    Some((chars[start + 1..end].iter().collect(), end))
+}

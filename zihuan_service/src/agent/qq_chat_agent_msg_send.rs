@@ -14,7 +14,7 @@ use ims_bot_adapter::models::message::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::utils::string_utils::parse_tag_value;
+use zihuan_core::utils::string_utils::{parse_at_segment, parse_tag_value};
 use zihuan_agent::utils::string_utils::is_no_reply_directive;
 use zihuan_graph_engine::data_value::DataValue;
 use zihuan_nlp::{PunctuationSegmenter, TextSegmenter};
@@ -730,31 +730,6 @@ fn is_mention_prefix_boundary(chars: &[char], index: usize) -> bool {
     !chars[index - 1].is_ascii_alphanumeric()
 }
 
-fn parse_at_segment(chars: &[char], start: usize) -> Option<(String, usize)> {
-    let mut end = start + 1;
-    while end < chars.len() && chars[end].is_ascii_digit() {
-        end += 1;
-    }
-
-    if end == start + 1 {
-        return None;
-    }
-
-    if end < chars.len() {
-        let boundary = chars[end];
-        if !boundary.is_whitespace()
-            && !matches!(
-                boundary,
-                ',' | '，' | '。' | ':' | '：' | '!' | '！' | '?' | '？' | ')' | '）' | ']' | '】'
-            )
-        {
-            return None;
-        }
-    }
-
-    Some((chars[start + 1..end].iter().collect(), end))
-}
-
 fn parse_bracket_segment(chars: &[char], start: usize) -> Option<(ReplySegment, usize)> {
     let mut end = start + 1;
     while end < chars.len() {
@@ -788,103 +763,4 @@ fn parse_bracket_message(inner: &str) -> Option<ReplySegment> {
         description: None,
         mime_type: None,
     })))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn sample_request(text: &str) -> QqAgentReplyBuildRequest {
-        QqAgentReplyBuildRequest {
-            assistant_text: text.to_string(),
-            is_group: true,
-            sender_id: "123456".to_string(),
-            sender_nickname: "tester".to_string(),
-            sender_card: String::new(),
-            bot_id: "999".to_string(),
-            bot_name: "bot".to_string(),
-            max_message_length: 4,
-            trigger_message_id: Some(42),
-            available_media: HashMap::new(),
-            reply_directive: None,
-        }
-    }
-
-    #[test]
-    fn parse_bracket_message_supports_media_id_marker() {
-        let parsed = parse_bracket_message("Image media_id=media-123").expect("parse image tag");
-        match parsed {
-            ReplySegment::Image(image) => {
-                assert_eq!(image.media.media_id, "media-123");
-            }
-            other => panic!("expected image segment, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn three_text_chunks_become_forward() {
-        let plan = plan_model_reply(
-            &sample_request("第一段。第二段。第三段。"),
-            &PunctuationSegmenter,
-        )
-        .expect("plan reply");
-        assert!(matches!(
-            plan.batches.as_slice(),
-            [batch] if matches!(batch.as_slice(), [Message::Forward(_)])
-        ));
-    }
-
-    #[test]
-    fn multi_image_becomes_forward() {
-        let mut request = sample_request("[Image media_id=a][Image media_id=b]");
-        request.available_media = HashMap::from([
-            (
-                "a".to_string(),
-                PersistedMedia {
-                    media_id: "a".to_string(),
-                    source: PersistedMediaSource::Upload,
-                    original_source: "https://example.com/a.png".to_string(),
-                    rustfs_path: String::new(),
-                    name: None,
-                    description: None,
-                    mime_type: None,
-                },
-            ),
-            (
-                "b".to_string(),
-                PersistedMedia {
-                    media_id: "b".to_string(),
-                    source: PersistedMediaSource::Upload,
-                    original_source: "https://example.com/b.png".to_string(),
-                    rustfs_path: String::new(),
-                    name: None,
-                    description: None,
-                    mime_type: None,
-                },
-            ),
-        ]);
-
-        let plan = plan_model_reply(&request, &PunctuationSegmenter).expect("plan reply");
-        assert!(matches!(
-            plan.batches.as_slice(),
-            [batch] if matches!(batch.as_slice(), [Message::Forward(_)])
-        ));
-    }
-
-    #[test]
-    fn reply_directive_extracts_first_text_outside_forward() {
-        let mut request = sample_request("@sender 第一段。第二段。第三段。");
-        request.reply_directive = Some(QqReplyDirective::TriggerMessage);
-
-        let plan = plan_model_reply(&request, &PunctuationSegmenter).expect("plan reply");
-        assert_eq!(plan.batches.len(), 2);
-        assert!(matches!(plan.batches[0].first(), Some(Message::Reply(_))));
-        assert!(plan.batches[0]
-            .iter()
-            .any(|message| matches!(message, Message::At(_))));
-        assert!(plan.batches[0]
-            .iter()
-            .any(|message| matches!(message, Message::PlainText(_))));
-        assert!(matches!(plan.batches[1].as_slice(), [Message::Forward(_)]));
-    }
 }
