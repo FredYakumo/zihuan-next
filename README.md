@@ -1,8 +1,8 @@
 # zihuan-next
 
-> English | [简体中文](README.zh-CN.md)
+`zihuan-next` is a multi-tier AI agent development and runtime framework built in Rust. It unifies local inference (Candle, Llama.cpp) and cloud model APIs (OpenAI, Anthropic) under a single abstraction, then layers on a **Brain** tool-calling agent runtime, a **visual node-graph engine** for workflow orchestration, and **IMS-native adapters** for real-world bot deployment.
 
-`zihuan-next` is a Rust-based Agent service platform built around two ideas:
+The framework is built around two ideas:
 
 - Agents run as persistent services.
 - Node graphs define reusable workflows and tools.
@@ -131,13 +131,12 @@ From the admin UI you can:
 
 ## What This Project Is
 
-`zihuan-next` combines:
+`zihuan-next` is a full-stack AI agent framework that spans four layers:
 
-- a persistent Agent runtime
-- a browser-based workflow editor
-- a synchronous DAG graph engine
-- a shared tool-call loop for agents and graph tools
-- a unified configuration center for connections, model refs, and agents
+- **Inference** — Unifies local inference (Candle, Llama.cpp) and cloud APIs (OpenAI, Anthropic) behind reusable `llm_refs`
+- **Agent Runtime** — Hosts persistent agents with a shared Brain tool-calling loop and Harness-mode extensibility
+- **Orchestration** — DAG graph engine and visual node-graph editor for designing reusable workflows and tools
+- **Integration** — IMS-native bot adapters, REST API, and WebSocket event streams for real-world deployment
 
 In practice, you use it in three connected ways:
 

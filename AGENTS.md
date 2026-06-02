@@ -6,7 +6,7 @@ See the `/zihuan-build`, `/zihuan-test`, and `/zihuan-lint` skills (in `.agents/
 
 ## Architecture Overview
 
-zihuan-next is a Rust-based AI Agent framework with a node-graph workflow engine. The core pipeline is: **Define graph → Topological sort → Execute nodes → Produce outputs**. It has two frontends served from the same Vite app: a **Vue 3 admin panel** (`/`) for configuration management and a **Litegraph.js editor** (`/editor`) for visual workflow editing.
+zihuan-next is a multi-tier AI agent development and runtime framework built in Rust. It unifies local inference (Candle, Llama.cpp) and cloud model APIs (OpenAI, Anthropic) under a single abstraction, then layers on a **Brain** tool-calling agent runtime, a **visual node-graph engine** for workflow orchestration, and **IMS-native adapters** for real-world bot deployment. The core pipeline is: **Define graph → Topological sort → Execute nodes → Produce outputs**. It has two frontends served from the same Vite app: a **Vue 3 admin panel** (`/`) for configuration management and a **Litegraph.js editor** (`/editor`) for visual workflow editing.
 
 ### Key crates
 
@@ -98,7 +98,7 @@ uv venv
 uv pip install -e .
 ```
 
-### Style
+### Python Style
 
 - Follow [PEP 8](https://peps.python.org/pep-0008/) with 120-char max line length
 - Use `ruff` for linting and formatting (configured in `pyproject.toml`)
