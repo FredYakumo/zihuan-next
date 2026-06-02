@@ -17,12 +17,12 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::utils::string_utils::parse_tag_value;
 use zihuan_agent::utils::string_utils::is_no_reply_directive;
 use zihuan_graph_engine::data_value::DataValue;
-use zihuan_graph_engine::message_restore::restore_media_by_id;
 use zihuan_nlp::{PunctuationSegmenter, TextSegmenter};
 
 use super::qq_chat_agent_core::{
     QqAgentReplyBatchBuilder, QqAgentReplyBuildRequest, QqAgentReplyBuildResult,
 };
+use crate::storage::media::resolve_media_references;
 
 const MAX_FORWARD_NODE_CHARS: usize = 800;
 const DEFAULT_NOTIFICATION_TEXT_CHARS: usize = 250;
@@ -533,62 +533,6 @@ fn resolve_bot_name(adapter: &SharedBotAdapter, fallback: &str) -> String {
             .map(|profile| profile.nickname.clone())
             .filter(|name| !name.trim().is_empty())
             .unwrap_or_else(|| fallback.to_string())
-    }
-}
-
-fn resolve_media_references(
-    batches: &mut [Vec<Message>],
-    available_media: &HashMap<String, PersistedMedia>,
-) -> Result<()> {
-    for batch in batches {
-        for message in batch {
-            resolve_message_media_reference(message, available_media)?;
-        }
-    }
-    Ok(())
-}
-
-fn resolve_message_media_reference(
-    message: &mut Message,
-    available_media: &HashMap<String, PersistedMedia>,
-) -> Result<()> {
-    match message {
-        Message::Image(image) => {
-            if image.rustfs_path().is_some() || image.original_source().is_some() {
-                return Ok(());
-            }
-
-            let media_id = image.media.media_id.trim();
-            if media_id.is_empty() {
-                return Err(Error::ValidationError(
-                    "outbound image marker is missing media_id".to_string(),
-                ));
-            }
-
-            if let Some(media) = available_media.get(media_id) {
-                image.media = media.clone();
-                return Ok(());
-            }
-
-            if let Some(media) = restore_media_by_id(media_id)? {
-                image.media = media;
-                return Ok(());
-            }
-
-            Err(Error::ValidationError(format!(
-                "failed to resolve outbound image media_id '{}'",
-                media_id
-            )))
-        }
-        Message::Forward(forward) => {
-            for node in &mut forward.content {
-                for nested in &mut node.content {
-                    resolve_message_media_reference(nested, available_media)?;
-                }
-            }
-            Ok(())
-        }
-        _ => Ok(()),
     }
 }
 
