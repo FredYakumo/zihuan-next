@@ -325,6 +325,20 @@ fn flush_text_part(parts: &mut Vec<ContentPart>, buffer: &mut String) {
     buffer.clear();
 }
 
+/// Parse a plain-text string that may contain inline image references and append the resulting
+/// content parts (text + image) to `parts`.
+///
+/// This is the leaf handler of the multimodal message construction pipeline (`append_messages_as_parts`
+/// → `append_plain_text_as_parts`). It delegates to `resolve_plain_text_segments` which detects
+/// image references embedded in text (local file paths, S3 URIs, remote URLs, etc.) and yields an
+/// alternating sequence of `Text` and `Image` segments.
+///
+/// - Consecutive text segments are accumulated in `text_buffer` and flushed as a single
+///   `ContentPart::Text` when an image is encountered or at the end of iteration.
+/// - Image segments are converted to `ContentPart::ImageUrl` and pushed directly.
+/// - `has_media` is set to `true` when any image is found, signaling the caller
+///   (`build_user_message`) that a multimodal message path is needed.
+/// - `image_stats` records per-source-type counts for observability logging.
 fn append_plain_text_as_parts(
     text: &str,
     parts: &mut Vec<ContentPart>,
@@ -346,6 +360,23 @@ fn append_plain_text_as_parts(
     }
 }
 
+/// Recursively walk a list of QQ `Message` values and convert them into a flat sequence of
+/// `ContentPart` elements (text and image) for multimodal LLM inference.
+///
+/// This is the central dispatcher of the message-to-parts conversion pipeline, called by
+/// `build_user_message`. It handles every QQ message type:
+///
+/// - **`PlainText`** — delegates to `append_plain_text_as_parts`, which detects inline image refs.
+/// - **`Image`** — resolves via `resolve_image_message_part`; falls back to text serialisation.
+/// - **`Reply`** — when `include_reply_source_block` is true, recursively renders the quoted
+///   source messages under a `[引用内容]` heading so the model sees the context inline.
+/// - **`Forward`** — iterates each forward node, prepending the sender name, and recursively
+///   processes nested messages under a `[转发内容]` heading.
+/// - **Other** — serialised to text as a fallback.
+///
+/// Text fragments are accumulated in `text_buffer` and flushed as a single `ContentPart::Text`
+/// only when an image is hit or processing finishes, minimising the number of text parts.
+/// The `has_media` flag tells `build_user_message` whether to take the multimodal path.
 fn append_messages_as_parts(
     messages: &[Message],
     parts: &mut Vec<ContentPart>,
