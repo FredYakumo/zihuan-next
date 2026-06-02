@@ -9,6 +9,7 @@ pub mod data_refs;
 pub mod database;
 pub mod error;
 pub mod ims_bot_adapter;
+pub mod steer;
 pub mod llm;
 pub mod rag;
 pub mod runtime;

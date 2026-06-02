@@ -17,6 +17,7 @@ use zihuan_core::agent_config::current_qq_chat_agent_config;
 use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
 use zihuan_core::error::Result;
 use zihuan_core::llm::{OpenAIMessage, TokenUsage};
+use zihuan_core::steer::{build_merged_follow_up_event, message_with_api_style};
 
 use zihuan_graph_engine::brain_tool_spec::{
     QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
@@ -48,10 +49,8 @@ use crate::storage::qq_chat_history_store::{conversation_history_key, load_histo
 use crate::agent::qq_chat_agent_msg_send::send_direct_text_reply;
 
 use super::{
-    build_group_system_prompt, build_merged_follow_up_event,
-    build_private_system_prompt, build_user_message,
+    build_group_system_prompt, build_private_system_prompt, build_user_message,
     expand_messages_for_inference, extract_user_message_text, hydrate_missing_reply_sources,
-    message_with_api_style,
     QqChatAgent, QqChatAgentContext, QqChatHandleReport, QqChatSteerHook,
     QqChatTaskTrace, QqChatTurnResult, QqCommandSideEffectContext, QqLongTaskNotifier, LOG_PREFIX,
     LOG_TEXT_PREVIEW_CHARS,

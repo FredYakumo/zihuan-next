@@ -7,8 +7,9 @@ use super::qq_chat_agent_core::{
     build_info_brain_tools, expand_messages_for_inference, extract_user_message_text,
     hydrate_missing_reply_sources, QqAgentReplyBatchBuilder, QqChatAgent,
     QqChatAgentContext, QqChatAgentService, QqChatAgentServiceConfig, QqChatTaskTrace,
-    PendingSteerEvent, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
+    LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
+use zihuan_core::steer::PendingSteerEvent;
 use zihuan_core::utils::string_utils::shorten_text;
 use super::qq_chat_agent_msg_send::build_reply_batch_builder as build_unified_reply_batch_builder;
 use super::qq_chat_agent_ignore_store::should_ignore_message_blocking;

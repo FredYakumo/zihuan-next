@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use log::{info, warn};
@@ -19,6 +19,7 @@ use super::tools::{
     DEFAULT_TOOL_REMEMBER_CONTENT, DEFAULT_TOOL_SEARCH_MEMORY_CONTENT,
     DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
 };
+use super::qq_chat_agent_msg_send::QqReplyDirective;
 use crate::nodes::tool_subgraph::{
     validate_shared_inputs, validate_tool_definitions, ToolResultMode,
 };
@@ -26,7 +27,6 @@ use crate::storage::qq_chat_history_store::clear_history;
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
 use ims_bot_adapter::adapter::restore_messages_for_message_id;
 use ims_bot_adapter::message_helpers::render_current_message_body;
-use ims_bot_adapter::models::event_model::MessageEvent;
 use ims_bot_adapter::utils;
 use ims_bot_adapter::models::message::{
     Message, MessageProp, PersistedMedia, PersistedMediaSource,
@@ -37,13 +37,17 @@ use ims_bot_adapter::multimodal_image_url::{
 };
 use zihuan_agent::brain::{BrainIterationHook, LongTaskNotifier};
 use zihuan_core::agent_config::QqChatEmotionDimensionConfig;
+use zihuan_core::steer::{
+    apply_steer_prefix, build_merged_follow_up_event, message_with_api_style,
+    PendingSteerEvent, PendingSteerStore, PROCESSING_INSTRUCTION,
+};
 use zihuan_core::command::{
     CommandChannel, CommandContext, NewConversationRequest, SideEffectContext,
 };
 use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
-use zihuan_core::llm::{ContentPart, MessageContent, OpenAIMessage};
+use zihuan_core::llm::{ContentPart, OpenAIMessage};
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::runtime::block_async;
 use zihuan_core::task_context::AgentTaskRuntime;
@@ -64,30 +68,38 @@ pub(crate) const LOG_TEXT_PREVIEW_CHARS: usize = 1_200;
 const LOG_TOOL_PREVIEW_CHARS: usize = 600;
 pub(crate) const DIRECT_REPLY_NO_SYSTEM_PROMPT: &str = "没有系统提示词";
 const MODEL_NAME_REPLY_PREFIX: &str = "我不是模型，不过我会调用: ";
-const STEER_PREFIX: &str =
-    "【用户插入消息】请结合下面这条新消息调整你当前的回复思路，并在后续回复中优先响应它：";
 
 #[derive(Debug, Clone)]
 pub(crate) struct QqChatHandleReport {
     pub(crate) result_summary: String,
 }
 
+/// Request to build a reply batch from the model's reply text.
 #[derive(Debug, Clone)]
-pub(crate) struct PendingSteerEvent {
-    pub(crate) event: MessageEvent,
-    pub(crate) time: String,
+pub(crate) struct QqAgentReplyBuildRequest {
+    pub assistant_text: String,
+    pub is_group: bool,
+    pub sender_id: String,
+    pub sender_nickname: String,
+    pub sender_card: String,
+    pub bot_id: String,
+    pub bot_name: String,
+    pub max_message_length: usize,
+    pub reply_directive: Option<QqReplyDirective>,
+    pub trigger_message_id: Option<i64>,
+    pub available_media: HashMap<String, PersistedMedia>,
 }
 
-#[derive(Debug, Default)]
-struct PendingSteerSession {
-    queue: VecDeque<PendingSteerEvent>,
-    accepted_steer_count: usize,
+/// Result of building reply batches.
+#[derive(Debug, Clone)]
+pub(crate) struct QqAgentReplyBuildResult {
+    pub batches: Vec<Vec<Message>>,
+    pub suppress_send: bool,
 }
 
-#[derive(Default)]
-pub(crate) struct PendingSteerStore {
-    by_sender: Mutex<HashMap<String, PendingSteerSession>>,
-}
+/// Builder type for constructing reply batches from a build request.
+pub(crate) type QqAgentReplyBatchBuilder =
+    Arc<dyn Fn(&QqAgentReplyBuildRequest) -> Result<QqAgentReplyBuildResult> + Send + Sync>;
 
 pub(crate) struct QqCommandSideEffectContext<'a> {
     command_context: &'a CommandContext,
@@ -141,65 +153,6 @@ impl SideEffectContext for QqCommandSideEffectContext<'_> {
             max_text_chars: MAX_REPLY_CHARS,
         };
         send_forward_content(&send_ctx, content)
-    }
-}
-
-impl PendingSteerStore {
-    pub(crate) fn enqueue_with_limit(
-        &self,
-        sender_id: &str,
-        pending: PendingSteerEvent,
-        max_steer_count: usize,
-    ) -> (bool, usize, usize) {
-        let mut guard = self.by_sender.lock().unwrap();
-        let session = guard.entry(sender_id.to_string()).or_default();
-        if session.accepted_steer_count >= max_steer_count {
-            return (false, session.queue.len(), session.accepted_steer_count);
-        }
-        session.accepted_steer_count += 1;
-        session.queue.push_back(pending);
-        (true, session.queue.len(), session.accepted_steer_count)
-    }
-
-    fn drain_all(&self, sender_id: &str) -> (Vec<PendingSteerEvent>, usize, usize) {
-        let mut guard = self.by_sender.lock().unwrap();
-        let Some(session) = guard.get_mut(sender_id) else {
-            return (Vec::new(), 0, 0);
-        };
-        let drained: Vec<PendingSteerEvent> = session.queue.drain(..).collect();
-        let remaining_queue_len = session.queue.len();
-        let accepted_steer_count = session.accepted_steer_count;
-        if session.queue.is_empty() && session.accepted_steer_count == 0 {
-            guard.remove(sender_id);
-        }
-        (drained, remaining_queue_len, accepted_steer_count)
-    }
-
-    fn pop_oldest(&self, sender_id: &str) -> Option<(PendingSteerEvent, usize, usize)> {
-        let mut guard = self.by_sender.lock().unwrap();
-        let session = guard.get_mut(sender_id)?;
-        let popped = session.queue.pop_front()?;
-        let remaining_queue_len = session.queue.len();
-        let accepted_steer_count = session.accepted_steer_count;
-        if session.queue.is_empty() && session.accepted_steer_count == 0 {
-            guard.remove(sender_id);
-        }
-        Some((popped, remaining_queue_len, accepted_steer_count))
-    }
-
-    pub(crate) fn finish_session(&self, sender_id: &str) {
-        let mut guard = self.by_sender.lock().unwrap();
-        if let Some(session) = guard.get_mut(sender_id) {
-            session.accepted_steer_count = 0;
-            if session.queue.is_empty() {
-                guard.remove(sender_id);
-            }
-        }
-    }
-
-    pub(crate) fn ensure_session_entry(&self, sender_id: &str) {
-        let mut guard = self.by_sender.lock().unwrap();
-        guard.entry(sender_id.to_string()).or_default();
     }
 }
 
@@ -833,7 +786,7 @@ pub(crate) fn build_user_message(
 
     // Build multimodal message with state + system prompt prepended as text parts
     let state_text =
-        build_state_system_prefix_lines(session_state, emotion_dimensions, system_prompt)
+        build_state_system_prefix_lines(session_state, emotion_dimensions, character_instructions)
             .join("\n");
     let state_text = format!("{state_text}\n");
 
@@ -887,7 +840,7 @@ fn build_steer_user_message(
     session_state: &QqChatAgentSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> OpenAIMessage {
-    let mut steer_message = build_user_message(
+    let steer_message = build_user_message(
         event,
         bot_id,
         bot_name,
@@ -898,23 +851,7 @@ fn build_steer_user_message(
         emotion_dimensions,
     );
 
-    match steer_message.content.as_mut() {
-        Some(MessageContent::Text(text)) => {
-            *text = format!("{STEER_PREFIX}\n\n{text}");
-        }
-        Some(MessageContent::Parts(parts)) => {
-            parts.insert(0, ContentPart::text(format!("{STEER_PREFIX}\n\n")));
-        }
-        None => {
-            steer_message.content = Some(MessageContent::Text(STEER_PREFIX.to_string()));
-        }
-    }
-
-    if let Some(api_style) = api_style {
-        steer_message.api_style = Some(api_style.to_string());
-    }
-
-    steer_message
+    apply_steer_prefix(steer_message, api_style)
 }
 
 fn build_merged_steer_user_message(
@@ -943,23 +880,17 @@ fn build_merged_steer_user_message(
             .collect::<Vec<_>>()
             .join("\n");
 
-        let mut steer_message = OpenAIMessage::user(format!(
-            "{STEER_PREFIX}\n\n{prefix}\n\n{merged_text}\n\n{PROCESSING_INSTRUCTION}"
+        let message = OpenAIMessage::user(format!(
+            "{prefix}\n\n{merged_text}\n\n{PROCESSING_INSTRUCTION}"
         ));
-        if let Some(api_style) = api_style {
-            steer_message.api_style = Some(api_style.to_string());
-        }
-        return steer_message;
+        return apply_steer_prefix(message, api_style);
     }
 
     let prefix_lines =
         build_state_system_prefix_lines(session_state, emotion_dimensions, system_prompt);
     let state_text = format!("{}\n", prefix_lines.join("\n"));
 
-    let mut parts = vec![
-        ContentPart::text(format!("{STEER_PREFIX}\n\n")),
-        ContentPart::text(state_text.clone()),
-    ];
+    let mut parts = vec![ContentPart::text(state_text.clone())];
     let mut text_buffer = String::new();
     let mut has_media = false;
     let mut image_stats = MultimodalImageStats::default();
@@ -983,7 +914,7 @@ fn build_merged_steer_user_message(
 
     flush_text_part(&mut parts, &mut text_buffer);
 
-    let mut steer_message = if has_media && parts.len() > 2 {
+    let message = if has_media && parts.len() > 1 {
         parts.push(ContentPart::text(PROCESSING_INSTRUCTION.to_string()));
         OpenAIMessage::user_with_parts(parts)
     } else {
@@ -997,29 +928,11 @@ fn build_merged_steer_user_message(
             .collect::<Vec<_>>()
             .join("\n");
         OpenAIMessage::user(format!(
-            "{STEER_PREFIX}\n\n{state_text}\n{merged_text}\n\n{PROCESSING_INSTRUCTION}"
+            "{state_text}\n{merged_text}\n\n{PROCESSING_INSTRUCTION}"
         ))
     };
 
-    if let Some(api_style) = api_style {
-        steer_message.api_style = Some(api_style.to_string());
-    }
-
-    steer_message
-}
-
-pub(crate) fn build_merged_follow_up_event(
-    pending_events: &[PendingSteerEvent],
-) -> ims_bot_adapter::models::MessageEvent {
-    let first_event = pending_events
-        .first()
-        .expect("merged follow-up requires at least one pending steer event");
-    let mut merged_event = first_event.event.clone();
-    merged_event.message_list = pending_events
-        .iter()
-        .flat_map(|pending| pending.event.message_list.clone())
-        .collect();
-    merged_event
+    apply_steer_prefix(message, api_style)
 }
 
 pub(crate) fn extract_user_message_text(
@@ -1028,16 +941,6 @@ pub(crate) fn extract_user_message_text(
     bot_name: &str,
 ) -> String {
     CurrentTurnUserInput::new(event, bot_id, bot_name).text
-}
-
-pub(crate) fn message_with_api_style(
-    mut message: OpenAIMessage,
-    api_style: Option<&str>,
-) -> OpenAIMessage {
-    if let Some(api_style) = api_style {
-        message.api_style = Some(api_style.to_string());
-    }
-    message
 }
 
 fn persisted_media_from_tool_value(value: &Value) -> Option<PersistedMedia> {
