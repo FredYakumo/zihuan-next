@@ -221,15 +221,6 @@ pub(crate) fn build_group_system_prompt(
     rules
 }
 
-pub(crate) fn sender_display_name(sender_name: &str, sender_card: &str) -> String {
-    let card = sender_card.trim();
-    if card.is_empty() {
-        sender_name.to_string()
-    } else {
-        card.to_string()
-    }
-}
-
 #[derive(Debug, Default)]
 struct MultimodalImageStats {
     image_parts: usize,
@@ -744,7 +735,8 @@ pub(crate) fn build_user_message(
         build_state_system_prefix_lines(session_state, emotion_dimensions, character_instructions);
 
     let current_input = CurrentTurnUserInput::new(event, bot_id, bot_name);
-    let sender_name = sender_display_name(&event.sender.nickname, &event.sender.card);
+    let sender_name =
+        ims_bot_adapter::utils::sender_display_name!(&event.sender.nickname, &event.sender.card);
     let mut metadata_lines = Vec::new();
     metadata_lines.push("[消息元信息]".to_string());
     metadata_lines.push(format!("message_type: {}", event.message_type.as_str()));
