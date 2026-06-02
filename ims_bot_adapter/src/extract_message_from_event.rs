@@ -193,7 +193,7 @@ impl ExtractMessageFromEventNode {
                             if !text_buffer.is_empty() {
                                 text_buffer.push_str("\n\n");
                             }
-                            text_buffer.push_str("[引用内容]\n");
+                            text_buffer.push_str(&format!("[{}]\n", crate::QUOTE_CONTENT_LABEL));
                             Self::append_messages_as_parts(
                                 source_messages,
                                 parts,
@@ -212,7 +212,7 @@ impl ExtractMessageFromEventNode {
                         if !text_buffer.is_empty() {
                             text_buffer.push_str("\n\n");
                         }
-                        text_buffer.push_str("[转发内容]\n");
+                        text_buffer.push_str(&format!("[{}]\n", crate::FORWARD_CONTENT_LABEL));
                         for (index, node) in forward.content.iter().enumerate() {
                             if index > 0 && !text_buffer.ends_with('\n') {
                                 text_buffer.push('\n');
@@ -268,17 +268,17 @@ impl ExtractMessageFromEventNode {
             .as_deref()
             .filter(|value| !value.is_empty())
         {
-            if text_buffer.contains("[引用内容]") {
+            if text_buffer.contains(crate::QUOTE_CONTENT_LABEL) {
                 if !text_buffer.is_empty() {
                     text_buffer.push_str("\n\n");
                 }
-                text_buffer.push_str("[引用内容补充摘要]\n");
+                text_buffer.push_str(&format!("[{}]\n", crate::QUOTE_CONTENT_APPENDIX_LABEL));
                 text_buffer.push_str(ref_cnt);
             } else {
                 if !text_buffer.is_empty() {
                     text_buffer.push_str("\n\n");
                 }
-                text_buffer.push_str("[引用内容]\n");
+                text_buffer.push_str(&format!("[{}]\n", crate::QUOTE_CONTENT_LABEL));
                 text_buffer.push_str(ref_cnt);
             }
         }

@@ -52,6 +52,24 @@ pub use system_config::{
     BotAdapterConnectionKind, BotAdapterConnectionsSection,
 };
 
+// Labels for message structure elements used when rendering ims messages
+pub const CURRENT_MESSAGE_LABEL: &str = "当前消息";
+pub const REPLY_MESSAGE_LABEL: &str = "引用消息";
+pub const FORWARD_NODE_LABEL: &str = "转发节点";
+pub const SENDER_LABEL: &str = "发送者";
+
+// Text markers used to delimit nested message structures
+pub const REPLY_START_MARKER: &str = "[引用消息开始]";
+pub const REPLY_END_MARKER: &str = "[引用消息结束]";
+pub const FORWARD_START_MARKER: &str = "[转发消息开始]";
+pub const FORWARD_END_MARKER: &str = "[转发消息结束]";
+
+// Labels for message content sections used in LLM prompts
+pub const QUOTE_CONTENT_LABEL: &str = "引用内容";
+pub const FORWARD_CONTENT_LABEL: &str = "转发内容";
+pub const IMAGE_ANALYSIS_LABEL: &str = "可分析图片";
+pub const QUOTE_CONTENT_APPENDIX_LABEL: &str = "引用内容补充摘要";
+
 pub fn init_node_registry() -> Result<()> {
     use extract_group_id_from_event::ExtractGroupIdFromEventNode;
     use extract_media_by_id::ExtractMediaByIdNode;

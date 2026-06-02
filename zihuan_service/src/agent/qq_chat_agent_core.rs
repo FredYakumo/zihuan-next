@@ -28,6 +28,11 @@ use crate::storage::qq_chat_session_store::build_outbound_persistence;
 use ims_bot_adapter::adapter::restore_messages_for_message_id;
 use ims_bot_adapter::message_helpers::render_current_message_body;
 use ims_bot_adapter::utils;
+use ims_bot_adapter::{
+    CURRENT_MESSAGE_LABEL, FORWARD_CONTENT_LABEL, FORWARD_END_MARKER, FORWARD_NODE_LABEL,
+    FORWARD_START_MARKER, IMAGE_ANALYSIS_LABEL, QUOTE_CONTENT_LABEL, REPLY_END_MARKER,
+    REPLY_MESSAGE_LABEL, REPLY_START_MARKER, SENDER_LABEL,
+};
 use ims_bot_adapter::models::message::{
     Message, MessageProp, PersistedMedia, PersistedMediaSource,
     PlainTextMessage, ReplyMessage,
@@ -361,7 +366,7 @@ fn append_messages_as_parts(
                         if !text_buffer.is_empty() {
                             text_buffer.push_str("\n\n");
                         }
-                        text_buffer.push_str("[引用内容]\n");
+                        text_buffer.push_str(&format!("[{}]\n", QUOTE_CONTENT_LABEL));
                         append_messages_as_parts(
                             source_messages,
                             parts,
@@ -384,7 +389,7 @@ fn append_messages_as_parts(
                     if !text_buffer.is_empty() {
                         text_buffer.push_str("\n\n");
                     }
-                    text_buffer.push_str("[转发内容]\n");
+                    text_buffer.push_str(&format!("[{}]\n", FORWARD_CONTENT_LABEL));
                     for (index, node) in forward.content.iter().enumerate() {
                         if index > 0 && !text_buffer.ends_with('\n') {
                             text_buffer.push('\n');
@@ -454,7 +459,7 @@ impl CurrentTurnUserInput {
         }
 
         for reference_text in reference_blocks {
-            sections.push(format!("[引用内容]\n{reference_text}"));
+            sections.push(format!("[{}]\n{reference_text}", QUOTE_CONTENT_LABEL));
         }
 
         CurrentTurnUserInput {
@@ -472,7 +477,13 @@ struct ImagePromptReference {
     media_id: String,
 }
 
-fn collect_image_prompt_references(
+/// Recursively traverses the message tree to collect image references for the LLM prompt.
+///
+/// Walks through `messages` and their nested structures (`Reply`, `Forward`).
+/// For each `Message::Image`, records its location path (e.g., `CURRENT_MESSAGE_LABEL`,
+/// `REPLY_MESSAGE_LABEL`, or "`CURRENT_MESSAGE_LABEL` / `FORWARD_NODE_LABEL` N(`SENDER_LABEL`)") and the `media_id`.
+/// Collected references are appended to the provided `references` vector.
+fn traverse_messages_for_image_references(
     messages: &[Message],
     current_path: &str,
     references: &mut Vec<ImagePromptReference>,
@@ -491,7 +502,7 @@ fn collect_image_prompt_references(
             }
             Message::Reply(reply) => {
                 if let Some(source_messages) = valid_reply_source_messages(reply) {
-                    collect_image_prompt_references(source_messages, "引用消息", references);
+                    traverse_messages_for_image_references(source_messages, REPLY_MESSAGE_LABEL, references);
                 }
             }
             Message::Forward(forward) => {
@@ -501,9 +512,9 @@ fn collect_image_prompt_references(
                         .as_deref()
                         .or(node.user_id.as_deref())
                         .unwrap_or("unknown");
-                    collect_image_prompt_references(
+                    traverse_messages_for_image_references(
                         &node.content,
-                        &format!("{} / 转发节点 {}({})", current_path, node_index + 1, sender),
+                        &format!("{} / {} {}({})", current_path, FORWARD_NODE_LABEL, node_index + 1, sender),
                         references,
                     );
                 }
@@ -515,7 +526,7 @@ fn collect_image_prompt_references(
 
 fn image_prompt_reference_lines(messages: &[Message]) -> Vec<String> {
     let mut references = Vec::new();
-    collect_image_prompt_references(messages, "当前消息", &mut references);
+    traverse_messages_for_image_references(messages, CURRENT_MESSAGE_LABEL, &mut references);
     references
         .into_iter()
         .map(|reference| format!("{} media_id={}", reference.location, reference.media_id))
@@ -632,7 +643,7 @@ pub(crate) fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message
         match message {
             Message::Reply(reply) => {
                 expanded.push(Message::PlainText(PlainTextMessage {
-                    text: "[引用消息开始]".to_string(),
+                    text: REPLY_START_MARKER.to_string(),
                 }));
                 if let Some(source_messages) = valid_reply_source_messages(reply) {
                     expanded.extend(expand_messages_for_inference(source_messages));
@@ -640,7 +651,7 @@ pub(crate) fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message
                     expanded.push(message.clone());
                 }
                 expanded.push(Message::PlainText(PlainTextMessage {
-                    text: "[引用消息结束]".to_string(),
+                    text: REPLY_END_MARKER.to_string(),
                 }));
             }
             Message::Forward(forward) => {
@@ -650,7 +661,7 @@ pub(crate) fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message
                 }
 
                 expanded.push(Message::PlainText(PlainTextMessage {
-                    text: "[转发消息开始]".to_string(),
+                    text: FORWARD_START_MARKER.to_string(),
                 }));
 
                 for (index, node) in forward.content.iter().enumerate() {
@@ -660,13 +671,13 @@ pub(crate) fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message
                         .or(node.user_id.as_deref())
                         .unwrap_or("unknown");
                     expanded.push(Message::PlainText(PlainTextMessage {
-                        text: format!("[转发节点 {} 发送者: {}]", index + 1, sender),
+                        text: format!("[{} {} {}: {}]", FORWARD_NODE_LABEL, index + 1, SENDER_LABEL, sender),
                     }));
                     expanded.extend(expand_messages_for_inference(&node.content));
                 }
 
                 expanded.push(Message::PlainText(PlainTextMessage {
-                    text: "[转发消息结束]".to_string(),
+                    text: FORWARD_END_MARKER.to_string(),
                 }));
             }
             _ => expanded.push(message.clone()),
@@ -731,59 +742,60 @@ pub(crate) fn build_user_message(
     session_state: &QqChatAgentSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> OpenAIMessage {
-    let mut lines =
+    let state_lines =
         build_state_system_prefix_lines(session_state, emotion_dimensions, character_instructions);
 
+    let environment = format!("[Environment]\n- Your name: {bot_name}");
+
+    let sender_name = ims_bot_adapter::utils::sender_display_name!(
+        &event.sender.nickname,
+        &event.sender.card
+    );
+
     let current_input = CurrentTurnUserInput::new(event, bot_id, bot_name);
-    let sender_name =
-        ims_bot_adapter::utils::sender_display_name!(&event.sender.nickname, &event.sender.card);
-    let mut metadata_lines = Vec::new();
-    metadata_lines.push("[消息元信息]".to_string());
-    metadata_lines.push(format!("message_type: {}", event.message_type.as_str()));
-    metadata_lines.push(format!("sender_id: {}", event.sender.user_id));
-    metadata_lines.push(format!("sender_name: {}", sender_name));
-    metadata_lines.push(format!("bot_id: {}", bot_id));
-    metadata_lines.push(format!("bot_name: {}", bot_name));
-    metadata_lines.push(format!("is_at_bot: {}", current_input.is_at_me));
 
-    if !current_input.at_target_list.is_empty() {
-        metadata_lines.push(format!(
-            "at_targets: {}",
-            current_input.at_target_list.join(", ")
-        ));
-    }
+    let at_mention = if current_input.is_at_me {
+        "\n- You were @-mentioned in this message"
+    } else {
+        ""
+    };
 
-    lines.push(String::new());
+    let at_targets = if current_input.at_target_list.is_empty() {
+        String::new()
+    } else {
+        format!("\n- At targets: {}", current_input.at_target_list.join(", "))
+    };
 
-    // Section 3: Message Metadata + User Message
-    lines.extend(metadata_lines.clone());
-    lines.push(String::new());
-    lines.push("[用户消息]".to_string());
-    lines.push(current_input.text.clone());
-    let image_reference_lines = image_prompt_reference_lines(&current_input.messages);
-    if !image_reference_lines.is_empty() {
-        lines.push(String::new());
-        lines.push("[可分析图片]".to_string());
-        lines.extend(image_reference_lines);
-    }
-    lines.push(String::new());
+    let metadata = format!(
+        "[User Message Metadata]\n- Message type: {ty}\n- Sender name: {sender_name}{at_mention}{at_targets}",
+        ty = event.message_type.as_str(),
+    );
 
-    // Section 4: Processing Instructions
-    lines.push(PROCESSING_INSTRUCTION.to_string());
+    let image_references = image_prompt_reference_lines(&current_input.messages);
+    let image_section = if image_references.is_empty() {
+        String::new()
+    } else {
+        format!("\n\n[{}]\n{}", IMAGE_ANALYSIS_LABEL, image_references.join("\n"))
+    };
 
-    let user_text = lines.join("\n");
+    let user_text = format!(
+        "{}\n\n{environment}\n\n{metadata}\n[用户消息]\n{}{image_section}\n\n{PROCESSING_INSTRUCTION}",
+        state_lines.join("\n"),
+        current_input.text,
+    );
+
     if !llm_supports_multimodal_input {
         return OpenAIMessage::user(user_text);
     }
 
-    // Build multimodal message with state + system prompt prepended as text parts
-    let state_text =
-        build_state_system_prefix_lines(session_state, emotion_dimensions, character_instructions)
-            .join("\n");
-    let state_text = format!("{state_text}\n");
+    if image_references.is_empty() {
+        return OpenAIMessage::user(user_text);
+    }
 
+    let state_text = format!("{}\n", state_lines.join("\n"));
     let mut parts = vec![ContentPart::text(state_text)];
-    let mut text_buffer = format!("{}\n\n[用户消息]\n", metadata_lines.join("\n"));
+    let metadata_text = format!("{environment}\n\n{metadata}");
+    let mut text_buffer = format!("{metadata_text}\n\n[用户消息]\n");
     let mut has_media = false;
     let mut image_stats = MultimodalImageStats::default();
     append_messages_as_parts(
@@ -796,28 +808,23 @@ pub(crate) fn build_user_message(
         &mut image_stats,
     );
 
-    if has_media {
-        flush_text_part(&mut parts, &mut text_buffer);
-        info!(
-            "{LOG_PREFIX} Built multimodal user message: total_parts={}, image_parts={}, local_file_images={}, object_storage_images={}, downloaded_remote_images={}, uploaded_to_s3_images={}, data_url_images={}, skipped_images={}",
-            parts.len(),
-            image_stats.image_parts,
-            image_stats.local_file_images,
-            image_stats.object_storage_images,
-            image_stats.downloaded_remote_images,
-            image_stats.uploaded_to_s3_images,
-            image_stats.data_url_images,
-            image_stats.skipped_images,
-        );
-        // Append processing instructions
-        parts.push(ContentPart::text(PROCESSING_INSTRUCTION.to_string()));
-        if parts.is_empty() {
-            OpenAIMessage::user("(无可用文本内容)")
-        } else {
-            OpenAIMessage::user_with_parts(parts)
-        }
+    flush_text_part(&mut parts, &mut text_buffer);
+    info!(
+        "{LOG_PREFIX} Built multimodal user message: total_parts={}, image_parts={}, local_file_images={}, object_storage_images={}, downloaded_remote_images={}, uploaded_to_s3_images={}, data_url_images={}, skipped_images={}",
+        parts.len(),
+        image_stats.image_parts,
+        image_stats.local_file_images,
+        image_stats.object_storage_images,
+        image_stats.downloaded_remote_images,
+        image_stats.uploaded_to_s3_images,
+        image_stats.data_url_images,
+        image_stats.skipped_images,
+    );
+    parts.push(ContentPart::text(PROCESSING_INSTRUCTION.to_string()));
+    if parts.is_empty() {
+        OpenAIMessage::user("(无可用文本内容)")
     } else {
-        OpenAIMessage::user(user_text)
+        OpenAIMessage::user_with_parts(parts)
     }
 }
 

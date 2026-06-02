@@ -15,7 +15,7 @@ zihuan-next is a multi-tier AI agent development and runtime framework built in 
 - **`zihuan_agent`** — Agentic runtime: `Brain` tool-calling loop, `FunctionTool` trait re-export, `BrainTool`, `BrainObserver` hooks.
 - **`zihuan_service`** — Service layer: QQ chat agent, HTTP stream agent, REST API endpoints, command system.
 - **`model_inference`** — LLM model inference integration: model configuration, API adapters, system configuration.
-- **`ims_bot_adapter`** — QQ bot adapter: WebSocket connection, message extraction, event processing, bot adapter nodes.
+- **`ims_bot_adapter`** — QQ bot adapter: WebSocket connection, message extraction, event processing, bot adapter nodes. Message-structure labels and boundary markers (e.g. `CURRENT_MESSAGE_LABEL`, `REPLY_START_MARKER`, `QUOTE_CONTENT_LABEL`) are defined as constants in `src/lib.rs`; any code that renders or parses nested message text must reuse these constants rather than hard-coding strings.
 - **`storage_handler`** — Storage abstractions: Redis, MySQL, S3, Weaviate connections.
 - **`zihuan_nlp`** — NLP utilities: text segmentation, tokenization.
 - **`node_macros`** — Proc macros: `node_input!`, `node_output!`, `node_input_flow!`, `node_output_flow!`, `return_with_node_output!`.
@@ -77,6 +77,7 @@ Prefer macros for pattern elimination. When the same structural pattern appears 
 - **Common types** that may cause circular references go in `zihuan_core`. Otherwise, keep code and types in the package that owns the responsibility.
 - **One node per file.** The graph must remain a DAG.
 - **Don't repeat yourself.** Reuse existing functionality whenever possible. Search before writing a new helper; do not duplicate logic.
+- **Message text parsing constants.** When rendering or parsing nested QQ message structures (reply quotes, forward nodes, image references), always import and use the shared constants defined in `ims_bot_adapter/src/lib.rs` (e.g. `REPLY_START_MARKER`, `QUOTE_CONTENT_LABEL`). Do not hard-code Chinese labels or boundary markers locally.
 
 ### Comments
 
