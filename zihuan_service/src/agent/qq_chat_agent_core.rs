@@ -3,12 +3,13 @@ use std::sync::{Arc, Mutex};
 
 use log::{info, warn};
 use serde_json::Value;
+use zihuan_agent::emotion::utils::emotion_dimensions_snapshot_text;
 use zihuan_agent::session_state::QqChatAgentSessionState;
 
 pub(crate) use super::qq_chat_agent_logging::QqChatTaskTrace;
 use super::qq_chat_agent_msg_send::{
     build_long_task_complete_content, build_long_task_start_text, send_forward_content,
-    send_notification_text, QqAgentReplyBatchBuilder, QqSendContext,
+    send_notification_text, QqSendContext,
 };
 pub(crate) use super::tools::build_info_brain_tools;
 use super::tools::{
@@ -24,10 +25,12 @@ use crate::nodes::tool_subgraph::{
 use crate::storage::qq_chat_history_store::clear_history;
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
 use ims_bot_adapter::adapter::restore_messages_for_message_id;
+use ims_bot_adapter::message_helpers::render_current_message_body;
 use ims_bot_adapter::models::event_model::MessageEvent;
+use ims_bot_adapter::utils;
 use ims_bot_adapter::models::message::{
-    Message, MessageProp, PersistedMedia, PersistedMediaSource, PlainTextMessage,
-    ReplyMessage,
+    Message, MessageProp, PersistedMedia, PersistedMediaSource,
+    PlainTextMessage, ReplyMessage,
 };
 use ims_bot_adapter::multimodal_image_url::{
     resolve_image_message_part, resolve_plain_text_segments, ImagePartSource, ResolvedTextSegment,
@@ -263,25 +266,6 @@ pub(crate) fn build_group_system_prompt(
         "\n- 群聊里如果需要明确提醒对方，可在调用 `send_natural_language_reply` 时把 mention_sender 设为 true。"
     ));
     rules
-}
-
-pub(crate) fn emotion_dimensions_snapshot_json(
-    session_state: &QqChatAgentSessionState,
-    emotion_dimensions: &[QqChatEmotionDimensionConfig],
-) -> String {
-    serde_json::to_string(
-        &session_state
-            .ordered_emotion_dimensions(emotion_dimensions)
-            .into_iter()
-            .map(|(name, value)| {
-                serde_json::json!({
-                    "name": name,
-                    "value": value,
-                })
-            })
-            .collect::<Vec<_>>(),
-    )
-    .unwrap_or_else(|_| "[]".to_string())
 }
 
 pub(crate) fn sender_display_name(sender_name: &str, sender_card: &str) -> String {
@@ -572,58 +556,27 @@ fn image_prompt_reference_lines(messages: &[Message]) -> Vec<String> {
         .collect()
 }
 
-fn messages_have_effective_content(messages: &[Message], depth: usize) -> bool {
-    if depth > 8 {
-        return false;
-    }
-
-    for message in messages {
-        match message {
-            Message::PlainText(plain) => {
-                if !plain.text.trim().is_empty() {
-                    return true;
-                }
-            }
-            Message::Image(_) => return true,
-            Message::Forward(forward) => {
-                if forward
-                    .content
-                    .iter()
-                    .any(|node| messages_have_effective_content(&node.content, depth + 1))
-                {
-                    return true;
-                }
-            }
-            Message::Reply(reply) => {
-                if let Some(source_messages) = reply.message_source.as_deref() {
-                    if matches!(source_messages, [Message::Reply(_)]) {
-                        continue;
-                    }
-                    if messages_have_effective_content(source_messages, depth + 1) {
-                        return true;
-                    }
-                }
-            }
-            Message::At(_) => {}
-        }
-    }
-
-    false
-}
-
 fn valid_reply_source_messages(reply: &ReplyMessage) -> Option<&[Message]> {
     let source_messages = reply.message_source.as_deref()?;
-    if messages_have_effective_content(source_messages, 0) {
+    if utils::messages_have_effective_content(source_messages, 0) {
         Some(source_messages)
     } else {
         None
     }
 }
 
+/// Recursively populate missing reply source messages in a message event.
+///
+/// QQ `Reply` messages only carry the `message_id` of the referenced message,
+/// not the actual content. This function walks the entire message tree and,
+/// for every `Reply` that lacks a `message_source`, queries the database via
+/// `restore_messages_for_message_id` to backfill it. It then recursively
+/// processes any nested `Reply` / `Forward` in the backfilled result.
 pub(crate) fn hydrate_missing_reply_sources(
     event: &ims_bot_adapter::models::MessageEvent,
     adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
 ) -> ims_bot_adapter::models::MessageEvent {
+    /// Recursively walk a message list and fill in missing reply sources.
     fn hydrate_messages(
         messages: &mut [Message],
         adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
@@ -631,12 +584,15 @@ pub(crate) fn hydrate_missing_reply_sources(
         for message in messages {
             match message {
                 Message::Reply(reply) => {
+                    // Reply has no valid source messages — attempt DB restore
                     if valid_reply_source_messages(reply).is_none() {
                         match block_async(restore_messages_for_message_id(adapter, reply.id)) {
                             Ok(Some(messages)) => {
                                 reply.message_source = Some(messages);
                             }
-                            Ok(None) => {}
+                            Ok(None) => {
+                                // Message not found in database either, skip
+                            }
                             Err(error) => {
                                 warn!(
                                     "{LOG_PREFIX} failed to restore reply source inside qq_chat_agent for message_id={}: {}",
@@ -646,15 +602,18 @@ pub(crate) fn hydrate_missing_reply_sources(
                         }
                     }
 
+                    // Recurse into the source messages to handle nested Reply / Forward
                     if let Some(source_messages) = reply.message_source.as_mut() {
                         hydrate_messages(source_messages, adapter);
                     }
                 }
                 Message::Forward(forward) => {
+                    // Each forward node may contain nested Replies — recurse
                     for node in &mut forward.content {
                         hydrate_messages(&mut node.content, adapter);
                     }
                 }
+                // PlainText / Image / At etc. need no hydration
                 _ => {}
             }
         }
@@ -663,26 +622,6 @@ pub(crate) fn hydrate_missing_reply_sources(
     let mut hydrated = event.clone();
     hydrate_messages(&mut hydrated.message_list, adapter);
     hydrated
-}
-
-fn render_current_message_body(messages: &[Message]) -> Option<String> {
-    let filtered: Vec<Message> = messages
-        .iter()
-        .filter(|message| !matches!(message, Message::Reply(_)))
-        .cloned()
-        .collect();
-    if filtered.is_empty() {
-        return None;
-    }
-
-    let rendered =
-        zihuan_core::ims_bot_adapter::models::message::render_messages_readable(&filtered);
-    let trimmed = rendered.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
 }
 
 fn collect_reply_reference_text(messages: &[Message]) -> Vec<String> {
@@ -767,7 +706,7 @@ fn build_state_system_prefix_lines(
         "**Your character's current state**:".to_string(),
         format!(
             "- Your emotion state: {}",
-            emotion_dimensions_snapshot_json(session_state, emotion_dimensions)
+            emotion_dimensions_snapshot_text(session_state, emotion_dimensions)
         ),
         format!("- Your character instructions: {}", character_instructions),
     ]

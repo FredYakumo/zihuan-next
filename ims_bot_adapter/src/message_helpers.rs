@@ -5,7 +5,7 @@
 
 use crate::adapter::SharedBotAdapter;
 use crate::models::event_model::{MessageEvent, MessageType, Sender};
-use crate::models::message::{AtTargetMessage, Message, PlainTextMessage};
+use crate::models::message::{render_messages_readable, AtTargetMessage, Message, PlainTextMessage};
 use crate::send_qq_message_batches::send_qq_message_batches;
 use crate::ws_action::{response_message_id, response_success, ws_send_action};
 use log::{info, warn};
@@ -461,5 +461,28 @@ pub fn send_friend_progress_notification_with_persistence(
         .any(|result| !result.success)
     {
         warn!("{LOG_PREFIX} Failed to send friend progress notification");
+    }
+}
+
+/// Render the message body excluding `Reply` wrapper messages.
+///
+/// Filters out `Message::Reply` entries and renders the remaining messages
+/// as a readable text string. Returns `None` if the result is empty.
+pub fn render_current_message_body(messages: &[Message]) -> Option<String> {
+    let filtered: Vec<Message> = messages
+        .iter()
+        .filter(|message| !matches!(message, Message::Reply(_)))
+        .cloned()
+        .collect();
+    if filtered.is_empty() {
+        return None;
+    }
+
+    let rendered = render_messages_readable(&filtered);
+    let trimmed = rendered.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
     }
 }

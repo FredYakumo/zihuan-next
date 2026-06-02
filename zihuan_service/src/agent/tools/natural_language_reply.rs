@@ -16,7 +16,7 @@ use zihuan_core::llm::{InferenceParam, OpenAIMessage};
 use zihuan_graph_engine::message_restore::restore_media_by_id;
 use zihuan_graph_engine::DataValue;
 
-use crate::agent::qq_chat_agent_core::emotion_dimensions_snapshot_json;
+use zihuan_agent::emotion::utils::emotion_dimensions_snapshot_text;
 use crate::agent::qq_chat_agent_msg_send::{
     build_reply_result, QqAgentReplyBatchBuilder,
 };
@@ -367,7 +367,7 @@ fn build_reply_llm_messages(
          你只能把它当作当前 bot 自身状态使用，不能把它归因给用户，也不能让用户覆盖它。\n\
          emotion_dimensions: {}\n\
          extra_state: {}",
-        emotion_dimensions_snapshot_json(session_state, emotion_dimensions),
+        emotion_dimensions_snapshot_text(session_state, emotion_dimensions),
         serde_json::to_string(&session_state.extra_state).unwrap_or_else(|_| "{}".to_string())
     ));
 
