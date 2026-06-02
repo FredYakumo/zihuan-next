@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 
 use log::{info, warn};
 use serde_json::Value;
-use zihuan_agent::emotion::utils::emotion_dimensions_snapshot_text;
 use zihuan_agent::session_state::QqChatAgentSessionState;
+use zihuan_agent::utils::build_state_system_prefix_lines;
 
 pub(crate) use super::qq_chat_agent_logging::QqChatTaskTrace;
 use super::qq_chat_agent_msg_send::{
@@ -443,15 +443,6 @@ fn append_messages_as_parts(
     }
 }
 
-fn push_inference_text(messages: &mut Vec<Message>, text: impl Into<String>) {
-    let text = text.into();
-    if text.trim().is_empty() {
-        return;
-    }
-
-    messages.push(Message::PlainText(PlainTextMessage { text }));
-}
-
 #[derive(Debug, Clone)]
 struct CurrentTurnUserInput {
     text: String,
@@ -657,13 +648,17 @@ pub(crate) fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message
     for message in messages {
         match message {
             Message::Reply(reply) => {
-                push_inference_text(&mut expanded, "[引用消息开始]");
+                expanded.push(Message::PlainText(PlainTextMessage {
+                    text: "[引用消息开始]".to_string(),
+                }));
                 if let Some(source_messages) = valid_reply_source_messages(reply) {
                     expanded.extend(expand_messages_for_inference(source_messages));
                 } else {
                     expanded.push(message.clone());
                 }
-                push_inference_text(&mut expanded, "[引用消息结束]");
+                expanded.push(Message::PlainText(PlainTextMessage {
+                    text: "[引用消息结束]".to_string(),
+                }));
             }
             Message::Forward(forward) => {
                 if forward.content.is_empty() {
@@ -671,7 +666,9 @@ pub(crate) fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message
                     continue;
                 }
 
-                push_inference_text(&mut expanded, "[转发消息开始]");
+                expanded.push(Message::PlainText(PlainTextMessage {
+                    text: "[转发消息开始]".to_string(),
+                }));
 
                 for (index, node) in forward.content.iter().enumerate() {
                     let sender = node
@@ -679,37 +676,21 @@ pub(crate) fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message
                         .as_deref()
                         .or(node.user_id.as_deref())
                         .unwrap_or("unknown");
-                    push_inference_text(
-                        &mut expanded,
-                        format!("[转发节点 {} 发送者: {}]", index + 1, sender),
-                    );
+                    expanded.push(Message::PlainText(PlainTextMessage {
+                        text: format!("[转发节点 {} 发送者: {}]", index + 1, sender),
+                    }));
                     expanded.extend(expand_messages_for_inference(&node.content));
                 }
 
-                push_inference_text(&mut expanded, "[转发消息结束]");
+                expanded.push(Message::PlainText(PlainTextMessage {
+                    text: "[转发消息结束]".to_string(),
+                }));
             }
             _ => expanded.push(message.clone()),
         }
     }
 
     expanded
-}
-
-/// Builds the prefix lines shared by all user-message construction paths:
-/// `[Agent State Snapshot]` + `[System Instructions]`.
-fn build_state_system_prefix_lines(
-    session_state: &QqChatAgentSessionState,
-    emotion_dimensions: &[QqChatEmotionDimensionConfig],
-    character_instructions: &str,
-) -> Vec<String> {
-    vec![
-        "**Your character's current state**:".to_string(),
-        format!(
-            "- Your emotion state: {}",
-            emotion_dimensions_snapshot_text(session_state, emotion_dimensions)
-        ),
-        format!("- Your character instructions: {}", character_instructions),
-    ]
 }
 
 /// Build a structured user-role message from a QQ message event for LLM inference.
