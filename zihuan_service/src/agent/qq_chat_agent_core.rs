@@ -237,7 +237,7 @@ fn build_common_system_rules(identity_example: &str, agent_system_prompt: Option
          - 用户问“你是谁/你叫什么”时，直接用你自己的身份回答，例如：{identity_example}\n\
          - 最终发给用户的话必须通过 `send_natural_language_reply` 工具发送；不要把主模型 assistant 文本直接当作用户可见回复\n\
          - 如果不需要回复用户，就不要调用 `send_natural_language_reply`\n\
-         - 遇到复杂数学、编程、深度推理任务时，优先调用 `run_math_programming_subagent`\n\
+         - 遇到复杂数学、编程、深度推理任务时，优先调用 `run_research_subagent`\n\
          - 当你需要调整 bot 当前情绪维度时，调用 `update_agent_state`\n\
          - 遇到任何需要查询信息的情况（包括时效性问题、版本更新、新闻等），第一步必须调用 `search_memory_content` 检索记忆，不得跳过；只有记忆中确实没有足够信息时，才允许调用 `web_search`\n\
          - `web_search` 之后，必须调用 `remember_content` 把有用的信息记下来，以便后续使用\n\

@@ -14,14 +14,15 @@ mod agent_memory;
 mod agent_state;
 mod common;
 mod current_time;
+mod deep_research;
 mod editable_qq_agent_tool;
 mod image_search;
 mod image_understand;
 mod info_tools;
-mod math_programming;
 mod natural_language_reply;
 mod recent_messages;
 mod reply_message;
+mod research;
 mod web_search;
 
 mod build_metadata {
@@ -35,16 +36,17 @@ pub(crate) use agent_memory::{
 pub(crate) use agent_state::UpdateAgentStateBrainTool;
 pub(crate) use common::{ToolNotificationTarget, QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS};
 pub(crate) use current_time::CurrentTimeBrainTool;
+pub(crate) use deep_research::RunDeepResearchSubagentBrainTool;
 pub(crate) use editable_qq_agent_tool::EditableQqAgentTool;
 pub(crate) use image_search::SearchSimilarImagesBrainTool;
 pub(crate) use image_understand::{execute_image_understand_tool, ImageUnderstandBrainTool};
 pub(crate) use info_tools::{GetAgentPublicInfoBrainTool, GetFunctionListBrainTool};
-pub(crate) use math_programming::RunMathProgrammingSubagentBrainTool;
 pub(crate) use natural_language_reply::{
     take_last_reply_result, QqNaturalLanguageReplyResult, SendNaturalLanguageReplyBrainTool,
 };
 pub(crate) use recent_messages::{GetRecentGroupMessagesBrainTool, GetRecentUserMessagesBrainTool};
 pub(crate) use reply_message::ReplyMessageBrainTool;
+pub(crate) use research::RunResearchSubagentBrainTool;
 pub(crate) use web_search::WebSearchBrainTool;
 
 pub(crate) const DEFAULT_TOOL_WEB_SEARCH: &str = "web_search";

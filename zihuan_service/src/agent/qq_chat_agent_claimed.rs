@@ -31,7 +31,7 @@ use super::super::tools::{
     take_last_reply_result, AgentMemoryToolResources, CurrentTimeBrainTool, EditableQqAgentTool,
     GetAgentPublicInfoBrainTool, GetFunctionListBrainTool, GetRecentGroupMessagesBrainTool,
     GetRecentUserMessagesBrainTool, ImageUnderstandBrainTool, ListAvailableMemoryKeysBrainTool,
-    RememberContentBrainTool, RunMathProgrammingSubagentBrainTool, SearchMemoryContentBrainTool,
+    RememberContentBrainTool, RunResearchSubagentBrainTool, SearchMemoryContentBrainTool,
     SearchSimilarImagesBrainTool, SendNaturalLanguageReplyBrainTool, ToolNotificationTarget,
     UpdateAgentStateBrainTool, WebSearchBrainTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
     DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
@@ -505,9 +505,14 @@ impl QqChatAgent {
             Arc::clone(&turn_session_state),
             emotion_dimensions.clone(),
         ));
-        brain = brain.with_tool(RunMathProgrammingSubagentBrainTool::new(Arc::clone(
-            ctx.math_programming_llm,
-        )));
+        brain = brain.with_tool(RunResearchSubagentBrainTool::new(
+            Arc::clone(ctx.math_programming_llm),
+            Arc::clone(ctx.web_search_engine),
+            ctx.mysql_ref.cloned(),
+            ctx.s3_ref.cloned(),
+            Some(hydrated_event.clone()),
+            ToolNotificationTarget::dashboard(),
+        ));
         brain = brain.with_tool(SendNaturalLanguageReplyBrainTool::new(
             ctx.adapter.clone(),
             target_id.to_string(),
