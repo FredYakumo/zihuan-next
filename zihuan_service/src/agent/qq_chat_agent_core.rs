@@ -1555,7 +1555,7 @@ pub(crate) struct QqChatAgentContext<'a> {
     max_steer_count: usize,
     reply_batch_builder: Option<&'a QqAgentReplyBatchBuilder>,
     shared_runtime_values: HashMap<String, DataValue>,
-    session_state_store: &'a Arc<Mutex<HashMap<String, QqChatAgentSessionState>>>,
+    session_state_store: &'a Arc<Mutex<QqChatAgentSessionState>>,
     pending_steer: &'a Arc<PendingSteerStore>,
     task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
     task_db_connection_id: Option<String>,
@@ -1949,7 +1949,7 @@ pub struct QqChatAgentServiceConfig {
     pub shared_inputs: Vec<FunctionPortDef>,
     pub tool_definitions: Vec<BrainToolDefinition>,
     pub shared_runtime_values: HashMap<String, DataValue>,
-    pub session_state_store: Arc<Mutex<HashMap<String, QqChatAgentSessionState>>>,
+    pub session_state_store: Arc<Mutex<QqChatAgentSessionState>>,
     pub task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
 }
 

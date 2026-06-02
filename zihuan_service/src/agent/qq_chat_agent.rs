@@ -28,6 +28,7 @@ use storage_handler::{
 };
 use tokio::task::JoinHandle;
 use zihuan_agent::brain::BrainTool;
+use zihuan_agent::session_state::QqChatAgentSessionState;
 use zihuan_core::agent_config::QqChatAgentConfig;
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
@@ -413,7 +414,7 @@ pub async fn spawn(
         shared_inputs: Vec::<FunctionPortDef>::new(),
         tool_definitions,
         shared_runtime_values: HashMap::new(),
-        session_state_store: Arc::new(Mutex::new(HashMap::new())),
+        session_state_store: Arc::new(Mutex::new(QqChatAgentSessionState::default())),
         task_runtime,
     })?);
 

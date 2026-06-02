@@ -324,9 +324,7 @@ impl QqChatAgent {
             ctx.session_state_store
                 .lock()
                 .unwrap()
-                .get(&history_key)
-                .cloned()
-                .unwrap_or_default()
+                .clone()
         };
         let emotion_dimensions = current_qq_chat_agent_config()?.resolved_emotion_dimensions();
         let mut current_session_state = current_session_state;
@@ -804,10 +802,8 @@ impl QqChatAgent {
             ));
         }
         save_history(ctx.cache, &history_key, history);
-        ctx.session_state_store.lock().unwrap().insert(
-            history_key.clone(),
-            turn_session_state.lock().unwrap().clone(),
-        );
+        *ctx.session_state_store.lock().unwrap() =
+            turn_session_state.lock().unwrap().clone();
 
         let result_summary = if let Some(ref assistant_text) = visible_assistant_history_text {
             format!(
