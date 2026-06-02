@@ -45,15 +45,18 @@ use storage_handler::AgentMemoryAccessContext;
 use crate::nodes::tool_subgraph::{ToolResultMode, ToolSubgraphRunner};
 use crate::storage::qq_chat_history_store::{conversation_history_key, load_history, save_history};
 
+use crate::agent::qq_chat_agent_msg_send::send_direct_text_reply;
+
 use super::{
-    build_agent_state_snapshot_message, build_group_system_prompt, build_merged_follow_up_event,
-    build_output_contract_priming_message, build_private_system_prompt, build_user_message,
-    expand_event_for_inference, extract_user_message_text, hydrate_missing_reply_sources,
-    message_with_api_style, send_direct_text_reply, sender_display_name, summarize_task_text,
-    truncate_for_log, QqChatAgent, QqChatAgentContext, QqChatHandleReport, QqChatSteerHook,
+    build_group_system_prompt, build_merged_follow_up_event,
+    build_private_system_prompt, build_user_message,
+    expand_messages_for_inference, extract_user_message_text, hydrate_missing_reply_sources,
+    message_with_api_style,
+    QqChatAgent, QqChatAgentContext, QqChatHandleReport, QqChatSteerHook,
     QqChatTaskTrace, QqChatTurnResult, QqCommandSideEffectContext, QqLongTaskNotifier, LOG_PREFIX,
     LOG_TEXT_PREVIEW_CHARS,
 };
+use zihuan_core::utils::string_utils::shorten_text;
 
 impl QqChatAgent {
     pub(crate) fn build_command_context(
@@ -139,6 +142,19 @@ impl QqChatAgent {
 
         let has_passthrough = passthrough_text.is_some();
         if result.inject_to_llm {
+            let is_group = matches!(
+                cmd_ctx.channel,
+                CommandChannel::QqChat { is_group: true, .. }
+            );
+            let cmd_system_prompt = if is_group {
+                build_group_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
+            } else {
+                build_private_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
+            };
+            let cmd_session_state = ctx.session_state_store.lock().unwrap().clone();
+            let cmd_emotion_dimensions =
+                current_qq_chat_agent_config()?.resolved_emotion_dimensions();
+
             let user_msg_for_cmd = message_with_api_style(
                 build_user_message(
                     hydrated_event,
@@ -146,6 +162,9 @@ impl QqChatAgent {
                     ctx.bot_name,
                     ctx.llm.supports_multimodal_input(),
                     ctx.s3_ref,
+                    &cmd_system_prompt,
+                    &cmd_session_state,
+                    &cmd_emotion_dimensions,
                 ),
                 ctx.llm.api_style(),
             );
@@ -213,7 +232,9 @@ impl QqChatAgent {
 
                 let steer_count = pending.len();
                 let next_event = build_merged_follow_up_event(&pending);
-                let next_inference_event = expand_event_for_inference(&next_event);
+                let mut next_inference_event = next_event.clone();
+                next_inference_event.message_list =
+                    expand_messages_for_inference(&next_event.message_list);
                 let next_message =
                     extract_user_message_text(&next_inference_event, &bot_id, ctx.bot_name);
                 trace.record_steer_follow_up(
@@ -231,7 +252,7 @@ impl QqChatAgent {
                     remaining_queue_len,
                     accepted_steer_count,
                     ctx.max_steer_count,
-                    truncate_for_log(&next_message, LOG_TEXT_PREVIEW_CHARS)
+                    shorten_text(&next_message, LOG_TEXT_PREVIEW_CHARS)
                 );
                 current_event = next_event;
                 current_time = pending
@@ -271,7 +292,9 @@ impl QqChatAgent {
         ctx: &QqChatAgentContext<'_>,
     ) -> Result<QqChatTurnResult> {
         let hydrated_event = hydrate_missing_reply_sources(event, ctx.adapter);
-        let inference_event = expand_event_for_inference(&hydrated_event);
+        let mut inference_event = hydrated_event.clone();
+        inference_event.message_list =
+            expand_messages_for_inference(&hydrated_event.message_list);
         let raw_user_message = extract_user_message_text(&hydrated_event, bot_id, ctx.bot_name);
         let mut current_message = extract_user_message_text(&inference_event, bot_id, ctx.bot_name);
         trace.log_user_message(&raw_user_message, &current_message);
@@ -331,6 +354,18 @@ impl QqChatAgent {
         current_session_state.sync_emotion_dimensions(&emotion_dimensions);
         let turn_session_state = Arc::new(Mutex::new(current_session_state));
 
+        let system_prompt = if is_group {
+            build_group_system_prompt(
+                ctx.bot_name,
+                ctx.agent_system_prompt,
+            )
+        } else {
+            build_private_system_prompt(
+                ctx.bot_name,
+                ctx.agent_system_prompt,
+            )
+        };
+
         let user_msg = message_with_api_style(
             build_user_message(
                 &hydrated_event,
@@ -338,6 +373,9 @@ impl QqChatAgent {
                 ctx.bot_name,
                 ctx.llm.supports_multimodal_input(),
                 ctx.s3_ref,
+                &system_prompt,
+                &turn_session_state.lock().unwrap(),
+                &emotion_dimensions,
             ),
             ctx.llm.api_style(),
         );
@@ -359,37 +397,6 @@ impl QqChatAgent {
         }
         trace.record_history_stats(history.len(), estimate_messages_tokens(&history));
 
-        let system_prompt = if is_group {
-            let group_name = inference_event.group_name.as_deref().unwrap_or("未知");
-            build_group_system_prompt(
-                ctx.bot_name,
-                sender_id,
-                &sender_display_name(
-                    &inference_event.sender.nickname,
-                    &inference_event.sender.card,
-                ),
-                group_name,
-                target_id,
-                ctx.agent_system_prompt,
-            )
-        } else {
-            build_private_system_prompt(
-                ctx.bot_name,
-                sender_id,
-                &sender_display_name(
-                    &inference_event.sender.nickname,
-                    &inference_event.sender.card,
-                ),
-                ctx.agent_system_prompt,
-            )
-        };
-        let system_msg = OpenAIMessage::system(system_prompt);
-        let state_msg = build_agent_state_snapshot_message(
-            &turn_session_state.lock().unwrap(),
-            &emotion_dimensions,
-        );
-        let priming_msg = build_output_contract_priming_message();
-
         let shared_runtime_values = Arc::new(Mutex::new(ctx.shared_runtime_values.clone()));
         {
             let mut locked = shared_runtime_values.lock().unwrap();
@@ -409,10 +416,7 @@ impl QqChatAgent {
             );
         }
 
-        let mut conversation: Vec<OpenAIMessage> = Vec::with_capacity(history.len() + 4);
-        conversation.push(system_msg);
-        conversation.push(state_msg);
-        conversation.push(priming_msg);
+        let mut conversation: Vec<OpenAIMessage> = Vec::with_capacity(history.len() + 1);
         conversation.extend(history.iter().cloned());
         conversation.push(user_msg.clone());
         let mut brain_conversation =
@@ -438,6 +442,9 @@ impl QqChatAgent {
             trace: trace.clone(),
             consumed_messages: Arc::clone(&consumed_steer_messages),
             shared_runtime_values: Arc::clone(&shared_runtime_values),
+            system_prompt: system_prompt.clone(),
+            session_state: Arc::clone(&turn_session_state),
+            emotion_dimensions: emotion_dimensions.clone(),
         }));
 
         if let (Some(memory_ref), Some(embedding_model)) = (
@@ -808,7 +815,7 @@ impl QqChatAgent {
         let result_summary = if let Some(ref assistant_text) = visible_assistant_history_text {
             format!(
                 "已回复[{sender_id}]，内容：{}",
-                summarize_task_text(assistant_text, 80)
+                zihuan_core::utils::string_utils::shorten_text(assistant_text, 80)
             )
         } else if matches!(stop_reason, BrainStopReason::TransportError(_)) {
             format!("回复[{sender_id}]失败：模型请求异常")

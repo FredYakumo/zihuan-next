@@ -14,6 +14,8 @@ use ims_bot_adapter::models::message::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use zihuan_core::error::{Error, Result};
+use zihuan_core::utils::string_utils::parse_tag_value;
+use zihuan_agent::utils::string_utils::is_no_reply_directive;
 use zihuan_graph_engine::data_value::DataValue;
 use zihuan_graph_engine::message_restore::restore_media_by_id;
 use zihuan_nlp::{PunctuationSegmenter, TextSegmenter};
@@ -815,8 +817,8 @@ fn parse_bracket_segment(chars: &[char], start: usize) -> Option<(ReplySegment, 
         if chars[end] == ']' {
             let inner: String = chars[start + 1..end].iter().collect();
             let inner = inner.trim();
-            if let Some(control) = parse_bracket_control(inner) {
-                return Some((control, end + 1));
+            if is_no_reply_directive(inner) {
+                return Some((ReplySegment::NoReply, end + 1));
             }
             if let Some(message) = parse_bracket_message(inner) {
                 return Some((message, end + 1));
@@ -842,39 +844,6 @@ fn parse_bracket_message(inner: &str) -> Option<ReplySegment> {
         description: None,
         mime_type: None,
     })))
-}
-
-fn parse_bracket_control(inner: &str) -> Option<ReplySegment> {
-    if inner.eq_ignore_ascii_case("no reply") {
-        return Some(ReplySegment::NoReply);
-    }
-    None
-}
-
-fn parse_tag_value(value: &str) -> Option<String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    if trimmed.len() >= 2 {
-        let quoted = trimmed
-            .strip_prefix('"')
-            .and_then(|value| value.strip_suffix('"'))
-            .or_else(|| {
-                trimmed
-                    .strip_prefix('\'')
-                    .and_then(|value| value.strip_suffix('\''))
-            });
-        if let Some(value) = quoted {
-            let inner = value.trim();
-            if !inner.is_empty() {
-                return Some(inner.to_string());
-            }
-        }
-    }
-
-    Some(trimmed.to_string())
 }
 
 #[cfg(test)]

@@ -1,17 +1,14 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
-use chrono::Local;
 use log::{info, warn};
 use serde_json::Value;
 use zihuan_agent::session_state::QqChatAgentSessionState;
-use zihuan_nlp::{PunctuationSegmenter, TextSegmenter};
 
-use super::qq_chat_agent_ignore_store::should_ignore_message_blocking;
 pub(crate) use super::qq_chat_agent_logging::QqChatTaskTrace;
 use super::qq_chat_agent_msg_send::{
     build_long_task_complete_content, build_long_task_start_text, send_forward_content,
-    send_notification_text, send_planned_batches, QqReplyDirective, QqSendContext,
+    send_notification_text, QqAgentReplyBatchBuilder, QqSendContext,
 };
 pub(crate) use super::tools::build_info_brain_tools;
 use super::tools::{
@@ -24,18 +21,13 @@ use super::tools::{
 use crate::nodes::tool_subgraph::{
     validate_shared_inputs, validate_tool_definitions, ToolResultMode,
 };
-use crate::storage::qq_chat_history_store::{
-    clear_history, conversation_history_key, load_history,
-};
-use crate::storage::qq_chat_session_store::{
-    build_outbound_persistence, release_session, try_claim_session,
-};
+use crate::storage::qq_chat_history_store::clear_history;
+use crate::storage::qq_chat_session_store::build_outbound_persistence;
 use ims_bot_adapter::adapter::restore_messages_for_message_id;
-use ims_bot_adapter::message_helpers::get_bot_id;
-use ims_bot_adapter::models::event_model::{MessageEvent, MessageType};
+use ims_bot_adapter::models::event_model::MessageEvent;
 use ims_bot_adapter::models::message::{
-    AtTargetMessage, ForwardMessage, ForwardNodeMessage, Message, MessageProp, PersistedMedia,
-    PersistedMediaSource, PlainTextMessage, ReplyMessage,
+    Message, MessageProp, PersistedMedia, PersistedMediaSource, PlainTextMessage,
+    ReplyMessage,
 };
 use ims_bot_adapter::multimodal_image_url::{
     resolve_image_message_part, resolve_plain_text_segments, ImagePartSource, ResolvedTextSegment,
@@ -51,23 +43,20 @@ use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::{ContentPart, MessageContent, OpenAIMessage};
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::runtime::block_async;
-use zihuan_core::task_context::{
-    scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime,
-    AgentTaskStatus,
-};
+use zihuan_core::task_context::AgentTaskRuntime;
+use zihuan_core::utils::string_utils::extract_string_field;
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::brain_tool_spec::{
     BrainToolDefinition, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use zihuan_graph_engine::data_value::{OpenAIMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
-use zihuan_graph_engine::message_persistence::persist_message_event;
 use zihuan_graph_engine::message_restore::register_media;
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
 
 pub(crate) const LOG_PREFIX: &str = "[QqChatAgent]";
-const MAX_REPLY_CHARS: usize = 250;
+pub(crate) const MAX_REPLY_CHARS: usize = 250;
 pub(crate) const LOG_TEXT_PREVIEW_CHARS: usize = 1_200;
 const LOG_TOOL_PREVIEW_CHARS: usize = 600;
 pub(crate) const DIRECT_REPLY_NO_SYSTEM_PROMPT: &str = "没有系统提示词";
@@ -77,13 +66,13 @@ const STEER_PREFIX: &str =
 
 #[derive(Debug, Clone)]
 pub(crate) struct QqChatHandleReport {
-    result_summary: String,
+    pub(crate) result_summary: String,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct PendingSteerEvent {
-    event: MessageEvent,
-    time: String,
+    pub(crate) event: MessageEvent,
+    pub(crate) time: String,
 }
 
 #[derive(Debug, Default)]
@@ -153,7 +142,7 @@ impl SideEffectContext for QqCommandSideEffectContext<'_> {
 }
 
 impl PendingSteerStore {
-    fn enqueue_with_limit(
+    pub(crate) fn enqueue_with_limit(
         &self,
         sender_id: &str,
         pending: PendingSteerEvent,
@@ -195,7 +184,7 @@ impl PendingSteerStore {
         Some((popped, remaining_queue_len, accepted_steer_count))
     }
 
-    fn finish_session(&self, sender_id: &str) {
+    pub(crate) fn finish_session(&self, sender_id: &str) {
         let mut guard = self.by_sender.lock().unwrap();
         if let Some(session) = guard.get_mut(sender_id) {
             session.accepted_steer_count = 0;
@@ -205,7 +194,7 @@ impl PendingSteerStore {
         }
     }
 
-    fn ensure_session_entry(&self, sender_id: &str) {
+    pub(crate) fn ensure_session_entry(&self, sender_id: &str) {
         let mut guard = self.by_sender.lock().unwrap();
         guard.entry(sender_id.to_string()).or_default();
     }
@@ -258,55 +247,22 @@ fn build_common_system_rules(identity_example: &str, agent_system_prompt: Option
 /// System prompt template (shared, private variant).
 pub(crate) fn build_private_system_prompt(
     bot_name: &str,
-    sender_id: &str,
-    sender_name: &str,
     agent_system_prompt: Option<&str>,
 ) -> String {
-    let rules = build_common_system_rules(&format!("我是{bot_name}。"), agent_system_prompt);
-    format!(
-        "你的名字叫`{bot_name}`。你的QQ好友`{sender_name}`(QQ号`{sender_id}`)向你发送了一条消息，请调用回复工具进行回复\n\
-         {rules}"
-    )
+    build_common_system_rules(&format!("你的名字叫{bot_name}。"), agent_system_prompt)
 }
 
 /// System prompt template (group variant).
 pub(crate) fn build_group_system_prompt(
     bot_name: &str,
-    sender_id: &str,
-    sender_name: &str,
-    group_name: &str,
-    group_id: &str,
     agent_system_prompt: Option<&str>,
 ) -> String {
-    let mut rules = build_common_system_rules(&format!("我是{bot_name}。"), agent_system_prompt);
+    let mut rules =
+        build_common_system_rules(&format!("你的名字叫{bot_name}。"), agent_system_prompt);
     rules.push_str(&format!(
         "\n- 群聊里如果需要明确提醒对方，可在调用 `send_natural_language_reply` 时把 mention_sender 设为 true。"
     ));
-    format!(
-        "你的名字叫`{bot_name}`。你正在`{group_name}`群(群号:{group_id})里聊天，群友`{sender_name}`(QQ号`{sender_id}`)向你发送了一条消息，请调用回复工具进行回复\n\
-         {rules}"
-    )
-}
-
-pub(crate) fn truncate_for_log(text: &str, max_chars: usize) -> String {
-    let total_chars = text.chars().count();
-    if total_chars <= max_chars {
-        return text.to_string();
-    }
-
-    let truncated: String = text.chars().take(max_chars).collect();
-    format!("{truncated}...(truncated,total_chars={total_chars})")
-}
-
-fn json_for_log<T: serde::Serialize>(value: &T, max_chars: usize) -> String {
-    match serde_json::to_string(value) {
-        Ok(json) => truncate_for_log(&json, max_chars),
-        Err(err) => format!("<serialize failed: {err}>"),
-    }
-}
-
-fn debug_for_log<T: std::fmt::Debug>(value: &T, max_chars: usize) -> String {
-    truncate_for_log(&format!("{value:?}"), max_chars)
+    rules
 }
 
 pub(crate) fn emotion_dimensions_snapshot_json(
@@ -335,256 +291,6 @@ pub(crate) fn sender_display_name(sender_name: &str, sender_card: &str) -> Strin
     } else {
         card.to_string()
     }
-}
-
-fn strip_leading_bot_mention(text: &str, bot_id: &str, bot_name: &str) -> String {
-    let mut remaining = text.trim_start();
-    loop {
-        let mut stripped = false;
-
-        for pattern in [bot_id, bot_name] {
-            let pattern = pattern.trim();
-            if pattern.is_empty() {
-                continue;
-            }
-
-            for prefix in [format!("@{pattern}"), format!("＠{pattern}")] {
-                if let Some(rest) = remaining.strip_prefix(&prefix) {
-                    remaining = rest.trim_start_matches(|c: char| {
-                        matches!(
-                            c,
-                            ' ' | '\t'
-                                | '\n'
-                                | '\r'
-                                | ','
-                                | '，'
-                                | '。'
-                                | ':'
-                                | '：'
-                                | '!'
-                                | '！'
-                                | '?'
-                                | '？'
-                        )
-                    });
-                    stripped = true;
-                    break;
-                }
-            }
-
-            if stripped {
-                break;
-            }
-        }
-
-        if !stripped {
-            break;
-        }
-    }
-
-    remaining.trim().to_string()
-}
-
-fn strip_leading_textual_mention<'a>(text: &'a str, patterns: &[String]) -> Option<&'a str> {
-    let mut remaining = text.trim_start();
-
-    for pattern in patterns {
-        let pattern = pattern.trim();
-        if pattern.is_empty() {
-            continue;
-        }
-
-        for prefix in [format!("@{pattern}"), format!("＠{pattern}")] {
-            if let Some(rest) = remaining.strip_prefix(&prefix) {
-                remaining = rest.trim_start_matches(|c: char| {
-                    matches!(
-                        c,
-                        ' ' | '\t'
-                            | '\n'
-                            | '\r'
-                            | ','
-                            | '，'
-                            | '。'
-                            | ':'
-                            | '：'
-                            | '!'
-                            | '！'
-                            | '?'
-                            | '？'
-                    )
-                });
-                return Some(remaining);
-            }
-        }
-    }
-
-    None
-}
-
-fn sender_mention_patterns(
-    sender_id: &str,
-    sender_nickname: &str,
-    sender_card: &str,
-) -> Vec<String> {
-    let mut patterns = Vec::new();
-
-    for candidate in [sender_id, sender_nickname, sender_card] {
-        let candidate = candidate.trim();
-        if candidate.is_empty() {
-            continue;
-        }
-        if !patterns.iter().any(|item| item == candidate) {
-            patterns.push(candidate.to_string());
-        }
-    }
-
-    patterns
-}
-
-pub(crate) fn summarize_task_text(text: &str, max_chars: usize) -> String {
-    let compact = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    let mut chars = compact.chars();
-    let summary: String = chars.by_ref().take(max_chars).collect();
-    if chars.next().is_some() {
-        format!("{summary}...")
-    } else {
-        summary
-    }
-}
-
-fn assistant_reply_batches(
-    content: &str,
-    is_group: bool,
-    sender_id: &str,
-    sender_nickname: &str,
-    sender_card: &str,
-) -> Vec<Vec<Message>> {
-    if !is_group {
-        return plain_text_batches(content);
-    }
-
-    let patterns = sender_mention_patterns(sender_id, sender_nickname, sender_card);
-    if let Some(rest) = strip_leading_textual_mention(content, &patterns) {
-        let trimmed_rest = rest.trim();
-        let mut batch = vec![Message::At(AtTargetMessage {
-            target: Some(sender_id.to_string()),
-        })];
-
-        if !trimmed_rest.is_empty() {
-            batch.push(Message::PlainText(PlainTextMessage {
-                text: format!(" {trimmed_rest}"),
-            }));
-        }
-
-        return vec![batch];
-    }
-
-    plain_text_batches(content)
-}
-
-#[derive(Debug, Clone)]
-pub struct QqAgentReplyBuildRequest {
-    pub assistant_text: String,
-    pub is_group: bool,
-    pub sender_id: String,
-    pub sender_nickname: String,
-    pub sender_card: String,
-    pub bot_id: String,
-    pub bot_name: String,
-    pub max_message_length: usize,
-    /// Reply target chosen by the `reply_message` tool, if any.
-    pub reply_directive: Option<QqReplyDirective>,
-    /// Message ID of the event that triggered this agent invocation.
-    pub trigger_message_id: Option<i64>,
-    /// Media candidates discovered during the current inference turn, keyed by media_id.
-    pub available_media: HashMap<String, PersistedMedia>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct QqAgentReplyBuildResult {
-    pub batches: Vec<Vec<Message>>,
-    pub suppress_send: bool,
-}
-
-pub type QqAgentReplyBatchBuilder =
-    Arc<dyn Fn(&QqAgentReplyBuildRequest) -> Result<QqAgentReplyBuildResult> + Send + Sync>;
-
-pub(crate) fn build_reply_result(
-    content: &str,
-    is_group: bool,
-    sender_id: &str,
-    sender_nickname: &str,
-    sender_card: &str,
-    bot_id: &str,
-    bot_name: &str,
-    max_message_length: usize,
-    reply_directive: Option<QqReplyDirective>,
-    trigger_message_id: Option<i64>,
-    available_media: HashMap<String, PersistedMedia>,
-    reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
-) -> Result<QqAgentReplyBuildResult> {
-    let trimmed = content.trim();
-    if trimmed.is_empty() {
-        return Ok(QqAgentReplyBuildResult::default());
-    }
-
-    if let Some(builder) = reply_batch_builder {
-        return builder(&QqAgentReplyBuildRequest {
-            assistant_text: trimmed.to_string(),
-            is_group,
-            sender_id: sender_id.to_string(),
-            sender_nickname: sender_nickname.to_string(),
-            sender_card: sender_card.to_string(),
-            bot_id: bot_id.to_string(),
-            bot_name: bot_name.to_string(),
-            max_message_length,
-            reply_directive,
-            trigger_message_id,
-            available_media,
-        });
-    }
-
-    Ok(QqAgentReplyBuildResult {
-        batches: assistant_reply_batches(
-            trimmed,
-            is_group,
-            sender_id,
-            sender_nickname,
-            sender_card,
-        ),
-        suppress_send: false,
-    })
-}
-
-fn build_reply_batches(
-    content: &str,
-    is_group: bool,
-    sender_id: &str,
-    sender_nickname: &str,
-    sender_card: &str,
-    bot_id: &str,
-    bot_name: &str,
-    max_message_length: usize,
-    reply_directive: Option<QqReplyDirective>,
-    trigger_message_id: Option<i64>,
-    available_media: HashMap<String, PersistedMedia>,
-    reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
-) -> Result<Vec<Vec<Message>>> {
-    Ok(build_reply_result(
-        content,
-        is_group,
-        sender_id,
-        sender_nickname,
-        sender_card,
-        bot_id,
-        bot_name,
-        max_message_length,
-        reply_directive,
-        trigger_message_id,
-        available_media,
-        reply_batch_builder,
-    )?
-    .batches)
 }
 
 #[derive(Debug, Default)]
@@ -768,6 +474,46 @@ struct CurrentTurnUserInput {
     is_at_me: bool,
     at_target_list: Vec<String>,
     messages: Vec<Message>,
+}
+
+impl CurrentTurnUserInput {
+    fn new(
+        event: &ims_bot_adapter::models::MessageEvent,
+        bot_id: &str,
+        bot_name: &str,
+    ) -> CurrentTurnUserInput {
+        let msg_prop = MessageProp::from_messages_with_bot_name(
+            &event.message_list,
+            Some(bot_id),
+            Some(bot_name),
+        );
+        let mut user_text = render_current_message_body(&event.message_list).unwrap_or_default();
+        if msg_prop.is_at_me {
+            user_text = zihuan_core::utils::string_utils::strip_leading_bot_mention(
+                &user_text, bot_id, bot_name,
+            );
+        }
+        let reference_blocks = collect_reply_reference_text(&event.message_list);
+        let mut sections = Vec::new();
+
+        let trimmed_user_text = user_text.trim();
+        if !trimmed_user_text.is_empty() {
+            sections.push(trimmed_user_text.to_string());
+        } else if reference_blocks.is_empty() {
+            sections.push("(无文本内容，可能是仅@或回复)".to_string());
+        }
+
+        for reference_text in reference_blocks {
+            sections.push(format!("[引用内容]\n{reference_text}"));
+        }
+
+        CurrentTurnUserInput {
+            text: sections.join("\n\n"),
+            is_at_me: msg_prop.is_at_me,
+            at_target_list: msg_prop.at_target_list,
+            messages: event.message_list.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -962,44 +708,11 @@ fn collect_reply_reference_text(messages: &[Message]) -> Vec<String> {
         .collect()
 }
 
-fn build_current_turn_user_input(
-    event: &ims_bot_adapter::models::MessageEvent,
-    bot_id: &str,
-    bot_name: &str,
-) -> CurrentTurnUserInput {
-    let msg_prop =
-        MessageProp::from_messages_with_bot_name(&event.message_list, Some(bot_id), Some(bot_name));
-    let mut user_text = render_current_message_body(&event.message_list).unwrap_or_default();
-    if msg_prop.is_at_me {
-        user_text = strip_leading_bot_mention(&user_text, bot_id, bot_name);
-    }
-    let reference_blocks = collect_reply_reference_text(&event.message_list);
-    let mut sections = Vec::new();
-
-    let trimmed_user_text = user_text.trim();
-    if !trimmed_user_text.is_empty() {
-        sections.push(trimmed_user_text.to_string());
-    } else if reference_blocks.is_empty() {
-        sections.push("(无文本内容，可能是仅@或回复)".to_string());
-    }
-
-    for reference_text in reference_blocks {
-        sections.push(format!("[引用内容]\n{reference_text}"));
-    }
-
-    CurrentTurnUserInput {
-        text: sections.join("\n\n"),
-        is_at_me: msg_prop.is_at_me,
-        at_target_list: msg_prop.at_target_list,
-        messages: event.message_list.clone(),
-    }
-}
-
 /// Recursively flattens nested message structures into a linear list suitable for LLM inference.
 ///
 /// Wraps `Reply` and `Forward` messages with plain-text boundary markers so the model can
 /// distinguish quoted content from the current turn without relying on opaque nested types.
-fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message> {
+pub(crate) fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message> {
     let mut expanded = Vec::new();
 
     for message in messages {
@@ -1043,22 +756,81 @@ fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message> {
     expanded
 }
 
-pub(crate) fn expand_event_for_inference(
-    event: &ims_bot_adapter::models::MessageEvent,
-) -> ims_bot_adapter::models::MessageEvent {
-    let mut expanded_event = event.clone();
-    expanded_event.message_list = expand_messages_for_inference(&event.message_list);
-    expanded_event
+/// Builds the prefix lines shared by all user-message construction paths:
+/// `[Agent State Snapshot]` + `[System Instructions]`.
+fn build_state_system_prefix_lines(
+    session_state: &QqChatAgentSessionState,
+    emotion_dimensions: &[QqChatEmotionDimensionConfig],
+    character_instructions: &str,
+) -> Vec<String> {
+    vec![
+        "**Your character's current state**:".to_string(),
+        format!(
+            "- Your emotion state: {}",
+            emotion_dimensions_snapshot_json(session_state, emotion_dimensions)
+        ),
+        format!("- Your character instructions: {}", character_instructions),
+    ]
 }
 
-/// Build a structured user message for the LLM so sender identity and bot mentions stay explicit.
+/// Build a structured user-role message from a QQ message event for LLM inference.
+///
+/// # Purpose
+///
+/// Constructs the user message that represents the current conversation turn. The message
+/// carries explicit metadata (sender identity, bot identity, whether the bot was @-mentioned,
+/// and @-target list) so the model never needs to infer who is speaking or who is being
+/// addressed from message text alone.
+///
+/// # Design
+///
+/// The function follows a two-path strategy depending on whether the target LLM supports
+/// multimodal (image) input:
+///
+/// * **Text-only path** (`llm_supports_multimodal_input == false`): builds the message as a
+///   plain `ContentPart::Text` with metadata lines, the user message body, and image
+///   reference hints (media_id strings the model can pass to image-analysis tools later).
+/// * **Multimodal path**: constructs `ContentPart::Parts` arrays where images discovered in
+///   the message body (inline images, reply sources, forwarded content) are resolved via S3
+///   and embedded as `image_url` parts alongside text. The metadata block is prepended to
+///   the first text part.
+///
+/// Message structures nested inside `Reply` and `Forward` are recursively unwrapped during
+/// multimodal construction, with quoted/forwarded content clearly delimited by text markers
+/// (e.g. `[引用内容]`, `[转发内容]`).
+///
+/// The sender name visible to the LLM is resolved via `sender_display_name`, which prefers
+/// the group card name over the raw nickname.
+///
+/// # Architecture
+///
+/// Called at the start of every agent inference turn (both the initial `handle` and
+/// steer-injection via `QqChatSteerHook::on_before_inference`). The returned
+/// `OpenAIMessage` is pushed into the conversation cache and fed to the Brain tool-call
+/// loop.
+///
+/// # Parameters
+///
+/// * `event` — the raw QQ message event (already hydrated with reply sources).
+/// * `bot_id` / `bot_name` — the bot's own QQ identity, used to detect @-mentions and
+///   provide self-identity context to the model.
+/// * `llm_supports_multimodal_input` — when true, images are resolved via S3 and embedded
+///   as `image_url` content parts; when false, only textual `media_id` references are
+///   emitted.
+/// * `s3_ref` — optional S3 handle for resolving image URLs to object-storage paths.
 pub(crate) fn build_user_message(
     event: &ims_bot_adapter::models::MessageEvent,
     bot_id: &str,
     bot_name: &str,
     llm_supports_multimodal_input: bool,
     s3_ref: Option<&Arc<S3Ref>>,
+    character_instructions: &str,
+    session_state: &QqChatAgentSessionState,
+    emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> OpenAIMessage {
+    let mut lines =
+        build_state_system_prefix_lines(session_state, emotion_dimensions, character_instructions);
+
     let current_input = build_current_turn_user_input(event, bot_id, bot_name);
     let sender_name = sender_display_name(&event.sender.nickname, &event.sender.card);
     let mut metadata_lines = Vec::new();
@@ -1077,7 +849,10 @@ pub(crate) fn build_user_message(
         ));
     }
 
-    let mut lines = metadata_lines.clone();
+    lines.push(String::new());
+
+    // Section 3: Message Metadata + User Message
+    lines.extend(metadata_lines.clone());
     lines.push(String::new());
     lines.push("[用户消息]".to_string());
     lines.push(current_input.text.clone());
@@ -1087,13 +862,23 @@ pub(crate) fn build_user_message(
         lines.push("[可分析图片]".to_string());
         lines.extend(image_reference_lines);
     }
+    lines.push(String::new());
+
+    // Section 4: Processing Instructions
+    lines.push(PROCESSING_INSTRUCTION.to_string());
 
     let user_text = lines.join("\n");
     if !llm_supports_multimodal_input {
         return OpenAIMessage::user(user_text);
     }
 
-    let mut parts = Vec::new();
+    // Build multimodal message with state + system prompt prepended as text parts
+    let state_text =
+        build_state_system_prefix_lines(session_state, emotion_dimensions, system_prompt)
+            .join("\n");
+    let state_text = format!("{state_text}\n");
+
+    let mut parts = vec![ContentPart::text(state_text)];
     let mut text_buffer = format!("{}\n\n[用户消息]\n", metadata_lines.join("\n"));
     let mut has_media = false;
     let mut image_stats = MultimodalImageStats::default();
@@ -1120,6 +905,8 @@ pub(crate) fn build_user_message(
             image_stats.data_url_images,
             image_stats.skipped_images,
         );
+        // Append processing instructions
+        parts.push(ContentPart::text(PROCESSING_INSTRUCTION.to_string()));
         if parts.is_empty() {
             OpenAIMessage::user("(无可用文本内容)")
         } else {
@@ -1137,6 +924,9 @@ fn build_steer_user_message(
     llm_supports_multimodal_input: bool,
     s3_ref: Option<&Arc<S3Ref>>,
     api_style: Option<&str>,
+    system_prompt: &str,
+    session_state: &QqChatAgentSessionState,
+    emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> OpenAIMessage {
     let mut steer_message = build_user_message(
         event,
@@ -1144,6 +934,9 @@ fn build_steer_user_message(
         bot_name,
         llm_supports_multimodal_input,
         s3_ref,
+        system_prompt,
+        session_state,
+        emotion_dimensions,
     );
 
     match steer_message.content.as_mut() {
@@ -1172,8 +965,15 @@ fn build_merged_steer_user_message(
     llm_supports_multimodal_input: bool,
     s3_ref: Option<&Arc<S3Ref>>,
     api_style: Option<&str>,
+    system_prompt: &str,
+    session_state: &QqChatAgentSessionState,
+    emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> OpenAIMessage {
     if !llm_supports_multimodal_input {
+        let prefix_lines =
+            build_state_system_prefix_lines(session_state, emotion_dimensions, system_prompt);
+        let prefix = prefix_lines.join("\n");
+
         let merged_text = events
             .iter()
             .enumerate()
@@ -1184,14 +984,23 @@ fn build_merged_steer_user_message(
             .collect::<Vec<_>>()
             .join("\n");
 
-        let mut steer_message = OpenAIMessage::user(format!("{STEER_PREFIX}\n\n{merged_text}"));
+        let mut steer_message = OpenAIMessage::user(format!(
+            "{STEER_PREFIX}\n\n{prefix}\n\n{merged_text}\n\n{PROCESSING_INSTRUCTION}"
+        ));
         if let Some(api_style) = api_style {
             steer_message.api_style = Some(api_style.to_string());
         }
         return steer_message;
     }
 
-    let mut parts = vec![ContentPart::text(format!("{STEER_PREFIX}\n\n"))];
+    let prefix_lines =
+        build_state_system_prefix_lines(session_state, emotion_dimensions, system_prompt);
+    let state_text = format!("{}\n", prefix_lines.join("\n"));
+
+    let mut parts = vec![
+        ContentPart::text(format!("{STEER_PREFIX}\n\n")),
+        ContentPart::text(state_text.clone()),
+    ];
     let mut text_buffer = String::new();
     let mut has_media = false;
     let mut image_stats = MultimodalImageStats::default();
@@ -1215,7 +1024,8 @@ fn build_merged_steer_user_message(
 
     flush_text_part(&mut parts, &mut text_buffer);
 
-    let mut steer_message = if has_media && parts.len() > 1 {
+    let mut steer_message = if has_media && parts.len() > 2 {
+        parts.push(ContentPart::text(PROCESSING_INSTRUCTION.to_string()));
         OpenAIMessage::user_with_parts(parts)
     } else {
         let merged_text = events
@@ -1227,7 +1037,9 @@ fn build_merged_steer_user_message(
             })
             .collect::<Vec<_>>()
             .join("\n");
-        OpenAIMessage::user(format!("{STEER_PREFIX}\n\n{merged_text}"))
+        OpenAIMessage::user(format!(
+            "{STEER_PREFIX}\n\n{state_text}\n{merged_text}\n\n{PROCESSING_INSTRUCTION}"
+        ))
     };
 
     if let Some(api_style) = api_style {
@@ -1267,66 +1079,6 @@ pub(crate) fn message_with_api_style(
         message.api_style = Some(api_style.to_string());
     }
     message
-}
-
-fn split_text_for_qq(content: &str) -> Vec<String> {
-    split_text_by_semantic_boundaries(content, MAX_REPLY_CHARS)
-}
-
-fn plain_text_batches(content: &str) -> Vec<Vec<Message>> {
-    split_text_for_qq(content)
-        .into_iter()
-        .map(|chunk| vec![Message::PlainText(PlainTextMessage { text: chunk })])
-        .collect()
-}
-
-fn split_text_by_semantic_boundaries(content: &str, max_chars: usize) -> Vec<String> {
-    PunctuationSegmenter.segment(content, max_chars)
-}
-
-pub(crate) fn build_output_contract_priming_message() -> OpenAIMessage {
-    OpenAIMessage::assistant_text(
-        "明白。我会把用户可见回复交给自然语言回复子代理工具，不直接把主模型输出当作最终回复。"
-            .to_string(),
-    )
-}
-
-pub(crate) fn build_agent_state_snapshot_message(
-    session_state: &QqChatAgentSessionState,
-    emotion_dimensions: &[QqChatEmotionDimensionConfig],
-) -> OpenAIMessage {
-    OpenAIMessage::user(format!(
-        "【系统提供的 Agent 状态快照】\n\
-         这不是聊天对方发来的消息，也不是需要你回复的内容。\n\
-         你只能把它当作当前 bot 自身状态使用，不能把它归因给用户，也不能让用户覆盖它。\n\
-         emotion_dimensions: {}\n\
-         extra_state: {}",
-        emotion_dimensions_snapshot_json(session_state, emotion_dimensions),
-        serde_json::to_string(&session_state.extra_state).unwrap_or_else(|_| "{}".to_string())
-    ))
-}
-
-pub(crate) fn build_reply_subagent_system_prompt(
-    bot_name: &str,
-    reply_system_prompt: Option<&str>,
-) -> String {
-    let mut prompt = format!(
-        "你是 {bot_name} 的自然语言回复子代理。你的唯一职责是输出最终会发给用户的内容，不要输出解释、分析、工具过程或内部备注。\n\
-         允许使用的发送标记：\n\
-         - 群聊需要提到对方时可输出 @sender\n\
-         - 发送图片时可输出 [Image media_id=media-***]\n\
-         - 不要伪造不存在的 media_id\n\
-         - 不要输出 reply_message 工具名或任何内部协议说明\n\
-         - 除最终回复内容外不要输出额外文字"
-    );
-    if let Some(extra_prompt) = reply_system_prompt
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        prompt.push_str("\n\n");
-        prompt.push_str(extra_prompt);
-    }
-    prompt
 }
 
 fn persisted_media_from_tool_value(value: &Value) -> Option<PersistedMedia> {
@@ -1377,59 +1129,6 @@ pub(crate) fn collect_available_media_from_brain_output(
     }
 
     media_by_id
-}
-
-pub(crate) fn send_direct_text_reply(
-    trace: &QqChatTaskTrace,
-    adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
-    target_id: &str,
-    rdb_pool: Option<&RelationalDbConnection>,
-    mysql_ref: Option<&Arc<MySqlConfig>>,
-    group_name: Option<&str>,
-    bot_name: &str,
-    bot_id: &str,
-    content: &str,
-    is_group: bool,
-    sender_id: &str,
-    sender_nickname: &str,
-    sender_card: &str,
-    max_message_length: usize,
-    reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
-) -> Result<Option<String>> {
-    let batches = build_reply_batches(
-        content,
-        is_group,
-        sender_id,
-        sender_nickname,
-        sender_card,
-        bot_id,
-        bot_name,
-        max_message_length,
-        None,
-        None,
-        HashMap::new(),
-        reply_batch_builder,
-    )?;
-    if batches.is_empty() {
-        return Ok(None);
-    }
-
-    let persistence = build_outbound_persistence(rdb_pool, mysql_ref, group_name, bot_name);
-    trace.mark_reply_send_started();
-    let send_ctx = QqSendContext {
-        adapter,
-        target_id,
-        is_group,
-        group_name,
-        bot_id,
-        bot_name,
-        mention_target_id: if is_group { Some(sender_id) } else { None },
-        persistence,
-        max_text_chars: max_message_length,
-    };
-    send_planned_batches(&send_ctx, &batches);
-    trace.record_reply_send(false, true, &batches);
-    Ok(Some(content.trim().to_string()))
 }
 
 pub(crate) fn build_model_name_reply(model_display_names: &[String]) -> String {
@@ -1515,13 +1214,6 @@ impl LongTaskNotifier for QqLongTaskNotifier {
     }
 }
 
-fn extract_string_field(value: &Value, key: &str) -> Option<String> {
-    value
-        .get(key)
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
-}
-
 fn extract_tavily_link(item: &str) -> Option<String> {
     item.lines().find_map(|line| {
         let trimmed = line.trim();
@@ -1535,30 +1227,30 @@ fn extract_tavily_link(item: &str) -> Option<String> {
 }
 
 pub(crate) struct QqChatAgentContext<'a> {
-    adapter: &'a ims_bot_adapter::adapter::SharedBotAdapter,
-    bot_name: &'a str,
-    agent_system_prompt: Option<&'a str>,
-    cache: &'a Arc<OpenAIMessageSessionCacheRef>,
-    llm: &'a Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-    math_programming_llm: &'a Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-    natural_language_reply_llm: &'a Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
-    natural_language_reply_system_prompt: Option<&'a str>,
-    rdb_pool: Option<&'a RelationalDbConnection>,
-    mysql_ref: Option<&'a Arc<MySqlConfig>>,
-    weaviate_image_ref: Option<&'a Arc<WeaviateRef>>,
-    weaviate_memory_ref: Option<&'a Arc<WeaviateRef>>,
-    embedding_model: Option<&'a Arc<dyn EmbeddingBase>>,
-    web_search_engine: &'a Arc<WebSearchEngineRef>,
-    s3_ref: Option<&'a Arc<S3Ref>>,
-    max_message_length: usize,
-    compact_context_length: usize,
-    max_steer_count: usize,
-    reply_batch_builder: Option<&'a QqAgentReplyBatchBuilder>,
-    shared_runtime_values: HashMap<String, DataValue>,
-    session_state_store: &'a Arc<Mutex<QqChatAgentSessionState>>,
-    pending_steer: &'a Arc<PendingSteerStore>,
-    task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
-    task_db_connection_id: Option<String>,
+    pub(crate) adapter: &'a ims_bot_adapter::adapter::SharedBotAdapter,
+    pub(crate) bot_name: &'a str,
+    pub(crate) agent_system_prompt: Option<&'a str>,
+    pub(crate) cache: &'a Arc<OpenAIMessageSessionCacheRef>,
+    pub(crate) llm: &'a Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
+    pub(crate) math_programming_llm: &'a Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
+    pub(crate) natural_language_reply_llm: &'a Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
+    pub(crate) natural_language_reply_system_prompt: Option<&'a str>,
+    pub(crate) rdb_pool: Option<&'a RelationalDbConnection>,
+    pub(crate) mysql_ref: Option<&'a Arc<MySqlConfig>>,
+    pub(crate) weaviate_image_ref: Option<&'a Arc<WeaviateRef>>,
+    pub(crate) weaviate_memory_ref: Option<&'a Arc<WeaviateRef>>,
+    pub(crate) embedding_model: Option<&'a Arc<dyn EmbeddingBase>>,
+    pub(crate) web_search_engine: &'a Arc<WebSearchEngineRef>,
+    pub(crate) s3_ref: Option<&'a Arc<S3Ref>>,
+    pub(crate) max_message_length: usize,
+    pub(crate) compact_context_length: usize,
+    pub(crate) max_steer_count: usize,
+    pub(crate) reply_batch_builder: Option<&'a QqAgentReplyBatchBuilder>,
+    pub(crate) shared_runtime_values: HashMap<String, DataValue>,
+    pub(crate) session_state_store: &'a Arc<Mutex<QqChatAgentSessionState>>,
+    pub(crate) pending_steer: &'a Arc<PendingSteerStore>,
+    pub(crate) task_runtime: Option<Arc<dyn AgentTaskRuntime>>,
+    pub(crate) task_db_connection_id: Option<String>,
 }
 
 pub struct QqChatAgent {
@@ -1584,6 +1276,9 @@ pub(crate) struct QqChatSteerHook {
     pub(crate) trace: QqChatTaskTrace,
     pub(crate) consumed_messages: Arc<Mutex<Vec<OpenAIMessage>>>,
     pub(crate) shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
+    pub(crate) system_prompt: String,
+    pub(crate) session_state: Arc<Mutex<QqChatAgentSessionState>>,
+    pub(crate) emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
 }
 
 impl BrainIterationHook for QqChatSteerHook {
@@ -1603,7 +1298,9 @@ impl BrainIterationHook for QqChatSteerHook {
         let mut consumed_guard = self.consumed_messages.lock().unwrap();
 
         for pending_event in pending {
-            let inference_event = expand_event_for_inference(&pending_event.event);
+            let mut inference_event = pending_event.event.clone();
+            inference_event.message_list =
+                expand_messages_for_inference(&pending_event.event.message_list);
             let current_message =
                 extract_user_message_text(&inference_event, &self.bot_id, &self.bot_name);
             self.trace.record_steer_received(&current_message);
@@ -1618,6 +1315,9 @@ impl BrainIterationHook for QqChatSteerHook {
                 self.llm_supports_multimodal_input,
                 self.s3_ref.as_ref(),
                 self.llm_api_style.as_deref(),
+                &self.system_prompt,
+                &self.session_state.lock().unwrap(),
+                &self.emotion_dimensions,
             )
         } else {
             build_merged_steer_user_message(
@@ -1627,6 +1327,9 @@ impl BrainIterationHook for QqChatSteerHook {
                 self.llm_supports_multimodal_input,
                 self.s3_ref.as_ref(),
                 self.llm_api_style.as_deref(),
+                &self.system_prompt,
+                &self.session_state.lock().unwrap(),
+                &self.emotion_dimensions,
             )
         };
         consumed_guard.push(steer_message.clone());
@@ -1678,7 +1381,7 @@ impl QqChatAgent {
             .unwrap_or(true)
     }
 
-    fn wrap_err(&self, msg: impl Into<String>) -> Error {
+    pub(crate) fn wrap_err(&self, msg: impl Into<String>) -> Error {
         Error::ValidationError(format!("[NODE_ERROR:{}] {}", self.id, msg.into()))
     }
 
@@ -1703,219 +1406,6 @@ impl QqChatAgent {
             "QQ Chat Agent",
         )?;
         Ok(())
-    }
-
-    /// Entry point for handling a single inbound QQ message event.
-    ///
-    /// The flow is:
-    /// - **Validation** — persists the message and checks ignore rules.
-    /// - **Group mention filter** — silently drops group messages that do not `@` the bot.
-    /// - **Session claim** — tries to acquire a per-sender session lock. If the session is busy,
-    ///   the message is enqueued as a steer event instead.
-    /// - **Task tracking** — starts a runtime task (if available) and builds a [`QqChatTaskTrace`].
-    /// - **Delegation** — forwards to [`handle_claimed`] for the actual brain loop and reply.
-    /// - **Cleanup** — releases the session lock, finalizes steer state, and marks the task
-    ///   as completed or failed.
-    fn handle(
-        &self,
-        event: &ims_bot_adapter::models::MessageEvent,
-        time: &str,
-        agent_id: &str,
-        session: &Arc<SessionStateRef>,
-        user_ip: Option<String>,
-        ctx: &QqChatAgentContext<'_>,
-    ) -> Result<()> {
-        let is_group = event.message_type == MessageType::Group;
-        let sender_id = event.sender.user_id.to_string();
-        let target_id = if is_group {
-            event
-                .group_id
-                .ok_or_else(|| self.wrap_err("group_id missing on group message"))?
-                .to_string()
-        } else {
-            sender_id.clone()
-        };
-
-        info!(
-            "{LOG_PREFIX} Handling {} message: message_id={} sender={} target={}",
-            if is_group { "group" } else { "private" },
-            event.message_id,
-            sender_id,
-            target_id
-        );
-
-        if let Err(err) = persist_message_event(event, ctx.rdb_pool, ctx.mysql_ref, None) {
-            warn!("{LOG_PREFIX} Message persistence failed: {err}");
-        }
-
-        if let Some(rdb_pool) = ctx.rdb_pool {
-            let group_id_text = event.group_id.map(|value| value.to_string());
-            if should_ignore_message_blocking(
-                rdb_pool,
-                agent_id,
-                &sender_id,
-                group_id_text.as_deref(),
-            )? {
-                info!(
-                    "{LOG_PREFIX} Ignored inbound message: message_id={} sender={} group={:?}",
-                    event.message_id, sender_id, event.group_id
-                );
-                return Ok(());
-            }
-        }
-
-        if is_group {
-            let bot_id = get_bot_id(ctx.adapter);
-            let msg_prop = MessageProp::from_messages_with_bot_name(
-                &event.message_list,
-                Some(&bot_id),
-                Some(ctx.bot_name),
-            );
-            if !msg_prop.is_at_me {
-                return Ok(());
-            }
-        }
-
-        let (claimed, claim_token) = try_claim_session(session, &sender_id);
-        if !claimed {
-            let bot_id = get_bot_id(ctx.adapter);
-            let hydrated_event = hydrate_missing_reply_sources(event, ctx.adapter);
-            let inference_event = expand_event_for_inference(&hydrated_event);
-            let current_message =
-                extract_user_message_text(&inference_event, &bot_id, ctx.bot_name);
-            if let Some(command_registry) = crate::command::global_command_registry() {
-                let cmd_ctx = self.build_command_context(
-                    &sender_id,
-                    &target_id,
-                    is_group,
-                    inference_event.group_id,
-                );
-                if let Some(preview) = command_registry.preview(&cmd_ctx, &current_message) {
-                    if preview.definition.allow_steer_bypass && preview.passthrough_text.is_none() {
-                        info!(
-                            "{LOG_PREFIX} Session busy for {sender_id}, executing command via steer bypass: message_id={} command=/{}",
-                            event.message_id,
-                            preview.definition.name
-                        );
-                        if let Some(dispatch_result) =
-                            command_registry.dispatch(&cmd_ctx, &current_message)
-                        {
-                            let history_key = conversation_history_key(
-                                &bot_id,
-                                &sender_id,
-                                is_group,
-                                inference_event.group_id,
-                            );
-                            let legacy_history_key = sender_id.to_string();
-                            let mut history =
-                                load_history(ctx.cache, &history_key, &legacy_history_key);
-                            let trace = QqChatTaskTrace::new(Local::now());
-                            self.execute_command_dispatch(
-                                &trace,
-                                &cmd_ctx,
-                                dispatch_result,
-                                &hydrated_event,
-                                &inference_event,
-                                &sender_id,
-                                &target_id,
-                                &bot_id,
-                                &mut history,
-                                ctx,
-                            )?;
-                            trace.finish_with_summary();
-                            return Ok(());
-                        }
-                    } else {
-                        info!(
-                            "{LOG_PREFIX} Session busy for {sender_id}, command falls back to steer: message_id={} command=/{} allow_steer_bypass={} has_passthrough={}",
-                            event.message_id,
-                            preview.definition.name,
-                            preview.definition.allow_steer_bypass,
-                            preview.passthrough_text.is_some()
-                        );
-                    }
-                }
-            }
-            let (accepted, queue_len, accepted_steer_count) = ctx.pending_steer.enqueue_with_limit(
-                &sender_id,
-                PendingSteerEvent {
-                    event: hydrated_event,
-                    time: time.to_string(),
-                },
-                ctx.max_steer_count,
-            );
-            if accepted {
-                info!(
-                    "{LOG_PREFIX} Session busy for {sender_id}, enqueueing steer: message_id={} queue_len={} accepted_steer_count={}/{} message={}",
-                    event.message_id,
-                    queue_len,
-                    accepted_steer_count,
-                    ctx.max_steer_count,
-                    truncate_for_log(&current_message, LOG_TEXT_PREVIEW_CHARS)
-                );
-            } else {
-                warn!(
-                    "{LOG_PREFIX} steer dropped for sender={} message_id={} because max steer count reached: accepted_steer_count={}/{} message={}",
-                    sender_id,
-                    event.message_id,
-                    accepted_steer_count,
-                    ctx.max_steer_count,
-                    truncate_for_log(&current_message, LOG_TEXT_PREVIEW_CHARS)
-                );
-            }
-            return Ok(());
-        }
-
-        ctx.pending_steer.ensure_session_entry(&sender_id);
-
-        let task_created_at = Local::now();
-        let task_handle = ctx.task_runtime.as_ref().map(|runtime| {
-            runtime.start_task(AgentTaskRequest {
-                task_name: format!("回复[{sender_id}]的消息"),
-                agent_id: agent_id.to_string(),
-                agent_name: ctx.bot_name.to_string(),
-                user_ip,
-                owner_id: Some(sender_id.to_string()),
-                task_db_connection_id: ctx.task_db_connection_id.clone(),
-            })
-        });
-        let trace = QqChatTaskTrace::new(task_created_at);
-        let result = if let Some(task_handle) = task_handle.as_ref() {
-            if let Some(task_runtime) = ctx.task_runtime.as_ref() {
-                scope_task_runtime(Arc::clone(task_runtime), || {
-                    scope_task_id(task_handle.task_id.clone(), || {
-                        self.handle_claimed(
-                            &trace, event, time, &sender_id, &target_id, is_group, ctx,
-                        )
-                    })
-                })
-            } else {
-                scope_task_id(task_handle.task_id.clone(), || {
-                    self.handle_claimed(&trace, event, time, &sender_id, &target_id, is_group, ctx)
-                })
-            }
-        } else {
-            self.handle_claimed(&trace, event, time, &sender_id, &target_id, is_group, ctx)
-        };
-        trace.finish_with_summary();
-
-        release_session(session, &sender_id, claim_token);
-        ctx.pending_steer.finish_session(&sender_id);
-        if let Some(task_handle) = task_handle {
-            match &result {
-                Ok(report) => task_handle.finish(AgentTaskResult {
-                    status: Some(AgentTaskStatus::Success),
-                    result_summary: Some(report.result_summary.clone()),
-                    error_message: None,
-                }),
-                Err(err) => task_handle.finish(AgentTaskResult {
-                    status: Some(AgentTaskStatus::Failed),
-                    result_summary: Some(format!("回复[{sender_id}]失败: {err}")),
-                    error_message: Some(err.to_string()),
-                }),
-            }
-        }
-        result.map(|_| ())
     }
 }
 
@@ -2028,122 +1518,6 @@ impl QqChatAgentService {
                 )
             },
         )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    use zihuan_core::ims_bot_adapter::models::event_model::{MessageEvent, MessageType, Sender};
-
-    use super::*;
-
-    fn write_temp_image_file(name: &str) -> String {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should be after epoch")
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("{}_{}.png", name, unique));
-        fs::write(&path, [0x89, 0x50, 0x4E, 0x47]).expect("write temp image");
-        format!("file://{}", path.to_string_lossy())
-    }
-
-    fn sample_image_message(media_id: &str, location: &str) -> Message {
-        Message::Image(ims_bot_adapter::models::message::ImageMessage::new(
-            PersistedMedia {
-                media_id: media_id.to_string(),
-                source: PersistedMediaSource::QqChat,
-                original_source: location.to_string(),
-                rustfs_path: String::new(),
-                name: Some("sample.png".to_string()),
-                description: None,
-                mime_type: Some("image/png".to_string()),
-            },
-        ))
-    }
-
-    fn sample_event(messages: Vec<Message>) -> MessageEvent {
-        MessageEvent {
-            message_id: 1001,
-            message_type: MessageType::Group,
-            sender: Sender {
-                user_id: 42,
-                nickname: "tester".to_string(),
-                card: String::new(),
-                role: None,
-            },
-            message_list: messages,
-            group_id: Some(7),
-            group_name: Some("test".to_string()),
-            is_group_message: true,
-        }
-    }
-
-    fn assert_contains_image_part(message: OpenAIMessage) {
-        match message.content {
-            Some(MessageContent::Parts(parts)) => {
-                assert!(parts
-                    .iter()
-                    .any(|part| matches!(part, ContentPart::ImageUrl { .. })));
-            }
-            other => panic!("expected multipart user message, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn build_user_message_keeps_reply_images_for_multimodal_models() {
-        let file_url = write_temp_image_file("reply_image");
-        let image = sample_image_message("media-reply", &file_url);
-        let event = sample_event(vec![Message::Reply(ReplyMessage {
-            id: 55,
-            message_source: Some(vec![image]),
-        })]);
-
-        let message = build_user_message(&event, "2721394556", "bot", true, None);
-        assert_contains_image_part(message);
-    }
-
-    #[test]
-    fn build_user_message_keeps_forward_images_for_multimodal_models() {
-        let file_url = write_temp_image_file("forward_image");
-        let image = sample_image_message("media-forward", &file_url);
-        let event = sample_event(vec![Message::Forward(ForwardMessage {
-            id: Some("forward-1".to_string()),
-            content: vec![ForwardNodeMessage {
-                user_id: Some("123".to_string()),
-                nickname: Some("alice".to_string()),
-                id: None,
-                content: vec![image],
-            }],
-        })]);
-
-        let message = build_user_message(&event, "2721394556", "bot", true, None);
-        assert_contains_image_part(message);
-    }
-
-    #[test]
-    fn build_user_message_exposes_media_ids_for_text_only_models() {
-        let image = sample_image_message("media-text-only", "https://example.com/test.png");
-        let event = sample_event(vec![
-            Message::PlainText(PlainTextMessage {
-                text: "这是真的吗".to_string(),
-            }),
-            Message::Reply(ReplyMessage {
-                id: 88,
-                message_source: Some(vec![image]),
-            }),
-        ]);
-
-        let message = build_user_message(&event, "2721394556", "bot", false, None);
-        let text = message
-            .content_text_owned()
-            .expect("text-only model should receive text");
-        assert!(text.contains("[可分析图片]"));
-        assert!(text.contains("media_id=media-text-only"));
-        assert!(text.contains("引用消息"));
-        assert!(!text.contains("引用消息 88"));
     }
 }
 

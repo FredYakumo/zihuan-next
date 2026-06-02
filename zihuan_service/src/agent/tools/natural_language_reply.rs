@@ -16,8 +16,9 @@ use zihuan_core::llm::{InferenceParam, OpenAIMessage};
 use zihuan_graph_engine::message_restore::restore_media_by_id;
 use zihuan_graph_engine::DataValue;
 
-use crate::agent::qq_chat_agent_core::{
-    build_reply_result, emotion_dimensions_snapshot_json, QqAgentReplyBatchBuilder,
+use crate::agent::qq_chat_agent_core::emotion_dimensions_snapshot_json;
+use crate::agent::qq_chat_agent_msg_send::{
+    build_reply_result, QqAgentReplyBatchBuilder,
 };
 use crate::agent::qq_chat_agent_logging::QqChatTaskTrace;
 use crate::agent::qq_chat_agent_msg_send::{

@@ -187,18 +187,15 @@ fn analyze_persisted_media(
     s3_ref: Option<&S3Ref>,
 ) -> Result<String> {
     let image_message = ImageMessage::new(media.clone());
-    let resolved = ims_bot_adapter::multimodal_image_url::resolve_image_message_part(
+    let resolved = match ims_bot_adapter::multimodal_image_url::resolve_image_message_part(
         &image_message,
         s3_ref,
         false,
         LOG_PREFIX,
-    )
-    .ok_or_else(|| {
-        Error::ValidationError(format!(
-            "image_understand failed to resolve image bytes for media_id='{}'",
-            media.media_id
-        ))
-    })?;
+    ) {
+        Some(resolved) => resolved,
+        None => return Ok("Not any image found".to_string()),
+    };
 
     let llm = load_multimodal_llm()?;
 
@@ -212,7 +209,7 @@ fn analyze_persisted_media(
 
     let messages = vec![
         OpenAIMessage::system(
-            "你是一个图片理解助手。只输出简洁、客观的中文描述，不要输出多余寒暄。".to_string(),
+            "你是一个图片理解助手。只输出简洁、客观的中文描述，不要输出多余寒暄。如果图片内容为空、无效或无法识别，只输出\"没有识别到图片\"。".to_string(),
         ),
         OpenAIMessage::user_with_parts(vec![ContentPart::text(prompt), resolved.part]),
     ];
