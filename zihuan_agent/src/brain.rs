@@ -10,7 +10,7 @@ use tokio::sync::mpsc;
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::tooling::ToolCalls;
-use zihuan_core::llm::{InferenceParam, LLMMessage, LLMMessagePart, MessageRole};
+use zihuan_core::llm::{InferenceParam, LLMMessage, MessagePart, MessageRole};
 use zihuan_core::task_context::{
     scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime,
     AgentTaskStatus,
@@ -674,13 +674,13 @@ fn append_tool_summary_to_system(
 
     for msg in messages.iter_mut() {
         if matches!(msg.role, MessageRole::System) {
-            if let Some(LLMMessagePart::Text { text }) = msg.parts.first_mut() {
+            if let Some(MessagePart::Text { text }) = msg.parts.first_mut() {
                 text.push('\n');
                 text.push('\n');
                 text.push_str(&summary);
                 return;
             }
-            msg.parts.push(LLMMessagePart::text(summary));
+            msg.parts.push(MessagePart::text(summary));
             return;
         }
     }
@@ -698,7 +698,7 @@ mod tests {
     use super::{Brain, BrainIterationHook, BrainTool};
     use zihuan_core::llm::llm_base::LLMBase;
     use zihuan_core::llm::tooling::{FunctionTool, ToolCalls, ToolCallsFuncSpec};
-    use zihuan_core::llm::{InferenceParam, LLMMessage, LLMMessagePart, MessageRole};
+    use zihuan_core::llm::{InferenceParam, LLMMessage, MessagePart, MessageRole};
 
     #[derive(Debug, Default)]
     struct RecordingLlmState {
@@ -724,7 +724,7 @@ mod tests {
             if state.calls == 1 {
                 LLMMessage {
                     role: MessageRole::Assistant,
-                    parts: vec![LLMMessagePart::text("先调用工具")],
+                    parts: vec![MessagePart::text("先调用工具")],
                     reasoning_content: None,
                     tool_calls: vec![ToolCalls {
                         id: "call-1".to_string(),

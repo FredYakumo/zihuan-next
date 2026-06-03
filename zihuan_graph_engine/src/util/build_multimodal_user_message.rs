@@ -1,8 +1,8 @@
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::{str_to_role, LLMMessage, LLMMessagePart};
+use zihuan_core::llm::{str_to_role, LLMMessage, MessagePart};
 
-/// Combines an optional text segment with a list of `LLMMessagePart`s into a multimodal `LLMMessage`.
+/// Combines an optional text segment with a list of `MessagePart`s into a multimodal `LLMMessage`.
 pub struct BuildMultimodalUserMessageNode {
     id: String,
     name: String,
@@ -27,12 +27,12 @@ impl Node for BuildMultimodalUserMessageNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("将可选文本和若干 LLMMessagePart 拼接为多模态 LLMMessage")
+        Some("将可选文本和若干 MessagePart 拼接为多模态 LLMMessage")
     }
 
     node_input![
         port! { name = "text", ty = String, desc = "前置文本段，可选；为空时只发送 parts", optional },
-        port! { name = "parts", ty = Vec(LLMMessagePart), desc = "要附加的多模态 LLMMessagePart 列表", optional },
+        port! { name = "parts", ty = Vec(MessagePart), desc = "要附加的多模态 MessagePart 列表", optional },
         port! { name = "role", ty = String, desc = "消息角色，可选 system / user / assistant / tool，默认 user", optional },
     ];
 
@@ -49,17 +49,17 @@ impl Node for BuildMultimodalUserMessageNode {
             Some(_) => return Err(Error::ValidationError("text must be a string".to_string())),
         };
 
-        let parts: Vec<LLMMessagePart> = match inputs.get("parts") {
+        let parts: Vec<MessagePart> = match inputs.get("parts") {
             Some(DataValue::Vec(_, items)) => items
                 .iter()
                 .filter_map(|v| match v {
-                    DataValue::LLMMessagePart(p) => Some(p.clone()),
+                    DataValue::MessagePart(p) => Some(p.clone()),
                     _ => None,
                 })
                 .collect(),
             Some(_) => {
                 return Err(Error::ValidationError(
-                    "parts must be Vec<LLMMessagePart>".to_string(),
+                    "parts must be Vec<MessagePart>".to_string(),
                 ))
             }
             None => Vec::new(),
@@ -73,7 +73,7 @@ impl Node for BuildMultimodalUserMessageNode {
 
         let mut message_parts = Vec::with_capacity(parts.len() + usize::from(text.is_some()));
         if let Some(t) = text {
-            message_parts.push(LLMMessagePart::text(t));
+            message_parts.push(MessagePart::text(t));
         }
         message_parts.extend(parts);
 

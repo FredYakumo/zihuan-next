@@ -329,16 +329,16 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
                 Some(Value::Array(parts)) => parts
                     .iter()
                     .filter_map(|part| {
-                        serde_json::from_value::<zihuan_core::llm::LLMMessagePart>(part.clone())
+                        serde_json::from_value::<zihuan_core::llm::MessagePart>(part.clone())
                             .ok()
                     })
                     .collect(),
                 Some(Value::Null) | None => map
                     .get("content")
                     .and_then(Value::as_str)
-                    .map(|content| vec![zihuan_core::llm::LLMMessagePart::text(content)])
+                    .map(|content| vec![zihuan_core::llm::MessagePart::text(content)])
                     .unwrap_or_default(),
-                Some(other) => serde_json::from_value::<zihuan_core::llm::LLMMessagePart>(
+                Some(other) => serde_json::from_value::<zihuan_core::llm::MessagePart>(
                     other.clone(),
                 )
                 .map(|part| vec![part])
@@ -405,7 +405,7 @@ fn infer_any_data_value(json: &Value) -> Option<DataValue> {
 /// in-crate tests that need the registry populated.
 pub fn init_node_registry() -> zihuan_core::error::Result<()> {
     use crate::util::{
-        AndThenNode, AnyOfNode, ArrayGetNode, AtQQTargetMessageNode, BinaryToImageLLMMessagePartNode,
+        AndThenNode, AnyOfNode, ArrayGetNode, AtQQTargetMessageNode, BinaryToImageMessagePartNode,
         BooleanBranchNode, BooleanNotNode, BuildMultimodalUserMessageNode, ConcatVecNode,
         ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode,
         FunctionInputsNode, FunctionNode, FunctionOutputsNode, GraphInputsNode, GraphOutputsNode,
@@ -417,7 +417,7 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         QQMessageJsonOutputSystemPromptProviderNode, QQMessageListDataNode, QQMessageToImageNode,
         SessionStateClearNode, SessionStateGetNode, SessionStateReleaseNode,
         SessionStateTryClaimNode, SetVariableNode, StackNode, StringDataNode, StringIsNotEmptyNode,
-        StringToImageLLMMessagePartNode, StringToLLMMessageNode, StringToPlainTextNode, SwitchNode,
+        StringToImageMessagePartNode, StringToLLMMessageNode, StringToPlainTextNode, SwitchNode,
         ToolResultNode,
     };
 
@@ -753,23 +753,23 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
     );
     register_node!(
         "string_to_image_content_part",
-        "字符串转图片/视频 LLMMessagePart",
+        "字符串转图片/视频 MessagePart",
         "消息",
-        "将字符串 URL（或 data: URL）封装为 LLM 多模态 LLMMessagePart，用于装配多模态 LLMMessage",
-        StringToImageLLMMessagePartNode
+        "将字符串 URL（或 data: URL）封装为 LLM 多模态 MessagePart，用于装配多模态 LLMMessage",
+        StringToImageMessagePartNode
     );
     register_node!(
         "binary_to_image_content_part",
-        "二进制转图片/视频 LLMMessagePart",
+        "二进制转图片/视频 MessagePart",
         "消息",
-        "将二进制字节 + MIME 编码为 base64 data URL，并封装为 LLM 多模态 LLMMessagePart",
-        BinaryToImageLLMMessagePartNode
+        "将二进制字节 + MIME 编码为 base64 data URL，并封装为 LLM 多模态 MessagePart",
+        BinaryToImageMessagePartNode
     );
     register_node!(
         "build_multimodal_user_message",
         "构建多模态 LLMMessage",
         "消息",
-        "将可选文本和若干 LLMMessagePart 拼接为多模态 LLMMessage，下游 LLM 推理节点直接消费",
+        "将可选文本和若干 MessagePart 拼接为多模态 LLMMessage，下游 LLM 推理节点直接消费",
         BuildMultimodalUserMessageNode
     );
 

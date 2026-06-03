@@ -107,7 +107,7 @@ pub fn data_type_to_json_schema_type(data_type: &DataType) -> &'static str {
         | DataType::LLModel
         | DataType::EmbeddingModel
         | DataType::LoopControlRef
-        | DataType::LLMMessagePart
+        | DataType::MessagePart
         | DataType::Custom(_)
         | DataType::Any => "object",
     }

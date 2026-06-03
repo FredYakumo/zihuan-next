@@ -6,7 +6,7 @@ pub mod openai_responses;
 pub mod openai_responses_image_url_object_compat;
 pub mod openai_responses_message_compat;
 
-use zihuan_core::llm::{LLMMessage, LLMMessagePart};
+use zihuan_core::llm::{LLMMessage, MessagePart};
 
 pub use ims_message::{event_to_llm_message, qq_messages_to_llm_message};
 pub use message_record::{llm_message_to_message_record, message_record_to_llm_message};
@@ -35,7 +35,7 @@ pub use openai_responses::{
 pub fn has_multimodal_messages(messages: &[LLMMessage]) -> bool {
     messages.iter().any(|msg| {
         msg.parts.iter().any(|part| {
-            matches!(part, LLMMessagePart::Image { .. } | LLMMessagePart::Video { .. })
+            matches!(part, MessagePart::Image { .. } | MessagePart::Video { .. })
         })
     })
 }

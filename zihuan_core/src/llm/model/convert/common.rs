@@ -2,7 +2,9 @@ use serde_json::{json, Value};
 
 use crate::llm::tooling::ToolCalls;
 
-use super::super::llm_message::{LLMMessage, LLMMessagePart};
+use crate::message_part::MessagePart;
+
+use super::super::llm_message::LLMMessage;
 use super::super::message_role::MessageRole;
 use crate::llm::util::role_to_str;
 
@@ -24,22 +26,22 @@ pub(crate) fn build_tool_calls_json(tool_calls: &[ToolCalls]) -> Value {
     )
 }
 
-pub(crate) fn build_chat_multimodal_parts(parts: &[LLMMessagePart]) -> Value {
+pub(crate) fn build_chat_multimodal_parts(parts: &[MessagePart]) -> Value {
     Value::Array(
         parts
             .iter()
             .map(|part| match part {
-                LLMMessagePart::Text { text } => json!({
+                MessagePart::Text { text } => json!({
                     "type": "text",
                     "text": text,
                 }),
-                LLMMessagePart::Image { .. } => json!({
+                MessagePart::Image { .. } => json!({
                     "type": "image_url",
                     "image_url": {
                         "url": part.media_locator().unwrap_or_default(),
                     }
                 }),
-                LLMMessagePart::Video { .. } => json!({
+                MessagePart::Video { .. } => json!({
                     "type": "video_url",
                     "video_url": {
                         "url": part.media_locator().unwrap_or_default(),
@@ -62,11 +64,11 @@ pub(crate) fn build_responses_content_items(
         .parts
         .iter()
         .map(|part| match part {
-            LLMMessagePart::Text { text } => json!({
+            MessagePart::Text { text } => json!({
                 "type": "input_text",
                 "text": text,
             }),
-            LLMMessagePart::Image { .. } => {
+            MessagePart::Image { .. } => {
                 let locator = part.media_locator().unwrap_or_default();
                 if matches!(message.role, MessageRole::Assistant) {
                     json!({
@@ -87,7 +89,7 @@ pub(crate) fn build_responses_content_items(
                     })
                 }
             }
-            LLMMessagePart::Video { .. } => json!({
+            MessagePart::Video { .. } => json!({
                 "type": "input_text",
                 "text": format!("[video omitted] {}", part.media_locator().unwrap_or_default()),
             }),

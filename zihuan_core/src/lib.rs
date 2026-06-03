@@ -11,6 +11,7 @@ pub mod error;
 pub mod ims_bot_adapter;
 pub mod steer;
 pub mod llm;
+pub mod message_part;
 pub mod rag;
 pub mod runtime;
 pub mod system_config;
@@ -19,3 +20,5 @@ pub mod tool_runtime;
 pub mod url_utils;
 pub mod weaviate;
 pub mod worker_pool;
+
+pub use message_part::MessagePart;

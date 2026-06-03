@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use log::warn;
-use zihuan_core::llm::{LLMMessage, LLMMessagePart, MessageRole};
+use zihuan_core::llm::{LLMMessage, MessagePart, MessageRole};
 
 const IMAGE_OMITTED_PLACEHOLDER: &str = "[image omitted]";
 const VIDEO_OMITTED_PLACEHOLDER: &str = "[video omitted]";
@@ -35,26 +35,26 @@ fn downgrade_message_for_text_only_model(mut message: LLMMessage) -> LLMMessage 
     let has_non_text_parts = message
         .parts
         .iter()
-        .any(|part| !matches!(part, LLMMessagePart::Text { .. }));
+        .any(|part| !matches!(part, MessagePart::Text { .. }));
     if has_non_text_parts {
-        message.parts = vec![LLMMessagePart::text(parts_to_text(message.parts))];
+        message.parts = vec![MessagePart::text(parts_to_text(message.parts))];
     }
     message
 }
 
-fn parts_to_text(parts: Vec<LLMMessagePart>) -> String {
+fn parts_to_text(parts: Vec<MessagePart>) -> String {
     let mut segments = Vec::with_capacity(parts.len());
 
     for part in parts {
         match part {
-            LLMMessagePart::Text { text } => segments.push(text),
-            LLMMessagePart::Image { media } => {
+            MessagePart::Text { text } => segments.push(text),
+            MessagePart::Image { media } => {
                 segments.push(media_placeholder(
                     IMAGE_OMITTED_PLACEHOLDER,
                     media.primary_locator().unwrap_or(""),
                 ));
             }
-            LLMMessagePart::Video { media } => {
+            MessagePart::Video { media } => {
                 segments.push(media_placeholder(
                     VIDEO_OMITTED_PLACEHOLDER,
                     media.primary_locator().unwrap_or(""),

@@ -15,7 +15,7 @@ use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
 use zihuan_core::ims_bot_adapter::models::message::ImageMessage;
 use zihuan_core::ims_bot_adapter::models::sender_model::Sender as GraphSender;
 use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::llm::LLMMessagePart;
+use zihuan_core::llm::MessagePart;
 pub use zihuan_core::rag::{WebSearchEngineRef, WebSearchImage};
 pub use zihuan_core::weaviate::WeaviateRef;
 
@@ -664,7 +664,7 @@ pub enum DataType {
     LLMMessage,
     QQMessage,
     Image,
-    LLMMessagePart,
+    MessagePart,
     FunctionTools,
     BotAdapterRef,
     S3Ref,
@@ -710,7 +710,7 @@ impl fmt::Display for DataType {
             DataType::LLMMessage => write!(f, "LLMMessage"),
             DataType::QQMessage => write!(f, "QQMessage"),
             DataType::Image => write!(f, "Image"),
-            DataType::LLMMessagePart => write!(f, "LLMMessagePart"),
+            DataType::MessagePart => write!(f, "MessagePart"),
             DataType::FunctionTools => write!(f, "FunctionTools"),
             DataType::BotAdapterRef => write!(f, "BotAdapterRef"),
             DataType::S3Ref => write!(f, "S3Ref"),
@@ -759,7 +759,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "Message" => Ok(DataType::LLMMessage),
                     "QQMessage" => Ok(DataType::QQMessage),
                     "Image" => Ok(DataType::Image),
-                    "LLMMessagePart" => Ok(DataType::LLMMessagePart),
+                    "MessagePart" => Ok(DataType::MessagePart),
                     "FunctionTools" => Ok(DataType::FunctionTools),
                     "BotAdapterRef" => Ok(DataType::BotAdapterRef),
                     "S3Ref" => Ok(DataType::S3Ref),
@@ -792,7 +792,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                             "Message",
                             "QQMessage",
                             "Image",
-                            "LLMMessagePart",
+                            "MessagePart",
                             "FunctionTools",
                             "BotAdapterRef",
                             "S3Ref",
@@ -863,7 +863,7 @@ pub enum DataValue {
     LLMMessage(zihuan_core::llm::LLMMessage),
     QQMessage(zihuan_core::ims_bot_adapter::models::message::Message),
     Image(ImageData),
-    LLMMessagePart(LLMMessagePart),
+    MessagePart(MessagePart),
     FunctionTools(Vec<Arc<dyn FunctionTool>>),
     BotAdapterRef(zihuan_core::ims_bot_adapter::BotAdapterHandle),
     S3Ref(Arc<S3Ref>),
@@ -895,7 +895,7 @@ impl DataValue {
             DataValue::LLMMessage(_) => DataType::LLMMessage,
             DataValue::QQMessage(_) => DataType::QQMessage,
             DataValue::Image(_) => DataType::Image,
-            DataValue::LLMMessagePart(_) => DataType::LLMMessagePart,
+            DataValue::MessagePart(_) => DataType::MessagePart,
             DataValue::MessageEvent(_) => DataType::MessageEvent,
             DataValue::FunctionTools(_) => DataType::FunctionTools,
             DataValue::BotAdapterRef(_) => DataType::BotAdapterRef,
@@ -955,7 +955,7 @@ impl DataValue {
             DataValue::LLMMessage(m) => serde_json::to_value(m).unwrap_or(Value::Null),
             DataValue::QQMessage(m) => serde_json::to_value(m).unwrap_or(Value::Null),
             DataValue::Image(image) => serde_json::to_value(image).unwrap_or(Value::Null),
-            DataValue::LLMMessagePart(part) => serde_json::to_value(part).unwrap_or(Value::Null),
+            DataValue::MessagePart(part) => serde_json::to_value(part).unwrap_or(Value::Null),
             DataValue::MessageEvent(event) => {
                 serde_json::json!({
                     "message_id": event.message_id,
@@ -1046,7 +1046,7 @@ impl fmt::Debug for DataValue {
             DataValue::LLMMessage(value) => f.debug_tuple("LLMMessage").field(value).finish(),
             DataValue::QQMessage(value) => f.debug_tuple("QQMessage").field(value).finish(),
             DataValue::Image(value) => f.debug_tuple("Image").field(value).finish(),
-            DataValue::LLMMessagePart(value) => f.debug_tuple("LLMMessagePart").field(value).finish(),
+            DataValue::MessagePart(value) => f.debug_tuple("MessagePart").field(value).finish(),
             DataValue::MessageEvent(value) => f.debug_tuple("MessageEvent").field(value).finish(),
             DataValue::Sender(value) => f.debug_tuple("Sender").field(value).finish(),
             DataValue::FunctionTools(value) => f.debug_tuple("FunctionTools").field(value).finish(),

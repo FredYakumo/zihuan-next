@@ -8,7 +8,7 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::logging::{
     LOG_DATA_URL_PREVIEW_CHARS, LOG_MESSAGE_PREVIEW_CHARS,
 };
-use zihuan_core::llm::{LLMMessagePart, LLMMessage};
+use zihuan_core::llm::{MessagePart, LLMMessage};
 use zihuan_graph_engine::message_restore::register_mysql_ref;
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::{
@@ -63,10 +63,10 @@ impl ExtractMessageFromEventNode {
         buffer.push_str(segment);
     }
 
-    fn flush_text_part(parts: &mut Vec<LLMMessagePart>, buffer: &mut String) {
+    fn flush_text_part(parts: &mut Vec<MessagePart>, buffer: &mut String) {
         let text = buffer.trim();
         if !text.is_empty() {
-            parts.push(LLMMessagePart::text(text.to_string()));
+            parts.push(MessagePart::text(text.to_string()));
         }
         buffer.clear();
     }
@@ -136,7 +136,7 @@ impl ExtractMessageFromEventNode {
 
     fn append_plain_text_as_parts(
         text: &str,
-        parts: &mut Vec<LLMMessagePart>,
+        parts: &mut Vec<MessagePart>,
         text_buffer: &mut String,
         has_media: &mut bool,
         s3_ref: Option<&S3Ref>,
@@ -157,7 +157,7 @@ impl ExtractMessageFromEventNode {
     /// appending text segments to the text buffer and flushing to parts when media is encountered.
     fn append_messages_as_parts(
         messages: &[Message],
-        parts: &mut Vec<LLMMessagePart>,
+        parts: &mut Vec<MessagePart>,
         text_buffer: &mut String,
         has_media: &mut bool,
         include_reply_source_block: bool,
@@ -295,7 +295,7 @@ impl ExtractMessageFromEventNode {
             } else {
                 let image_part_count = parts
                     .iter()
-                    .filter(|part| matches!(part, LLMMessagePart::Image { .. }))
+                    .filter(|part| matches!(part, MessagePart::Image { .. }))
                     .count();
                 info!(
                     "{} build_user_message produced multimodal parts total_parts={} image_parts={}",
@@ -313,7 +313,7 @@ impl ExtractMessageFromEventNode {
                 .map(str::to_string)
                 .or_else(|| {
                     parts.into_iter().find_map(|part| match part {
-                        LLMMessagePart::Text { text } if !text.trim().is_empty() => Some(text),
+                        MessagePart::Text { text } if !text.trim().is_empty() => Some(text),
                         _ => None,
                     })
                 })
@@ -358,7 +358,7 @@ mod tests {
     use crate::models::message::{
         ImageMessage, Message, PersistedMedia, PersistedMediaSource, PlainTextMessage,
     };
-    use zihuan_core::llm::{LLMMessagePart, MessageContent};
+    use zihuan_core::llm::{MessagePart, MessageContent};
 
     #[test]
     fn build_user_message_keeps_non_image_url_as_text() {
@@ -397,7 +397,7 @@ mod tests {
             Some(MessageContent::Parts(parts)) => {
                 assert!(parts
                     .iter()
-                    .any(|part| matches!(part, LLMMessagePart::Image { .. })));
+                    .any(|part| matches!(part, MessagePart::Image { .. })));
             }
             other => panic!("expected multipart content, got {other:?}"),
         }

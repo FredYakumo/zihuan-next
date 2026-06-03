@@ -2,7 +2,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use tokio::sync::mpsc;
 use zihuan_core::llm::tooling::{ToolCalls, ToolCallsFuncSpec};
-use zihuan_core::llm::{str_to_role, InferenceParam, LLMMessage, LLMMessageConvertStyle, LLMMessagePart, TokenUsage};
+use zihuan_core::llm::{str_to_role, InferenceParam, LLMMessage, LLMMessageConvertStyle, MessagePart, TokenUsage};
 
 #[derive(Default)]
 struct StreamToolCallDelta {
@@ -12,11 +12,11 @@ struct StreamToolCallDelta {
     function_arguments: String,
 }
 
-fn text_parts(text: String) -> Vec<LLMMessagePart> {
+fn text_parts(text: String) -> Vec<MessagePart> {
     if text.is_empty() {
         Vec::new()
     } else {
-        vec![LLMMessagePart::text(text)]
+        vec![MessagePart::text(text)]
     }
 }
 

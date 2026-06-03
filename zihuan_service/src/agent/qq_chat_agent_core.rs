@@ -52,7 +52,7 @@ use zihuan_core::command::{
 use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
-use zihuan_core::llm::{LLMMessagePart, LLMMessage};
+use zihuan_core::llm::{MessagePart, LLMMessage};
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::runtime::block_async;
 use zihuan_core::task_context::AgentTaskRuntime;
@@ -266,10 +266,10 @@ fn append_text_segment(buffer: &mut String, segment: &str) {
     buffer.push_str(segment);
 }
 
-fn flush_text_part(parts: &mut Vec<LLMMessagePart>, buffer: &mut String) {
+fn flush_text_part(parts: &mut Vec<MessagePart>, buffer: &mut String) {
     let text = buffer.trim();
     if !text.is_empty() {
-        parts.push(LLMMessagePart::text(text.to_string()));
+        parts.push(MessagePart::text(text.to_string()));
     }
     buffer.clear();
 }
@@ -283,14 +283,14 @@ fn flush_text_part(parts: &mut Vec<LLMMessagePart>, buffer: &mut String) {
 /// alternating sequence of `Text` and `Image` segments.
 ///
 /// - Consecutive text segments are accumulated in `text_buffer` and flushed as a single
-///   `LLMMessagePart::Text` when an image is encountered or at the end of iteration.
-/// - Image segments are converted to `LLMMessagePart::ImageUrl` and pushed directly.
+///   `MessagePart::Text` when an image is encountered or at the end of iteration.
+/// - Image segments are converted to `MessagePart::ImageUrl` and pushed directly.
 /// - `has_media` is set to `true` when any image is found, signaling the caller
 ///   (`build_user_message`) that a multimodal message path is needed.
 /// - `image_stats` records per-source-type counts for observability logging.
 fn append_plain_text_as_parts(
     text: &str,
-    parts: &mut Vec<LLMMessagePart>,
+    parts: &mut Vec<MessagePart>,
     text_buffer: &mut String,
     has_media: &mut bool,
     s3_ref: Option<&Arc<S3Ref>>,
@@ -310,7 +310,7 @@ fn append_plain_text_as_parts(
 }
 
 /// Recursively walk a list of QQ `Message` values and convert them into a flat sequence of
-/// `LLMMessagePart` elements (text and image) for multimodal LLM inference.
+/// `MessagePart` elements (text and image) for multimodal LLM inference.
 ///
 /// This is the central dispatcher of the message-to-parts conversion pipeline, called by
 /// `build_user_message`. It handles every QQ message type:
@@ -323,12 +323,12 @@ fn append_plain_text_as_parts(
 ///   processes nested messages under a `[转发内容]` heading.
 /// - **Other** — serialised to text as a fallback.
 ///
-/// Text fragments are accumulated in `text_buffer` and flushed as a single `LLMMessagePart::Text`
+/// Text fragments are accumulated in `text_buffer` and flushed as a single `MessagePart::Text`
 /// only when an image is hit or processing finishes, minimising the number of text parts.
 /// The `has_media` flag tells `build_user_message` whether to take the multimodal path.
 fn append_messages_as_parts(
     messages: &[Message],
-    parts: &mut Vec<LLMMessagePart>,
+    parts: &mut Vec<MessagePart>,
     text_buffer: &mut String,
     has_media: &mut bool,
     include_reply_source_block: bool,
@@ -702,9 +702,9 @@ pub(crate) fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message
 /// multimodal (image) input:
 ///
 /// * **Text-only path** (`llm_supports_multimodal_input == false`): builds the message as a
-///   plain `LLMMessagePart::Text` with metadata lines, the user message body, and image
+///   plain `MessagePart::Text` with metadata lines, the user message body, and image
 ///   reference hints (media_id strings the model can pass to image-analysis tools later).
-/// * **Multimodal path**: constructs `LLMMessagePart::Parts` arrays where images discovered in
+/// * **Multimodal path**: constructs `MessagePart::Parts` arrays where images discovered in
 ///   the message body (inline images, reply sources, forwarded content) are resolved via S3
 ///   and embedded as `image_url` parts alongside text. The metadata block is prepended to
 ///   the first text part.
@@ -802,7 +802,7 @@ pub(crate) fn build_user_message(
 
 
     let state_text = format!("{}\n", state_lines.join("\n"));
-    let mut parts = vec![LLMMessagePart::text(state_text)];
+    let mut parts = vec![MessagePart::text(state_text)];
     let metadata_text = format!("{environment}\n\n{metadata}");
     let mut text_buffer = format!("{metadata_text}\n\n{}", ims_bot_adapter::CURRENT_MESSAGE_LABEL);
     let mut has_media = false;
@@ -829,7 +829,7 @@ pub(crate) fn build_user_message(
         image_stats.data_url_images,
         image_stats.skipped_images,
     );
-    parts.push(LLMMessagePart::text(PROCESSING_INSTRUCTION.to_string()));
+    parts.push(MessagePart::text(PROCESSING_INSTRUCTION.to_string()));
     if parts.is_empty() {
         LLMMessage::user(ims_bot_adapter::NOT_ANY_TEXT_MARKER.to_string())
     } else {
@@ -898,7 +898,7 @@ fn build_merged_steer_user_message(
         build_state_system_prefix_lines(session_state, emotion_dimensions, system_prompt);
     let state_text = format!("{}\n", prefix_lines.join("\n"));
 
-    let mut parts = vec![LLMMessagePart::text(state_text.clone())];
+    let mut parts = vec![MessagePart::text(state_text.clone())];
     let mut text_buffer = String::new();
     let mut has_media = false;
     let mut image_stats = MultimodalImageStats::default();
@@ -923,7 +923,7 @@ fn build_merged_steer_user_message(
     flush_text_part(&mut parts, &mut text_buffer);
 
     let message = if has_media && parts.len() > 1 {
-        parts.push(LLMMessagePart::text(PROCESSING_INSTRUCTION.to_string()));
+        parts.push(MessagePart::text(PROCESSING_INSTRUCTION.to_string()));
         LLMMessage::user_with_parts(parts)
     } else {
         let merged_text = events

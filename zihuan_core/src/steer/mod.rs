@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 
 use crate::ims_bot_adapter::models::MessageEvent;
-use crate::llm::{LLMMessage, LLMMessagePart};
+use crate::llm::{LLMMessage, MessagePart};
 
 pub const STEER_PREFIX: &str =
     "[User-STEER Message] User steer a new message:";
@@ -19,18 +19,18 @@ pub const PROCESSING_INSTRUCTION: &str =
 /// Prepends `STEER_PREFIX` to the message parts.
 pub fn apply_steer_prefix(mut message: LLMMessage, _api_style: Option<&str>) -> LLMMessage {
     if message.parts.is_empty() {
-        message.parts.push(LLMMessagePart::text(STEER_PREFIX));
+        message.parts.push(MessagePart::text(STEER_PREFIX));
         return message;
     }
 
     match message.parts.first_mut() {
-        Some(LLMMessagePart::Text { text }) => {
+        Some(MessagePart::Text { text }) => {
             *text = format!("{STEER_PREFIX}\n\n{text}");
         }
         _ => {
             message
                 .parts
-                .insert(0, LLMMessagePart::text(format!("{STEER_PREFIX}\n\n")));
+                .insert(0, MessagePart::text(format!("{STEER_PREFIX}\n\n")));
         }
     }
 

@@ -1,6 +1,6 @@
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::{str_to_role, LLMMessage, LLMMessagePart};
+use zihuan_core::llm::{str_to_role, LLMMessage, MessagePart};
 
 /// Converts a plain string into an `LLMMessage` with the selected role.
 pub struct StringToLLMMessageNode {
@@ -54,7 +54,7 @@ impl Node for StringToLLMMessageNode {
         crate::return_with_node_output![self;
             "message" => DataValue::LLMMessage(LLMMessage {
                 role,
-                parts: vec![LLMMessagePart::text(content)],
+                parts: vec![MessagePart::text(content)],
                 reasoning_content: None,
                 tool_calls: Vec::new(),
                 tool_call_id: None,

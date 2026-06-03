@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use tokio::sync::mpsc;
 use zihuan_core::llm::tooling::{ToolCalls, ToolCallsFuncSpec};
 use zihuan_core::llm::{
-    str_to_role, InferenceParam, LLMMessage, LLMMessageConvertStyle, LLMMessagePart, TokenUsage,
+    str_to_role, InferenceParam, LLMMessage, LLMMessageConvertStyle, MessagePart, TokenUsage,
 };
 
 #[derive(Default)]
@@ -293,7 +293,7 @@ pub fn parse_responses_response(api_resp: &Value) -> Option<LLMMessage> {
 
     Some(LLMMessage {
         role,
-        parts: if content.is_empty() { Vec::new() } else { vec![LLMMessagePart::text(content)] },
+        parts: if content.is_empty() { Vec::new() } else { vec![MessagePart::text(content)] },
         reasoning_content: if reasoning_content.is_empty() {
             None
         } else {
@@ -434,7 +434,7 @@ pub fn parse_responses_sse_response(response_text: &str) -> Option<LLMMessage> {
     } else {
         Some(LLMMessage {
             role: str_to_role("assistant"),
-            parts: if content.is_empty() { Vec::new() } else { vec![LLMMessagePart::text(content)] },
+            parts: if content.is_empty() { Vec::new() } else { vec![MessagePart::text(content)] },
             reasoning_content: None,
             tool_calls,
             tool_call_id: None,
@@ -588,7 +588,7 @@ pub async fn parse_responses_sse_stream_response(
 
     LLMMessage {
         role: str_to_role("assistant"),
-        parts: if content.is_empty() { Vec::new() } else { vec![LLMMessagePart::text(content)] },
+        parts: if content.is_empty() { Vec::new() } else { vec![MessagePart::text(content)] },
         reasoning_content: None,
         tool_calls: collect_responses_stream_tool_calls(streamed_tool_calls),
         tool_call_id: None,
