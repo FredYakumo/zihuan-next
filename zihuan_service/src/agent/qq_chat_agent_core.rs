@@ -57,8 +57,9 @@ use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
 
 pub(crate) use crate::qq_chat_user_input::{
-    expand_messages_for_inference, prepare_current_turn_user_input,
-    prepare_current_turn_user_input_from_event, PreparedCurrentTurnUserInput,
+    append_prepared_parts, build_prepared_input_metadata, expand_messages_for_inference,
+    flush_text_part, prepare_current_turn_user_input, prepare_current_turn_user_input_from_event,
+    PreparedCurrentTurnUserInput,
 };
 
 pub(crate) const LOG_PREFIX: &str = "[QqChatAgent]";
@@ -220,35 +221,6 @@ pub(crate) fn build_group_system_prompt(
     rules
 }
 
-fn flush_text_part(parts: &mut Vec<MessagePart>, buffer: &mut String) {
-    let text = buffer.trim();
-    if !text.is_empty() {
-        parts.push(MessagePart::text(text.to_string()));
-    }
-    buffer.clear();
-}
-
-fn append_prepared_parts(
-    parts: &mut Vec<MessagePart>,
-    text_buffer: &mut String,
-    prefix: &str,
-    prepared_parts: &[MessagePart],
-) {
-    if !prefix.is_empty() {
-        text_buffer.push_str(prefix);
-    }
-
-    for part in prepared_parts {
-        match part {
-            MessagePart::Text { text } => text_buffer.push_str(text),
-            MessagePart::Image { .. } | MessagePart::Video { .. } => {
-                flush_text_part(parts, text_buffer);
-                parts.push(part.clone());
-            }
-        }
-    }
-}
-
 /// Build a structured user-role message from a QQ message event for LLM inference.
 ///
 /// # Purpose
@@ -356,18 +328,8 @@ pub(crate) fn build_user_message(
     let mut text_buffer = format!("{metadata_text}\n\n{}", ims_bot_adapter::CURRENT_MESSAGE_LABEL);
     append_prepared_parts(&mut parts, &mut text_buffer, "\n", &current_input.parts);
     flush_text_part(&mut parts, &mut text_buffer);
-    info!(
-        "{LOG_PREFIX} Built multimodal user message: total_parts={}, image_parts={}, local_file_images={}, object_storage_images={}, downloaded_remote_images={}, uploaded_to_s3_images={}, data_url_images={}, skipped_images={}",
-        parts.len(),
-        current_input.multimodal_stats.image_parts,
-        current_input.multimodal_stats.local_file_images,
-        current_input.multimodal_stats.object_storage_images,
-        current_input.multimodal_stats.downloaded_remote_images,
-        current_input.multimodal_stats.uploaded_to_s3_images,
-        current_input.multimodal_stats.data_url_images,
-        current_input.multimodal_stats.skipped_images,
-    );
     parts.push(MessagePart::text(PROCESSING_INSTRUCTION.to_string()));
+    
     LLMMessage::user_with_parts(parts)
 }
 
@@ -394,23 +356,44 @@ fn build_steer_user_message(
 
 fn build_merged_steer_user_message(
     current_inputs: &[PreparedCurrentTurnUserInput],
+    bot_name: &str,
     llm_supports_multimodal_input: bool,
     api_style: Option<&str>,
     system_prompt: &str,
     session_state: &QqChatAgentSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> LLMMessage {
-    if !llm_supports_multimodal_input {
-        let prefix_lines =
-            build_state_system_prefix_lines(session_state, emotion_dimensions, system_prompt);
-        let prefix = prefix_lines.join("\n");
+    let prefix_lines =
+        build_state_system_prefix_lines(session_state, emotion_dimensions, system_prompt);
+    let prefix = prefix_lines.join("\n");
 
+    let build_entry_text =
+        |index: usize, input: &PreparedCurrentTurnUserInput| -> String {
+            let metadata_text = build_prepared_input_metadata(input, bot_name);
+            let image_section = if input.image_reference_lines.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "\n\n[{}]\n{}",
+                    IMAGE_ANALYSIS_LABEL,
+                    input.image_reference_lines.join("\n")
+                )
+            };
+            format!(
+                "{}. {metadata_text}\n{}\n{input_text}{image_section}",
+                index + 1,
+                ims_bot_adapter::CURRENT_MESSAGE_LABEL,
+                input_text = input.text,
+            )
+        };
+
+    if !llm_supports_multimodal_input {
         let merged_text = current_inputs
             .iter()
             .enumerate()
-            .map(|(index, input)| format!("{}. {}", index + 1, input.text))
+            .map(|(index, input)| build_entry_text(index, input))
             .collect::<Vec<_>>()
-            .join("\n");
+            .join("\n\n");
 
         let message = LLMMessage::user(format!(
             "{prefix}\n\n{merged_text}\n\n{PROCESSING_INSTRUCTION}"
@@ -418,10 +401,7 @@ fn build_merged_steer_user_message(
         return apply_steer_prefix(message, api_style);
     }
 
-    let prefix_lines =
-        build_state_system_prefix_lines(session_state, emotion_dimensions, system_prompt);
     let state_text = format!("{}\n", prefix_lines.join("\n"));
-
     let mut parts = vec![MessagePart::text(state_text.clone())];
     let mut text_buffer = String::new();
 
@@ -429,12 +409,21 @@ fn build_merged_steer_user_message(
         if index > 0 {
             text_buffer.push_str("\n\n");
         }
+        let metadata_text = build_prepared_input_metadata(current_input, bot_name);
+        text_buffer.push_str(&format!("{}. {metadata_text}\n{}\n", index + 1, ims_bot_adapter::CURRENT_MESSAGE_LABEL));
         append_prepared_parts(
             &mut parts,
             &mut text_buffer,
-            &format!("{}. ", index + 1),
+            "",
             &current_input.parts,
         );
+        if !current_input.image_reference_lines.is_empty() {
+            text_buffer.push_str(&format!(
+                "\n\n[{}]\n{}",
+                IMAGE_ANALYSIS_LABEL,
+                current_input.image_reference_lines.join("\n")
+            ));
+        }
     }
 
     flush_text_part(&mut parts, &mut text_buffer);
@@ -447,9 +436,9 @@ fn build_merged_steer_user_message(
         let merged_text = current_inputs
             .iter()
             .enumerate()
-            .map(|(index, input)| format!("{}. {}", index + 1, input.text))
+            .map(|(index, input)| build_entry_text(index, input))
             .collect::<Vec<_>>()
-            .join("\n");
+            .join("\n\n");
         LLMMessage::user(format!(
             "{state_text}\n{merged_text}\n\n{PROCESSING_INSTRUCTION}"
         ))
@@ -704,6 +693,7 @@ impl BrainIterationHook for QqChatSteerHook {
         } else {
             build_merged_steer_user_message(
                 &prepared_inputs,
+                &self.bot_name,
                 self.llm_supports_multimodal_input,
                 self.llm_api_style.as_deref(),
                 &self.system_prompt,

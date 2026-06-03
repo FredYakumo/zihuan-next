@@ -13,7 +13,7 @@ use ims_bot_adapter::{
     FORWARD_START_MARKER, REPLAY_CONTENT_LABEL, REPLY_END_MARKER, REPLY_MESSAGE_LABEL,
     REPLY_START_MARKER, SENDER_LABEL,
 };
-use log::warn;
+use log::{info, warn};
 use zihuan_core::llm::MessagePart;
 use zihuan_core::runtime::block_async;
 use zihuan_graph_engine::object_storage::S3Ref;
@@ -112,6 +112,17 @@ pub(crate) fn prepare_current_turn_user_input_from_event(
         &mut multimodal_stats,
     );
     flush_text_part(&mut parts, &mut text_buffer);
+    info!(
+        "{LOG_PREFIX} Prepared multimodal user input: parts={}, image_parts={}, local_file_images={}, object_storage_images={}, downloaded_remote_images={}, uploaded_to_s3_images={}, data_url_images={}, skipped_images={}",
+        parts.len(),
+        multimodal_stats.image_parts,
+        multimodal_stats.local_file_images,
+        multimodal_stats.object_storage_images,
+        multimodal_stats.downloaded_remote_images,
+        multimodal_stats.uploaded_to_s3_images,
+        multimodal_stats.data_url_images,
+        multimodal_stats.skipped_images,
+    );
 
     PreparedCurrentTurnUserInput {
         event: event.clone(),
@@ -227,12 +238,59 @@ fn append_text_segment(buffer: &mut String, segment: &str) {
     buffer.push_str(segment);
 }
 
-fn flush_text_part(parts: &mut Vec<MessagePart>, buffer: &mut String) {
+pub(crate) fn flush_text_part(parts: &mut Vec<MessagePart>, buffer: &mut String) {
     let text = buffer.trim();
     if !text.is_empty() {
         parts.push(MessagePart::text(text.to_string()));
     }
     buffer.clear();
+}
+
+pub(crate) fn append_prepared_parts(
+    parts: &mut Vec<MessagePart>,
+    text_buffer: &mut String,
+    prefix: &str,
+    prepared_parts: &[MessagePart],
+) {
+    if !prefix.is_empty() {
+        text_buffer.push_str(prefix);
+    }
+
+    for part in prepared_parts {
+        match part {
+            MessagePart::Text { text } => text_buffer.push_str(text),
+            MessagePart::Image { .. } | MessagePart::Video { .. } => {
+                flush_text_part(parts, text_buffer);
+                parts.push(part.clone());
+            }
+        }
+    }
+}
+
+pub(crate) fn build_prepared_input_metadata(
+    input: &PreparedCurrentTurnUserInput,
+    bot_name: &str,
+) -> String {
+    let environment = format!("[Environment]\n- Your name: {bot_name}");
+    let sender_name = ims_bot_adapter::utils::sender_display_name!(
+        &input.event.sender.nickname,
+        &input.event.sender.card
+    );
+    let at_mention = if input.is_at_me {
+        "\n- You were @-mentioned in this message"
+    } else {
+        ""
+    };
+    let at_targets = if input.at_target_list.is_empty() {
+        String::new()
+    } else {
+        format!("\n- At targets: {}", input.at_target_list.join(", "))
+    };
+    let metadata = format!(
+        "[User Message Metadata]\n- Message type: {ty}\n- Sender name: {sender_name}{at_mention}{at_targets}",
+        ty = input.event.message_type.as_str(),
+    );
+    format!("{environment}\n\n{metadata}")
 }
 
 fn append_plain_text_as_parts(
