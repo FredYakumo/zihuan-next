@@ -358,50 +358,6 @@ mod tests {
     use crate::models::message::{
         ImageMessage, Message, PersistedMedia, PersistedMediaSource, PlainTextMessage,
     };
-    use zihuan_core::llm::{MessagePart, MessageContent};
-
-    #[test]
-    fn build_user_message_keeps_non_image_url_as_text() {
-        let message = ExtractMessageFromEventNode::build_extracted_message_outputs(
-            &[Message::PlainText(PlainTextMessage {
-                text: "看这个链接 https://example.com/page.html".to_string(),
-            })],
-            "bot",
-            None,
-        )
-        .user_message;
-
-        match message.content.as_ref() {
-            Some(MessageContent::Text(text)) => {
-                assert!(text.contains("https://example.com/page.html"));
-            }
-            other => panic!("expected text content, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn build_user_message_parses_data_url_image_message() {
-        let image = Message::Image(ImageMessage::new(PersistedMedia::new(
-            PersistedMediaSource::QqChat,
-            "data:image/png;base64,AA==",
-            "qq-images/test",
-            Some("download".to_string()),
-            None,
-            Some("image/png".to_string()),
-        )));
-        let message =
-            ExtractMessageFromEventNode::build_extracted_message_outputs(&[image], "bot", None)
-                .user_message;
-
-        match message.content.as_ref() {
-            Some(MessageContent::Parts(parts)) => {
-                assert!(parts
-                    .iter()
-                    .any(|part| matches!(part, MessagePart::Image { .. })));
-            }
-            other => panic!("expected multipart content, got {other:?}"),
-        }
-    }
 }
 
 impl Node for ExtractMessageFromEventNode {

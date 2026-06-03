@@ -75,7 +75,7 @@ pub fn expand_message_event_for_tool_input(
 }
 
 #[doc(hidden)]
-pub use super::qq_chat_user_input::PreparedCurrentTurnUserInput;
+pub use crate::qq_chat_user_input::PreparedCurrentTurnUserInput;
 
 #[doc(hidden)]
 pub fn prepare_message_event_user_input_for_test(

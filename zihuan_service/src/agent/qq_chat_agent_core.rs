@@ -56,7 +56,7 @@ use zihuan_graph_engine::message_restore::register_media;
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
 
-pub(crate) use super::qq_chat_user_input::{
+pub(crate) use crate::qq_chat_user_input::{
     expand_messages_for_inference, prepare_current_turn_user_input,
     prepare_current_turn_user_input_from_event, PreparedCurrentTurnUserInput,
 };

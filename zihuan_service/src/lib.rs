@@ -4,6 +4,8 @@ pub mod nodes;
 mod resource_resolver;
 pub mod scheduled_task;
 pub mod storage;
+pub mod qq_chat_user_input;
+
 
 pub use agent::{AgentManager, AgentRuntimeInfo, AgentRuntimeStatus};
 
