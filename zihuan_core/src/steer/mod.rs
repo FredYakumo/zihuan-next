@@ -11,7 +11,7 @@ pub const STEER_PREFIX: &str =
 /// respond to the current turn.
 pub const PROCESSING_INSTRUCTION: &str =
     "[Processing Instructions]\n\
-     - This is the message the assistant needs to process.\n\
+     - This is the user's message the assistant needs to process.\n\
      - Ensure your reply addresses the user's request directly and naturally.";
 
 /// Apply the steer prefix to an already-built `OpenAIMessage`.

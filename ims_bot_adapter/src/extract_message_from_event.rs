@@ -193,7 +193,7 @@ impl ExtractMessageFromEventNode {
                             if !text_buffer.is_empty() {
                                 text_buffer.push_str("\n\n");
                             }
-                            text_buffer.push_str(&format!("[{}]\n", crate::QUOTE_CONTENT_LABEL));
+                            text_buffer.push_str(&format!("[{}]\n", crate::REPLAY_CONTENT_LABEL));
                             Self::append_messages_as_parts(
                                 source_messages,
                                 parts,
@@ -268,7 +268,7 @@ impl ExtractMessageFromEventNode {
             .as_deref()
             .filter(|value| !value.is_empty())
         {
-            if text_buffer.contains(crate::QUOTE_CONTENT_LABEL) {
+            if text_buffer.contains(crate::REPLAY_CONTENT_LABEL) {
                 if !text_buffer.is_empty() {
                     text_buffer.push_str("\n\n");
                 }
@@ -278,7 +278,7 @@ impl ExtractMessageFromEventNode {
                 if !text_buffer.is_empty() {
                     text_buffer.push_str("\n\n");
                 }
-                text_buffer.push_str(&format!("[{}]\n", crate::QUOTE_CONTENT_LABEL));
+                text_buffer.push_str(&format!("[{}]\n", crate::REPLAY_CONTENT_LABEL));
                 text_buffer.push_str(ref_cnt);
             }
         }

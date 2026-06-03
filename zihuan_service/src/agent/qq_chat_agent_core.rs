@@ -30,7 +30,7 @@ use ims_bot_adapter::message_helpers::render_current_message_body;
 use ims_bot_adapter::utils;
 use ims_bot_adapter::{
     CURRENT_MESSAGE_LABEL, FORWARD_CONTENT_LABEL, FORWARD_END_MARKER, FORWARD_NODE_LABEL,
-    FORWARD_START_MARKER, IMAGE_ANALYSIS_LABEL, QUOTE_CONTENT_LABEL, REPLY_END_MARKER,
+    FORWARD_START_MARKER, IMAGE_ANALYSIS_LABEL, REPLAY_CONTENT_LABEL, REPLY_END_MARKER,
     REPLY_MESSAGE_LABEL, REPLY_START_MARKER, SENDER_LABEL,
 };
 use ims_bot_adapter::models::message::{
@@ -366,7 +366,7 @@ fn append_messages_as_parts(
                         if !text_buffer.is_empty() {
                             text_buffer.push_str("\n\n");
                         }
-                        text_buffer.push_str(&format!("[{}]\n", QUOTE_CONTENT_LABEL));
+                        text_buffer.push_str(&format!("[{}]\n", REPLAY_CONTENT_LABEL));
                         append_messages_as_parts(
                             source_messages,
                             parts,
@@ -459,7 +459,7 @@ impl CurrentTurnUserInput {
         }
 
         for reference_text in reference_blocks {
-            sections.push(format!("[{}]\n{reference_text}", QUOTE_CONTENT_LABEL));
+            sections.push(format!("[{}]\n{reference_text}", REPLAY_CONTENT_LABEL));
         }
 
         CurrentTurnUserInput {
@@ -771,7 +771,16 @@ pub(crate) fn build_user_message(
         ty = event.message_type.as_str(),
     );
 
-    let image_references = image_prompt_reference_lines(&current_input.messages);
+
+    let mut references = Vec::new();
+    traverse_messages_for_image_references(&current_input.messages, CURRENT_MESSAGE_LABEL, &mut references);
+    let image_references: Vec<String> = references
+        .into_iter()
+        .map(|reference| format!("{} media_id={}", reference.location, reference.media_id))
+        .collect();
+
+
+
     let image_section = if image_references.is_empty() {
         String::new()
     } else {
@@ -779,23 +788,23 @@ pub(crate) fn build_user_message(
     };
 
     let user_text = format!(
-        "{}\n\n{environment}\n\n{metadata}\n[用户消息]\n{}{image_section}\n\n{PROCESSING_INSTRUCTION}",
+        "{}\n\n{environment}\n\n{metadata}\n{}\n{}{image_section}\n\n{PROCESSING_INSTRUCTION}",
         state_lines.join("\n"),
+        ims_bot_adapter::CURRENT_MESSAGE_LABEL,
         current_input.text,
     );
 
-    if !llm_supports_multimodal_input {
+    if !llm_supports_multimodal_input || image_references.is_empty() {
         return OpenAIMessage::user(user_text);
     }
 
-    if image_references.is_empty() {
-        return OpenAIMessage::user(user_text);
-    }
+    // Processing multimodal input
+
 
     let state_text = format!("{}\n", state_lines.join("\n"));
     let mut parts = vec![ContentPart::text(state_text)];
     let metadata_text = format!("{environment}\n\n{metadata}");
-    let mut text_buffer = format!("{metadata_text}\n\n[用户消息]\n");
+    let mut text_buffer = format!("{metadata_text}\n\n{}", ims_bot_adapter::CURRENT_MESSAGE_LABEL);
     let mut has_media = false;
     let mut image_stats = MultimodalImageStats::default();
     append_messages_as_parts(
@@ -822,7 +831,7 @@ pub(crate) fn build_user_message(
     );
     parts.push(ContentPart::text(PROCESSING_INSTRUCTION.to_string()));
     if parts.is_empty() {
-        OpenAIMessage::user("(无可用文本内容)")
+        OpenAIMessage::user(ims_bot_adapter::NOT_ANY_TEXT_MARKER.to_string())
     } else {
         OpenAIMessage::user_with_parts(parts)
     }
