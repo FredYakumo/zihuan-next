@@ -50,10 +50,10 @@ use crate::agent::qq_chat_agent_msg_send::send_direct_text_reply;
 
 use super::{
     build_group_system_prompt, build_private_system_prompt, build_user_message,
-    expand_messages_for_inference, extract_user_message_text, hydrate_missing_reply_sources,
-    QqChatAgent, QqChatAgentContext, QqChatHandleReport, QqChatSteerHook,
-    QqChatTaskTrace, QqChatTurnResult, QqCommandSideEffectContext, QqLongTaskNotifier, LOG_PREFIX,
-    LOG_TEXT_PREVIEW_CHARS,
+    expand_messages_for_inference, prepare_current_turn_user_input,
+    prepare_current_turn_user_input_from_event, QqChatAgent, QqChatAgentContext,
+    QqChatHandleReport, QqChatSteerHook, QqChatTaskTrace, QqChatTurnResult,
+    QqCommandSideEffectContext, QqLongTaskNotifier, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 use zihuan_core::utils::string_utils::shorten_text;
 
@@ -156,11 +156,14 @@ impl QqChatAgent {
 
             let user_msg_for_cmd = message_with_api_style(
                 build_user_message(
-                    hydrated_event,
-                    bot_id,
+                    &prepare_current_turn_user_input_from_event(
+                        hydrated_event,
+                        bot_id,
+                        ctx.bot_name,
+                        ctx.s3_ref,
+                    ),
                     ctx.bot_name,
                     ctx.llm.supports_multimodal_input(),
-                    ctx.s3_ref,
                     &cmd_system_prompt,
                     &cmd_session_state,
                     &cmd_emotion_dimensions,
@@ -234,8 +237,13 @@ impl QqChatAgent {
                 let mut next_inference_event = next_event.clone();
                 next_inference_event.message_list =
                     expand_messages_for_inference(&next_event.message_list);
-                let next_message =
-                    extract_user_message_text(&next_inference_event, &bot_id, ctx.bot_name);
+                let next_message = prepare_current_turn_user_input_from_event(
+                    &next_inference_event,
+                    &bot_id,
+                    ctx.bot_name,
+                    ctx.s3_ref,
+                )
+                .text;
                 trace.record_steer_follow_up(
                     next_event.message_id,
                     steer_count,
@@ -290,12 +298,18 @@ impl QqChatAgent {
         bot_id: &str,
         ctx: &QqChatAgentContext<'_>,
     ) -> Result<QqChatTurnResult> {
-        let hydrated_event = hydrate_missing_reply_sources(event, ctx.adapter);
-        let mut inference_event = hydrated_event.clone();
-        inference_event.message_list =
-            expand_messages_for_inference(&hydrated_event.message_list);
-        let raw_user_message = extract_user_message_text(&hydrated_event, bot_id, ctx.bot_name);
-        let mut current_message = extract_user_message_text(&inference_event, bot_id, ctx.bot_name);
+        let prepared_input =
+            prepare_current_turn_user_input(event, ctx.adapter, bot_id, ctx.bot_name, ctx.s3_ref);
+        let mut inference_event = prepared_input.event.clone();
+        inference_event.message_list = expand_messages_for_inference(&prepared_input.event.message_list);
+        let inference_input = prepare_current_turn_user_input_from_event(
+            &inference_event,
+            bot_id,
+            ctx.bot_name,
+            ctx.s3_ref,
+        );
+        let raw_user_message = prepared_input.text.clone();
+        let mut current_message = inference_input.text.clone();
         trace.log_user_message(&raw_user_message, &current_message);
 
         let history_key =
@@ -325,7 +339,7 @@ impl QqChatAgent {
                         result,
                         passthrough_text,
                     },
-                    &hydrated_event,
+                    &prepared_input.event,
                     &inference_event,
                     sender_id,
                     target_id,
@@ -367,11 +381,9 @@ impl QqChatAgent {
 
         let user_msg = message_with_api_style(
             build_user_message(
-                &hydrated_event,
-                bot_id,
+                &prepared_input,
                 ctx.bot_name,
                 ctx.llm.supports_multimodal_input(),
-                ctx.s3_ref,
                 &system_prompt,
                 &turn_session_state.lock().unwrap(),
                 &emotion_dimensions,
@@ -401,7 +413,7 @@ impl QqChatAgent {
             let mut locked = shared_runtime_values.lock().unwrap();
             locked.insert(
                 QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
-                DataValue::MessageEvent(hydrated_event.clone()),
+                DataValue::MessageEvent(prepared_input.event.clone()),
             );
             let adapter_handle: zihuan_core::ims_bot_adapter::BotAdapterHandle =
                 ctx.adapter.clone();
@@ -459,7 +471,7 @@ impl QqChatAgent {
                     group_id: if is_group {
                         Some(target_id.to_string())
                     } else {
-                        hydrated_event.group_id.map(|value| value.to_string())
+                        prepared_input.event.group_id.map(|value| value.to_string())
                     },
                     is_group,
                     admin: false,
@@ -514,7 +526,7 @@ impl QqChatAgent {
             Arc::clone(ctx.web_search_engine),
             ctx.mysql_ref.cloned(),
             ctx.s3_ref.cloned(),
-            Some(hydrated_event.clone()),
+            Some(prepared_input.event.clone()),
             ToolNotificationTarget::dashboard(),
         ));
         brain = brain.with_tool(SendNaturalLanguageReplyBrainTool::new(
@@ -597,7 +609,7 @@ impl QqChatAgent {
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_IMAGE_UNDERSTAND) {
             brain = brain.with_tool(ImageUnderstandBrainTool::new(
-                Some(hydrated_event.clone()),
+                Some(prepared_input.event.clone()),
                 ctx.mysql_ref.cloned(),
                 ctx.s3_ref.cloned(),
                 ToolNotificationTarget::new(
@@ -616,12 +628,12 @@ impl QqChatAgent {
 
         brain = brain.with_tool(GetBotProfileBrainTool::new(
             ctx.adapter.clone(),
-            hydrated_event.clone(),
+            prepared_input.event.clone(),
             ctx.s3_ref.cloned(),
         ));
         brain = brain.with_tool(GetQqUserProfileBrainTool::new(
             ctx.adapter.clone(),
-            hydrated_event.clone(),
+            prepared_input.event.clone(),
             ctx.s3_ref.cloned(),
         ));
 

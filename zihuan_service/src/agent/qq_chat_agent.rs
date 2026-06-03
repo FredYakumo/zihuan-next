@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 
 use super::inference::{InferenceToolContext, InferenceToolProvider};
 use super::qq_chat_agent_core::{
-    build_info_brain_tools, expand_messages_for_inference, extract_user_message_text,
-    hydrate_missing_reply_sources, QqAgentReplyBatchBuilder, QqChatAgent,
+    build_info_brain_tools, expand_messages_for_inference, prepare_current_turn_user_input,
+    prepare_current_turn_user_input_from_event, QqAgentReplyBatchBuilder, QqChatAgent,
     QqChatAgentContext, QqChatAgentService, QqChatAgentServiceConfig, QqChatTaskTrace,
     LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
@@ -72,6 +72,18 @@ pub fn expand_message_event_for_tool_input(
     let mut expanded = event.clone();
     expanded.message_list = expand_messages_for_inference(&event.message_list);
     expanded
+}
+
+#[doc(hidden)]
+pub use super::qq_chat_user_input::PreparedCurrentTurnUserInput;
+
+#[doc(hidden)]
+pub fn prepare_message_event_user_input_for_test(
+    event: &ims_bot_adapter::models::event_model::MessageEvent,
+    bot_id: &str,
+    bot_name: &str,
+) -> PreparedCurrentTurnUserInput {
+    prepare_current_turn_user_input_from_event(event, bot_id, bot_name, None)
 }
 
 #[derive(Clone)]
@@ -679,12 +691,23 @@ impl QqChatAgent {
         let (claimed, claim_token) = try_claim_session(session, &sender_id);
         if !claimed {
             let bot_id = get_bot_id(ctx.adapter);
-            let hydrated_event = hydrate_missing_reply_sources(event, ctx.adapter);
-            let mut inference_event = hydrated_event.clone();
+            let prepared_input = prepare_current_turn_user_input(
+                event,
+                ctx.adapter,
+                &bot_id,
+                ctx.bot_name,
+                ctx.s3_ref,
+            );
+            let mut inference_event = prepared_input.event.clone();
             inference_event.message_list =
-                expand_messages_for_inference(&hydrated_event.message_list);
-            let current_message =
-                extract_user_message_text(&inference_event, &bot_id, ctx.bot_name);
+                expand_messages_for_inference(&prepared_input.event.message_list);
+            let current_message = prepare_current_turn_user_input_from_event(
+                &inference_event,
+                &bot_id,
+                ctx.bot_name,
+                ctx.s3_ref,
+            )
+            .text;
             if let Some(command_registry) = crate::command::global_command_registry() {
                 let cmd_ctx = self.build_command_context(
                     &sender_id,
@@ -716,7 +739,7 @@ impl QqChatAgent {
                                 &trace,
                                 &cmd_ctx,
                                 dispatch_result,
-                                &hydrated_event,
+                                &prepared_input.event,
                                 &inference_event,
                                 &sender_id,
                                 &target_id,
@@ -741,7 +764,7 @@ impl QqChatAgent {
             let (accepted, queue_len, accepted_steer_count) = ctx.pending_steer.enqueue_with_limit(
                 &sender_id,
                 PendingSteerEvent {
-                    event: hydrated_event,
+                    event: prepared_input.event,
                     time: time.to_string(),
                 },
                 ctx.max_steer_count,

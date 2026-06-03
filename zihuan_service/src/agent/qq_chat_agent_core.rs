@@ -25,26 +25,16 @@ use crate::nodes::tool_subgraph::{
 };
 use crate::storage::qq_chat_history_store::clear_history;
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
-use ims_bot_adapter::adapter::restore_messages_for_message_id;
-use ims_bot_adapter::message_helpers::render_current_message_body;
-use ims_bot_adapter::utils;
 use ims_bot_adapter::{
-    CURRENT_MESSAGE_LABEL, FORWARD_CONTENT_LABEL, FORWARD_END_MARKER, FORWARD_NODE_LABEL,
-    FORWARD_START_MARKER, IMAGE_ANALYSIS_LABEL, REPLAY_CONTENT_LABEL, REPLY_END_MARKER,
-    REPLY_MESSAGE_LABEL, REPLY_START_MARKER, SENDER_LABEL,
+    IMAGE_ANALYSIS_LABEL,
 };
 use ims_bot_adapter::models::message::{
-    Message, MessageProp, PersistedMedia, PersistedMediaSource,
-    PlainTextMessage, ReplyMessage,
-};
-use ims_bot_adapter::multimodal_image_url::{
-    resolve_image_message_part, resolve_plain_text_segments, ImagePartSource, ResolvedTextSegment,
+    Message, PersistedMedia, PersistedMediaSource,
 };
 use zihuan_agent::brain::{BrainIterationHook, LongTaskNotifier};
 use zihuan_core::agent_config::QqChatEmotionDimensionConfig;
 use zihuan_core::steer::{
-    apply_steer_prefix, build_merged_follow_up_event, message_with_api_style,
-    PendingSteerEvent, PendingSteerStore, PROCESSING_INSTRUCTION,
+    apply_steer_prefix, PendingSteerStore, PROCESSING_INSTRUCTION,
 };
 use zihuan_core::command::{
     CommandChannel, CommandContext, NewConversationRequest, SideEffectContext,
@@ -54,7 +44,6 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::{MessagePart, LLMMessage};
 use zihuan_core::rag::WebSearchEngineRef;
-use zihuan_core::runtime::block_async;
 use zihuan_core::task_context::AgentTaskRuntime;
 use zihuan_core::utils::string_utils::extract_string_field;
 use zihuan_core::weaviate::WeaviateRef;
@@ -66,6 +55,11 @@ use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::message_restore::register_media;
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
+
+pub(crate) use super::qq_chat_user_input::{
+    expand_messages_for_inference, prepare_current_turn_user_input,
+    prepare_current_turn_user_input_from_event, PreparedCurrentTurnUserInput,
+};
 
 pub(crate) const LOG_PREFIX: &str = "[QqChatAgent]";
 pub(crate) const MAX_REPLY_CHARS: usize = 250;
@@ -226,46 +220,6 @@ pub(crate) fn build_group_system_prompt(
     rules
 }
 
-#[derive(Debug, Default)]
-struct MultimodalImageStats {
-    image_parts: usize,
-    local_file_images: usize,
-    object_storage_images: usize,
-    downloaded_remote_images: usize,
-    uploaded_to_s3_images: usize,
-    data_url_images: usize,
-    skipped_images: usize,
-}
-
-impl MultimodalImageStats {
-    fn record_success(&mut self, source: ImagePartSource) {
-        self.image_parts += 1;
-        match source {
-            ImagePartSource::LocalFile => self.local_file_images += 1,
-            ImagePartSource::ObjectStorage => self.object_storage_images += 1,
-            ImagePartSource::DownloadedRemote => self.downloaded_remote_images += 1,
-            ImagePartSource::UploadedToS3 => self.uploaded_to_s3_images += 1,
-            ImagePartSource::DataUrl => self.data_url_images += 1,
-        }
-    }
-
-    fn record_skipped(&mut self) {
-        self.skipped_images += 1;
-    }
-}
-
-fn append_text_segment(buffer: &mut String, segment: &str) {
-    let segment = segment.trim();
-    if segment.is_empty() {
-        return;
-    }
-
-    if !buffer.is_empty() {
-        buffer.push(' ');
-    }
-    buffer.push_str(segment);
-}
-
 fn flush_text_part(parts: &mut Vec<MessagePart>, buffer: &mut String) {
     let text = buffer.trim();
     if !text.is_empty() {
@@ -274,417 +228,25 @@ fn flush_text_part(parts: &mut Vec<MessagePart>, buffer: &mut String) {
     buffer.clear();
 }
 
-/// Parse a plain-text string that may contain inline image references and append the resulting
-/// content parts (text + image) to `parts`.
-///
-/// This is the leaf handler of the multimodal message construction pipeline (`append_messages_as_parts`
-/// → `append_plain_text_as_parts`). It delegates to `resolve_plain_text_segments` which detects
-/// image references embedded in text (local file paths, S3 URIs, remote URLs, etc.) and yields an
-/// alternating sequence of `Text` and `Image` segments.
-///
-/// - Consecutive text segments are accumulated in `text_buffer` and flushed as a single
-///   `MessagePart::Text` when an image is encountered or at the end of iteration.
-/// - Image segments are converted to `MessagePart::ImageUrl` and pushed directly.
-/// - `has_media` is set to `true` when any image is found, signaling the caller
-///   (`build_user_message`) that a multimodal message path is needed.
-/// - `image_stats` records per-source-type counts for observability logging.
-fn append_plain_text_as_parts(
-    text: &str,
+fn append_prepared_parts(
     parts: &mut Vec<MessagePart>,
     text_buffer: &mut String,
-    has_media: &mut bool,
-    s3_ref: Option<&Arc<S3Ref>>,
-    image_stats: &mut MultimodalImageStats,
+    prefix: &str,
+    prepared_parts: &[MessagePart],
 ) {
-    for segment in resolve_plain_text_segments(text, s3_ref.map(AsRef::as_ref), true, LOG_PREFIX) {
-        match segment {
-            ResolvedTextSegment::Text(text) => append_text_segment(text_buffer, &text),
-            ResolvedTextSegment::Image(resolved) => {
+    if !prefix.is_empty() {
+        text_buffer.push_str(prefix);
+    }
+
+    for part in prepared_parts {
+        match part {
+            MessagePart::Text { text } => text_buffer.push_str(text),
+            MessagePart::Image { .. } | MessagePart::Video { .. } => {
                 flush_text_part(parts, text_buffer);
-                parts.push(resolved.part);
-                *has_media = true;
-                image_stats.record_success(resolved.source);
+                parts.push(part.clone());
             }
         }
     }
-}
-
-/// Recursively walk a list of QQ `Message` values and convert them into a flat sequence of
-/// `MessagePart` elements (text and image) for multimodal LLM inference.
-///
-/// This is the central dispatcher of the message-to-parts conversion pipeline, called by
-/// `build_user_message`. It handles every QQ message type:
-///
-/// - **`PlainText`** — delegates to `append_plain_text_as_parts`, which detects inline image refs.
-/// - **`Image`** — resolves via `resolve_image_message_part`; falls back to text serialisation.
-/// - **`Reply`** — when `include_reply_source_block` is true, recursively renders the quoted
-///   source messages under a `[引用内容]` heading so the model sees the context inline.
-/// - **`Forward`** — iterates each forward node, prepending the sender name, and recursively
-///   processes nested messages under a `[转发内容]` heading.
-/// - **Other** — serialised to text as a fallback.
-///
-/// Text fragments are accumulated in `text_buffer` and flushed as a single `MessagePart::Text`
-/// only when an image is hit or processing finishes, minimising the number of text parts.
-/// The `has_media` flag tells `build_user_message` whether to take the multimodal path.
-fn append_messages_as_parts(
-    messages: &[Message],
-    parts: &mut Vec<MessagePart>,
-    text_buffer: &mut String,
-    has_media: &mut bool,
-    include_reply_source_block: bool,
-    s3_ref: Option<&Arc<S3Ref>>,
-    image_stats: &mut MultimodalImageStats,
-) {
-    for message in messages {
-        match message {
-            Message::PlainText(plain) => {
-                append_plain_text_as_parts(
-                    &plain.text,
-                    parts,
-                    text_buffer,
-                    has_media,
-                    s3_ref,
-                    image_stats,
-                );
-            }
-            Message::Image(image) => {
-                if let Some(resolved) =
-                    resolve_image_message_part(image, s3_ref.map(AsRef::as_ref), true, LOG_PREFIX)
-                {
-                    flush_text_part(parts, text_buffer);
-                    parts.push(resolved.part);
-                    *has_media = true;
-                    image_stats.record_success(resolved.source);
-                } else {
-                    append_text_segment(text_buffer, &image.to_string());
-                    image_stats.record_skipped();
-                }
-            }
-            Message::Reply(reply) => {
-                if include_reply_source_block {
-                    if let Some(source_messages) = valid_reply_source_messages(reply) {
-                        if !text_buffer.is_empty() {
-                            text_buffer.push_str("\n\n");
-                        }
-                        text_buffer.push_str(&format!("[{}]\n", REPLAY_CONTENT_LABEL));
-                        append_messages_as_parts(
-                            source_messages,
-                            parts,
-                            text_buffer,
-                            has_media,
-                            false,
-                            s3_ref,
-                            image_stats,
-                        );
-                        continue;
-                    }
-                }
-
-                append_text_segment(text_buffer, &reply.to_string());
-            }
-            Message::Forward(forward) => {
-                if forward.content.is_empty() {
-                    append_text_segment(text_buffer, &forward.to_string());
-                } else {
-                    if !text_buffer.is_empty() {
-                        text_buffer.push_str("\n\n");
-                    }
-                    text_buffer.push_str(&format!("[{}]\n", FORWARD_CONTENT_LABEL));
-                    for (index, node) in forward.content.iter().enumerate() {
-                        if index > 0 && !text_buffer.ends_with('\n') {
-                            text_buffer.push('\n');
-                        }
-                        let sender = node
-                            .nickname
-                            .as_deref()
-                            .or(node.user_id.as_deref())
-                            .unwrap_or("unknown");
-                        text_buffer.push_str(sender);
-                        text_buffer.push_str(": ");
-                        append_messages_as_parts(
-                            &node.content,
-                            parts,
-                            text_buffer,
-                            has_media,
-                            false,
-                            s3_ref,
-                            image_stats,
-                        );
-                        if !text_buffer.ends_with('\n') {
-                            text_buffer.push('\n');
-                        }
-                    }
-                }
-            }
-            other => {
-                append_text_segment(text_buffer, &other.to_string());
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct CurrentTurnUserInput {
-    text: String,
-    is_at_me: bool,
-    at_target_list: Vec<String>,
-    messages: Vec<Message>,
-}
-
-impl CurrentTurnUserInput {
-    fn new(
-        event: &ims_bot_adapter::models::MessageEvent,
-        bot_id: &str,
-        bot_name: &str,
-    ) -> CurrentTurnUserInput {
-        let msg_prop = MessageProp::from_messages_with_bot_name(
-            &event.message_list,
-            Some(bot_id),
-            Some(bot_name),
-        );
-        let mut user_text = render_current_message_body(&event.message_list).unwrap_or_default();
-        if msg_prop.is_at_me {
-            user_text = zihuan_core::utils::string_utils::strip_leading_bot_mention(
-                &user_text, bot_id, bot_name,
-            );
-        }
-        let reference_blocks = collect_reply_reference_text(&event.message_list);
-        let mut sections = Vec::new();
-
-        let trimmed_user_text = user_text.trim();
-        if !trimmed_user_text.is_empty() {
-            sections.push(trimmed_user_text.to_string());
-        } else if reference_blocks.is_empty() {
-            sections.push("(无文本内容，可能是仅@或回复)".to_string());
-        }
-
-        for reference_text in reference_blocks {
-            sections.push(format!("[{}]\n{reference_text}", REPLAY_CONTENT_LABEL));
-        }
-
-        CurrentTurnUserInput {
-            text: sections.join("\n\n"),
-            is_at_me: msg_prop.is_at_me,
-            at_target_list: msg_prop.at_target_list,
-            messages: event.message_list.clone(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct ImagePromptReference {
-    location: String,
-    media_id: String,
-}
-
-/// Recursively traverses the message tree to collect image references for the LLM prompt.
-///
-/// Walks through `messages` and their nested structures (`Reply`, `Forward`).
-/// For each `Message::Image`, records its location path (e.g., `CURRENT_MESSAGE_LABEL`,
-/// `REPLY_MESSAGE_LABEL`, or "`CURRENT_MESSAGE_LABEL` / `FORWARD_NODE_LABEL` N(`SENDER_LABEL`)") and the `media_id`.
-/// Collected references are appended to the provided `references` vector.
-fn traverse_messages_for_image_references(
-    messages: &[Message],
-    current_path: &str,
-    references: &mut Vec<ImagePromptReference>,
-) {
-    for message in messages {
-        match message {
-            Message::Image(image) => {
-                let media_id = image.media.media_id.trim();
-                if media_id.is_empty() {
-                    continue;
-                }
-                references.push(ImagePromptReference {
-                    location: current_path.to_string(),
-                    media_id: media_id.to_string(),
-                });
-            }
-            Message::Reply(reply) => {
-                if let Some(source_messages) = valid_reply_source_messages(reply) {
-                    traverse_messages_for_image_references(source_messages, REPLY_MESSAGE_LABEL, references);
-                }
-            }
-            Message::Forward(forward) => {
-                for (node_index, node) in forward.content.iter().enumerate() {
-                    let sender = node
-                        .nickname
-                        .as_deref()
-                        .or(node.user_id.as_deref())
-                        .unwrap_or("unknown");
-                    traverse_messages_for_image_references(
-                        &node.content,
-                        &format!("{} / {} {}({})", current_path, FORWARD_NODE_LABEL, node_index + 1, sender),
-                        references,
-                    );
-                }
-            }
-            Message::PlainText(_) | Message::At(_) => {}
-        }
-    }
-}
-
-fn image_prompt_reference_lines(messages: &[Message]) -> Vec<String> {
-    let mut references = Vec::new();
-    traverse_messages_for_image_references(messages, CURRENT_MESSAGE_LABEL, &mut references);
-    references
-        .into_iter()
-        .map(|reference| format!("{} media_id={}", reference.location, reference.media_id))
-        .collect()
-}
-
-fn valid_reply_source_messages(reply: &ReplyMessage) -> Option<&[Message]> {
-    let source_messages = reply.message_source.as_deref()?;
-    if utils::messages_have_effective_content(source_messages, 0) {
-        Some(source_messages)
-    } else {
-        None
-    }
-}
-
-/// Recursively populate missing reply source messages in a message event.
-///
-/// QQ `Reply` messages only carry the `message_id` of the referenced message,
-/// not the actual content. This function walks the entire message tree and,
-/// for every `Reply` that lacks a `message_source`, queries the database via
-/// `restore_messages_for_message_id` to backfill it. It then recursively
-/// processes any nested `Reply` / `Forward` in the backfilled result.
-pub(crate) fn hydrate_missing_reply_sources(
-    event: &ims_bot_adapter::models::MessageEvent,
-    adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
-) -> ims_bot_adapter::models::MessageEvent {
-    /// Recursively walk a message list and fill in missing reply sources.
-    fn hydrate_messages(
-        messages: &mut [Message],
-        adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
-    ) {
-        for message in messages {
-            match message {
-                Message::Reply(reply) => {
-                    // Reply has no valid source messages — attempt DB restore
-                    if valid_reply_source_messages(reply).is_none() {
-                        match block_async(restore_messages_for_message_id(adapter, reply.id)) {
-                            Ok(Some(messages)) => {
-                                reply.message_source = Some(messages);
-                            }
-                            Ok(None) => {
-                                // Message not found in database either, skip
-                            }
-                            Err(error) => {
-                                warn!(
-                                    "{LOG_PREFIX} failed to restore reply source inside qq_chat_agent for message_id={}: {}",
-                                    reply.id, error
-                                );
-                            }
-                        }
-                    }
-
-                    // Recurse into the source messages to handle nested Reply / Forward
-                    if let Some(source_messages) = reply.message_source.as_mut() {
-                        hydrate_messages(source_messages, adapter);
-                    }
-                }
-                Message::Forward(forward) => {
-                    // Each forward node may contain nested Replies — recurse
-                    for node in &mut forward.content {
-                        hydrate_messages(&mut node.content, adapter);
-                    }
-                }
-                // PlainText / Image / At etc. need no hydration
-                _ => {}
-            }
-        }
-    }
-
-    let mut hydrated = event.clone();
-    hydrate_messages(&mut hydrated.message_list, adapter);
-    hydrated
-}
-
-/// Collect readable text from reply-quoted source messages.
-///
-/// Only processes `Message::Reply` entries that have valid source messages (confirmed by
-/// `valid_reply_source_messages`). Each source is rendered to human-readable text via
-/// `render_messages_readable`; empty results are discarded.
-///
-/// Used by `CurrentTurnUserInput::new` to build `[引用内容]` blocks that are appended to
-/// the user message text, so the model sees quoted context inline.
-fn collect_reply_reference_text(messages: &[Message]) -> Vec<String> {
-    messages
-        .iter()
-        .filter_map(|message| match message {
-            Message::Reply(reply) => {
-                valid_reply_source_messages(reply).and_then(|source_messages| {
-                    let rendered =
-                        zihuan_core::ims_bot_adapter::models::message::render_messages_readable(
-                            source_messages,
-                        );
-                    let trimmed = rendered.trim();
-                    if trimmed.is_empty() {
-                        None
-                    } else {
-                        Some(trimmed.to_string())
-                    }
-                })
-            }
-            _ => None,
-        })
-        .collect()
-}
-
-/// Recursively flattens nested message structures into a linear list suitable for LLM inference.
-///
-/// Wraps `Reply` and `Forward` messages with plain-text boundary markers so the model can
-/// distinguish quoted content from the current turn without relying on opaque nested types.
-pub(crate) fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message> {
-    let mut expanded = Vec::new();
-
-    for message in messages {
-        match message {
-            Message::Reply(reply) => {
-                expanded.push(Message::PlainText(PlainTextMessage {
-                    text: REPLY_START_MARKER.to_string(),
-                }));
-                if let Some(source_messages) = valid_reply_source_messages(reply) {
-                    expanded.extend(expand_messages_for_inference(source_messages));
-                } else {
-                    expanded.push(message.clone());
-                }
-                expanded.push(Message::PlainText(PlainTextMessage {
-                    text: REPLY_END_MARKER.to_string(),
-                }));
-            }
-            Message::Forward(forward) => {
-                if forward.content.is_empty() {
-                    expanded.push(message.clone());
-                    continue;
-                }
-
-                expanded.push(Message::PlainText(PlainTextMessage {
-                    text: FORWARD_START_MARKER.to_string(),
-                }));
-
-                for (index, node) in forward.content.iter().enumerate() {
-                    let sender = node
-                        .nickname
-                        .as_deref()
-                        .or(node.user_id.as_deref())
-                        .unwrap_or("unknown");
-                    expanded.push(Message::PlainText(PlainTextMessage {
-                        text: format!("[{} {} {}: {}]", FORWARD_NODE_LABEL, index + 1, SENDER_LABEL, sender),
-                    }));
-                    expanded.extend(expand_messages_for_inference(&node.content));
-                }
-
-                expanded.push(Message::PlainText(PlainTextMessage {
-                    text: FORWARD_END_MARKER.to_string(),
-                }));
-            }
-            _ => expanded.push(message.clone()),
-        }
-    }
-
-    expanded
 }
 
 /// Build a structured user-role message from a QQ message event for LLM inference.
@@ -733,11 +295,9 @@ pub(crate) fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message
 ///   emitted.
 /// * `s3_ref` — optional S3 handle for resolving image URLs to object-storage paths.
 pub(crate) fn build_user_message(
-    event: &ims_bot_adapter::models::MessageEvent,
-    bot_id: &str,
+    current_input: &PreparedCurrentTurnUserInput,
     bot_name: &str,
     llm_supports_multimodal_input: bool,
-    s3_ref: Option<&Arc<S3Ref>>,
     character_instructions: &str,
     session_state: &QqChatAgentSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
@@ -748,11 +308,9 @@ pub(crate) fn build_user_message(
     let environment = format!("[Environment]\n- Your name: {bot_name}");
 
     let sender_name = ims_bot_adapter::utils::sender_display_name!(
-        &event.sender.nickname,
-        &event.sender.card
+        &current_input.event.sender.nickname,
+        &current_input.event.sender.card
     );
-
-    let current_input = CurrentTurnUserInput::new(event, bot_id, bot_name);
 
     let at_mention = if current_input.is_at_me {
         "\n- You were @-mentioned in this message"
@@ -768,23 +326,17 @@ pub(crate) fn build_user_message(
 
     let metadata = format!(
         "[User Message Metadata]\n- Message type: {ty}\n- Sender name: {sender_name}{at_mention}{at_targets}",
-        ty = event.message_type.as_str(),
+        ty = current_input.event.message_type.as_str(),
     );
 
-
-    let mut references = Vec::new();
-    traverse_messages_for_image_references(&current_input.messages, CURRENT_MESSAGE_LABEL, &mut references);
-    let image_references: Vec<String> = references
-        .into_iter()
-        .map(|reference| format!("{} media_id={}", reference.location, reference.media_id))
-        .collect();
-
-
-
-    let image_section = if image_references.is_empty() {
+    let image_section = if current_input.image_reference_lines.is_empty() {
         String::new()
     } else {
-        format!("\n\n[{}]\n{}", IMAGE_ANALYSIS_LABEL, image_references.join("\n"))
+        format!(
+            "\n\n[{}]\n{}",
+            IMAGE_ANALYSIS_LABEL,
+            current_input.image_reference_lines.join("\n")
+        )
     };
 
     let user_text = format!(
@@ -794,66 +346,44 @@ pub(crate) fn build_user_message(
         current_input.text,
     );
 
-    if !llm_supports_multimodal_input || image_references.is_empty() {
+    if !llm_supports_multimodal_input || !current_input.has_media {
         return LLMMessage::user(user_text);
     }
-
-    // Processing multimodal input
-
 
     let state_text = format!("{}\n", state_lines.join("\n"));
     let mut parts = vec![MessagePart::text(state_text)];
     let metadata_text = format!("{environment}\n\n{metadata}");
     let mut text_buffer = format!("{metadata_text}\n\n{}", ims_bot_adapter::CURRENT_MESSAGE_LABEL);
-    let mut has_media = false;
-    let mut image_stats = MultimodalImageStats::default();
-    append_messages_as_parts(
-        &current_input.messages,
-        &mut parts,
-        &mut text_buffer,
-        &mut has_media,
-        true,
-        s3_ref,
-        &mut image_stats,
-    );
-
+    append_prepared_parts(&mut parts, &mut text_buffer, "\n", &current_input.parts);
     flush_text_part(&mut parts, &mut text_buffer);
     info!(
         "{LOG_PREFIX} Built multimodal user message: total_parts={}, image_parts={}, local_file_images={}, object_storage_images={}, downloaded_remote_images={}, uploaded_to_s3_images={}, data_url_images={}, skipped_images={}",
         parts.len(),
-        image_stats.image_parts,
-        image_stats.local_file_images,
-        image_stats.object_storage_images,
-        image_stats.downloaded_remote_images,
-        image_stats.uploaded_to_s3_images,
-        image_stats.data_url_images,
-        image_stats.skipped_images,
+        current_input.multimodal_stats.image_parts,
+        current_input.multimodal_stats.local_file_images,
+        current_input.multimodal_stats.object_storage_images,
+        current_input.multimodal_stats.downloaded_remote_images,
+        current_input.multimodal_stats.uploaded_to_s3_images,
+        current_input.multimodal_stats.data_url_images,
+        current_input.multimodal_stats.skipped_images,
     );
     parts.push(MessagePart::text(PROCESSING_INSTRUCTION.to_string()));
-    if parts.is_empty() {
-        LLMMessage::user(ims_bot_adapter::NOT_ANY_TEXT_MARKER.to_string())
-    } else {
-        LLMMessage::user_with_parts(parts)
-    }
+    LLMMessage::user_with_parts(parts)
 }
 
 fn build_steer_user_message(
-    event: &ims_bot_adapter::models::MessageEvent,
-    bot_id: &str,
+    current_input: &PreparedCurrentTurnUserInput,
     bot_name: &str,
     llm_supports_multimodal_input: bool,
-    s3_ref: Option<&Arc<S3Ref>>,
     api_style: Option<&str>,
     system_prompt: &str,
     session_state: &QqChatAgentSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> LLMMessage {
     let steer_message = build_user_message(
-        event,
-        bot_id,
+        current_input,
         bot_name,
         llm_supports_multimodal_input,
-        s3_ref,
         system_prompt,
         session_state,
         emotion_dimensions,
@@ -863,11 +393,8 @@ fn build_steer_user_message(
 }
 
 fn build_merged_steer_user_message(
-    events: &[ims_bot_adapter::models::MessageEvent],
-    bot_id: &str,
-    bot_name: &str,
+    current_inputs: &[PreparedCurrentTurnUserInput],
     llm_supports_multimodal_input: bool,
-    s3_ref: Option<&Arc<S3Ref>>,
     api_style: Option<&str>,
     system_prompt: &str,
     session_state: &QqChatAgentSessionState,
@@ -878,13 +405,10 @@ fn build_merged_steer_user_message(
             build_state_system_prefix_lines(session_state, emotion_dimensions, system_prompt);
         let prefix = prefix_lines.join("\n");
 
-        let merged_text = events
+        let merged_text = current_inputs
             .iter()
             .enumerate()
-            .map(|(index, event)| {
-                let text = extract_user_message_text(event, bot_id, bot_name);
-                format!("{}. {text}", index + 1)
-            })
+            .map(|(index, input)| format!("{}. {}", index + 1, input.text))
             .collect::<Vec<_>>()
             .join("\n");
 
@@ -900,39 +424,30 @@ fn build_merged_steer_user_message(
 
     let mut parts = vec![MessagePart::text(state_text.clone())];
     let mut text_buffer = String::new();
-    let mut has_media = false;
-    let mut image_stats = MultimodalImageStats::default();
 
-    for (index, event) in events.iter().enumerate() {
-        let current_input = CurrentTurnUserInput::new(event, bot_id, bot_name);
+    for (index, current_input) in current_inputs.iter().enumerate() {
         if index > 0 {
             text_buffer.push_str("\n\n");
         }
-        text_buffer.push_str(&format!("{}. ", index + 1));
-        append_messages_as_parts(
-            &current_input.messages,
+        append_prepared_parts(
             &mut parts,
             &mut text_buffer,
-            &mut has_media,
-            true,
-            s3_ref,
-            &mut image_stats,
+            &format!("{}. ", index + 1),
+            &current_input.parts,
         );
     }
 
     flush_text_part(&mut parts, &mut text_buffer);
+    let has_media = current_inputs.iter().any(|input| input.has_media);
 
     let message = if has_media && parts.len() > 1 {
         parts.push(MessagePart::text(PROCESSING_INSTRUCTION.to_string()));
         LLMMessage::user_with_parts(parts)
     } else {
-        let merged_text = events
+        let merged_text = current_inputs
             .iter()
             .enumerate()
-            .map(|(index, event)| {
-                let text = extract_user_message_text(event, bot_id, bot_name);
-                format!("{}. {text}", index + 1)
-            })
+            .map(|(index, input)| format!("{}. {}", index + 1, input.text))
             .collect::<Vec<_>>()
             .join("\n");
         LLMMessage::user(format!(
@@ -941,14 +456,6 @@ fn build_merged_steer_user_message(
     };
 
     apply_steer_prefix(message, api_style)
-}
-
-pub(crate) fn extract_user_message_text(
-    event: &ims_bot_adapter::models::MessageEvent,
-    bot_id: &str,
-    bot_name: &str,
-) -> String {
-    CurrentTurnUserInput::new(event, bot_id, bot_name).text
 }
 
 fn persisted_media_from_tool_value(value: &Value) -> Option<PersistedMedia> {
@@ -1165,25 +672,30 @@ impl BrainIterationHook for QqChatSteerHook {
         let steer_count = pending.len();
 
         let mut injected = Vec::with_capacity(pending.len());
+        let mut prepared_inputs = Vec::with_capacity(pending.len());
         let mut consumed_guard = self.consumed_messages.lock().unwrap();
 
         for pending_event in pending {
             let mut inference_event = pending_event.event.clone();
             inference_event.message_list =
                 expand_messages_for_inference(&pending_event.event.message_list);
-            let current_message =
-                extract_user_message_text(&inference_event, &self.bot_id, &self.bot_name);
+            let prepared_input = prepare_current_turn_user_input_from_event(
+                &inference_event,
+                &self.bot_id,
+                &self.bot_name,
+                self.s3_ref.as_ref(),
+            );
+            let current_message = prepared_input.text.clone();
             self.trace.record_steer_received(&current_message);
+            prepared_inputs.push(prepared_input);
             injected.push(inference_event);
         }
 
-        let steer_message = if injected.len() == 1 {
+        let steer_message = if prepared_inputs.len() == 1 {
             build_steer_user_message(
-                &injected[0],
-                &self.bot_id,
+                &prepared_inputs[0],
                 &self.bot_name,
                 self.llm_supports_multimodal_input,
-                self.s3_ref.as_ref(),
                 self.llm_api_style.as_deref(),
                 &self.system_prompt,
                 &self.session_state.lock().unwrap(),
@@ -1191,11 +703,8 @@ impl BrainIterationHook for QqChatSteerHook {
             )
         } else {
             build_merged_steer_user_message(
-                &injected,
-                &self.bot_id,
-                &self.bot_name,
+                &prepared_inputs,
                 self.llm_supports_multimodal_input,
-                self.s3_ref.as_ref(),
                 self.llm_api_style.as_deref(),
                 &self.system_prompt,
                 &self.session_state.lock().unwrap(),

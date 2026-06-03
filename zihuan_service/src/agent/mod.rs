@@ -10,6 +10,7 @@ pub mod qq_chat_agent_ignore_store;
 mod qq_chat_agent_inbox;
 mod qq_chat_agent_logging;
 pub(crate) mod qq_chat_agent_msg_send;
+pub(crate) mod qq_chat_user_input;
 mod tools;
 pub(crate) use tools::execute_image_understand_tool;
 pub(crate) use tools::CurrentTimeBrainTool;
