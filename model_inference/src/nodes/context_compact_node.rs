@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::inference_function::compact_message::compact_context_messages;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::OpenAIMessage;
+use zihuan_core::llm::LLMMessage;
 use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
 
 pub struct ContextCompactNode {
@@ -21,14 +21,14 @@ impl ContextCompactNode {
     fn parse_messages_input(
         &self,
         inputs: &HashMap<String, DataValue>,
-    ) -> Result<Vec<OpenAIMessage>> {
+    ) -> Result<Vec<LLMMessage>> {
         match inputs.get("messages") {
-            Some(DataValue::Vec(inner_type, items)) if **inner_type == DataType::OpenAIMessage => {
+            Some(DataValue::Vec(inner_type, items)) if **inner_type == DataType::LLMMessage => {
                 items
                     .iter()
                     .map(|item| match item {
-                        DataValue::OpenAIMessage(message) => Ok(message.clone()),
-                        _ => Err(self.wrap_error("messages must contain OpenAIMessage items")),
+                        DataValue::LLMMessage(message) => Ok(message.clone()),
+                        _ => Err(self.wrap_error("messages must contain LLMMessage items")),
                     })
                     .collect()
             }
@@ -51,18 +51,18 @@ impl Node for ContextCompactNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("压缩 OpenAIMessage 历史为摘要对加最近 2 条非 tool 消息")
+        Some("压缩 LLMMessage 历史为摘要对加最近 2 条非 tool 消息")
     }
 
     node_input![
         port! { name = "llm_model", ty = LLModel, desc = "LLM 模型引用，用于执行上下文摘要压缩" },
-        port! { name = "messages", ty = Vec(OpenAIMessage), desc = "待压缩的 OpenAIMessage 历史列表" },
+        port! { name = "messages", ty = Vec(LLMMessage), desc = "待压缩的 LLMMessage 历史列表" },
         port! { name = "compact_context_length", ty = Integer, desc = "估算 token 超过该阈值时触发压缩；<=0 时仅 force_compact 可触发" },
         port! { name = "force_compact", ty = Boolean, desc = "为 true 时即使未超阈值也执行压缩", optional },
     ];
 
     node_output![
-        port! { name = "messages", ty = Vec(OpenAIMessage), desc = "压缩后的消息列表" },
+        port! { name = "messages", ty = Vec(LLMMessage), desc = "压缩后的消息列表" },
         port! { name = "did_compact", ty = Boolean, desc = "本次是否执行并应用了压缩" },
         port! { name = "estimated_tokens_before", ty = Integer, desc = "压缩前的估算 token 数" },
         port! { name = "estimated_tokens_after", ty = Integer, desc = "压缩后的估算 token 数" },
@@ -91,11 +91,11 @@ impl Node for ContextCompactNode {
 
         zihuan_graph_engine::return_with_node_output![self;
             "messages" => DataValue::Vec(
-                Box::new(DataType::OpenAIMessage),
+                Box::new(DataType::LLMMessage),
                 result
                     .messages
                     .into_iter()
-                    .map(DataValue::OpenAIMessage)
+                    .map(DataValue::LLMMessage)
                     .collect(),
             ),
             "did_compact" => DataValue::Boolean(result.did_compact),

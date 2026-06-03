@@ -52,7 +52,7 @@ use zihuan_core::command::{
 use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
-use zihuan_core::llm::{ContentPart, OpenAIMessage};
+use zihuan_core::llm::{LLMMessagePart, LLMMessage};
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::runtime::block_async;
 use zihuan_core::task_context::AgentTaskRuntime;
@@ -61,7 +61,7 @@ use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::brain_tool_spec::{
     BrainToolDefinition, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
 };
-use zihuan_graph_engine::data_value::{OpenAIMessageSessionCacheRef, SessionStateRef};
+use zihuan_graph_engine::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::message_restore::register_media;
 use zihuan_graph_engine::object_storage::S3Ref;
@@ -108,7 +108,7 @@ pub(crate) type QqAgentReplyBatchBuilder =
 
 pub(crate) struct QqCommandSideEffectContext<'a> {
     command_context: &'a CommandContext,
-    cache: &'a Arc<OpenAIMessageSessionCacheRef>,
+    cache: &'a Arc<LLMMessageSessionCacheRef>,
     adapter: &'a ims_bot_adapter::adapter::SharedBotAdapter,
     bot_id: &'a str,
     bot_name: &'a str,
@@ -266,10 +266,10 @@ fn append_text_segment(buffer: &mut String, segment: &str) {
     buffer.push_str(segment);
 }
 
-fn flush_text_part(parts: &mut Vec<ContentPart>, buffer: &mut String) {
+fn flush_text_part(parts: &mut Vec<LLMMessagePart>, buffer: &mut String) {
     let text = buffer.trim();
     if !text.is_empty() {
-        parts.push(ContentPart::text(text.to_string()));
+        parts.push(LLMMessagePart::text(text.to_string()));
     }
     buffer.clear();
 }
@@ -283,14 +283,14 @@ fn flush_text_part(parts: &mut Vec<ContentPart>, buffer: &mut String) {
 /// alternating sequence of `Text` and `Image` segments.
 ///
 /// - Consecutive text segments are accumulated in `text_buffer` and flushed as a single
-///   `ContentPart::Text` when an image is encountered or at the end of iteration.
-/// - Image segments are converted to `ContentPart::ImageUrl` and pushed directly.
+///   `LLMMessagePart::Text` when an image is encountered or at the end of iteration.
+/// - Image segments are converted to `LLMMessagePart::ImageUrl` and pushed directly.
 /// - `has_media` is set to `true` when any image is found, signaling the caller
 ///   (`build_user_message`) that a multimodal message path is needed.
 /// - `image_stats` records per-source-type counts for observability logging.
 fn append_plain_text_as_parts(
     text: &str,
-    parts: &mut Vec<ContentPart>,
+    parts: &mut Vec<LLMMessagePart>,
     text_buffer: &mut String,
     has_media: &mut bool,
     s3_ref: Option<&Arc<S3Ref>>,
@@ -310,7 +310,7 @@ fn append_plain_text_as_parts(
 }
 
 /// Recursively walk a list of QQ `Message` values and convert them into a flat sequence of
-/// `ContentPart` elements (text and image) for multimodal LLM inference.
+/// `LLMMessagePart` elements (text and image) for multimodal LLM inference.
 ///
 /// This is the central dispatcher of the message-to-parts conversion pipeline, called by
 /// `build_user_message`. It handles every QQ message type:
@@ -323,12 +323,12 @@ fn append_plain_text_as_parts(
 ///   processes nested messages under a `[转发内容]` heading.
 /// - **Other** — serialised to text as a fallback.
 ///
-/// Text fragments are accumulated in `text_buffer` and flushed as a single `ContentPart::Text`
+/// Text fragments are accumulated in `text_buffer` and flushed as a single `LLMMessagePart::Text`
 /// only when an image is hit or processing finishes, minimising the number of text parts.
 /// The `has_media` flag tells `build_user_message` whether to take the multimodal path.
 fn append_messages_as_parts(
     messages: &[Message],
-    parts: &mut Vec<ContentPart>,
+    parts: &mut Vec<LLMMessagePart>,
     text_buffer: &mut String,
     has_media: &mut bool,
     include_reply_source_block: bool,
@@ -702,9 +702,9 @@ pub(crate) fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message
 /// multimodal (image) input:
 ///
 /// * **Text-only path** (`llm_supports_multimodal_input == false`): builds the message as a
-///   plain `ContentPart::Text` with metadata lines, the user message body, and image
+///   plain `LLMMessagePart::Text` with metadata lines, the user message body, and image
 ///   reference hints (media_id strings the model can pass to image-analysis tools later).
-/// * **Multimodal path**: constructs `ContentPart::Parts` arrays where images discovered in
+/// * **Multimodal path**: constructs `LLMMessagePart::Parts` arrays where images discovered in
 ///   the message body (inline images, reply sources, forwarded content) are resolved via S3
 ///   and embedded as `image_url` parts alongside text. The metadata block is prepended to
 ///   the first text part.
@@ -720,7 +720,7 @@ pub(crate) fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message
 ///
 /// Called at the start of every agent inference turn (both the initial `handle` and
 /// steer-injection via `QqChatSteerHook::on_before_inference`). The returned
-/// `OpenAIMessage` is pushed into the conversation cache and fed to the Brain tool-call
+/// `LLMMessage` is pushed into the conversation cache and fed to the Brain tool-call
 /// loop.
 ///
 /// # Parameters
@@ -741,7 +741,7 @@ pub(crate) fn build_user_message(
     character_instructions: &str,
     session_state: &QqChatAgentSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
-) -> OpenAIMessage {
+) -> LLMMessage {
     let state_lines =
         build_state_system_prefix_lines(session_state, emotion_dimensions, character_instructions);
 
@@ -795,14 +795,14 @@ pub(crate) fn build_user_message(
     );
 
     if !llm_supports_multimodal_input || image_references.is_empty() {
-        return OpenAIMessage::user(user_text);
+        return LLMMessage::user(user_text);
     }
 
     // Processing multimodal input
 
 
     let state_text = format!("{}\n", state_lines.join("\n"));
-    let mut parts = vec![ContentPart::text(state_text)];
+    let mut parts = vec![LLMMessagePart::text(state_text)];
     let metadata_text = format!("{environment}\n\n{metadata}");
     let mut text_buffer = format!("{metadata_text}\n\n{}", ims_bot_adapter::CURRENT_MESSAGE_LABEL);
     let mut has_media = false;
@@ -829,11 +829,11 @@ pub(crate) fn build_user_message(
         image_stats.data_url_images,
         image_stats.skipped_images,
     );
-    parts.push(ContentPart::text(PROCESSING_INSTRUCTION.to_string()));
+    parts.push(LLMMessagePart::text(PROCESSING_INSTRUCTION.to_string()));
     if parts.is_empty() {
-        OpenAIMessage::user(ims_bot_adapter::NOT_ANY_TEXT_MARKER.to_string())
+        LLMMessage::user(ims_bot_adapter::NOT_ANY_TEXT_MARKER.to_string())
     } else {
-        OpenAIMessage::user_with_parts(parts)
+        LLMMessage::user_with_parts(parts)
     }
 }
 
@@ -847,7 +847,7 @@ fn build_steer_user_message(
     system_prompt: &str,
     session_state: &QqChatAgentSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
-) -> OpenAIMessage {
+) -> LLMMessage {
     let steer_message = build_user_message(
         event,
         bot_id,
@@ -872,7 +872,7 @@ fn build_merged_steer_user_message(
     system_prompt: &str,
     session_state: &QqChatAgentSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
-) -> OpenAIMessage {
+) -> LLMMessage {
     if !llm_supports_multimodal_input {
         let prefix_lines =
             build_state_system_prefix_lines(session_state, emotion_dimensions, system_prompt);
@@ -888,7 +888,7 @@ fn build_merged_steer_user_message(
             .collect::<Vec<_>>()
             .join("\n");
 
-        let message = OpenAIMessage::user(format!(
+        let message = LLMMessage::user(format!(
             "{prefix}\n\n{merged_text}\n\n{PROCESSING_INSTRUCTION}"
         ));
         return apply_steer_prefix(message, api_style);
@@ -898,7 +898,7 @@ fn build_merged_steer_user_message(
         build_state_system_prefix_lines(session_state, emotion_dimensions, system_prompt);
     let state_text = format!("{}\n", prefix_lines.join("\n"));
 
-    let mut parts = vec![ContentPart::text(state_text.clone())];
+    let mut parts = vec![LLMMessagePart::text(state_text.clone())];
     let mut text_buffer = String::new();
     let mut has_media = false;
     let mut image_stats = MultimodalImageStats::default();
@@ -923,8 +923,8 @@ fn build_merged_steer_user_message(
     flush_text_part(&mut parts, &mut text_buffer);
 
     let message = if has_media && parts.len() > 1 {
-        parts.push(ContentPart::text(PROCESSING_INSTRUCTION.to_string()));
-        OpenAIMessage::user_with_parts(parts)
+        parts.push(LLMMessagePart::text(PROCESSING_INSTRUCTION.to_string()));
+        LLMMessage::user_with_parts(parts)
     } else {
         let merged_text = events
             .iter()
@@ -935,7 +935,7 @@ fn build_merged_steer_user_message(
             })
             .collect::<Vec<_>>()
             .join("\n");
-        OpenAIMessage::user(format!(
+        LLMMessage::user(format!(
             "{state_text}\n{merged_text}\n\n{PROCESSING_INSTRUCTION}"
         ))
     };
@@ -975,7 +975,7 @@ fn persisted_media_from_tool_value(value: &Value) -> Option<PersistedMedia> {
 }
 
 pub(crate) fn collect_available_media_from_brain_output(
-    messages: &[OpenAIMessage],
+    messages: &[LLMMessage],
 ) -> HashMap<String, PersistedMedia> {
     let mut media_by_id = HashMap::new();
 
@@ -1100,7 +1100,7 @@ pub(crate) struct QqChatAgentContext<'a> {
     pub(crate) adapter: &'a ims_bot_adapter::adapter::SharedBotAdapter,
     pub(crate) bot_name: &'a str,
     pub(crate) agent_system_prompt: Option<&'a str>,
-    pub(crate) cache: &'a Arc<OpenAIMessageSessionCacheRef>,
+    pub(crate) cache: &'a Arc<LLMMessageSessionCacheRef>,
     pub(crate) llm: &'a Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
     pub(crate) math_programming_llm: &'a Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
     pub(crate) natural_language_reply_llm: &'a Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
@@ -1144,7 +1144,7 @@ pub(crate) struct QqChatSteerHook {
     pub(crate) llm_api_style: Option<String>,
     pub(crate) s3_ref: Option<Arc<S3Ref>>,
     pub(crate) trace: QqChatTaskTrace,
-    pub(crate) consumed_messages: Arc<Mutex<Vec<OpenAIMessage>>>,
+    pub(crate) consumed_messages: Arc<Mutex<Vec<LLMMessage>>>,
     pub(crate) shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
     pub(crate) system_prompt: String,
     pub(crate) session_state: Arc<Mutex<QqChatAgentSessionState>>,
@@ -1155,8 +1155,8 @@ impl BrainIterationHook for QqChatSteerHook {
     fn on_before_inference(
         &self,
         _iteration: usize,
-        _conversation: &[OpenAIMessage],
-    ) -> Vec<OpenAIMessage> {
+        _conversation: &[LLMMessage],
+    ) -> Vec<LLMMessage> {
         let (pending, remaining_queue_len, accepted_steer_count) =
             self.pending_steer.drain_all(&self.sender_id);
         if pending.is_empty() {
@@ -1286,7 +1286,7 @@ pub struct QqChatAgentServiceConfig {
     pub node_id: String,
     pub bot_name: String,
     pub system_prompt: Option<String>,
-    pub cache: Arc<OpenAIMessageSessionCacheRef>,
+    pub cache: Arc<LLMMessageSessionCacheRef>,
     pub session: Arc<SessionStateRef>,
     pub llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
     pub math_programming_llm: Arc<dyn zihuan_core::llm::llm_base::LLMBase>,

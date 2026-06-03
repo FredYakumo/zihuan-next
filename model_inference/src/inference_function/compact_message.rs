@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use log::warn;
 use zihuan_core::llm::llm_base::LLMBase;
-use zihuan_core::llm::{InferenceParam, MessageRole, OpenAIMessage};
+use zihuan_core::llm::{InferenceParam, MessageRole, LLMMessage};
 
 use crate::message_content_utils::{is_transport_error, sanitize_messages_for_inference};
 
@@ -14,7 +14,7 @@ const SUMMARY_SYSTEM_PROMPT: &str = "你负责压缩对话历史。你只能总�
 
 #[derive(Debug, Clone)]
 pub struct ContextCompactionResult {
-    pub messages: Vec<OpenAIMessage>,
+    pub messages: Vec<LLMMessage>,
     pub did_compact: bool,
     pub estimated_tokens_before: usize,
     pub estimated_tokens_after: usize,
@@ -24,9 +24,9 @@ pub struct ContextCompactionResult {
 
 pub fn compact_message_history(
     llm: &Arc<dyn LLMBase>,
-    history: Vec<OpenAIMessage>,
+    history: Vec<LLMMessage>,
     compact_context_length: usize,
-    user_message: &OpenAIMessage,
+    user_message: &LLMMessage,
 ) -> ContextCompactionResult {
     compact_context_messages(
         llm,
@@ -39,9 +39,9 @@ pub fn compact_message_history(
 
 pub fn compact_context_messages(
     llm: &Arc<dyn LLMBase>,
-    messages: Vec<OpenAIMessage>,
+    messages: Vec<LLMMessage>,
     compact_context_length: usize,
-    trigger_messages: &[OpenAIMessage],
+    trigger_messages: &[LLMMessage],
     force_compact: bool,
 ) -> ContextCompactionResult {
     let sanitized_messages = sanitize_messages_for_inference(messages);
@@ -62,7 +62,7 @@ pub fn compact_context_messages(
         };
     }
 
-    let filtered_messages: Vec<OpenAIMessage> = sanitized_messages
+    let filtered_messages: Vec<LLMMessage> = sanitized_messages
         .iter()
         .filter(|message| !is_tool_related_message(message))
         .cloned()
@@ -90,8 +90,8 @@ pub fn compact_context_messages(
     }
 
     let prompt_messages = vec![
-        OpenAIMessage::system(SUMMARY_SYSTEM_PROMPT),
-        OpenAIMessage::user(build_compaction_prompt(&prefix_messages)),
+        LLMMessage::system(SUMMARY_SYSTEM_PROMPT),
+        LLMMessage::user(build_compaction_prompt(&prefix_messages)),
     ];
 
     let response = llm.inference(&InferenceParam {
@@ -128,8 +128,8 @@ pub fn compact_context_messages(
     }
 
     let mut compacted_messages = Vec::with_capacity(2 + tail_messages.len());
-    compacted_messages.push(OpenAIMessage::user(STORED_COMPACTION_REQUEST));
-    compacted_messages.push(OpenAIMessage::assistant_text(summary_text));
+    compacted_messages.push(LLMMessage::user(STORED_COMPACTION_REQUEST));
+    compacted_messages.push(LLMMessage::assistant_text(summary_text));
     compacted_messages.extend(tail_messages);
 
     let estimated_tokens_after = estimate_messages_tokens(&compacted_messages);
@@ -144,11 +144,11 @@ pub fn compact_context_messages(
     }
 }
 
-pub fn estimate_messages_tokens(messages: &[OpenAIMessage]) -> usize {
+pub fn estimate_messages_tokens(messages: &[LLMMessage]) -> usize {
     messages.iter().map(estimate_message_tokens).sum()
 }
 
-fn estimate_message_tokens(message: &OpenAIMessage) -> usize {
+fn estimate_message_tokens(message: &LLMMessage) -> usize {
     let mut chars = estimate_role_tokens(&message.role) * 4;
 
     if let Some(content) = message.content_text_owned() {
@@ -182,11 +182,11 @@ fn estimate_role_tokens(role: &MessageRole) -> usize {
     }
 }
 
-fn is_tool_related_message(message: &OpenAIMessage) -> bool {
+fn is_tool_related_message(message: &LLMMessage) -> bool {
     matches!(message.role, MessageRole::Tool) || !message.tool_calls.is_empty()
 }
 
-fn build_compaction_prompt(messages: &[OpenAIMessage]) -> String {
+fn build_compaction_prompt(messages: &[LLMMessage]) -> String {
     let mut prompt = String::from(
         "请基于以下较早的历史消息生成长期上下文摘要。\n\
          要求：\n\

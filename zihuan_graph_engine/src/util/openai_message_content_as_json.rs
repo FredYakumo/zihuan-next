@@ -4,13 +4,13 @@ use serde_json::Value;
 use std::collections::HashMap;
 use zihuan_core::error::{Error, Result};
 
-/// Parses the `content` string of an `OpenAIMessage` into JSON.
-pub struct OpenAIMessageContentAsJsonNode {
+/// Parses the `content` string of an `LLMMessage` into JSON.
+pub struct LLMMessageContentAsJsonNode {
     id: String,
     name: String,
 }
 
-impl OpenAIMessageContentAsJsonNode {
+impl LLMMessageContentAsJsonNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -19,7 +19,7 @@ impl OpenAIMessageContentAsJsonNode {
     }
 }
 
-impl Node for OpenAIMessageContentAsJsonNode {
+impl Node for LLMMessageContentAsJsonNode {
     fn id(&self) -> &str {
         &self.id
     }
@@ -29,15 +29,15 @@ impl Node for OpenAIMessageContentAsJsonNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("将 OpenAIMessage 的 content 字符串解析为 JSON")
+        Some("将 LLMMessage 的 content 字符串解析为 JSON")
     }
 
     node_input![
-        port! { name = "message", ty = OpenAIMessage, desc = "输入的 OpenAIMessage，其 content 必须是合法 JSON 字符串" },
+        port! { name = "message", ty = LLMMessage, desc = "输入的 LLMMessage，其 content 必须是合法 JSON 字符串" },
     ];
 
     node_output![
-        port! { name = "json", ty = Json, desc = "由 OpenAIMessage.content 解析得到的 JSON" },
+        port! { name = "json", ty = Json, desc = "由 LLMMessage.content 解析得到的 JSON" },
         port! { name = "failed", ty = String, desc = "解析失败时输出原始 content 字符串" },
     ];
 
@@ -45,18 +45,18 @@ impl Node for OpenAIMessageContentAsJsonNode {
         self.validate_inputs(&inputs)?;
 
         let message = match inputs.get("message") {
-            Some(DataValue::OpenAIMessage(message)) => message,
+            Some(DataValue::LLMMessage(message)) => message,
             _ => return Err(Error::InvalidNodeInput("message is required".to_string())),
         };
 
         let content = message
             .content_text_owned()
-            .ok_or_else(|| Error::ValidationError("OpenAIMessage content is None".to_string()))?;
+            .ok_or_else(|| Error::ValidationError("LLMMessage content is None".to_string()))?;
 
         match serde_json::from_str(&content) {
             Ok(json) => {
                 info!(
-                    "[{}] OpenAIMessage content parsed as JSON successfully",
+                    "[{}] LLMMessage content parsed as JSON successfully",
                     self.id
                 );
                 crate::return_with_node_output![self;
@@ -88,7 +88,7 @@ impl Node for OpenAIMessageContentAsJsonNode {
 
                 if let Some(json) = merged {
                     warn!(
-                        "[{}] OpenAIMessage content contained multiple JSON values; merged into one array. Original parse error: {}. Raw content: {:?}",
+                        "[{}] LLMMessage content contained multiple JSON values; merged into one array. Original parse error: {}. Raw content: {:?}",
                         self.id, err, content
                     );
                     return crate::return_with_node_output![self;
@@ -112,7 +112,7 @@ impl Node for OpenAIMessageContentAsJsonNode {
 
                 if let Some(json) = bracket_recovered {
                     warn!(
-                        "[{}] OpenAIMessage content was truncated (missing closing bracket(s)); auto-closed to recover. Original parse error: {}. Raw content: {:?}",
+                        "[{}] LLMMessage content was truncated (missing closing bracket(s)); auto-closed to recover. Original parse error: {}. Raw content: {:?}",
                         self.id, err, content
                     );
                     return crate::return_with_node_output![self;
@@ -121,7 +121,7 @@ impl Node for OpenAIMessageContentAsJsonNode {
                 }
 
                 warn!(
-                    "[{}] Failed to parse OpenAIMessage content as JSON: {}. Raw content: {:?}",
+                    "[{}] Failed to parse LLMMessage content as JSON: {}. Raw content: {:?}",
                     self.id, err, content
                 );
                 crate::return_with_node_output![self;

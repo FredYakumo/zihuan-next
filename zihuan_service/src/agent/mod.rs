@@ -28,7 +28,7 @@ use tokio::task::JoinHandle;
 use uuid::Uuid;
 use zihuan_agent::brain::BrainObserver;
 use zihuan_core::error::Result;
-use zihuan_core::llm::OpenAIMessage;
+use zihuan_core::llm::LLMMessage;
 use zihuan_core::task_context::AgentTaskRuntime;
 
 use self::inference::{InferenceToolProvider, LoadedInferenceAgent};
@@ -130,8 +130,8 @@ impl AgentManager {
     pub fn infer_agent_response_with_trace(
         &self,
         agent_id: &str,
-        messages: Vec<OpenAIMessage>,
-    ) -> Result<Vec<OpenAIMessage>> {
+        messages: Vec<LLMMessage>,
+    ) -> Result<Vec<LLMMessage>> {
         let agent = self.running_agent(agent_id).ok_or_else(|| {
             zihuan_core::error::Error::ValidationError(format!(
                 "agent '{}' is not running",
@@ -144,10 +144,10 @@ impl AgentManager {
     pub async fn infer_agent_response_streaming(
         &self,
         agent_id: &str,
-        messages: Vec<OpenAIMessage>,
+        messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<String>,
         observer: Option<Arc<dyn BrainObserver>>,
-    ) -> Result<Vec<OpenAIMessage>> {
+    ) -> Result<Vec<LLMMessage>> {
         let agent = self.running_agent(agent_id).ok_or_else(|| {
             zihuan_core::error::Error::ValidationError(format!(
                 "agent '{}' is not running",

@@ -9,7 +9,7 @@ use super::agent_text_similarity::{
 };
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::InferenceParam;
-use zihuan_core::llm::{MessageRole, OpenAIMessage};
+use zihuan_core::llm::{MessageRole, LLMMessage};
 
 const LOG_PREFIX: &str = "[QqChatAgent]";
 const CLASSIFY_INTENT_PROMPT: &str = r#"你是一个消息意图分类器。你必须只输出以下 9 个标签中的一个，且只能输出标签本身，不要输出解释、标点、引号、代码块或额外文字。
@@ -499,7 +499,7 @@ fn detect_prompt_injection_by_similarity(
     }
 }
 
-fn format_recent_history_for_intent(messages: &[OpenAIMessage], max_tokens: usize) -> String {
+fn format_recent_history_for_intent(messages: &[LLMMessage], max_tokens: usize) -> String {
     let mut parts: Vec<String> = Vec::new();
     let mut used_chars: usize = 0;
     let char_budget = max_tokens.saturating_mul(4);
@@ -537,7 +537,7 @@ pub fn classify_intent_with_trace(
     llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
     embedding_model: Option<&Arc<dyn EmbeddingBase>>,
     message: &str,
-    history: Option<&[OpenAIMessage]>,
+    history: Option<&[LLMMessage]>,
     intent_history_max_tokens: usize,
 ) -> IntentClassificationTrace {
     let started_at = Instant::now();
@@ -568,15 +568,15 @@ pub fn classify_intent_with_trace(
     }
 
     let mut messages = Vec::with_capacity(4);
-    messages.push(OpenAIMessage::system(CLASSIFY_INTENT_PROMPT.to_string()));
+    messages.push(LLMMessage::system(CLASSIFY_INTENT_PROMPT.to_string()));
     if let Some(history_msgs) = history {
         let history_text =
             format_recent_history_for_intent(history_msgs, intent_history_max_tokens);
         if !history_text.is_empty() {
-            messages.push(OpenAIMessage::user(history_text));
+            messages.push(LLMMessage::user(history_text));
         }
     }
-    messages.push(OpenAIMessage::user(message.to_string()));
+    messages.push(LLMMessage::user(message.to_string()));
     let response = llm.inference(&InferenceParam {
         messages: &messages,
         tools: None,
@@ -606,7 +606,7 @@ pub fn classify_intent(
     llm: &Arc<dyn zihuan_core::llm::llm_base::LLMBase>,
     embedding_model: Option<&Arc<dyn EmbeddingBase>>,
     message: &str,
-    history: Option<&[OpenAIMessage]>,
+    history: Option<&[LLMMessage]>,
     intent_history_max_tokens: usize,
 ) -> IntentCategory {
     classify_intent_with_trace(

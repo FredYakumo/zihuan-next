@@ -8,7 +8,7 @@ use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::llm::{MessageRole, OpenAIMessage};
+use zihuan_core::llm::{MessageRole, LLMMessage};
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::task_context::append_current_task_progress;
 use zihuan_core::tool_runtime::ToolRunDuration;
@@ -141,8 +141,8 @@ impl BrainTool for RunDeepResearchSubagentBrainTool {
             );
 
             let messages = vec![
-                OpenAIMessage::system(DEEP_RESEARCH_SYSTEM_PROMPT.to_string()),
-                OpenAIMessage::user(user_prompt),
+                LLMMessage::system(DEEP_RESEARCH_SYSTEM_PROMPT.to_string()),
+                LLMMessage::user(user_prompt),
             ];
 
             // Build the inner Brain with research tools.

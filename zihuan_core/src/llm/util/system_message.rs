@@ -1,6 +1,6 @@
-use crate::llm::model::OpenAIMessage;
+use crate::llm::model::LLMMessage;
 
 #[allow(non_snake_case)]
-pub fn SystemMessage<S: Into<String>>(content: S) -> OpenAIMessage {
-    OpenAIMessage::system(content)
+pub fn SystemMessage<S: Into<String>>(content: S) -> LLMMessage {
+    LLMMessage::system(content)
 }

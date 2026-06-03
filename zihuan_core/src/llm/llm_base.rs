@@ -1,4 +1,4 @@
-use crate::llm::model::{InferenceParam, OpenAIMessage};
+use crate::llm::model::{InferenceParam, LLMMessage};
 use tokio::sync::mpsc;
 
 pub trait LLMBase: std::fmt::Debug + Send + Sync {
@@ -12,7 +12,7 @@ pub trait LLMBase: std::fmt::Debug + Send + Sync {
         false
     }
 
-    fn inference(&self, param: &InferenceParam) -> OpenAIMessage;
+    fn inference(&self, param: &InferenceParam) -> LLMMessage;
 
     fn as_streaming(&self) -> Option<&dyn StreamingLLMBase> {
         None
@@ -24,5 +24,5 @@ pub trait StreamingLLMBase: LLMBase {
         &'a self,
         param: &'a InferenceParam<'a>,
         token_tx: mpsc::UnboundedSender<String>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = OpenAIMessage> + Send + 'a>>;
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = LLMMessage> + Send + 'a>>;
 }

@@ -10,7 +10,7 @@ use serde_json::Value;
 use ims_bot_adapter::models::message::Message;
 use zihuan_agent::brain::{BrainObserver, BrainStopReason};
 use zihuan_core::llm::tooling::ToolCalls;
-use zihuan_core::llm::{OpenAIMessage, TokenUsage};
+use zihuan_core::llm::{LLMMessage, TokenUsage};
 
 const LOG_PREFIX: &str = "[QqChatAgent]";
 const LOG_TEXT_PREVIEW_CHARS: usize = 1_200;
@@ -150,7 +150,7 @@ impl QqChatTaskTrace {
         accepted_steer_count: usize,
         max_steer_count: usize,
         remaining_queue_len: usize,
-        messages: &[OpenAIMessage],
+        messages: &[LLMMessage],
     ) {
         self.log_key_event(
             "插嘴已注入当前对话",
@@ -197,7 +197,7 @@ impl QqChatTaskTrace {
 
     pub(crate) fn log_llm_conversation(
         &self,
-        conversation: &[OpenAIMessage],
+        conversation: &[LLMMessage],
         prompt_tokens_estimated: usize,
     ) {
         self.log_key_event(
@@ -288,7 +288,7 @@ impl QqChatTaskTrace {
     pub(crate) fn record_llm_final_result(
         &self,
         stop_reason: &BrainStopReason,
-        brain_output: &[OpenAIMessage],
+        brain_output: &[LLMMessage],
     ) {
         let now = TracePoint::now();
         let duration_ms = self

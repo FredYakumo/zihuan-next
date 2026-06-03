@@ -117,16 +117,16 @@ pub fn init_node_registry() -> Result<()> {
     );
     register_node!(
         "extract_message_from_event",
-        "事件提取 OpenAIMessage 列表",
+        "事件提取 LLMMessage 列表",
         "Bot适配器",
-        "从消息事件中提取 OpenAIMessage 列表",
+        "从消息事件中提取 LLMMessage 列表",
         ExtractMessageFromEventNode
     );
     register_node!(
         "extract_media_by_id",
         "按媒体 ID 提取图片",
         "Bot适配器",
-        "通过持久化媒体 ID 从数据库恢复图片并转换为 OpenAIMessage",
+        "通过持久化媒体 ID 从数据库恢复图片并转换为 LLMMessage",
         ExtractMediaByIdNode
     );
     register_node!(

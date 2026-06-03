@@ -13,7 +13,7 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::llm::{InferenceParam, OpenAIMessage};
+use zihuan_core::llm::{InferenceParam, LLMMessage};
 use zihuan_core::weaviate::WeaviateRef;
 
 use super::common::{
@@ -257,10 +257,10 @@ fn split_memory_items(
     content: &str,
 ) -> Result<Vec<MemoryDraftItem>> {
     let prompt = vec![
-        OpenAIMessage::system(
+        LLMMessage::system(
             "你是一个记忆整理器。把用户提供的内容拆成若干条适合长期检索的记忆。只返回 JSON 数组，不要 Markdown，不要解释。每项格式：{\"title\":\"记忆标题\",\"value\":\"记忆内容\"}。若内容只适合一条记忆，返回单元素数组。title 需要简洁明确，适合作为以后检索这条记忆的标题。不要泄露或引用当前对话之外的信息。",
         ),
-        OpenAIMessage::user(format!("请整理下面的内容为记忆 JSON：\n{content}")),
+        LLMMessage::user(format!("请整理下面的内容为记忆 JSON：\n{content}")),
     ];
     let response = resources.llm.inference(&InferenceParam {
         messages: &prompt,

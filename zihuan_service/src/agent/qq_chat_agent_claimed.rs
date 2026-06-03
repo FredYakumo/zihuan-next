@@ -16,7 +16,7 @@ use zihuan_agent::brain::{Brain, BrainStopReason, LongTaskContext};
 use zihuan_core::agent_config::current_qq_chat_agent_config;
 use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
 use zihuan_core::error::Result;
-use zihuan_core::llm::{OpenAIMessage, TokenUsage};
+use zihuan_core::llm::{LLMMessage, TokenUsage};
 use zihuan_core::steer::{build_merged_follow_up_event, message_with_api_style};
 
 use zihuan_graph_engine::brain_tool_spec::{
@@ -88,7 +88,7 @@ impl QqChatAgent {
         sender_id: &str,
         target_id: &str,
         bot_id: &str,
-        history: &mut Vec<OpenAIMessage>,
+        history: &mut Vec<LLMMessage>,
         ctx: &QqChatAgentContext<'_>,
     ) -> Result<Option<String>> {
         let DispatchResult {
@@ -169,7 +169,7 @@ impl QqChatAgent {
             );
             history.push(user_msg_for_cmd);
             history.push(message_with_api_style(
-                OpenAIMessage::assistant_text(result.reply),
+                LLMMessage::assistant_text(result.reply),
                 ctx.llm.api_style(),
             ));
         }
@@ -415,7 +415,7 @@ impl QqChatAgent {
             );
         }
 
-        let mut conversation: Vec<OpenAIMessage> = Vec::with_capacity(history.len() + 1);
+        let mut conversation: Vec<LLMMessage> = Vec::with_capacity(history.len() + 1);
         conversation.extend(history.iter().cloned());
         conversation.push(user_msg.clone());
         let mut brain_conversation =
@@ -753,7 +753,7 @@ impl QqChatAgent {
             );
             brain_conversation.extend(brain_output.iter().cloned());
             brain_conversation.push(message_with_api_style(
-                OpenAIMessage::user(
+                LLMMessage::user(
                     "【系统补充提醒】你刚才还没有真正回复用户。请再次思考：是否需要调用工具来完成对用户的最终回复，尤其是 `send_natural_language_reply`。如果你判断这条消息确实不需要回复，可以选择仍然不调用任何回复工具。"
                         .to_string(),
                 ),
@@ -803,7 +803,7 @@ impl QqChatAgent {
         history.extend(consumed_steer_messages.lock().unwrap().iter().cloned());
         if let Some(ref assistant_text) = visible_assistant_history_text {
             history.push(message_with_api_style(
-                OpenAIMessage::assistant_text(assistant_text.clone()),
+                LLMMessage::assistant_text(assistant_text.clone()),
                 ctx.llm.api_style(),
             ));
         }

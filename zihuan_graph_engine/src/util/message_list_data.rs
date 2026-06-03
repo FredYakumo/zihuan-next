@@ -26,20 +26,20 @@ impl Node for MessageListDataNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("OpenAIMessage 列表数据源，支持内联 UI 编辑")
+        Some("LLMMessage 列表数据源，支持内联 UI 编辑")
     }
 
     fn input_ports(&self) -> Vec<Port> {
         vec![
-            Port::new("messages", DataType::Vec(Box::new(DataType::OpenAIMessage)))
-                .with_description("Vec<OpenAIMessage> provided by UI inline editor")
+            Port::new("messages", DataType::Vec(Box::new(DataType::LLMMessage)))
+                .with_description("Vec<LLMMessage> provided by UI inline editor")
                 .optional()
                 .hidden(),
         ]
     }
 
     node_output![
-        port! { name = "messages", ty = Vec(OpenAIMessage), desc = "Output Vec<OpenAIMessage> from UI data source" },
+        port! { name = "messages", ty = Vec(LLMMessage), desc = "Output Vec<LLMMessage> from UI data source" },
     ];
 
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
@@ -51,7 +51,7 @@ impl Node for MessageListDataNode {
             .cloned()
             .filter(|v| matches!(v, DataValue::Vec(..)))
             .unwrap_or_else(|| {
-                DataValue::Vec(Box::new(crate::DataType::OpenAIMessage), Vec::new())
+                DataValue::Vec(Box::new(crate::DataType::LLMMessage), Vec::new())
             });
         outputs.insert("messages".to_string(), value);
 

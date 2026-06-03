@@ -45,7 +45,7 @@ use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;
-use zihuan_core::llm::OpenAIMessage;
+use zihuan_core::llm::LLMMessage;
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::runtime::block_async;
 use zihuan_core::task_context::{
@@ -54,7 +54,7 @@ use zihuan_core::task_context::{
 };
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
-use zihuan_graph_engine::data_value::{OpenAIMessageSessionCacheRef, SessionStateRef};
+use zihuan_graph_engine::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::message_persistence::persist_message_event;
 use zihuan_graph_engine::message_restore::{register_mysql_ref, register_rdb_pool};
@@ -93,10 +93,10 @@ pub struct QqInferenceToolProvider {
 }
 
 impl InferenceToolProvider for QqInferenceToolProvider {
-    fn augment_messages(&self, messages: &mut Vec<OpenAIMessage>, _context: &InferenceToolContext) {
+    fn augment_messages(&self, messages: &mut Vec<LLMMessage>, _context: &InferenceToolContext) {
         messages.insert(
             0,
-            OpenAIMessage::system(format!(
+            LLMMessage::system(format!(
                 "你是 {}。请保持回答简洁、友好、准确；当可调用工具时优先使用工具获取事实。",
                 self.resources.bot_name
             )),
@@ -387,7 +387,7 @@ pub async fn spawn(
             config.bot_name.clone()
         },
         system_prompt: config.system_prompt.clone(),
-        cache: Arc::new(OpenAIMessageSessionCacheRef::new(format!(
+        cache: Arc::new(LLMMessageSessionCacheRef::new(format!(
             "service_agent_cache_{}",
             agent.id
         ))),

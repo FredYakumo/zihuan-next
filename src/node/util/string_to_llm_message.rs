@@ -1,17 +1,17 @@
 use std::collections::HashMap;
 
 use crate::error::{Error, Result};
-use zihuan_core::llm::OpenAIMessage;
+use zihuan_core::llm::LLMMessage;
 use zihuan_core::llm::util::str_to_role::str_to_role;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 
-/// Converts a plain string into an `OpenAIMessage` with the selected role.
-pub struct StringToOpenAIMessageNode {
+/// Converts a plain string into an `LLMMessage` with the selected role.
+pub struct StringToLLMMessageNode {
     id: String,
     name: String,
 }
 
-impl StringToOpenAIMessageNode {
+impl StringToLLMMessageNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -20,7 +20,7 @@ impl StringToOpenAIMessageNode {
     }
 }
 
-impl Node for StringToOpenAIMessageNode {
+impl Node for StringToLLMMessageNode {
     fn id(&self) -> &str {
         &self.id
     }
@@ -30,15 +30,15 @@ impl Node for StringToOpenAIMessageNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("将字符串封装为可选 role 的 OpenAIMessage")
+        Some("将字符串封装为可选 role 的 LLMMessage")
     }
 
     node_input![
         port! { name = "content", ty = String, desc = "消息内容" },
-        port! { name = "role", ty = String, desc = "OpenAIMessage 角色，可选 system / user / assistant / tool" },
+        port! { name = "role", ty = String, desc = "LLMMessage 角色，可选 system / user / assistant / tool" },
     ];
 
-    node_output![port! { name = "message", ty = OpenAIMessage, desc = "封装后的 OpenAIMessage" },];
+    node_output![port! { name = "message", ty = LLMMessage, desc = "封装后的 LLMMessage" },];
 
     fn execute(
         &mut self,
@@ -60,7 +60,7 @@ impl Node for StringToOpenAIMessageNode {
         let mut outputs = HashMap::new();
         outputs.insert(
             "message".to_string(),
-            DataValue::OpenAIMessage(OpenAIMessage {
+            DataValue::LLMMessage(LLMMessage {
                 role,
                 api_style: None,
                 content: Some(content),

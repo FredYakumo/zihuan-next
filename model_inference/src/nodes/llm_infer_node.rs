@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use zihuan_core::error::Result;
-use zihuan_core::llm::{InferenceParam, OpenAIMessage};
+use zihuan_core::llm::{InferenceParam, LLMMessage};
 use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
 
 pub struct LLMInferNode {
@@ -31,10 +31,10 @@ impl Node for LLMInferNode {
 
     node_input![
         port! { name = "llm_model", ty = LLModel, desc = "LLM模型引用，由LlmNode提供" },
-        port! { name = "messages",  ty = Vec(OpenAIMessage), desc = "输入消息列表，包含系统消息和用户消息" },
+        port! { name = "messages",  ty = Vec(LLMMessage), desc = "输入消息列表，包含系统消息和用户消息" },
     ];
 
-    node_output![port! { name = "response", ty = Vec(OpenAIMessage), desc = "LLM返回的消息列表" },];
+    node_output![port! { name = "response", ty = Vec(LLMMessage), desc = "LLM返回的消息列表" },];
 
     fn execute(
         &mut self,
@@ -51,11 +51,11 @@ impl Node for LLMInferNode {
             }
         };
 
-        let messages: Vec<OpenAIMessage> = match inputs.get("messages") {
+        let messages: Vec<LLMMessage> = match inputs.get("messages") {
             Some(DataValue::Vec(_, items)) => items
                 .iter()
                 .filter_map(|item| {
-                    if let DataValue::OpenAIMessage(m) = item {
+                    if let DataValue::LLMMessage(m) = item {
                         Some(m.clone())
                     } else {
                         None
@@ -77,8 +77,8 @@ impl Node for LLMInferNode {
 
         zihuan_graph_engine::return_with_node_output![self;
             "response" => DataValue::Vec(
-                Box::new(DataType::OpenAIMessage),
-                vec![DataValue::OpenAIMessage(response_message)],
+                Box::new(DataType::LLMMessage),
+                vec![DataValue::LLMMessage(response_message)],
             ),
         ]
     }

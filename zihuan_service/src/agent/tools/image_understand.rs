@@ -11,7 +11,7 @@ use zihuan_core::agent_config::{current_qq_chat_agent_config, image_understand_l
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::llm::{ContentPart, InferenceParam, OpenAIMessage};
+use zihuan_core::llm::{LLMMessagePart, InferenceParam, LLMMessage};
 use zihuan_core::runtime::block_async;
 use zihuan_graph_engine::message_restore::{
     find_media_in_messages, register_mysql_ref, restore_media_by_id,
@@ -208,10 +208,10 @@ fn analyze_persisted_media(
     };
 
     let messages = vec![
-        OpenAIMessage::system(
+        LLMMessage::system(
             "你是一个图片理解助手。只输出简洁、客观的中文描述，不要输出多余寒暄。如果图片内容为空、无效或无法识别，只输出\"没有识别到图片\"。".to_string(),
         ),
-        OpenAIMessage::user_with_parts(vec![ContentPart::text(prompt), resolved.part]),
+        LLMMessage::user_with_parts(vec![LLMMessagePart::text(prompt), resolved.part]),
     ];
     let response = llm.inference(&InferenceParam {
         messages: &messages,

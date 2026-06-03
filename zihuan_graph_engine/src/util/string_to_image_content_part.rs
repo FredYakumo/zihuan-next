@@ -1,15 +1,15 @@
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::{ContentPart, MediaUrlSpec};
+use zihuan_core::llm::LLMMessagePart;
 
-/// Wraps a String URL (or `data:` URL) into a multimodal `ContentPart`.
-pub struct StringToImageContentPartNode {
+/// Wraps a String URL (or `data:` URL) into a multimodal `LLMMessagePart`.
+pub struct StringToImageLLMMessagePartNode {
     id: String,
     name: String,
 }
 
-impl StringToImageContentPartNode {
+impl StringToImageLLMMessagePartNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -18,7 +18,7 @@ impl StringToImageContentPartNode {
     }
 }
 
-impl Node for StringToImageContentPartNode {
+impl Node for StringToImageLLMMessagePartNode {
     fn id(&self) -> &str {
         &self.id
     }
@@ -28,7 +28,7 @@ impl Node for StringToImageContentPartNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("将字符串 URL（或 data:image/...;base64,...）封装为多模态 ContentPart")
+        Some("将字符串 URL（或 data:image/...;base64,...）封装为多模态 LLMMessagePart")
     }
 
     node_input![
@@ -37,7 +37,7 @@ impl Node for StringToImageContentPartNode {
     ];
 
     node_output![
-        port! { name = "content_part", ty = ContentPart, desc = "封装后的多模态 ContentPart" },
+        port! { name = "content_part", ty = LLMMessagePart, desc = "封装后的多模态 LLMMessagePart" },
     ];
 
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
@@ -59,12 +59,8 @@ impl Node for StringToImageContentPartNode {
         };
 
         let part = match media_type.as_str() {
-            "" | "image" => ContentPart::ImageUrl {
-                image_url: MediaUrlSpec::Bare(url),
-            },
-            "video" => ContentPart::VideoUrl {
-                video_url: MediaUrlSpec::Bare(url),
-            },
+            "" | "image" => LLMMessagePart::image_url_string(url),
+            "video" => LLMMessagePart::video_url_string(url),
             other => {
                 return Err(Error::ValidationError(format!(
                     "media_type must be 'image' or 'video', got '{other}'"
@@ -73,7 +69,7 @@ impl Node for StringToImageContentPartNode {
         };
 
         let mut outputs = HashMap::new();
-        outputs.insert("content_part".to_string(), DataValue::ContentPart(part));
+        outputs.insert("content_part".to_string(), DataValue::LLMMessagePart(part));
 
         let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;

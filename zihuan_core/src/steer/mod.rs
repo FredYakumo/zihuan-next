@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 
 use crate::ims_bot_adapter::models::MessageEvent;
-use crate::llm::{ContentPart, MessageContent, OpenAIMessage};
+use crate::llm::{LLMMessage, LLMMessagePart};
 
 pub const STEER_PREFIX: &str =
     "[User-STEER Message] User steer a new message:";
@@ -14,32 +14,24 @@ pub const PROCESSING_INSTRUCTION: &str =
      - This is the user's message the assistant needs to process.\n\
      - Ensure your reply addresses the user's request directly and naturally.";
 
-/// Apply the steer prefix to an already-built `OpenAIMessage`.
+/// Apply the steer prefix to an already-built `LLMMessage`.
 ///
-/// Prepends `STEER_PREFIX` to the message content and optionally sets the
-/// `api_style` field. Handles all `MessageContent` variants:
-///
-/// - `Text` — prepend the prefix directly.
-/// - `Parts` — insert a new text part at position 0.
-/// - `None` — replace with a plain text message containing only the prefix.
-pub fn apply_steer_prefix(
-    mut message: OpenAIMessage,
-    api_style: Option<&str>,
-) -> OpenAIMessage {
-    match message.content.as_mut() {
-        Some(MessageContent::Text(text)) => {
-            *text = format!("{STEER_PREFIX}\n\n{text}");
-        }
-        Some(MessageContent::Parts(parts)) => {
-            parts.insert(0, ContentPart::text(format!("{STEER_PREFIX}\n\n")));
-        }
-        None => {
-            message.content = Some(MessageContent::Text(STEER_PREFIX.to_string()));
-        }
+/// Prepends `STEER_PREFIX` to the message parts.
+pub fn apply_steer_prefix(mut message: LLMMessage, _api_style: Option<&str>) -> LLMMessage {
+    if message.parts.is_empty() {
+        message.parts.push(LLMMessagePart::text(STEER_PREFIX));
+        return message;
     }
 
-    if let Some(api_style) = api_style {
-        message.api_style = Some(api_style.to_string());
+    match message.parts.first_mut() {
+        Some(LLMMessagePart::Text { text }) => {
+            *text = format!("{STEER_PREFIX}\n\n{text}");
+        }
+        _ => {
+            message
+                .parts
+                .insert(0, LLMMessagePart::text(format!("{STEER_PREFIX}\n\n")));
+        }
     }
 
     message
@@ -152,13 +144,8 @@ pub fn build_merged_follow_up_event(
     merged_event
 }
 
-/// Set the `api_style` field on an `OpenAIMessage` if a style is provided.
-pub fn message_with_api_style(
-    mut message: OpenAIMessage,
-    api_style: Option<&str>,
-) -> OpenAIMessage {
-    if let Some(api_style) = api_style {
-        message.api_style = Some(api_style.to_string());
-    }
+/// Compatibility shim retained so call sites can migrate without carrying
+/// provider-specific state inside `LLMMessage`.
+pub fn message_with_api_style(message: LLMMessage, _api_style: Option<&str>) -> LLMMessage {
     message
 }

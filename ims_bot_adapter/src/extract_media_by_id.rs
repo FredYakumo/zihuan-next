@@ -3,7 +3,7 @@ use node_macros::return_with_node_output;
 use std::collections::HashMap;
 use std::sync::Arc;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::OpenAIMessage;
+use zihuan_core::llm::LLMMessage;
 use zihuan_graph_engine::message_restore::{register_mysql_ref, restore_media_by_id};
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
@@ -37,7 +37,7 @@ impl Node for ExtractMediaByIdNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("通过持久化媒体 ID 从数据库恢复图片并转换为 OpenAIMessage")
+        Some("通过持久化媒体 ID 从数据库恢复图片并转换为 LLMMessage")
     }
 
     node_input![
@@ -47,7 +47,7 @@ impl Node for ExtractMediaByIdNode {
     ];
 
     node_output![
-        port! { name = "messages", ty = Vec(OpenAIMessage), desc = "Vec<OpenAIMessage> 包含一条带图片内容的用户消息" },
+        port! { name = "messages", ty = Vec(LLMMessage), desc = "Vec<LLMMessage> 包含一条带图片内容的用户消息" },
         port! { name = "content", ty = String, desc = "人类可读的图片摘要标签" }
     ];
 
@@ -100,7 +100,7 @@ impl Node for ExtractMediaByIdNode {
             ))
                 })?;
 
-        let user_message = OpenAIMessage::user_with_parts(vec![resolved.part]);
+        let user_message = LLMMessage::user_with_parts(vec![resolved.part]);
         let content_label = format!("[Image media_id={media_id}]");
 
         info!(
@@ -111,8 +111,8 @@ impl Node for ExtractMediaByIdNode {
 
         return_with_node_output![self;
             "messages" => DataValue::Vec(
-                Box::new(DataType::OpenAIMessage),
-                vec![DataValue::OpenAIMessage(user_message)],
+                Box::new(DataType::LLMMessage),
+                vec![DataValue::LLMMessage(user_message)],
             ),
             "content" => DataValue::String(content_label)
         ]

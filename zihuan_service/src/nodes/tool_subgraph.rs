@@ -91,7 +91,7 @@ pub fn data_type_to_json_schema_type(data_type: &DataType) -> &'static str {
         DataType::Json
         | DataType::MessageEvent
         | DataType::Sender
-        | DataType::OpenAIMessage
+        | DataType::LLMMessage
         | DataType::QQMessage
         | DataType::Image
         | DataType::FunctionTools
@@ -103,11 +103,11 @@ pub fn data_type_to_json_schema_type(data_type: &DataType) -> &'static str {
         | DataType::WeaviateRef
         | DataType::WebSearchEngineRef
         | DataType::SessionStateRef
-        | DataType::OpenAIMessageSessionCacheRef
+        | DataType::LLMMessageSessionCacheRef
         | DataType::LLModel
         | DataType::EmbeddingModel
         | DataType::LoopControlRef
-        | DataType::ContentPart
+        | DataType::LLMMessagePart
         | DataType::Custom(_)
         | DataType::Any => "object",
     }
