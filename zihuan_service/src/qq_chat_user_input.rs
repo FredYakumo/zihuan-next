@@ -112,6 +112,20 @@ pub(crate) fn prepare_current_turn_user_input_from_event(
         &mut multimodal_stats,
     );
     flush_text_part(&mut parts, &mut text_buffer);
+
+    if msg_prop.is_at_me {
+        for part in &mut parts {
+            if let MessagePart::Text { text } = part {
+                let stripped =
+                    zihuan_core::utils::string_utils::strip_leading_bot_mention(text, bot_id, bot_name);
+                if stripped.len() < text.len() {
+                    *text = stripped;
+                    break;
+                }
+            }
+        }
+    }
+
     info!(
         "{LOG_PREFIX} Prepared multimodal user input: parts={}, image_parts={}, local_file_images={}, object_storage_images={}, downloaded_remote_images={}, uploaded_to_s3_images={}, data_url_images={}, skipped_images={}",
         parts.len(),

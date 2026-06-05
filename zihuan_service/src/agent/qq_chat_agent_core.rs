@@ -322,6 +322,8 @@ pub(crate) fn build_user_message(
         return LLMMessage::user(user_text);
     }
 
+    // Handles for multimodal
+
     let state_text = format!("{}\n", state_lines.join("\n"));
     let mut parts = vec![MessagePart::text(state_text)];
     let metadata_text = format!("{environment}\n\n{metadata}");
@@ -329,7 +331,7 @@ pub(crate) fn build_user_message(
     append_prepared_parts(&mut parts, &mut text_buffer, "\n", &current_input.parts);
     flush_text_part(&mut parts, &mut text_buffer);
     parts.push(MessagePart::text(PROCESSING_INSTRUCTION.to_string()));
-    
+
     LLMMessage::user_with_parts(parts)
 }
 
