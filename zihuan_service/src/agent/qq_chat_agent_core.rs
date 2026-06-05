@@ -221,7 +221,7 @@ pub(crate) fn build_group_system_prompt(
     rules
 }
 
-/// Build a structured user-role message from a QQ message event for LLM inference.
+/// Build a structured user-role message from pre-processed QQ input for LLM inference.
 ///
 /// # Purpose
 ///
@@ -230,22 +230,23 @@ pub(crate) fn build_group_system_prompt(
 /// and @-target list) so the model never needs to infer who is speaking or who is being
 /// addressed from message text alone.
 ///
+/// Session state (mood, emotion, memory, etc.) and character instructions are injected as
+/// a system-like prefix at the top of the user text.
+///
 /// # Design
 ///
 /// The function follows a two-path strategy depending on whether the target LLM supports
 /// multimodal (image) input:
 ///
 /// * **Text-only path** (`llm_supports_multimodal_input == false`): builds the message as a
-///   plain `MessagePart::Text` with metadata lines, the user message body, and image
-///   reference hints (media_id strings the model can pass to image-analysis tools later).
-/// * **Multimodal path**: constructs `MessagePart::Parts` arrays where images discovered in
-///   the message body (inline images, reply sources, forwarded content) are resolved via S3
-///   and embedded as `image_url` parts alongside text. The metadata block is prepended to
-///   the first text part.
-///
-/// Message structures nested inside `Reply` and `Forward` are recursively unwrapped during
-/// multimodal construction, with quoted/forwarded content clearly delimited by text markers
-/// (e.g. `[引用内容]`, `[转发内容]`).
+///   single plain-text payload containing state prefix lines, environment context, metadata
+///   block, the user message body, image reference hints (`media_id` strings the model can
+///   pass to image-analysis tools later), and processing instructions.
+/// * **Multimodal path** (`llm_supports_multimodal_input == true`): assembles a
+///   `Vec<MessagePart>` where the state prefix is the first text part, followed by a text
+///   block carrying environment and metadata, then the pre-resolved multimodal `parts`
+///   (already hydrated with S3 image URLs, reply quotes, forwarded content, etc.), and
+///   finally a trailing processing-instruction text part.
 ///
 /// The sender name visible to the LLM is resolved via `sender_display_name`, which prefers
 /// the group card name over the raw nickname.
@@ -259,13 +260,19 @@ pub(crate) fn build_group_system_prompt(
 ///
 /// # Parameters
 ///
-/// * `event` — the raw QQ message event (already hydrated with reply sources).
-/// * `bot_id` / `bot_name` — the bot's own QQ identity, used to detect @-mentions and
-///   provide self-identity context to the model.
-/// * `llm_supports_multimodal_input` — when true, images are resolved via S3 and embedded
-///   as `image_url` content parts; when false, only textual `media_id` references are
-///   emitted.
-/// * `s3_ref` — optional S3 handle for resolving image URLs to object-storage paths.
+/// * `current_input` — pre-processed turn input containing the hydrated event, stripped
+///   message text, @-mention flags, pre-resolved multimodal parts, and image reference
+///   lines.
+/// * `bot_name` — the bot's display name, emitted in the `[Environment]` block so the
+///   model knows its own identity.
+/// * `llm_supports_multimodal_input` — when true, the multimodal `parts` in
+///   `current_input` are embedded as separate `MessagePart` entries; when false, only
+///   textual `media_id` references are emitted.
+/// * `character_instructions` — character-specific prompt lines injected into the state
+///   prefix.
+/// * `session_state` — runtime session state (mood, emotion values, memory) rendered as
+///   prefix lines.
+/// * `emotion_dimensions` — configured emotion axes used to format the state prefix.
 pub(crate) fn build_user_message(
     current_input: &PreparedCurrentTurnUserInput,
     bot_name: &str,
