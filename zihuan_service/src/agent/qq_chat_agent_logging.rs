@@ -106,6 +106,7 @@ impl QqChatTaskTrace {
             )
         } else {
             format!(
+                
                 "用户消息: raw={} | inference={}",
                 truncate_for_log(raw_user_message, LOG_TEXT_PREVIEW_CHARS),
                 truncate_for_log(current_message, LOG_TEXT_PREVIEW_CHARS)

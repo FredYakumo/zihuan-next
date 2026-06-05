@@ -363,6 +363,9 @@ fn build_steer_user_message(
     apply_steer_prefix(steer_message, api_style)
 }
 
+/// Builds a single user message that merges all current-turn inputs, injecting session state
+/// and emotion context as a prefix. Falls back to plain text when the LLM does not support
+/// multimodal input; otherwise assembles `MessagePart`s so images are forwarded inline.
 fn build_merged_steer_user_message(
     current_inputs: &[PreparedCurrentTurnUserInput],
     bot_name: &str,
@@ -376,6 +379,8 @@ fn build_merged_steer_user_message(
         build_state_system_prefix_lines(session_state, emotion_dimensions, system_prompt);
     let prefix = prefix_lines.join("\n");
 
+    // Helper for the plain-text fallback path: formats a single input entry with metadata
+    // and optional image analysis references.
     let build_entry_text =
         |index: usize, input: &PreparedCurrentTurnUserInput| -> String {
             let metadata_text = build_prepared_input_metadata(input, bot_name);
@@ -396,6 +401,7 @@ fn build_merged_steer_user_message(
             )
         };
 
+    // Fast path for text-only LLMs: concatenate everything into one string.
     if !llm_supports_multimodal_input {
         let merged_text = current_inputs
             .iter()
@@ -410,6 +416,8 @@ fn build_merged_steer_user_message(
         return apply_steer_prefix(message, api_style);
     }
 
+    // Multimodal path: accumulate `MessagePart`s so that image blobs stay separate
+    // from the surrounding text instead of being serialized into a single string.
     let state_text = format!("{}\n", prefix_lines.join("\n"));
     let mut parts = vec![MessagePart::text(state_text.clone())];
     let mut text_buffer = String::new();
@@ -420,6 +428,8 @@ fn build_merged_steer_user_message(
         }
         let metadata_text = build_prepared_input_metadata(current_input, bot_name);
         text_buffer.push_str(&format!("{}. {metadata_text}\n{}\n", index + 1, ims_bot_adapter::CURRENT_MESSAGE_LABEL));
+        // Promote any media parts from the input into the message part list,
+        // flushing buffered text before and after so the ordering is preserved.
         append_prepared_parts(
             &mut parts,
             &mut text_buffer,
@@ -435,9 +445,12 @@ fn build_merged_steer_user_message(
         }
     }
 
+    // Ensure any trailing text in the buffer is captured as a final text part.
     flush_text_part(&mut parts, &mut text_buffer);
     let has_media = current_inputs.iter().any(|input| input.has_media);
 
+    // When no media was actually present, the multimodal assembly above produces
+    // only a single text part, so fall back to the simpler plain-text message.
     let message = if has_media && parts.len() > 1 {
         parts.push(MessagePart::text(PROCESSING_INSTRUCTION.to_string()));
         LLMMessage::user_with_parts(parts)
