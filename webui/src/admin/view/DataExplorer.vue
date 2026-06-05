@@ -121,11 +121,11 @@
       <div v-if="redis.connectionId" class="explorer-search">
         <label class="field" style="flex: 2;">
           <span class="field-label">Key Pattern</span>
-          <input v-model="redis.pattern" class="field-input" placeholder="* 或 openai_message_session:*" />
+          <input v-model="redis.pattern" class="field-input" placeholder="* 或 llm_message_session:*" />
         </label>
         <div class="field" style="flex: 0; align-self: flex-end; display: flex; gap: 6px;">
           <button class="btn ghost" @click="redis.pattern = '*'">All Keys</button>
-          <button class="btn ghost" @click="redis.pattern = 'openai_message_session:*'">LLM Sessions</button>
+          <button class="btn ghost" @click="redis.pattern = 'llm_message_session:*'">LLM Sessions</button>
           <button class="btn" :disabled="redis.loading" @click="searchRedis">搜索</button>
         </div>
       </div>

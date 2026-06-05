@@ -576,28 +576,28 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         MessageContentNode
     );
     register_node!(
-        "string_to_openai_message",
+        "string_to_llm_message",
         "字符串转 LLMMessage",
         "消息",
         "将字符串封装为可选 role 的 LLMMessage",
         StringToLLMMessageNode
     );
     register_node!(
-        "openai_message_content_as_json",
+        "llm_message_content_as_json",
         "LLMMessage内容转JSON",
         "消息",
         "将 LLMMessage 的 content 字符串解析为 JSON",
         LLMMessageContentAsJsonNode
     );
     register_node!(
-        "openai_message_to_string",
+        "llm_message_to_string",
         "LLMMessage转字符串",
         "消息",
         "将 LLMMessage 的 reasoning_content（如有）与 content 拼接为字符串",
         LLMMessageToStringNode
     );
     register_node!(
-        "as_system_openai_message",
+        "as_system_llm_message",
         "字符串转 LLMMessage",
         "消息",
         "兼容旧节点类型 ID：将字符串封装为可选 role 的 LLMMessage，默认 role=system",
@@ -695,22 +695,22 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         ToolResultNode
     );
     register_node!(
-        "openai_message_session_cache",
+        "llm_message_session_cache",
         "LLMMessage 会话暂存",
         "消息存储",
         "根据缓存 Ref、sender_id 和消息列表向当前运行期会话历史追加 Vec<LLMMessage>",
         LLMMessageSessionCacheNode
     );
     register_node!(
-        "openai_message_session_cache_get",
+        "llm_message_session_cache_get",
         "获取 LLMMessage 历史",
         "消息存储",
         "根据 LLMMessage 会话缓存 Ref 和 sender_id 读取当前运行期累计的 Vec<LLMMessage>",
         LLMMessageSessionCacheGetNode
     );
-    register_node!("openai_message_session_cache_set", "覆写 LLMMessage 历史", "消息存储", "根据 LLMMessage 会话缓存 Ref、sender_id 和消息列表覆写当前运行期累计的 Vec<LLMMessage>", LLMMessageSessionCacheSetNode);
+    register_node!("llm_message_session_cache_set", "覆写 LLMMessage 历史", "消息存储", "根据 LLMMessage 会话缓存 Ref、sender_id 和消息列表覆写当前运行期累计的 Vec<LLMMessage>", LLMMessageSessionCacheSetNode);
     register_node!(
-        "openai_message_session_cache_clear",
+        "llm_message_session_cache_clear",
         "清空 LLMMessage 历史",
         "消息存储",
         "根据 LLMMessage 会话缓存 Ref 和 sender_id 清空当前运行期累计的历史消息",

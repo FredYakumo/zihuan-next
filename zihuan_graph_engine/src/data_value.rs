@@ -259,7 +259,7 @@ impl LLMMessageSessionCacheRef {
 
     fn storage_key(&self, bucket_name: &str, sender_id: &str) -> String {
         format!(
-            "openai_message_session:{}:{}:{}",
+            "llm_message_session:{}:{}:{}",
             self.node_id, bucket_name, sender_id
         )
     }
@@ -434,7 +434,7 @@ impl LLMMessageSessionCacheRef {
             if let Some(cm) = cm_guard.as_mut() {
                 let deleted_count: i32 = cm.del(&key).await?;
                 let tracker_key = format!(
-                    "openai_message_session:{}:bucket:{}:keys",
+                    "llm_message_session:{}:bucket:{}:keys",
                     self.node_id, bucket_name
                 );
                 let _: () = cm.srem(&tracker_key, &key).await?;
@@ -491,11 +491,11 @@ impl LLMMessageSessionCacheRef {
                 let serialized = serde_json::to_string(&messages)?;
                 cm.set::<_, _, ()>(&key, serialized).await?;
                 let tracker_key = format!(
-                    "openai_message_session:{}:bucket:{}:keys",
+                    "llm_message_session:{}:bucket:{}:keys",
                     self.node_id, bucket_name
                 );
                 let tracker_registry_key =
-                    format!("openai_message_session:{}:tracker_sets", self.node_id);
+                    format!("llm_message_session:{}:tracker_sets", self.node_id);
                 cm.sadd::<_, _, ()>(&tracker_key, &key).await?;
                 cm.sadd::<_, _, ()>(&tracker_registry_key, &tracker_key)
                     .await?;
@@ -559,11 +559,11 @@ impl LLMMessageSessionCacheRef {
                 let serialized = serde_json::to_string(&existing_messages)?;
                 cm.set::<_, _, ()>(&key, serialized).await?;
                 let tracker_key = format!(
-                    "openai_message_session:{}:bucket:{}:keys",
+                    "llm_message_session:{}:bucket:{}:keys",
                     self.node_id, bucket_name
                 );
                 let tracker_registry_key =
-                    format!("openai_message_session:{}:tracker_sets", self.node_id);
+                    format!("llm_message_session:{}:tracker_sets", self.node_id);
                 cm.sadd::<_, _, ()>(&tracker_key, &key).await?;
                 cm.sadd::<_, _, ()>(&tracker_registry_key, &tracker_key)
                     .await?;
