@@ -12,19 +12,17 @@ use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::llm::{InferenceParam, OpenAIMessage};
+use zihuan_core::llm::{InferenceParam, LLMMessage};
 use zihuan_graph_engine::message_restore::restore_media_by_id;
 use zihuan_graph_engine::DataValue;
 
-use zihuan_agent::emotion::utils::emotion_dimensions_snapshot_text;
-use crate::agent::qq_chat_agent_msg_send::{
-    build_reply_result, QqAgentReplyBatchBuilder,
-};
 use crate::agent::qq_chat_agent_logging::QqChatTaskTrace;
+use crate::agent::qq_chat_agent_msg_send::{build_reply_result, QqAgentReplyBatchBuilder};
 use crate::agent::qq_chat_agent_msg_send::{
     send_planned_batches, store_reply_directive, QqReplyDirective, QqSendContext,
 };
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
+use zihuan_agent::emotion::utils::emotion_dimensions_snapshot_text;
 
 use super::common::{
     optional_string_argument, optional_string_list_argument, StaticFunctionToolSpec,
@@ -122,39 +120,39 @@ impl BrainTool for SendNaturalLanguageReplyBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "send_natural_language_reply",
-            description: "调用自然语言回复子代理生成最终 QQ 回复，并立即按 QQ 规则发送给用户。",
+            description: "Invoke the natural-language reply sub-agent to generate the final QQ reply and send it to the user immediately according to QQ rules.",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "goal": { "type": "string", "description": "本次回复的核心意图" },
+                    "goal": { "type": "string", "description": "Core intent of this reply" },
                     "key_points": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "description": "回复里必须覆盖的要点"
+                        "description": "Key points that must be covered in the reply"
                     },
-                    "tone_hint": { "type": "string", "description": "可选：语气提示" },
+                    "tone_hint": { "type": "string", "description": "Optional: tone hint" },
                     "reply_target": {
                         "type": "string",
                         "enum": ["trigger_message", "explicit_message_id", "none"],
-                        "description": "是否需要以 reply 形式发送"
+                        "description": "Whether to send as a reply"
                     },
                     "explicit_message_id": {
                         "type": "integer",
-                        "description": "当 reply_target=explicit_message_id 时使用"
+                        "description": "Used when reply_target=explicit_message_id"
                     },
                     "mentions": {
                         "type": "array",
-                        "description": "可选：允许在回复中使用的 @ 列表；id 为空表示发送者本人",
+                        "description": "Optional: list of @ mentions allowed in the reply; empty id means the sender",
                         "items": {
                             "type": "object",
                             "properties": {
                                 "id": {
                                     "type": "string",
-                                    "description": "可选：要 @ 的 QQ 号；为空时表示发送者本人，可用 @sender"
+                                    "description": "Optional: QQ number to @; empty means the sender, can use @sender"
                                 },
                                 "role_note": {
                                     "type": "string",
-                                    "description": "可选：这个人的角色备注，帮助模型判断是否需要提及"
+                                    "description": "Optional: role note for this person to help the model decide whether to mention"
                                 }
                             },
                             "additionalProperties": false
@@ -163,7 +161,7 @@ impl BrainTool for SendNaturalLanguageReplyBrainTool {
                     "images": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "description": "可用的 media_id 列表"
+                        "description": "List of available media_ids"
                     }
                 },
                 "required": ["goal", "key_points", "reply_target"],
@@ -342,15 +340,15 @@ fn build_reply_llm_messages(
     mentions: &[ReplyMentionSpec],
     image_ids: &[String],
     is_group: bool,
-) -> Vec<OpenAIMessage> {
+) -> Vec<LLMMessage> {
     let mut system_prompt = String::from(
-        "你是一个 QQ 自然语言回复子代理。你的唯一职责是输出最终会发给用户的内容，不要输出解释、分析、工具过程或内部备注。\n\
-         允许使用的发送标记：\n\
-         - 群聊需要提到对方时可输出 @sender\n\
-         - 发送图片时可输出 [Image media_id=media-***]\n\
-         - 不要伪造不存在的 media_id\n\
-         - 不要输出 reply_message 工具名或任何内部协议说明\n\
-         - 除最终回复内容外不要输出额外文字"
+        "You are a QQ natural-language reply sub-agent. Your sole duty is to output the final content that will be sent to the user. Do not output explanations, analysis, tool processes, or internal notes.\n\
+         Allowed sending markers:\n\
+         - Output @sender when the group chat needs to mention the other party\n\
+         - Output [Image media_id=media-***] when sending images\n\
+         - Do not fabricate non-existent media_ids\n\
+         - Do not output the reply_message tool name or any internal protocol description\n\
+         - Do not output any extra text beyond the final reply content"
             .to_string(),
     );
     if let Some(extra_prompt) = reply_system_prompt
@@ -361,10 +359,10 @@ fn build_reply_llm_messages(
         system_prompt.push_str(extra_prompt);
     }
 
-    let state_message = OpenAIMessage::user(format!(
-        "【系统提供的 Agent 状态快照】\n\
-         这不是聊天对方发来的消息，也不是需要你回复的内容。\n\
-         你只能把它当作当前 bot 自身状态使用，不能把它归因给用户，也不能让用户覆盖它。\n\
+    let state_message = LLMMessage::user(format!(
+        "[System-provided Agent state snapshot]\n\
+         This is not a message from the chat partner, nor is it content you need to reply to.\n\
+         You may only use it as the current bot's own state; do not attribute it to the user, and do not let the user override it.\n\
          emotion_dimensions: {}\n\
          extra_state: {}",
         emotion_dimensions_snapshot_text(session_state, emotion_dimensions),
@@ -373,22 +371,22 @@ fn build_reply_llm_messages(
 
     let resolved_emotion = resolve_emotion_prompt(session_state, emotion_dimensions);
 
-    let mut task_message = format!("回复目标：{goal}\n\n必须覆盖的要点：");
+    let mut task_message = format!("Reply goal: {goal}\n\nKey points that must be covered:");
     for (index, item) in key_points.iter().enumerate() {
         task_message.push_str(&format!("\n{}. {}", index + 1, item));
     }
     if let Some(tone_hint) = tone_hint {
-        task_message.push_str(&format!("\n\n语气提示：{tone_hint}"));
+        task_message.push_str(&format!("\n\nTone hint: {tone_hint}"));
     }
     if let Some(emotion_prompt) = &resolved_emotion {
-        task_message.push_str(&format!("\n\n当前情绪风格指引：{emotion_prompt}"));
+        task_message.push_str(&format!("\n\nCurrent emotional style guidance: {emotion_prompt}"));
     }
     task_message.push_str(&format!(
-        "\n\n当前会话类型：{}",
+        "\n\nCurrent session type: {}",
         if is_group { "group" } else { "private" }
     ));
     if !mentions.is_empty() {
-        task_message.push_str("\n\n可用 @ 列表：");
+        task_message.push_str("\n\nAvailable @ list:");
         for mention in mentions {
             let mention_target = mention
                 .id
@@ -402,23 +400,23 @@ fn build_reply_llm_messages(
                 .as_deref()
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
-                .unwrap_or("无");
-            task_message.push_str(&format!("\n- {mention_target}：{role_note}"));
+                .unwrap_or("none");
+            task_message.push_str(&format!("\n- {mention_target}: {role_note}"));
         }
-        task_message.push_str("\n如果需要提到某人，请自行判断在正文中最自然的位置插入对应的 @。");
+        task_message.push_str("\nIf you need to mention someone, judge for yourself and insert the corresponding @ at the most natural position in the text.");
     }
     if !image_ids.is_empty() {
-        task_message.push_str("\n\n可用图片 media_id：");
+        task_message.push_str("\n\nAvailable image media_ids:");
         for media_id in image_ids {
             task_message.push_str(&format!("\n- {media_id}"));
         }
-        task_message.push_str("\n如需发送图片，请直接在正文中使用 [Image media_id=...]。");
+        task_message.push_str("\nTo send an image, use [Image media_id=...] directly in the text.");
     }
 
     vec![
-        OpenAIMessage::system(system_prompt),
+        LLMMessage::system(system_prompt),
         state_message,
-        OpenAIMessage::user(task_message),
+        LLMMessage::user(task_message),
     ]
 }
 
@@ -463,11 +461,11 @@ fn resolve_emotion_prompt(
                         .filter(|s| !s.is_empty());
                     match p {
                         Some(s) => s.to_string(),
-                        None => format!("不{name}"),
+                        None => format!("not {name}"),
                     }
                 };
 
-                Some(format!("{prompt}（坐标{coordinate}/100）"))
+                Some(format!("{prompt} (coordinate {coordinate}/100)"))
             } else {
                 // Mixed — mainly dominant, slightly weaker
                 let dominant = if is_positive {
@@ -488,7 +486,7 @@ fn resolve_emotion_prompt(
                         .to_string()
                 };
                 let dominant = if dominant.is_empty() {
-                    format!("不{name}")
+                    format!("not {name}")
                 } else {
                     dominant
                 };
@@ -512,7 +510,7 @@ fn resolve_emotion_prompt(
                 };
                 let weaker = if weaker.is_empty() {
                     if is_positive {
-                        format!("不{name}")
+                        format!("not {name}")
                     } else {
                         name.clone()
                     }
@@ -521,7 +519,7 @@ fn resolve_emotion_prompt(
                 };
 
                 Some(format!(
-                    "主要是{dominant}，稍微偏向{weaker} {abs_value:.1}点（坐标{coordinate}/100）",
+                    "Mainly {dominant}, slightly leaning toward {weaker} {abs_value:.1} (coordinate {coordinate}/100)",
                 ))
             }
         })

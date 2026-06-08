@@ -52,6 +52,26 @@ pub use system_config::{
     BotAdapterConnectionKind, BotAdapterConnectionsSection,
 };
 
+// Labels for message structure elements used when rendering ims messages
+pub const CURRENT_MESSAGE_LABEL: &str = "[Current Message]";
+pub const REPLY_MESSAGE_LABEL: &str = "[Reply Message]";
+pub const FORWARD_NODE_LABEL: &str = "[Forward Node]";
+pub const SENDER_LABEL: &str = "[Sender]";
+
+// Text markers used to delimit nested message structures
+pub const REPLY_START_MARKER: &str = "[Reply Message Start]";
+pub const REPLY_END_MARKER: &str = "[Reply Message End]";
+pub const FORWARD_START_MARKER: &str = "[Forward Message Start]";
+pub const FORWARD_END_MARKER: &str = "[Forward Message End]";
+pub const NOT_ANY_TEXT_MARKER: &str = "[No Text Content]";
+pub const NOT_REPLAY_TEXT_MARKER: &str = "[No Reply]";
+
+// Labels for message content sections used in LLM prompts
+pub const REPLAY_CONTENT_LABEL: &str = "[Replay Content]";
+pub const FORWARD_CONTENT_LABEL: &str = "[Forward Content]";
+pub const IMAGE_ANALYSIS_LABEL: &str = "[Image Analysis]";
+pub const QUOTE_CONTENT_APPENDIX_LABEL: &str = "[Quote Content Appendix]";
+
 pub fn init_node_registry() -> Result<()> {
     use extract_group_id_from_event::ExtractGroupIdFromEventNode;
     use extract_media_by_id::ExtractMediaByIdNode;
@@ -97,16 +117,16 @@ pub fn init_node_registry() -> Result<()> {
     );
     register_node!(
         "extract_message_from_event",
-        "事件提取 OpenAIMessage 列表",
+        "事件提取 LLMMessage 列表",
         "Bot适配器",
-        "从消息事件中提取 OpenAIMessage 列表",
+        "从消息事件中提取 LLMMessage 列表",
         ExtractMessageFromEventNode
     );
     register_node!(
         "extract_media_by_id",
         "按媒体 ID 提取图片",
         "Bot适配器",
-        "通过持久化媒体 ID 从数据库恢复图片并转换为 OpenAIMessage",
+        "通过持久化媒体 ID 从数据库恢复图片并转换为 LLMMessage",
         ExtractMediaByIdNode
     );
     register_node!(

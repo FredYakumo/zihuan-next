@@ -4,12 +4,10 @@ use std::sync::{Arc, Mutex};
 
 use super::inference::{InferenceToolContext, InferenceToolProvider};
 use super::qq_chat_agent_core::{
-    build_info_brain_tools, expand_messages_for_inference, extract_user_message_text,
-    hydrate_missing_reply_sources, QqAgentReplyBatchBuilder, QqChatAgent,
+    build_info_brain_tools, expand_messages_for_inference, prepare_current_turn_user_input_from_event, QqAgentReplyBatchBuilder, QqChatAgent,
     QqChatAgentContext, QqChatAgentService, QqChatAgentServiceConfig, QqChatTaskTrace,
-    PendingSteerEvent, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
+    LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
-use zihuan_core::utils::string_utils::shorten_text;
 use super::qq_chat_agent_msg_send::build_reply_batch_builder as build_unified_reply_batch_builder;
 use super::qq_chat_agent_ignore_store::should_ignore_message_blocking;
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
@@ -19,7 +17,6 @@ use crate::resource_resolver::{
     build_embedding_model, build_llm_model, resolve_llm_service_config,
     resolve_local_embedding_model_name,
 };
-use crate::storage::qq_chat_history_store::{conversation_history_key, load_history};
 use crate::storage::qq_chat_session_store::{release_session, try_claim_session};
 use chrono::Local;
 use ims_bot_adapter::adapter::BotAdapter;
@@ -44,16 +41,18 @@ use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;
-use zihuan_core::llm::OpenAIMessage;
+use zihuan_core::llm::LLMMessage;
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::runtime::block_async;
+use zihuan_core::steer::PendingSteerEvent;
 use zihuan_core::task_context::{
     scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime,
     AgentTaskStatus,
 };
+use zihuan_core::utils::string_utils::shorten_text;
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
-use zihuan_graph_engine::data_value::{OpenAIMessageSessionCacheRef, SessionStateRef};
+use zihuan_graph_engine::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::message_persistence::persist_message_event;
 use zihuan_graph_engine::message_restore::{register_mysql_ref, register_rdb_pool};
@@ -71,6 +70,18 @@ pub fn expand_message_event_for_tool_input(
     let mut expanded = event.clone();
     expanded.message_list = expand_messages_for_inference(&event.message_list);
     expanded
+}
+
+#[doc(hidden)]
+pub use crate::qq_chat_user_input::PreparedCurrentTurnUserInput;
+
+#[doc(hidden)]
+pub fn prepare_message_event_user_input_for_test(
+    event: &ims_bot_adapter::models::event_model::MessageEvent,
+    bot_id: &str,
+    bot_name: &str,
+) -> PreparedCurrentTurnUserInput {
+    prepare_current_turn_user_input_from_event(event, bot_id, bot_name, None)
 }
 
 #[derive(Clone)]
@@ -92,10 +103,10 @@ pub struct QqInferenceToolProvider {
 }
 
 impl InferenceToolProvider for QqInferenceToolProvider {
-    fn augment_messages(&self, messages: &mut Vec<OpenAIMessage>, _context: &InferenceToolContext) {
+    fn augment_messages(&self, messages: &mut Vec<LLMMessage>, _context: &InferenceToolContext) {
         messages.insert(
             0,
-            OpenAIMessage::system(format!(
+            LLMMessage::system(format!(
                 "你是 {}。请保持回答简洁、友好、准确；当可调用工具时优先使用工具获取事实。",
                 self.resources.bot_name
             )),
@@ -386,7 +397,7 @@ pub async fn spawn(
             config.bot_name.clone()
         },
         system_prompt: config.system_prompt.clone(),
-        cache: Arc::new(OpenAIMessageSessionCacheRef::new(format!(
+        cache: Arc::new(LLMMessageSessionCacheRef::new(format!(
             "service_agent_cache_{}",
             agent.id
         ))),
@@ -677,94 +688,9 @@ impl QqChatAgent {
 
         let (claimed, claim_token) = try_claim_session(session, &sender_id);
         if !claimed {
-            let bot_id = get_bot_id(ctx.adapter);
-            let hydrated_event = hydrate_missing_reply_sources(event, ctx.adapter);
-            let mut inference_event = hydrated_event.clone();
-            inference_event.message_list =
-                expand_messages_for_inference(&hydrated_event.message_list);
-            let current_message =
-                extract_user_message_text(&inference_event, &bot_id, ctx.bot_name);
-            if let Some(command_registry) = crate::command::global_command_registry() {
-                let cmd_ctx = self.build_command_context(
-                    &sender_id,
-                    &target_id,
-                    is_group,
-                    inference_event.group_id,
-                );
-                if let Some(preview) = command_registry.preview(&cmd_ctx, &current_message) {
-                    if preview.definition.allow_steer_bypass && preview.passthrough_text.is_none() {
-                        info!(
-                            "{LOG_PREFIX} Session busy for {sender_id}, executing command via steer bypass: message_id={} command=/{}",
-                            event.message_id,
-                            preview.definition.name
-                        );
-                        if let Some(dispatch_result) =
-                            command_registry.dispatch(&cmd_ctx, &current_message)
-                        {
-                            let history_key = conversation_history_key(
-                                &bot_id,
-                                &sender_id,
-                                is_group,
-                                inference_event.group_id,
-                            );
-                            let legacy_history_key = sender_id.to_string();
-                            let mut history =
-                                load_history(ctx.cache, &history_key, &legacy_history_key);
-                            let trace = QqChatTaskTrace::new(Local::now());
-                            self.execute_command_dispatch(
-                                &trace,
-                                &cmd_ctx,
-                                dispatch_result,
-                                &hydrated_event,
-                                &inference_event,
-                                &sender_id,
-                                &target_id,
-                                &bot_id,
-                                &mut history,
-                                ctx,
-                            )?;
-                            trace.finish_with_summary();
-                            return Ok(());
-                        }
-                    } else {
-                        info!(
-                            "{LOG_PREFIX} Session busy for {sender_id}, command falls back to steer: message_id={} command=/{} allow_steer_bypass={} has_passthrough={}",
-                            event.message_id,
-                            preview.definition.name,
-                            preview.definition.allow_steer_bypass,
-                            preview.passthrough_text.is_some()
-                        );
-                    }
-                }
-            }
-            let (accepted, queue_len, accepted_steer_count) = ctx.pending_steer.enqueue_with_limit(
-                &sender_id,
-                PendingSteerEvent {
-                    event: hydrated_event,
-                    time: time.to_string(),
-                },
-                ctx.max_steer_count,
+            return self.try_handle_busy_session_steer(
+                event, ctx, &sender_id, &target_id, is_group, time,
             );
-            if accepted {
-                info!(
-                    "{LOG_PREFIX} Session busy for {sender_id}, enqueueing steer: message_id={} queue_len={} accepted_steer_count={}/{} message={}",
-                    event.message_id,
-                    queue_len,
-                    accepted_steer_count,
-                    ctx.max_steer_count,
-                    shorten_text(&current_message, LOG_TEXT_PREVIEW_CHARS)
-                );
-            } else {
-                warn!(
-                    "{LOG_PREFIX} steer dropped for sender={} message_id={} because max steer count reached: accepted_steer_count={}/{} message={}",
-                    sender_id,
-                    event.message_id,
-                    accepted_steer_count,
-                    ctx.max_steer_count,
-                    shorten_text(&current_message, LOG_TEXT_PREVIEW_CHARS)
-                );
-            }
-            return Ok(());
         }
 
         ctx.pending_steer.ensure_session_entry(&sender_id);

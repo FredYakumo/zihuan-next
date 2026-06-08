@@ -150,9 +150,9 @@
         {
           "name": "messages",
           "data_type": {
-            "Vec": "OpenAIMessage"
+            "Vec": "LLMMessage"
           },
-          "description": "Vec<OpenAIMessage> provided by UI inline editor",
+          "description": "Vec<LLMMessage> provided by UI inline editor",
           "required": false,
           "hidden": true
         }
@@ -161,9 +161,9 @@
         {
           "name": "messages",
           "data_type": {
-            "Vec": "OpenAIMessage"
+            "Vec": "LLMMessage"
           },
-          "description": "Output Vec<OpenAIMessage> from UI data source",
+          "description": "Output Vec<LLMMessage> from UI data source",
           "required": true,
           "hidden": false
         }
@@ -339,7 +339,7 @@
         {
           "name": "messages",
           "data_type": {
-            "Vec": "OpenAIMessage"
+            "Vec": "LLMMessage"
           },
           "description": "消息列表（包含 system/user/assistant/tool 等角色）",
           "required": true,
@@ -378,7 +378,7 @@
         {
           "name": "output",
           "data_type": {
-            "Vec": "OpenAIMessage"
+            "Vec": "LLMMessage"
           },
           "description": "本次 Brain 运行新增的 assistant/tool 消息轨迹",
           "required": true,
@@ -1016,9 +1016,9 @@
                   "output_ports": [
                     {
                       "data_type": {
-                        "Vec": "OpenAIMessage"
+                        "Vec": "LLMMessage"
                       },
-                      "description": "Vec<OpenAIMessage> containing system and user messages",
+                      "description": "Vec<LLMMessage> containing system and user messages",
                       "hidden": false,
                       "name": "messages",
                       "required": true
@@ -1083,9 +1083,9 @@
                   "input_ports": [
                     {
                       "data_type": {
-                        "Vec": "OpenAIMessage"
+                        "Vec": "LLMMessage"
                       },
-                      "description": "Vec<OpenAIMessage> provided by UI inline editor",
+                      "description": "Vec<LLMMessage> provided by UI inline editor",
                       "hidden": true,
                       "name": "messages",
                       "required": false
@@ -1096,9 +1096,9 @@
                   "output_ports": [
                     {
                       "data_type": {
-                        "Vec": "OpenAIMessage"
+                        "Vec": "LLMMessage"
                       },
-                      "description": "Output Vec<OpenAIMessage> from UI data source",
+                      "description": "Output Vec<LLMMessage> from UI data source",
                       "hidden": false,
                       "name": "messages",
                       "required": true
@@ -1218,7 +1218,7 @@
                     },
                     {
                       "data_type": {
-                        "Vec": "OpenAIMessage"
+                        "Vec": "LLMMessage"
                       },
                       "description": "输入消息列表，包含系统消息和用户消息",
                       "hidden": false,
@@ -1231,7 +1231,7 @@
                   "output_ports": [
                     {
                       "data_type": {
-                        "Vec": "OpenAIMessage"
+                        "Vec": "LLMMessage"
                       },
                       "description": "LLM返回的消息列表",
                       "hidden": false,
@@ -1310,15 +1310,15 @@
                   "inline_values": {},
                   "input_ports": [
                     {
-                      "data_type": "OpenAIMessage",
-                      "description": "输入的 OpenAIMessage",
+                      "data_type": "LLMMessage",
+                      "description": "输入的 LLMMessage",
                       "hidden": false,
                       "name": "message",
                       "required": true
                     }
                   ],
                   "name": "openai message to string",
-                  "node_type": "openai_message_to_string",
+                  "node_type": "llm_message_to_string",
                   "output_ports": [
                     {
                       "data_type": "String",
@@ -1495,7 +1495,7 @@
       "id": "19b88ffe-1f19-45b0-89c0-5c473e6c2c59",
       "name": "string to openai message",
       "description": null,
-      "node_type": "string_to_openai_message",
+      "node_type": "string_to_llm_message",
       "input_ports": [
         {
           "name": "content",
@@ -1507,7 +1507,7 @@
         {
           "name": "role",
           "data_type": "String",
-          "description": "OpenAIMessage 角色，可选 system / user / assistant / tool",
+          "description": "LLMMessage 角色，可选 system / user / assistant / tool",
           "required": true,
           "hidden": false
         }
@@ -1515,8 +1515,8 @@
       "output_ports": [
         {
           "name": "message",
-          "data_type": "OpenAIMessage",
-          "description": "封装后的 OpenAIMessage",
+          "data_type": "LLMMessage",
+          "description": "封装后的 LLMMessage",
           "required": true,
           "hidden": false
         }
@@ -1593,12 +1593,12 @@
       "id": "57c4a659-760c-4f8b-8185-beebb70b4186",
       "name": "openai message to string",
       "description": null,
-      "node_type": "openai_message_to_string",
+      "node_type": "llm_message_to_string",
       "input_ports": [
         {
           "name": "message",
-          "data_type": "OpenAIMessage",
-          "description": "输入的 OpenAIMessage",
+          "data_type": "LLMMessage",
+          "description": "输入的 LLMMessage",
           "required": true,
           "hidden": false
         }

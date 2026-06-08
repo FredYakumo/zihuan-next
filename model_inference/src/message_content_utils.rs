@@ -1,15 +1,15 @@
 use std::collections::HashSet;
 
 use log::warn;
-use zihuan_core::llm::{ContentPart, MessageContent, MessageRole, OpenAIMessage};
+use zihuan_core::llm::{LLMMessage, MessagePart, MessageRole};
 
 const IMAGE_OMITTED_PLACEHOLDER: &str = "[image omitted]";
 const VIDEO_OMITTED_PLACEHOLDER: &str = "[video omitted]";
 
 pub fn downgrade_messages_for_model(
-    messages: Vec<OpenAIMessage>,
+    messages: Vec<LLMMessage>,
     supports_multimodal_input: bool,
-) -> Vec<OpenAIMessage> {
+) -> Vec<LLMMessage> {
     if supports_multimodal_input {
         return messages;
     }
@@ -21,9 +21,9 @@ pub fn downgrade_messages_for_model(
 }
 
 pub fn downgrade_message_for_model(
-    message: OpenAIMessage,
+    message: LLMMessage,
     supports_multimodal_input: bool,
-) -> OpenAIMessage {
+) -> LLMMessage {
     if supports_multimodal_input {
         return message;
     }
@@ -31,29 +31,33 @@ pub fn downgrade_message_for_model(
     downgrade_message_for_text_only_model(message)
 }
 
-fn downgrade_message_for_text_only_model(mut message: OpenAIMessage) -> OpenAIMessage {
-    if let Some(MessageContent::Parts(parts)) = message.content {
-        message.content = Some(MessageContent::Text(parts_to_text(parts)));
+fn downgrade_message_for_text_only_model(mut message: LLMMessage) -> LLMMessage {
+    let has_non_text_parts = message
+        .parts
+        .iter()
+        .any(|part| !matches!(part, MessagePart::Text { .. }));
+    if has_non_text_parts {
+        message.parts = vec![MessagePart::text(parts_to_text(message.parts))];
     }
     message
 }
 
-fn parts_to_text(parts: Vec<ContentPart>) -> String {
+fn parts_to_text(parts: Vec<MessagePart>) -> String {
     let mut segments = Vec::with_capacity(parts.len());
 
     for part in parts {
         match part {
-            ContentPart::Text { text } => segments.push(text),
-            ContentPart::ImageUrl { image_url } => {
+            MessagePart::Text { text } => segments.push(text),
+            MessagePart::Image { media } => {
                 segments.push(media_placeholder(
                     IMAGE_OMITTED_PLACEHOLDER,
-                    image_url.as_url(),
+                    media.primary_locator().unwrap_or(""),
                 ));
             }
-            ContentPart::VideoUrl { video_url } => {
+            MessagePart::Video { media } => {
                 segments.push(media_placeholder(
                     VIDEO_OMITTED_PLACEHOLDER,
-                    video_url.as_url(),
+                    media.primary_locator().unwrap_or(""),
                 ));
             }
         }
@@ -73,8 +77,8 @@ fn media_placeholder(prefix: &str, url: &str) -> String {
 
 /// Remove dangling / unresolved tool-call sequences from a message history so
 /// that the sequence passed to the LLM is always well-formed.
-pub fn sanitize_messages_for_inference(messages: Vec<OpenAIMessage>) -> Vec<OpenAIMessage> {
-    let mut sanitized: Vec<OpenAIMessage> = Vec::with_capacity(messages.len());
+pub fn sanitize_messages_for_inference(messages: Vec<LLMMessage>) -> Vec<LLMMessage> {
+    let mut sanitized: Vec<LLMMessage> = Vec::with_capacity(messages.len());
     let mut pending: Option<(usize, HashSet<String>)> = None;
 
     for message in messages {

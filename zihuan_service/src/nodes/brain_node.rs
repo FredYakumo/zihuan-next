@@ -13,7 +13,7 @@ use zihuan_agent::brain::{
 };
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::llm::OpenAIMessage;
+use zihuan_core::llm::LLMMessage;
 use zihuan_graph_engine::brain_tool_spec::{
     brain_shared_inputs_from_value, BrainToolDefinition, BRAIN_SHARED_INPUTS_PORT,
     BRAIN_TOOLS_CONFIG_PORT,
@@ -82,7 +82,7 @@ impl BrainNode {
 
     fn output_ports_static() -> Vec<Port> {
         vec![
-            Port::new("output", DataType::Vec(Box::new(DataType::OpenAIMessage)))
+            Port::new("output", DataType::Vec(Box::new(DataType::LLMMessage)))
                 .with_description("本次 Brain 运行新增的 assistant/tool 消息轨迹"),
         ]
     }
@@ -103,12 +103,12 @@ impl BrainNode {
 
     fn parse_messages_input(
         inputs: &zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<Vec<OpenAIMessage>> {
+    ) -> Result<Vec<LLMMessage>> {
         match inputs.get("messages") {
             Some(DataValue::Vec(_, items)) => Ok(items
                 .iter()
                 .filter_map(|item| {
-                    if let DataValue::OpenAIMessage(message) = item {
+                    if let DataValue::LLMMessage(message) = item {
                         Some(message.clone())
                     } else {
                         None
@@ -153,7 +153,7 @@ impl Node for BrainNode {
         let mut ports = vec![
             Port::new("llm_model", DataType::LLModel)
                 .with_description("LLM 模型引用，由 LLM API 节点提供"),
-            Port::new("messages", DataType::Vec(Box::new(DataType::OpenAIMessage)))
+            Port::new("messages", DataType::Vec(Box::new(DataType::LLMMessage)))
                 .with_description("消息列表（包含 system/user/assistant/tool 等角色）"),
             // Hidden ports: managed via "管理工具" button dialog
             Port::new(BRAIN_TOOLS_CONFIG_PORT, DataType::Json)
@@ -284,10 +284,10 @@ impl Node for BrainNode {
         outputs.insert(
             "output".to_string(),
             DataValue::Vec(
-                Box::new(DataType::OpenAIMessage),
+                Box::new(DataType::LLMMessage),
                 output_messages
                     .into_iter()
-                    .map(DataValue::OpenAIMessage)
+                    .map(DataValue::LLMMessage)
                     .collect(),
             ),
         );

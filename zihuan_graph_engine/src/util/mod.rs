@@ -20,13 +20,13 @@ pub mod join_string;
 pub mod json_extract;
 pub mod json_parser;
 pub mod json_to_qq_message_vec;
+pub mod llm_message_content_as_json;
+pub mod llm_message_session_cache;
+pub mod llm_message_session_cache_get;
+pub mod llm_message_session_cache_set;
+pub mod llm_message_to_string;
 pub mod message_content;
 pub mod message_list_data;
-pub mod openai_message_content_as_json;
-pub mod openai_message_session_cache;
-pub mod openai_message_session_cache_get;
-pub mod openai_message_session_cache_set;
-pub mod openai_message_to_string;
 pub mod preview_message_list;
 pub mod preview_qq_message_list;
 pub mod preview_string;
@@ -43,25 +43,25 @@ pub mod stack;
 pub mod string_data;
 pub mod string_is_not_empty;
 pub mod string_to_image_content_part;
-pub mod string_to_openai_message;
+pub mod string_to_llm_message;
 pub mod string_to_plain_text;
 pub mod switch;
 pub mod tool_result_node;
 
-pub mod openai_message_session_cache_clear {
-    use crate::data_value::OpenAIMessageSessionCacheRef;
+pub mod llm_message_session_cache_clear {
+    use crate::data_value::LLMMessageSessionCacheRef;
     use crate::{node_input, node_output, DataType, DataValue, Node, Port};
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::task::block_in_place;
     use zihuan_core::error::Result;
 
-    pub struct OpenAIMessageSessionCacheClearNode {
+    pub struct LLMMessageSessionCacheClearNode {
         id: String,
         name: String,
     }
 
-    impl OpenAIMessageSessionCacheClearNode {
+    impl LLMMessageSessionCacheClearNode {
         pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
             Self {
                 id: id.into(),
@@ -70,7 +70,7 @@ pub mod openai_message_session_cache_clear {
         }
     }
 
-    impl Node for OpenAIMessageSessionCacheClearNode {
+    impl Node for LLMMessageSessionCacheClearNode {
         fn id(&self) -> &str {
             &self.id
         }
@@ -80,11 +80,11 @@ pub mod openai_message_session_cache_clear {
         }
 
         fn description(&self) -> Option<&str> {
-            Some("根据缓存 Ref 和 sender_id 清空当前运行期累计的 Vec<OpenAIMessage>")
+            Some("根据缓存 Ref 和 sender_id 清空当前运行期累计的 Vec<LLMMessage>")
         }
 
         node_input![
-            port! { name = "cache_ref", ty = OpenAIMessageSessionCacheRef, desc = "OpenAIMessage 会话暂存器输出的缓存引用" },
+            port! { name = "cache_ref", ty = LLMMessageSessionCacheRef, desc = "LLMMessage 会话暂存器输出的缓存引用" },
             port! { name = "sender_id", ty = String, desc = "要清空历史消息的 sender_id" },
         ];
 
@@ -95,10 +95,10 @@ pub mod openai_message_session_cache_clear {
         fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
             self.validate_inputs(&inputs)?;
 
-            let cache_ref: Arc<OpenAIMessageSessionCacheRef> = inputs
+            let cache_ref: Arc<LLMMessageSessionCacheRef> = inputs
                 .get("cache_ref")
                 .and_then(|value| match value {
-                    DataValue::OpenAIMessageSessionCacheRef(cache_ref) => Some(cache_ref.clone()),
+                    DataValue::LLMMessageSessionCacheRef(cache_ref) => Some(cache_ref.clone()),
                     _ => None,
                 })
                 .ok_or_else(|| {
@@ -137,7 +137,7 @@ pub use and_then::AndThenNode;
 pub use any_of::AnyOfNode;
 pub use array_get::ArrayGetNode;
 pub use at_qq_target_message::AtQQTargetMessageNode;
-pub use binary_to_image_content_part::BinaryToImageContentPartNode;
+pub use binary_to_image_content_part::BinaryToImageMessagePartNode;
 pub use boolean_branch::BooleanBranchNode;
 pub use boolean_not::BooleanNotNode;
 pub use build_multimodal_user_message::BuildMultimodalUserMessageNode;
@@ -155,14 +155,14 @@ pub use join_string::JoinStringNode;
 pub use json_extract::JsonExtractNode;
 pub use json_parser::JsonParserNode;
 pub use json_to_qq_message_vec::JsonToQQMessageVecNode;
+pub use llm_message_content_as_json::LLMMessageContentAsJsonNode;
+pub use llm_message_session_cache::LLMMessageSessionCacheNode;
+pub use llm_message_session_cache_clear::LLMMessageSessionCacheClearNode;
+pub use llm_message_session_cache_get::LLMMessageSessionCacheGetNode;
+pub use llm_message_session_cache_set::LLMMessageSessionCacheSetNode;
+pub use llm_message_to_string::LLMMessageToStringNode;
 pub use message_content::MessageContentNode;
 pub use message_list_data::MessageListDataNode;
-pub use openai_message_content_as_json::OpenAIMessageContentAsJsonNode;
-pub use openai_message_session_cache::OpenAIMessageSessionCacheNode;
-pub use openai_message_session_cache_clear::OpenAIMessageSessionCacheClearNode;
-pub use openai_message_session_cache_get::OpenAIMessageSessionCacheGetNode;
-pub use openai_message_session_cache_set::OpenAIMessageSessionCacheSetNode;
-pub use openai_message_to_string::OpenAIMessageToStringNode;
 pub use preview_message_list::PreviewMessageListNode;
 pub use preview_qq_message_list::PreviewQQMessageListNode;
 pub use preview_string::PreviewStringNode;
@@ -178,8 +178,8 @@ pub use set_variable::SetVariableNode;
 pub use stack::StackNode;
 pub use string_data::{StringDataNode, STRING_DATA_CONTEXT};
 pub use string_is_not_empty::StringIsNotEmptyNode;
-pub use string_to_image_content_part::StringToImageContentPartNode;
-pub use string_to_openai_message::StringToOpenAIMessageNode;
+pub use string_to_image_content_part::StringToImageMessagePartNode;
+pub use string_to_llm_message::StringToLLMMessageNode;
 pub use string_to_plain_text::StringToPlainTextNode;
 pub use switch::SwitchNode;
 pub use tool_result_node::ToolResultNode;

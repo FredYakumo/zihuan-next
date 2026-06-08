@@ -46,7 +46,7 @@ export interface QQMessageItem {
   };
 }
 
-export interface OpenAIMessageItem {
+export interface LLMMessageItem {
   role: "system" | "user" | "assistant" | "tool";
   content?: string | null;
   reasoning_content?: string | null;

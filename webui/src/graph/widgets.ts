@@ -5,7 +5,7 @@ import { setupBrainWidgets } from "./node_widgets/brain";
 import { setupFormatStringWidgets } from "./node_widgets/format_string";
 import { setupFunctionWidgets } from "./node_widgets/function_node";
 import { setupJsonExtractWidgets } from "./node_widgets/json_extract";
-import { setupOpenAIMessageListWidgets } from "./node_widgets/openai_message_list_data";
+import { setupLLMMessageListWidgets } from "./node_widgets/llm_message_list_data";
 import { setupQQMessageListWidgets } from "./node_widgets/qq_message_list_data";
 import { setupQQMessagePreviewWidgets } from "./node_widgets/qq_message_preview";
 import { setupStringDataWidgets } from "./node_widgets/string_data";
@@ -46,7 +46,7 @@ export function setupNodeWidgets(
       setupStringDataWidgets(lNode, nodeDef, getSessionId, onMutated);
       break;
     case "message_list_data":
-      setupOpenAIMessageListWidgets(lNode, nodeDef, getSessionId, onRefresh);
+      setupLLMMessageListWidgets(lNode, nodeDef, getSessionId, onRefresh);
       break;
     case "qq_message_list_data":
       setupQQMessageListWidgets(lNode, nodeDef, getSessionId, onRefresh);

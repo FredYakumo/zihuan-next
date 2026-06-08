@@ -23,7 +23,7 @@ use zihuan_core::command::{
 };
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::ToolCalls;
-use zihuan_core::llm::{MessageRole, OpenAIMessage};
+use zihuan_core::llm::{LLMMessage, MessageRole};
 
 const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
 const APP_DIR_NAME: &str = "zihuan-next_aibot";
@@ -83,7 +83,7 @@ pub struct ChatStreamRequest {
     pub agent_id: String,
     #[serde(default)]
     pub session_id: Option<String>,
-    pub messages: Vec<OpenAIMessage>,
+    pub messages: Vec<LLMMessage>,
     #[serde(default)]
     pub stream: Option<bool>,
 }
@@ -258,12 +258,12 @@ struct ChatAgentInfo {
 /// decision explicit so the orchestrator can remain branch-free and declarative.
 struct CommandDispatchOutcome {
     session_id: String,
-    messages: Vec<OpenAIMessage>,
-    latest_user_message: Option<OpenAIMessage>,
+    messages: Vec<LLMMessage>,
+    latest_user_message: Option<LLMMessage>,
     should_run_inference: bool,
     should_persist: bool,
     requires_assistant_message: bool,
-    immediate_output_messages: Option<Vec<OpenAIMessage>>,
+    immediate_output_messages: Option<Vec<LLMMessage>>,
 }
 
 /// Look up a running agent by ID and build its display snapshot.
@@ -318,8 +318,8 @@ fn try_dispatch_dashboard_command(
     agent: &AgentConfig,
     agent_snapshot: &AgentSnapshot,
     requested_session_id: &Option<String>,
-    messages: Vec<OpenAIMessage>,
-    latest_user_message: &Option<OpenAIMessage>,
+    messages: Vec<LLMMessage>,
+    latest_user_message: &Option<LLMMessage>,
 ) -> std::result::Result<CommandDispatchOutcome, Value> {
     let requested_session_id = requested_session_id
         .as_deref()
@@ -332,7 +332,7 @@ fn try_dispatch_dashboard_command(
     let mut should_run_inference = true;
     let mut should_persist = true;
     let mut requires_assistant_message = true;
-    let mut immediate_output_messages: Option<Vec<OpenAIMessage>> = None;
+    let mut immediate_output_messages: Option<Vec<LLMMessage>> = None;
 
     let Some(command_registry) = zihuan_service::command::global_command_registry() else {
         return Ok(CommandDispatchOutcome {
@@ -348,7 +348,7 @@ fn try_dispatch_dashboard_command(
 
     let raw_user_text = latest_user_message
         .as_ref()
-        .and_then(OpenAIMessage::content_text_owned);
+        .and_then(LLMMessage::content_text_owned);
 
     let Some(raw_user_text) = raw_user_text else {
         return Ok(CommandDispatchOutcome {
@@ -402,13 +402,13 @@ fn try_dispatch_dashboard_command(
     }
 
     if let Some(passthrough_text) = dispatch_result.passthrough_text {
-        let passthrough_message = OpenAIMessage::user(passthrough_text.clone());
+        let passthrough_message = LLMMessage::user(passthrough_text.clone());
         latest_user_message = Some(passthrough_message.clone());
 
         if issued_new_session_id.is_some() {
             messages = vec![passthrough_message];
         } else if dispatch_result.result.inject_to_llm {
-            messages.push(OpenAIMessage::assistant_text(dispatch_result.result.reply));
+            messages.push(LLMMessage::assistant_text(dispatch_result.result.reply));
             messages.push(passthrough_message);
         } else {
             replace_last_user_message(&mut messages, passthrough_message);
@@ -420,7 +420,7 @@ fn try_dispatch_dashboard_command(
         latest_user_message = None;
     } else {
         should_run_inference = false;
-        immediate_output_messages = Some(vec![OpenAIMessage::assistant_text(
+        immediate_output_messages = Some(vec![LLMMessage::assistant_text(
             dispatch_result.result.reply,
         )]);
     }
@@ -452,17 +452,17 @@ async fn emit_immediate_output(
     sender: &mut BodySender,
     session_id: &str,
     assistant_message_id: &str,
-    output_messages: &[OpenAIMessage],
+    output_messages: &[LLMMessage],
     should_persist: bool,
     agent: &AgentConfig,
     agent_snapshot: &AgentSnapshot,
     trace_id: &str,
-    latest_user_message: Option<&OpenAIMessage>,
+    latest_user_message: Option<&LLMMessage>,
 ) -> bool {
     if let Some(content) = output_messages
         .iter()
         .find(|message| matches!(message.role, MessageRole::Assistant))
-        .and_then(OpenAIMessage::content_text_owned)
+        .and_then(LLMMessage::content_text_owned)
     {
         let delta_event = json!({
             "type": "delta",
@@ -904,7 +904,7 @@ fn build_chat_stream_event(kind: &str, session_id: &str, message_id: Option<&str
 ///
 /// **Purpose:** Prevents degenerate inputs (e.g. trailing empty user messages) from reaching
 /// the LLM, which would cause API errors.
-fn sanitize_messages(messages: Vec<OpenAIMessage>) -> Vec<OpenAIMessage> {
+fn sanitize_messages(messages: Vec<LLMMessage>) -> Vec<LLMMessage> {
     messages
         .into_iter()
         .filter(|message| {
@@ -924,7 +924,7 @@ fn sanitize_messages(messages: Vec<OpenAIMessage>) -> Vec<OpenAIMessage> {
 ///
 /// **Purpose:** Used by command dispatch when a passthrough command rewrites the user message
 /// in-place rather than appending.
-fn replace_last_user_message(messages: &mut Vec<OpenAIMessage>, replacement: OpenAIMessage) {
+fn replace_last_user_message(messages: &mut Vec<LLMMessage>, replacement: LLMMessage) {
     if let Some(index) = messages
         .iter()
         .rposition(|message| matches!(message.role, MessageRole::User))
@@ -951,8 +951,8 @@ fn persist_chat_records(
     agent_snapshot: &AgentSnapshot,
     trace_id: &str,
     assistant_message_id: &str,
-    latest_user_message: Option<&OpenAIMessage>,
-    output_messages: &[OpenAIMessage],
+    latest_user_message: Option<&LLMMessage>,
+    output_messages: &[LLMMessage],
 ) -> Result<()> {
     let now = Utc::now().to_rfc3339();
     if let Some(user_message) = latest_user_message {

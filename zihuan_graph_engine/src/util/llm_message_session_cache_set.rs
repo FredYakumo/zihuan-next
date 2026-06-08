@@ -1,15 +1,15 @@
-use crate::data_value::OpenAIMessageSessionCacheRef;
+use crate::data_value::LLMMessageSessionCacheRef;
 use crate::{node_input, node_output, node_output_flow, DataType, DataValue, Node, Port};
 use std::sync::Arc;
 use zihuan_core::error::Result;
-use zihuan_core::llm::OpenAIMessage;
+use zihuan_core::llm::LLMMessage;
 
-pub struct OpenAIMessageSessionCacheSetNode {
+pub struct LLMMessageSessionCacheSetNode {
     id: String,
     name: String,
 }
 
-impl OpenAIMessageSessionCacheSetNode {
+impl LLMMessageSessionCacheSetNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -18,7 +18,7 @@ impl OpenAIMessageSessionCacheSetNode {
     }
 }
 
-impl Node for OpenAIMessageSessionCacheSetNode {
+impl Node for LLMMessageSessionCacheSetNode {
     fn id(&self) -> &str {
         &self.id
     }
@@ -28,13 +28,13 @@ impl Node for OpenAIMessageSessionCacheSetNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("根据缓存 Ref、sender_id 与消息列表，覆写当前运行期累计的 Vec<OpenAIMessage>")
+        Some("根据缓存 Ref、sender_id 与消息列表，覆写当前运行期累计的 Vec<LLMMessage>")
     }
 
     node_input![
-        port! { name = "cache_ref", ty = OpenAIMessageSessionCacheRef, desc = "OpenAIMessage 会话暂存器输出的缓存引用" },
+        port! { name = "cache_ref", ty = LLMMessageSessionCacheRef, desc = "LLMMessage 会话暂存器输出的缓存引用" },
         port! { name = "sender_id", ty = String, desc = "要覆写历史消息的 sender_id" },
-        port! { name = "messages", ty = Vec(OpenAIMessage), desc = "要写回并覆写到缓存中的 Vec<OpenAIMessage>" },
+        port! { name = "messages", ty = Vec(LLMMessage), desc = "要写回并覆写到缓存中的 Vec<LLMMessage>" },
     ];
 
     node_output![port! { name = "success", ty = Boolean, desc = "是否成功覆写历史消息" },];
@@ -42,10 +42,10 @@ impl Node for OpenAIMessageSessionCacheSetNode {
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
-        let cache_ref: Arc<OpenAIMessageSessionCacheRef> = inputs
+        let cache_ref: Arc<LLMMessageSessionCacheRef> = inputs
             .get("cache_ref")
             .and_then(|value| match value {
-                DataValue::OpenAIMessageSessionCacheRef(cache_ref) => Some(cache_ref.clone()),
+                DataValue::LLMMessageSessionCacheRef(cache_ref) => Some(cache_ref.clone()),
                 _ => None,
             })
             .ok_or_else(|| {
@@ -62,14 +62,14 @@ impl Node for OpenAIMessageSessionCacheSetNode {
                 zihuan_core::error::Error::InvalidNodeInput("sender_id is required".to_string())
             })?;
 
-        let messages: Vec<OpenAIMessage> = match inputs.get("messages") {
-            Some(DataValue::Vec(inner_type, items)) if **inner_type == DataType::OpenAIMessage => {
+        let messages: Vec<LLMMessage> = match inputs.get("messages") {
+            Some(DataValue::Vec(inner_type, items)) if **inner_type == DataType::LLMMessage => {
                 items
                     .iter()
                     .map(|item| match item {
-                        DataValue::OpenAIMessage(message) => Ok(message.clone()),
+                        DataValue::LLMMessage(message) => Ok(message.clone()),
                         _ => Err(zihuan_core::error::Error::InvalidNodeInput(
-                            "messages must contain OpenAIMessage items".to_string(),
+                            "messages must contain LLMMessage items".to_string(),
                         )),
                     })
                     .collect::<Result<Vec<_>>>()?

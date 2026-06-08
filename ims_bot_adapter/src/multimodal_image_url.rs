@@ -4,7 +4,7 @@ use reqwest::header::CONTENT_TYPE;
 use std::path::Path;
 use std::time::Duration;
 use tokio::task::block_in_place;
-use zihuan_core::llm::ContentPart;
+use zihuan_core::llm::MessagePart;
 use zihuan_graph_engine::object_storage::S3Ref;
 
 use crate::models::message::ImageMessage;
@@ -22,7 +22,7 @@ pub enum ImagePartSource {
 
 #[derive(Debug, Clone)]
 pub struct ResolvedImagePart {
-    pub part: ContentPart,
+    pub part: MessagePart,
     pub source: ImagePartSource,
 }
 
@@ -68,12 +68,12 @@ fn image_name(image: &ImageMessage) -> &str {
         .unwrap_or("image.png")
 }
 
-fn image_part_from_bytes_with_mime(mime_type: &str, bytes: Vec<u8>) -> ContentPart {
+fn image_part_from_bytes_with_mime(mime_type: &str, bytes: Vec<u8>) -> MessagePart {
     let base64_payload = base64::engine::general_purpose::STANDARD.encode(bytes);
-    ContentPart::image_data_url(mime_type, base64_payload)
+    MessagePart::image_data_url(mime_type, base64_payload)
 }
 
-fn image_part_from_bytes(image: &ImageMessage, bytes: Vec<u8>) -> ContentPart {
+fn image_part_from_bytes(image: &ImageMessage, bytes: Vec<u8>) -> MessagePart {
     image_part_from_bytes_with_mime(
         image
             .mime_type()
@@ -320,7 +320,7 @@ fn resolve_remote_url_as_image_part(
 ) -> Option<ResolvedImagePart> {
     if url.starts_with("data:") {
         return Some(ResolvedImagePart {
-            part: ContentPart::image_url_string(url.to_string()),
+            part: MessagePart::image_url_string(url.to_string()),
             source: ImagePartSource::DataUrl,
         });
     }

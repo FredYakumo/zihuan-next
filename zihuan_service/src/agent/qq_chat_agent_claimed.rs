@@ -2,8 +2,6 @@ use std::sync::{Arc, Mutex};
 
 use log::{info, warn};
 
-use ims_bot_adapter::message_helpers::get_bot_id;
-
 use model_inference::inference_function::compact_message::{
     compact_message_history, estimate_messages_tokens,
 };
@@ -16,7 +14,8 @@ use zihuan_agent::brain::{Brain, BrainStopReason, LongTaskContext};
 use zihuan_core::agent_config::current_qq_chat_agent_config;
 use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
 use zihuan_core::error::Result;
-use zihuan_core::llm::{OpenAIMessage, TokenUsage};
+use zihuan_core::llm::{LLMMessage, TokenUsage};
+use zihuan_core::steer::message_with_api_style;
 
 use zihuan_graph_engine::brain_tool_spec::{
     QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
@@ -48,15 +47,15 @@ use crate::storage::qq_chat_history_store::{conversation_history_key, load_histo
 use crate::agent::qq_chat_agent_msg_send::send_direct_text_reply;
 
 use super::{
-    build_group_system_prompt, build_merged_follow_up_event,
-    build_private_system_prompt, build_user_message,
-    expand_messages_for_inference, extract_user_message_text, hydrate_missing_reply_sources,
-    message_with_api_style,
-    QqChatAgent, QqChatAgentContext, QqChatHandleReport, QqChatSteerHook,
-    QqChatTaskTrace, QqChatTurnResult, QqCommandSideEffectContext, QqLongTaskNotifier, LOG_PREFIX,
-    LOG_TEXT_PREVIEW_CHARS,
+    build_group_system_prompt, build_private_system_prompt, build_user_message,
+    expand_messages_for_inference, prepare_current_turn_user_input,
+    prepare_current_turn_user_input_from_event, QqChatAgent, QqChatAgentContext,
+    QqChatTaskTrace, QqChatTurnResult,
+    QqCommandSideEffectContext, QqLongTaskNotifier, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 use zihuan_core::utils::string_utils::shorten_text;
+
+use super::super::qq_chat_agent_steer::QqChatSteerHook;
 
 impl QqChatAgent {
     pub(crate) fn build_command_context(
@@ -89,7 +88,7 @@ impl QqChatAgent {
         sender_id: &str,
         target_id: &str,
         bot_id: &str,
-        history: &mut Vec<OpenAIMessage>,
+        history: &mut Vec<LLMMessage>,
         ctx: &QqChatAgentContext<'_>,
     ) -> Result<Option<String>> {
         let DispatchResult {
@@ -157,11 +156,14 @@ impl QqChatAgent {
 
             let user_msg_for_cmd = message_with_api_style(
                 build_user_message(
-                    hydrated_event,
-                    bot_id,
+                    &prepare_current_turn_user_input_from_event(
+                        hydrated_event,
+                        bot_id,
+                        ctx.bot_name,
+                        ctx.s3_ref,
+                    ),
                     ctx.bot_name,
                     ctx.llm.supports_multimodal_input(),
-                    ctx.s3_ref,
                     &cmd_system_prompt,
                     &cmd_session_state,
                     &cmd_emotion_dimensions,
@@ -170,7 +172,7 @@ impl QqChatAgent {
             );
             history.push(user_msg_for_cmd);
             history.push(message_with_api_style(
-                OpenAIMessage::assistant_text(result.reply),
+                LLMMessage::assistant_text(result.reply),
                 ctx.llm.api_style(),
             ));
         }
@@ -191,80 +193,6 @@ impl QqChatAgent {
         Ok(passthrough_text)
     }
 
-    /// Processes a claimed QQ chat message, potentially across multiple turns due to steering.
-    ///
-    /// Repeatedly calls [`handle_claimed_turn`] and drains any pending steer messages after each
-    /// turn. When steer messages exist, they are merged into a follow-up event that becomes the
-    /// input for the next iteration. The loop ends once no more steer messages remain.
-    ///
-    /// Returns a [`QqChatHandleReport`] with a summary of the final turn.
-    pub(crate) fn handle_claimed(
-        &self,
-        trace: &QqChatTaskTrace,
-        event: &ims_bot_adapter::models::MessageEvent,
-        time: &str,
-        sender_id: &str,
-        target_id: &str,
-        is_group: bool,
-        ctx: &QqChatAgentContext<'_>,
-    ) -> Result<QqChatHandleReport> {
-        (|| -> Result<QqChatHandleReport> {
-            let bot_id = get_bot_id(ctx.adapter);
-            let mut current_event = event.clone();
-            let mut current_time = time.to_string();
-            let result_summary = loop {
-                let turn_result = self.handle_claimed_turn(
-                    trace,
-                    &current_event,
-                    &current_time,
-                    sender_id,
-                    target_id,
-                    is_group,
-                    &bot_id,
-                    ctx,
-                )?;
-
-                let (pending, remaining_queue_len, accepted_steer_count) =
-                    ctx.pending_steer.drain_all(sender_id);
-                if pending.is_empty() {
-                    break turn_result.result_summary;
-                }
-
-                let steer_count = pending.len();
-                let next_event = build_merged_follow_up_event(&pending);
-                let mut next_inference_event = next_event.clone();
-                next_inference_event.message_list =
-                    expand_messages_for_inference(&next_event.message_list);
-                let next_message =
-                    extract_user_message_text(&next_inference_event, &bot_id, ctx.bot_name);
-                trace.record_steer_follow_up(
-                    next_event.message_id,
-                    steer_count,
-                    accepted_steer_count,
-                    ctx.max_steer_count,
-                    &next_message,
-                );
-                info!(
-                    "{LOG_PREFIX} steer follow-up picked for sender={} message_id={} steer_count={} remaining_queue_len={} accepted_steer_count={}/{} message={}",
-                    sender_id,
-                    next_event.message_id,
-                    steer_count,
-                    remaining_queue_len,
-                    accepted_steer_count,
-                    ctx.max_steer_count,
-                    shorten_text(&next_message, LOG_TEXT_PREVIEW_CHARS)
-                );
-                current_event = next_event;
-                current_time = pending
-                    .last()
-                    .map(|event| event.time.clone())
-                    .unwrap_or_else(|| current_time.clone());
-            };
-
-            Ok(QqChatHandleReport { result_summary })
-        })()
-    }
-
     /// Processes a single QQ chat turn end-to-end for a claimed message.
     ///
     /// The lifecycle is:
@@ -280,7 +208,7 @@ impl QqChatAgent {
     ///   (group or private chat), persisting message history along the way.
     ///
     /// Returns a [`QqChatTurnResult`] containing a human-readable summary of what happened.
-    fn handle_claimed_turn(
+    pub(crate) fn handle_claimed_turn(
         &self,
         trace: &QqChatTaskTrace,
         event: &ims_bot_adapter::models::MessageEvent,
@@ -291,12 +219,19 @@ impl QqChatAgent {
         bot_id: &str,
         ctx: &QqChatAgentContext<'_>,
     ) -> Result<QqChatTurnResult> {
-        let hydrated_event = hydrate_missing_reply_sources(event, ctx.adapter);
-        let mut inference_event = hydrated_event.clone();
+        let prepared_input =
+            prepare_current_turn_user_input(event, ctx.adapter, bot_id, ctx.bot_name, ctx.s3_ref);
+        let mut inference_event = prepared_input.event.clone();
         inference_event.message_list =
-            expand_messages_for_inference(&hydrated_event.message_list);
-        let raw_user_message = extract_user_message_text(&hydrated_event, bot_id, ctx.bot_name);
-        let mut current_message = extract_user_message_text(&inference_event, bot_id, ctx.bot_name);
+            expand_messages_for_inference(&prepared_input.event.message_list);
+        let inference_input = prepare_current_turn_user_input_from_event(
+            &inference_event,
+            bot_id,
+            ctx.bot_name,
+            ctx.s3_ref,
+        );
+        let raw_user_message = prepared_input.text.clone();
+        let mut current_message = inference_input.text.clone();
         trace.log_user_message(&raw_user_message, &current_message);
 
         let history_key =
@@ -326,7 +261,7 @@ impl QqChatAgent {
                         result,
                         passthrough_text,
                     },
-                    &hydrated_event,
+                    &prepared_input.event,
                     &inference_event,
                     sender_id,
                     target_id,
@@ -343,36 +278,23 @@ impl QqChatAgent {
             }
         }
 
-        let current_session_state = {
-            ctx.session_state_store
-                .lock()
-                .unwrap()
-                .clone()
-        };
+        let current_session_state = { ctx.session_state_store.lock().unwrap().clone() };
         let emotion_dimensions = current_qq_chat_agent_config()?.resolved_emotion_dimensions();
         let mut current_session_state = current_session_state;
         current_session_state.sync_emotion_dimensions(&emotion_dimensions);
         let turn_session_state = Arc::new(Mutex::new(current_session_state));
 
         let system_prompt = if is_group {
-            build_group_system_prompt(
-                ctx.bot_name,
-                ctx.agent_system_prompt,
-            )
+            build_group_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
         } else {
-            build_private_system_prompt(
-                ctx.bot_name,
-                ctx.agent_system_prompt,
-            )
+            build_private_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
         };
 
         let user_msg = message_with_api_style(
             build_user_message(
-                &hydrated_event,
-                bot_id,
+                &prepared_input,
                 ctx.bot_name,
                 ctx.llm.supports_multimodal_input(),
-                ctx.s3_ref,
                 &system_prompt,
                 &turn_session_state.lock().unwrap(),
                 &emotion_dimensions,
@@ -402,7 +324,7 @@ impl QqChatAgent {
             let mut locked = shared_runtime_values.lock().unwrap();
             locked.insert(
                 QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
-                DataValue::MessageEvent(hydrated_event.clone()),
+                DataValue::MessageEvent(prepared_input.event.clone()),
             );
             let adapter_handle: zihuan_core::ims_bot_adapter::BotAdapterHandle =
                 ctx.adapter.clone();
@@ -416,7 +338,7 @@ impl QqChatAgent {
             );
         }
 
-        let mut conversation: Vec<OpenAIMessage> = Vec::with_capacity(history.len() + 1);
+        let mut conversation: Vec<LLMMessage> = Vec::with_capacity(history.len() + 1);
         conversation.extend(history.iter().cloned());
         conversation.push(user_msg.clone());
         let mut brain_conversation =
@@ -460,7 +382,7 @@ impl QqChatAgent {
                     group_id: if is_group {
                         Some(target_id.to_string())
                     } else {
-                        hydrated_event.group_id.map(|value| value.to_string())
+                        prepared_input.event.group_id.map(|value| value.to_string())
                     },
                     is_group,
                     admin: false,
@@ -515,8 +437,31 @@ impl QqChatAgent {
             Arc::clone(ctx.web_search_engine),
             ctx.mysql_ref.cloned(),
             ctx.s3_ref.cloned(),
-            Some(hydrated_event.clone()),
+            Some(prepared_input.event.clone()),
             ToolNotificationTarget::dashboard(),
+            if let (Some(memory_ref), Some(embedding_model)) = (
+                ctx.weaviate_memory_ref.cloned(),
+                ctx.embedding_model.cloned(),
+            ) {
+                Some(AgentMemoryToolResources {
+                    memory_ref,
+                    embedding_model,
+                    llm: Arc::clone(ctx.llm),
+                    access: AgentMemoryAccessContext {
+                        sender_id: Some(sender_id.to_string()),
+                        group_id: if is_group {
+                            Some(target_id.to_string())
+                        } else {
+                            prepared_input.event.group_id.map(|value| value.to_string())
+                        },
+                        is_group,
+                        admin: false,
+                        skip_expiry_extend: false,
+                    },
+                })
+            } else {
+                None
+            },
         ));
         brain = brain.with_tool(SendNaturalLanguageReplyBrainTool::new(
             ctx.adapter.clone(),
@@ -598,7 +543,7 @@ impl QqChatAgent {
 
         if self.is_default_tool_enabled(DEFAULT_TOOL_IMAGE_UNDERSTAND) {
             brain = brain.with_tool(ImageUnderstandBrainTool::new(
-                Some(hydrated_event.clone()),
+                Some(prepared_input.event.clone()),
                 ctx.mysql_ref.cloned(),
                 ctx.s3_ref.cloned(),
                 ToolNotificationTarget::new(
@@ -617,12 +562,12 @@ impl QqChatAgent {
 
         brain = brain.with_tool(GetBotProfileBrainTool::new(
             ctx.adapter.clone(),
-            hydrated_event.clone(),
+            prepared_input.event.clone(),
             ctx.s3_ref.cloned(),
         ));
         brain = brain.with_tool(GetQqUserProfileBrainTool::new(
             ctx.adapter.clone(),
-            hydrated_event.clone(),
+            prepared_input.event.clone(),
             ctx.s3_ref.cloned(),
         ));
 
@@ -754,7 +699,7 @@ impl QqChatAgent {
             );
             brain_conversation.extend(brain_output.iter().cloned());
             brain_conversation.push(message_with_api_style(
-                OpenAIMessage::user(
+                LLMMessage::user(
                     "【系统补充提醒】你刚才还没有真正回复用户。请再次思考：是否需要调用工具来完成对用户的最终回复，尤其是 `send_natural_language_reply`。如果你判断这条消息确实不需要回复，可以选择仍然不调用任何回复工具。"
                         .to_string(),
                 ),
@@ -804,13 +749,12 @@ impl QqChatAgent {
         history.extend(consumed_steer_messages.lock().unwrap().iter().cloned());
         if let Some(ref assistant_text) = visible_assistant_history_text {
             history.push(message_with_api_style(
-                OpenAIMessage::assistant_text(assistant_text.clone()),
+                LLMMessage::assistant_text(assistant_text.clone()),
                 ctx.llm.api_style(),
             ));
         }
         save_history(ctx.cache, &history_key, history);
-        *ctx.session_state_store.lock().unwrap() =
-            turn_session_state.lock().unwrap().clone();
+        *ctx.session_state_store.lock().unwrap() = turn_session_state.lock().unwrap().clone();
 
         let result_summary = if let Some(ref assistant_text) = visible_assistant_history_text {
             format!(

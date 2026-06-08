@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::OpenAIMessage;
+use zihuan_core::llm::LLMMessage;
 
 pub struct ToolResultNode {
     id: String,
@@ -28,7 +28,7 @@ impl Node for ToolResultNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("将工具执行结果封装为 role=tool 的 OpenAIMessage，供 agentic loop 回写对话列表")
+        Some("将工具执行结果封装为 role=tool 的 LLMMessage，供 agentic loop 回写对话列表")
     }
 
     node_input![
@@ -37,7 +37,7 @@ impl Node for ToolResultNode {
     ];
 
     node_output![
-        port! { name = "message", ty = OpenAIMessage, desc = "role=tool 的结果消息，可拼入对话列表后重新送入 BrainNode" },
+        port! { name = "message", ty = LLMMessage, desc = "role=tool 的结果消息，可拼入对话列表后重新送入 BrainNode" },
     ];
 
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
@@ -59,10 +59,10 @@ impl Node for ToolResultNode {
             _ => return Err(Error::ValidationError("content is required".to_string())),
         };
 
-        let message = OpenAIMessage::tool_result(tool_call_id, content);
+        let message = LLMMessage::tool_result(tool_call_id, content);
 
         crate::return_with_node_output![self;
-            "message" => DataValue::OpenAIMessage(message),
+            "message" => DataValue::LLMMessage(message),
         ]
     }
 }

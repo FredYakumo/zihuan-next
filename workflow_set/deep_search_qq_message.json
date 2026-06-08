@@ -16,7 +16,7 @@
         {
           "name": "messages",
           "data_type": {
-            "Vec": "OpenAIMessage"
+            "Vec": "LLMMessage"
           },
           "description": "消息列表（包含 system/user/assistant/tool 等角色）",
           "required": true,
@@ -76,7 +76,7 @@
         {
           "name": "output",
           "data_type": {
-            "Vec": "OpenAIMessage"
+            "Vec": "LLMMessage"
           },
           "description": "本次 Brain 运行新增的 assistant/tool 消息轨迹",
           "required": true,
@@ -1046,8 +1046,8 @@
       "input_ports": [
         {
           "name": "message",
-          "data_type": "OpenAIMessage",
-          "description": "输入的 LLM OpenAIMessage",
+          "data_type": "LLMMessage",
+          "description": "输入的 LLM LLMMessage",
           "required": true,
           "hidden": false
         }
@@ -1056,7 +1056,7 @@
         {
           "name": "content",
           "data_type": "String",
-          "description": "OpenAIMessage 的 content 字符串，若为 None 则输出空字符串",
+          "description": "LLMMessage 的 content 字符串，若为 None 则输出空字符串",
           "required": true,
           "hidden": false
         }
@@ -1908,7 +1908,7 @@
     },
     {
       "id": "e2e1823e-2765-4c5c-86d6-0c8e8f68e270",
-      "name": "组合OpenAIMessage",
+      "name": "组合LLMMessage",
       "description": null,
       "node_type": "function",
       "input_ports": [
@@ -1978,7 +1978,7 @@
               "required": true
             }
           ],
-          "name": "组合OpenAIMessage",
+          "name": "组合LLMMessage",
           "outputs": [
             {
               "data_type": {
@@ -2151,7 +2151,7 @@
                 }
               },
               {
-                "description": "将系统提示封装成 OpenAIMessage",
+                "description": "将系统提示封装成 LLMMessage",
                 "disabled": false,
                 "dynamic_input_ports": false,
                 "dynamic_output_ports": false,
@@ -2171,18 +2171,18 @@
                   },
                   {
                     "data_type": "String",
-                    "description": "OpenAIMessage 角色，可选 system / user / assistant / tool",
+                    "description": "LLMMessage 角色，可选 system / user / assistant / tool",
                     "hidden": false,
                     "name": "role",
                     "required": true
                   }
                 ],
                 "name": "System Message",
-                "node_type": "string_to_openai_message",
+                "node_type": "string_to_llm_message",
                 "output_ports": [
                   {
-                    "data_type": "OpenAIMessage",
-                    "description": "封装后的 OpenAIMessage",
+                    "data_type": "LLMMessage",
+                    "description": "封装后的 LLMMessage",
                     "hidden": false,
                     "name": "message",
                     "required": true
@@ -2260,18 +2260,18 @@
                   },
                   {
                     "data_type": "String",
-                    "description": "OpenAIMessage 角色，可选 system / user / assistant / tool",
+                    "description": "LLMMessage 角色，可选 system / user / assistant / tool",
                     "hidden": false,
                     "name": "role",
                     "required": true
                   }
                 ],
                 "name": "User Message",
-                "node_type": "string_to_openai_message",
+                "node_type": "string_to_llm_message",
                 "output_ports": [
                   {
-                    "data_type": "OpenAIMessage",
-                    "description": "封装后的 OpenAIMessage",
+                    "data_type": "LLMMessage",
+                    "description": "封装后的 LLMMessage",
                     "hidden": false,
                     "name": "message",
                     "required": true

@@ -15,7 +15,7 @@ use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
 use zihuan_core::ims_bot_adapter::models::message::ImageMessage;
 use zihuan_core::ims_bot_adapter::models::sender_model::Sender as GraphSender;
 use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::llm::ContentPart;
+use zihuan_core::llm::MessagePart;
 pub use zihuan_core::rag::{WebSearchEngineRef, WebSearchImage};
 pub use zihuan_core::weaviate::WeaviateRef;
 
@@ -227,16 +227,16 @@ impl fmt::Debug for SessionStateRef {
 /// The storage persists for the duration of a single graph execution and is reset
 /// by the node on the next graph start.
 #[derive(Clone)]
-pub struct OpenAIMessageSessionCacheRef {
+pub struct LLMMessageSessionCacheRef {
     pub node_id: String,
-    pub memory_cache: Arc<TokioMutex<HashMap<String, Vec<zihuan_core::llm::OpenAIMessage>>>>,
+    pub memory_cache: Arc<TokioMutex<HashMap<String, Vec<zihuan_core::llm::LLMMessage>>>>,
     pub redis_cm: Arc<TokioMutex<Option<Connection>>>,
     pub cached_redis_url: Arc<TokioMutex<Option<String>>>,
     pub sender_bucket_map: Arc<TokioMutex<HashMap<String, String>>>,
     pub default_bucket_name: Arc<TokioMutex<String>>,
 }
 
-impl OpenAIMessageSessionCacheRef {
+impl LLMMessageSessionCacheRef {
     pub fn new(node_id: impl Into<String>) -> Self {
         Self {
             node_id: node_id.into(),
@@ -259,7 +259,7 @@ impl OpenAIMessageSessionCacheRef {
 
     fn storage_key(&self, bucket_name: &str, sender_id: &str) -> String {
         format!(
-            "openai_message_session:{}:{}:{}",
+            "llm_message_session:{}:{}:{}",
             self.node_id, bucket_name, sender_id
         )
     }
@@ -276,7 +276,7 @@ impl OpenAIMessageSessionCacheRef {
     pub fn get_messages_blocking(
         &self,
         sender_id: &str,
-    ) -> zihuan_core::error::Result<Vec<zihuan_core::llm::OpenAIMessage>> {
+    ) -> zihuan_core::error::Result<Vec<zihuan_core::llm::LLMMessage>> {
         let sender_id = sender_id.to_string();
         let fut = self.get_messages(&sender_id);
         let run = || {
@@ -299,7 +299,7 @@ impl OpenAIMessageSessionCacheRef {
     pub fn set_messages_blocking(
         &self,
         sender_id: &str,
-        messages: Vec<zihuan_core::llm::OpenAIMessage>,
+        messages: Vec<zihuan_core::llm::LLMMessage>,
     ) -> zihuan_core::error::Result<()> {
         let sender_id = sender_id.to_string();
         let fut = self.set_messages(&sender_id, messages);
@@ -323,7 +323,7 @@ impl OpenAIMessageSessionCacheRef {
     pub fn append_messages_blocking(
         &self,
         sender_id: &str,
-        incoming_messages: Vec<zihuan_core::llm::OpenAIMessage>,
+        incoming_messages: Vec<zihuan_core::llm::LLMMessage>,
     ) -> zihuan_core::error::Result<()> {
         let sender_id = sender_id.to_string();
         let fut = self.append_messages(&sender_id, incoming_messages);
@@ -347,7 +347,7 @@ impl OpenAIMessageSessionCacheRef {
     pub async fn get_messages(
         &self,
         sender_id: &str,
-    ) -> zihuan_core::error::Result<Vec<zihuan_core::llm::OpenAIMessage>> {
+    ) -> zihuan_core::error::Result<Vec<zihuan_core::llm::LLMMessage>> {
         let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
             let sender_bucket_map = self.sender_bucket_map.lock().await;
@@ -385,8 +385,7 @@ impl OpenAIMessageSessionCacheRef {
             if let Some(cm) = cm_guard.as_mut() {
                 let existing_json: Option<String> = cm.get(&key).await?;
                 if let Some(raw) = existing_json {
-                    let messages: Vec<zihuan_core::llm::OpenAIMessage> =
-                        serde_json::from_str(&raw)?;
+                    let messages: Vec<zihuan_core::llm::LLMMessage> = serde_json::from_str(&raw)?;
                     return Ok(messages);
                 }
             }
@@ -434,7 +433,7 @@ impl OpenAIMessageSessionCacheRef {
             if let Some(cm) = cm_guard.as_mut() {
                 let deleted_count: i32 = cm.del(&key).await?;
                 let tracker_key = format!(
-                    "openai_message_session:{}:bucket:{}:keys",
+                    "llm_message_session:{}:bucket:{}:keys",
                     self.node_id, bucket_name
                 );
                 let _: () = cm.srem(&tracker_key, &key).await?;
@@ -451,7 +450,7 @@ impl OpenAIMessageSessionCacheRef {
     pub async fn set_messages(
         &self,
         sender_id: &str,
-        messages: Vec<zihuan_core::llm::OpenAIMessage>,
+        messages: Vec<zihuan_core::llm::LLMMessage>,
     ) -> zihuan_core::error::Result<()> {
         let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
@@ -491,11 +490,11 @@ impl OpenAIMessageSessionCacheRef {
                 let serialized = serde_json::to_string(&messages)?;
                 cm.set::<_, _, ()>(&key, serialized).await?;
                 let tracker_key = format!(
-                    "openai_message_session:{}:bucket:{}:keys",
+                    "llm_message_session:{}:bucket:{}:keys",
                     self.node_id, bucket_name
                 );
                 let tracker_registry_key =
-                    format!("openai_message_session:{}:tracker_sets", self.node_id);
+                    format!("llm_message_session:{}:tracker_sets", self.node_id);
                 cm.sadd::<_, _, ()>(&tracker_key, &key).await?;
                 cm.sadd::<_, _, ()>(&tracker_registry_key, &tracker_key)
                     .await?;
@@ -511,7 +510,7 @@ impl OpenAIMessageSessionCacheRef {
     pub async fn append_messages(
         &self,
         sender_id: &str,
-        incoming_messages: Vec<zihuan_core::llm::OpenAIMessage>,
+        incoming_messages: Vec<zihuan_core::llm::LLMMessage>,
     ) -> zihuan_core::error::Result<()> {
         let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
@@ -549,7 +548,7 @@ impl OpenAIMessageSessionCacheRef {
 
             if let Some(cm) = cm_guard.as_mut() {
                 let existing_json: Option<String> = cm.get(&key).await?;
-                let mut existing_messages: Vec<zihuan_core::llm::OpenAIMessage> = existing_json
+                let mut existing_messages: Vec<zihuan_core::llm::LLMMessage> = existing_json
                     .as_deref()
                     .map(serde_json::from_str)
                     .transpose()?
@@ -559,11 +558,11 @@ impl OpenAIMessageSessionCacheRef {
                 let serialized = serde_json::to_string(&existing_messages)?;
                 cm.set::<_, _, ()>(&key, serialized).await?;
                 let tracker_key = format!(
-                    "openai_message_session:{}:bucket:{}:keys",
+                    "llm_message_session:{}:bucket:{}:keys",
                     self.node_id, bucket_name
                 );
                 let tracker_registry_key =
-                    format!("openai_message_session:{}:tracker_sets", self.node_id);
+                    format!("llm_message_session:{}:tracker_sets", self.node_id);
                 cm.sadd::<_, _, ()>(&tracker_key, &key).await?;
                 cm.sadd::<_, _, ()>(&tracker_registry_key, &tracker_key)
                     .await?;
@@ -578,9 +577,9 @@ impl OpenAIMessageSessionCacheRef {
     }
 }
 
-impl fmt::Debug for OpenAIMessageSessionCacheRef {
+impl fmt::Debug for LLMMessageSessionCacheRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("OpenAIMessageSessionCacheRef")
+        f.debug_struct("LLMMessageSessionCacheRef")
             .field("node_id", &self.node_id)
             .field("memory_cache", &"<TokioMutex<HashMap<...>>>")
             .field("redis_cm", &"<TokioMutex<Option<Connection>>>")
@@ -661,10 +660,10 @@ pub enum DataType {
     Vector,
     MessageEvent,
     Sender,
-    OpenAIMessage,
+    LLMMessage,
     QQMessage,
     Image,
-    ContentPart,
+    MessagePart,
     FunctionTools,
     BotAdapterRef,
     S3Ref,
@@ -674,7 +673,7 @@ pub enum DataType {
     WeaviateRef,
     WebSearchEngineRef,
     SessionStateRef,
-    OpenAIMessageSessionCacheRef,
+    LLMMessageSessionCacheRef,
     Password,
     LLModel,
     EmbeddingModel,
@@ -707,10 +706,10 @@ impl fmt::Display for DataType {
             DataType::Vector => write!(f, "Vector"),
             DataType::MessageEvent => write!(f, "MessageEvent"),
             DataType::Sender => write!(f, "Sender"),
-            DataType::OpenAIMessage => write!(f, "OpenAIMessage"),
+            DataType::LLMMessage => write!(f, "LLMMessage"),
             DataType::QQMessage => write!(f, "QQMessage"),
             DataType::Image => write!(f, "Image"),
-            DataType::ContentPart => write!(f, "ContentPart"),
+            DataType::MessagePart => write!(f, "MessagePart"),
             DataType::FunctionTools => write!(f, "FunctionTools"),
             DataType::BotAdapterRef => write!(f, "BotAdapterRef"),
             DataType::S3Ref => write!(f, "S3Ref"),
@@ -720,7 +719,7 @@ impl fmt::Display for DataType {
             DataType::WeaviateRef => write!(f, "WeaviateRef"),
             DataType::WebSearchEngineRef => write!(f, "WebSearchEngineRef"),
             DataType::SessionStateRef => write!(f, "SessionStateRef"),
-            DataType::OpenAIMessageSessionCacheRef => write!(f, "OpenAIMessageSessionCacheRef"),
+            DataType::LLMMessageSessionCacheRef => write!(f, "LLMMessageSessionCacheRef"),
             DataType::Password => write!(f, "Password"),
             DataType::LLModel => write!(f, "LLModel"),
             DataType::EmbeddingModel => write!(f, "EmbeddingModel"),
@@ -755,11 +754,11 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "Vector" => Ok(DataType::Vector),
                     "MessageEvent" => Ok(DataType::MessageEvent),
                     "Sender" => Ok(DataType::Sender),
-                    "OpenAIMessage" => Ok(DataType::OpenAIMessage),
-                    "Message" => Ok(DataType::OpenAIMessage),
+                    "LLMMessage" => Ok(DataType::LLMMessage),
+                    "Message" => Ok(DataType::LLMMessage),
                     "QQMessage" => Ok(DataType::QQMessage),
                     "Image" => Ok(DataType::Image),
-                    "ContentPart" => Ok(DataType::ContentPart),
+                    "MessagePart" => Ok(DataType::MessagePart),
                     "FunctionTools" => Ok(DataType::FunctionTools),
                     "BotAdapterRef" => Ok(DataType::BotAdapterRef),
                     "S3Ref" => Ok(DataType::S3Ref),
@@ -769,7 +768,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                     "WeaviateRef" => Ok(DataType::WeaviateRef),
                     "WebSearchEngineRef" => Ok(DataType::WebSearchEngineRef),
                     "SessionStateRef" => Ok(DataType::SessionStateRef),
-                    "OpenAIMessageSessionCacheRef" => Ok(DataType::OpenAIMessageSessionCacheRef),
+                    "LLMMessageSessionCacheRef" => Ok(DataType::LLMMessageSessionCacheRef),
                     "Password" => Ok(DataType::Password),
                     "LLModel" => Ok(DataType::LLModel),
                     "EmbeddingModel" => Ok(DataType::EmbeddingModel),
@@ -788,11 +787,11 @@ impl<'de> serde::Deserialize<'de> for DataType {
                             "Vec",
                             "MessageEvent",
                             "Sender",
-                            "OpenAIMessage",
+                            "LLMMessage",
                             "Message",
                             "QQMessage",
                             "Image",
-                            "ContentPart",
+                            "MessagePart",
                             "FunctionTools",
                             "BotAdapterRef",
                             "S3Ref",
@@ -802,7 +801,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
                             "WeaviateRef",
                             "WebSearchEngineRef",
                             "SessionStateRef",
-                            "OpenAIMessageSessionCacheRef",
+                            "LLMMessageSessionCacheRef",
                             "Password",
                             "LLModel",
                             "EmbeddingModel",
@@ -860,10 +859,10 @@ pub enum DataValue {
     Vector(Vec<f32>),
     MessageEvent(MessageEvent),
     Sender(GraphSender),
-    OpenAIMessage(zihuan_core::llm::OpenAIMessage),
+    LLMMessage(zihuan_core::llm::LLMMessage),
     QQMessage(zihuan_core::ims_bot_adapter::models::message::Message),
     Image(ImageData),
-    ContentPart(ContentPart),
+    MessagePart(MessagePart),
     FunctionTools(Vec<Arc<dyn FunctionTool>>),
     BotAdapterRef(zihuan_core::ims_bot_adapter::BotAdapterHandle),
     S3Ref(Arc<S3Ref>),
@@ -873,7 +872,7 @@ pub enum DataValue {
     WeaviateRef(Arc<WeaviateRef>),
     WebSearchEngineRef(Arc<WebSearchEngineRef>),
     SessionStateRef(Arc<SessionStateRef>),
-    OpenAIMessageSessionCacheRef(Arc<OpenAIMessageSessionCacheRef>),
+    LLMMessageSessionCacheRef(Arc<LLMMessageSessionCacheRef>),
     Password(String),
     LLModel(Arc<dyn zihuan_core::llm::llm_base::LLMBase>),
     EmbeddingModel(Arc<dyn zihuan_core::llm::embedding_base::EmbeddingBase>),
@@ -892,10 +891,10 @@ impl DataValue {
             DataValue::Vec(ty, _) => DataType::Vec(ty.clone()),
             DataValue::Vector(_) => DataType::Vector,
             DataValue::Sender(_) => DataType::Sender,
-            DataValue::OpenAIMessage(_) => DataType::OpenAIMessage,
+            DataValue::LLMMessage(_) => DataType::LLMMessage,
             DataValue::QQMessage(_) => DataType::QQMessage,
             DataValue::Image(_) => DataType::Image,
-            DataValue::ContentPart(_) => DataType::ContentPart,
+            DataValue::MessagePart(_) => DataType::MessagePart,
             DataValue::MessageEvent(_) => DataType::MessageEvent,
             DataValue::FunctionTools(_) => DataType::FunctionTools,
             DataValue::BotAdapterRef(_) => DataType::BotAdapterRef,
@@ -906,7 +905,7 @@ impl DataValue {
             DataValue::WeaviateRef(_) => DataType::WeaviateRef,
             DataValue::WebSearchEngineRef(_) => DataType::WebSearchEngineRef,
             DataValue::SessionStateRef(_) => DataType::SessionStateRef,
-            DataValue::OpenAIMessageSessionCacheRef(_) => DataType::OpenAIMessageSessionCacheRef,
+            DataValue::LLMMessageSessionCacheRef(_) => DataType::LLMMessageSessionCacheRef,
             DataValue::Password(_) => DataType::Password,
             DataValue::LLModel(_) => DataType::LLModel,
             DataValue::EmbeddingModel(_) => DataType::EmbeddingModel,
@@ -952,10 +951,10 @@ impl DataValue {
             DataValue::Vec(_, items) => {
                 Value::Array(items.iter().map(|item| item.to_json()).collect())
             }
-            DataValue::OpenAIMessage(m) => serde_json::to_value(m).unwrap_or(Value::Null),
+            DataValue::LLMMessage(m) => serde_json::to_value(m).unwrap_or(Value::Null),
             DataValue::QQMessage(m) => serde_json::to_value(m).unwrap_or(Value::Null),
             DataValue::Image(image) => serde_json::to_value(image).unwrap_or(Value::Null),
-            DataValue::ContentPart(part) => serde_json::to_value(part).unwrap_or(Value::Null),
+            DataValue::MessagePart(part) => serde_json::to_value(part).unwrap_or(Value::Null),
             DataValue::MessageEvent(event) => {
                 serde_json::json!({
                     "message_id": event.message_id,
@@ -1023,8 +1022,8 @@ impl DataValue {
                 "type": "SessionStateRef",
                 "node_id": session_ref.node_id,
             }),
-            DataValue::OpenAIMessageSessionCacheRef(cache_ref) => serde_json::json!({
-                "type": "OpenAIMessageSessionCacheRef",
+            DataValue::LLMMessageSessionCacheRef(cache_ref) => serde_json::json!({
+                "type": "LLMMessageSessionCacheRef",
                 "node_id": cache_ref.node_id,
             }),
             DataValue::LoopControlRef(_) => Value::Null,
@@ -1043,10 +1042,10 @@ impl fmt::Debug for DataValue {
             DataValue::Binary(value) => f.debug_tuple("Binary").field(value).finish(),
             DataValue::Vec(ty, value) => f.debug_tuple("Vec").field(ty).field(value).finish(),
             DataValue::Vector(value) => f.debug_tuple("Vector").field(value).finish(),
-            DataValue::OpenAIMessage(value) => f.debug_tuple("OpenAIMessage").field(value).finish(),
+            DataValue::LLMMessage(value) => f.debug_tuple("LLMMessage").field(value).finish(),
             DataValue::QQMessage(value) => f.debug_tuple("QQMessage").field(value).finish(),
             DataValue::Image(value) => f.debug_tuple("Image").field(value).finish(),
-            DataValue::ContentPart(value) => f.debug_tuple("ContentPart").field(value).finish(),
+            DataValue::MessagePart(value) => f.debug_tuple("MessagePart").field(value).finish(),
             DataValue::MessageEvent(value) => f.debug_tuple("MessageEvent").field(value).finish(),
             DataValue::Sender(value) => f.debug_tuple("Sender").field(value).finish(),
             DataValue::FunctionTools(value) => f.debug_tuple("FunctionTools").field(value).finish(),
@@ -1065,8 +1064,8 @@ impl fmt::Debug for DataValue {
             DataValue::SessionStateRef(session_ref) => {
                 f.debug_tuple("SessionStateRef").field(session_ref).finish()
             }
-            DataValue::OpenAIMessageSessionCacheRef(cache_ref) => f
-                .debug_tuple("OpenAIMessageSessionCacheRef")
+            DataValue::LLMMessageSessionCacheRef(cache_ref) => f
+                .debug_tuple("LLMMessageSessionCacheRef")
                 .field(cache_ref)
                 .finish(),
             DataValue::Password(value) => f.debug_tuple("Password").field(value).finish(),

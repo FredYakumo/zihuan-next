@@ -19,7 +19,7 @@ use zihuan_core::command::{
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;
-use zihuan_core::llm::{MessageRole, OpenAIMessage};
+use zihuan_core::llm::{LLMMessage, MessageRole};
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::runtime::block_async;
 use zihuan_core::task_context::{
@@ -64,7 +64,7 @@ impl SideEffectContext for HttpStreamCommandSideEffectContext {
 struct ChatCompletionsRequest {
     #[serde(default)]
     model: Option<String>,
-    messages: Vec<zihuan_core::llm::OpenAIMessage>,
+    messages: Vec<zihuan_core::llm::LLMMessage>,
     #[serde(default)]
     stream: bool,
     #[serde(default)]
@@ -414,7 +414,7 @@ async fn execute_http_stream_completion(
             .iter()
             .rev()
             .find(|message| matches!(message.role, MessageRole::User))
-            .and_then(OpenAIMessage::content_text_owned);
+            .and_then(LLMMessage::content_text_owned);
 
         if let Some(raw_user_text) = raw_user_text {
             let command_context = CommandContext {
@@ -438,13 +438,13 @@ async fn execute_http_stream_completion(
 
                 if let Some(passthrough_text) = dispatch_result.passthrough_text {
                     if dispatch_result.result.inject_to_llm {
-                        messages.push(OpenAIMessage::assistant_text(dispatch_result.result.reply));
-                        messages.push(OpenAIMessage::user(passthrough_text));
+                        messages.push(LLMMessage::assistant_text(dispatch_result.result.reply));
+                        messages.push(LLMMessage::user(passthrough_text));
                     } else {
-                        messages = vec![OpenAIMessage::user(passthrough_text)];
+                        messages = vec![LLMMessage::user(passthrough_text)];
                     }
                 } else {
-                    let final_message = OpenAIMessage::assistant_text(dispatch_result.result.reply);
+                    let final_message = LLMMessage::assistant_text(dispatch_result.result.reply);
                     let model_name = model.unwrap_or(model_name);
                     if stream {
                         return Ok(HttpStreamCompletion::Sse(build_sse_response(
@@ -539,7 +539,7 @@ fn build_sse_response(
     completion_id: &str,
     created: i64,
     model_name: &str,
-    final_message: &zihuan_core::llm::OpenAIMessage,
+    final_message: &zihuan_core::llm::LLMMessage,
 ) -> String {
     let mut chunks = Vec::new();
     chunks.push(serde_json::json!({

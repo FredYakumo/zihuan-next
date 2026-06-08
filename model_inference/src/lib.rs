@@ -2,11 +2,11 @@ pub mod agent_config_support;
 pub mod inference_function;
 pub mod linalg;
 pub mod llm_api;
+pub mod llm_message;
 pub mod message_content_utils;
 pub mod nn;
 pub mod nodes;
 pub mod system_config;
-pub mod utils;
 
 use zihuan_core::error::Result;
 
@@ -41,7 +41,7 @@ pub fn init_node_registry() -> Result<()> {
         "context_compact",
         "上下文压缩",
         "AI",
-        "压缩 OpenAIMessage 历史，仅保留摘要对和最近 2 条非 tool 消息",
+        "压缩 LLMMessage 历史，仅保留摘要对和最近 2 条非 tool 消息",
         ContextCompactNode
     );
     register_node!(

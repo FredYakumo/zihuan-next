@@ -33,7 +33,7 @@ impl RedisNode {
     }
 
     fn cleanup_patterns() -> [&'static str; 2] {
-        ["message_cache:*", "openai_message_session:*"]
+        ["message_cache:*", "llm_message_session:*"]
     }
 
     fn run_cleanup_once(

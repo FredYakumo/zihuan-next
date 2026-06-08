@@ -6,7 +6,7 @@ See the `/zihuan-build`, `/zihuan-test`, and `/zihuan-lint` skills (in `.agents/
 
 ## Architecture Overview
 
-zihuan-next is a Rust-based AI Agent framework with a node-graph workflow engine. The core pipeline is: **Define graph → Topological sort → Execute nodes → Produce outputs**. It has two frontends served from the same Vite app: a **Vue 3 admin panel** (`/`) for configuration management and a **Litegraph.js editor** (`/editor`) for visual workflow editing.
+zihuan-next is a multi-tier AI agent development and runtime framework built in Rust. It unifies local inference (Candle, Llama.cpp) and cloud model APIs (OpenAI, Anthropic) under a single abstraction, then layers on a **Brain** tool-calling agent runtime, a **visual node-graph engine** for workflow orchestration, and **IMS-native adapters** for real-world bot deployment. The core pipeline is: **Define graph → Topological sort → Execute nodes → Produce outputs**. It has two frontends served from the same Vite app: a **Vue 3 admin panel** (`/`) for configuration management and a **Litegraph.js editor** (`/editor`) for visual workflow editing.
 
 ### Key crates
 
@@ -14,8 +14,8 @@ zihuan-next is a Rust-based AI Agent framework with a node-graph workflow engine
 - **`zihuan_graph_engine`** — DAG execution engine: topological sort, node lifecycle, data pool, graph execution.
 - **`zihuan_agent`** — Agentic runtime: `Brain` tool-calling loop, `FunctionTool` trait re-export, `BrainTool`, `BrainObserver` hooks.
 - **`zihuan_service`** — Service layer: QQ chat agent, HTTP stream agent, REST API endpoints, command system.
-- **`model_inference`** — LLM model inference integration: model configuration, API adapters, system configuration.
-- **`ims_bot_adapter`** — QQ bot adapter: WebSocket connection, message extraction, event processing, bot adapter nodes.
+- **`model_inference`** — LLM model inference integration: model configuration, API adapters, system configuration. Provider/wire-format compatibility lives under `src/llm_message/convert/`; for remote API styles, keep one convert entry file per concrete `LlmApiStyle` variant rather than multiplexing multiple wire dialects through a shared public format enum.
+- **`ims_bot_adapter`** — QQ bot adapter: WebSocket connection, message extraction, event processing, bot adapter nodes. Message-structure labels and boundary markers (e.g. `CURRENT_MESSAGE_LABEL`, `REPLY_START_MARKER`, `QUOTE_CONTENT_LABEL`) are defined as constants in `src/lib.rs`; any code that renders or parses nested message text must reuse these constants rather than hard-coding strings.
 - **`storage_handler`** — Storage abstractions: Redis, MySQL, S3, Weaviate connections.
 - **`zihuan_nlp`** — NLP utilities: text segmentation, tokenization.
 - **`node_macros`** — Proc macros: `node_input!`, `node_output!`, `node_input_flow!`, `node_output_flow!`, `return_with_node_output!`.
@@ -33,7 +33,9 @@ zihuan-next is a Rust-based AI Agent framework with a node-graph workflow engine
 
 **Node System** — Every node implements the `Node` trait. Only one node type exists: `Simple` — every node executes as a synchronous transformation `execute(inputs) -> outputs`. Nodes receive all resolved inputs as a `NodeInputFlow` and return a `NodeOutputFlow`.
 
-**Port & Data Type System** — Ports carry typed data between nodes. Defined with `node_macros` using `port!{ name = "...", ty = Type, desc = "..." }` entries. Types include primitives (`String`, `Integer`, `Float`, `Boolean`, `Json`, `Binary`), messages (`OpenAIMessage`, `QQMessage`, `MessageEvent`), infrastructure refs (`RedisRef`, `MySqlRef`, `WeaviateRef`), and LLM types (`LLModel`, `EmbeddingModel`, `FunctionTools`). See `/zihuan-node-dev`.
+**Port & Data Type System** — Ports carry typed data between nodes. Defined with `node_macros` using `port!{ name = "...", ty = Type, desc = "..." }` entries. Types include primitives (`String`, `Integer`, `Float`, `Boolean`, `Json`, `Binary`), messages (`LLMMessage`, `QQMessage`, `MessageEvent`), infrastructure refs (`RedisRef`, `MySqlRef`, `WeaviateRef`), and LLM types (`LLModel`, `EmbeddingModel`, `FunctionTools`). See `/zihuan-node-dev`.
+
+**Unified LLM Message Model** — Internal conversation/state/history flow uses `zihuan_core::llm::LLMMessage` as the project-wide message type. `LLMMessage` contains `role`, `parts`, `tool_calls`, `tool_call_id`, `reasoning_content`, and `usage`. Message content is carried by `zihuan_core::MessagePart`, which is the project-wide base payload for text and multimodal message content. Image/video parts must carry the existing project media model (`PersistedMedia`) rather than raw provider-specific URL structs. Provider-specific request/response shapes belong in convert modules, not in the core message type.
 
 **Brain Agent Loop** — The `Brain` engine implements a tool-calling loop (max 25 iterations): send conversation to LLM → receive tool calls → execute matching tools → append results → repeat. Tools implement the `FunctionTool` trait and are defined in `zihuan_agent/src/tools/`. See `/zihuan-agent-tool-dev`.
 
@@ -77,6 +79,10 @@ Prefer macros for pattern elimination. When the same structural pattern appears 
 - **Common types** that may cause circular references go in `zihuan_core`. Otherwise, keep code and types in the package that owns the responsibility.
 - **One node per file.** The graph must remain a DAG.
 - **Don't repeat yourself.** Reuse existing functionality whenever possible. Search before writing a new helper; do not duplicate logic.
+- **Message text parsing constants.** When rendering or parsing nested QQ message structures (reply quotes, forward nodes, image references), always import and use the shared constants defined in `ims_bot_adapter/src/lib.rs` (e.g. `REPLY_START_MARKER`, `QUOTE_CONTENT_LABEL`). Do not hard-code Chinese labels or boundary markers locally.
+- **LLM message naming.** Use `LLMMessage`, `MessagePart`, and `LLMMessageSessionCacheRef` in new Rust code. `MessagePart` is the shared base carrier for project message content. Do not introduce new `OpenAIMessage*` names for internal message flow.
+- **Node naming.** New or renamed message utility nodes should use the `llm_message_*` prefix rather than `openai_message_*`. Keep node IDs, file names, and module names aligned with the `llm_message_*` terminology unless explicit backward compatibility is required.
+- **API style conversion layout.** For remote LLM adapters, each non-local `LlmApiStyle` should map to a dedicated convert entry file under `model_inference/src/llm_message/convert/`. Shared parsing helpers are fine, but the top-level dispatch must remain one-style-to-one-file so wire dialects stay easy to audit.
 
 ### Comments
 
@@ -98,7 +104,7 @@ uv venv
 uv pip install -e .
 ```
 
-### Style
+### Python Style
 
 - Follow [PEP 8](https://peps.python.org/pep-0008/) with 120-char max line length
 - Use `ruff` for linting and formatting (configured in `pyproject.toml`)

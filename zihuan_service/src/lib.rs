@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod command;
 pub mod nodes;
+pub mod qq_chat_user_input;
 mod resource_resolver;
 pub mod scheduled_task;
 pub mod storage;

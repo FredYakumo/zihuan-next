@@ -284,8 +284,8 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
 
         (v, DataType::Json) => Some(DataValue::Json(v.clone())),
 
-        // Single OpenAIMessage from a JSON object: {"role": "user", "content": "..."}
-        (Value::Object(map), DataType::OpenAIMessage) => {
+        // Single LLMMessage from a JSON object: {"role": "user", "content": "..."}
+        (Value::Object(map), DataType::LLMMessage) => {
             fn parse_role(v: &Value) -> zihuan_core::llm::MessageRole {
                 let s = v.as_str().unwrap_or("user").to_ascii_lowercase();
                 match s.as_str() {
@@ -309,7 +309,7 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
                 .get("api_style")
                 .and_then(|value| value.as_str())
                 .map(ToOwned::to_owned);
-            Some(DataValue::OpenAIMessage(zihuan_core::llm::OpenAIMessage {
+            Some(DataValue::LLMMessage(zihuan_core::llm::LLMMessage {
                 role,
                 api_style,
                 content,
@@ -328,7 +328,7 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
         }
 
         // Generic Vec: recurse per element using the inner type.
-        // Handles Vec<OpenAIMessage>, Vec<QQMessage>, and any other Vec<X>.
+        // Handles Vec<LLMMessage>, Vec<QQMessage>, and any other Vec<X>.
         (Value::Array(items), DataType::Vec(inner)) => {
             let parsed: Vec<DataValue> = items
                 .iter()

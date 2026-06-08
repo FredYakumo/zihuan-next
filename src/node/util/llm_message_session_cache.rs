@@ -1,17 +1,18 @@
 use crate::error::Result;
-use zihuan_core::llm::OpenAIMessage;
-use crate::node::data_value::OpenAIMessageSessionCacheRef;
+use zihuan_core::llm::LLMMessage;
+use crate::node::data_value::LLMMessageSessionCacheRef;
 use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
+use log::info;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::task::block_in_place;
 
-pub struct OpenAIMessageSessionCacheSetNode {
+pub struct LLMMessageSessionCacheNode {
     id: String,
     name: String,
 }
 
-impl OpenAIMessageSessionCacheSetNode {
+impl LLMMessageSessionCacheNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -20,7 +21,7 @@ impl OpenAIMessageSessionCacheSetNode {
     }
 }
 
-impl Node for OpenAIMessageSessionCacheSetNode {
+impl Node for LLMMessageSessionCacheNode {
     fn id(&self) -> &str {
         &self.id
     }
@@ -30,16 +31,16 @@ impl Node for OpenAIMessageSessionCacheSetNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("根据缓存 Ref、sender_id 与消息列表，覆写当前运行期累计的 Vec<OpenAIMessage>")
+        Some("根据缓存 Ref、sender_id 与消息列表，向当前运行期会话历史追加 Vec<LLMMessage>")
     }
 
     node_input![
-        port! { name = "cache_ref", ty = OpenAIMessageSessionCacheRef, desc = "OpenAIMessage 会话暂存器输出的缓存引用" },
-        port! { name = "sender_id", ty = String, desc = "要覆写历史消息的 sender_id" },
-        port! { name = "messages", ty = Vec(OpenAIMessage), desc = "要写回并覆写到缓存中的 Vec<OpenAIMessage>" },
+        port! { name = "cache_ref", ty = LLMMessageSessionCacheRef, desc = "LLMMessage 会话暂存器输出的缓存引用" },
+        port! { name = "sender_id", ty = String, desc = "用户唯一标识，用于区分不同会话" },
+        port! { name = "messages", ty = Vec(LLMMessage), desc = "要暂存并追加到会话缓存中的 Vec<LLMMessage>" },
     ];
 
-    node_output![port! { name = "success", ty = Boolean, desc = "是否成功覆写历史消息" },];
+    node_output![port! { name = "success", ty = Boolean, desc = "是否成功写入 Redis 或内存缓存" },];
 
     fn execute(
         &mut self,
@@ -47,10 +48,10 @@ impl Node for OpenAIMessageSessionCacheSetNode {
     ) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
-        let cache_ref: Arc<OpenAIMessageSessionCacheRef> = inputs
+        let cache_ref: Arc<LLMMessageSessionCacheRef> = inputs
             .get("cache_ref")
             .and_then(|value| match value {
-                DataValue::OpenAIMessageSessionCacheRef(cache_ref) => Some(cache_ref.clone()),
+                DataValue::LLMMessageSessionCacheRef(cache_ref) => Some(cache_ref.clone()),
                 _ => None,
             })
             .ok_or_else(|| {
@@ -67,14 +68,14 @@ impl Node for OpenAIMessageSessionCacheSetNode {
                 crate::error::Error::InvalidNodeInput("sender_id is required".to_string())
             })?;
 
-        let messages: Vec<OpenAIMessage> = match inputs.get("messages") {
-            Some(DataValue::Vec(inner_type, items)) if **inner_type == DataType::OpenAIMessage => {
+        let messages: Vec<LLMMessage> = match inputs.get("messages") {
+            Some(DataValue::Vec(inner_type, items)) if **inner_type == DataType::LLMMessage => {
                 items
                     .iter()
                     .map(|item| match item {
-                        DataValue::OpenAIMessage(message) => Ok(message.clone()),
+                        DataValue::LLMMessage(message) => Ok(message.clone()),
                         _ => Err(crate::error::Error::InvalidNodeInput(
-                            "messages must contain OpenAIMessage items".to_string(),
+                            "messages must contain LLMMessage items".to_string(),
                         )),
                     })
                     .collect::<Result<Vec<_>>>()?
@@ -86,12 +87,18 @@ impl Node for OpenAIMessageSessionCacheSetNode {
             }
         };
 
-        let write_messages = async move { cache_ref.set_messages(&sender_id, messages).await };
+        info!(
+            "[LLMMessageSessionCacheNode] Appending {} message(s) for sender {}",
+            messages.len(),
+            sender_id
+        );
+
+        let append_messages = async move { cache_ref.append_messages(&sender_id, messages).await };
 
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            block_in_place(|| handle.block_on(write_messages))
+            block_in_place(|| handle.block_on(append_messages))
         } else {
-            tokio::runtime::Runtime::new()?.block_on(write_messages)
+            tokio::runtime::Runtime::new()?.block_on(append_messages)
         }?;
 
         let mut outputs = HashMap::new();

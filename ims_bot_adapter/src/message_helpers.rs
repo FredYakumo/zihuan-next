@@ -5,7 +5,9 @@
 
 use crate::adapter::SharedBotAdapter;
 use crate::models::event_model::{MessageEvent, MessageType, Sender};
-use crate::models::message::{render_messages_readable, AtTargetMessage, Message, PlainTextMessage};
+use crate::models::message::{
+    render_messages_readable, AtTargetMessage, Message, PlainTextMessage,
+};
 use crate::send_qq_message_batches::send_qq_message_batches;
 use crate::ws_action::{response_message_id, response_success, ws_send_action};
 use log::{info, warn};

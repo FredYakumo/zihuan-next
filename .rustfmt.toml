@@ -1,0 +1,35 @@
+# Rustfmt configuration for zihuan-next
+# See https://rust-lang.github.io/rustfmt for all options
+
+edition = "2021"
+
+# Line width
+max_width = 120
+chain_width = 80
+fn_call_width = 80
+struct_lit_width = 30
+
+# Imports
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
+reorder_imports = true
+
+# Formatting style
+hard_tabs = false
+tab_spaces = 4
+newline_style = "Unix"
+
+# Misc
+format_code_in_doc_comments = true
+format_macro_matchers = true
+format_strings = true
+wrap_comments = true
+normalize_comments = true
+normalize_doc_attributes = true
+remove_nested_parens = true
+reorder_impl_items = true
+use_field_init_shorthand = true
+use_try_shorthand = true
+
+# Disabled by default; enable where helpful
+format_generated_files = false

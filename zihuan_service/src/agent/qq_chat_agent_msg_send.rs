@@ -2,6 +2,8 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
+
 use ims_bot_adapter::adapter::SharedBotAdapter;
 use ims_bot_adapter::message_helpers::{
     get_bot_id, send_friend_batches_with_persistence, send_group_batches_with_persistence,
@@ -13,15 +15,16 @@ use ims_bot_adapter::models::message::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use zihuan_agent::utils::string_utils::is_no_reply_directive;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::utils::string_utils::{parse_at_segment, parse_tag_value};
-use zihuan_agent::utils::string_utils::is_no_reply_directive;
 use zihuan_graph_engine::data_value::DataValue;
 use zihuan_nlp::{PunctuationSegmenter, TextSegmenter};
 
-use super::qq_chat_agent_core::{
+pub(crate) use super::qq_chat_agent_core::{
     QqAgentReplyBatchBuilder, QqAgentReplyBuildRequest, QqAgentReplyBuildResult,
 };
+use crate::agent::qq_chat_agent_logging::QqChatTaskTrace;
 use crate::storage::media::resolve_media_references;
 
 const MAX_FORWARD_NODE_CHARS: usize = 800;
@@ -763,4 +766,102 @@ fn parse_bracket_message(inner: &str) -> Option<ReplySegment> {
         description: None,
         mime_type: None,
     })))
+}
+
+/// Build a `QqAgentReplyBuildResult` from raw reply parameters by calling the
+/// provided `reply_batch_builder`.
+pub(crate) fn build_reply_result(
+    reply_text: &str,
+    is_group: bool,
+    sender_id: &str,
+    sender_nickname: &str,
+    sender_card: &str,
+    bot_id: &str,
+    bot_name: &str,
+    max_message_length: usize,
+    reply_directive: Option<QqReplyDirective>,
+    trigger_message_id: Option<i64>,
+    available_media: HashMap<String, PersistedMedia>,
+    reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
+) -> Result<QqAgentReplyBuildResult> {
+    let request = QqAgentReplyBuildRequest {
+        assistant_text: reply_text.to_string(),
+        is_group,
+        sender_id: sender_id.to_string(),
+        sender_nickname: sender_nickname.to_string(),
+        sender_card: sender_card.to_string(),
+        bot_id: bot_id.to_string(),
+        bot_name: bot_name.to_string(),
+        max_message_length,
+        reply_directive,
+        trigger_message_id,
+        available_media,
+    };
+
+    if let Some(builder) = reply_batch_builder {
+        builder(&request)
+    } else {
+        Err(Error::ValidationError(
+            "no reply_batch_builder available for build_reply_result".to_string(),
+        ))
+    }
+}
+
+/// Send a direct text reply to the user, constructing reply batches via the
+/// provided `reply_batch_builder` and dispatching them through the QQ adapter.
+pub(crate) fn send_direct_text_reply(
+    trace: &QqChatTaskTrace,
+    adapter: &SharedBotAdapter,
+    target_id: &str,
+    rdb_pool: Option<&RelationalDbConnection>,
+    mysql_ref: Option<&Arc<MySqlConfig>>,
+    group_name: Option<&str>,
+    bot_name: &str,
+    bot_id: &str,
+    text: &str,
+    is_group: bool,
+    sender_id: &str,
+    sender_name: &str,
+    sender_card: &str,
+    max_message_length: usize,
+    reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
+) -> Result<()> {
+    let persistence = crate::storage::qq_chat_session_store::build_outbound_persistence(
+        rdb_pool, mysql_ref, group_name, bot_name,
+    );
+
+    let reply_result = build_reply_result(
+        text,
+        is_group,
+        sender_id,
+        sender_name,
+        sender_card,
+        bot_id,
+        bot_name,
+        max_message_length,
+        None,
+        None,
+        HashMap::new(),
+        reply_batch_builder,
+    )?;
+
+    if reply_result.suppress_send || reply_result.batches.is_empty() {
+        trace.record_reply_send(reply_result.suppress_send, true, &reply_result.batches);
+        return Ok(());
+    }
+
+    trace.record_reply_send(false, false, &reply_result.batches);
+    let send_ctx = QqSendContext {
+        adapter,
+        target_id,
+        is_group,
+        group_name,
+        bot_name,
+        bot_id,
+        mention_target_id: None,
+        persistence,
+        max_text_chars: max_message_length,
+    };
+    send_planned_batches(&send_ctx, &reply_result.batches);
+    Ok(())
 }

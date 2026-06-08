@@ -8,12 +8,13 @@ use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::llm::{MessageRole, OpenAIMessage};
+use zihuan_core::llm::{LLMMessage, MessageRole};
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::task_context::append_current_task_progress;
 use zihuan_core::tool_runtime::ToolRunDuration;
 use zihuan_graph_engine::object_storage::S3Ref;
 
+use super::agent_memory::{AgentMemoryToolResources, SearchMemoryContentBrainTool};
 use super::common::{optional_string_argument, StaticFunctionToolSpec, ToolNotificationTarget};
 use super::current_time::CurrentTimeBrainTool;
 use super::image_understand::ImageUnderstandBrainTool;
@@ -22,25 +23,27 @@ use super::web_search::WebSearchBrainTool;
 const LOG_PREFIX: &str = "[DeepResearch]";
 
 const DEEP_RESEARCH_SYSTEM_PROMPT: &str = "\
-你是一个严谨的研究助理，擅长数学、物理、计算机科学、软件工程、编程与形式逻辑分析。\n\
+You are a rigorous research assistant, proficient in mathematics, physics, computer science, software engineering, programming, and formal logical analysis.\n\
 \n\
-你的任务是对用户问题做深入研究，并在需要事实查证、网页资料或图片上下文时主动调用工具。\n\
+Your task is to conduct in-depth research on the user's question and proactively invoke tools when factual verification, web sources, or image context are needed.\n\
 \n\
-研究流程要求：\n\
-1. 先把用户问题拆成若干个彼此独立的研究点、子问题或核查点。\n\
-2. 必须按\"一个研究点一轮处理\"的方式推进：每一轮只围绕一个研究点进行检索、阅读、核查和整理。\n\
-3. 禁止把多个研究点混在同一次 `web_search` 调用里；如果有多个点，就分成多次工具调用逐个处理。\n\
-4. 只有在当前研究点已有足够证据后，才能进入下一个研究点。\n\
-5. 在所有研究点处理完成后，再做统一汇总、交叉校验和最终结论。\n\
+Research workflow requirements:\n\
+1. First determine which parts can be answered directly from existing knowledge and which parts genuinely require online verification.\n\
+2. If the missing information is the user's historical preferences, previously mentioned facts, or saved materials, prefer calling `search_memory_content` first; do not escalate to web research automatically.\n\
+3. Use `web_search` mainly for the latest information, reading web pages, and verifying truthfulness/accuracy; do not treat it as a general background knowledge supplement.\n\
+4. If the question contains both inferable parts and parts that need verification, reserve web search only for the most critical and uncertain external fact.\n\
+5. Try to call `web_search` only once during a single research session; after one search, synthesize and answer first, and do not automatically continue to a second or third search.\n\
+6. If the first search is still insufficient, clearly state what information is missing or cannot be confirmed, and ask the user whether to continue searching.\n\
 \n\
-工具使用规则：\n\
-1. `web_search` 用于联网搜索资料，或对单个 URL 抽取网页正文。\n\
-2. `image_understand` 用于通过 `media_id` 理解图片内容。\n\
-3. 每次调用工具前，assistant 的 content 必须先写一句简短中文进度提示；这句话会直接回给用户，所以不要包含 @，也不要留空。例如：`我先查第一个点`、`我先核对这个说法`、`我先看看图片内容`。\n\
-4. 工具返回后再继续分析，优先基于工具结果作答。\n\
-5. 如果某个研究点需要多次搜索，也要保持单点聚焦，不要把别的点混入当前搜索词。\n\
+Tool usage rules:\n\
+1. `search_memory_content` retrieves long-term memories accessible in the current context, previously saved facts, historical preferences, and known materials.\n\
+2. `web_search` is for online searches of the latest materials, verifying key external facts, or extracting the main text of a single URL.\n\
+3. `image_understand` is used to understand image content via `media_id`.\n\
+4. Before each tool call, the assistant's content must include a short progress update; this sentence will be sent directly to the user, so do not include @ and do not leave it blank. Examples: `Let me check if this was recorded before`, `Let me verify this claim`, `Let me look at the image content first`.\n\
+5. After the tool returns, continue the analysis based on the tool result first; do not keep searching online just to make a directly completable analysis more complete.\n\
+6. If search is necessary, keep it narrowly focused; do not mix other points into the current query, and do not treat multi-round search as the default process.\n\
 \n\
-输出要求：\n\
+Output requirements:\n\
 - Problem Overview\n\
 - Research Points Breakdown\n\
 - Step-by-Step Analysis\n\
@@ -49,7 +52,7 @@ const DEEP_RESEARCH_SYSTEM_PROMPT: &str = "\
 - Final Conclusion\n\
 - Important Notes and Caveats\n\
 \n\
-如果信息不足，要明确说明缺失信息和无法确认的部分。最终回答使用中文。";
+If information is insufficient, clearly state the missing information and what cannot be confirmed.";
 
 pub(crate) struct RunDeepResearchSubagentBrainTool {
     llm: Arc<dyn LLMBase>,
@@ -58,6 +61,7 @@ pub(crate) struct RunDeepResearchSubagentBrainTool {
     s3_ref: Option<Arc<S3Ref>>,
     current_message_event: Option<ims_bot_adapter::models::MessageEvent>,
     notification_target: ToolNotificationTarget,
+    memory_resources: Option<AgentMemoryToolResources>,
 }
 
 impl RunDeepResearchSubagentBrainTool {
@@ -69,6 +73,7 @@ impl RunDeepResearchSubagentBrainTool {
         s3_ref: Option<Arc<S3Ref>>,
         current_message_event: Option<ims_bot_adapter::models::MessageEvent>,
         notification_target: ToolNotificationTarget,
+        memory_resources: Option<AgentMemoryToolResources>,
     ) -> Self {
         Self {
             llm,
@@ -77,6 +82,7 @@ impl RunDeepResearchSubagentBrainTool {
             s3_ref,
             current_message_event,
             notification_target,
+            memory_resources,
         }
     }
 }
@@ -141,8 +147,8 @@ impl BrainTool for RunDeepResearchSubagentBrainTool {
             );
 
             let messages = vec![
-                OpenAIMessage::system(DEEP_RESEARCH_SYSTEM_PROMPT.to_string()),
-                OpenAIMessage::user(user_prompt),
+                LLMMessage::system(DEEP_RESEARCH_SYSTEM_PROMPT.to_string()),
+                LLMMessage::user(user_prompt),
             ];
 
             // Build the inner Brain with research tools.
@@ -151,6 +157,9 @@ impl BrainTool for RunDeepResearchSubagentBrainTool {
             // while still surfacing it in the task dashboard.
             let mut brain = Brain::new(Arc::clone(&self.llm));
             brain.add_tool(CurrentTimeBrainTool);
+            if let Some(memory_resources) = self.memory_resources.clone() {
+                brain.add_tool(SearchMemoryContentBrainTool::new(memory_resources));
+            }
             brain.add_tool(WebSearchBrainTool::new(
                 Arc::clone(&self.web_search_engine),
                 self.notification_target.clone(),
