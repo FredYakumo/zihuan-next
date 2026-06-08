@@ -4,13 +4,12 @@ use std::sync::{Arc, Mutex};
 
 use super::inference::{InferenceToolContext, InferenceToolProvider};
 use super::qq_chat_agent_core::{
-    build_info_brain_tools, expand_messages_for_inference, prepare_current_turn_user_input,
-    prepare_current_turn_user_input_from_event, QqAgentReplyBatchBuilder, QqChatAgent,
-    QqChatAgentContext, QqChatAgentService, QqChatAgentServiceConfig, QqChatTaskTrace, LOG_PREFIX,
-    LOG_TEXT_PREVIEW_CHARS,
+    build_info_brain_tools, expand_messages_for_inference, prepare_current_turn_user_input_from_event, QqAgentReplyBatchBuilder, QqChatAgent,
+    QqChatAgentContext, QqChatAgentService, QqChatAgentServiceConfig, QqChatTaskTrace,
+    LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
-use super::qq_chat_agent_ignore_store::should_ignore_message_blocking;
 use super::qq_chat_agent_msg_send::build_reply_batch_builder as build_unified_reply_batch_builder;
+use super::qq_chat_agent_ignore_store::should_ignore_message_blocking;
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
 use crate::agent::qq_chat_agent_inbox::{QqChatAgentInbox, QqChatAgentSupervisorEvent};
 use crate::agent::tool_definitions::build_enabled_tool_definitions;
@@ -18,7 +17,6 @@ use crate::resource_resolver::{
     build_embedding_model, build_llm_model, resolve_llm_service_config,
     resolve_local_embedding_model_name,
 };
-use crate::storage::qq_chat_history_store::{conversation_history_key, load_history};
 use crate::storage::qq_chat_session_store::{release_session, try_claim_session};
 use chrono::Local;
 use ims_bot_adapter::adapter::BotAdapter;
@@ -690,105 +688,9 @@ impl QqChatAgent {
 
         let (claimed, claim_token) = try_claim_session(session, &sender_id);
         if !claimed {
-            let bot_id = get_bot_id(ctx.adapter);
-            let prepared_input = prepare_current_turn_user_input(
-                event,
-                ctx.adapter,
-                &bot_id,
-                ctx.bot_name,
-                ctx.s3_ref,
+            return self.try_handle_busy_session_steer(
+                event, ctx, &sender_id, &target_id, is_group, time,
             );
-            let mut inference_event = prepared_input.event.clone();
-            inference_event.message_list =
-                expand_messages_for_inference(&prepared_input.event.message_list);
-            let current_message = prepare_current_turn_user_input_from_event(
-                &inference_event,
-                &bot_id,
-                ctx.bot_name,
-                ctx.s3_ref,
-            )
-            .text;
-            if let Some(command_registry) = crate::command::global_command_registry() {
-                let cmd_ctx = self.build_command_context(
-                    &sender_id,
-                    &target_id,
-                    is_group,
-                    inference_event.group_id,
-                );
-                if let Some(preview) = command_registry.preview(&cmd_ctx, &current_message) {
-                    if preview.definition.allow_steer_bypass && preview.passthrough_text.is_none() {
-                        info!(
-                            "{LOG_PREFIX} Session busy for {sender_id}, executing command via steer bypass: message_id={} command=/{}",
-                            event.message_id,
-                            preview.definition.name
-                        );
-                        if let Some(dispatch_result) =
-                            command_registry.dispatch(&cmd_ctx, &current_message)
-                        {
-                            let history_key = conversation_history_key(
-                                &bot_id,
-                                &sender_id,
-                                is_group,
-                                inference_event.group_id,
-                            );
-                            let legacy_history_key = sender_id.to_string();
-                            let mut history =
-                                load_history(ctx.cache, &history_key, &legacy_history_key);
-                            let trace = QqChatTaskTrace::new(Local::now());
-                            self.execute_command_dispatch(
-                                &trace,
-                                &cmd_ctx,
-                                dispatch_result,
-                                &prepared_input.event,
-                                &inference_event,
-                                &sender_id,
-                                &target_id,
-                                &bot_id,
-                                &mut history,
-                                ctx,
-                            )?;
-                            trace.finish_with_summary();
-                            return Ok(());
-                        }
-                    } else {
-                        info!(
-                            "{LOG_PREFIX} Session busy for {sender_id}, command falls back to steer: message_id={} command=/{} allow_steer_bypass={} has_passthrough={}",
-                            event.message_id,
-                            preview.definition.name,
-                            preview.definition.allow_steer_bypass,
-                            preview.passthrough_text.is_some()
-                        );
-                    }
-                }
-            }
-            let (accepted, queue_len, accepted_steer_count) = ctx.pending_steer.enqueue_with_limit(
-                &sender_id,
-                PendingSteerEvent {
-                    event: prepared_input.event,
-                    time: time.to_string(),
-                },
-                ctx.max_steer_count,
-            );
-            if accepted {
-                info!(
-                    "{LOG_PREFIX} Session busy for {sender_id}, enqueueing steer: message_id={} queue_len={} accepted_steer_count={}/{} message={}",
-                    event.message_id,
-                    queue_len,
-                    accepted_steer_count,
-                    ctx.max_steer_count,
-                    shorten_text(&current_message, LOG_TEXT_PREVIEW_CHARS)
-                );
-            } else {
-                warn!(
-                    "{LOG_PREFIX} steer dropped for sender={} message_id={} because max steer count reached: accepted_steer_count={}/{} message={}",
-                    sender_id,
-                    event.message_id,
-                    accepted_steer_count,
-                    ctx.max_steer_count,
-                    shorten_text(&current_message, LOG_TEXT_PREVIEW_CHARS)
-                );
-            }
-            return Ok(());
         }
 
         ctx.pending_steer.ensure_session_entry(&sender_id);

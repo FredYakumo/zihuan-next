@@ -25,10 +25,15 @@ use crate::nodes::tool_subgraph::{
 };
 use crate::storage::qq_chat_history_store::clear_history;
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
-use ims_bot_adapter::models::message::{Message, PersistedMedia, PersistedMediaSource};
-use ims_bot_adapter::IMAGE_ANALYSIS_LABEL;
-use zihuan_agent::brain::{BrainIterationHook, LongTaskNotifier};
+use ims_bot_adapter::{
+    IMAGE_ANALYSIS_LABEL,
+};
+use ims_bot_adapter::models::message::{
+    Message, PersistedMedia, PersistedMediaSource,
+};
+use zihuan_agent::brain::LongTaskNotifier;
 use zihuan_core::agent_config::QqChatEmotionDimensionConfig;
+use zihuan_core::steer::{PendingSteerStore, PROCESSING_INSTRUCTION};
 use zihuan_core::command::{
     CommandChannel, CommandContext, NewConversationRequest, SideEffectContext,
 };
@@ -37,12 +42,11 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::{LLMMessage, MessagePart};
 use zihuan_core::rag::WebSearchEngineRef;
-use zihuan_core::steer::{apply_steer_prefix, PendingSteerStore, PROCESSING_INSTRUCTION};
 use zihuan_core::task_context::AgentTaskRuntime;
 use zihuan_core::utils::string_utils::extract_string_field;
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::brain_tool_spec::{
-    BrainToolDefinition, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
+    BrainToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use zihuan_graph_engine::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
@@ -348,131 +352,6 @@ pub(crate) fn build_user_message(
     LLMMessage::user_with_parts(parts)
 }
 
-fn build_steer_user_message(
-    current_input: &PreparedCurrentTurnUserInput,
-    bot_name: &str,
-    llm_supports_multimodal_input: bool,
-    api_style: Option<&str>,
-    system_prompt: &str,
-    session_state: &QqChatAgentSessionState,
-    emotion_dimensions: &[QqChatEmotionDimensionConfig],
-) -> LLMMessage {
-    let steer_message = build_user_message(
-        current_input,
-        bot_name,
-        llm_supports_multimodal_input,
-        system_prompt,
-        session_state,
-        emotion_dimensions,
-    );
-
-    apply_steer_prefix(steer_message, api_style)
-}
-
-/// Builds a single user message that merges all current-turn inputs, injecting session state
-/// and emotion context as a prefix. Falls back to plain text when the LLM does not support
-/// multimodal input; otherwise assembles `MessagePart`s so images are forwarded inline.
-fn build_merged_steer_user_message(
-    current_inputs: &[PreparedCurrentTurnUserInput],
-    bot_name: &str,
-    llm_supports_multimodal_input: bool,
-    api_style: Option<&str>,
-    system_prompt: &str,
-    session_state: &QqChatAgentSessionState,
-    emotion_dimensions: &[QqChatEmotionDimensionConfig],
-) -> LLMMessage {
-    let prefix_lines =
-        build_state_system_prefix_lines(session_state, emotion_dimensions, system_prompt);
-    let prefix = prefix_lines.join("\n");
-
-    // Helper for the plain-text fallback path: formats a single input entry with metadata
-    // and optional image analysis references.
-    let build_entry_text = |index: usize, input: &PreparedCurrentTurnUserInput| -> String {
-        let metadata_text = build_prepared_input_metadata(input, bot_name);
-        let image_section = if input.image_reference_lines.is_empty() {
-            String::new()
-        } else {
-            format!(
-                "\n\n[{}]\n{}",
-                IMAGE_ANALYSIS_LABEL,
-                input.image_reference_lines.join("\n")
-            )
-        };
-        format!(
-            "{}. {metadata_text}\n{}\n{input_text}{image_section}",
-            index + 1,
-            ims_bot_adapter::CURRENT_MESSAGE_LABEL,
-            input_text = input.text,
-        )
-    };
-
-    // Fast path for text-only LLMs: concatenate everything into one string.
-    if !llm_supports_multimodal_input {
-        let merged_text = current_inputs
-            .iter()
-            .enumerate()
-            .map(|(index, input)| build_entry_text(index, input))
-            .collect::<Vec<_>>()
-            .join("\n\n");
-
-        let message = LLMMessage::user(format!(
-            "{prefix}\n\n{merged_text}\n\n{PROCESSING_INSTRUCTION}"
-        ));
-        return apply_steer_prefix(message, api_style);
-    }
-
-    // Multimodal path: accumulate `MessagePart`s so that image blobs stay separate
-    // from the surrounding text instead of being serialized into a single string.
-    let state_text = format!("{}\n", prefix_lines.join("\n"));
-    let mut parts = vec![MessagePart::text(state_text.clone())];
-    let mut text_buffer = String::new();
-
-    for (index, current_input) in current_inputs.iter().enumerate() {
-        if index > 0 {
-            text_buffer.push_str("\n\n");
-        }
-        let metadata_text = build_prepared_input_metadata(current_input, bot_name);
-        text_buffer.push_str(&format!(
-            "{}. {metadata_text}\n{}\n",
-            index + 1,
-            ims_bot_adapter::CURRENT_MESSAGE_LABEL
-        ));
-        // Promote any media parts from the input into the message part list,
-        // flushing buffered text before and after so the ordering is preserved.
-        append_prepared_parts(&mut parts, &mut text_buffer, "", &current_input.parts);
-        if !current_input.image_reference_lines.is_empty() {
-            text_buffer.push_str(&format!(
-                "\n\n[{}]\n{}",
-                IMAGE_ANALYSIS_LABEL,
-                current_input.image_reference_lines.join("\n")
-            ));
-        }
-    }
-
-    // Ensure any trailing text in the buffer is captured as a final text part.
-    flush_text_part(&mut parts, &mut text_buffer);
-    let has_media = current_inputs.iter().any(|input| input.has_media);
-
-    // When no media was actually present, the multimodal assembly above produces
-    // only a single text part, so fall back to the simpler plain-text message.
-    let message = if has_media && parts.len() > 1 {
-        parts.push(MessagePart::text(PROCESSING_INSTRUCTION.to_string()));
-        LLMMessage::user_with_parts(parts)
-    } else {
-        let merged_text = current_inputs
-            .iter()
-            .enumerate()
-            .map(|(index, input)| build_entry_text(index, input))
-            .collect::<Vec<_>>()
-            .join("\n\n");
-        LLMMessage::user(format!(
-            "{state_text}\n{merged_text}\n\n{PROCESSING_INSTRUCTION}"
-        ))
-    };
-
-    apply_steer_prefix(message, api_style)
-}
-
 fn persisted_media_from_tool_value(value: &Value) -> Option<PersistedMedia> {
     let media_id = value.get("media_id")?.as_str()?.trim();
     if media_id.is_empty() {
@@ -653,100 +532,7 @@ pub struct QqChatAgent {
 }
 
 pub(crate) struct QqChatTurnResult {
-    result_summary: String,
-}
-
-pub(crate) struct QqChatSteerHook {
-    pub(crate) pending_steer: Arc<PendingSteerStore>,
-    pub(crate) sender_id: String,
-    pub(crate) bot_id: String,
-    pub(crate) bot_name: String,
-    pub(crate) max_steer_count: usize,
-    pub(crate) llm_supports_multimodal_input: bool,
-    pub(crate) llm_api_style: Option<String>,
-    pub(crate) s3_ref: Option<Arc<S3Ref>>,
-    pub(crate) trace: QqChatTaskTrace,
-    pub(crate) consumed_messages: Arc<Mutex<Vec<LLMMessage>>>,
-    pub(crate) shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
-    pub(crate) system_prompt: String,
-    pub(crate) session_state: Arc<Mutex<QqChatAgentSessionState>>,
-    pub(crate) emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
-}
-
-impl BrainIterationHook for QqChatSteerHook {
-    fn on_before_inference(
-        &self,
-        _iteration: usize,
-        _conversation: &[LLMMessage],
-    ) -> Vec<LLMMessage> {
-        let (pending, remaining_queue_len, accepted_steer_count) =
-            self.pending_steer.drain_all(&self.sender_id);
-        if pending.is_empty() {
-            return Vec::new();
-        }
-        let steer_count = pending.len();
-
-        let mut injected = Vec::with_capacity(pending.len());
-        let mut prepared_inputs = Vec::with_capacity(pending.len());
-        let mut consumed_guard = self.consumed_messages.lock().unwrap();
-
-        for pending_event in pending {
-            let mut inference_event = pending_event.event.clone();
-            inference_event.message_list =
-                expand_messages_for_inference(&pending_event.event.message_list);
-            let prepared_input = prepare_current_turn_user_input_from_event(
-                &inference_event,
-                &self.bot_id,
-                &self.bot_name,
-                self.s3_ref.as_ref(),
-            );
-            let current_message = prepared_input.text.clone();
-            self.trace.record_steer_received(&current_message);
-            prepared_inputs.push(prepared_input);
-            injected.push(inference_event);
-        }
-
-        let steer_message = if prepared_inputs.len() == 1 {
-            build_steer_user_message(
-                &prepared_inputs[0],
-                &self.bot_name,
-                self.llm_supports_multimodal_input,
-                self.llm_api_style.as_deref(),
-                &self.system_prompt,
-                &self.session_state.lock().unwrap(),
-                &self.emotion_dimensions,
-            )
-        } else {
-            build_merged_steer_user_message(
-                &prepared_inputs,
-                &self.bot_name,
-                self.llm_supports_multimodal_input,
-                self.llm_api_style.as_deref(),
-                &self.system_prompt,
-                &self.session_state.lock().unwrap(),
-                &self.emotion_dimensions,
-            )
-        };
-        consumed_guard.push(steer_message.clone());
-        drop(consumed_guard);
-        self.trace.record_steer_injected(
-            steer_count,
-            1,
-            accepted_steer_count,
-            self.max_steer_count,
-            remaining_queue_len,
-            std::slice::from_ref(&steer_message),
-        );
-        {
-            let last_injected = injected.last().expect("injected must be non-empty");
-            let mut shared_rt = self.shared_runtime_values.lock().unwrap();
-            shared_rt.insert(
-                QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT.to_string(),
-                DataValue::MessageEvent(last_injected.clone()),
-            );
-        }
-        vec![steer_message]
-    }
+    pub(crate) result_summary: String,
 }
 
 impl QqChatAgent {

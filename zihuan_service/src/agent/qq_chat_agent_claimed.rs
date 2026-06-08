@@ -2,8 +2,6 @@ use std::sync::{Arc, Mutex};
 
 use log::{info, warn};
 
-use ims_bot_adapter::message_helpers::get_bot_id;
-
 use model_inference::inference_function::compact_message::{
     compact_message_history, estimate_messages_tokens,
 };
@@ -17,7 +15,7 @@ use zihuan_core::agent_config::current_qq_chat_agent_config;
 use zihuan_core::command::{CommandChannel, CommandContext, DispatchResult};
 use zihuan_core::error::Result;
 use zihuan_core::llm::{LLMMessage, TokenUsage};
-use zihuan_core::steer::{build_merged_follow_up_event, message_with_api_style};
+use zihuan_core::steer::message_with_api_style;
 
 use zihuan_graph_engine::brain_tool_spec::{
     QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
@@ -52,10 +50,12 @@ use super::{
     build_group_system_prompt, build_private_system_prompt, build_user_message,
     expand_messages_for_inference, prepare_current_turn_user_input,
     prepare_current_turn_user_input_from_event, QqChatAgent, QqChatAgentContext,
-    QqChatHandleReport, QqChatSteerHook, QqChatTaskTrace, QqChatTurnResult,
+    QqChatTaskTrace, QqChatTurnResult,
     QqCommandSideEffectContext, QqLongTaskNotifier, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 use zihuan_core::utils::string_utils::shorten_text;
+
+use super::super::qq_chat_agent_steer::QqChatSteerHook;
 
 impl QqChatAgent {
     pub(crate) fn build_command_context(
@@ -193,85 +193,6 @@ impl QqChatAgent {
         Ok(passthrough_text)
     }
 
-    /// Processes a claimed QQ chat message, potentially across multiple turns due to steering.
-    ///
-    /// Repeatedly calls [`handle_claimed_turn`] and drains any pending steer messages after each
-    /// turn. When steer messages exist, they are merged into a follow-up event that becomes the
-    /// input for the next iteration. The loop ends once no more steer messages remain.
-    ///
-    /// Returns a [`QqChatHandleReport`] with a summary of the final turn.
-    pub(crate) fn handle_claimed(
-        &self,
-        trace: &QqChatTaskTrace,
-        event: &ims_bot_adapter::models::MessageEvent,
-        time: &str,
-        sender_id: &str,
-        target_id: &str,
-        is_group: bool,
-        ctx: &QqChatAgentContext<'_>,
-    ) -> Result<QqChatHandleReport> {
-        (|| -> Result<QqChatHandleReport> {
-            let bot_id = get_bot_id(ctx.adapter);
-            let mut current_event = event.clone();
-            let mut current_time = time.to_string();
-            let result_summary = loop {
-                let turn_result = self.handle_claimed_turn(
-                    trace,
-                    &current_event,
-                    &current_time,
-                    sender_id,
-                    target_id,
-                    is_group,
-                    &bot_id,
-                    ctx,
-                )?;
-
-                let (pending, remaining_queue_len, accepted_steer_count) =
-                    ctx.pending_steer.drain_all(sender_id);
-                if pending.is_empty() {
-                    break turn_result.result_summary;
-                }
-
-                let steer_count = pending.len();
-                let next_event = build_merged_follow_up_event(&pending);
-                let mut next_inference_event = next_event.clone();
-                next_inference_event.message_list =
-                    expand_messages_for_inference(&next_event.message_list);
-                let next_message = prepare_current_turn_user_input_from_event(
-                    &next_inference_event,
-                    &bot_id,
-                    ctx.bot_name,
-                    ctx.s3_ref,
-                )
-                .text;
-                trace.record_steer_follow_up(
-                    next_event.message_id,
-                    steer_count,
-                    accepted_steer_count,
-                    ctx.max_steer_count,
-                    &next_message,
-                );
-                info!(
-                    "{LOG_PREFIX} steer follow-up picked for sender={} message_id={} steer_count={} remaining_queue_len={} accepted_steer_count={}/{} message={}",
-                    sender_id,
-                    next_event.message_id,
-                    steer_count,
-                    remaining_queue_len,
-                    accepted_steer_count,
-                    ctx.max_steer_count,
-                    shorten_text(&next_message, LOG_TEXT_PREVIEW_CHARS)
-                );
-                current_event = next_event;
-                current_time = pending
-                    .last()
-                    .map(|event| event.time.clone())
-                    .unwrap_or_else(|| current_time.clone());
-            };
-
-            Ok(QqChatHandleReport { result_summary })
-        })()
-    }
-
     /// Processes a single QQ chat turn end-to-end for a claimed message.
     ///
     /// The lifecycle is:
@@ -287,7 +208,7 @@ impl QqChatAgent {
     ///   (group or private chat), persisting message history along the way.
     ///
     /// Returns a [`QqChatTurnResult`] containing a human-readable summary of what happened.
-    fn handle_claimed_turn(
+    pub(crate) fn handle_claimed_turn(
         &self,
         trace: &QqChatTaskTrace,
         event: &ims_bot_adapter::models::MessageEvent,

@@ -9,6 +9,7 @@ mod qq_chat_agent_core;
 pub mod qq_chat_agent_ignore_store;
 mod qq_chat_agent_inbox;
 mod qq_chat_agent_logging;
+mod qq_chat_agent_steer;
 pub(crate) mod qq_chat_agent_msg_send;
 mod tools;
 pub(crate) use tools::execute_image_understand_tool;
