@@ -145,17 +145,11 @@ impl LLMMessage {
 
     /// Internal helper to detect whether a message can be serialized as pure text.
     pub(crate) fn has_only_text_parts(&self) -> bool {
-        self.parts
-            .iter()
-            .all(|part| matches!(part, MessagePart::Text { .. }))
+        self.parts.iter().all(|part| matches!(part, MessagePart::Text { .. }))
     }
 
     /// Dispatch this message to the concrete provider/style-specific payload converter.
-    pub fn convert(
-        &self,
-        style: LLMMessageConvertStyle,
-        include_reasoning_content: bool,
-    ) -> Vec<Value> {
+    pub fn convert(&self, style: LLMMessageConvertStyle, include_reasoning_content: bool) -> Vec<Value> {
         match style {
             LLMMessageConvertStyle::OpenAiChatCompletions => {
                 super::convert::openai_chat_completions::convert(self, include_reasoning_content)
@@ -166,9 +160,7 @@ impl LLMMessage {
                     include_reasoning_content,
                 )
             }
-            LLMMessageConvertStyle::OpenAiResponses => {
-                super::convert::openai_responses::convert(self)
-            }
+            LLMMessageConvertStyle::OpenAiResponses => super::convert::openai_responses::convert(self),
             LLMMessageConvertStyle::OpenAiResponsesMessageCompat => {
                 super::convert::openai_responses_message_compat::convert(self)
             }

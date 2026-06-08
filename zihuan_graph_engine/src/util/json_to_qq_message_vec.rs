@@ -72,12 +72,8 @@ impl Node for JsonToQQMessageVecNode {
                 Ok(outputs)
             }
             Err(e) => {
-                warn!(
-                    "[JsonToQQMessageVecNode] Conversion failed: {} — routing to failed output",
-                    e
-                );
-                let outputs =
-                    HashMap::from([("failed".to_string(), DataValue::Json(json_value.clone()))]);
+                warn!("[JsonToQQMessageVecNode] Conversion failed: {} — routing to failed output", e);
+                let outputs = HashMap::from([("failed".to_string(), DataValue::Json(json_value.clone()))]);
                 let outputs = crate::NodeOutputFlow::from(outputs);
                 self.validate_outputs(&outputs)?;
                 Ok(outputs)

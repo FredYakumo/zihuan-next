@@ -11,21 +11,15 @@ where
 {
     let v = serde_json::Value::deserialize(deserializer)?;
     match v {
-        serde_json::Value::Number(n) => n
-            .as_i64()
-            .ok_or_else(|| de::Error::custom("numeric value is not an i64")),
+        serde_json::Value::Number(n) => n.as_i64().ok_or_else(|| de::Error::custom("numeric value is not an i64")),
         serde_json::Value::String(s) => s
             .parse::<i64>()
             .map_err(|e| de::Error::custom(format!("failed to parse i64 from string: {e}"))),
-        other => Err(de::Error::custom(format!(
-            "expected string or number for i64, got {other}"
-        ))),
+        other => Err(de::Error::custom(format!("expected string or number for i64, got {other}"))),
     }
 }
 
-fn deserialize_option_string_from_string_or_number<'de, D>(
-    deserializer: D,
-) -> Result<Option<String>, D::Error>
+fn deserialize_option_string_from_string_or_number<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -106,10 +100,7 @@ impl MessageBase for PlainTextMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AtTargetMessage {
     #[serde(rename = "qq", alias = "target")]
-    #[serde(
-        default,
-        deserialize_with = "deserialize_option_string_from_string_or_number"
-    )]
+    #[serde(default, deserialize_with = "deserialize_option_string_from_string_or_number")]
     pub target: Option<String>,
 }
 
@@ -235,11 +226,7 @@ impl PersistedMedia {
     }
 }
 
-fn build_persisted_media_id(
-    source: &PersistedMediaSource,
-    original_source: &str,
-    rustfs_path: &str,
-) -> String {
+fn build_persisted_media_id(source: &PersistedMediaSource, original_source: &str, rustfs_path: &str) -> String {
     let seed = format!("{source}|{original_source}|{rustfs_path}");
     let mut hasher = DefaultHasher::new();
     seed.hash(&mut hasher);
@@ -274,8 +261,7 @@ impl ImageMessage {
     }
 
     pub fn original_source(&self) -> Option<&str> {
-        (!self.media.original_source.trim().is_empty())
-            .then_some(self.media.original_source.as_str())
+        (!self.media.original_source.trim().is_empty()).then_some(self.media.original_source.as_str())
     }
 
     pub fn name(&self) -> Option<&str> {
@@ -366,10 +352,7 @@ impl<'de> Deserialize<'de> for ImageMessage {
 /// Forward / merged-forward message.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ForwardMessage {
-    #[serde(
-        default,
-        deserialize_with = "deserialize_option_string_from_string_or_number"
-    )]
+    #[serde(default, deserialize_with = "deserialize_option_string_from_string_or_number")]
     pub id: Option<String>,
     #[serde(default)]
     pub content: Vec<ForwardNodeMessage>,
@@ -402,10 +385,7 @@ pub struct ForwardNodeMessage {
     pub user_id: Option<String>,
     #[serde(default, alias = "name")]
     pub nickname: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_option_string_from_string_or_number"
-    )]
+    #[serde(default, deserialize_with = "deserialize_option_string_from_string_or_number")]
     pub id: Option<String>,
     #[serde(default)]
     pub content: Vec<Message>,
@@ -428,11 +408,7 @@ fn append_rendered_segment(buffer: &mut String, segment: &str) {
 }
 
 fn render_forward_node_readable(node: &ForwardNodeMessage) -> String {
-    let sender = node
-        .nickname
-        .as_deref()
-        .or(node.user_id.as_deref())
-        .unwrap_or("unknown");
+    let sender = node.nickname.as_deref().or(node.user_id.as_deref()).unwrap_or("unknown");
     let rendered = render_messages_readable(&node.content);
     if rendered.trim().is_empty() {
         format!("{sender}: (empty)")
@@ -520,12 +496,8 @@ mod tests {
     fn persisted_media_source_serde_and_display() {
         let source = PersistedMediaSource::QqChat;
         assert_eq!(source.to_string(), "qq_chat");
-        assert_eq!(
-            serde_json::to_string(&source).expect("serialize source"),
-            "\"qq_chat\""
-        );
-        let parsed: PersistedMediaSource =
-            serde_json::from_str("\"web_search\"").expect("deserialize source");
+        assert_eq!(serde_json::to_string(&source).expect("serialize source"), "\"qq_chat\"");
+        let parsed: PersistedMediaSource = serde_json::from_str("\"web_search\"").expect("deserialize source");
         assert!(matches!(parsed, PersistedMediaSource::WebSearch));
     }
 
@@ -547,10 +519,7 @@ mod tests {
         let restored: ImageMessage = serde_json::from_str(&json).expect("deserialize image");
         assert_eq!(restored.media.source.to_string(), "qq_chat");
         assert_eq!(restored.media.mime_type.as_deref(), Some("image/jpeg"));
-        assert_eq!(
-            restored.media.rustfs_path,
-            "qq-images/2026/05/16/sample.jpg"
-        );
+        assert_eq!(restored.media.rustfs_path, "qq-images/2026/05/16/sample.jpg");
     }
 
     #[test]
@@ -569,10 +538,7 @@ mod tests {
             restored.media.original_source,
             "https://multimedia.nt.qq.com.cn/download?appid=1406&fileid=test"
         );
-        assert_eq!(
-            restored.media.name.as_deref(),
-            Some("580FDE1876D6C29E5F2AF42CC83D6E62.png")
-        );
+        assert_eq!(restored.media.name.as_deref(), Some("580FDE1876D6C29E5F2AF42CC83D6E62.png"));
         assert_eq!(restored.media.rustfs_path, "");
         assert_eq!(restored.media.mime_type, None);
     }
@@ -612,11 +578,7 @@ impl MessageProp {
         Self::from_messages_with_bot_name(messages, bot_id, None)
     }
 
-    pub fn from_messages_with_bot_name(
-        messages: &[Message],
-        bot_id: Option<&str>,
-        bot_name: Option<&str>,
-    ) -> Self {
+    pub fn from_messages_with_bot_name(messages: &[Message], bot_id: Option<&str>, bot_name: Option<&str>) -> Self {
         use std::collections::HashSet;
 
         let mut ref_parts: Vec<String> = Vec::new();

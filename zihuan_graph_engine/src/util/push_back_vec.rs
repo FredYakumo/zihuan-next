@@ -33,9 +33,7 @@ impl Node for PushBackVecNode {
         port! { name = "element", ty = Any, desc = "要追加到列表末尾的元素" },
     ];
 
-    node_output![
-        port! { name = "result", ty = Any, desc = "追加元素后的新列表，元素类型与输入列表一致" },
-    ];
+    node_output![port! { name = "result", ty = Any, desc = "追加元素后的新列表，元素类型与输入列表一致" },];
 
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
@@ -49,9 +47,10 @@ impl Node for PushBackVecNode {
             }
         };
 
-        let element = inputs.get("element").cloned().ok_or_else(|| {
-            zihuan_core::error::Error::ValidationError("element 输入不存在".to_string())
-        })?;
+        let element = inputs
+            .get("element")
+            .cloned()
+            .ok_or_else(|| zihuan_core::error::Error::ValidationError("element 输入不存在".to_string()))?;
 
         let element_type = element.data_type();
         if vec_type != element_type {

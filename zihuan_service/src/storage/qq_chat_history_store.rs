@@ -9,17 +9,9 @@ use zihuan_graph_engine::data_value::LLMMessageSessionCacheRef;
 
 const LOG_PREFIX: &str = "[QqChatAgent]";
 
-pub(crate) fn conversation_history_key(
-    bot_id: &str,
-    sender_id: &str,
-    is_group: bool,
-    group_id: Option<i64>,
-) -> String {
+pub(crate) fn conversation_history_key(bot_id: &str, sender_id: &str, is_group: bool, group_id: Option<i64>) -> String {
     if is_group {
-        format!(
-            "group:{bot_id}:{}:{sender_id}",
-            group_id.unwrap_or_default()
-        )
+        format!("group:{bot_id}:{}:{sender_id}", group_id.unwrap_or_default())
     } else {
         format!("private:{bot_id}:{sender_id}")
     }
@@ -38,11 +30,7 @@ pub(crate) fn load_history(
     }
 }
 
-pub(crate) fn save_history(
-    cache: &Arc<LLMMessageSessionCacheRef>,
-    history_key: &str,
-    messages: Vec<LLMMessage>,
-) {
+pub(crate) fn save_history(cache: &Arc<LLMMessageSessionCacheRef>, history_key: &str, messages: Vec<LLMMessage>) {
     if let Err(err) = block_async(cache.set_messages(history_key, messages)) {
         warn!("{LOG_PREFIX} Failed to save history for {history_key}: {err}");
     }
@@ -51,11 +39,7 @@ pub(crate) fn save_history(
 fn clear_history_key(cache: &Arc<LLMMessageSessionCacheRef>, history_key: &str) -> Result<()> {
     block_async(cache.clear_messages(history_key))
         .map(|_| ())
-        .map_err(|err| {
-            Error::StringError(format!(
-                "failed to clear QQ chat history for key '{history_key}': {err}"
-            ))
-        })
+        .map_err(|err| Error::StringError(format!("failed to clear QQ chat history for key '{history_key}': {err}")))
 }
 
 pub(crate) fn clear_history(

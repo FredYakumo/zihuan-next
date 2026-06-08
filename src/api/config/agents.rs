@@ -14,18 +14,15 @@ use serde::{Deserialize, Serialize};
 use storage_handler::{ConnectionConfig, ConnectionKind, WeaviateCollectionSchema};
 use uuid::Uuid;
 use zihuan_core::task_context::{
-    AgentTaskHandle, AgentTaskInfo, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime,
-    AgentTaskStatus,
+    AgentTaskHandle, AgentTaskInfo, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
 };
 
 use ims_bot_adapter::{
-    fetch_login_info, fetch_login_info_via_adapter_connection, parse_ims_bot_adapter_connection,
-    qq_avatar_url,
+    fetch_login_info, fetch_login_info_via_adapter_connection, parse_ims_bot_adapter_connection, qq_avatar_url,
 };
 use log::{info, warn};
 use zihuan_service::agent::qq_chat_agent_ignore_store::{
-    create_ignore_rule, delete_ignore_rule, list_ignore_rules, update_ignore_rule,
-    QqChatAgentIgnoreRuleUpsert,
+    create_ignore_rule, delete_ignore_rule, list_ignore_rules, update_ignore_rule, QqChatAgentIgnoreRuleUpsert,
 };
 
 use crate::api::state::{AppState, TaskStatus};
@@ -38,8 +35,7 @@ use zihuan_core::error::{Error as CoreError, Result as CoreResult};
 use zihuan_service::AgentRuntimeInfo;
 
 use super::{
-    now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found,
-    render_unprocessable_entity,
+    now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found, render_unprocessable_entity,
 };
 
 #[derive(Serialize)]
@@ -148,9 +144,7 @@ impl AgentTaskRuntime for DefaultAgentTaskRuntime {
 
             match task_status {
                 TaskStatus::Stopped => {
-                    let _ = broadcast_tx.send(ServerMessage::TaskStopped {
-                        task_id: task_id.clone(),
-                    });
+                    let _ = broadcast_tx.send(ServerMessage::TaskStopped { task_id: task_id.clone() });
                 }
                 TaskStatus::Success => {
                     let _ = broadcast_tx.send(ServerMessage::TaskFinished {
@@ -202,11 +196,7 @@ impl AgentTaskRuntime for DefaultAgentTaskRuntime {
         if let Some(info) = self.background_tasks.lock().unwrap().get_mut(task_id) {
             info.progress.push(message.clone());
         }
-        self.state
-            .tasks
-            .lock()
-            .unwrap()
-            .append_task_progress(task_id, message);
+        self.state.tasks.lock().unwrap().append_task_progress(task_id, message);
     }
 
     fn cancel_task(&self, task_id: &str) -> bool {
@@ -214,10 +204,7 @@ impl AgentTaskRuntime for DefaultAgentTaskRuntime {
     }
 }
 
-pub fn build_agent_task_runtime(
-    state: Arc<AppState>,
-    broadcast_tx: WsBroadcast,
-) -> Arc<dyn AgentTaskRuntime> {
+pub fn build_agent_task_runtime(state: Arc<AppState>, broadcast_tx: WsBroadcast) -> Arc<dyn AgentTaskRuntime> {
     if let Some(existing) = zihuan_service::command::global_task_runtime() {
         return existing;
     }
@@ -237,16 +224,15 @@ pub async fn start_agent_runtime(
     connections: Vec<ConnectionConfig>,
 ) -> CoreResult<()> {
     let agent_name = agent.name.clone();
-    let on_finish: Box<dyn FnOnce(bool, Option<String>) + Send + 'static> =
-        Box::new(move |success, error_message| {
-            if !success {
-                log::warn!(
-                    "[agents] agent '{}' stopped with error: {}",
-                    agent_name,
-                    error_message.unwrap_or_else(|| "stopped".to_string())
-                );
-            }
-        });
+    let on_finish: Box<dyn FnOnce(bool, Option<String>) + Send + 'static> = Box::new(move |success, error_message| {
+        if !success {
+            log::warn!(
+                "[agents] agent '{}' stopped with error: {}",
+                agent_name,
+                error_message.unwrap_or_else(|| "stopped".to_string())
+            );
+        }
+    });
 
     let task_runtime = build_agent_task_runtime(state.clone(), broadcast_tx.clone());
     state
@@ -285,9 +271,7 @@ pub struct UpdateAgentRequest {
 
 #[handler]
 pub async fn list_agents(_req: &mut Request, res: &mut Response, depot: &mut Depot) {
-    let state = depot
-        .obtain::<std::sync::Arc<crate::api::state::AppState>>()
-        .unwrap();
+    let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap();
     match system_config::load_agents() {
         Ok(agents) => {
             let connections = match system_config::load_connections() {
@@ -298,9 +282,7 @@ pub async fn list_agents(_req: &mut Request, res: &mut Response, depot: &mut Dep
             let mut items = Vec::with_capacity(agents.len());
             for agent in agents {
                 let qq_chat_profile = match &agent.agent_type {
-                    AgentType::QqChat(config) => {
-                        resolve_qq_chat_profile(&connections, config).await
-                    }
+                    AgentType::QqChat(config) => resolve_qq_chat_profile(&connections, config).await,
                     AgentType::HttpStream(_) => None,
                 };
 
@@ -390,15 +372,13 @@ fn resolve_qq_chat_agent_config<'a>(
     Ok(config)
 }
 
-async fn resolve_agent_rdb_connection(
-    agent_id: &str,
-) -> CoreResult<zihuan_core::data_refs::RelationalDbConnection> {
+async fn resolve_agent_rdb_connection(agent_id: &str) -> CoreResult<zihuan_core::data_refs::RelationalDbConnection> {
     let agents = system_config::load_agents()?;
-    let config = resolve_qq_chat_agent_config(&agents, agent_id)
-        .map_err(|err| zihuan_core::string_error!("{}", err))?;
-    let rdb_id = config.resolved_rdb_id().ok_or_else(|| {
-        zihuan_core::string_error!("QQ chat agent '{}' has no rdb_id configured", agent_id)
-    })?;
+    let config =
+        resolve_qq_chat_agent_config(&agents, agent_id).map_err(|err| zihuan_core::string_error!("{}", err))?;
+    let rdb_id = config
+        .resolved_rdb_id()
+        .ok_or_else(|| zihuan_core::string_error!("QQ chat agent '{}' has no rdb_id configured", agent_id))?;
     let connections = system_config::load_connections()?;
     storage_handler::build_relational_db_connection_for_connection(rdb_id, &connections).await
 }
@@ -586,10 +566,7 @@ pub async fn update_agent(req: &mut Request, res: &mut Response, _depot: &mut De
 
     match system_config::save_agents(agents) {
         Ok(()) => {
-            info!(
-                "[agents] updated agent '{}' (id={})",
-                response.name, response.id
-            );
+            info!("[agents] updated agent '{}' (id={})", response.name, response.id);
             res.render(Json(response));
         }
         Err(err) => render_internal_error(res, err),
@@ -624,15 +601,8 @@ pub async fn start_agent(req: &mut Request, res: &mut Response, depot: &mut Depo
     }
 
     info!("[agents] starting agent '{}' (id={})", agent.name, id,);
-    if let Err(err) =
-        start_agent_runtime(state.clone(), broadcast_tx, agent.clone(), connections).await
-    {
-        log::error!(
-            "[agents] failed to start agent '{}' (id={}): {}",
-            agent.name,
-            id,
-            err
-        );
+    if let Err(err) = start_agent_runtime(state.clone(), broadcast_tx, agent.clone(), connections).await {
+        log::error!("[agents] failed to start agent '{}' (id={}): {}", agent.name, id, err);
         return render_internal_error(res, err);
     }
     res.render(Json(serde_json::json!({
@@ -643,9 +613,7 @@ pub async fn start_agent(req: &mut Request, res: &mut Response, depot: &mut Depo
 
 #[handler]
 pub async fn stop_agent(req: &mut Request, res: &mut Response, depot: &mut Depot) {
-    let state = depot
-        .obtain::<std::sync::Arc<crate::api::state::AppState>>()
-        .unwrap();
+    let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap();
     let id = req.param::<String>("id").unwrap_or_default();
     info!("[agents] stopping agent (id={})", id);
     match state.agent_manager.stop_agent(&id).await {
@@ -700,10 +668,7 @@ fn validate_default_agent_flag(
     }
 }
 
-fn validate_agent_connection_schemas(
-    agent_type: &AgentType,
-    connections: &[ConnectionConfig],
-) -> Result<(), String> {
+fn validate_agent_connection_schemas(agent_type: &AgentType, connections: &[ConnectionConfig]) -> Result<(), String> {
     match agent_type {
         AgentType::QqChat(config) => {
             validate_rdb_connection(connections, config.resolved_rdb_id())?;
@@ -752,20 +717,12 @@ fn validate_qq_chat_agent_llms(
 
             let llm_ref = llm_refs
                 .iter()
-                .find(|item| {
-                    item.id == resolved_llm_ref_id || item.config_id == resolved_llm_ref_id
-                })
+                .find(|item| item.id == resolved_llm_ref_id || item.config_id == resolved_llm_ref_id)
                 .ok_or_else(|| {
-                    format!(
-                        "agent '{}' references missing llm_ref '{}'",
-                        agent_name, resolved_llm_ref_id
-                    )
+                    format!("agent '{}' references missing llm_ref '{}'", agent_name, resolved_llm_ref_id)
                 })?;
             if !llm_ref.enabled {
-                return Err(format!(
-                    "agent '{}' references disabled llm_ref '{}'",
-                    agent_name, llm_ref.name
-                ));
+                return Err(format!("agent '{}' references disabled llm_ref '{}'", agent_name, llm_ref.name));
             }
             match &llm_ref.model {
                 model_inference::system_config::ModelRefSpec::ChatLlm { llm } => {
@@ -789,12 +746,10 @@ fn validate_qq_chat_agent_llms(
                         ))
                     }
                 }
-                model_inference::system_config::ModelRefSpec::TextEmbeddingLocal { .. } => {
-                    Err(format!(
+                model_inference::system_config::ModelRefSpec::TextEmbeddingLocal { .. } => Err(format!(
                     "agent '{}' references non-chat model_ref '{}' as image_understand_llm_ref_id",
                     agent_name, llm_ref.name
-                ))
-                }
+                )),
             }?;
 
             validate_chat_llm_ref(
@@ -808,17 +763,11 @@ fn validate_qq_chat_agent_llms(
                 "natural_language_reply_llm_ref_id",
             )?;
 
-            validate_embedding_model_ref(
-                llm_refs,
-                config.embedding_model_ref_id.as_deref(),
-                agent_name,
-            )
+            validate_embedding_model_ref(llm_refs, config.embedding_model_ref_id.as_deref(), agent_name)
         }
-        AgentType::HttpStream(config) => validate_embedding_model_ref(
-            llm_refs,
-            config.embedding_model_ref_id.as_deref(),
-            agent_name,
-        ),
+        AgentType::HttpStream(config) => {
+            validate_embedding_model_ref(llm_refs, config.embedding_model_ref_id.as_deref(), agent_name)
+        }
     }
 }
 
@@ -828,17 +777,11 @@ fn validate_chat_llm_ref(
     agent_name: &str,
     field_name: &str,
 ) -> Result<(), String> {
-    let llm_ref_id =
-        llm_ref_id.ok_or_else(|| format!("agent '{}' is missing {}", agent_name, field_name))?;
+    let llm_ref_id = llm_ref_id.ok_or_else(|| format!("agent '{}' is missing {}", agent_name, field_name))?;
     let llm_ref = llm_refs
         .iter()
         .find(|item| item.id == llm_ref_id || item.config_id == llm_ref_id)
-        .ok_or_else(|| {
-            format!(
-                "agent '{}' references missing {} '{}'",
-                agent_name, field_name, llm_ref_id
-            )
-        })?;
+        .ok_or_else(|| format!("agent '{}' references missing {} '{}'", agent_name, field_name, llm_ref_id))?;
     if !llm_ref.enabled {
         return Err(format!(
             "agent '{}' references disabled {} '{}'",
@@ -859,10 +802,7 @@ fn validate_embedding_model_ref(
     embedding_model_ref_id: Option<&str>,
     agent_name: &str,
 ) -> Result<(), String> {
-    let Some(embedding_model_ref_id) = embedding_model_ref_id
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    else {
+    let Some(embedding_model_ref_id) = embedding_model_ref_id.map(str::trim).filter(|value| !value.is_empty()) else {
         return Ok(());
     };
 
@@ -890,10 +830,7 @@ fn validate_embedding_model_ref(
     }
 }
 
-fn validate_rdb_connection(
-    connections: &[ConnectionConfig],
-    connection_id: Option<&str>,
-) -> Result<(), String> {
+fn validate_rdb_connection(connections: &[ConnectionConfig], connection_id: Option<&str>) -> Result<(), String> {
     let Some(connection_id) = connection_id else {
         return Ok(());
     };
@@ -901,14 +838,8 @@ fn validate_rdb_connection(
         .iter()
         .find(|item| item.id == connection_id || item.config_id == connection_id)
         .ok_or_else(|| format!("rdb_id '{}' not found", connection_id))?;
-    if !matches!(
-        connection.kind,
-        ConnectionKind::Mysql(_) | ConnectionKind::Sqlite(_)
-    ) {
-        return Err(format!(
-            "rdb_id '{}' is not a MySQL or SQLite connection",
-            connection.name
-        ));
+    if !matches!(connection.kind, ConnectionKind::Mysql(_) | ConnectionKind::Sqlite(_)) {
+        return Err(format!("rdb_id '{}' is not a MySQL or SQLite connection", connection.name));
     }
     Ok(())
 }
@@ -919,10 +850,7 @@ fn validate_weaviate_connection_schema(
     expected_schema: WeaviateCollectionSchema,
     field_name: &str,
 ) -> Result<(), String> {
-    let Some(connection_id) = connection_id
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    else {
+    let Some(connection_id) = connection_id.map(str::trim).filter(|value| !value.is_empty()) else {
         return Ok(());
     };
     let connection = connections
@@ -930,10 +858,7 @@ fn validate_weaviate_connection_schema(
         .find(|item| item.id == connection_id || item.config_id == connection_id)
         .ok_or_else(|| format!("{field_name} '{}' not found", connection_id))?;
     let ConnectionKind::Weaviate(weaviate) = &connection.kind else {
-        return Err(format!(
-            "{field_name} '{}' is not a weaviate connection",
-            connection.name
-        ));
+        return Err(format!("{field_name} '{}' is not a weaviate connection", connection.name));
     };
     if weaviate.collection_schema != expected_schema {
         return Err(format!(

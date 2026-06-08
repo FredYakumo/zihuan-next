@@ -50,60 +50,33 @@ impl Node for WeaviateImageSearchNode {
         port! { name = "has_results", ty = Boolean, desc = "是否命中至少一张图片" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let weaviate_ref = match inputs.get("weaviate_ref") {
             Some(DataValue::WeaviateRef(value)) => value.clone(),
-            _ => {
-                return Err(Error::ValidationError(
-                    "Missing required input: weaviate_ref".to_string(),
-                ))
-            }
+            _ => return Err(Error::ValidationError("Missing required input: weaviate_ref".to_string())),
         };
         let embedding_model = match inputs.get("embedding_model") {
             Some(DataValue::EmbeddingModel(value)) => value.clone(),
-            _ => {
-                return Err(Error::ValidationError(
-                    "Missing required input: embedding_model".to_string(),
-                ))
-            }
+            _ => return Err(Error::ValidationError("Missing required input: embedding_model".to_string())),
         };
         let query = match inputs.get("query") {
             Some(DataValue::String(value)) if !value.trim().is_empty() => value.trim().to_string(),
-            _ => {
-                return Err(Error::ValidationError(
-                    "Missing required input: query".to_string(),
-                ))
-            }
+            _ => return Err(Error::ValidationError("Missing required input: query".to_string())),
         };
         let limit = match inputs.get("limit") {
             Some(DataValue::Integer(value)) if *value > 0 => *value as usize,
             Some(DataValue::Integer(_)) => {
-                return Err(Error::ValidationError(
-                    "limit must be greater than 0".to_string(),
-                ))
+                return Err(Error::ValidationError("limit must be greater than 0".to_string()))
             }
-            _ => {
-                return Err(Error::ValidationError(
-                    "Missing required input: limit".to_string(),
-                ))
-            }
+            _ => return Err(Error::ValidationError("Missing required input: limit".to_string())),
         };
         let max_distance = match inputs.get("max_distance") {
             Some(DataValue::Float(value)) if *value >= 0.0 => Some(*value),
             Some(DataValue::Integer(value)) if *value >= 0 => Some(*value as f64),
-            Some(DataValue::Float(_)) | Some(DataValue::Integer(_)) | None => {
-                Some(DEFAULT_MAX_DISTANCE)
-            }
-            Some(_) => {
-                return Err(Error::ValidationError(
-                    "max_distance must be a non-negative number".to_string(),
-                ))
-            }
+            Some(DataValue::Float(_)) | Some(DataValue::Integer(_)) | None => Some(DEFAULT_MAX_DISTANCE),
+            Some(_) => return Err(Error::ValidationError("max_distance must be a non-negative number".to_string())),
         };
         let target_vector = inputs
             .get("target_vector")
@@ -154,14 +127,8 @@ impl Node for WeaviateImageSearchNode {
             .collect::<Vec<_>>();
 
         let outputs = HashMap::from([
-            (
-                "images".to_string(),
-                DataValue::Json(Value::Array(images.clone())),
-            ),
-            (
-                "has_results".to_string(),
-                DataValue::Boolean(!images.is_empty()),
-            ),
+            ("images".to_string(), DataValue::Json(Value::Array(images.clone()))),
+            ("has_results".to_string(), DataValue::Boolean(!images.is_empty())),
         ]);
 
         let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
@@ -180,34 +147,24 @@ fn normalized_image_item(item: &Value, max_distance: Option<f64>) -> Option<Valu
     let mut object = Map::new();
     object.insert(
         "media_id".to_string(),
-        string_field(item, "media_id")
-            .map(Value::String)
-            .unwrap_or(Value::Null),
+        string_field(item, "media_id").map(Value::String).unwrap_or(Value::Null),
     );
     object.insert(
         "original_source".to_string(),
-        string_field(item, "original_source")
-            .map(Value::String)
-            .unwrap_or(Value::Null),
+        string_field(item, "original_source").map(Value::String).unwrap_or(Value::Null),
     );
     object.insert("rustfs_path".to_string(), Value::String(rustfs_path));
     object.insert(
         "name".to_string(),
-        string_field(item, "name")
-            .map(Value::String)
-            .unwrap_or(Value::Null),
+        string_field(item, "name").map(Value::String).unwrap_or(Value::Null),
     );
     object.insert(
         "description".to_string(),
-        string_field(item, "description")
-            .map(Value::String)
-            .unwrap_or(Value::Null),
+        string_field(item, "description").map(Value::String).unwrap_or(Value::Null),
     );
     object.insert(
         "mime_type".to_string(),
-        string_field(item, "mime_type")
-            .map(Value::String)
-            .unwrap_or(Value::Null),
+        string_field(item, "mime_type").map(Value::String).unwrap_or(Value::Null),
     );
     object.insert(
         "source".to_string(),
@@ -241,7 +198,5 @@ fn distance_field(value: &Value) -> Option<f64> {
 fn semantic_result_order(left: &Value, right: &Value) -> Ordering {
     let left_distance = distance_field(left).unwrap_or(f64::INFINITY);
     let right_distance = distance_field(right).unwrap_or(f64::INFINITY);
-    left_distance
-        .partial_cmp(&right_distance)
-        .unwrap_or(Ordering::Equal)
+    left_distance.partial_cmp(&right_distance).unwrap_or(Ordering::Equal)
 }

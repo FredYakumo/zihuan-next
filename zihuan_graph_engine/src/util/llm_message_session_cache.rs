@@ -50,9 +50,7 @@ impl Node for LLMMessageSessionCacheNode {
                 DataValue::LLMMessageSessionCacheRef(cache_ref) => Some(cache_ref.clone()),
                 _ => None,
             })
-            .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("cache_ref is required".to_string())
-            })?;
+            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("cache_ref is required".to_string()))?;
 
         let sender_id = inputs
             .get("sender_id")
@@ -60,27 +58,19 @@ impl Node for LLMMessageSessionCacheNode {
                 DataValue::String(sender_id) => Some(sender_id.clone()),
                 _ => None,
             })
-            .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("sender_id is required".to_string())
-            })?;
+            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("sender_id is required".to_string()))?;
 
         let messages: Vec<LLMMessage> = match inputs.get("messages") {
-            Some(DataValue::Vec(inner_type, items)) if **inner_type == DataType::LLMMessage => {
-                items
-                    .iter()
-                    .map(|item| match item {
-                        DataValue::LLMMessage(message) => Ok(message.clone()),
-                        _ => Err(zihuan_core::error::Error::InvalidNodeInput(
-                            "messages must contain LLMMessage items".to_string(),
-                        )),
-                    })
-                    .collect::<Result<Vec<_>>>()?
-            }
-            _ => {
-                return Err(zihuan_core::error::Error::InvalidNodeInput(
-                    "messages is required".to_string(),
-                ))
-            }
+            Some(DataValue::Vec(inner_type, items)) if **inner_type == DataType::LLMMessage => items
+                .iter()
+                .map(|item| match item {
+                    DataValue::LLMMessage(message) => Ok(message.clone()),
+                    _ => Err(zihuan_core::error::Error::InvalidNodeInput(
+                        "messages must contain LLMMessage items".to_string(),
+                    )),
+                })
+                .collect::<Result<Vec<_>>>()?,
+            _ => return Err(zihuan_core::error::Error::InvalidNodeInput("messages is required".to_string())),
         };
 
         info!(

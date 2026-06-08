@@ -51,10 +51,7 @@ impl Node for ExtractMediaByIdNode {
         port! { name = "content", ty = String, desc = "人类可读的图片摘要标签" }
     ];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let media_id = match inputs.get("media_id") {
@@ -66,9 +63,7 @@ impl Node for ExtractMediaByIdNode {
             }
         };
         if media_id.is_empty() {
-            return Err(Error::InvalidNodeInput(
-                "media_id must be a non-empty String".to_string(),
-            ));
+            return Err(Error::InvalidNodeInput("media_id must be a non-empty String".to_string()));
         }
 
         if let Some(DataValue::MySqlRef(mysql_ref)) = inputs.get("mysql_ref") {
@@ -80,34 +75,24 @@ impl Node for ExtractMediaByIdNode {
             _ => None,
         });
 
-        info!(
-            "{} looking up media by id media_id={}",
-            Self::LOG_PREFIX,
-            media_id,
-        );
+        info!("{} looking up media by id media_id={}", Self::LOG_PREFIX, media_id,);
 
-        let persisted_media = restore_media_by_id(media_id)?.ok_or_else(|| {
-            Error::ValidationError(format!("media_id {media_id} not found in database"))
-        })?;
+        let persisted_media = restore_media_by_id(media_id)?
+            .ok_or_else(|| Error::ValidationError(format!("media_id {media_id} not found in database")))?;
 
         let image_message = ImageMessage::new(persisted_media);
 
-        let resolved =
-            resolve_image_message_part(&image_message, s3_ref.as_deref(), false, Self::LOG_PREFIX)
-                .ok_or_else(|| {
-                    Error::ValidationError(format!(
-                "failed to resolve image bytes for media_id={media_id}: no safe source available"
-            ))
-                })?;
+        let resolved = resolve_image_message_part(&image_message, s3_ref.as_deref(), false, Self::LOG_PREFIX)
+            .ok_or_else(|| {
+                Error::ValidationError(format!(
+                    "failed to resolve image bytes for media_id={media_id}: no safe source available"
+                ))
+            })?;
 
         let user_message = LLMMessage::user_with_parts(vec![resolved.part]);
         let content_label = format!("[Image media_id={media_id}]");
 
-        info!(
-            "{} resolved media to user message media_id={}",
-            Self::LOG_PREFIX,
-            media_id,
-        );
+        info!("{} resolved media to user message media_id={}", Self::LOG_PREFIX, media_id,);
 
         return_with_node_output![self;
             "messages" => DataValue::Vec(

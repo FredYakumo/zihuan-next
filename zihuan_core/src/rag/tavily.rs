@@ -58,11 +58,7 @@ impl TavilySearch {
         }
     }
 
-    async fn search_async(
-        &self,
-        query: &str,
-        search_count: i64,
-    ) -> crate::error::Result<Vec<String>> {
+    async fn search_async(&self, query: &str, search_count: i64) -> crate::error::Result<Vec<String>> {
         let response = self
             .client
             .post("https://api.tavily.com/search")
@@ -89,20 +85,13 @@ impl TavilySearch {
 
         let body = response.text().await?;
         let parsed: TavilySearchResponse = serde_json::from_str(&body).map_err(|err| {
-            crate::error::Error::StringError(format!(
-                "Failed to parse Tavily search response: {err}"
-            ))
+            crate::error::Error::StringError(format!("Failed to parse Tavily search response: {err}"))
         })?;
 
         Ok(parsed
             .results
             .into_iter()
-            .map(|item| {
-                format!(
-                    "标题: {}\n链接: {}\n内容: {}",
-                    item.title, item.url, item.content
-                )
-            })
+            .map(|item| format!("标题: {}\n链接: {}\n内容: {}", item.title, item.url, item.content))
             .collect())
     }
 
@@ -132,9 +121,7 @@ impl TavilySearch {
 
         let body = response.text().await?;
         let parsed: TavilyExtractResponse = serde_json::from_str(&body).map_err(|err| {
-            crate::error::Error::StringError(format!(
-                "Failed to parse Tavily extract response: {err}"
-            ))
+            crate::error::Error::StringError(format!("Failed to parse Tavily extract response: {err}"))
         })?;
 
         if parsed.results.is_empty() {
@@ -155,10 +142,7 @@ impl TavilySearch {
         let response = self
             .client
             .get(url)
-            .header(
-                reqwest::header::USER_AGENT,
-                "Mozilla/5.0 (compatible; zihuan-next/1.0)",
-            )
+            .header(reqwest::header::USER_AGENT, "Mozilla/5.0 (compatible; zihuan-next/1.0)")
             .send()
             .await?;
 
@@ -172,17 +156,10 @@ impl TavilySearch {
         }
 
         let body = response.text().await?;
-        Ok(vec![format!(
-            "链接: {url}\n内容: {}",
-            strip_html_tags(&body)
-        )])
+        Ok(vec![format!("链接: {url}\n内容: {}", strip_html_tags(&body))])
     }
 
-    async fn search_images_async(
-        &self,
-        query: &str,
-        max_results: i64,
-    ) -> crate::error::Result<Vec<WebSearchImage>> {
+    async fn search_images_async(&self, query: &str, max_results: i64) -> crate::error::Result<Vec<WebSearchImage>> {
         let response = self
             .client
             .post("https://api.tavily.com/search")
@@ -210,9 +187,7 @@ impl TavilySearch {
 
         let body = response.text().await?;
         let parsed: TavilyImageSearchResponse = serde_json::from_str(&body).map_err(|err| {
-            crate::error::Error::StringError(format!(
-                "Failed to parse Tavily search response: {err}"
-            ))
+            crate::error::Error::StringError(format!("Failed to parse Tavily search response: {err}"))
         })?;
 
         Ok(parsed.images)
@@ -232,11 +207,7 @@ impl WebSearchEngine for TavilySearch {
         block_async(self.fetch_url_direct_async(url))
     }
 
-    fn search_images(
-        &self,
-        query: &str,
-        max_results: i64,
-    ) -> crate::error::Result<Vec<WebSearchImage>> {
+    fn search_images(&self, query: &str, max_results: i64) -> crate::error::Result<Vec<WebSearchImage>> {
         block_async(self.search_images_async(query, max_results))
     }
 }

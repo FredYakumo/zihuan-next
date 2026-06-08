@@ -38,10 +38,7 @@ impl Node for MessageEventTypeFilterNode {
         port! { name = "false_event", ty = crate::models::event_model::MessageEvent, desc = "消息类型不匹配时的输出" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let event = match inputs.get("message_event") {
             Some(DataValue::MessageEvent(e)) => e.clone(),
             _ => return Err("message_event input is required".into()),

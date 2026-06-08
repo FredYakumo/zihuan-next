@@ -153,21 +153,14 @@ pub fn tool_subgraph_owner_uses_brain_outputs(node_type: &str) -> bool {
 }
 
 pub fn tool_subgraph_owner_types() -> [&'static str; 3] {
-    [
-        "brain",
-        QQ_AGENT_TOOL_OWNER_TYPE,
-        QQ_AGENT_TOOL_OWNER_TYPE_LEGACY,
-    ]
+    ["brain", QQ_AGENT_TOOL_OWNER_TYPE, QQ_AGENT_TOOL_OWNER_TYPE_LEGACY]
 }
 
 pub fn is_tool_subgraph_owner(node_type: &str) -> bool {
     tool_subgraph_owner_types().contains(&node_type)
 }
 
-pub fn normalized_tool_outputs_for_owner(
-    node_type: &str,
-    tool: &BrainToolDefinition,
-) -> Vec<FunctionPortDef> {
+pub fn normalized_tool_outputs_for_owner(node_type: &str, tool: &BrainToolDefinition) -> Vec<FunctionPortDef> {
     if tool_subgraph_owner_uses_brain_outputs(node_type) {
         tool.outputs.clone()
     } else {

@@ -2,9 +2,7 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use crate::function_graph::{
-    FunctionPortDef, FUNCTION_RUNTIME_VALUES_PORT, FUNCTION_SIGNATURE_PORT,
-};
+use crate::function_graph::{FunctionPortDef, FUNCTION_RUNTIME_VALUES_PORT, FUNCTION_SIGNATURE_PORT};
 use crate::graph_boundary::graph_inputs_ports;
 use crate::util::function::data_value_from_json_with_declared_type;
 use crate::{DataValue, Node, Port};
@@ -28,12 +26,8 @@ impl GraphInputsNode {
     }
 
     fn apply_signature_json(&mut self, value: &Value) -> Result<()> {
-        self.signature =
-            serde_json::from_value::<Vec<FunctionPortDef>>(value.clone()).map_err(|_| {
-                Error::ValidationError(
-                    "graph_inputs.signature 不是有效的节点图签名 JSON".to_string(),
-                )
-            })?;
+        self.signature = serde_json::from_value::<Vec<FunctionPortDef>>(value.clone())
+            .map_err(|_| Error::ValidationError("graph_inputs.signature 不是有效的节点图签名 JSON".to_string()))?;
         Ok(())
     }
 }
@@ -107,9 +101,7 @@ impl Node for GraphInputsNode {
 
             let runtime_values = match inputs.get(FUNCTION_RUNTIME_VALUES_PORT) {
                 Some(DataValue::Json(Value::Object(map))) => map,
-                Some(DataValue::Json(Value::Null)) | None => {
-                    return Ok(crate::NodeOutputFlow::new())
-                }
+                Some(DataValue::Json(Value::Null)) | None => return Ok(crate::NodeOutputFlow::new()),
                 Some(DataValue::Json(other)) => {
                     return Err(Error::ValidationError(format!(
                         "graph_inputs.runtime_values 需要 JSON 对象，实际为 {}",
@@ -134,10 +126,7 @@ impl Node for GraphInputsNode {
                     )))
                 }
             };
-            outputs.insert(
-                port.name.clone(),
-                data_value_from_json_with_declared_type(port, value)?,
-            );
+            outputs.insert(port.name.clone(), data_value_from_json_with_declared_type(port, value)?);
         }
 
         self.validate_outputs(&outputs)?;
@@ -192,9 +181,7 @@ mod tests {
         )])))
         .expect("runtime values should apply");
 
-        let outputs = node
-            .execute(crate::NodeInputFlow::new())
-            .expect("execute should succeed");
+        let outputs = node.execute(crate::NodeInputFlow::new()).expect("execute should succeed");
 
         match outputs.get("required_text") {
             Some(DataValue::String(value)) => assert_eq!(value, "hello"),
@@ -209,9 +196,7 @@ mod tests {
         node.set_function_runtime_values(crate::RuntimeValueFlow::new())
             .expect("runtime values should apply");
 
-        let error = node
-            .execute(crate::NodeInputFlow::new())
-            .expect_err("execute should fail");
+        let error = node.execute(crate::NodeInputFlow::new()).expect_err("execute should fail");
         assert!(error.to_string().contains("required_text"));
     }
 

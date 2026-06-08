@@ -137,10 +137,7 @@ impl WeaviateRef {
         if let Some(api_key) = &self.api_key {
             builder.bearer_auth(api_key)
         } else if self.username.is_some() || self.password.is_some() {
-            builder.basic_auth(
-                self.username.clone().unwrap_or_default(),
-                self.password.clone(),
-            )
+            builder.basic_auth(self.username.clone().unwrap_or_default(), self.password.clone())
         } else {
             builder
         }
@@ -186,11 +183,7 @@ impl WeaviateRef {
     }
 
     pub async fn post_json_async(&self, path: &str, body: Value) -> Result<Value> {
-        Self::send_json_async(
-            self.authorized(self.client.post(self.url(path)))
-                .json(&body),
-        )
-        .await
+        Self::send_json_async(self.authorized(self.client.post(self.url(path))).json(&body)).await
     }
 
     pub async fn put_json_async(&self, path: &str, body: Value) -> Result<Value> {
@@ -198,10 +191,7 @@ impl WeaviateRef {
     }
 
     pub async fn delete_empty_async(&self, path: &str) -> Result<()> {
-        let response = self
-            .authorized(self.client.delete(self.url(path)))
-            .send()
-            .await?;
+        let response = self.authorized(self.client.delete(self.url(path))).send().await?;
         if response.status().is_success() {
             return Ok(());
         }
@@ -217,11 +207,7 @@ impl WeaviateRef {
         crate::runtime::block_async(self.get_object_vector_async(class_name, id))
     }
 
-    pub async fn get_object_vector_async(
-        &self,
-        class_name: &str,
-        id: &str,
-    ) -> Result<Option<Vec<f32>>> {
+    pub async fn get_object_vector_async(&self, class_name: &str, id: &str) -> Result<Option<Vec<f32>>> {
         let query = format!(
             r#"{{ Get {{ {class_name}(where: {{path: ["_id"], operator: Equal, valueText: "{id}"}}) {{ _additional {{ vector }} }} }} }}"#
         );
@@ -252,11 +238,8 @@ impl WeaviateRef {
         if body.trim().is_empty() {
             return Ok(Value::Null);
         }
-        serde_json::from_str(&body).map_err(|err| {
-            Error::StringError(format!(
-                "Failed to parse Weaviate response as JSON: {err}; body={body}"
-            ))
-        })
+        serde_json::from_str(&body)
+            .map_err(|err| Error::StringError(format!("Failed to parse Weaviate response as JSON: {err}; body={body}")))
     }
 }
 
@@ -276,13 +259,10 @@ impl fmt::Debug for WeaviateRef {
 fn normalize_base_url(raw: String) -> Result<String> {
     let trimmed = raw.trim().trim_end_matches('/').to_string();
     if trimmed.is_empty() {
-        return Err(Error::ValidationError(
-            "Weaviate base_url must not be empty".to_string(),
-        ));
+        return Err(Error::ValidationError("Weaviate base_url must not be empty".to_string()));
     }
-    let parsed = reqwest::Url::parse(&trimmed).map_err(|err| {
-        Error::ValidationError(format!("Invalid Weaviate base_url '{trimmed}': {err}"))
-    })?;
+    let parsed = reqwest::Url::parse(&trimmed)
+        .map_err(|err| Error::ValidationError(format!("Invalid Weaviate base_url '{trimmed}': {err}")))?;
     let scheme = parsed.scheme();
     if scheme != "http" && scheme != "https" {
         return Err(Error::ValidationError(format!(
@@ -295,17 +275,13 @@ fn normalize_base_url(raw: String) -> Result<String> {
 fn normalize_class_name(raw: String) -> Result<String> {
     let trimmed = raw.trim().to_string();
     if trimmed.is_empty() {
-        return Err(Error::ValidationError(
-            "Weaviate class_name must not be empty".to_string(),
-        ));
+        return Err(Error::ValidationError("Weaviate class_name must not be empty".to_string()));
     }
     Ok(trimmed)
 }
 
 fn normalize_owned_optional_string(value: Option<String>) -> Option<String> {
-    value
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+    value.map(|value| value.trim().to_string()).filter(|value| !value.is_empty())
 }
 
 pub fn gql_escape(value: &str) -> String {
@@ -322,11 +298,7 @@ pub fn graphql_value(value: &Value) -> String {
         Value::Bool(b) => b.to_string(),
         Value::Number(n) => n.to_string(),
         Value::Array(items) => {
-            let rendered = items
-                .iter()
-                .map(graphql_value)
-                .collect::<Vec<_>>()
-                .join(", ");
+            let rendered = items.iter().map(graphql_value).collect::<Vec<_>>().join(", ");
             format!("[{}]", rendered)
         }
         Value::Object(map) => {

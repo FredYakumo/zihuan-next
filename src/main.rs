@@ -20,11 +20,7 @@ lazy_static! {
 }
 
 #[derive(Parser, Debug)]
-#[command(
-    author,
-    version,
-    about = "Zihuan Next — node-graph workflow engine (web UI)"
-)]
+#[command(author, version, about = "Zihuan Next — node-graph workflow engine (web UI)")]
 struct Args {
     #[arg(long, default_value = "127.0.0.1", env = "ZIHUAN_HOST")]
     host: String,
@@ -46,18 +42,14 @@ async fn main() {
     // Initialize global command registry and sync persisted permissions
     {
         let registry = zihuan_service::command::init_global_command_registry();
-        info!(
-            "Command registry initialized with {} commands",
-            registry.list_commands().len()
-        );
+        info!("Command registry initialized with {} commands", registry.list_commands().len());
 
         // Load persisted permissions from config.yaml and apply to registry
         let repo = zihuan_core::config::FsConfigRepository::default();
         if let Ok(root) = repo.load_root() {
             for record in &root.configs.command_permissions {
-                if let Ok(cmd) = serde_json::from_value::<zihuan_core::command::CommandPermission>(
-                    record.spec.clone(),
-                ) {
+                if let Ok(cmd) = serde_json::from_value::<zihuan_core::command::CommandPermission>(record.spec.clone())
+                {
                     registry.set_permissions(&cmd.command_name, cmd.rules);
                 }
             }
@@ -96,10 +88,7 @@ async fn main() {
             )
             .await
             {
-                error!(
-                    "Failed to auto start agent '{}' (id={}): {}",
-                    agent.name, agent.id, err
-                );
+                error!("Failed to auto start agent '{}' (id={}): {}", agent.name, agent.id, err);
             }
         }
     }
@@ -129,28 +118,16 @@ async fn main() {
 }
 
 async fn startup_recover_orphan_tasks(state: &api::state::AppState) {
-    let pools: Vec<(String, zihuan_core::data_refs::RelationalDbConnection)> = state
-        .tasks
-        .lock()
-        .unwrap()
-        .all_db_pools()
-        .into_iter()
-        .collect();
+    let pools: Vec<(String, zihuan_core::data_refs::RelationalDbConnection)> =
+        state.tasks.lock().unwrap().all_db_pools().into_iter().collect();
 
     for (conn_id, pool) in pools {
         match api::task_store::mark_orphan_running_stopped(&pool).await {
             Ok(count) if count > 0 => {
-                info!(
-                    "Recovered {} orphan running tasks for connection '{}'",
-                    count, conn_id
-                );
+                info!("Recovered {} orphan running tasks for connection '{}'", count, conn_id);
             }
             Err(err) => {
-                log::warn!(
-                    "Failed to recover orphan tasks for connection '{}': {}",
-                    conn_id,
-                    err
-                );
+                log::warn!("Failed to recover orphan tasks for connection '{}': {}", conn_id, err);
             }
             _ => {}
         }
@@ -161,10 +138,7 @@ async fn ensure_database_tables_for_existing_connections() {
     let connections = match crate::system_config::load_connections() {
         Ok(conns) => conns,
         Err(e) => {
-            log::warn!(
-                "[startup] failed to load connections for table check: {}",
-                e
-            );
+            log::warn!("[startup] failed to load connections for table check: {}", e);
             return;
         }
     };
@@ -193,10 +167,7 @@ async fn register_existing_relational_db_pools(state: &api::state::AppState) {
     let connections = match crate::system_config::load_connections() {
         Ok(conns) => conns,
         Err(err) => {
-            log::warn!(
-                "[startup] failed to load connections for DB pool setup: {}",
-                err
-            );
+            log::warn!("[startup] failed to load connections for DB pool setup: {}", err);
             return;
         }
     };
@@ -209,18 +180,9 @@ async fn register_existing_relational_db_pools(state: &api::state::AppState) {
             continue;
         }
 
-        match storage_handler::build_relational_db_connection_for_kind(
-            &connection.id,
-            &connection.kind,
-        )
-        .await
-        {
+        match storage_handler::build_relational_db_connection_for_kind(&connection.id, &connection.kind).await {
             Ok(pool) => {
-                state
-                    .tasks
-                    .lock()
-                    .unwrap()
-                    .register_db_pool(connection.id.clone(), pool);
+                state.tasks.lock().unwrap().register_db_pool(connection.id.clone(), pool);
             }
             Err(err) => {
                 log::warn!(
@@ -235,23 +197,16 @@ async fn register_existing_relational_db_pools(state: &api::state::AppState) {
 }
 
 fn spawn_task_ttl_cleanup(state: std::sync::Arc<api::state::AppState>) {
-    let ttl_hours = zihuan_core::system_config::load_section::<
-        zihuan_core::system_config::GlobalSettingsSection,
-    >()
-    .unwrap_or_default()
-    .task_ttl_hours;
+    let ttl_hours = zihuan_core::system_config::load_section::<zihuan_core::system_config::GlobalSettingsSection>()
+        .unwrap_or_default()
+        .task_ttl_hours;
 
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
         loop {
             interval.tick().await;
-            let pools: Vec<zihuan_core::data_refs::RelationalDbConnection> = state
-                .tasks
-                .lock()
-                .unwrap()
-                .all_db_pools()
-                .into_values()
-                .collect();
+            let pools: Vec<zihuan_core::data_refs::RelationalDbConnection> =
+                state.tasks.lock().unwrap().all_db_pools().into_values().collect();
             for pool in pools {
                 if let Err(err) = api::task_store::cleanup_expired_tasks(&pool, ttl_hours).await {
                     log::warn!("Task TTL cleanup failed: {}", err);

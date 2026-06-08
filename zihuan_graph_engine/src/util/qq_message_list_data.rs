@@ -33,9 +33,7 @@ impl Node for QQMessageListDataNode {
         port! { name = "messages", ty = Vec(QQMessage), desc = "Vec<QQMessage> provided by UI inline editor", optional },
     ];
 
-    node_output![
-        port! { name = "messages", ty = Vec(QQMessage), desc = "Output Vec<QQMessage> from UI data source" },
-    ];
+    node_output![port! { name = "messages", ty = Vec(QQMessage), desc = "Output Vec<QQMessage> from UI data source" },];
 
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;

@@ -5,9 +5,7 @@ use uuid::Uuid;
 use zihuan_core::command::{CommandPermission, PermissionRule};
 use zihuan_core::config::{ConfigKind, ConfigRepository, FsConfigRepository, StoredConfigRecord};
 
-use super::{
-    now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found,
-};
+use super::{now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found};
 
 // DTOs — Data Transfer Objects for the command-permission REST API.
 //
@@ -39,12 +37,11 @@ pub struct CommandPermissionDto {
 
 impl From<&StoredConfigRecord> for CommandPermissionDto {
     fn from(record: &StoredConfigRecord) -> Self {
-        let cmd: CommandPermission =
-            serde_json::from_value(record.spec.clone()).unwrap_or(CommandPermission {
-                command_name: String::new(),
-                rules: vec![PermissionRule::Everyone],
-                enabled: true,
-            });
+        let cmd: CommandPermission = serde_json::from_value(record.spec.clone()).unwrap_or(CommandPermission {
+            command_name: String::new(),
+            rules: vec![PermissionRule::Everyone],
+            enabled: true,
+        });
         Self {
             config_id: record.config_id.clone(),
             command_name: cmd.command_name,
@@ -168,11 +165,7 @@ pub async fn update_command_permission(req: &mut Request, res: &mut Response) {
         Err(err) => return render_internal_error(res, err),
     };
 
-    let idx = root
-        .configs
-        .command_permissions
-        .iter()
-        .position(|r| r.config_id == id);
+    let idx = root.configs.command_permissions.iter().position(|r| r.config_id == id);
 
     let Some(idx) = idx else {
         return render_not_found(res, "command permission not found");
@@ -219,11 +212,7 @@ pub async fn delete_command_permission(req: &mut Request, res: &mut Response) {
         Err(err) => return render_internal_error(res, err),
     };
 
-    let idx = root
-        .configs
-        .command_permissions
-        .iter()
-        .position(|r| r.config_id == id);
+    let idx = root.configs.command_permissions.iter().position(|r| r.config_id == id);
 
     match idx {
         Some(pos) => {

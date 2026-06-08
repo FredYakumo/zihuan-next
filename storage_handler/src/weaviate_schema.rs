@@ -3,30 +3,21 @@ use std::collections::HashMap;
 
 use zihuan_core::error::{Error, Result};
 use zihuan_core::weaviate::{
-    WeaviateCollectionConfig, WeaviateCollectionSchema, WeaviateEnsureCollectionResult,
-    WeaviateNamedVectorizerConfig, WeaviatePropertyConfig, WeaviateRef, WeaviateVectorConfigEntry,
+    WeaviateCollectionConfig, WeaviateCollectionSchema, WeaviateEnsureCollectionResult, WeaviateNamedVectorizerConfig,
+    WeaviatePropertyConfig, WeaviateRef, WeaviateVectorConfigEntry,
 };
 
 use crate::WeaviateClient;
 
-pub fn collection_config_for_schema(
-    schema: WeaviateCollectionSchema,
-    class_name: String,
-) -> WeaviateCollectionConfig {
+pub fn collection_config_for_schema(schema: WeaviateCollectionSchema, class_name: String) -> WeaviateCollectionConfig {
     match schema {
         WeaviateCollectionSchema::ImageSemantic => image_vector_collection_config(class_name),
         WeaviateCollectionSchema::AgentMemory => agent_memory_collection_config(class_name),
     }
 }
 
-pub fn validate_collection_schema(
-    existing: &Value,
-    expected: &WeaviateCollectionConfig,
-) -> Result<()> {
-    let existing_name = existing
-        .get("class")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
+pub fn validate_collection_schema(existing: &Value, expected: &WeaviateCollectionConfig) -> Result<()> {
+    let existing_name = existing.get("class").and_then(Value::as_str).unwrap_or_default();
     if existing_name != expected.class_name {
         return Err(Error::ValidationError(format!(
             "Weaviate collection name mismatch: expected '{}', got '{}'",
@@ -34,10 +25,7 @@ pub fn validate_collection_schema(
         )));
     }
     if let Some(expected_vectorizer) = expected.vectorizer.as_deref() {
-        let existing_vectorizer = existing
-            .get("vectorizer")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
+        let existing_vectorizer = existing.get("vectorizer").and_then(Value::as_str).unwrap_or_default();
         if existing_vectorizer != expected_vectorizer {
             return Err(Error::ValidationError(format!(
                 "Weaviate collection '{}' vectorizer mismatch: expected '{}', got '{}'",
@@ -68,10 +56,7 @@ pub fn validate_collection_schema(
                     expected.class_name, vector_name, expected_entry.vector_index_type, existing_index_type
                 )));
             }
-            let existing_vectorizer = existing_entry
-                .get("vectorizer")
-                .cloned()
-                .unwrap_or(Value::Null);
+            let existing_vectorizer = existing_entry.get("vectorizer").cloned().unwrap_or(Value::Null);
             if !named_vectorizer_matches(&existing_vectorizer, &expected_entry.vectorizer) {
                 return Err(Error::ValidationError(format!(
                     "Weaviate collection '{}' vector '{}' vectorizer mismatch: expected {}, got {}",
@@ -115,10 +100,7 @@ pub fn validate_collection_schema(
         if existing_data_type != expected_property.data_type {
             return Err(Error::ValidationError(format!(
                 "Weaviate collection '{}' property '{}' dataType mismatch: expected {:?}, got {:?}",
-                expected.class_name,
-                expected_property.name,
-                expected_property.data_type,
-                existing_data_type
+                expected.class_name, expected_property.name, expected_property.data_type, existing_data_type
             )));
         }
     }

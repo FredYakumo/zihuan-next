@@ -32,9 +32,7 @@ impl Node for CurrentTimeNode {
 
     node_input![];
 
-    node_output![
-        port! { name = "time", ty = String, desc = "当前本地时间字符串，格式为 YYYY-MM-DD HH:MM:SS" },
-    ];
+    node_output![port! { name = "time", ty = String, desc = "当前本地时间字符串，格式为 YYYY-MM-DD HH:MM:SS" },];
 
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;

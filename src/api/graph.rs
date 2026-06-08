@@ -9,8 +9,8 @@ use zihuan_graph_engine::graph_boundary::{
     sync_root_graph_io, sync_root_graph_io_signature, GRAPH_INPUTS_NODE_ID, GRAPH_OUTPUTS_NODE_ID,
 };
 use zihuan_graph_engine::graph_io::{
-    refresh_node_dynamic_ports, GraphMetadata, GraphPosition, GraphSize, NodeDefinition,
-    NodeGraphDefinition, PortBinding,
+    refresh_node_dynamic_ports, GraphMetadata, GraphPosition, GraphSize, NodeDefinition, NodeGraphDefinition,
+    PortBinding,
 };
 
 use super::state::{AppState, GraphSession, GraphTabInfo};
@@ -45,11 +45,7 @@ pub async fn create_graph(_req: &mut Request, res: &mut Response, depot: &mut De
         node_count: 0,
         edge_count: 0,
     };
-    state
-        .sessions
-        .write()
-        .unwrap()
-        .insert(session.id.clone(), session);
+    state.sessions.write().unwrap().insert(session.id.clone(), session);
     res.render(Json(tab));
 }
 
@@ -151,9 +147,7 @@ pub async fn add_node(req: &mut Request, res: &mut Response, depot: &mut Depot) 
         .unwrap_or((false, false));
 
     let node_id = Uuid::new_v4().to_string();
-    let display_name = body
-        .name
-        .unwrap_or_else(|| body.node_type.replace('_', " "));
+    let display_name = body.name.unwrap_or_else(|| body.node_type.replace('_', " "));
 
     let node_def = NodeDefinition {
         id: node_id.clone(),
@@ -164,14 +158,8 @@ pub async fn add_node(req: &mut Request, res: &mut Response, depot: &mut Depot) 
         output_ports,
         dynamic_input_ports: dyn_in,
         dynamic_output_ports: dyn_out,
-        position: Some(GraphPosition {
-            x: body.x,
-            y: body.y,
-        }),
-        size: Some(GraphSize {
-            width: 200.0,
-            height: 120.0,
-        }),
+        position: Some(GraphPosition { x: body.x, y: body.y }),
+        size: Some(GraphSize { width: 200.0, height: 120.0 }),
         inline_values: Default::default(),
         port_bindings: Default::default(),
         has_error: false,
@@ -259,20 +247,14 @@ pub async fn update_node(req: &mut Request, res: &mut Response, depot: &mut Depo
         if let Some(sz) = &mut node.size {
             sz.width = w;
         } else {
-            node.size = Some(GraphSize {
-                width: w,
-                height: 100.0,
-            });
+            node.size = Some(GraphSize { width: w, height: 100.0 });
         }
     }
     if let Some(h) = body.height {
         if let Some(sz) = &mut node.size {
             sz.height = h;
         } else {
-            node.size = Some(GraphSize {
-                width: 200.0,
-                height: h,
-            });
+            node.size = Some(GraphSize { width: 200.0, height: h });
         }
     }
     if let Some(d) = body.disabled {
@@ -298,10 +280,11 @@ pub async fn update_node(req: &mut Request, res: &mut Response, depot: &mut Depo
 
                     match (existing_cfg, incoming_cfg) {
                         (Some(existing_cfg), Some(mut incoming_cfg)) => {
-                            let existing_has_content =
-                                existing_cfg.subgraph.nodes.iter().any(|n| {
-                                    n.id != "__function_inputs__" && n.id != "__function_outputs__"
-                                });
+                            let existing_has_content = existing_cfg
+                                .subgraph
+                                .nodes
+                                .iter()
+                                .any(|n| n.id != "__function_inputs__" && n.id != "__function_outputs__");
                             let incoming_is_empty = incoming_cfg.subgraph.nodes.is_empty();
 
                             if existing_has_content && incoming_is_empty {
@@ -325,9 +308,7 @@ pub async fn update_node(req: &mut Request, res: &mut Response, depot: &mut Depo
         refresh_node_dynamic_ports(node);
     }
     if let Some(pb) = body.port_bindings {
-        if let Ok(bindings) =
-            serde_json::from_value::<std::collections::HashMap<String, PortBinding>>(pb)
-        {
+        if let Ok(bindings) = serde_json::from_value::<std::collections::HashMap<String, PortBinding>>(pb) {
             for (k, v) in bindings {
                 node.port_bindings.insert(k.clone(), v);
                 node.inline_values.remove(&k);
@@ -356,16 +337,12 @@ pub async fn delete_node(req: &mut Request, res: &mut Response, depot: &mut Depo
     };
 
     let before = session.graph.nodes.len();
-    if matches!(
-        node_id.as_str(),
-        "__function_inputs__" | "__function_outputs__"
-    ) || node_id == GRAPH_INPUTS_NODE_ID
+    if matches!(node_id.as_str(), "__function_inputs__" | "__function_outputs__")
+        || node_id == GRAPH_INPUTS_NODE_ID
         || node_id == GRAPH_OUTPUTS_NODE_ID
     {
         res.status_code(StatusCode::BAD_REQUEST);
-        res.render(Json(
-            serde_json::json!({"error": "Boundary node cannot be deleted"}),
-        ));
+        res.render(Json(serde_json::json!({"error": "Boundary node cannot be deleted"})));
         return;
     }
 
@@ -422,15 +399,12 @@ pub async fn add_edge(req: &mut Request, res: &mut Response, depot: &mut Depot) 
         .edges
         .retain(|e| !(e.to_node_id == body.target_node && e.to_port == body.target_port));
 
-    session
-        .graph
-        .edges
-        .push(zihuan_graph_engine::graph_io::EdgeDefinition {
-            from_node_id: body.source_node,
-            from_port: body.source_port,
-            to_node_id: body.target_node,
-            to_port: body.target_port,
-        });
+    session.graph.edges.push(zihuan_graph_engine::graph_io::EdgeDefinition {
+        from_node_id: body.source_node,
+        from_port: body.source_port,
+        to_node_id: body.target_node,
+        to_port: body.target_port,
+    });
     session.dirty = true;
     res.render(Json(serde_json::json!({"ok": true})));
 }

@@ -5,9 +5,7 @@
 
 use crate::adapter::SharedBotAdapter;
 use crate::models::event_model::{MessageEvent, MessageType, Sender};
-use crate::models::message::{
-    render_messages_readable, AtTargetMessage, Message, PlainTextMessage,
-};
+use crate::models::message::{render_messages_readable, AtTargetMessage, Message, PlainTextMessage};
 use crate::send_qq_message_batches::send_qq_message_batches;
 use crate::ws_action::{response_message_id, response_success, ws_send_action};
 use log::{info, warn};
@@ -62,9 +60,7 @@ fn build_outbound_event(
     let sender_user_id = match bot_id.parse::<i64>() {
         Ok(value) => value,
         Err(error) => {
-            warn!(
-                "{LOG_PREFIX} Failed to parse bot_id '{bot_id}' into i64 for persistence: {error}"
-            );
+            warn!("{LOG_PREFIX} Failed to parse bot_id '{bot_id}' into i64 for persistence: {error}");
             return None;
         }
     };
@@ -156,16 +152,10 @@ fn plain_text_batches(content: &str) -> Vec<Vec<Message>> {
         .collect()
 }
 
-fn progress_notification_batches(
-    content: &str,
-    is_group: bool,
-    mention_target_id: Option<&str>,
-) -> Vec<Vec<Message>> {
+fn progress_notification_batches(content: &str, is_group: bool, mention_target_id: Option<&str>) -> Vec<Vec<Message>> {
     let mut batches = plain_text_batches(content);
     if is_group {
-        if let (Some(mention_target_id), Some(first_batch)) =
-            (mention_target_id, batches.first_mut())
-        {
+        if let (Some(mention_target_id), Some(first_batch)) = (mention_target_id, batches.first_mut()) {
             first_batch.insert(
                 0,
                 Message::At(AtTargetMessage {
@@ -218,9 +208,7 @@ pub fn send_friend_text_with_persistence(
     match ws_send_action(adapter, "send_private_msg", params) {
         Ok(response) => {
             if response_success(&response) {
-                let messages = vec![Message::PlainText(PlainTextMessage {
-                    text: text.to_string(),
-                })];
+                let messages = vec![Message::PlainText(PlainTextMessage { text: text.to_string() })];
                 persist_outbound_messages(
                     adapter,
                     MessageType::Private,
@@ -261,9 +249,7 @@ pub fn send_group_text_with_persistence(
     match ws_send_action(adapter, "send_group_msg", params) {
         Ok(response) => {
             if response_success(&response) {
-                let messages = vec![Message::PlainText(PlainTextMessage {
-                    text: text.to_string(),
-                })];
+                let messages = vec![Message::PlainText(PlainTextMessage { text: text.to_string() })];
                 persist_outbound_messages(
                     adapter,
                     MessageType::Group,
@@ -301,14 +287,7 @@ pub fn send_friend_batches_with_persistence(
     let results = send_qq_message_batches(adapter, "friend", target_id, batches);
     for (batch, result) in batches.iter().zip(results.iter()) {
         if result.success && !result.skipped {
-            persist_outbound_messages(
-                adapter,
-                MessageType::Private,
-                target_id,
-                result.message_id,
-                batch,
-                persistence,
-            );
+            persist_outbound_messages(adapter, MessageType::Private, target_id, result.message_id, batch, persistence);
         }
     }
     let all_ok = results.iter().filter(|r| !r.skipped).all(|r| r.success);
@@ -339,14 +318,7 @@ pub fn send_group_batches_with_persistence(
     let results = send_qq_message_batches(adapter, "group", target_id, batches);
     for (batch, result) in batches.iter().zip(results.iter()) {
         if result.success && !result.skipped {
-            persist_outbound_messages(
-                adapter,
-                MessageType::Group,
-                target_id,
-                result.message_id,
-                batch,
-                persistence,
-            );
+            persist_outbound_messages(adapter, MessageType::Group, target_id, result.message_id, batch, persistence);
         }
     }
     let all_ok = results.iter().filter(|r| !r.skipped).all(|r| r.success);
@@ -370,11 +342,7 @@ pub fn send_group_progress_notification(
     }
     let batches = progress_notification_batches(content, true, Some(mention_target_id));
     let results = send_qq_message_batches(adapter, "group", group_id, &batches);
-    if results
-        .iter()
-        .filter(|result| !result.skipped)
-        .any(|result| !result.success)
-    {
+    if results.iter().filter(|result| !result.skipped).any(|result| !result.success) {
         warn!("{LOG_PREFIX} Failed to send group progress notification");
     }
 }
@@ -393,21 +361,10 @@ pub fn send_group_progress_notification_with_persistence(
     let results = send_qq_message_batches(adapter, "group", group_id, &batches);
     for (batch, result) in batches.iter().zip(results.iter()) {
         if result.success && !result.skipped {
-            persist_outbound_messages(
-                adapter,
-                MessageType::Group,
-                group_id,
-                result.message_id,
-                batch,
-                persistence,
-            );
+            persist_outbound_messages(adapter, MessageType::Group, group_id, result.message_id, batch, persistence);
         }
     }
-    if results
-        .iter()
-        .filter(|result| !result.skipped)
-        .any(|result| !result.success)
-    {
+    if results.iter().filter(|result| !result.skipped).any(|result| !result.success) {
         warn!("{LOG_PREFIX} Failed to send group progress notification");
     }
 }
@@ -415,21 +372,13 @@ pub fn send_group_progress_notification_with_persistence(
 /// Send a plain-text progress notification to a friend.
 ///
 /// No-op when `content` is blank.
-pub fn send_friend_progress_notification(
-    adapter: &SharedBotAdapter,
-    target_id: &str,
-    content: &str,
-) {
+pub fn send_friend_progress_notification(adapter: &SharedBotAdapter, target_id: &str, content: &str) {
     if content.trim().is_empty() {
         return;
     }
     let batches = plain_text_batches(content);
     let results = send_qq_message_batches(adapter, "friend", target_id, &batches);
-    if results
-        .iter()
-        .filter(|result| !result.skipped)
-        .any(|result| !result.success)
-    {
+    if results.iter().filter(|result| !result.skipped).any(|result| !result.success) {
         warn!("{LOG_PREFIX} Failed to send friend progress notification");
     }
 }
@@ -447,21 +396,10 @@ pub fn send_friend_progress_notification_with_persistence(
     let results = send_qq_message_batches(adapter, "friend", target_id, &batches);
     for (batch, result) in batches.iter().zip(results.iter()) {
         if result.success && !result.skipped {
-            persist_outbound_messages(
-                adapter,
-                MessageType::Private,
-                target_id,
-                result.message_id,
-                batch,
-                persistence,
-            );
+            persist_outbound_messages(adapter, MessageType::Private, target_id, result.message_id, batch, persistence);
         }
     }
-    if results
-        .iter()
-        .filter(|result| !result.skipped)
-        .any(|result| !result.success)
-    {
+    if results.iter().filter(|result| !result.skipped).any(|result| !result.success) {
         warn!("{LOG_PREFIX} Failed to send friend progress notification");
     }
 }

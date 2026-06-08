@@ -55,10 +55,7 @@ impl Node for SetVariableNode {
         ];
 
         if let Some(data_type) = &self.variable_type {
-            ports.push(
-                Port::new(SET_VARIABLE_VALUE_PORT, data_type.clone())
-                    .with_description("写入变量的新值"),
-            );
+            ports.push(Port::new(SET_VARIABLE_VALUE_PORT, data_type.clone()).with_description("写入变量的新值"));
         }
 
         ports
@@ -69,30 +66,22 @@ impl Node for SetVariableNode {
     }
 
     fn apply_inline_config(&mut self, inline_values: &crate::NodeConfigFlow) -> Result<()> {
-        self.variable_name =
-            inline_values
-                .get(SET_VARIABLE_NAME_PORT)
-                .and_then(|value| match value {
-                    DataValue::String(value) if !value.trim().is_empty() => {
-                        Some(value.trim().to_string())
-                    }
-                    _ => None,
-                });
+        self.variable_name = inline_values.get(SET_VARIABLE_NAME_PORT).and_then(|value| match value {
+            DataValue::String(value) if !value.trim().is_empty() => Some(value.trim().to_string()),
+            _ => None,
+        });
 
-        self.variable_type =
-            inline_values
-                .get(SET_VARIABLE_TYPE_PORT)
-                .and_then(|value| match value {
-                    DataValue::String(value) => match value.as_str() {
-                        "Integer" => Some(DataType::Integer),
-                        "Float" => Some(DataType::Float),
-                        "Boolean" => Some(DataType::Boolean),
-                        "Password" => Some(DataType::Password),
-                        "String" => Some(DataType::String),
-                        _ => None,
-                    },
-                    _ => None,
-                });
+        self.variable_type = inline_values.get(SET_VARIABLE_TYPE_PORT).and_then(|value| match value {
+            DataValue::String(value) => match value.as_str() {
+                "Integer" => Some(DataType::Integer),
+                "Float" => Some(DataType::Float),
+                "Boolean" => Some(DataType::Boolean),
+                "Password" => Some(DataType::Password),
+                "String" => Some(DataType::String),
+                _ => None,
+            },
+            _ => None,
+        });
 
         Ok(())
     }

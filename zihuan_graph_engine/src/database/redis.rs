@@ -125,26 +125,17 @@ impl RedisNode {
             return Ok(());
         };
 
-        let removed = match Self::run_cleanup_once(
-            self.redis_cm.clone(),
-            self.cached_redis_url.clone(),
-            url.clone(),
-            false,
-        ) {
-            Ok(removed) => removed,
-            Err(err) => {
-                warn!(
-                    "[RedisNode] Existing Redis connection became unhealthy: {}. Reconnecting once.",
-                    err
-                );
-                Self::run_cleanup_once(
-                    self.redis_cm.clone(),
-                    self.cached_redis_url.clone(),
-                    url,
-                    true,
-                )?
-            }
-        };
+        let removed =
+            match Self::run_cleanup_once(self.redis_cm.clone(), self.cached_redis_url.clone(), url.clone(), false) {
+                Ok(removed) => removed,
+                Err(err) => {
+                    warn!(
+                        "[RedisNode] Existing Redis connection became unhealthy: {}. Reconnecting once.",
+                        err
+                    );
+                    Self::run_cleanup_once(self.redis_cm.clone(), self.cached_redis_url.clone(), url, true)?
+                }
+            };
 
         if removed > 0 {
             info!(
@@ -201,9 +192,7 @@ impl Node for RedisNode {
                 DataValue::String(s) => Some(s.clone()),
                 _ => None,
             })
-            .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("redis_host is required".to_string())
-            })?;
+            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("redis_host is required".to_string()))?;
 
         let port = inputs
             .get("redis_port")
@@ -211,9 +200,7 @@ impl Node for RedisNode {
                 DataValue::Integer(i) => Some(*i as u16),
                 _ => None,
             })
-            .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("redis_port is required".to_string())
-            })?;
+            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("redis_port is required".to_string()))?;
 
         let db = inputs
             .get("redis_db")

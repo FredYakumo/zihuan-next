@@ -40,8 +40,7 @@ impl ObjectStorageConfig {
                 bucket,
                 access_key,
                 secret_key,
-                region: env::var("OBJECT_STORAGE_REGION")
-                    .unwrap_or_else(|_| "us-east-1".to_string()),
+                region: env::var("OBJECT_STORAGE_REGION").unwrap_or_else(|_| "us-east-1".to_string()),
                 public_base_url: env::var("OBJECT_STORAGE_PUBLIC_BASE_URL").ok(),
                 path_style: env::var("OBJECT_STORAGE_PATH_STYLE")
                     .ok()
@@ -73,14 +72,9 @@ pub async fn save_image_to_object_storage(
     input: &ImageObjectStorageInput,
 ) -> Result<SavedImageObject> {
     let key = build_object_key(input.message_id, input.segment_index, &input.file_name);
-    let object_url = object_storage
-        .put_object(&key, &input.content_type, &input.bytes)
-        .await?;
+    let object_url = object_storage.put_object(&key, &input.content_type, &input.bytes).await?;
 
-    Ok(SavedImageObject {
-        object_key: key,
-        object_url,
-    })
+    Ok(SavedImageObject { object_key: key, object_url })
 }
 
 fn build_object_key(message_id: i64, segment_index: usize, file_name: &str) -> String {

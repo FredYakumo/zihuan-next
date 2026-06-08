@@ -33,20 +33,14 @@ impl Node for StringToPlainTextNode {
 
     node_input![port! { name = "text", ty = String, desc = "输入字符串" },];
 
-    node_output![
-        port! { name = "result", ty = QQMessage, desc = "输出 QQMessage PlainText 消息段" },
-    ];
+    node_output![port! { name = "result", ty = QQMessage, desc = "输出 QQMessage PlainText 消息段" },];
 
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let text = match inputs.get("text") {
             Some(DataValue::String(s)) => s.clone(),
-            _ => {
-                return Err(zihuan_core::error::Error::InvalidNodeInput(
-                    "text is required".to_string(),
-                ))
-            }
+            _ => return Err(zihuan_core::error::Error::InvalidNodeInput("text is required".to_string())),
         };
 
         let qq_message = Message::PlainText(PlainTextMessage { text });

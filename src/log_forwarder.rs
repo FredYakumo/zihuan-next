@@ -61,11 +61,7 @@ impl Log for LogForwarder {
                 }
             }
             // Ignore errors: no receivers yet, channel full, etc.
-            let _ = tx.send(ServerMessage::LogMessage {
-                level,
-                message,
-                timestamp,
-            });
+            let _ = tx.send(ServerMessage::LogMessage { level, message, timestamp });
         }
     }
 
@@ -115,9 +111,5 @@ fn current_task_id() -> Option<String> {
     CURRENT_TASK_ID
         .with(|cell| cell.borrow().clone())
         .or_else(zihuan_core::task_context::current_task_id)
-        .or_else(|| {
-            zihuan_graph_engine::data_value::EXECUTION_TASK_ID
-                .try_with(Clone::clone)
-                .ok()
-        })
+        .or_else(|| zihuan_graph_engine::data_value::EXECUTION_TASK_ID.try_with(Clone::clone).ok())
 }

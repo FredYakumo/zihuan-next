@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
 use log::info;
-use model_inference::system_config::{
-    load_agents, load_llm_refs, AgentConfig, AgentType, HttpStreamAgentConfig,
-};
+use model_inference::system_config::{load_agents, load_llm_refs, AgentConfig, AgentType, HttpStreamAgentConfig};
 use salvo::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use salvo::http::{HeaderValue, StatusCode};
 use salvo::prelude::*;
@@ -13,18 +11,14 @@ use storage_handler::{
 };
 use tokio::task::JoinHandle;
 use zihuan_agent::brain::BrainTool;
-use zihuan_core::command::{
-    CommandChannel, CommandContext, NewConversationRequest, SideEffectContext,
-};
+use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::{LLMMessage, MessageRole};
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::runtime::block_async;
-use zihuan_core::task_context::{
-    AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
-};
+use zihuan_core::task_context::{AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus};
 use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
 
 use zihuan_graph_engine::data_value::EXECUTION_TASK_ID;
@@ -34,9 +28,7 @@ use super::inference::{InferenceToolContext, InferenceToolProvider};
 use super::tool_definitions::build_enabled_tool_definitions;
 use super::tools::build_info_brain_tools;
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
-use crate::resource_resolver::{
-    build_llm_model, resolve_llm_service_config, resolve_local_embedding_model_name,
-};
+use crate::resource_resolver::{build_llm_model, resolve_llm_service_config, resolve_local_embedding_model_name};
 use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
 
 #[derive(Clone)]
@@ -131,14 +123,11 @@ fn load_http_stream_resources(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let web_search_engine_ref = build_web_search_engine_ref(
-        web_search_engine_connection_id,
-        connections,
-    )
-    .unwrap_or_else(|error| {
-        log::warn!("[inference][http_stream] web search engine connection unavailable: {error}");
-        None
-    });
+    let web_search_engine_ref = build_web_search_engine_ref(web_search_engine_connection_id, connections)
+        .unwrap_or_else(|error| {
+            log::warn!("[inference][http_stream] web search engine connection unavailable: {error}");
+            None
+        });
 
     let weaviate_memory_ref = tokio::task::block_in_place(|| {
         build_weaviate_ref(
@@ -162,11 +151,9 @@ fn load_http_stream_resources(
         .filter(|value| !value.trim().is_empty())
         .and_then(|model_ref_id| {
             match resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, "http_stream") {
-                Ok(Some(_)) => block_async(
-                    RuntimeEmbeddingModelManager::shared()
-                        .get_or_create_embedding_model(model_ref_id),
-                )
-                .ok(),
+                Ok(Some(_)) => {
+                    block_async(RuntimeEmbeddingModelManager::shared().get_or_create_embedding_model(model_ref_id)).ok()
+                }
                 Ok(None) => None,
                 Err(error) => {
                     log::warn!("[inference][http_stream] embedding model ref unavailable: {error}");
@@ -222,23 +209,18 @@ pub async fn spawn(
         task_db_connection_id,
     });
     let auth_token = normalize_optional_token(config.api_key.clone());
-    let router = Router::new()
-        .hoop(salvo::affix_state::inject(runtime_state))
-        .push(
-            Router::with_path("v1/chat/completions")
-                .hoop(HttpStreamAuth::new(auth_token))
-                .post(http_stream_chat_completions),
-        );
+    let router = Router::new().hoop(salvo::affix_state::inject(runtime_state)).push(
+        Router::with_path("v1/chat/completions")
+            .hoop(HttpStreamAuth::new(auth_token))
+            .post(http_stream_chat_completions),
+    );
     let service = salvo::Service::new(router);
     let manager = manager.clone();
     let agent_id = agent.id.clone();
     let agent_name = agent.name.clone();
 
     Ok(tokio::spawn(async move {
-        info!(
-            "[service] starting HTTP stream agent '{}' on {}",
-            agent_name, config.bind
-        );
+        info!("[service] starting HTTP stream agent '{}' on {}", agent_name, config.bind);
         salvo::Server::new(acceptor).serve(service).await;
         info!("[service] HTTP stream agent '{}' stopped", agent_name);
         manager.update_state(
@@ -268,13 +250,7 @@ impl HttpStreamAuth {
 
 #[async_trait]
 impl Handler for HttpStreamAuth {
-    async fn handle(
-        &self,
-        req: &mut Request,
-        depot: &mut Depot,
-        res: &mut Response,
-        ctrl: &mut FlowCtrl,
-    ) {
+    async fn handle(&self, req: &mut Request, depot: &mut Depot, res: &mut Response, ctrl: &mut FlowCtrl) {
         let Some(expected) = self.api_key.as_ref() else {
             ctrl.call_next(req, depot, res).await;
             return;
@@ -300,21 +276,13 @@ async fn http_stream_chat_completions(req: &mut Request, res: &mut Response, dep
     let body: ChatCompletionsRequest = match req.parse_json().await {
         Ok(body) => body,
         Err(err) => {
-            render_http_stream_error(
-                res,
-                StatusCode::BAD_REQUEST,
-                format!("invalid request body: {err}"),
-            );
+            render_http_stream_error(res, StatusCode::BAD_REQUEST, format!("invalid request body: {err}"));
             return;
         }
     };
 
     if body.messages.is_empty() {
-        render_http_stream_error(
-            res,
-            StatusCode::BAD_REQUEST,
-            "messages must not be empty".to_string(),
-        );
+        render_http_stream_error(res, StatusCode::BAD_REQUEST, "messages must not be empty".to_string());
         return;
     }
 
@@ -328,10 +296,7 @@ async fn http_stream_chat_completions(req: &mut Request, res: &mut Response, dep
         .map(ToOwned::to_owned)
         .or_else(|| Some(req.remote_addr().to_string()));
     let model_hint = body.model.clone();
-    let task_name = format!(
-        "处理HTTP流请求[{}]",
-        request_ip.as_deref().unwrap_or("unknown")
-    );
+    let task_name = format!("处理HTTP流请求[{}]", request_ip.as_deref().unwrap_or("unknown"));
     let task_handle = runtime.task_runtime.as_ref().map(|task_runtime| {
         task_runtime.start_task(AgentTaskRequest {
             task_name,
@@ -360,10 +325,8 @@ async fn http_stream_chat_completions(req: &mut Request, res: &mut Response, dep
     match result {
         Ok(HttpStreamCompletion::Json(value)) => res.render(Json(value)),
         Ok(HttpStreamCompletion::Sse(body)) => {
-            res.headers_mut().insert(
-                CONTENT_TYPE,
-                HeaderValue::from_static("text/event-stream; charset=utf-8"),
-            );
+            res.headers_mut()
+                .insert(CONTENT_TYPE, HeaderValue::from_static("text/event-stream; charset=utf-8"));
             res.render(Text::Plain(body));
         }
         Err(err) => {
@@ -426,9 +389,7 @@ async fn execute_http_stream_completion(
                 },
             };
 
-            if let Some(dispatch_result) =
-                command_registry.dispatch(&command_context, &raw_user_text)
-            {
+            if let Some(dispatch_result) = command_registry.dispatch(&command_context, &raw_user_text) {
                 let side_effect_context = HttpStreamCommandSideEffectContext {
                     command_context: command_context.clone(),
                 };
@@ -510,9 +471,10 @@ fn resolve_http_stream_target_agent(
             .and_then(ensure_http_stream_target_agent_enabled);
     }
 
-    if let Some(agent) = agents.iter().find(|agent| {
-        agent.is_default && agent.enabled && matches!(&agent.agent_type, AgentType::HttpStream(_))
-    }) {
+    if let Some(agent) = agents
+        .iter()
+        .find(|agent| agent.is_default && agent.enabled && matches!(&agent.agent_type, AgentType::HttpStream(_)))
+    {
         return Ok(agent.clone());
     }
 
@@ -521,10 +483,7 @@ fn resolve_http_stream_target_agent(
 
 fn ensure_http_stream_target_agent_enabled(agent: AgentConfig) -> Result<AgentConfig> {
     if !agent.enabled {
-        return Err(Error::ValidationError(format!(
-            "agent '{}' is disabled",
-            agent.name
-        )));
+        return Err(Error::ValidationError(format!("agent '{}' is disabled", agent.name)));
     }
     if !matches!(&agent.agent_type, AgentType::HttpStream(_)) {
         return Err(Error::ValidationError(format!(
@@ -594,10 +553,7 @@ fn split_stream_chunks(content: &str) -> Vec<String> {
         return Vec::new();
     }
     let chars = content.chars().collect::<Vec<_>>();
-    chars
-        .chunks(64)
-        .map(|chunk| chunk.iter().collect::<String>())
-        .collect()
+    chars.chunks(64).map(|chunk| chunk.iter().collect::<String>()).collect()
 }
 
 fn render_http_stream_error(res: &mut Response, status: StatusCode, message: String) {
@@ -618,9 +574,7 @@ fn bearer_token(value: Option<&HeaderValue>) -> Option<&str> {
 }
 
 fn normalize_optional_token(value: Option<String>) -> Option<String> {
-    value
-        .map(|token| token.trim().to_string())
-        .filter(|token| !token.is_empty())
+    value.map(|token| token.trim().to_string()).filter(|token| !token.is_empty())
 }
 
 fn http_stream_command_caller_id(api_key: Option<&str>) -> String {
@@ -650,9 +604,7 @@ fn mask_http_stream_api_key(api_key: Option<&str>) -> String {
 
 fn validate_http_stream_config(config: &HttpStreamAgentConfig) -> Result<()> {
     if config.bind.trim().is_empty() {
-        return Err(Error::ValidationError(
-            "http_stream bind must not be empty".to_string(),
-        ));
+        return Err(Error::ValidationError("http_stream bind must not be empty".to_string()));
     }
     let has_llm_ref = config
         .llm_ref_id
@@ -660,9 +612,7 @@ fn validate_http_stream_config(config: &HttpStreamAgentConfig) -> Result<()> {
         .map(str::trim)
         .is_some_and(|value| !value.is_empty());
     if !has_llm_ref {
-        return Err(Error::ValidationError(
-            "http_stream must define llm_ref_id".to_string(),
-        ));
+        return Err(Error::ValidationError("http_stream must define llm_ref_id".to_string()));
     }
     Ok(())
 }

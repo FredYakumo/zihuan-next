@@ -14,8 +14,7 @@ use zihuan_graph_engine::{DataType, DataValue};
 use crate::agent::qq_chat_agent_msg_send::{send_notification_text, QqSendContext};
 
 const LOG_PREFIX: &str = "[QqChatAgent]";
-pub(crate) const QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS: &str =
-    "qq_chat_emit_tool_progress_notifications";
+pub(crate) const QQ_CHAT_EMIT_TOOL_PROGRESS_NOTIFICATIONS: &str = "qq_chat_emit_tool_progress_notifications";
 
 #[derive(Clone)]
 pub(crate) struct ToolNotificationTarget {
@@ -119,25 +118,17 @@ pub(crate) fn send_editable_tool_progress_notification(
         return;
     }
 
-    let event = match shared_rt
-        .get(zihuan_graph_engine::brain_tool_spec::QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT)
-    {
+    let event = match shared_rt.get(zihuan_graph_engine::brain_tool_spec::QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT) {
         Some(DataValue::MessageEvent(event)) => event,
         _ => {
-            warn!(
-                "{LOG_PREFIX} editable tool progress notification skipped: missing message_event"
-            );
+            warn!("{LOG_PREFIX} editable tool progress notification skipped: missing message_event");
             return;
         }
     };
-    let adapter = match shared_rt
-        .get(zihuan_graph_engine::brain_tool_spec::QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT)
-    {
+    let adapter = match shared_rt.get(zihuan_graph_engine::brain_tool_spec::QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT) {
         Some(DataValue::BotAdapterRef(handle)) => shared_from_handle(handle),
         _ => {
-            warn!(
-                "{LOG_PREFIX} editable tool progress notification skipped: missing qq_ims_bot_adapter"
-            );
+            warn!("{LOG_PREFIX} editable tool progress notification skipped: missing qq_ims_bot_adapter");
             return;
         }
     };
@@ -159,9 +150,7 @@ pub(crate) fn send_editable_tool_progress_notification(
             };
             let _ = send_notification_text(&send_ctx, call_content);
         } else {
-            warn!(
-                "{LOG_PREFIX} editable tool progress notification skipped: group message missing group_id"
-            );
+            warn!("{LOG_PREFIX} editable tool progress notification skipped: group message missing group_id");
         }
     } else {
         let target_id = event.sender.user_id.to_string();
@@ -182,11 +171,7 @@ pub(crate) fn send_editable_tool_progress_notification(
 
 /// Coerces an optional limit into a bounded positive usize, falling back to
 /// `default_limit` and clamping between 1 and `max_limit`.
-pub(crate) fn sanitize_positive_limit(
-    value: Option<i64>,
-    default_limit: i64,
-    max_limit: i64,
-) -> usize {
+pub(crate) fn sanitize_positive_limit(value: Option<i64>, default_limit: i64, max_limit: i64) -> usize {
     let limit = value.unwrap_or(default_limit);
     limit.clamp(1, max_limit) as usize
 }
@@ -218,18 +203,12 @@ pub(crate) fn optional_string_list_argument(arguments: &Value, key: &str) -> Opt
 }
 
 pub(crate) fn extract_string_field(value: &Value, key: &str) -> Option<String> {
-    value
-        .get(key)
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
+    value.get(key).and_then(Value::as_str).map(ToOwned::to_owned)
 }
 
 /// Extracts a `Vec<String>` from a graph output map, validating both the outer
 /// vector type and that every inner item is actually a string.
-pub(crate) fn extract_string_list_output(
-    outputs: &HashMap<String, DataValue>,
-    key: &str,
-) -> Result<Vec<String>> {
+pub(crate) fn extract_string_list_output(outputs: &HashMap<String, DataValue>, key: &str) -> Result<Vec<String>> {
     let value = outputs
         .get(key)
         .ok_or_else(|| Error::ValidationError(format!("missing output: {key}")))?;

@@ -12,14 +12,12 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::task_context::append_current_task_progress;
 use zihuan_graph_engine::brain_tool_spec::{
-    brain_tool_input_signature, fixed_tool_runtime_inputs, BrainToolDefinition,
-    BrainToolImplementation, BuiltInBrainToolKind, ToolParamDef, BRAIN_TOOL_FIXED_CONTENT_INPUT,
-    QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT, QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT,
-    QQ_AGENT_TOOL_OWNER_TYPE,
+    brain_tool_input_signature, fixed_tool_runtime_inputs, BrainToolDefinition, BrainToolImplementation,
+    BuiltInBrainToolKind, ToolParamDef, BRAIN_TOOL_FIXED_CONTENT_INPUT, QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
+    QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPUT, QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use zihuan_graph_engine::function_graph::{
-    sync_function_subgraph_signature, FunctionPortDef, FUNCTION_INPUTS_NODE_ID,
-    FUNCTION_OUTPUTS_NODE_ID,
+    sync_function_subgraph_signature, FunctionPortDef, FUNCTION_INPUTS_NODE_ID, FUNCTION_OUTPUTS_NODE_ID,
 };
 use zihuan_graph_engine::graph_io::refresh_port_types;
 use zihuan_graph_engine::registry::{build_node_graph_from_definition, NODE_REGISTRY};
@@ -152,10 +150,7 @@ pub fn shared_inputs_ports(shared_inputs: &[FunctionPortDef], owner_label: &str)
         .collect()
 }
 
-pub fn validate_shared_inputs(
-    shared_inputs: &[FunctionPortDef],
-    owner_label: &str,
-) -> Result<Vec<FunctionPortDef>> {
+pub fn validate_shared_inputs(shared_inputs: &[FunctionPortDef], owner_label: &str) -> Result<Vec<FunctionPortDef>> {
     let mut seen_names = HashSet::new();
     let mut normalized = Vec::with_capacity(shared_inputs.len());
 
@@ -182,10 +177,7 @@ pub fn validate_shared_inputs(
     Ok(normalized)
 }
 
-fn normalize_outputs_for_mode(
-    tool: &mut BrainToolDefinition,
-    result_mode: ToolResultMode,
-) -> Result<()> {
+fn normalize_outputs_for_mode(tool: &mut BrainToolDefinition, result_mode: ToolResultMode) -> Result<()> {
     if result_mode == ToolResultMode::SingleString {
         if tool.outputs.len() != 1 {
             return Err(Error::ValidationError(format!(
@@ -241,24 +233,16 @@ pub fn validate_tool_definitions(
         let tool_id = tool.id.trim();
         let tool_name = tool.name.trim();
         if tool_id.is_empty() {
-            return Err(Error::ValidationError(
-                "Tool id cannot be empty".to_string(),
-            ));
+            return Err(Error::ValidationError("Tool id cannot be empty".to_string()));
         }
         if tool_name.is_empty() {
-            return Err(Error::ValidationError(
-                "Tool name cannot be empty".to_string(),
-            ));
+            return Err(Error::ValidationError("Tool name cannot be empty".to_string()));
         }
         if !seen_ids.insert(tool_id.to_string()) {
-            return Err(Error::ValidationError(format!(
-                "Duplicate tool id: {tool_id}"
-            )));
+            return Err(Error::ValidationError(format!("Duplicate tool id: {tool_id}")));
         }
         if !seen_names.insert(tool_name.to_string()) {
-            return Err(Error::ValidationError(format!(
-                "Duplicate tool name: {tool_name}"
-            )));
+            return Err(Error::ValidationError(format!("Duplicate tool name: {tool_name}")));
         }
 
         let mut seen_param_names = HashSet::new();
@@ -307,11 +291,7 @@ pub fn validate_tool_definitions(
 }
 
 pub fn build_tool_error_message(message: impl Into<String>) -> String {
-    Value::Object(Map::from_iter([(
-        "error".to_string(),
-        Value::String(message.into()),
-    )]))
-    .to_string()
+    Value::Object(Map::from_iter([("error".to_string(), Value::String(message.into()))])).to_string()
 }
 
 /// Sends a progress notification for a brain tool call if notifications are enabled.
@@ -420,19 +400,13 @@ impl ToolSubgraphRunner {
             Value::Object(map) => map,
             Value::Null => Map::new(),
             other => {
-                return Err(self.wrap_error(format!(
-                    "Tool '{}' 的参数必须是 JSON 对象，实际为 {}",
-                    tool.name, other
-                )));
+                return Err(self.wrap_error(format!("Tool '{}' 的参数必须是 JSON 对象，实际为 {}", tool.name, other)));
             }
         };
         let builtin_arguments = Value::Object(tool_runtime_values.clone());
 
         let mut runtime_values = self.shared_runtime_values.lock().unwrap().clone();
-        runtime_values.insert(
-            BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(),
-            DataValue::String(tool_call_content),
-        );
+        runtime_values.insert(BRAIN_TOOL_FIXED_CONTENT_INPUT.to_string(), DataValue::String(tool_call_content));
         if self.owner_node_type == QQ_AGENT_TOOL_OWNER_TYPE {
             for fixed_name in [
                 BRAIN_TOOL_FIXED_CONTENT_INPUT,
@@ -440,19 +414,13 @@ impl ToolSubgraphRunner {
                 QQ_AGENT_TOOL_FIXED_BOT_ADAPTER_INPUT,
             ] {
                 if !runtime_values.contains_key(fixed_name) {
-                    return Err(self.wrap_error(format!(
-                        "Tool '{}' 缺少固定输入 '{}'",
-                        tool.name, fixed_name
-                    )));
+                    return Err(self.wrap_error(format!("Tool '{}' 缺少固定输入 '{}'", tool.name, fixed_name)));
                 }
             }
         }
         for (key, value) in tool_runtime_values {
             if runtime_values.contains_key(&key) {
-                return Err(self.wrap_error(format!(
-                    "Tool '{}' 参数 '{}' 与共享输入重名",
-                    tool.name, key
-                )));
+                return Err(self.wrap_error(format!("Tool '{}' 参数 '{}' 与共享输入重名", tool.name, key)));
             }
             let param_definition = tool.parameters.iter().find(|param| param.name == key);
             if matches!(param_definition, Some(param) if !param.required) && value.is_null() {
@@ -474,8 +442,7 @@ impl ToolSubgraphRunner {
             runtime_values.insert(key, parsed_value);
         }
 
-        let input_signature =
-            brain_tool_input_signature(&self.owner_node_type, &self.shared_inputs, tool);
+        let input_signature = brain_tool_input_signature(&self.owner_node_type, &self.shared_inputs, tool);
         if !tool.uses_subgraph() {
             let result = match tool.builtin_kind() {
                 Some(BuiltInBrainToolKind::ImageUnderstand) => {
@@ -486,14 +453,12 @@ impl ToolSubgraphRunner {
 
             return match self.result_mode {
                 ToolResultMode::JsonObject => {
-                    let output = tool.outputs.first().ok_or_else(|| {
-                        self.wrap_error(format!("Tool '{}' 必须声明一个 String 输出", tool.name))
-                    })?;
-                    let result_payload = Value::Object(Map::from_iter([(
-                        output.name.clone(),
-                        Value::String(result),
-                    )]))
-                    .to_string();
+                    let output = tool
+                        .outputs
+                        .first()
+                        .ok_or_else(|| self.wrap_error(format!("Tool '{}' 必须声明一个 String 输出", tool.name)))?;
+                    let result_payload =
+                        Value::Object(Map::from_iter([(output.name.clone(), Value::String(result))])).to_string();
                     info!(
                         "[ToolSubgraph:{}] tool '{}' succeeded with result: {}",
                         self.node_id, tool.name, result_payload
@@ -518,12 +483,7 @@ impl ToolSubgraphRunner {
             .nodes
             .iter_mut()
             .find(|node| node.id == FUNCTION_INPUTS_NODE_ID)
-            .ok_or_else(|| {
-                self.wrap_error(format!(
-                    "Tool '{}' 缺少 function_inputs 边界节点",
-                    tool.name
-                ))
-            })?;
+            .ok_or_else(|| self.wrap_error(format!("Tool '{}' 缺少 function_inputs 边界节点", tool.name)))?;
         function_inputs_node.inline_values.insert(
             zihuan_graph_engine::function_graph::FUNCTION_SIGNATURE_PORT.to_string(),
             serde_json::to_value(&input_signature).unwrap_or(Value::Null),
@@ -533,12 +493,7 @@ impl ToolSubgraphRunner {
             .nodes
             .iter_mut()
             .find(|node| node.id == FUNCTION_OUTPUTS_NODE_ID)
-            .ok_or_else(|| {
-                self.wrap_error(format!(
-                    "Tool '{}' 缺少 function_outputs 边界节点",
-                    tool.name
-                ))
-            })?;
+            .ok_or_else(|| self.wrap_error(format!("Tool '{}' 缺少 function_outputs 边界节点", tool.name)))?;
         function_outputs_node.inline_values.insert(
             zihuan_graph_engine::function_graph::FUNCTION_SIGNATURE_PORT.to_string(),
             serde_json::to_value(&tool.outputs).unwrap_or(Value::Null),
@@ -547,9 +502,7 @@ impl ToolSubgraphRunner {
         let mut graph = build_node_graph_from_definition(&subgraph)
             .map_err(|e| self.wrap_error(format!("Tool '{}' 子图构建失败: {e}", tool.name)))?;
         inject_runtime_values_into_function_inputs_node(&mut graph, runtime_values.into())
-            .map_err(|e| {
-                self.wrap_error(format!("Tool '{}' 注入子图运行时输入失败: {e}", tool.name))
-            })?;
+            .map_err(|e| self.wrap_error(format!("Tool '{}' 注入子图运行时输入失败: {e}", tool.name)))?;
         let execution_result = if let Some(config) = self.qq_chat_agent_config.clone() {
             with_current_qq_chat_agent_config(config, || graph.execute_and_capture_results())
         } else {
@@ -560,31 +513,20 @@ impl ToolSubgraphRunner {
                 "[ToolSubgraph:{}] tool '{}' execution failed: {error_message}",
                 self.node_id, tool.name
             );
-            return Err(self.wrap_error(format!(
-                "Tool '{}' 子图执行失败: {error_message}",
-                tool.name
-            )));
+            return Err(self.wrap_error(format!("Tool '{}' 子图执行失败: {error_message}", tool.name)));
         }
 
         let result_node_values = execution_result
             .node_results
             .get(FUNCTION_OUTPUTS_NODE_ID)
-            .ok_or_else(|| {
-                self.wrap_error(format!(
-                    "Tool '{}' 缺少 function_outputs 执行结果",
-                    tool.name
-                ))
-            })?;
+            .ok_or_else(|| self.wrap_error(format!("Tool '{}' 缺少 function_outputs 执行结果", tool.name)))?;
 
         match self.result_mode {
             ToolResultMode::JsonObject => {
                 let mut result_payload = Map::new();
                 for port in &tool.outputs {
                     let value = result_node_values.get(&port.name).ok_or_else(|| {
-                        self.wrap_error(format!(
-                            "Tool '{}' 输出 '{}' 未在子图中提供",
-                            tool.name, port.name
-                        ))
+                        self.wrap_error(format!("Tool '{}' 输出 '{}' 未在子图中提供", tool.name, port.name))
                     })?;
                     if !port.data_type.is_compatible_with(&value.data_type()) {
                         return Err(self.wrap_error(format!(
@@ -605,14 +547,12 @@ impl ToolSubgraphRunner {
                 Ok(result)
             }
             ToolResultMode::SingleString => {
-                let output = tool.outputs.first().ok_or_else(|| {
-                    self.wrap_error(format!("Tool '{}' 必须声明一个 String 输出", tool.name))
-                })?;
+                let output = tool
+                    .outputs
+                    .first()
+                    .ok_or_else(|| self.wrap_error(format!("Tool '{}' 必须声明一个 String 输出", tool.name)))?;
                 let value = result_node_values.get(&output.name).ok_or_else(|| {
-                    self.wrap_error(format!(
-                        "Tool '{}' 输出 '{}' 未在子图中提供",
-                        tool.name, output.name
-                    ))
+                    self.wrap_error(format!("Tool '{}' 输出 '{}' 未在子图中提供", tool.name, output.name))
                 })?;
                 match value {
                     DataValue::String(text) => {

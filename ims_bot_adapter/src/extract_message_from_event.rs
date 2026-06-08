@@ -5,20 +5,14 @@ use serde_json::Value;
 use std::collections::HashMap;
 use tokio::task::block_in_place;
 use zihuan_core::error::{Error, Result};
-use zihuan_core::ims_bot_adapter::logging::{
-    LOG_DATA_URL_PREVIEW_CHARS, LOG_MESSAGE_PREVIEW_CHARS,
-};
+use zihuan_core::ims_bot_adapter::logging::{LOG_DATA_URL_PREVIEW_CHARS, LOG_MESSAGE_PREVIEW_CHARS};
 use zihuan_core::llm::{LLMMessage, MessagePart};
 use zihuan_graph_engine::message_restore::register_mysql_ref;
 use zihuan_graph_engine::object_storage::S3Ref;
-use zihuan_graph_engine::{
-    node_input, node_output, DataType, DataValue, Node, NodeInputFlow, Port,
-};
+use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, NodeInputFlow, Port};
 
 use crate::models::message::Message;
-use crate::multimodal_image_url::{
-    resolve_image_message_part, resolve_plain_text_segments, ResolvedTextSegment,
-};
+use crate::multimodal_image_url::{resolve_image_message_part, resolve_plain_text_segments, ResolvedTextSegment};
 
 /// Node that converts a MessageEvent to an LLM prompt message list
 ///
@@ -166,18 +160,10 @@ impl ExtractMessageFromEventNode {
         for message in messages {
             match message {
                 Message::PlainText(plain) => {
-                    Self::append_plain_text_as_parts(
-                        &plain.text,
-                        parts,
-                        text_buffer,
-                        has_media,
-                        s3_ref,
-                    );
+                    Self::append_plain_text_as_parts(&plain.text, parts, text_buffer, has_media, s3_ref);
                 }
                 Message::Image(image) => {
-                    if let Some(resolved) =
-                        resolve_image_message_part(image, s3_ref, false, Self::LOG_PREFIX)
-                    {
+                    if let Some(resolved) = resolve_image_message_part(image, s3_ref, false, Self::LOG_PREFIX) {
                         Self::flush_text_part(parts, text_buffer);
                         parts.push(resolved.part);
                         *has_media = true;
@@ -217,21 +203,10 @@ impl ExtractMessageFromEventNode {
                             if index > 0 && !text_buffer.ends_with('\n') {
                                 text_buffer.push('\n');
                             }
-                            let sender = node
-                                .nickname
-                                .as_deref()
-                                .or(node.user_id.as_deref())
-                                .unwrap_or("unknown");
+                            let sender = node.nickname.as_deref().or(node.user_id.as_deref()).unwrap_or("unknown");
                             text_buffer.push_str(sender);
                             text_buffer.push_str(": ");
-                            Self::append_messages_as_parts(
-                                &node.content,
-                                parts,
-                                text_buffer,
-                                has_media,
-                                false,
-                                s3_ref,
-                            );
+                            Self::append_messages_as_parts(&node.content, parts, text_buffer, has_media, false, s3_ref);
                             if !text_buffer.ends_with('\n') {
                                 text_buffer.push('\n');
                             }
@@ -245,29 +220,14 @@ impl ExtractMessageFromEventNode {
         }
     }
 
-    fn build_user_message(
-        messages: &[Message],
-        msg_prop: &MessageProp,
-        s3_ref: Option<&S3Ref>,
-    ) -> LLMMessage {
+    fn build_user_message(messages: &[Message], msg_prop: &MessageProp, s3_ref: Option<&S3Ref>) -> LLMMessage {
         let mut parts = Vec::new();
         let mut text_buffer = String::new();
         let mut has_media = false;
 
-        Self::append_messages_as_parts(
-            messages,
-            &mut parts,
-            &mut text_buffer,
-            &mut has_media,
-            true,
-            s3_ref,
-        );
+        Self::append_messages_as_parts(messages, &mut parts, &mut text_buffer, &mut has_media, true, s3_ref);
 
-        if let Some(ref_cnt) = msg_prop
-            .ref_content
-            .as_deref()
-            .filter(|value| !value.is_empty())
-        {
+        if let Some(ref_cnt) = msg_prop.ref_content.as_deref().filter(|value| !value.is_empty()) {
             if text_buffer.contains(crate::REPLAY_CONTENT_LABEL) {
                 if !text_buffer.is_empty() {
                     text_buffer.push_str("\n\n");
@@ -293,10 +253,7 @@ impl ExtractMessageFromEventNode {
                 );
                 LLMMessage::user("(无可用文本内容)")
             } else {
-                let image_part_count = parts
-                    .iter()
-                    .filter(|part| matches!(part, MessagePart::Image { .. }))
-                    .count();
+                let image_part_count = parts.iter().filter(|part| matches!(part, MessagePart::Image { .. })).count();
                 info!(
                     "{} build_user_message produced multimodal parts total_parts={} image_parts={}",
                     Self::LOG_PREFIX,
@@ -355,9 +312,7 @@ impl ExtractMessageFromEventNode {
 #[cfg(test)]
 mod tests {
     use super::ExtractMessageFromEventNode;
-    use crate::models::message::{
-        ImageMessage, Message, PersistedMedia, PersistedMediaSource, PlainTextMessage,
-    };
+    use crate::models::message::{ImageMessage, Message, PersistedMedia, PersistedMediaSource, PlainTextMessage};
 }
 
 impl Node for ExtractMessageFromEventNode {
@@ -389,10 +344,7 @@ impl Node for ExtractMessageFromEventNode {
         port! { name = "at_target_list", ty = Vec(String), desc = "List of all @ targets in the message" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         if let Some(DataValue::MySqlRef(mysql_ref)) = inputs.get("mysql_ref") {
@@ -427,17 +379,11 @@ impl Node for ExtractMessageFromEventNode {
         let (bot_id, adapter_object_storage) = if tokio::runtime::Handle::try_current().is_ok() {
             block_in_place(|| {
                 let adapter = ims_bot_adapter_ref.blocking_lock();
-                (
-                    adapter.get_bot_id().to_string(),
-                    adapter.get_object_storage(),
-                )
+                (adapter.get_bot_id().to_string(), adapter.get_object_storage())
             })
         } else {
             let adapter = ims_bot_adapter_ref.blocking_lock();
-            (
-                adapter.get_bot_id().to_string(),
-                adapter.get_object_storage(),
-            )
+            (adapter.get_bot_id().to_string(), adapter.get_object_storage())
         };
         let object_storage = explicit_s3_ref.or(adapter_object_storage);
 
@@ -453,16 +399,12 @@ impl Node for ExtractMessageFromEventNode {
         let message_list = if let Some(message_id) = target_message_id {
             let resolved = if tokio::runtime::Handle::try_current().is_ok() {
                 block_in_place(|| {
-                    tokio::runtime::Handle::current().block_on(restore_message_list_for_message_id(
-                        &ims_bot_adapter_ref,
-                        message_id,
-                    ))
+                    tokio::runtime::Handle::current()
+                        .block_on(restore_message_list_for_message_id(&ims_bot_adapter_ref, message_id))
                 })
             } else {
-                tokio::runtime::Runtime::new()?.block_on(restore_message_list_for_message_id(
-                    &ims_bot_adapter_ref,
-                    message_id,
-                ))
+                tokio::runtime::Runtime::new()?
+                    .block_on(restore_message_list_for_message_id(&ims_bot_adapter_ref, message_id))
             }?;
 
             match resolved {
@@ -496,11 +438,7 @@ impl Node for ExtractMessageFromEventNode {
             event.message_list.clone()
         };
 
-        let extracted = Self::build_extracted_message_outputs(
-            &message_list,
-            &bot_id,
-            object_storage.as_deref(),
-        );
+        let extracted = Self::build_extracted_message_outputs(&message_list, &bot_id, object_storage.as_deref());
         info!(
             "{} output user message={}",
             Self::LOG_PREFIX,
@@ -516,23 +454,13 @@ impl Node for ExtractMessageFromEventNode {
             ),
         );
         outputs.insert("content".to_string(), DataValue::String(extracted.content));
-        outputs.insert(
-            "ref_content".to_string(),
-            DataValue::String(extracted.ref_content),
-        );
-        outputs.insert(
-            "is_at_me".to_string(),
-            DataValue::Boolean(extracted.is_at_me),
-        );
+        outputs.insert("ref_content".to_string(), DataValue::String(extracted.ref_content));
+        outputs.insert("is_at_me".to_string(), DataValue::Boolean(extracted.is_at_me));
         outputs.insert(
             "at_target_list".to_string(),
             DataValue::Vec(
                 Box::new(DataType::String),
-                extracted
-                    .at_target_list
-                    .into_iter()
-                    .map(DataValue::String)
-                    .collect(),
+                extracted.at_target_list.into_iter().map(DataValue::String).collect(),
             ),
         );
 

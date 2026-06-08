@@ -3,9 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub fn find_repo_root(crate_dir: &Path) -> Option<&Path> {
-    crate_dir
-        .ancestors()
-        .find(|ancestor| ancestor.join(".git").exists())
+    crate_dir.ancestors().find(|ancestor| ancestor.join(".git").exists())
 }
 
 pub fn git_commit_id(repo_root: &Path) -> Option<String> {

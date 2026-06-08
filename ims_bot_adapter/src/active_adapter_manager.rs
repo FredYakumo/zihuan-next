@@ -11,8 +11,7 @@ use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 use zihuan_core::connection_manager::{
-    ConnectionManager as ConnectionManagerTrait, RuntimeConnectionInstanceSummary,
-    RuntimeConnectionStatus,
+    ConnectionManager as ConnectionManagerTrait, RuntimeConnectionInstanceSummary, RuntimeConnectionStatus,
 };
 use zihuan_core::error::{Error, Result};
 
@@ -75,18 +74,12 @@ impl ActiveAdapterManager {
         })
     }
 
-    fn spawn_heartbeat_loop(
-        instance_id: String,
-        connection_name: String,
-        adapter: SharedBotAdapter,
-    ) -> JoinHandle<()> {
+    fn spawn_heartbeat_loop(instance_id: String, connection_name: String, adapter: SharedBotAdapter) -> JoinHandle<()> {
         tokio::spawn(async move {
-            let mut ticker =
-                tokio::time::interval(Duration::from_secs(BOT_ADAPTER_HEARTBEAT_INTERVAL_SECS));
+            let mut ticker = tokio::time::interval(Duration::from_secs(BOT_ADAPTER_HEARTBEAT_INTERVAL_SECS));
             loop {
                 ticker.tick().await;
-                match ws_send_action_async(&adapter, "get_login_info", serde_json::json!({})).await
-                {
+                match ws_send_action_async(&adapter, "get_login_info", serde_json::json!({})).await {
                     Ok(_) => {
                         log::debug!(
                             "[active_adapter_manager] heartbeat ok for '{}' (instance_id={})",
@@ -109,10 +102,7 @@ impl ActiveAdapterManager {
         let connections = load_connections()?;
         let connection = find_connection(&connections, config_id)?;
         if !connection.enabled {
-            return Err(Error::ValidationError(format!(
-                "connection '{}' is disabled",
-                connection.name
-            )));
+            return Err(Error::ValidationError(format!("connection '{}' is disabled", connection.name)));
         }
 
         let ConnectionKind::BotAdapter(raw) = &connection.kind else {
@@ -155,9 +145,7 @@ impl ActiveAdapterManager {
         };
         info!(
             "[active_adapter_manager] instantiated bot adapter instance_id={} config_id={} name='{}'",
-            instance.summary.instance_id,
-            instance.summary.config_id,
-            instance.summary.name
+            instance.summary.instance_id, instance.summary.config_id, instance.summary.name
         );
         Ok(instance)
     }
@@ -191,10 +179,7 @@ impl ConnectionManagerTrait for ActiveAdapterManager {
         let instance = self.create_instance(config_id).await?;
         let handle = instance.adapter.clone();
         let mut instances = self.instances.write().await;
-        instances
-            .entry(config_id.to_string())
-            .or_default()
-            .push(instance);
+        instances.entry(config_id.to_string()).or_default().push(instance);
         Ok(handle)
     }
 
@@ -212,16 +197,11 @@ impl ConnectionManagerTrait for ActiveAdapterManager {
     async fn close_instance(&self, instance_id: &str) -> Result<bool> {
         let mut instances = self.instances.write().await;
         for bucket in instances.values_mut() {
-            if let Some(index) = bucket
-                .iter()
-                .position(|item| item.summary.instance_id == instance_id)
-            {
+            if let Some(index) = bucket.iter().position(|item| item.summary.instance_id == instance_id) {
                 let removed = bucket.remove(index);
                 info!(
                     "[active_adapter_manager] force closed bot adapter instance_id={} config_id={} name='{}'",
-                    removed.summary.instance_id,
-                    removed.summary.config_id,
-                    removed.summary.name
+                    removed.summary.instance_id, removed.summary.config_id, removed.summary.name
                 );
                 removed.task.abort();
                 removed.heartbeat_task.abort();
@@ -259,8 +239,7 @@ impl ConnectionManagerTrait for ActiveAdapterManager {
                     retained.push(item);
                     continue;
                 }
-                let stale = (now - item.summary.last_used_at).num_seconds()
-                    >= BOT_ADAPTER_INSTANCE_IDLE_TIMEOUT_SECS;
+                let stale = (now - item.summary.last_used_at).num_seconds() >= BOT_ADAPTER_INSTANCE_IDLE_TIMEOUT_SECS;
                 if enabled && !stale {
                     retained.push(item);
                 } else {
@@ -309,13 +288,8 @@ pub fn register_active_bot_adapter(
 ) {
 }
 
-pub fn get_active_bot_adapter_handle(
-    connection_id: &str,
-) -> Option<zihuan_core::ims_bot_adapter::BotAdapterHandle> {
-    zihuan_core::runtime::block_async(
-        ActiveAdapterManager::shared().get_active_bot_adapter_handle(connection_id),
-    )
-    .ok()
+pub fn get_active_bot_adapter_handle(connection_id: &str) -> Option<zihuan_core::ims_bot_adapter::BotAdapterHandle> {
+    zihuan_core::runtime::block_async(ActiveAdapterManager::shared().get_active_bot_adapter_handle(connection_id)).ok()
 }
 
 pub fn has_active_bot_adapter(connection_id: &str) -> bool {
@@ -341,21 +315,19 @@ pub fn list_active_bot_adapter_connection_ids() -> Vec<String> {
 }
 
 pub fn stop_active_bot_adapter(connection_id: &str) -> bool {
-    zihuan_core::runtime::block_async(
-        ActiveAdapterManager::shared().close_instances_for_config(connection_id),
-    )
-    .map(|count| {
-        if count > 0 {
-            info!(
-                "[active_adapter_manager] stopped {} bot adapter instance(s) for config_id={}",
-                count, connection_id
-            );
-            true
-        } else {
-            false
-        }
-    })
-    .unwrap_or(false)
+    zihuan_core::runtime::block_async(ActiveAdapterManager::shared().close_instances_for_config(connection_id))
+        .map(|count| {
+            if count > 0 {
+                info!(
+                    "[active_adapter_manager] stopped {} bot adapter instance(s) for config_id={}",
+                    count, connection_id
+                );
+                true
+            } else {
+                false
+            }
+        })
+        .unwrap_or(false)
 }
 
 pub async fn ensure_active_bot_adapter(connection: &ConnectionConfig) -> bool {
@@ -371,7 +343,5 @@ pub async fn list_runtime_bot_adapter_instances() -> Result<Vec<RuntimeConnectio
 }
 
 pub async fn close_runtime_bot_adapter_instance(instance_id: &str) -> Result<bool> {
-    ActiveAdapterManager::shared()
-        .close_instance(instance_id)
-        .await
+    ActiveAdapterManager::shared().close_instance(instance_id).await
 }

@@ -7,10 +7,7 @@ use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::message_restore::register_mysql_ref;
 use zihuan_graph_engine::{DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port};
 
-use crate::{
-    RuntimeStorageConnectionManager, DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS,
-    DEFAULT_MYSQL_MAX_CONNECTIONS,
-};
+use crate::{RuntimeStorageConnectionManager, DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS, DEFAULT_MYSQL_MAX_CONNECTIONS};
 
 const CONFIG_ID_FIELD: &str = "config_id";
 const LEGACY_CONNECTION_ID_FIELD: &str = "connection_id";
@@ -52,13 +49,9 @@ impl MySqlNode {
     }
 
     fn connection_select_field() -> NodeConfigField {
-        NodeConfigField::new(
-            CONFIG_ID_FIELD,
-            DataType::String,
-            NodeConfigWidget::ConnectionSelect,
-        )
-        .with_connection_kind("mysql")
-        .with_description("选择系统中的 MySQL 连接配置")
+        NodeConfigField::new(CONFIG_ID_FIELD, DataType::String, NodeConfigWidget::ConnectionSelect)
+            .with_connection_kind("mysql")
+            .with_description("选择系统中的 MySQL 连接配置")
     }
 
     fn selected_config_id(&self) -> Result<&str> {
@@ -95,10 +88,7 @@ impl Node for MySqlNode {
         vec![Self::connection_select_field()]
     }
 
-    fn apply_inline_config(
-        &mut self,
-        inline_values: &zihuan_graph_engine::NodeConfigFlow,
-    ) -> Result<()> {
+    fn apply_inline_config(&mut self, inline_values: &zihuan_graph_engine::NodeConfigFlow) -> Result<()> {
         self.config_id = inline_values
             .get(CONFIG_ID_FIELD)
             .or_else(|| inline_values.get(LEGACY_CONNECTION_ID_FIELD))
@@ -109,10 +99,7 @@ impl Node for MySqlNode {
         Ok(())
     }
 
-    fn execute(
-        &mut self,
-        _inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, _inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let config_id = self.selected_config_id()?;
         let config = zihuan_core::runtime::block_async(
             RuntimeStorageConnectionManager::shared().get_or_create_mysql_ref(config_id),

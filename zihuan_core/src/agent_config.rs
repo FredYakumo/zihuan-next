@@ -28,9 +28,7 @@ pub fn with_current_qq_chat_agent_config<T>(config: QqChatAgentConfig, f: impl F
 pub fn current_qq_chat_agent_config() -> Result<QqChatAgentConfig> {
     CURRENT_QQ_CHAT_AGENT_CONFIG.with(|slot| {
         slot.borrow().last().cloned().ok_or_else(|| {
-            Error::ValidationError(
-                "当前节点不在 Agent 工具调用上下文中，无法读取 Agent 配置".to_string(),
-            )
+            Error::ValidationError("当前节点不在 Agent 工具调用上下文中，无法读取 Agent 配置".to_string())
         })
     })
 }
@@ -54,20 +52,14 @@ pub fn normalize_llm_kind(llm_kind: Option<&str>) -> Result<&'static str> {
 pub fn llm_ref_id_for_kind<'a>(config: &'a QqChatAgentConfig, llm_kind: &str) -> Option<&'a str> {
     match llm_kind {
         LLM_KIND_MAIN => config.llm_ref_id.as_deref(),
-        LLM_KIND_MATH_PROGRAMMING => config
-            .math_programming_llm_ref_id
-            .as_deref()
-            .or(config.llm_ref_id.as_deref()),
+        LLM_KIND_MATH_PROGRAMMING => config.math_programming_llm_ref_id.as_deref().or(config.llm_ref_id.as_deref()),
         LLM_KIND_NATURAL_LANGUAGE_REPLY => config.natural_language_reply_llm_ref_id.as_deref(),
         _ => None,
     }
 }
 
 pub fn image_understand_llm_ref_id<'a>(config: &'a QqChatAgentConfig) -> Option<&'a str> {
-    config
-        .image_understand_llm_ref_id
-        .as_deref()
-        .or(config.llm_ref_id.as_deref())
+    config.image_understand_llm_ref_id.as_deref().or(config.llm_ref_id.as_deref())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

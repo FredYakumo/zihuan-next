@@ -38,20 +38,13 @@ impl Node for AgentMySqlRefNode {
 
     node_output![port! { name = "mysql_ref", ty = MySqlRef, desc = "Agent MySQL 连接引用" },];
 
-    fn execute(
-        &mut self,
-        _inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, _inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let config = current_qq_chat_agent_config()?;
         let mysql_connection_id = config.resolved_rdb_id();
         let mysql_connection_id = mysql_connection_id
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .ok_or_else(|| {
-                zihuan_core::error::Error::ValidationError(
-                    "mysql_connection_id is required".to_string(),
-                )
-            })?;
+            .ok_or_else(|| zihuan_core::error::Error::ValidationError("mysql_connection_id is required".to_string()))?;
         let mysql_ref = zihuan_core::runtime::block_async(
             RuntimeStorageConnectionManager::shared().get_or_create_mysql_ref(mysql_connection_id),
         )?;

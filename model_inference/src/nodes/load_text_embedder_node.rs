@@ -42,31 +42,22 @@ impl Node for LoadTextEmbedderNode {
         port! { name = "retry_count", ty = Integer, desc = "重试次数，可选，默认 2 次", optional },
     ];
 
-    node_output![
-        port! { name = "embedding_model", ty = EmbeddingModel, desc = "Embedding 模型引用" },
-    ];
+    node_output![port! { name = "embedding_model", ty = EmbeddingModel, desc = "Embedding 模型引用" },];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let model_name = match inputs.get("model_name") {
             Some(DataValue::String(value)) if !value.trim().is_empty() => value.trim().to_string(),
             _ => {
-                return Err(Error::ValidationError(
-                    "Missing required input: model_name".to_string(),
-                ));
+                return Err(Error::ValidationError("Missing required input: model_name".to_string()));
             }
         };
 
         let api_endpoint = match inputs.get("api_endpoint") {
             Some(DataValue::String(value)) if !value.trim().is_empty() => value.trim().to_string(),
             _ => {
-                return Err(Error::ValidationError(
-                    "Missing required input: api_endpoint".to_string(),
-                ));
+                return Err(Error::ValidationError("Missing required input: api_endpoint".to_string()));
             }
         };
 
@@ -92,13 +83,8 @@ impl Node for LoadTextEmbedderNode {
             .unwrap_or(DEFAULT_RETRY_COUNT);
 
         let model: Arc<dyn EmbeddingBase> = Arc::new(
-            EmbeddingAPI::new(
-                model_name,
-                api_endpoint,
-                api_key,
-                Duration::from_secs(timeout_secs),
-            )
-            .with_retry_count(retry_count),
+            EmbeddingAPI::new(model_name, api_endpoint, api_key, Duration::from_secs(timeout_secs))
+                .with_retry_count(retry_count),
         );
 
         zihuan_graph_engine::return_with_node_output![self;

@@ -37,10 +37,7 @@ impl Node for ExtractGroupIdFromEventNode {
 
     node_output![port! { name = "result", ty = String, desc = "群号字符串" },];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let event = match inputs.get("message_event") {
             Some(DataValue::MessageEvent(event)) => event,
             _ => return Err("message_event input is required".into()),
@@ -50,9 +47,7 @@ impl Node for ExtractGroupIdFromEventNode {
             return Err("message_event must be a group message".into());
         }
 
-        let group_id = event
-            .group_id
-            .ok_or("group_id is missing in group message event")?;
+        let group_id = event.group_id.ok_or("group_id is missing in group message event")?;
 
         zihuan_graph_engine::return_with_node_output![self;
             "result" => DataValue::String(group_id.to_string()),

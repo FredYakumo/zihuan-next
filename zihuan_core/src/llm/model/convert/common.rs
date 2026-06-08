@@ -50,10 +50,7 @@ pub(crate) fn build_chat_multimodal_parts(parts: &[MessagePart]) -> Value {
     )
 }
 
-pub(crate) fn build_responses_content_items(
-    message: &LLMMessage,
-    image_url_as_object: bool,
-) -> Vec<Value> {
+pub(crate) fn build_responses_content_items(message: &LLMMessage, image_url_as_object: bool) -> Vec<Value> {
     if message.parts.is_empty() {
         return Vec::new();
     }
@@ -95,11 +92,7 @@ pub(crate) fn build_responses_content_items(
         .collect()
 }
 
-pub(crate) fn with_reasoning(
-    mut msg_obj: Value,
-    message: &LLMMessage,
-    include_reasoning_content: bool,
-) -> Value {
+pub(crate) fn with_reasoning(mut msg_obj: Value, message: &LLMMessage, include_reasoning_content: bool) -> Value {
     if include_reasoning_content {
         if let Some(reasoning_content) = &message.reasoning_content {
             msg_obj["reasoning_content"] = json!(reasoning_content);

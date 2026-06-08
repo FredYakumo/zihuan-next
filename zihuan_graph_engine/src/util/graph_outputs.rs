@@ -23,12 +23,8 @@ impl GraphOutputsNode {
     }
 
     fn apply_signature_json(&mut self, value: &Value) -> Result<()> {
-        self.signature =
-            serde_json::from_value::<Vec<FunctionPortDef>>(value.clone()).map_err(|_| {
-                Error::ValidationError(
-                    "graph_outputs.signature 不是有效的节点图签名 JSON".to_string(),
-                )
-            })?;
+        self.signature = serde_json::from_value::<Vec<FunctionPortDef>>(value.clone())
+            .map_err(|_| Error::ValidationError("graph_outputs.signature 不是有效的节点图签名 JSON".to_string()))?;
         Ok(())
     }
 }

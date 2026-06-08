@@ -43,10 +43,7 @@ impl Node for TopKSimilarityNode {
         port! { name = "vectors", ty = Vec(Vector), desc = "命中的向量列表，按相似度降序排列" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let candidates = parse_vector_list(inputs.get("vectors"))?;
@@ -54,19 +51,15 @@ impl Node for TopKSimilarityNode {
         let top_k = match inputs.get("top_k") {
             Some(DataValue::Integer(value)) if *value > 0 => *value as usize,
             Some(DataValue::Integer(_)) => {
-                return Err(Error::ValidationError(
-                    "top_k must be greater than 0".to_string(),
-                ));
+                return Err(Error::ValidationError("top_k must be greater than 0".to_string()));
             }
             _ => {
-                return Err(Error::ValidationError(
-                    "Missing required input: top_k".to_string(),
-                ));
+                return Err(Error::ValidationError("Missing required input: top_k".to_string()));
             }
         };
 
-        let top_results = top_k_similar(&candidates, &query, top_k)
-            .map_err(|error| Error::StringError(error.to_string()))?;
+        let top_results =
+            top_k_similar(&candidates, &query, top_k).map_err(|error| Error::StringError(error.to_string()))?;
 
         let indices = top_results
             .iter()
@@ -92,12 +85,8 @@ impl Node for TopKSimilarityNode {
 fn parse_vector(value: Option<&DataValue>) -> Result<Vec<f32>> {
     match value {
         Some(DataValue::Vector(values)) if !values.is_empty() => Ok(values.clone()),
-        Some(DataValue::Vector(_)) => Err(Error::ValidationError(
-            "query vector must not be empty".to_string(),
-        )),
-        _ => Err(Error::ValidationError(
-            "query input must be Vector".to_string(),
-        )),
+        Some(DataValue::Vector(_)) => Err(Error::ValidationError("query vector must not be empty".to_string())),
+        _ => Err(Error::ValidationError("query input must be Vector".to_string())),
     }
 }
 
@@ -105,9 +94,7 @@ fn parse_vector_list(value: Option<&DataValue>) -> Result<Vec<Vec<f32>>> {
     let values = match value {
         Some(DataValue::Vec(_, values)) => values,
         _ => {
-            return Err(Error::ValidationError(
-                "vectors input must be Vec<Vector>".to_string(),
-            ));
+            return Err(Error::ValidationError("vectors input must be Vec<Vector>".to_string()));
         }
     };
 
@@ -126,9 +113,7 @@ fn parse_vector_list(value: Option<&DataValue>) -> Result<Vec<Vec<f32>>> {
         .collect::<Result<Vec<_>>>()?;
 
     if vectors.is_empty() {
-        return Err(Error::ValidationError(
-            "vectors input must not be empty".to_string(),
-        ));
+        return Err(Error::ValidationError("vectors input must not be empty".to_string()));
     }
 
     Ok(vectors)

@@ -43,9 +43,7 @@ pub fn response_success(response: &Value) -> bool {
 }
 
 pub fn response_message_id(response: &Value) -> Option<i64> {
-    response
-        .get("data")
-        .and_then(|data| json_i64(data.get("message_id")))
+    response.get("data").and_then(|data| json_i64(data.get("message_id")))
 }
 
 pub fn qq_message_list_to_json(messages: &[crate::models::message::Message]) -> serde_json::Value {
@@ -88,33 +86,21 @@ pub fn qq_message_list_to_json(messages: &[crate::models::message::Message]) -> 
     )
 }
 
-pub fn qq_message_list_to_send_json(
-    adapter_ref: &SharedBotAdapter,
-    messages: &[Message],
-) -> Result<serde_json::Value> {
+pub fn qq_message_list_to_send_json(adapter_ref: &SharedBotAdapter, messages: &[Message]) -> Result<serde_json::Value> {
     let normalized = normalize_messages_for_send(adapter_ref, messages)?;
     Ok(qq_message_list_to_json(&normalized))
 }
 
-fn normalize_messages_for_send(
-    adapter_ref: &SharedBotAdapter,
-    messages: &[Message],
-) -> Result<Vec<Message>> {
+fn normalize_messages_for_send(adapter_ref: &SharedBotAdapter, messages: &[Message]) -> Result<Vec<Message>> {
     messages
         .iter()
         .map(|message| normalize_message_for_send(adapter_ref, message))
         .collect()
 }
 
-fn normalize_message_for_send(
-    adapter_ref: &SharedBotAdapter,
-    message: &Message,
-) -> Result<Message> {
+fn normalize_message_for_send(adapter_ref: &SharedBotAdapter, message: &Message) -> Result<Message> {
     match message {
-        Message::Image(image) => Ok(Message::Image(normalize_image_for_send(
-            adapter_ref,
-            image,
-        )?)),
+        Message::Image(image) => Ok(Message::Image(normalize_image_for_send(adapter_ref, image)?)),
         Message::Forward(forward) => {
             let mut cloned = forward.clone();
             for node in &mut cloned.content {
@@ -126,10 +112,7 @@ fn normalize_message_for_send(
     }
 }
 
-fn normalize_image_for_send(
-    adapter_ref: &SharedBotAdapter,
-    image: &ImageMessage,
-) -> Result<ImageMessage> {
+fn normalize_image_for_send(adapter_ref: &SharedBotAdapter, image: &ImageMessage) -> Result<ImageMessage> {
     if let Some(base64_file) = outbound_base64_file(adapter_ref, image)? {
         let mut normalized = image.clone();
         normalized.media.original_source = base64_file;
@@ -176,15 +159,8 @@ fn normalize_existing_local_path(path: &str) -> Option<String> {
     None
 }
 
-fn outbound_object_storage_key(
-    adapter_ref: &SharedBotAdapter,
-    image: &ImageMessage,
-) -> Option<String> {
-    if let Some(key) = image
-        .rustfs_path()
-        .map(str::trim)
-        .filter(|key| !key.is_empty())
-    {
+fn outbound_object_storage_key(adapter_ref: &SharedBotAdapter, image: &ImageMessage) -> Option<String> {
+    if let Some(key) = image.rustfs_path().map(str::trim).filter(|key| !key.is_empty()) {
         return Some(key.to_string());
     }
 
@@ -199,10 +175,7 @@ fn outbound_object_storage_key(
     None
 }
 
-fn outbound_base64_file(
-    adapter_ref: &SharedBotAdapter,
-    image: &ImageMessage,
-) -> Result<Option<String>> {
+fn outbound_base64_file(adapter_ref: &SharedBotAdapter, image: &ImageMessage) -> Result<Option<String>> {
     if let Some(file) = image.original_source() {
         if file.starts_with("base64://") {
             return Ok(Some(file.to_string()));
@@ -213,20 +186,14 @@ fn outbound_base64_file(
     }
 
     if let Some(data_url) = image.original_source() {
-        if let Some(base64_payload) = data_url
-            .strip_prefix("data:")
-            .and_then(data_url_base64_payload)
-        {
+        if let Some(base64_payload) = data_url.strip_prefix("data:").and_then(data_url_base64_payload) {
             return Ok(Some(format!("base64://{base64_payload}")));
         }
     }
 
     if let Some(local_path) = outbound_local_image_path(image) {
         let bytes = std::fs::read(&local_path).map_err(|error| {
-            Error::ValidationError(format!(
-                "failed to read outbound QQ image file '{}': {}",
-                local_path, error
-            ))
+            Error::ValidationError(format!("failed to read outbound QQ image file '{}': {}", local_path, error))
         })?;
         return Ok(Some(bytes_to_base64_file(bytes)));
     }
@@ -261,17 +228,10 @@ fn outbound_base64_file(
 }
 
 fn bytes_to_base64_file(bytes: Vec<u8>) -> String {
-    format!(
-        "base64://{}",
-        base64::engine::general_purpose::STANDARD.encode(bytes)
-    )
+    format!("base64://{}", base64::engine::general_purpose::STANDARD.encode(bytes))
 }
 
-async fn store_remote_image_bytes(
-    adapter_ref: &SharedBotAdapter,
-    url: &str,
-    bytes: &[u8],
-) -> Result<()> {
+async fn store_remote_image_bytes(adapter_ref: &SharedBotAdapter, url: &str, bytes: &[u8]) -> Result<()> {
     let object_storage = adapter_ref.lock().await.object_storage.clone();
     let Some(object_storage) = object_storage else {
         return Err(Error::ValidationError(format!(
@@ -300,12 +260,7 @@ fn remote_image_object_key(url: &str) -> String {
                 .and_then(|ext| ext.to_str())
                 .map(|ext| ext.to_ascii_lowercase())
         })
-        .filter(|ext| {
-            matches!(
-                ext.as_str(),
-                "jpg" | "jpeg" | "png" | "webp" | "gif" | "bmp" | "avif" | "svg"
-            )
-        })
+        .filter(|ext| matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp" | "gif" | "bmp" | "avif" | "svg"))
         .unwrap_or_else(|| "jpg".to_string());
     format!(
         "qq-outbound/{}/{}.{}",
@@ -412,11 +367,7 @@ fn object_storage_url_prefixes(object_storage: &S3Ref) -> Vec<String> {
     } else if let Ok(endpoint) = reqwest::Url::parse(&object_storage.endpoint) {
         if let Some(host) = endpoint.host_str() {
             let scheme = endpoint.scheme();
-            prefixes.push(format!(
-                "{scheme}://{}.{}",
-                object_storage.bucket.trim_matches('/'),
-                host
-            ));
+            prefixes.push(format!("{scheme}://{}.{}", object_storage.bucket.trim_matches('/'), host));
         }
     }
 
@@ -433,10 +384,7 @@ async fn download_object_storage_bytes(
     let Some(object_storage) = object_storage else {
         return Ok(None);
     };
-    object_storage
-        .get_object_bytes(object_key.as_ref())
-        .await
-        .map(Some)
+    object_storage.get_object_bytes(object_key.as_ref()).await.map(Some)
 }
 
 async fn download_remote_bytes(url: &str) -> Result<Option<Vec<u8>>> {
@@ -484,9 +432,7 @@ pub async fn ws_send_action_async(
     let (action_tx, pending_actions) = {
         let guard = adapter_ref.lock().await;
         let tx = guard.action_tx.clone().ok_or_else(|| {
-            zihuan_core::error::Error::ValidationError(
-                "Bot adapter WebSocket not connected yet".to_string(),
-            )
+            zihuan_core::error::Error::ValidationError("Bot adapter WebSocket not connected yet".to_string())
         })?;
         let pending = guard.pending_actions.clone();
         Ok::<_, zihuan_core::error::Error>((tx, pending))
@@ -495,24 +441,17 @@ pub async fn ws_send_action_async(
     let (tx, rx) = oneshot::channel::<serde_json::Value>();
     pending_actions.lock().await.insert(echo.clone(), tx);
 
-    action_tx.send(payload.to_string()).map_err(|_| {
-        zihuan_core::error::Error::ValidationError("Failed to enqueue WebSocket action".to_string())
-    })?;
+    action_tx
+        .send(payload.to_string())
+        .map_err(|_| zihuan_core::error::Error::ValidationError("Failed to enqueue WebSocket action".to_string()))?;
 
     // Wait for the response (30 s timeout).
     let response = tokio::time::timeout(std::time::Duration::from_secs(30), rx)
         .await
         .map_err(|_| {
-            zihuan_core::error::Error::ValidationError(format!(
-                "Action '{}' timed out after 30 s",
-                action_name
-            ))
+            zihuan_core::error::Error::ValidationError(format!("Action '{}' timed out after 30 s", action_name))
         })?
-        .map_err(|_| {
-            zihuan_core::error::Error::ValidationError(
-                "Response channel closed unexpectedly".to_string(),
-            )
-        })?;
+        .map_err(|_| zihuan_core::error::Error::ValidationError("Response channel closed unexpectedly".to_string()))?;
 
     Ok(response)
 }

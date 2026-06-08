@@ -12,8 +12,6 @@ where
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         block_in_place(|| handle.block_on(future))
     } else {
-        tokio::runtime::Runtime::new()
-            .expect("tokio runtime")
-            .block_on(future)
+        tokio::runtime::Runtime::new().expect("tokio runtime").block_on(future)
     }
 }

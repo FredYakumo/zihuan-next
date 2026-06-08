@@ -38,19 +38,14 @@ impl Node for AgentImageDbRefNode {
 
     node_output![port! { name = "weaviate_ref", ty = WeaviateRef, desc = "Agent 图片向量库引用" },];
 
-    fn execute(
-        &mut self,
-        _inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, _inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let config = current_qq_chat_agent_config()?;
         let weaviate_image_connection_id = config.weaviate_image_connection_id.as_deref();
         let weaviate_image_connection_id = weaviate_image_connection_id
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| {
-                zihuan_core::error::Error::ValidationError(
-                    "weaviate_image_connection_id is required".to_string(),
-                )
+                zihuan_core::error::Error::ValidationError("weaviate_image_connection_id is required".to_string())
             })?;
         let connections = load_connections()?;
         let weaviate_ref = resource_resolver::build_weaviate_ref(
@@ -59,15 +54,9 @@ impl Node for AgentImageDbRefNode {
             Some(WeaviateCollectionSchema::ImageSemantic),
         )?
         .ok_or_else(|| {
-            zihuan_core::error::Error::ValidationError(
-                "weaviate_image_connection_id is required".to_string(),
-            )
+            zihuan_core::error::Error::ValidationError("weaviate_image_connection_id is required".to_string())
         })?;
-        storage_handler::ensure_collection_schema(
-            &weaviate_ref,
-            WeaviateCollectionSchema::ImageSemantic,
-            false,
-        )?;
+        storage_handler::ensure_collection_schema(&weaviate_ref, WeaviateCollectionSchema::ImageSemantic, false)?;
         zihuan_graph_engine::return_with_node_output![self;
             "weaviate_ref" => DataValue::WeaviateRef(weaviate_ref),
         ]

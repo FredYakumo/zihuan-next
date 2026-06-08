@@ -9,9 +9,7 @@ use model_inference::nn::embedding::embedding_runtime_manager::close_runtime_emb
 use model_inference::system_config::{AgentConfig, AgentType, LlmRefConfig, ModelRefSpec};
 use zihuan_service::AgentRuntimeStatus;
 
-use super::{
-    now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found,
-};
+use super::{now_rfc3339, ok_response, render_bad_request, render_internal_error, render_not_found};
 
 #[derive(Deserialize)]
 pub struct CreateLlmRefRequest {
@@ -63,10 +61,7 @@ pub async fn create_llm_ref(req: &mut Request, res: &mut Response, _depot: &mut 
 
     match system_config::save_llm_refs(llm_refs) {
         Ok(()) => {
-            info!(
-                "[llm_refs] created LLM config '{}' (id={})",
-                llm_ref.name, llm_ref.id
-            );
+            info!("[llm_refs] created LLM config '{}' (id={})", llm_ref.name, llm_ref.id);
             res.render(Json(llm_ref));
         }
         Err(err) => render_internal_error(res, err),
@@ -75,9 +70,7 @@ pub async fn create_llm_ref(req: &mut Request, res: &mut Response, _depot: &mut 
 
 #[handler]
 pub async fn update_llm_ref(req: &mut Request, res: &mut Response, depot: &mut Depot) {
-    let state = depot
-        .obtain::<std::sync::Arc<crate::api::state::AppState>>()
-        .unwrap();
+    let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap();
     let id = req.param::<String>("id").unwrap_or_default();
     let body: UpdateLlmRefRequest = match req.parse_json().await {
         Ok(body) => body,
@@ -101,10 +94,7 @@ pub async fn update_llm_ref(req: &mut Request, res: &mut Response, depot: &mut D
 
     match system_config::save_llm_refs(llm_refs) {
         Ok(()) => {
-            info!(
-                "[llm_refs] updated LLM config '{}' (id={})",
-                response.name, response.id
-            );
+            info!("[llm_refs] updated LLM config '{}' (id={})", response.name, response.id);
             let _ = close_runtime_embedding_instances_for_config(&id);
             hot_reload_agents_for_llm_ref(state.as_ref(), &id).await;
             res.render(Json(response));
@@ -115,9 +105,7 @@ pub async fn update_llm_ref(req: &mut Request, res: &mut Response, depot: &mut D
 
 #[handler]
 pub async fn delete_llm_ref(req: &mut Request, res: &mut Response, depot: &mut Depot) {
-    let state = depot
-        .obtain::<std::sync::Arc<crate::api::state::AppState>>()
-        .unwrap();
+    let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap();
     let id = req.param::<String>("id").unwrap_or_default();
     let mut llm_refs = match system_config::load_llm_refs() {
         Ok(llm_refs) => llm_refs,
@@ -164,10 +152,7 @@ async fn hot_reload_agents_for_llm_ref(state: &crate::api::state::AppState, llm_
         }
     };
 
-    for agent in agents
-        .into_iter()
-        .filter(|agent| agent_uses_llm_ref(agent, llm_ref_id))
-    {
+    for agent in agents.into_iter().filter(|agent| agent_uses_llm_ref(agent, llm_ref_id)) {
         let runtime = state.agent_manager.runtime_info(&agent.id);
         if runtime.status != AgentRuntimeStatus::Running {
             continue;

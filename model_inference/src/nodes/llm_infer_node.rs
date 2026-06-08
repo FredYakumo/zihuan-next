@@ -36,10 +36,7 @@ impl Node for LLMInferNode {
 
     node_output![port! { name = "response", ty = Vec(LLMMessage), desc = "LLM返回的消息列表" },];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let model = match inputs.get("llm_model") {

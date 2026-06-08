@@ -28,9 +28,7 @@ pub fn build_weaviate_ref(
         std::time::Duration::from_secs(30),
     )?);
     if !weaviate_ref.ready()? {
-        return Err(Error::StringError(
-            "Weaviate is reachable but not ready yet".to_string(),
-        ));
+        return Err(Error::StringError("Weaviate is reachable but not ready yet".to_string()));
     }
     ensure_collection_schema(&weaviate_ref, collection_schema, true)?;
     Ok(weaviate_ref)
@@ -52,13 +50,9 @@ impl WeaviateNode {
     }
 
     fn connection_select_field() -> NodeConfigField {
-        NodeConfigField::new(
-            CONFIG_ID_FIELD,
-            DataType::String,
-            NodeConfigWidget::ConnectionSelect,
-        )
-        .with_connection_kind("weaviate")
-        .with_description("选择系统中的 Weaviate 连接配置")
+        NodeConfigField::new(CONFIG_ID_FIELD, DataType::String, NodeConfigWidget::ConnectionSelect)
+            .with_connection_kind("weaviate")
+            .with_description("选择系统中的 Weaviate 连接配置")
     }
 }
 
@@ -80,18 +74,14 @@ impl Node for WeaviateNode {
     }
 
     fn output_ports(&self) -> Vec<Port> {
-        vec![Port::new("weaviate_ref", DataType::WeaviateRef)
-            .with_description("Weaviate 数据库引用")]
+        vec![Port::new("weaviate_ref", DataType::WeaviateRef).with_description("Weaviate 数据库引用")]
     }
 
     fn config_fields(&self) -> Vec<NodeConfigField> {
         vec![Self::connection_select_field()]
     }
 
-    fn apply_inline_config(
-        &mut self,
-        inline_values: &zihuan_graph_engine::NodeConfigFlow,
-    ) -> Result<()> {
+    fn apply_inline_config(&mut self, inline_values: &zihuan_graph_engine::NodeConfigFlow) -> Result<()> {
         self.config_id = inline_values
             .get(CONFIG_ID_FIELD)
             .or_else(|| inline_values.get(LEGACY_CONNECTION_ID_FIELD))
@@ -102,10 +92,7 @@ impl Node for WeaviateNode {
         Ok(())
     }
 
-    fn execute(
-        &mut self,
-        _inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, _inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let config_id = self
             .config_id
             .as_deref()

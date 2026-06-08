@@ -1,7 +1,5 @@
 use crate::send_qq_message_batches::{describe_message_segments, qq_messages_from_data_value};
-use crate::ws_action::{
-    json_i64, qq_message_list_to_send_json, response_message_id, response_success, ws_send_action,
-};
+use crate::ws_action::{json_i64, qq_message_list_to_send_json, response_message_id, response_success, ws_send_action};
 use log::{info, warn};
 use std::collections::HashMap;
 use zihuan_core::error::Result;
@@ -45,10 +43,7 @@ impl Node for SendMessageNode {
         port! { name = "message_id", ty = Integer, desc = "服务器返回的消息ID" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let adapter_ref = match inputs.get("ims_bot_adapter") {
@@ -89,9 +84,7 @@ impl Node for SendMessageNode {
             }
         };
 
-        info!(
-            "[SendMessageNode] Sending {target_label} message to {target_id} with {segment_summary}"
-        );
+        info!("[SendMessageNode] Sending {target_label} message to {target_id} with {segment_summary}");
         let response = ws_send_action(&adapter_ref, action_name, params)?;
 
         let success = response_success(&response);

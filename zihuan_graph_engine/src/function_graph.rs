@@ -128,19 +128,14 @@ pub fn hidden_function_runtime_values_port() -> Port {
 pub fn is_hidden_function_port(node_type: &str, port_name: &str) -> bool {
     match node_type {
         "function" => port_name == FUNCTION_CONFIG_PORT,
-        FUNCTION_INPUTS_NODE_TYPE => {
-            port_name == FUNCTION_SIGNATURE_PORT || port_name == FUNCTION_RUNTIME_VALUES_PORT
-        }
+        FUNCTION_INPUTS_NODE_TYPE => port_name == FUNCTION_SIGNATURE_PORT || port_name == FUNCTION_RUNTIME_VALUES_PORT,
         FUNCTION_OUTPUTS_NODE_TYPE => port_name == FUNCTION_SIGNATURE_PORT,
         _ => false,
     }
 }
 
 pub fn is_function_boundary_node(node_type: &str) -> bool {
-    matches!(
-        node_type,
-        FUNCTION_INPUTS_NODE_TYPE | FUNCTION_OUTPUTS_NODE_TYPE
-    )
+    matches!(node_type, FUNCTION_INPUTS_NODE_TYPE | FUNCTION_OUTPUTS_NODE_TYPE)
 }
 
 pub fn embedded_function_config_from_node(node: &NodeDefinition) -> Option<EmbeddedFunctionConfig> {
@@ -159,9 +154,7 @@ pub fn embedded_function_config_from_value(value: &Value) -> Option<EmbeddedFunc
     serde_json::from_value::<EmbeddedFunctionConfig>(value.clone()).ok()
 }
 
-pub fn function_signature_from_inline_values(
-    inline_values: &HashMap<String, Value>,
-) -> Option<Vec<FunctionPortDef>> {
+pub fn function_signature_from_inline_values(inline_values: &HashMap<String, Value>) -> Option<Vec<FunctionPortDef>> {
     inline_values
         .get(FUNCTION_SIGNATURE_PORT)
         .and_then(function_signature_from_value)
@@ -171,10 +164,7 @@ pub fn function_signature_from_value(value: &Value) -> Option<Vec<FunctionPortDe
     serde_json::from_value::<Vec<FunctionPortDef>>(value.clone()).ok()
 }
 
-pub fn sync_function_node_definition(
-    node: &mut NodeDefinition,
-    config: &EmbeddedFunctionConfig,
-) -> bool {
+pub fn sync_function_node_definition(node: &mut NodeDefinition, config: &EmbeddedFunctionConfig) -> bool {
     let mut changed = false;
     let mut normalized = config.clone();
     changed |= sync_function_subgraph(&mut normalized.subgraph);
@@ -218,8 +208,7 @@ pub fn sync_function_node_definition(
         .map(|existing| existing != &config_json)
         .unwrap_or(true)
     {
-        node.inline_values
-            .insert(FUNCTION_CONFIG_PORT.to_string(), config_json);
+        node.inline_values.insert(FUNCTION_CONFIG_PORT.to_string(), config_json);
         changed = true;
     }
 
@@ -250,11 +239,7 @@ pub fn sync_function_subgraph_signature(
 ) -> bool {
     let mut changed = false;
 
-    changed |= upsert_boundary_node(
-        subgraph,
-        FUNCTION_INPUTS_NODE_ID,
-        build_function_inputs_node_definition(inputs),
-    );
+    changed |= upsert_boundary_node(subgraph, FUNCTION_INPUTS_NODE_ID, build_function_inputs_node_definition(inputs));
     changed |= upsert_boundary_node(
         subgraph,
         FUNCTION_OUTPUTS_NODE_ID,
@@ -267,10 +252,7 @@ pub fn sync_function_subgraph_signature(
         .map(|node| {
             (
                 node.id.as_str(),
-                node.input_ports
-                    .iter()
-                    .map(|port| port.name.as_str())
-                    .collect(),
+                node.input_ports.iter().map(|port| port.name.as_str()).collect(),
             )
         })
         .collect();
@@ -280,10 +262,7 @@ pub fn sync_function_subgraph_signature(
         .map(|node| {
             (
                 node.id.as_str(),
-                node.output_ports
-                    .iter()
-                    .map(|port| port.name.as_str())
-                    .collect(),
+                node.output_ports.iter().map(|port| port.name.as_str()).collect(),
             )
         })
         .collect();
@@ -304,11 +283,7 @@ pub fn sync_function_subgraph_signature(
     changed
 }
 
-fn upsert_boundary_node(
-    subgraph: &mut NodeGraphDefinition,
-    node_id: &str,
-    replacement: NodeDefinition,
-) -> bool {
+fn upsert_boundary_node(subgraph: &mut NodeGraphDefinition, node_id: &str, replacement: NodeDefinition) -> bool {
     if let Some(existing) = subgraph.nodes.iter_mut().find(|node| node.id == node_id) {
         let position = existing.position.clone();
         let size = existing.size.clone();
@@ -325,8 +300,7 @@ fn upsert_boundary_node(
             || existing.output_ports != replacement.output_ports
             || existing.dynamic_input_ports != replacement.dynamic_input_ports
             || existing.dynamic_output_ports != replacement.dynamic_output_ports
-            || existing.position.as_ref().map(|p| (p.x, p.y))
-                != replacement.position.as_ref().map(|p| (p.x, p.y))
+            || existing.position.as_ref().map(|p| (p.x, p.y)) != replacement.position.as_ref().map(|p| (p.x, p.y))
             || existing.size.as_ref().map(|s| (s.width, s.height))
                 != replacement.size.as_ref().map(|s| (s.width, s.height))
             || existing.inline_values != replacement.inline_values
@@ -353,10 +327,7 @@ fn build_function_inputs_node_definition(signature: &[FunctionPortDef]) -> NodeD
         name: "函数输入".to_string(),
         description: Some("函数子图的输入边界节点".to_string()),
         node_type: FUNCTION_INPUTS_NODE_TYPE.to_string(),
-        input_ports: vec![
-            hidden_function_signature_port(),
-            hidden_function_runtime_values_port(),
-        ],
+        input_ports: vec![hidden_function_signature_port(), hidden_function_runtime_values_port()],
         output_ports: function_inputs_ports(signature),
         dynamic_input_ports: false,
         dynamic_output_ports: true,

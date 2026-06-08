@@ -41,10 +41,7 @@ pub fn normalize_ignore_rule_input(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned);
-    let group_id = group_id
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned);
+    let group_id = group_id.map(str::trim).filter(|value| !value.is_empty()).map(ToOwned::to_owned);
 
     let match_key = match (&sender_id, &group_id) {
         (Some(sender_id), Some(group_id)) => {
@@ -59,11 +56,7 @@ pub fn normalize_ignore_rule_input(
         }
     };
 
-    Ok(NormalizedIgnoreRuleInput {
-        sender_id,
-        group_id,
-        match_key,
-    })
+    Ok(NormalizedIgnoreRuleInput { sender_id, group_id, match_key })
 }
 
 pub async fn list_ignore_rules(
@@ -81,15 +74,10 @@ pub async fn create_ignore_rule(
     agent_id: &str,
     input: &QqChatAgentIgnoreRuleUpsert,
 ) -> Result<QqChatAgentIgnoreRule> {
-    let normalized =
-        normalize_ignore_rule_input(input.sender_id.as_deref(), input.group_id.as_deref())?;
+    let normalized = normalize_ignore_rule_input(input.sender_id.as_deref(), input.group_id.as_deref())?;
     match connection {
-        RelationalDbConnection::MySql(config) => {
-            create_ignore_rule_mysql(config, agent_id, &normalized).await
-        }
-        RelationalDbConnection::Sqlite(config) => {
-            create_ignore_rule_sqlite(config, agent_id, &normalized).await
-        }
+        RelationalDbConnection::MySql(config) => create_ignore_rule_mysql(config, agent_id, &normalized).await,
+        RelationalDbConnection::Sqlite(config) => create_ignore_rule_sqlite(config, agent_id, &normalized).await,
     }
 }
 
@@ -99,23 +87,16 @@ pub async fn update_ignore_rule(
     rule_id: i64,
     input: &QqChatAgentIgnoreRuleUpsert,
 ) -> Result<QqChatAgentIgnoreRule> {
-    let normalized =
-        normalize_ignore_rule_input(input.sender_id.as_deref(), input.group_id.as_deref())?;
+    let normalized = normalize_ignore_rule_input(input.sender_id.as_deref(), input.group_id.as_deref())?;
     match connection {
-        RelationalDbConnection::MySql(config) => {
-            update_ignore_rule_mysql(config, agent_id, rule_id, &normalized).await
-        }
+        RelationalDbConnection::MySql(config) => update_ignore_rule_mysql(config, agent_id, rule_id, &normalized).await,
         RelationalDbConnection::Sqlite(config) => {
             update_ignore_rule_sqlite(config, agent_id, rule_id, &normalized).await
         }
     }
 }
 
-pub async fn delete_ignore_rule(
-    connection: &RelationalDbConnection,
-    agent_id: &str,
-    rule_id: i64,
-) -> Result<()> {
+pub async fn delete_ignore_rule(connection: &RelationalDbConnection, agent_id: &str, rule_id: i64) -> Result<()> {
     match connection {
         RelationalDbConnection::MySql(config) => {
             sqlx::query("DELETE FROM qq_chat_agent_ignore_rule WHERE id = ? AND agent_id = ?")
@@ -146,8 +127,7 @@ pub async fn should_ignore_message(
 ) -> Result<bool> {
     let sender_match_key = format!("sender:{}", sender_id.trim());
     let group_match_key = group_id.map(|value| format!("group:{}", value.trim()));
-    let group_sender_match_key =
-        group_id.map(|value| format!("group:{}|sender:{}", value.trim(), sender_id.trim()));
+    let group_sender_match_key = group_id.map(|value| format!("group:{}|sender:{}", value.trim(), sender_id.trim()));
 
     match connection {
         RelationalDbConnection::MySql(config) => {
@@ -193,9 +173,7 @@ pub fn should_ignore_message_blocking(
     let agent_id = agent_id.to_string();
     let sender_id = sender_id.to_string();
     let group_id = group_id.map(ToOwned::to_owned);
-    let run = async move {
-        should_ignore_message(&connection, &agent_id, &sender_id, group_id.as_deref()).await
-    };
+    let run = async move { should_ignore_message(&connection, &agent_id, &sender_id, group_id.as_deref()).await };
 
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         block_in_place(|| handle.block_on(run))
@@ -204,10 +182,7 @@ pub fn should_ignore_message_blocking(
     }
 }
 
-async fn list_ignore_rules_mysql(
-    config: &Arc<MySqlConfig>,
-    agent_id: &str,
-) -> Result<Vec<QqChatAgentIgnoreRule>> {
+async fn list_ignore_rules_mysql(config: &Arc<MySqlConfig>, agent_id: &str) -> Result<Vec<QqChatAgentIgnoreRule>> {
     let rows = sqlx::query(
         "SELECT id, agent_id, sender_id, group_id, match_key, created_at, updated_at \
          FROM qq_chat_agent_ignore_rule WHERE agent_id = ? ORDER BY id ASC",
@@ -220,10 +195,7 @@ async fn list_ignore_rules_mysql(
     Ok(rows.into_iter().map(map_ignore_rule_mysql_row).collect())
 }
 
-async fn list_ignore_rules_sqlite(
-    config: &Arc<SqliteConfig>,
-    agent_id: &str,
-) -> Result<Vec<QqChatAgentIgnoreRule>> {
+async fn list_ignore_rules_sqlite(config: &Arc<SqliteConfig>, agent_id: &str) -> Result<Vec<QqChatAgentIgnoreRule>> {
     let rows = sqlx::query(
         "SELECT id, agent_id, sender_id, group_id, match_key, created_at, updated_at \
          FROM qq_chat_agent_ignore_rule WHERE agent_id = ? ORDER BY id ASC",
@@ -449,15 +421,17 @@ fn map_ignore_rule_sqlite_row(row: SqliteRow) -> QqChatAgentIgnoreRule {
 }
 
 fn mysql_pool(config: &Arc<MySqlConfig>) -> Result<&sqlx::mysql::MySqlPool> {
-    config.pool.as_ref().ok_or_else(|| {
-        Error::ValidationError("ignore-rule mysql pool is not initialized".to_string())
-    })
+    config
+        .pool
+        .as_ref()
+        .ok_or_else(|| Error::ValidationError("ignore-rule mysql pool is not initialized".to_string()))
 }
 
 fn sqlite_pool(config: &Arc<SqliteConfig>) -> Result<&sqlx::sqlite::SqlitePool> {
-    config.pool.as_ref().ok_or_else(|| {
-        Error::ValidationError("ignore-rule sqlite pool is not initialized".to_string())
-    })
+    config
+        .pool
+        .as_ref()
+        .ok_or_else(|| Error::ValidationError("ignore-rule sqlite pool is not initialized".to_string()))
 }
 
 fn format_mysql_timestamp(value: NaiveDateTime) -> String {
@@ -466,10 +440,7 @@ fn format_mysql_timestamp(value: NaiveDateTime) -> String {
 
 fn map_conflict_error(error: sqlx::Error) -> Error {
     let message = error.to_string().to_lowercase();
-    if message.contains("unique")
-        || message.contains("duplicate")
-        || message.contains("constraint failed")
-    {
+    if message.contains("unique") || message.contains("duplicate") || message.contains("constraint failed") {
         return Error::ValidationError("ignore rule already exists".to_string());
     }
     Error::Database(error)

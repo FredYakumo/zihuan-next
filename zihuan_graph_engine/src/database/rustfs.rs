@@ -146,10 +146,7 @@ fn ensure_endpoint_bypasses_proxy(endpoint: &str) {
 
 fn append_no_proxy_var(var_name: &str, host: &str) -> bool {
     let current = std::env::var(var_name).unwrap_or_default();
-    let already_present = current
-        .split(',')
-        .map(str::trim)
-        .any(|entry| entry.eq_ignore_ascii_case(host));
+    let already_present = current.split(',').map(str::trim).any(|entry| entry.eq_ignore_ascii_case(host));
     if already_present {
         return false;
     }

@@ -2,9 +2,7 @@ use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use zihuan_core::agent_config::QqChatAgentConfig;
-use zihuan_core::config::{
-    ConfigCategory, ConfigCenter, ConfigKind, ConfigRecord, StoredConfigRecord,
-};
+use zihuan_core::config::{ConfigCategory, ConfigCenter, ConfigKind, ConfigRecord, StoredConfigRecord};
 use zihuan_core::error::Result;
 use zihuan_core::tool_runtime::ToolRunDuration;
 use zihuan_graph_engine::function_graph::FunctionPortDef;
@@ -247,9 +245,7 @@ impl ConfigRecord for AgentConfig {
 
     fn validate(&self) -> Result<()> {
         if self.canonical_config_id().trim().is_empty() {
-            return Err(zihuan_core::string_error!(
-                "agent config_id must not be empty"
-            ));
+            return Err(zihuan_core::string_error!("agent config_id must not be empty"));
         }
         if self.name.trim().is_empty() {
             return Err(zihuan_core::string_error!("agent name must not be empty"));
@@ -290,9 +286,7 @@ impl ConfigRecord for LlmRefConfig {
 
     fn validate(&self) -> Result<()> {
         if self.canonical_config_id().trim().is_empty() {
-            return Err(zihuan_core::string_error!(
-                "llm_ref config_id must not be empty"
-            ));
+            return Err(zihuan_core::string_error!("llm_ref config_id must not be empty"));
         }
         if self.name.trim().is_empty() {
             return Err(zihuan_core::string_error!("llm_ref name must not be empty"));
@@ -300,23 +294,15 @@ impl ConfigRecord for LlmRefConfig {
         match &self.model {
             ModelRefSpec::ChatLlm { llm } => {
                 if llm.model_name.trim().is_empty() {
-                    return Err(zihuan_core::string_error!(
-                        "chat_llm model_name must not be empty"
-                    ));
+                    return Err(zihuan_core::string_error!("chat_llm model_name must not be empty"));
                 }
-                if !matches!(llm.api_style, LlmApiStyle::Candle)
-                    && llm.api_endpoint.trim().is_empty()
-                {
-                    return Err(zihuan_core::string_error!(
-                        "chat_llm api_endpoint must not be empty"
-                    ));
+                if !matches!(llm.api_style, LlmApiStyle::Candle) && llm.api_endpoint.trim().is_empty() {
+                    return Err(zihuan_core::string_error!("chat_llm api_endpoint must not be empty"));
                 }
             }
             ModelRefSpec::TextEmbeddingLocal { model_name } => {
                 if model_name.trim().is_empty() {
-                    return Err(zihuan_core::string_error!(
-                        "text_embedding_local model_name must not be empty"
-                    ));
+                    return Err(zihuan_core::string_error!("text_embedding_local model_name must not be empty"));
                 }
             }
         }
@@ -366,12 +352,7 @@ pub fn load_agents() -> Result<Vec<AgentConfig>> {
 }
 
 pub fn save_agents(agents: Vec<AgentConfig>) -> Result<()> {
-    save_records(
-        ConfigCategory::Agent,
-        agents,
-        normalize_agent_identity,
-        agent_to_record,
-    )
+    save_records(ConfigCategory::Agent, agents, normalize_agent_identity, agent_to_record)
 }
 
 pub fn load_llm_refs() -> Result<Vec<LlmRefConfig>> {
@@ -391,12 +372,7 @@ pub fn load_llm_refs() -> Result<Vec<LlmRefConfig>> {
 }
 
 pub fn save_llm_refs(llm_refs: Vec<LlmRefConfig>) -> Result<()> {
-    save_records(
-        ConfigCategory::LlmRef,
-        llm_refs,
-        normalize_llm_ref_identity,
-        llm_ref_to_record,
-    )
+    save_records(ConfigCategory::LlmRef, llm_refs, normalize_llm_ref_identity, llm_ref_to_record)
 }
 
 fn save_records<T>(
@@ -462,10 +438,7 @@ fn normalize_llm_ref_identity(mut llm_ref: LlmRefConfig, fallback_id: String) ->
 fn agent_to_record(agent: &AgentConfig) -> Result<StoredConfigRecord> {
     agent.validate()?;
     let mut spec = Map::new();
-    spec.insert(
-        "agent_type".to_string(),
-        serde_json::to_value(&agent.agent_type)?,
-    );
+    spec.insert("agent_type".to_string(), serde_json::to_value(&agent.agent_type)?);
     spec.insert("auto_start".to_string(), Value::Bool(agent.auto_start));
     spec.insert("is_default".to_string(), Value::Bool(agent.is_default));
     spec.insert("tools".to_string(), serde_json::to_value(&agent.tools)?);
@@ -486,11 +459,11 @@ fn agent_from_record(record: StoredConfigRecord) -> Result<AgentConfig> {
             record.config_id
         ));
     }
-    let spec = record.spec.as_object().ok_or_else(|| {
-        zihuan_core::string_error!("agent config '{}' spec must be an object", record.config_id)
-    })?;
-    let mut agent_type =
-        serde_json::from_value(spec.get("agent_type").cloned().unwrap_or(Value::Null))?;
+    let spec = record
+        .spec
+        .as_object()
+        .ok_or_else(|| zihuan_core::string_error!("agent config '{}' spec must be an object", record.config_id))?;
+    let mut agent_type = serde_json::from_value(spec.get("agent_type").cloned().unwrap_or(Value::Null))?;
     if let AgentType::QqChat(config) = &mut agent_type {
         let rdb_id = config
             .rdb_id
@@ -512,8 +485,7 @@ fn agent_from_record(record: StoredConfigRecord) -> Result<AgentConfig> {
             .map(ToOwned::to_owned);
 
         if rdb_id.is_none() {
-            if let (Some(mysql_id), Some(task_id)) = (&mysql_connection_id, &task_db_connection_id)
-            {
+            if let (Some(mysql_id), Some(task_id)) = (&mysql_connection_id, &task_db_connection_id) {
                 if mysql_id != task_id {
                     warn!(
                         "[config_center] qq_chat agent '{}' has conflicting legacy mysql_connection_id='{}' and task_db_connection_id='{}'; using mysql_connection_id",
@@ -533,20 +505,10 @@ fn agent_from_record(record: StoredConfigRecord) -> Result<AgentConfig> {
         name: record.name,
         agent_type,
         enabled: record.enabled,
-        auto_start: spec
-            .get("auto_start")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
-        is_default: spec
-            .get("is_default")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
+        auto_start: spec.get("auto_start").and_then(Value::as_bool).unwrap_or(false),
+        is_default: spec.get("is_default").and_then(Value::as_bool).unwrap_or(false),
         updated_at: record.updated_at,
-        tools: serde_json::from_value(
-            spec.get("tools")
-                .cloned()
-                .unwrap_or_else(|| Value::Array(Vec::new())),
-        )?,
+        tools: serde_json::from_value(spec.get("tools").cloned().unwrap_or_else(|| Value::Array(Vec::new())))?,
     })
 }
 

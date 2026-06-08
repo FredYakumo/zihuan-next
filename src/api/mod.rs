@@ -30,11 +30,7 @@ use ws::{ws_handler, WsBroadcast};
 struct WebAssets;
 
 /// Build the Salvo router with all API endpoints and static file serving.
-pub fn build_router(
-    state: Arc<AppState>,
-    broadcast: WsBroadcast,
-    canonical_local_origin: Option<String>,
-) -> Router {
+pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast, canonical_local_origin: Option<String>) -> Router {
     // API routes
     let api = Router::new()
         // Registry
@@ -247,25 +243,12 @@ impl CanonicalLocalRedirect {
 
 #[async_trait]
 impl Handler for CanonicalLocalRedirect {
-    async fn handle(
-        &self,
-        req: &mut Request,
-        depot: &mut Depot,
-        res: &mut Response,
-        ctrl: &mut FlowCtrl,
-    ) {
+    async fn handle(&self, req: &mut Request, depot: &mut Depot, res: &mut Response, ctrl: &mut FlowCtrl) {
         if matches!(*req.method(), Method::GET | Method::HEAD)
             && should_redirect_local_host(req.headers(), &self.canonical_origin)
         {
-            let path_and_query = req
-                .uri()
-                .path_and_query()
-                .map(|value| value.as_str())
-                .unwrap_or("/");
-            res.render(Redirect::temporary(format!(
-                "{}{}",
-                self.canonical_origin, path_and_query
-            )));
+            let path_and_query = req.uri().path_and_query().map(|value| value.as_str()).unwrap_or("/");
+            res.render(Redirect::temporary(format!("{}{}", self.canonical_origin, path_and_query)));
             ctrl.skip_rest();
             return;
         }
@@ -303,9 +286,7 @@ fn normalize_host(host: &str) -> Option<String> {
     }
 
     if host.starts_with('[') {
-        return host
-            .split_once(']')
-            .map(|(addr, _)| format!("{addr}]").to_ascii_lowercase());
+        return host.split_once(']').map(|(addr, _)| format!("{addr}]").to_ascii_lowercase());
     }
 
     match host.split_once(':') {

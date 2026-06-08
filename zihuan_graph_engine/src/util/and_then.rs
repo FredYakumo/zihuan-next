@@ -39,9 +39,10 @@ impl Node for AndThenNode {
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
-        let output = inputs.get("second").cloned().ok_or_else(|| {
-            zihuan_core::error::Error::ValidationError("second 输入不存在".to_string())
-        })?;
+        let output = inputs
+            .get("second")
+            .cloned()
+            .ok_or_else(|| zihuan_core::error::Error::ValidationError("second 输入不存在".to_string()))?;
 
         crate::return_with_node_output![self;
             "output" => output,

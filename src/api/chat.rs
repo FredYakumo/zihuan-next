@@ -18,9 +18,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 use zihuan_agent::brain::BrainObserver;
 use zihuan_core::agent_config::QqChatAgentConfig;
-use zihuan_core::command::{
-    CommandChannel, CommandContext, NewConversationRequest, SideEffectContext,
-};
+use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::ToolCalls;
 use zihuan_core::llm::{LLMMessage, MessageRole};
@@ -166,9 +164,7 @@ struct DashboardCommandSideEffectState {
 impl DashboardCommandSideEffectState {
     fn issue_new_session_id(&self) -> String {
         let mut guard = self.next_session_id.lock().unwrap();
-        guard
-            .get_or_insert_with(|| Uuid::new_v4().to_string())
-            .clone()
+        guard.get_or_insert_with(|| Uuid::new_v4().to_string()).clone()
     }
 
     fn current_new_session_id(&self) -> Option<String> {
@@ -216,10 +212,7 @@ fn extract_agent_snapshot(agent: &AgentConfig, connections: &[ConnectionConfig])
     }
 }
 
-fn resolve_qq_avatar_url(
-    connections: &[ConnectionConfig],
-    config: &QqChatAgentConfig,
-) -> Option<String> {
+fn resolve_qq_avatar_url(connections: &[ConnectionConfig], config: &QqChatAgentConfig) -> Option<String> {
     let connection = connections
         .iter()
         .find(|item| item.id == config.ims_bot_adapter_connection_id)?;
@@ -282,19 +275,16 @@ fn resolve_chat_agent(
     agent_manager: &zihuan_service::agent::AgentManager,
     agent_id: &str,
 ) -> std::result::Result<ChatAgentInfo, Value> {
-    let running_agent = agent_manager.running_agent(agent_id).ok_or_else(
-        || json!({ "type": "error", "error": format!("agent '{}' is not running", agent_id) }),
-    )?;
+    let running_agent = agent_manager
+        .running_agent(agent_id)
+        .ok_or_else(|| json!({ "type": "error", "error": format!("agent '{}' is not running", agent_id) }))?;
     let agent = running_agent.agent_config().clone();
 
-    let connections = crate::system_config::load_connections()
-        .map_err(|err| json!({ "type": "error", "error": err.to_string() }))?;
+    let connections =
+        crate::system_config::load_connections().map_err(|err| json!({ "type": "error", "error": err.to_string() }))?;
     let agent_snapshot = extract_agent_snapshot(&agent, &connections);
 
-    Ok(ChatAgentInfo {
-        agent,
-        agent_snapshot,
-    })
+    Ok(ChatAgentInfo { agent, agent_snapshot })
 }
 
 /// Attempt to match and execute a dashboard slash-command against the user's latest message.
@@ -321,9 +311,7 @@ fn try_dispatch_dashboard_command(
     messages: Vec<LLMMessage>,
     latest_user_message: &Option<LLMMessage>,
 ) -> std::result::Result<CommandDispatchOutcome, Value> {
-    let requested_session_id = requested_session_id
-        .as_deref()
-        .filter(|value| !value.trim().is_empty());
+    let requested_session_id = requested_session_id.as_deref().filter(|value| !value.trim().is_empty());
     let mut session_id = requested_session_id
         .map(|s| s.to_string())
         .unwrap_or_else(|| Uuid::new_v4().to_string());
@@ -346,9 +334,7 @@ fn try_dispatch_dashboard_command(
         });
     };
 
-    let raw_user_text = latest_user_message
-        .as_ref()
-        .and_then(LLMMessage::content_text_owned);
+    let raw_user_text = latest_user_message.as_ref().and_then(LLMMessage::content_text_owned);
 
     let Some(raw_user_text) = raw_user_text else {
         return Ok(CommandDispatchOutcome {
@@ -420,9 +406,7 @@ fn try_dispatch_dashboard_command(
         latest_user_message = None;
     } else {
         should_run_inference = false;
-        immediate_output_messages = Some(vec![LLMMessage::assistant_text(
-            dispatch_result.result.reply,
-        )]);
+        immediate_output_messages = Some(vec![LLMMessage::assistant_text(dispatch_result.result.reply)]);
     }
 
     Ok(CommandDispatchOutcome {
@@ -470,11 +454,7 @@ async fn emit_immediate_output(
             "index": 0,
             "token": content,
         });
-        if sender
-            .send_data(format!("data: {delta_event}\n\n"))
-            .await
-            .is_err()
-        {
+        if sender.send_data(format!("data: {delta_event}\n\n")).await.is_err() {
             return false;
         }
     }
@@ -627,18 +607,12 @@ pub async fn stream_chat(req: &mut Request, res: &mut Response, depot: &mut Depo
         return;
     }
 
-    let state = depot
-        .obtain::<std::sync::Arc<crate::api::state::AppState>>()
-        .unwrap()
-        .clone();
+    let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap().clone();
 
     let (sender, receiver) = ResBody::channel();
-    res.headers_mut().insert(
-        CONTENT_TYPE,
-        HeaderValue::from_static("text/event-stream; charset=utf-8"),
-    );
     res.headers_mut()
-        .insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+        .insert(CONTENT_TYPE, HeaderValue::from_static("text/event-stream; charset=utf-8"));
+    res.headers_mut().insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
     res.body = receiver;
 
     tokio::spawn(execute_chat_streaming(state, body, sender));
@@ -719,10 +693,7 @@ async fn execute_chat_streaming(
         stream,
     } = body;
 
-    let ChatAgentInfo {
-        agent,
-        agent_snapshot,
-    } = match resolve_chat_agent(&state.agent_manager, &agent_id) {
+    let ChatAgentInfo { agent, agent_snapshot } = match resolve_chat_agent(&state.agent_manager, &agent_id) {
         Ok(info) => info,
         Err(event) => {
             let _ = sender.send_data(format!("data: {event}\n\n")).await;
@@ -732,8 +703,7 @@ async fn execute_chat_streaming(
 
     messages = sanitize_messages(messages);
     if messages.is_empty() {
-        let event =
-            json!({ "type": "error", "error": "messages must not be empty after sanitization" });
+        let event = json!({ "type": "error", "error": "messages must not be empty after sanitization" });
         let _ = sender.send_data(format!("data: {event}\n\n")).await;
         return;
     }
@@ -767,8 +737,7 @@ async fn execute_chat_streaming(
         }
     };
 
-    let assistant_message_id =
-        requires_assistant_message.then(|| format!("msg_{}", Uuid::new_v4().simple()));
+    let assistant_message_id = requires_assistant_message.then(|| format!("msg_{}", Uuid::new_v4().simple()));
 
     if !send_sse(
         &mut sender,
@@ -780,9 +749,7 @@ async fn execute_chat_streaming(
     }
 
     if !should_run_inference {
-        if let (Some(ref output_messages), Some(ref msg_id)) =
-            (&immediate_output_messages, &assistant_message_id)
-        {
+        if let (Some(ref output_messages), Some(ref msg_id)) = (&immediate_output_messages, &assistant_message_id) {
             if !emit_immediate_output(
                 &mut sender,
                 &session_id,
@@ -831,21 +798,9 @@ async fn execute_chat_streaming(
     });
 
     if stream.unwrap_or(true) {
-        relay_inference_stream(
-            &mut sender,
-            &assistant_message_id,
-            &mut token_rx,
-            &mut event_rx,
-        )
-        .await;
+        relay_inference_stream(&mut sender, &assistant_message_id, &mut token_rx, &mut event_rx).await;
     } else {
-        relay_collected_text(
-            &mut sender,
-            &assistant_message_id,
-            &mut token_rx,
-            &mut event_rx,
-        )
-        .await;
+        relay_collected_text(&mut sender, &assistant_message_id, &mut token_rx, &mut event_rx).await;
     }
 
     let output_messages = match inference_handle.await {
@@ -856,8 +811,7 @@ async fn execute_chat_streaming(
             return;
         }
         Err(err) => {
-            let event =
-                json!({ "type": "error", "error": format!("failed to join chat task: {err}") });
+            let event = json!({ "type": "error", "error": format!("failed to join chat task: {err}") });
             let _ = sender.send_data(format!("data: {event}\n\n")).await;
             return;
         }
@@ -908,13 +862,8 @@ fn sanitize_messages(messages: Vec<LLMMessage>) -> Vec<LLMMessage> {
     messages
         .into_iter()
         .filter(|message| {
-            let has_content = message
-                .content_text_owned()
-                .is_some_and(|text| !text.trim().is_empty());
-            let has_reasoning = message
-                .reasoning_content
-                .as_deref()
-                .is_some_and(|text| !text.trim().is_empty());
+            let has_content = message.content_text_owned().is_some_and(|text| !text.trim().is_empty());
+            let has_reasoning = message.reasoning_content.as_deref().is_some_and(|text| !text.trim().is_empty());
             has_content || has_reasoning || !message.tool_calls.is_empty()
         })
         .collect()
@@ -925,10 +874,7 @@ fn sanitize_messages(messages: Vec<LLMMessage>) -> Vec<LLMMessage> {
 /// **Purpose:** Used by command dispatch when a passthrough command rewrites the user message
 /// in-place rather than appending.
 fn replace_last_user_message(messages: &mut Vec<LLMMessage>, replacement: LLMMessage) {
-    if let Some(index) = messages
-        .iter()
-        .rposition(|message| matches!(message.role, MessageRole::User))
-    {
+    if let Some(index) = messages.iter().rposition(|message| matches!(message.role, MessageRole::User)) {
         messages[index] = replacement;
     } else {
         messages.push(replacement);
@@ -992,9 +938,7 @@ fn persist_chat_records(
             timestamp: now.clone(),
             stream_index: None,
             trace_id: trace_id.to_string(),
-            message_id: if matches!(message.role, MessageRole::Assistant)
-                && message.tool_calls.is_empty()
-            {
+            message_id: if matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty() {
                 assistant_message_id.to_string()
             } else {
                 format!("msg_{}", Uuid::new_v4().simple())
@@ -1066,9 +1010,7 @@ fn load_chat_sessions(filter_agent_id: Option<&str>) -> Result<Vec<ChatSessionSu
             agent_id: first_record.as_ref().map(|r| r.agent_id.clone()),
             agent_name: first_record.as_ref().map(|r| r.agent_name.clone()),
             agent_type: first_record.as_ref().map(|r| r.agent_type.clone()),
-            agent_avatar_url: first_record
-                .as_ref()
-                .and_then(|r| r.agent_avatar_url.clone()),
+            agent_avatar_url: first_record.as_ref().and_then(|r| r.agent_avatar_url.clone()),
         });
     }
 
@@ -1092,11 +1034,7 @@ fn load_chat_session_messages(session_id: &str) -> Result<Vec<ChatHistoryRecord>
         }
         match serde_json::from_str::<ChatHistoryRecord>(&line) {
             Ok(record) => entries.push(record),
-            Err(err) => {
-                return Err(Error::StringError(format!(
-                    "failed to parse chat record: {err}"
-                )))
-            }
+            Err(err) => return Err(Error::StringError(format!("failed to parse chat record: {err}"))),
         }
     }
     Ok(entries)
@@ -1111,9 +1049,8 @@ fn read_first_record(path: &Path) -> Result<Option<ChatHistoryRecord>> {
         return Ok(None);
     }
 
-    let record: ChatHistoryRecord = serde_json::from_str(line.trim()).map_err(|err| {
-        Error::StringError(format!("failed to parse first chat history record: {err}"))
-    })?;
+    let record: ChatHistoryRecord = serde_json::from_str(line.trim())
+        .map_err(|err| Error::StringError(format!("failed to parse first chat history record: {err}")))?;
     Ok(Some(record))
 }
 
@@ -1126,9 +1063,7 @@ fn chat_history_dir() -> Result<PathBuf> {
 
 fn chat_session_file_path(session_id: &str) -> Result<PathBuf> {
     if session_id.trim().is_empty() {
-        return Err(Error::ValidationError(
-            "session_id must not be empty".to_string(),
-        ));
+        return Err(Error::ValidationError("session_id must not be empty".to_string()));
     }
     Ok(chat_history_dir()?.join(format!("{session_id}.jsonl")))
 }

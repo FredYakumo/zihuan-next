@@ -30,9 +30,7 @@ fn extract_limit(inputs: &HashMap<String, DataValue>) -> Result<u32> {
         .ok_or_else(|| Error::InvalidNodeInput("limit is required".to_string()))?;
 
     if limit <= 0 {
-        return Err(Error::ValidationError(
-            "limit must be greater than 0".to_string(),
-        ));
+        return Err(Error::ValidationError("limit must be greater than 0".to_string()));
     }
 
     Ok(limit as u32)
@@ -91,9 +89,7 @@ impl Node for MessageMySQLGetGroupHistoryNode {
         })?;
 
         let messages = format_history_messages(aggregate_history_rows(
-            rows.into_iter()
-                .map(message_history_chunk_row_from_row)
-                .collect(),
+            rows.into_iter().map(message_history_chunk_row_from_row).collect(),
             limit as usize,
         ));
 

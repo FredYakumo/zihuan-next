@@ -15,19 +15,12 @@ pub fn build_llm_from_ref_id(llm_ref_id: Option<&str>) -> Result<Arc<dyn LLMBase
     let llm_ref_id = llm_ref_id
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            zihuan_core::error::Error::ValidationError("llm_ref_id is required".to_string())
-        })?;
+        .ok_or_else(|| zihuan_core::error::Error::ValidationError("llm_ref_id is required".to_string()))?;
 
     let llm_ref = load_llm_refs()?
         .into_iter()
         .find(|item| item.id == llm_ref_id || item.config_id == llm_ref_id)
-        .ok_or_else(|| {
-            zihuan_core::error::Error::ValidationError(format!(
-                "llm_ref '{}' not found",
-                llm_ref_id
-            ))
-        })?;
+        .ok_or_else(|| zihuan_core::error::Error::ValidationError(format!("llm_ref '{}' not found", llm_ref_id)))?;
 
     if !llm_ref.enabled {
         return Err(zihuan_core::error::Error::ValidationError(format!(
@@ -58,20 +51,13 @@ pub fn build_llm_from_ref_id(llm_ref_id: Option<&str>) -> Result<Arc<dyn LLMBase
     ))
 }
 
-pub fn build_embedding_from_ref_id(
-    embedding_model_ref_id: Option<&str>,
-) -> Result<Arc<dyn EmbeddingBase>> {
+pub fn build_embedding_from_ref_id(embedding_model_ref_id: Option<&str>) -> Result<Arc<dyn EmbeddingBase>> {
     let embedding_model_ref_id = embedding_model_ref_id
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            zihuan_core::error::Error::ValidationError(
-                "embedding_model_ref_id is required".to_string(),
-            )
-        })?;
+        .ok_or_else(|| zihuan_core::error::Error::ValidationError("embedding_model_ref_id is required".to_string()))?;
 
     zihuan_core::runtime::block_async(
-        RuntimeEmbeddingModelManager::shared()
-            .get_or_create_embedding_model(embedding_model_ref_id),
+        RuntimeEmbeddingModelManager::shared().get_or_create_embedding_model(embedding_model_ref_id),
     )
 }

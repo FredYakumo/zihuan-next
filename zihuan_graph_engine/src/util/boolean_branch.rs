@@ -53,9 +53,10 @@ impl Node for BooleanBranchNode {
             }
         };
 
-        let input = inputs.get("input").cloned().ok_or_else(|| {
-            zihuan_core::error::Error::ValidationError("input 输入不存在".to_string())
-        })?;
+        let input = inputs
+            .get("input")
+            .cloned()
+            .ok_or_else(|| zihuan_core::error::Error::ValidationError("input 输入不存在".to_string()))?;
 
         if condition {
             crate::return_with_node_output![self;

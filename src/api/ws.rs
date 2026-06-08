@@ -60,18 +60,12 @@ pub fn create_broadcast() -> WsBroadcast {
 }
 
 #[handler]
-pub async fn ws_handler(
-    req: &mut Request,
-    res: &mut Response,
-    depot: &mut Depot,
-) -> Result<(), StatusError> {
+pub async fn ws_handler(req: &mut Request, res: &mut Response, depot: &mut Depot) -> Result<(), StatusError> {
     let state = depot.obtain::<Arc<AppState>>().unwrap().clone();
     let broadcast_tx = depot.obtain::<WsBroadcast>().unwrap().clone();
 
     WebSocketUpgrade::new()
-        .upgrade(req, res, move |ws| {
-            handle_ws_connection(ws, state, broadcast_tx)
-        })
+        .upgrade(req, res, move |ws| handle_ws_connection(ws, state, broadcast_tx))
         .await
 }
 

@@ -7,9 +7,7 @@ use model_inference::message_content_utils::sanitize_messages_for_inference;
 use model_inference::system_config::{AgentConfig, AgentType, LlmRefConfig};
 use storage_handler::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
-use zihuan_agent::brain::{
-    Brain, BrainObserver, BrainStopReason, BrainTool, ToolRunDuration, MAX_TOOL_ITERATIONS,
-};
+use zihuan_agent::brain::{Brain, BrainObserver, BrainStopReason, BrainTool, ToolRunDuration, MAX_TOOL_ITERATIONS};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
@@ -113,10 +111,7 @@ impl LoadedInferenceAgent {
         tools: Arc<dyn InferenceToolProvider>,
     ) -> Result<Self> {
         if !agent.enabled {
-            return Err(Error::ValidationError(format!(
-                "agent '{}' is disabled",
-                agent.name
-            )));
+            return Err(Error::ValidationError(format!("agent '{}' is disabled", agent.name)));
         }
 
         let llm_ref_id = match &agent.agent_type {
@@ -148,14 +143,9 @@ impl LoadedInferenceAgent {
         output_messages
             .into_iter()
             .rev()
-            .find(|message| {
-                matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty()
-            })
+            .find(|message| matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty())
             .ok_or_else(|| {
-                Error::StringError(format!(
-                    "agent '{}' did not produce a final assistant message",
-                    self.agent.name
-                ))
+                Error::StringError(format!("agent '{}' did not produce a final assistant message", self.agent.name))
             })
     }
 
@@ -227,8 +217,7 @@ pub fn infer_agent_response_with_trace(
     messages: Vec<LLMMessage>,
 ) -> Result<Vec<LLMMessage>> {
     let connections = load_connections().unwrap_or_default();
-    LoadedInferenceAgent::load_with_refs(agent, llm_refs, &connections)?
-        .infer_response_with_trace(messages)
+    LoadedInferenceAgent::load_with_refs(agent, llm_refs, &connections)?.infer_response_with_trace(messages)
 }
 
 pub fn resolve_agent_model_name(agent: &AgentConfig, llm_refs: &[LlmRefConfig]) -> Result<String> {

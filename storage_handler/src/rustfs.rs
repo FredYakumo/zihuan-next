@@ -45,10 +45,7 @@ fn ensure_endpoint_bypasses_proxy(endpoint: &str) {
 
 fn append_no_proxy_var(var_name: &str, host: &str) -> bool {
     let current = std::env::var(var_name).unwrap_or_default();
-    let already_present = current
-        .split(',')
-        .map(str::trim)
-        .any(|entry| entry.eq_ignore_ascii_case(host));
+    let already_present = current.split(',').map(str::trim).any(|entry| entry.eq_ignore_ascii_case(host));
     if already_present {
         return false;
     }
@@ -102,13 +99,9 @@ impl RustfsNode {
     }
 
     fn connection_select_field() -> NodeConfigField {
-        NodeConfigField::new(
-            CONFIG_ID_FIELD,
-            DataType::String,
-            NodeConfigWidget::ConnectionSelect,
-        )
-        .with_connection_kind("rustfs")
-        .with_description("选择系统中的 RustFS 对象存储连接配置")
+        NodeConfigField::new(CONFIG_ID_FIELD, DataType::String, NodeConfigWidget::ConnectionSelect)
+            .with_connection_kind("rustfs")
+            .with_description("选择系统中的 RustFS 对象存储连接配置")
     }
 
     fn selected_config_id(&self) -> Result<&str> {
@@ -145,10 +138,7 @@ impl Node for RustfsNode {
         vec![Self::connection_select_field()]
     }
 
-    fn apply_inline_config(
-        &mut self,
-        inline_values: &zihuan_graph_engine::NodeConfigFlow,
-    ) -> Result<()> {
+    fn apply_inline_config(&mut self, inline_values: &zihuan_graph_engine::NodeConfigFlow) -> Result<()> {
         self.config_id = inline_values
             .get(CONFIG_ID_FIELD)
             .or_else(|| inline_values.get(LEGACY_CONNECTION_ID_FIELD))
@@ -159,10 +149,7 @@ impl Node for RustfsNode {
         Ok(())
     }
 
-    fn execute(
-        &mut self,
-        _inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, _inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let config_id = self.selected_config_id()?;
         let s3_ref = zihuan_core::runtime::block_async(
             RuntimeStorageConnectionManager::shared().get_or_create_s3_ref(config_id),

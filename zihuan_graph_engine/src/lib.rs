@@ -128,13 +128,11 @@ pub use data_value::{DataType, DataValue};
 pub use flow::{NodeConfigFlow, NodeInputFlow, NodeOutputFlow, RuntimeValueFlow};
 #[allow(unused_imports)]
 pub use graph_io::{
-    ensure_positions, load_graph_definition_from_json, save_graph_definition_to_json,
-    EdgeDefinition, GraphPosition, NodeDefinition, NodeGraphDefinition,
+    ensure_positions, load_graph_definition_from_json, save_graph_definition_to_json, EdgeDefinition, GraphPosition,
+    NodeDefinition, NodeGraphDefinition,
 };
 #[allow(unused_imports)]
-pub use node_macros::{
-    node_input, node_input_flow, node_output, node_output_flow, return_with_node_output,
-};
+pub use node_macros::{node_input, node_input_flow, node_output, node_output_flow, return_with_node_output};
 #[allow(unused_imports)]
 pub use registry::build_node_graph_from_definition;
 
@@ -178,11 +176,7 @@ pub mod flow {
                     self.values.contains_key(key)
                 }
 
-                pub fn insert(
-                    &mut self,
-                    key: impl Into<String>,
-                    value: DataValue,
-                ) -> Option<DataValue> {
+                pub fn insert(&mut self, key: impl Into<String>, value: DataValue) -> Option<DataValue> {
                     self.values.insert(key.into(), value)
                 }
 
@@ -402,26 +396,20 @@ pub trait Node: Send + Sync {
         for port in &input_ports {
             inputs.get(&port.name).map_or_else(
                 || {
-                    (!port.required).then_some(()).ok_or_else(|| {
-                        zihuan_core::validation_error!(
-                            "Required input port '{}' is missing",
-                            port.name
-                        )
-                    })
+                    (!port.required)
+                        .then_some(())
+                        .ok_or_else(|| zihuan_core::validation_error!("Required input port '{}' is missing", port.name))
                 },
                 |value| {
                     let actual_type = value.data_type();
-                    port.data_type
-                        .is_compatible_with(&actual_type)
-                        .then_some(())
-                        .ok_or_else(|| {
-                            zihuan_core::validation_error!(
-                                "Input port '{}' expects type {}, got {}",
-                                port.name,
-                                port.data_type,
-                                actual_type
-                            )
-                        })
+                    port.data_type.is_compatible_with(&actual_type).then_some(()).ok_or_else(|| {
+                        zihuan_core::validation_error!(
+                            "Input port '{}' expects type {}, got {}",
+                            port.name,
+                            port.data_type,
+                            actual_type
+                        )
+                    })
                 },
             )?;
         }
@@ -445,17 +433,14 @@ pub trait Node: Send + Sync {
                 .get(&port.name)
                 .map(|value| {
                     let actual_type = value.data_type();
-                    port.data_type
-                        .is_compatible_with(&actual_type)
-                        .then_some(())
-                        .ok_or_else(|| {
-                            zihuan_core::validation_error!(
-                                "Output port '{}' expects type {}, got {}",
-                                port.name,
-                                port.data_type,
-                                actual_type
-                            )
-                        })
+                    port.data_type.is_compatible_with(&actual_type).then_some(()).ok_or_else(|| {
+                        zihuan_core::validation_error!(
+                            "Output port '{}' expects type {}, got {}",
+                            port.name,
+                            port.data_type,
+                            actual_type
+                        )
+                    })
                 })
                 .transpose()
                 .map(|_| ())
@@ -581,9 +566,7 @@ impl NodeGraph {
             let Some(initial_value) = variable.initial_value.as_ref() else {
                 continue;
             };
-            if let Some(data_value) =
-                crate::registry::json_to_data_value(initial_value, &variable.data_type)
-            {
+            if let Some(data_value) = crate::registry::json_to_data_value(initial_value, &variable.data_type) {
                 values.insert(variable.name.clone(), data_value);
             }
         }
@@ -609,10 +592,7 @@ impl NodeGraph {
     pub fn add_node(&mut self, node: Box<dyn Node>) -> Result<()> {
         let id = node.id().to_string();
         if self.nodes.contains_key(&id) {
-            return Err(zihuan_core::validation_error!(
-                "Node with id '{}' already exists",
-                id
-            ));
+            return Err(zihuan_core::validation_error!("Node with id '{}' already exists", id));
         }
         self.nodes.insert(id, node);
         Ok(())
@@ -650,8 +630,7 @@ impl NodeGraph {
         let mut output_producers: HashMap<String, String> = HashMap::new();
         for (node_id, node) in &self.nodes {
             for port in node.output_ports() {
-                if let Some(existing) = output_producers.insert(port.name.clone(), node_id.clone())
-                {
+                if let Some(existing) = output_producers.insert(port.name.clone(), node_id.clone()) {
                     return Err(zihuan_core::validation_error!(
                         "Output port '{}' is produced by both '{}' and '{}'",
                         port.name,
@@ -677,14 +656,8 @@ impl NodeGraph {
             for port in node.input_ports() {
                 if let Some(producer) = output_producers.get(&port.name) {
                     if producer != node_id {
-                        dependencies
-                            .entry(node_id.clone())
-                            .or_default()
-                            .push(producer.clone());
-                        dependents
-                            .entry(producer.clone())
-                            .or_default()
-                            .push(node_id.clone());
+                        dependencies.entry(node_id.clone()).or_default().push(producer.clone());
+                        dependents.entry(producer.clone()).or_default().push(node_id.clone());
                         if let Some(count) = in_degree.get_mut(node_id) {
                             *count += 1;
                         }
@@ -698,18 +671,13 @@ impl NodeGraph {
                         .unwrap_or(false);
 
                     if !has_inline {
-                        let msg = if let Some(hp_name) =
-                            self.port_binding_hp_name(node_id, &port.name)
-                        {
+                        let msg = if let Some(hp_name) = self.port_binding_hp_name(node_id, &port.name) {
                             format!(
                                 "Hyperparameter '{}' is bound to required port '{}' on node '{}' but has no value set",
                                 hp_name, port.name, node_id
                             )
                         } else {
-                            format!(
-                                "Required input port '{}' for node '{}' is not bound",
-                                port.name, node_id
-                            )
+                            format!("Required input port '{}' for node '{}' is not bound", port.name, node_id)
                         };
                         return Err(zihuan_core::error::Error::ValidationError(msg));
                     }
@@ -753,9 +721,10 @@ impl NodeGraph {
                 continue;
             }
             let Some(inputs) = ({
-                let node = self.nodes.get(&node_id).ok_or_else(|| {
-                    zihuan_core::validation_error!("Node '{}' not found during execution", node_id)
-                })?;
+                let node = self
+                    .nodes
+                    .get(&node_id)
+                    .ok_or_else(|| zihuan_core::validation_error!("Node '{}' not found during execution", node_id))?;
                 self.collect_inputs_if_available(
                     node.as_ref(),
                     &data_pool,
@@ -767,15 +736,15 @@ impl NodeGraph {
                 continue;
             };
 
-            let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
-                zihuan_core::validation_error!("Node '{}' not found during execution", node_id)
-            })?;
+            let node = self
+                .nodes
+                .get_mut(&node_id)
+                .ok_or_else(|| zihuan_core::validation_error!("Node '{}' not found during execution", node_id))?;
             let outputs = node
                 .execute(inputs)
                 .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
-            node.validate_outputs(&outputs).map_err(|e| {
-                Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e)
-            })?;
+            node.validate_outputs(&outputs)
+                .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e))?;
             for (key, value) in outputs.into_inner() {
                 if data_pool.contains_key(&key) {
                     return Err(zihuan_core::validation_error!(
@@ -841,8 +810,7 @@ impl NodeGraph {
         let mut output_producers: HashMap<String, String> = HashMap::new();
         for (node_id, node) in &self.nodes {
             for port in node.output_ports() {
-                if let Some(existing) = output_producers.insert(port.name.clone(), node_id.clone())
-                {
+                if let Some(existing) = output_producers.insert(port.name.clone(), node_id.clone()) {
                     return Err(zihuan_core::validation_error!(
                         "Output port '{}' is produced by both '{}' and '{}'",
                         port.name,
@@ -868,14 +836,8 @@ impl NodeGraph {
             for port in node.input_ports() {
                 if let Some(producer) = output_producers.get(&port.name) {
                     if producer != node_id {
-                        dependencies
-                            .entry(node_id.clone())
-                            .or_default()
-                            .push(producer.clone());
-                        dependents
-                            .entry(producer.clone())
-                            .or_default()
-                            .push(node_id.clone());
+                        dependencies.entry(node_id.clone()).or_default().push(producer.clone());
+                        dependents.entry(producer.clone()).or_default().push(node_id.clone());
                         if let Some(count) = in_degree.get_mut(node_id) {
                             *count += 1;
                         }
@@ -889,18 +851,13 @@ impl NodeGraph {
                         .unwrap_or(false);
 
                     if !has_inline {
-                        let msg = if let Some(hp_name) =
-                            self.port_binding_hp_name(node_id, &port.name)
-                        {
+                        let msg = if let Some(hp_name) = self.port_binding_hp_name(node_id, &port.name) {
                             format!(
                                 "Hyperparameter '{}' is bound to required port '{}' on node '{}' but has no value set",
                                 hp_name, port.name, node_id
                             )
                         } else {
-                            format!(
-                                "Required input port '{}' for node '{}' is not bound",
-                                port.name, node_id
-                            )
+                            format!("Required input port '{}' for node '{}' is not bound", port.name, node_id)
                         };
                         return Err(zihuan_core::error::Error::ValidationError(msg));
                     }
@@ -944,9 +901,10 @@ impl NodeGraph {
                 continue;
             }
             let Some(inputs) = ({
-                let node = self.nodes.get(&node_id).ok_or_else(|| {
-                    zihuan_core::validation_error!("Node '{}' not found during execution", node_id)
-                })?;
+                let node = self
+                    .nodes
+                    .get(&node_id)
+                    .ok_or_else(|| zihuan_core::validation_error!("Node '{}' not found during execution", node_id))?;
                 self.collect_inputs_if_available(
                     node.as_ref(),
                     &data_pool,
@@ -958,9 +916,10 @@ impl NodeGraph {
                 continue;
             };
 
-            let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
-                zihuan_core::validation_error!("Node '{}' not found during execution", node_id)
-            })?;
+            let node = self
+                .nodes
+                .get_mut(&node_id)
+                .ok_or_else(|| zihuan_core::validation_error!("Node '{}' not found during execution", node_id))?;
 
             let inputs_clone = if self.execution_callback.is_some() {
                 Some(inputs.clone())
@@ -971,9 +930,8 @@ impl NodeGraph {
             let outputs = node
                 .execute(inputs.clone())
                 .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
-            node.validate_outputs(&outputs).map_err(|e| {
-                Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e)
-            })?;
+            node.validate_outputs(&outputs)
+                .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e))?;
 
             if let Some(cb) = &self.execution_callback {
                 if let Some(inp) = inputs_clone {
@@ -1054,9 +1012,10 @@ impl NodeGraph {
             if self.is_node_disabled(node_id) {
                 continue;
             }
-            let node = self.nodes.get(node_id).ok_or_else(|| {
-                zihuan_core::validation_error!("Node '{}' not found during execution", node_id)
-            })?;
+            let node = self
+                .nodes
+                .get(node_id)
+                .ok_or_else(|| zihuan_core::validation_error!("Node '{}' not found during execution", node_id))?;
 
             let has_inline = self.inline_values.get(node_id);
             let input_map = input_sources.get(node_id);
@@ -1066,21 +1025,15 @@ impl NodeGraph {
                     continue;
                 }
                 let has_edge = input_map.and_then(|m| m.get(&port.name)).is_some();
-                let has_inline_value = has_inline
-                    .map(|m| m.contains_key(&port.name))
-                    .unwrap_or(false);
+                let has_inline_value = has_inline.map(|m| m.contains_key(&port.name)).unwrap_or(false);
                 if !has_edge && !has_inline_value {
-                    let msg = if let Some(hp_name) = self.port_binding_hp_name(node_id, &port.name)
-                    {
+                    let msg = if let Some(hp_name) = self.port_binding_hp_name(node_id, &port.name) {
                         format!(
                             "Hyperparameter '{}' is bound to required port '{}' on node '{}' but has no value set",
                             hp_name, port.name, node_id
                         )
                     } else {
-                        format!(
-                            "Required input port '{}' for node '{}' is not bound",
-                            port.name, node_id
-                        )
+                        format!("Required input port '{}' for node '{}' is not bound", port.name, node_id)
                     };
                     return Err(zihuan_core::error::Error::ValidationError(msg));
                 }
@@ -1096,9 +1049,10 @@ impl NodeGraph {
                 continue;
             }
             let inputs = {
-                let node = self.nodes.get(&node_id).ok_or_else(|| {
-                    zihuan_core::validation_error!("Node '{}' not found during execution", node_id)
-                })?;
+                let node = self
+                    .nodes
+                    .get(&node_id)
+                    .ok_or_else(|| zihuan_core::validation_error!("Node '{}' not found during execution", node_id))?;
                 self.collect_inputs_with_edges_if_available(
                     node.as_ref(),
                     &data_pool,
@@ -1118,15 +1072,15 @@ impl NodeGraph {
                 None
             };
             let outputs = {
-                let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
-                    zihuan_core::validation_error!("Node '{}' not found during execution", node_id)
-                })?;
+                let node = self
+                    .nodes
+                    .get_mut(&node_id)
+                    .ok_or_else(|| zihuan_core::validation_error!("Node '{}' not found during execution", node_id))?;
                 let outputs = node
                     .execute(inputs)
                     .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
-                node.validate_outputs(&outputs).map_err(|e| {
-                    Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e)
-                })?;
+                node.validate_outputs(&outputs)
+                    .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e))?;
                 outputs
             };
 
@@ -1197,9 +1151,10 @@ impl NodeGraph {
             if self.is_node_disabled(node_id) {
                 continue;
             }
-            let node = self.nodes.get(node_id).ok_or_else(|| {
-                zihuan_core::validation_error!("Node '{}' not found during execution", node_id)
-            })?;
+            let node = self
+                .nodes
+                .get(node_id)
+                .ok_or_else(|| zihuan_core::validation_error!("Node '{}' not found during execution", node_id))?;
 
             let has_inline = self.inline_values.get(node_id);
             let input_map = input_sources.get(node_id);
@@ -1209,21 +1164,15 @@ impl NodeGraph {
                     continue;
                 }
                 let has_edge = input_map.and_then(|m| m.get(&port.name)).is_some();
-                let has_inline_value = has_inline
-                    .map(|m| m.contains_key(&port.name))
-                    .unwrap_or(false);
+                let has_inline_value = has_inline.map(|m| m.contains_key(&port.name)).unwrap_or(false);
                 if !has_edge && !has_inline_value {
-                    let msg = if let Some(hp_name) = self.port_binding_hp_name(node_id, &port.name)
-                    {
+                    let msg = if let Some(hp_name) = self.port_binding_hp_name(node_id, &port.name) {
                         format!(
                             "Hyperparameter '{}' is bound to required port '{}' on node '{}' but has no value set",
                             hp_name, port.name, node_id
                         )
                     } else {
-                        format!(
-                            "Required input port '{}' for node '{}' is not bound",
-                            port.name, node_id
-                        )
+                        format!("Required input port '{}' for node '{}' is not bound", port.name, node_id)
                     };
                     return Err(zihuan_core::error::Error::ValidationError(msg));
                 }
@@ -1239,9 +1188,10 @@ impl NodeGraph {
                 continue;
             }
             let inputs = {
-                let node = self.nodes.get(&node_id).ok_or_else(|| {
-                    zihuan_core::validation_error!("Node '{}' not found during execution", node_id)
-                })?;
+                let node = self
+                    .nodes
+                    .get(&node_id)
+                    .ok_or_else(|| zihuan_core::validation_error!("Node '{}' not found during execution", node_id))?;
                 self.collect_inputs_with_edges_if_available(
                     node.as_ref(),
                     &data_pool,
@@ -1261,15 +1211,15 @@ impl NodeGraph {
                 None
             };
             let outputs = {
-                let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
-                    zihuan_core::validation_error!("Node '{}' not found during execution", node_id)
-                })?;
+                let node = self
+                    .nodes
+                    .get_mut(&node_id)
+                    .ok_or_else(|| zihuan_core::validation_error!("Node '{}' not found during execution", node_id))?;
                 let outputs = node
                     .execute(inputs.clone())
                     .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "execute", e))?;
-                node.validate_outputs(&outputs).map_err(|e| {
-                    Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e)
-                })?;
+                node.validate_outputs(&outputs)
+                    .map_err(|e| Self::wrap_node_error(&node_id, node.as_ref(), "validate_outputs", e))?;
                 outputs
             };
 
@@ -1305,12 +1255,14 @@ impl NodeGraph {
         let mut input_sources: InputSourceMap = HashMap::new();
 
         for edge in &self.edges {
-            let from_node = self.nodes.get(&edge.from_node_id).ok_or_else(|| {
-                zihuan_core::validation_error!("Node '{}' not found for edge", edge.from_node_id)
-            })?;
-            let to_node = self.nodes.get(&edge.to_node_id).ok_or_else(|| {
-                zihuan_core::validation_error!("Node '{}' not found for edge", edge.to_node_id)
-            })?;
+            let from_node = self
+                .nodes
+                .get(&edge.from_node_id)
+                .ok_or_else(|| zihuan_core::validation_error!("Node '{}' not found for edge", edge.from_node_id))?;
+            let to_node = self
+                .nodes
+                .get(&edge.to_node_id)
+                .ok_or_else(|| zihuan_core::validation_error!("Node '{}' not found for edge", edge.to_node_id))?;
 
             let from_port = from_node
                 .output_ports()
@@ -1339,7 +1291,11 @@ impl NodeGraph {
             if !from_port.data_type.is_compatible_with(&to_port.data_type) {
                 return Err(zihuan_core::validation_error!(
                     "端口类型不匹配：\"{}\"的输出端口\"{}\" -> \"{}\"的输入端口\"{}\" [NODE_ERROR:{}]",
-                    from_node.name(), edge.from_port, to_node.name(), edge.to_port, edge.to_node_id
+                    from_node.name(),
+                    edge.from_port,
+                    to_node.name(),
+                    edge.to_port,
+                    edge.to_node_id
                 ));
             }
 
@@ -1363,10 +1319,7 @@ impl NodeGraph {
                     edge.to_node_id
                 ));
             }
-            entry.insert(
-                edge.to_port.clone(),
-                (edge.from_node_id.clone(), edge.from_port.clone()),
-            );
+            entry.insert(edge.to_port.clone(), (edge.from_node_id.clone(), edge.from_port.clone()));
         }
 
         Ok((connected_nodes, dependents, dependencies, input_sources))
@@ -1387,10 +1340,7 @@ impl NodeGraph {
             let bound_variable_value = self.runtime_bound_variable_value(node_id, &port.name);
             if let Some(source_map) = sources.and_then(|m| m.get(&port.name)) {
                 let (from_node_id, from_port) = source_map;
-                if let Some(value) = data_pool
-                    .get(from_node_id)
-                    .and_then(|from_outputs| from_outputs.get(from_port))
-                {
+                if let Some(value) = data_pool.get(from_node_id).and_then(|from_outputs| from_outputs.get(from_port)) {
                     inputs.insert(port.name.clone(), value.clone());
                     continue;
                 }
@@ -1461,11 +1411,7 @@ impl NodeGraph {
         if binding.kind != crate::graph_io::PortBindingKind::Variable {
             return None;
         }
-        self.runtime_variable_store
-            .read()
-            .unwrap()
-            .get(&binding.name)
-            .cloned()
+        self.runtime_variable_store.read().unwrap().get(&binding.name).cloned()
     }
 
     pub fn to_json(&self) -> Value {

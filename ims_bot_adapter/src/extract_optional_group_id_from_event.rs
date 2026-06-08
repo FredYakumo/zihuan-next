@@ -37,20 +37,14 @@ impl Node for ExtractOptionalGroupIdFromEventNode {
 
     node_output![port! { name = "result", ty = String, desc = "群号字符串；私聊时为空" },];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let event = match inputs.get("message_event") {
             Some(DataValue::MessageEvent(event)) => event,
             _ => return Err("message_event input is required".into()),
         };
 
         let group_id = if event.message_type == MessageType::Group {
-            event
-                .group_id
-                .ok_or("group_id is missing in group message event")?
-                .to_string()
+            event.group_id.ok_or("group_id is missing in group message event")?.to_string()
         } else {
             String::new()
         };

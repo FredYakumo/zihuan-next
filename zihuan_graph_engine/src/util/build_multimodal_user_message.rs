@@ -55,11 +55,7 @@ impl Node for BuildMultimodalUserMessageNode {
                     _ => None,
                 })
                 .collect(),
-            Some(_) => {
-                return Err(Error::ValidationError(
-                    "parts must be Vec<MessagePart>".to_string(),
-                ))
-            }
+            Some(_) => return Err(Error::ValidationError("parts must be Vec<MessagePart>".to_string())),
             None => Vec::new(),
         };
 

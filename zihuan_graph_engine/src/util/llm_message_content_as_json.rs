@@ -55,10 +55,7 @@ impl Node for LLMMessageContentAsJsonNode {
 
         match serde_json::from_str(&content) {
             Ok(json) => {
-                info!(
-                    "[{}] LLMMessage content parsed as JSON successfully",
-                    self.id
-                );
+                info!("[{}] LLMMessage content parsed as JSON successfully", self.id);
                 crate::return_with_node_output![self;
                     "json" => DataValue::Json(json),
                 ]

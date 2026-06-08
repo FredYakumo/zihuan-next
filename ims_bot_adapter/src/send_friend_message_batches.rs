@@ -44,10 +44,7 @@ impl Node for SendFriendMessageBatchesNode {
         port! { name = "message_ids", ty = Vec(Integer), desc = "每个输入批次对应的 message_id；失败或跳过为空批次时为 -1" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
         let outputs = execute_fixed_target_batch_send(&inputs, TARGET_TYPE_FRIEND, LOG_PREFIX)?;
         Ok(outputs.into())

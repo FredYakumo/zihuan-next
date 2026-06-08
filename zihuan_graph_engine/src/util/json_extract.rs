@@ -23,9 +23,7 @@ fn validate_field_definitions(field_definitions: &[JsonExtractFieldDef]) -> Resu
             return Err(Error::ValidationError("提取字段名不能为空".to_string()));
         }
         if !field_names.insert(field_name.to_string()) {
-            return Err(Error::ValidationError(format!(
-                "提取字段名重复：{field_name}"
-            )));
+            return Err(Error::ValidationError(format!("提取字段名重复：{field_name}")));
         }
     }
 
@@ -154,29 +152,23 @@ impl Node for JsonExtractNode {
         let json = match inputs.get("json") {
             Some(DataValue::Json(value)) => value,
             _ => {
-                return Err(Error::ValidationError(
-                    "Missing required input: json".to_string(),
-                ));
+                return Err(Error::ValidationError("Missing required input: json".to_string()));
             }
         };
 
-        let object = json.as_object().ok_or_else(|| {
-            Error::ValidationError("json_extract 节点要求输入 JSON 必须为对象".to_string())
-        })?;
+        let object = json
+            .as_object()
+            .ok_or_else(|| Error::ValidationError("json_extract 节点要求输入 JSON 必须为对象".to_string()))?;
 
         let mut outputs = HashMap::new();
         for field in &self.field_definitions {
-            let raw_value = object.get(&field.name).ok_or_else(|| {
-                Error::ValidationError(format!("JSON 中不存在字段 '{}'", field.name))
-            })?;
+            let raw_value = object
+                .get(&field.name)
+                .ok_or_else(|| Error::ValidationError(format!("JSON 中不存在字段 '{}'", field.name)))?;
 
-            let typed_value =
-                json_value_to_data_value(raw_value, &field.data_type).ok_or_else(|| {
-                    Error::ValidationError(format!(
-                        "字段 '{}' 无法转换为类型 {}",
-                        field.name, field.data_type
-                    ))
-                })?;
+            let typed_value = json_value_to_data_value(raw_value, &field.data_type).ok_or_else(|| {
+                Error::ValidationError(format!("字段 '{}' 无法转换为类型 {}", field.name, field.data_type))
+            })?;
 
             outputs.insert(field.name.clone(), typed_value);
         }

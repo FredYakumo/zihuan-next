@@ -30,12 +30,10 @@ impl Node for MessageListDataNode {
     }
 
     fn input_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("messages", DataType::Vec(Box::new(DataType::LLMMessage)))
-                .with_description("Vec<LLMMessage> provided by UI inline editor")
-                .optional()
-                .hidden(),
-        ]
+        vec![Port::new("messages", DataType::Vec(Box::new(DataType::LLMMessage)))
+            .with_description("Vec<LLMMessage> provided by UI inline editor")
+            .optional()
+            .hidden()]
     }
 
     node_output![

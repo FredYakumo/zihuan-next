@@ -48,27 +48,16 @@ impl NodeRegistry {
             description: description.into(),
         };
 
-        self.factories
-            .write()
-            .unwrap()
-            .insert(type_id.clone(), factory);
+        self.factories.write().unwrap().insert(type_id.clone(), factory);
         self.metadata.write().unwrap().insert(type_id, metadata);
         Ok(())
     }
 
     /// Create a new node instance by type ID
-    pub fn create_node(
-        &self,
-        type_id: &str,
-        id: impl Into<String>,
-        name: impl Into<String>,
-    ) -> Result<Box<dyn Node>> {
+    pub fn create_node(&self, type_id: &str, id: impl Into<String>, name: impl Into<String>) -> Result<Box<dyn Node>> {
         let factories = self.factories.read().unwrap();
         let factory = factories.get(type_id).ok_or_else(|| {
-            zihuan_core::error::Error::ValidationError(format!(
-                "Node type '{}' not registered",
-                type_id
-            ))
+            zihuan_core::error::Error::ValidationError(format!("Node type '{}' not registered", type_id))
         })?;
 
         Ok(factory(id.into(), name.into()))
@@ -88,10 +77,7 @@ impl NodeRegistry {
         let factories = self.factories.read().unwrap();
         let factory = factories.get(type_id)?;
         let node = factory("__probe__".to_string(), "__probe__".to_string());
-        Some((
-            node.has_dynamic_input_ports(),
-            node.has_dynamic_output_ports(),
-        ))
+        Some((node.has_dynamic_input_ports(), node.has_dynamic_output_ports()))
     }
 
     pub fn get_node_config_fields(&self, type_id: &str) -> Option<Vec<NodeConfigField>> {
@@ -151,17 +137,13 @@ macro_rules! register_node {
                 $display_name,
                 $category,
                 $description,
-                std::sync::Arc::new(|id: String, name: String| {
-                    Box::new(<$node_struct>::new(id, name))
-                }),
+                std::sync::Arc::new(|id: String, name: String| Box::new(<$node_struct>::new(id, name))),
             )
             .unwrap();
     };
 }
 
-pub fn build_node_graph_from_definition(
-    definition: &crate::graph_io::NodeGraphDefinition,
-) -> Result<crate::NodeGraph> {
+pub fn build_node_graph_from_definition(definition: &crate::graph_io::NodeGraphDefinition) -> Result<crate::NodeGraph> {
     let mut graph = crate::NodeGraph::new();
     graph.set_definition(definition.clone());
 
@@ -170,11 +152,7 @@ pub fn build_node_graph_from_definition(
     }
 
     for node_def in &definition.nodes {
-        let node = NODE_REGISTRY.create_node(
-            &node_def.node_type,
-            node_def.id.clone(),
-            node_def.name.clone(),
-        )?;
+        let node = NODE_REGISTRY.create_node(&node_def.node_type, node_def.id.clone(), node_def.name.clone())?;
 
         // Parse inline values
         if !node_def.inline_values.is_empty() {
@@ -184,11 +162,7 @@ pub fn build_node_graph_from_definition(
                 .into_iter()
                 .chain(node.output_ports().into_iter())
                 .map(|p| (p.name, p.data_type))
-                .chain(
-                    node.config_fields()
-                        .into_iter()
-                        .map(|field| (field.key, field.data_type)),
-                )
+                .chain(node.config_fields().into_iter().map(|field| (field.key, field.data_type)))
                 .collect();
 
             for (port_name, json_val) in &node_def.inline_values {
@@ -234,11 +208,7 @@ pub fn build_node_graph_from_definition(
                 .into_iter()
                 .chain(node.output_ports().into_iter())
                 .map(|p| (p.name, p.data_type))
-                .chain(
-                    node.config_fields()
-                        .into_iter()
-                        .map(|field| (field.key, field.data_type)),
-                )
+                .chain(node.config_fields().into_iter().map(|field| (field.key, field.data_type)))
                 .collect();
             let mut extra = NodeConfigFlow::new();
             for (port_name, json_val) in &node_def.inline_values {
@@ -258,11 +228,7 @@ pub fn build_node_graph_from_definition(
         })
         .collect();
     for (node_id, extra_values) in extra_inline {
-        graph
-            .inline_values
-            .entry(node_id)
-            .or_default()
-            .extend(extra_values);
+        graph.inline_values.entry(node_id).or_default().extend(extra_values);
     }
 
     let runtime_variable_store = graph.runtime_variable_store();
@@ -328,20 +294,16 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
             let parts = match map.get("parts") {
                 Some(Value::Array(parts)) => parts
                     .iter()
-                    .filter_map(|part| {
-                        serde_json::from_value::<zihuan_core::llm::MessagePart>(part.clone()).ok()
-                    })
+                    .filter_map(|part| serde_json::from_value::<zihuan_core::llm::MessagePart>(part.clone()).ok())
                     .collect(),
                 Some(Value::Null) | None => map
                     .get("content")
                     .and_then(Value::as_str)
                     .map(|content| vec![zihuan_core::llm::MessagePart::text(content)])
                     .unwrap_or_default(),
-                Some(other) => {
-                    serde_json::from_value::<zihuan_core::llm::MessagePart>(other.clone())
-                        .map(|part| vec![part])
-                        .unwrap_or_default()
-                }
+                Some(other) => serde_json::from_value::<zihuan_core::llm::MessagePart>(other.clone())
+                    .map(|part| vec![part])
+                    .unwrap_or_default(),
             };
             Some(DataValue::LLMMessage(zihuan_core::llm::LLMMessage {
                 role,
@@ -353,33 +315,28 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
             }))
         }
 
-        (_, DataType::Sender) => serde_json::from_value::<
-            zihuan_core::ims_bot_adapter::models::sender_model::Sender,
-        >(json.clone())
-        .ok()
-        .map(DataValue::Sender),
+        (_, DataType::Sender) => {
+            serde_json::from_value::<zihuan_core::ims_bot_adapter::models::sender_model::Sender>(json.clone())
+                .ok()
+                .map(DataValue::Sender)
+        }
 
         // Single QQ Message from a JSON object: {"type": "text", "data": {"text": "..."}}
-        (_, DataType::QQMessage) => serde_json::from_value::<
-            zihuan_core::ims_bot_adapter::models::message::Message,
-        >(json.clone())
-        .ok()
-        .map(DataValue::QQMessage),
+        (_, DataType::QQMessage) => {
+            serde_json::from_value::<zihuan_core::ims_bot_adapter::models::message::Message>(json.clone())
+                .ok()
+                .map(DataValue::QQMessage)
+        }
 
         // Single Image payload from a JSON object.
-        (_, DataType::Image) => {
-            serde_json::from_value::<crate::data_value::ImageData>(json.clone())
-                .ok()
-                .map(DataValue::Image)
-        }
+        (_, DataType::Image) => serde_json::from_value::<crate::data_value::ImageData>(json.clone())
+            .ok()
+            .map(DataValue::Image),
 
         // Generic Vec: recurse per element using the inner type.
         // Handles Vec<LLMMessage>, Vec<QQMessage>, and any other Vec<X>.
         (Value::Array(items), DataType::Vec(inner)) => {
-            let parsed: Vec<DataValue> = items
-                .iter()
-                .filter_map(|item| json_to_data_value(item, inner))
-                .collect();
+            let parsed: Vec<DataValue> = items.iter().filter_map(|item| json_to_data_value(item, inner)).collect();
             Some(DataValue::Vec(inner.clone(), parsed))
         }
 
@@ -390,10 +347,7 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
 fn infer_any_data_value(json: &Value) -> Option<DataValue> {
     match json {
         Value::String(s) => Some(DataValue::String(s.clone())),
-        Value::Number(n) => n
-            .as_i64()
-            .map(DataValue::Integer)
-            .or_else(|| n.as_f64().map(DataValue::Float)),
+        Value::Number(n) => n.as_i64().map(DataValue::Integer).or_else(|| n.as_f64().map(DataValue::Float)),
         Value::Bool(b) => Some(DataValue::Boolean(*b)),
         _ => Some(DataValue::Json(json.clone())),
     }
@@ -404,20 +358,17 @@ fn infer_any_data_value(json: &Value) -> Option<DataValue> {
 /// in-crate tests that need the registry populated.
 pub fn init_node_registry() -> zihuan_core::error::Result<()> {
     use crate::util::{
-        AndThenNode, AnyOfNode, ArrayGetNode, AtQQTargetMessageNode, BinaryToImageMessagePartNode,
-        BooleanBranchNode, BooleanNotNode, BuildMultimodalUserMessageNode, ConcatVecNode,
-        ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode,
-        FunctionInputsNode, FunctionNode, FunctionOutputsNode, GraphInputsNode, GraphOutputsNode,
-        JoinStringNode, JsonExtractNode, JsonParserNode, JsonToQQMessageVecNode,
-        LLMMessageContentAsJsonNode, LLMMessageSessionCacheClearNode,
-        LLMMessageSessionCacheGetNode, LLMMessageSessionCacheNode, LLMMessageSessionCacheSetNode,
-        LLMMessageToStringNode, MessageContentNode, MessageListDataNode, PreviewMessageListNode,
-        PreviewQQMessageListNode, PreviewStringNode, PushBackVecNode,
+        AndThenNode, AnyOfNode, ArrayGetNode, AtQQTargetMessageNode, BinaryToImageMessagePartNode, BooleanBranchNode,
+        BooleanNotNode, BuildMultimodalUserMessageNode, ConcatVecNode, ConditionalNode, ConditionalRouterNode,
+        CurrentTimeNode, FormatStringNode, FunctionInputsNode, FunctionNode, FunctionOutputsNode, GraphInputsNode,
+        GraphOutputsNode, JoinStringNode, JsonExtractNode, JsonParserNode, JsonToQQMessageVecNode,
+        LLMMessageContentAsJsonNode, LLMMessageSessionCacheClearNode, LLMMessageSessionCacheGetNode,
+        LLMMessageSessionCacheNode, LLMMessageSessionCacheSetNode, LLMMessageToStringNode, MessageContentNode,
+        MessageListDataNode, PreviewMessageListNode, PreviewQQMessageListNode, PreviewStringNode, PushBackVecNode,
         QQMessageJsonOutputSystemPromptProviderNode, QQMessageListDataNode, QQMessageToImageNode,
-        SessionStateClearNode, SessionStateGetNode, SessionStateReleaseNode,
-        SessionStateTryClaimNode, SetVariableNode, StackNode, StringDataNode, StringIsNotEmptyNode,
-        StringToImageMessagePartNode, StringToLLMMessageNode, StringToPlainTextNode, SwitchNode,
-        ToolResultNode,
+        SessionStateClearNode, SessionStateGetNode, SessionStateReleaseNode, SessionStateTryClaimNode, SetVariableNode,
+        StackNode, StringDataNode, StringIsNotEmptyNode, StringToImageMessagePartNode, StringToLLMMessageNode,
+        StringToPlainTextNode, SwitchNode, ToolResultNode,
     };
 
     register_node!(
@@ -476,13 +427,7 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         "主节点图内部边界节点，汇总主图结果作为返回值",
         GraphOutputsNode
     );
-    register_node!(
-        "conditional",
-        "条件分支",
-        "工具",
-        "根据条件选择不同的输出分支",
-        ConditionalNode
-    );
+    register_node!("conditional", "条件分支", "工具", "根据条件选择不同的输出分支", ConditionalNode);
     register_node!(
         "conditional_router",
         "变量分拣器",
@@ -511,13 +456,7 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         "根据 condition 将 input 送到 true 或 false 分支，未选中的分支不会输出",
         BooleanBranchNode
     );
-    register_node!(
-        "boolean_not",
-        "布尔取反",
-        "工具",
-        "对输入的 Boolean 值取反",
-        BooleanNotNode
-    );
+    register_node!("boolean_not", "布尔取反", "工具", "对输入的 Boolean 值取反", BooleanNotNode);
     register_node!(
         "array_get",
         "列表取元素",
@@ -525,13 +464,7 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         "从列表中按下标取元素，支持负数下标（-1为最后一个）",
         ArrayGetNode
     );
-    register_node!(
-        "stack",
-        "封装元素为数组",
-        "工具",
-        "将单个元素封装为单元素 List",
-        StackNode
-    );
+    register_node!("stack", "封装元素为数组", "工具", "将单个元素封装为单元素 List", StackNode);
     register_node!(
         "concat_vec",
         "拼接两个列表",

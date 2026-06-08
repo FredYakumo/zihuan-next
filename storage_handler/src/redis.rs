@@ -17,13 +17,7 @@ use crate::{find_connection, load_connections, ConnectionKind};
 const CONNECTION_ID_FIELD: &str = "connection_id";
 
 pub async fn build_redis_ref(url: &str) -> Result<Arc<RedisConfig>> {
-    let redis_ref = Arc::new(RedisConfig::new(
-        Some(url.to_string()),
-        None,
-        None,
-        None,
-        None,
-    ));
+    let redis_ref = Arc::new(RedisConfig::new(Some(url.to_string()), None, None, None, None));
     {
         let mut redis_cm = redis_ref.redis_cm.lock().await;
         *redis_cm = Some(connect(url).await?);
@@ -172,17 +166,10 @@ pub struct RedisBlockingPopConnection {
 
 impl RedisBlockingPopConnection {
     pub fn new(redis_ref: Arc<RedisConfig>) -> Self {
-        Self {
-            redis_ref,
-            conn: None,
-        }
+        Self { redis_ref, conn: None }
     }
 
-    pub async fn blpop_value(
-        &mut self,
-        key: &str,
-        timeout_secs: usize,
-    ) -> Result<Option<(String, String)>> {
+    pub async fn blpop_value(&mut self, key: &str, timeout_secs: usize) -> Result<Option<(String, String)>> {
         let first_error = {
             let conn = self.ensure_connection().await?;
             match conn.blpop(key, timeout_secs as f64).await {
@@ -281,13 +268,9 @@ impl RedisNode {
     }
 
     fn connection_select_field() -> NodeConfigField {
-        NodeConfigField::new(
-            CONNECTION_ID_FIELD,
-            DataType::String,
-            NodeConfigWidget::ConnectionSelect,
-        )
-        .with_connection_kind("redis")
-        .with_description("选择系统中的 Redis 连接配置")
+        NodeConfigField::new(CONNECTION_ID_FIELD, DataType::String, NodeConfigWidget::ConnectionSelect)
+            .with_connection_kind("redis")
+            .with_description("选择系统中的 Redis 连接配置")
     }
 
     fn cleanup_patterns() -> [&'static str; 2] {
@@ -352,9 +335,7 @@ impl RedisNode {
         match catch_unwind(AssertUnwindSafe(execute)) {
             Ok(Ok(v)) => Ok(v),
             Ok(Err(e)) => Err(e.into()),
-            Err(_) => Err(Error::StringError(
-                "Redis connection task terminated unexpectedly".to_string(),
-            )),
+            Err(_) => Err(Error::StringError("Redis connection task terminated unexpectedly".to_string())),
         }
     }
 
@@ -373,26 +354,17 @@ impl RedisNode {
             return Ok(());
         };
 
-        let removed = match Self::run_cleanup_once(
-            self.redis_cm.clone(),
-            self.cached_redis_url.clone(),
-            url.clone(),
-            false,
-        ) {
-            Ok(removed) => removed,
-            Err(err) => {
-                warn!(
-                    "[RedisNode] Existing Redis connection became unhealthy: {}. Reconnecting once.",
-                    err
-                );
-                Self::run_cleanup_once(
-                    self.redis_cm.clone(),
-                    self.cached_redis_url.clone(),
-                    url,
-                    true,
-                )?
-            }
-        };
+        let removed =
+            match Self::run_cleanup_once(self.redis_cm.clone(), self.cached_redis_url.clone(), url.clone(), false) {
+                Ok(removed) => removed,
+                Err(err) => {
+                    warn!(
+                        "[RedisNode] Existing Redis connection became unhealthy: {}. Reconnecting once.",
+                        err
+                    );
+                    Self::run_cleanup_once(self.redis_cm.clone(), self.cached_redis_url.clone(), url, true)?
+                }
+            };
 
         if removed > 0 {
             info!(
@@ -423,16 +395,9 @@ impl RedisNode {
             )));
         };
         if !connection.enabled {
-            return Err(Error::ValidationError(format!(
-                "connection '{}' is disabled",
-                connection.name
-            )));
+            return Err(Error::ValidationError(format!("connection '{}' is disabled", connection.name)));
         }
-        build_redis_connection_url(
-            &redis.url,
-            redis.username.as_deref(),
-            redis.password.as_deref(),
-        )
+        build_redis_connection_url(&redis.url, redis.username.as_deref(), redis.password.as_deref())
     }
 }
 
@@ -466,23 +431,15 @@ impl Node for RedisNode {
         vec![Self::connection_select_field()]
     }
 
-    fn apply_inline_config(
-        &mut self,
-        inline_values: &zihuan_graph_engine::NodeConfigFlow,
-    ) -> Result<()> {
-        self.connection_id = inline_values
-            .get(CONNECTION_ID_FIELD)
-            .and_then(|value| match value {
-                DataValue::String(value) => Some(value.clone()),
-                _ => None,
-            });
+    fn apply_inline_config(&mut self, inline_values: &zihuan_graph_engine::NodeConfigFlow) -> Result<()> {
+        self.connection_id = inline_values.get(CONNECTION_ID_FIELD).and_then(|value| match value {
+            DataValue::String(value) => Some(value.clone()),
+            _ => None,
+        });
         Ok(())
     }
 
-    fn execute(
-        &mut self,
-        _inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, _inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let url = self.selected_url()?;
         let config = Arc::new(RedisConfig {
             url: Some(url),
@@ -500,34 +457,21 @@ impl Node for RedisNode {
     }
 }
 
-pub fn build_redis_connection_url(
-    base_url: &str,
-    username: Option<&str>,
-    password: Option<&str>,
-) -> Result<String> {
+pub fn build_redis_connection_url(base_url: &str, username: Option<&str>, password: Option<&str>) -> Result<String> {
     let username = username.map(str::trim).filter(|value| !value.is_empty());
     let password = password.map(str::trim).filter(|value| !value.is_empty());
     if username.is_none() && password.is_none() {
         return Ok(base_url.to_string());
     }
 
-    let mut parsed = Url::parse(base_url).map_err(|err| {
-        Error::ValidationError(format!("invalid redis url '{}': {}", base_url, err))
-    })?;
+    let mut parsed = Url::parse(base_url)
+        .map_err(|err| Error::ValidationError(format!("invalid redis url '{}': {}", base_url, err)))?;
     let encoded_username = username.map(pct_encode).unwrap_or_default();
-    parsed.set_username(&encoded_username).map_err(|_| {
-        Error::ValidationError(format!(
-            "failed to apply username to redis url '{}'",
-            base_url
-        ))
-    })?;
+    parsed
+        .set_username(&encoded_username)
+        .map_err(|_| Error::ValidationError(format!("failed to apply username to redis url '{}'", base_url)))?;
     parsed
         .set_password(password.map(pct_encode).as_deref())
-        .map_err(|_| {
-            Error::ValidationError(format!(
-                "failed to apply password to redis url '{}'",
-                base_url
-            ))
-        })?;
+        .map_err(|_| Error::ValidationError(format!("failed to apply password to redis url '{}'", base_url)))?;
     Ok(parsed.to_string())
 }

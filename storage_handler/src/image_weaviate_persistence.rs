@@ -53,10 +53,7 @@ impl Node for ImageWeaviatePersistenceNode {
         port! { name = "object_storage_path", ty = String, desc = "Pass-through object storage path" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let object_storage_path = required_string(&inputs, "object_storage_path")?;
@@ -86,15 +83,13 @@ impl Node for ImageWeaviatePersistenceNode {
         };
 
         if description_vector.is_empty() {
-            return Err(Error::ValidationError(
-                "description_vector must not be empty".to_string(),
-            ));
+            return Err(Error::ValidationError("description_vector must not be empty".to_string()));
         }
 
         let source = parse_media_source(optional_non_empty_string(&inputs, "source").as_deref());
         let media_id = optional_non_empty_string(&inputs, "media_id");
-        let original_source = optional_non_empty_string(&inputs, "original_source")
-            .unwrap_or_else(|| object_storage_path.clone());
+        let original_source =
+            optional_non_empty_string(&inputs, "original_source").unwrap_or_else(|| object_storage_path.clone());
         let name = optional_non_empty_string(&inputs, "name");
         let mime_type = optional_non_empty_string(&inputs, "mime_type");
         let media = if let Some(media_id) = media_id {
@@ -123,18 +118,10 @@ impl Node for ImageWeaviatePersistenceNode {
             .and_then(|n| embedding_model.as_ref()?.inference(n).ok())
             .filter(|v| !v.is_empty());
 
-        let success = match upsert_image_record(
-            &weaviate_ref,
-            &media,
-            &description_vector,
-            name_vector.as_deref(),
-        ) {
+        let success = match upsert_image_record(&weaviate_ref, &media, &description_vector, name_vector.as_deref()) {
             Ok(_) => true,
             Err(err) => {
-                log::error!(
-                    "[ImageWeaviatePersistenceNode] Failed to persist image vector: {}",
-                    err
-                );
+                log::error!("[ImageWeaviatePersistenceNode] Failed to persist image vector: {}", err);
                 false
             }
         };

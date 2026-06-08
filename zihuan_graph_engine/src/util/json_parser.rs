@@ -48,10 +48,7 @@ impl Node for JsonParserNode {
                     outputs.insert("success".to_string(), DataValue::Boolean(true));
                 }
                 Err(_) => {
-                    outputs.insert(
-                        "parsed".to_string(),
-                        DataValue::Json(serde_json::json!(null)),
-                    );
+                    outputs.insert("parsed".to_string(), DataValue::Json(serde_json::json!(null)));
                     outputs.insert("success".to_string(), DataValue::Boolean(false));
                 }
             }

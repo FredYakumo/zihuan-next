@@ -40,11 +40,7 @@ impl Node for AtQQTargetMessageNode {
 
         let id = match inputs.get("id") {
             Some(DataValue::String(id)) => id.clone(),
-            _ => {
-                return Err(zihuan_core::error::Error::InvalidNodeInput(
-                    "id is required".to_string(),
-                ))
-            }
+            _ => return Err(zihuan_core::error::Error::InvalidNodeInput("id is required".to_string())),
         };
 
         let qq_message = Message::At(AtTargetMessage { target: Some(id) });

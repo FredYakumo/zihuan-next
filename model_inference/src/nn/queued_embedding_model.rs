@@ -47,16 +47,10 @@ impl QueuedEmbeddingModel {
             .map_err(|_| Error::StringError("embedding worker state lock poisoned".to_string()))?;
 
         if guard.is_none() {
-            *guard = Some(EmbeddingWorkerHandle {
-                sender: self.spawn_worker()?,
-            });
+            *guard = Some(EmbeddingWorkerHandle { sender: self.spawn_worker()? });
         }
 
-        Ok(guard
-            .as_ref()
-            .expect("worker initialized above")
-            .sender
-            .clone())
+        Ok(guard.as_ref().expect("worker initialized above").sender.clone())
     }
 
     fn reset_worker(&self) {
@@ -76,10 +70,7 @@ impl QueuedEmbeddingModel {
             .name(worker_name.clone())
             .spawn(move || run_embedding_worker(&worker_name_for_thread, &mut model, receiver))
             .map_err(|err| {
-                Error::StringError(format!(
-                    "failed to spawn embedding worker '{}' : {}",
-                    worker_name, err
-                ))
+                Error::StringError(format!("failed to spawn embedding worker '{}' : {}", worker_name, err))
             })?;
 
         Ok(sender)
@@ -146,8 +137,7 @@ fn run_embedding_worker(
     );
 
     while let Ok(request) = receiver.recv() {
-        let result =
-            panic::catch_unwind(AssertUnwindSafe(|| model.batch_inference(&request.texts)));
+        let result = panic::catch_unwind(AssertUnwindSafe(|| model.batch_inference(&request.texts)));
         let response = match result {
             Ok(result) => result,
             Err(_) => {
@@ -166,9 +156,7 @@ fn run_embedding_worker(
                 );
                 model.set_preferred_device(Device::Cpu);
 
-                match panic::catch_unwind(AssertUnwindSafe(|| {
-                    model.batch_inference(&request.texts)
-                })) {
+                match panic::catch_unwind(AssertUnwindSafe(|| model.batch_inference(&request.texts))) {
                     Ok(cpu_result) => cpu_result,
                     Err(_) => {
                         let _ = request.response.send(Err(Error::StringError(format!(
@@ -213,9 +201,7 @@ impl EmbeddingBase for QueuedEmbeddingModel {
     fn inference(&self, text: &str) -> Result<Vec<f32>> {
         let text = text.trim();
         if text.is_empty() {
-            return Err(Error::ValidationError(
-                "text input must not be blank".to_string(),
-            ));
+            return Err(Error::ValidationError("text input must not be blank".to_string()));
         }
 
         let mut embeddings = self.request_embeddings(vec![text.to_string()])?;
@@ -226,9 +212,7 @@ impl EmbeddingBase for QueuedEmbeddingModel {
 
     fn batch_inference(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
         if texts.is_empty() {
-            return Err(Error::ValidationError(
-                "texts input must not be empty".to_string(),
-            ));
+            return Err(Error::ValidationError("texts input must not be empty".to_string()));
         }
 
         self.request_embeddings(texts.to_vec())

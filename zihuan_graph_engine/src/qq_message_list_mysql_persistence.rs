@@ -1,7 +1,7 @@
 use crate::message_mysql_chunking::{
-    split_content_chunks, truncate_field_if_needed, truncate_optional_field_if_needed,
-    AT_TARGET_LIST_MAX_CHARS, CONTENT_MAX_CHARS, GROUP_ID_MAX_CHARS, GROUP_NAME_MAX_CHARS,
-    MEDIA_JSON_MAX_CHARS, MESSAGE_ID_MAX_CHARS, SENDER_ID_MAX_CHARS, SENDER_NAME_MAX_CHARS,
+    split_content_chunks, truncate_field_if_needed, truncate_optional_field_if_needed, AT_TARGET_LIST_MAX_CHARS,
+    CONTENT_MAX_CHARS, GROUP_ID_MAX_CHARS, GROUP_NAME_MAX_CHARS, MEDIA_JSON_MAX_CHARS, MESSAGE_ID_MAX_CHARS,
+    SENDER_ID_MAX_CHARS, SENDER_NAME_MAX_CHARS,
 };
 use crate::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 use chrono::Local;
@@ -15,10 +15,7 @@ use zihuan_core::ims_bot_adapter::models::message::{collect_media_records, Messa
 /// Returns true for errors that indicate a dropped/stale connection rather than
 /// a SQL-level problem (constraint violation, syntax error, etc.).
 fn is_connection_error(e: &sqlx::Error) -> bool {
-    matches!(
-        e,
-        sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed | sqlx::Error::Io(_)
-    )
+    matches!(e, sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed | sqlx::Error::Io(_))
 }
 
 /// QQMessage List MySQL Persistence Node — stores a raw Vec<QQMessage> together
@@ -82,11 +79,7 @@ impl Node for QQMessageListMySQLPersistenceNode {
                 DataValue::Vec(ty, items) => Some((ty.clone(), items.clone())),
                 _ => None,
             })
-            .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput(
-                    "qq_message_list is required".to_string(),
-                )
-            })?;
+            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("qq_message_list is required".to_string()))?;
 
         // ── Extract metadata strings ─────────────────────────────────────────
         let raw_message_id = inputs
@@ -95,15 +88,9 @@ impl Node for QQMessageListMySQLPersistenceNode {
                 DataValue::String(s) => Some(s.clone()),
                 _ => None,
             })
-            .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("message_id is required".to_string())
-            })?;
-        let message_id = truncate_field_if_needed(
-            "message_id",
-            raw_message_id.clone(),
-            MESSAGE_ID_MAX_CHARS,
-            &raw_message_id,
-        );
+            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("message_id is required".to_string()))?;
+        let message_id =
+            truncate_field_if_needed("message_id", raw_message_id.clone(), MESSAGE_ID_MAX_CHARS, &raw_message_id);
 
         let sender_id = inputs
             .get("sender_id")
@@ -111,11 +98,8 @@ impl Node for QQMessageListMySQLPersistenceNode {
                 DataValue::String(s) => Some(s.clone()),
                 _ => None,
             })
-            .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("sender_id is required".to_string())
-            })?;
-        let sender_id =
-            truncate_field_if_needed("sender_id", sender_id, SENDER_ID_MAX_CHARS, &message_id);
+            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("sender_id is required".to_string()))?;
+        let sender_id = truncate_field_if_needed("sender_id", sender_id, SENDER_ID_MAX_CHARS, &message_id);
 
         let sender_name = inputs
             .get("sender_name")
@@ -123,38 +107,21 @@ impl Node for QQMessageListMySQLPersistenceNode {
                 DataValue::String(s) => Some(s.clone()),
                 _ => None,
             })
-            .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("sender_name is required".to_string())
-            })?;
-        let sender_name = truncate_field_if_needed(
-            "sender_name",
-            sender_name,
-            SENDER_NAME_MAX_CHARS,
-            &message_id,
-        );
+            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("sender_name is required".to_string()))?;
+        let sender_name = truncate_field_if_needed("sender_name", sender_name, SENDER_NAME_MAX_CHARS, &message_id);
 
         // Optional: treat absent or empty string as NULL.
         let group_id: Option<String> = inputs.get("group_id").and_then(|v| match v {
             DataValue::String(s) if !s.is_empty() => Some(s.clone()),
             _ => None,
         });
-        let group_id = truncate_optional_field_if_needed(
-            "group_id",
-            group_id,
-            GROUP_ID_MAX_CHARS,
-            &message_id,
-        );
+        let group_id = truncate_optional_field_if_needed("group_id", group_id, GROUP_ID_MAX_CHARS, &message_id);
 
         let group_name: Option<String> = inputs.get("group_name").and_then(|v| match v {
             DataValue::String(s) if !s.is_empty() => Some(s.clone()),
             _ => None,
         });
-        let group_name = truncate_optional_field_if_needed(
-            "group_name",
-            group_name,
-            GROUP_NAME_MAX_CHARS,
-            &message_id,
-        );
+        let group_name = truncate_optional_field_if_needed("group_name", group_name, GROUP_NAME_MAX_CHARS, &message_id);
 
         // ── MySQL pool ───────────────────────────────────────────────────────
         let mysql_config = inputs
@@ -163,9 +130,7 @@ impl Node for QQMessageListMySQLPersistenceNode {
                 DataValue::MySqlRef(r) => Some(r.clone()),
                 _ => None,
             })
-            .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("mysql_ref is required".to_string())
-            })?;
+            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("mysql_ref is required".to_string()))?;
 
         let passthrough = DataValue::Vec(msg_item_type, msg_items.clone());
 
@@ -204,11 +169,7 @@ impl Node for QQMessageListMySQLPersistenceNode {
             })
             .collect();
 
-        let content: String = messages
-            .iter()
-            .map(|m| m.to_string())
-            .collect::<Vec<_>>()
-            .join("");
+        let content: String = messages.iter().map(|m| m.to_string()).collect::<Vec<_>>().join("");
         let content_chunks = split_content_chunks(&content, CONTENT_MAX_CHARS);
 
         let at_targets: Vec<String> = messages
@@ -227,12 +188,8 @@ impl Node for QQMessageListMySQLPersistenceNode {
         } else {
             Some(at_targets.join(","))
         };
-        let at_target_list = truncate_optional_field_if_needed(
-            "at_target_list",
-            at_target_list,
-            AT_TARGET_LIST_MAX_CHARS,
-            &message_id,
-        );
+        let at_target_list =
+            truncate_optional_field_if_needed("at_target_list", at_target_list, AT_TARGET_LIST_MAX_CHARS, &message_id);
         let media_json = {
             let records = collect_media_records(&messages);
             if records.is_empty() {
@@ -241,19 +198,17 @@ impl Node for QQMessageListMySQLPersistenceNode {
                 Some(serde_json::to_string(&records)?)
             }
         };
-        let media_json = truncate_optional_field_if_needed(
-            "media_json",
-            media_json,
-            MEDIA_JSON_MAX_CHARS,
-            &message_id,
-        );
+        let media_json = truncate_optional_field_if_needed("media_json", media_json, MEDIA_JSON_MAX_CHARS, &message_id);
 
         let send_time = Local::now().naive_local();
         let message_id_log = message_id.clone();
 
         info!(
             "[QQMessageListMySQLPersistenceNode] Inserting message {} (sender={}, group={:?}, chunks={})",
-            message_id_log, sender_id, group_id, content_chunks.len(),
+            message_id_log,
+            sender_id,
+            group_id,
+            content_chunks.len(),
         );
 
         // ── Insert with single retry on connection errors ─────────────────────
@@ -266,11 +221,7 @@ impl Node for QQMessageListMySQLPersistenceNode {
                     } else {
                         None
                     };
-                    let chunk_media_json = if chunk_index == 0 {
-                        media_json.as_ref()
-                    } else {
-                        None
-                    };
+                    let chunk_media_json = if chunk_index == 0 { media_json.as_ref() } else { None };
 
                     sqlx::query(
                         r#"
@@ -315,10 +266,7 @@ impl Node for QQMessageListMySQLPersistenceNode {
                             message_id_log, attempt
                         );
                     } else {
-                        info!(
-                            "[QQMessageListMySQLPersistenceNode] Message {} inserted",
-                            message_id_log
-                        );
+                        info!("[QQMessageListMySQLPersistenceNode] Message {} inserted", message_id_log);
                     }
                     success = true;
                     break;

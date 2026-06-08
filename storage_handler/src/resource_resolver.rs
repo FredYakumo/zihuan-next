@@ -10,15 +10,9 @@ use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
 
 use crate::WeaviateCollectionSchema;
-use crate::{
-    redis::build_redis_connection_url, ConnectionConfig, ConnectionKind,
-    RuntimeStorageConnectionManager,
-};
+use crate::{redis::build_redis_connection_url, ConnectionConfig, ConnectionKind, RuntimeStorageConnectionManager};
 
-pub fn find_connection<'a>(
-    connections: &'a [ConnectionConfig],
-    id: &str,
-) -> Result<&'a ConnectionConfig> {
+pub fn find_connection<'a>(connections: &'a [ConnectionConfig], id: &str) -> Result<&'a ConnectionConfig> {
     connections
         .iter()
         .find(|connection| connection.id == id)
@@ -54,11 +48,7 @@ pub fn build_redis_ref(
             connection.name
         )));
     };
-    let url = build_redis_connection_url(
-        &redis.url,
-        redis.username.as_deref(),
-        redis.password.as_deref(),
-    )?;
+    let url = build_redis_connection_url(&redis.url, redis.username.as_deref(), redis.password.as_deref())?;
     Ok(Some(Arc::new(RedisConfig::new(
         Some(url),
         redis.username.clone(),
@@ -97,10 +87,7 @@ pub fn build_weaviate_ref(
     )?))
 }
 
-pub async fn build_s3_ref(
-    connection_id: Option<&str>,
-    connections: &[ConnectionConfig],
-) -> Result<Option<Arc<S3Ref>>> {
+pub async fn build_s3_ref(connection_id: Option<&str>, connections: &[ConnectionConfig]) -> Result<Option<Arc<S3Ref>>> {
     let Some(connection_id) = connection_id else {
         return Ok(None);
     };
@@ -131,9 +118,7 @@ pub fn build_web_search_engine_ref(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            Error::ValidationError("web_search_engine.api_token must not be empty".to_string())
-        })?;
+        .ok_or_else(|| Error::ValidationError("web_search_engine.api_token must not be empty".to_string()))?;
     let engine_ref = match engine.provider.as_str() {
         "tavily" => Arc::new(TavilySearch::new(
             api_token.to_string(),
@@ -174,18 +159,14 @@ pub async fn resolve_connection_data_value(
     connections: &[ConnectionConfig],
 ) -> Result<Option<DataValue>> {
     match data_type {
-        zihuan_graph_engine::DataType::MySqlRef => {
-            build_mysql_ref(Some(connection_id), connections)
-                .await
-                .map(|value| value.map(DataValue::MySqlRef))
-        }
+        zihuan_graph_engine::DataType::MySqlRef => build_mysql_ref(Some(connection_id), connections)
+            .await
+            .map(|value| value.map(DataValue::MySqlRef)),
         zihuan_graph_engine::DataType::RedisRef => {
-            build_redis_ref(Some(connection_id), connections)
-                .map(|value| value.map(DataValue::RedisRef))
+            build_redis_ref(Some(connection_id), connections).map(|value| value.map(DataValue::RedisRef))
         }
         zihuan_graph_engine::DataType::WeaviateRef => {
-            build_weaviate_ref(Some(connection_id), connections, None)
-                .map(|value| value.map(DataValue::WeaviateRef))
+            build_weaviate_ref(Some(connection_id), connections, None).map(|value| value.map(DataValue::WeaviateRef))
         }
         zihuan_graph_engine::DataType::S3Ref => build_s3_ref(Some(connection_id), connections)
             .await
@@ -194,11 +175,9 @@ pub async fn resolve_connection_data_value(
             build_web_search_engine_ref(Some(connection_id), connections)
                 .map(|value| value.map(DataValue::WebSearchEngineRef))
         }
-        zihuan_graph_engine::DataType::SqliteRef => {
-            build_sqlite_ref(Some(connection_id), connections)
-                .await
-                .map(|value| value.map(DataValue::SqliteRef))
-        }
+        zihuan_graph_engine::DataType::SqliteRef => build_sqlite_ref(Some(connection_id), connections)
+            .await
+            .map(|value| value.map(DataValue::SqliteRef)),
         _ => Ok(None),
     }
 }
@@ -214,10 +193,7 @@ fn ensure_endpoint_bypasses_proxy(endpoint: &str) {
 
 fn append_no_proxy_var(var_name: &str, host: &str) -> bool {
     let current = std::env::var(var_name).unwrap_or_default();
-    let already_present = current
-        .split(',')
-        .map(str::trim)
-        .any(|entry| entry.eq_ignore_ascii_case(host));
+    let already_present = current.split(',').map(str::trim).any(|entry| entry.eq_ignore_ascii_case(host));
     if already_present {
         return false;
     }

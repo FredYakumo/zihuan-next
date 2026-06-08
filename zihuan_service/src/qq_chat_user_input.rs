@@ -9,9 +9,8 @@ use ims_bot_adapter::multimodal_image_url::{
 };
 use ims_bot_adapter::utils;
 use ims_bot_adapter::{
-    CURRENT_MESSAGE_LABEL, FORWARD_CONTENT_LABEL, FORWARD_END_MARKER, FORWARD_NODE_LABEL,
-    FORWARD_START_MARKER, REPLAY_CONTENT_LABEL, REPLY_END_MARKER, REPLY_MESSAGE_LABEL,
-    REPLY_START_MARKER, SENDER_LABEL,
+    CURRENT_MESSAGE_LABEL, FORWARD_CONTENT_LABEL, FORWARD_END_MARKER, FORWARD_NODE_LABEL, FORWARD_START_MARKER,
+    REPLAY_CONTENT_LABEL, REPLY_END_MARKER, REPLY_MESSAGE_LABEL, REPLY_START_MARKER, SENDER_LABEL,
 };
 use log::{info, warn};
 use zihuan_core::llm::MessagePart;
@@ -77,13 +76,10 @@ pub(crate) fn prepare_current_turn_user_input_from_event(
     bot_name: &str,
     s3_ref: Option<&Arc<S3Ref>>,
 ) -> PreparedCurrentTurnUserInput {
-    let msg_prop =
-        MessageProp::from_messages_with_bot_name(&event.message_list, Some(bot_id), Some(bot_name));
+    let msg_prop = MessageProp::from_messages_with_bot_name(&event.message_list, Some(bot_id), Some(bot_name));
     let mut user_text = render_current_message_body(&event.message_list).unwrap_or_default();
     if msg_prop.is_at_me {
-        user_text = zihuan_core::utils::string_utils::strip_leading_bot_mention(
-            &user_text, bot_id, bot_name,
-        );
+        user_text = zihuan_core::utils::string_utils::strip_leading_bot_mention(&user_text, bot_id, bot_name);
     }
 
     let reference_blocks = collect_reply_reference_text(&event.message_list);
@@ -116,9 +112,7 @@ pub(crate) fn prepare_current_turn_user_input_from_event(
     if msg_prop.is_at_me {
         for part in &mut parts {
             if let MessagePart::Text { text } = part {
-                let stripped = zihuan_core::utils::string_utils::strip_leading_bot_mention(
-                    text, bot_id, bot_name,
-                );
+                let stripped = zihuan_core::utils::string_utils::strip_leading_bot_mention(text, bot_id, bot_name);
                 if stripped.len() < text.len() {
                     *text = stripped;
                     break;
@@ -180,19 +174,9 @@ pub(crate) fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message
                 }));
 
                 for (index, node) in forward.content.iter().enumerate() {
-                    let sender = node
-                        .nickname
-                        .as_deref()
-                        .or(node.user_id.as_deref())
-                        .unwrap_or("unknown");
+                    let sender = node.nickname.as_deref().or(node.user_id.as_deref()).unwrap_or("unknown");
                     expanded.push(Message::PlainText(PlainTextMessage {
-                        text: format!(
-                            "[{} {} {}: {}]",
-                            FORWARD_NODE_LABEL,
-                            index + 1,
-                            SENDER_LABEL,
-                            sender
-                        ),
+                        text: format!("[{} {} {}: {}]", FORWARD_NODE_LABEL, index + 1, SENDER_LABEL, sender),
                     }));
                     expanded.extend(expand_messages_for_inference(&node.content));
                 }
@@ -288,15 +272,10 @@ pub(crate) fn append_prepared_parts(
     }
 }
 
-pub(crate) fn build_prepared_input_metadata(
-    input: &PreparedCurrentTurnUserInput,
-    bot_name: &str,
-) -> String {
+pub(crate) fn build_prepared_input_metadata(input: &PreparedCurrentTurnUserInput, bot_name: &str) -> String {
     let environment = format!("[Environment]\n- Your name: {bot_name}");
-    let sender_name = ims_bot_adapter::utils::sender_display_name!(
-        &input.event.sender.nickname,
-        &input.event.sender.card
-    );
+    let sender_name =
+        ims_bot_adapter::utils::sender_display_name!(&input.event.sender.nickname, &input.event.sender.card);
     let at_mention = if input.is_at_me {
         "\n- You were @-mentioned in this message"
     } else {
@@ -347,19 +326,10 @@ fn append_messages_as_parts(
     for message in messages {
         match message {
             Message::PlainText(plain) => {
-                append_plain_text_as_parts(
-                    &plain.text,
-                    parts,
-                    text_buffer,
-                    has_media,
-                    s3_ref,
-                    image_stats,
-                );
+                append_plain_text_as_parts(&plain.text, parts, text_buffer, has_media, s3_ref, image_stats);
             }
             Message::Image(image) => {
-                if let Some(resolved) =
-                    resolve_image_message_part(image, s3_ref.map(AsRef::as_ref), true, LOG_PREFIX)
-                {
+                if let Some(resolved) = resolve_image_message_part(image, s3_ref.map(AsRef::as_ref), true, LOG_PREFIX) {
                     flush_text_part(parts, text_buffer);
                     parts.push(resolved.part);
                     *has_media = true;
@@ -403,11 +373,7 @@ fn append_messages_as_parts(
                         if index > 0 && !text_buffer.ends_with('\n') {
                             text_buffer.push('\n');
                         }
-                        let sender = node
-                            .nickname
-                            .as_deref()
-                            .or(node.user_id.as_deref())
-                            .unwrap_or("unknown");
+                        let sender = node.nickname.as_deref().or(node.user_id.as_deref()).unwrap_or("unknown");
                         text_buffer.push_str(sender);
                         text_buffer.push_str(": ");
                         append_messages_as_parts(
@@ -443,20 +409,15 @@ fn collect_reply_reference_text(messages: &[Message]) -> Vec<String> {
     messages
         .iter()
         .filter_map(|message| match message {
-            Message::Reply(reply) => {
-                valid_reply_source_messages(reply).and_then(|source_messages| {
-                    let rendered =
-                        zihuan_core::ims_bot_adapter::models::message::render_messages_readable(
-                            source_messages,
-                        );
-                    let trimmed = rendered.trim();
-                    if trimmed.is_empty() {
-                        None
-                    } else {
-                        Some(trimmed.to_string())
-                    }
-                })
-            }
+            Message::Reply(reply) => valid_reply_source_messages(reply).and_then(|source_messages| {
+                let rendered = zihuan_core::ims_bot_adapter::models::message::render_messages_readable(source_messages);
+                let trimmed = rendered.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            }),
             _ => None,
         })
         .collect()
@@ -487,29 +448,15 @@ fn traverse_messages_for_image_references(
             }
             Message::Reply(reply) => {
                 if let Some(source_messages) = valid_reply_source_messages(reply) {
-                    traverse_messages_for_image_references(
-                        source_messages,
-                        REPLY_MESSAGE_LABEL,
-                        references,
-                    );
+                    traverse_messages_for_image_references(source_messages, REPLY_MESSAGE_LABEL, references);
                 }
             }
             Message::Forward(forward) => {
                 for (node_index, node) in forward.content.iter().enumerate() {
-                    let sender = node
-                        .nickname
-                        .as_deref()
-                        .or(node.user_id.as_deref())
-                        .unwrap_or("unknown");
+                    let sender = node.nickname.as_deref().or(node.user_id.as_deref()).unwrap_or("unknown");
                     traverse_messages_for_image_references(
                         &node.content,
-                        &format!(
-                            "{} / {} {}({})",
-                            current_path,
-                            FORWARD_NODE_LABEL,
-                            node_index + 1,
-                            sender
-                        ),
+                        &format!("{} / {} {}({})", current_path, FORWARD_NODE_LABEL, node_index + 1, sender),
                         references,
                     );
                 }

@@ -10,10 +10,9 @@ use zihuan_agent::utils::build_state_system_prefix_lines;
 
 use zihuan_core::agent_config::QqChatEmotionDimensionConfig;
 use zihuan_core::error::Result;
-use zihuan_core::llm::{MessagePart, LLMMessage};
+use zihuan_core::llm::{LLMMessage, MessagePart};
 use zihuan_core::steer::{
-    apply_steer_prefix, build_merged_follow_up_event, PendingSteerEvent, PendingSteerStore,
-    PROCESSING_INSTRUCTION,
+    apply_steer_prefix, build_merged_follow_up_event, PendingSteerEvent, PendingSteerStore, PROCESSING_INSTRUCTION,
 };
 use zihuan_core::utils::string_utils::shorten_text;
 
@@ -21,19 +20,17 @@ use zihuan_graph_engine::brain_tool_spec::QQ_AGENT_TOOL_FIXED_MESSAGE_EVENT_INPU
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
 
-use ims_bot_adapter::{CURRENT_MESSAGE_LABEL, IMAGE_ANALYSIS_LABEL};
 use ims_bot_adapter::message_helpers::get_bot_id;
+use ims_bot_adapter::{CURRENT_MESSAGE_LABEL, IMAGE_ANALYSIS_LABEL};
 
 use crate::qq_chat_user_input::{
-    append_prepared_parts, build_prepared_input_metadata, expand_messages_for_inference,
-    flush_text_part, prepare_current_turn_user_input, prepare_current_turn_user_input_from_event,
-    PreparedCurrentTurnUserInput,
+    append_prepared_parts, build_prepared_input_metadata, expand_messages_for_inference, flush_text_part,
+    prepare_current_turn_user_input, prepare_current_turn_user_input_from_event, PreparedCurrentTurnUserInput,
 };
 use crate::storage::qq_chat_history_store::{conversation_history_key, load_history};
 
 use super::qq_chat_agent_core::{
-    build_user_message, QqChatAgent, QqChatAgentContext, QqChatHandleReport, LOG_PREFIX,
-    LOG_TEXT_PREVIEW_CHARS,
+    build_user_message, QqChatAgent, QqChatAgentContext, QqChatHandleReport, LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 use super::qq_chat_agent_logging::QqChatTaskTrace;
 
@@ -67,29 +64,23 @@ fn build_merged_steer_user_message(
     session_state: &QqChatAgentSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> LLMMessage {
-    let prefix_lines =
-        build_state_system_prefix_lines(session_state, emotion_dimensions, system_prompt);
+    let prefix_lines = build_state_system_prefix_lines(session_state, emotion_dimensions, system_prompt);
     let prefix = prefix_lines.join("\n");
 
-    let build_entry_text =
-        |index: usize, input: &PreparedCurrentTurnUserInput| -> String {
-            let metadata_text = build_prepared_input_metadata(input, bot_name);
-            let image_section = if input.image_reference_lines.is_empty() {
-                String::new()
-            } else {
-                format!(
-                    "\n\n[{}]\n{}",
-                    IMAGE_ANALYSIS_LABEL,
-                    input.image_reference_lines.join("\n")
-                )
-            };
-            format!(
-                "{}. {metadata_text}\n{}\n{input_text}{image_section}",
-                index + 1,
-                CURRENT_MESSAGE_LABEL,
-                input_text = input.text,
-            )
+    let build_entry_text = |index: usize, input: &PreparedCurrentTurnUserInput| -> String {
+        let metadata_text = build_prepared_input_metadata(input, bot_name);
+        let image_section = if input.image_reference_lines.is_empty() {
+            String::new()
+        } else {
+            format!("\n\n[{}]\n{}", IMAGE_ANALYSIS_LABEL, input.image_reference_lines.join("\n"))
         };
+        format!(
+            "{}. {metadata_text}\n{}\n{input_text}{image_section}",
+            index + 1,
+            CURRENT_MESSAGE_LABEL,
+            input_text = input.text,
+        )
+    };
 
     if !llm_supports_multimodal_input {
         let merged_text = current_inputs
@@ -99,9 +90,7 @@ fn build_merged_steer_user_message(
             .collect::<Vec<_>>()
             .join("\n\n");
 
-        let message = LLMMessage::user(format!(
-            "{prefix}\n\n{merged_text}\n\n{PROCESSING_INSTRUCTION}"
-        ));
+        let message = LLMMessage::user(format!("{prefix}\n\n{merged_text}\n\n{PROCESSING_INSTRUCTION}"));
         return apply_steer_prefix(message, api_style);
     }
 
@@ -114,11 +103,7 @@ fn build_merged_steer_user_message(
             text_buffer.push_str("\n\n");
         }
         let metadata_text = build_prepared_input_metadata(current_input, bot_name);
-        text_buffer.push_str(&format!(
-            "{}. {metadata_text}\n{}\n",
-            index + 1,
-            CURRENT_MESSAGE_LABEL
-        ));
+        text_buffer.push_str(&format!("{}. {metadata_text}\n{}\n", index + 1, CURRENT_MESSAGE_LABEL));
         append_prepared_parts(&mut parts, &mut text_buffer, "", &current_input.parts);
         if !current_input.image_reference_lines.is_empty() {
             text_buffer.push_str(&format!(
@@ -142,9 +127,7 @@ fn build_merged_steer_user_message(
             .map(|(index, input)| build_entry_text(index, input))
             .collect::<Vec<_>>()
             .join("\n\n");
-        LLMMessage::user(format!(
-            "{state_text}\n{merged_text}\n\n{PROCESSING_INSTRUCTION}"
-        ))
+        LLMMessage::user(format!("{state_text}\n{merged_text}\n\n{PROCESSING_INSTRUCTION}"))
     };
 
     apply_steer_prefix(message, api_style)
@@ -168,13 +151,8 @@ pub(crate) struct QqChatSteerHook {
 }
 
 impl BrainIterationHook for QqChatSteerHook {
-    fn on_before_inference(
-        &self,
-        _iteration: usize,
-        _conversation: &[LLMMessage],
-    ) -> Vec<LLMMessage> {
-        let (pending, remaining_queue_len, accepted_steer_count) =
-            self.pending_steer.drain_all(&self.sender_id);
+    fn on_before_inference(&self, _iteration: usize, _conversation: &[LLMMessage]) -> Vec<LLMMessage> {
+        let (pending, remaining_queue_len, accepted_steer_count) = self.pending_steer.drain_all(&self.sender_id);
         if pending.is_empty() {
             return Vec::new();
         }
@@ -186,8 +164,7 @@ impl BrainIterationHook for QqChatSteerHook {
 
         for pending_event in pending {
             let mut inference_event = pending_event.event.clone();
-            inference_event.message_list =
-                expand_messages_for_inference(&pending_event.event.message_list);
+            inference_event.message_list = expand_messages_for_inference(&pending_event.event.message_list);
             let prepared_input = prepare_current_turn_user_input_from_event(
                 &inference_event,
                 &self.bot_id,
@@ -254,30 +231,13 @@ impl QqChatAgent {
         time: &str,
     ) -> Result<()> {
         let bot_id = get_bot_id(ctx.adapter);
-        let prepared_input = prepare_current_turn_user_input(
-            event,
-            ctx.adapter,
-            &bot_id,
-            ctx.bot_name,
-            ctx.s3_ref,
-        );
+        let prepared_input = prepare_current_turn_user_input(event, ctx.adapter, &bot_id, ctx.bot_name, ctx.s3_ref);
         let mut inference_event = prepared_input.event.clone();
-        inference_event.message_list =
-            expand_messages_for_inference(&prepared_input.event.message_list);
-        let current_message = prepare_current_turn_user_input_from_event(
-            &inference_event,
-            &bot_id,
-            ctx.bot_name,
-            ctx.s3_ref,
-        )
-        .text;
+        inference_event.message_list = expand_messages_for_inference(&prepared_input.event.message_list);
+        let current_message =
+            prepare_current_turn_user_input_from_event(&inference_event, &bot_id, ctx.bot_name, ctx.s3_ref).text;
         if let Some(command_registry) = crate::command::global_command_registry() {
-            let cmd_ctx = self.build_command_context(
-                sender_id,
-                target_id,
-                is_group,
-                inference_event.group_id,
-            );
+            let cmd_ctx = self.build_command_context(sender_id, target_id, is_group, inference_event.group_id);
             if let Some(preview) = command_registry.preview(&cmd_ctx, &current_message) {
                 if preview.definition.allow_steer_bypass && preview.passthrough_text.is_none() {
                     info!(
@@ -285,18 +245,11 @@ impl QqChatAgent {
                         event.message_id,
                         preview.definition.name
                     );
-                    if let Some(dispatch_result) =
-                        command_registry.dispatch(&cmd_ctx, &current_message)
-                    {
-                        let history_key = conversation_history_key(
-                            &bot_id,
-                            sender_id,
-                            is_group,
-                            inference_event.group_id,
-                        );
+                    if let Some(dispatch_result) = command_registry.dispatch(&cmd_ctx, &current_message) {
+                        let history_key =
+                            conversation_history_key(&bot_id, sender_id, is_group, inference_event.group_id);
                         let legacy_history_key = sender_id.to_string();
-                        let mut history =
-                            load_history(ctx.cache, &history_key, &legacy_history_key);
+                        let mut history = load_history(ctx.cache, &history_key, &legacy_history_key);
                         let trace = QqChatTaskTrace::new(Local::now());
                         self.execute_command_dispatch(
                             &trace,
@@ -382,8 +335,7 @@ impl QqChatAgent {
                     ctx,
                 )?;
 
-                let (pending, remaining_queue_len, accepted_steer_count) =
-                    ctx.pending_steer.drain_all(sender_id);
+                let (pending, remaining_queue_len, accepted_steer_count) = ctx.pending_steer.drain_all(sender_id);
                 if pending.is_empty() {
                     break turn_result.result_summary;
                 }
@@ -391,8 +343,7 @@ impl QqChatAgent {
                 let steer_count = pending.len();
                 let next_event = build_merged_follow_up_event(&pending);
                 let mut next_inference_event = next_event.clone();
-                next_inference_event.message_list =
-                    expand_messages_for_inference(&next_event.message_list);
+                next_inference_event.message_list = expand_messages_for_inference(&next_event.message_list);
                 let next_message = prepare_current_turn_user_input_from_event(
                     &next_inference_event,
                     &bot_id,

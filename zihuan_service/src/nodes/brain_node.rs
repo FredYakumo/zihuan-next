@@ -5,18 +5,15 @@ use serde_json::Value;
 
 use crate::agent::CurrentTimeBrainTool;
 use crate::nodes::tool_subgraph::{
-    shared_inputs_ports, validate_shared_inputs, validate_tool_definitions, SubgraphFunctionTool,
-    ToolResultMode, ToolSubgraphRunner,
+    shared_inputs_ports, validate_shared_inputs, validate_tool_definitions, SubgraphFunctionTool, ToolResultMode,
+    ToolSubgraphRunner,
 };
-use zihuan_agent::brain::{
-    Brain, BrainStopReason, BrainTool, ToolRunDuration, MAX_TOOL_ITERATIONS,
-};
+use zihuan_agent::brain::{Brain, BrainStopReason, BrainTool, ToolRunDuration, MAX_TOOL_ITERATIONS};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::LLMMessage;
 use zihuan_graph_engine::brain_tool_spec::{
-    brain_shared_inputs_from_value, BrainToolDefinition, BRAIN_SHARED_INPUTS_PORT,
-    BRAIN_TOOLS_CONFIG_PORT,
+    brain_shared_inputs_from_value, BrainToolDefinition, BRAIN_SHARED_INPUTS_PORT, BRAIN_TOOLS_CONFIG_PORT,
 };
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::{DataType, DataValue, Node, Port};
@@ -81,10 +78,8 @@ impl BrainNode {
     }
 
     fn output_ports_static() -> Vec<Port> {
-        vec![
-            Port::new("output", DataType::Vec(Box::new(DataType::LLMMessage)))
-                .with_description("本次 Brain 运行新增的 assistant/tool 消息轨迹"),
-        ]
+        vec![Port::new("output", DataType::Vec(Box::new(DataType::LLMMessage)))
+            .with_description("本次 Brain 运行新增的 assistant/tool 消息轨迹")]
     }
 
     fn wrap_error(&self, message: impl Into<String>) -> Error {
@@ -95,15 +90,11 @@ impl BrainNode {
         self.tool_definitions
             .iter()
             .cloned()
-            .map(|definition| {
-                Arc::new(SubgraphFunctionTool::new(definition)) as Arc<dyn FunctionTool>
-            })
+            .map(|definition| Arc::new(SubgraphFunctionTool::new(definition)) as Arc<dyn FunctionTool>)
             .collect()
     }
 
-    fn parse_messages_input(
-        inputs: &zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<Vec<LLMMessage>> {
+    fn parse_messages_input(inputs: &zihuan_graph_engine::NodeInputFlow) -> Result<Vec<LLMMessage>> {
         match inputs.get("messages") {
             Some(DataValue::Vec(_, items)) => Ok(items
                 .iter()
@@ -115,9 +106,7 @@ impl BrainNode {
                     }
                 })
                 .collect()),
-            _ => Err(Error::ValidationError(
-                "Missing required input: messages".to_string(),
-            )),
+            _ => Err(Error::ValidationError("Missing required input: messages".to_string())),
         }
     }
 
@@ -151,8 +140,7 @@ impl Node for BrainNode {
 
     fn input_ports(&self) -> Vec<Port> {
         let mut ports = vec![
-            Port::new("llm_model", DataType::LLModel)
-                .with_description("LLM 模型引用，由 LLM API 节点提供"),
+            Port::new("llm_model", DataType::LLModel).with_description("LLM 模型引用，由 LLM API 节点提供"),
             Port::new("messages", DataType::Vec(Box::new(DataType::LLMMessage)))
                 .with_description("消息列表（包含 system/user/assistant/tool 等角色）"),
             // Hidden ports: managed via "管理工具" button dialog
@@ -177,18 +165,14 @@ impl Node for BrainNode {
         true
     }
 
-    fn apply_inline_config(
-        &mut self,
-        inline_values: &zihuan_graph_engine::NodeConfigFlow,
-    ) -> Result<()> {
+    fn apply_inline_config(&mut self, inline_values: &zihuan_graph_engine::NodeConfigFlow) -> Result<()> {
         match inline_values.get(BRAIN_SHARED_INPUTS_PORT) {
             Some(DataValue::Json(value)) => {
                 if value.is_null() {
                     self.set_shared_inputs(Vec::new())?;
                 } else {
-                    let shared_inputs = brain_shared_inputs_from_value(value).ok_or_else(|| {
-                        Error::ValidationError("Invalid shared_inputs".to_string())
-                    })?;
+                    let shared_inputs = brain_shared_inputs_from_value(value)
+                        .ok_or_else(|| Error::ValidationError("Invalid shared_inputs".to_string()))?;
                     self.set_shared_inputs(shared_inputs)?;
                 }
             }
@@ -224,10 +208,7 @@ impl Node for BrainNode {
         }
     }
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         if let Some(DataValue::Json(value)) = inputs.get(BRAIN_SHARED_INPUTS_PORT) {
@@ -273,9 +254,7 @@ impl Node for BrainNode {
                 return Err(self.wrap_error(format!("LLM request failed: {content}")));
             }
             BrainStopReason::MaxIterationsReached => {
-                return Err(self.wrap_error(format!(
-                    "Brain tool loop exceeded max iterations ({MAX_TOOL_ITERATIONS})"
-                )));
+                return Err(self.wrap_error(format!("Brain tool loop exceeded max iterations ({MAX_TOOL_ITERATIONS})")));
             }
             BrainStopReason::Done => {}
         }
@@ -285,10 +264,7 @@ impl Node for BrainNode {
             "output".to_string(),
             DataValue::Vec(
                 Box::new(DataType::LLMMessage),
-                output_messages
-                    .into_iter()
-                    .map(DataValue::LLMMessage)
-                    .collect(),
+                output_messages.into_iter().map(DataValue::LLMMessage).collect(),
             ),
         );
         let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);

@@ -37,9 +37,7 @@ impl Node for LLMMessageSessionCacheGetNode {
         port! { name = "fallback", ty = Vec(LLMMessage), desc = "可选：未读取到 sender_id 历史消息时输出的回退消息列表", optional },
     ];
 
-    node_output![
-        port! { name = "messages", ty = Vec(LLMMessage), desc = "读取到的历史 Vec<LLMMessage>" },
-    ];
+    node_output![port! { name = "messages", ty = Vec(LLMMessage), desc = "读取到的历史 Vec<LLMMessage>" },];
 
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
@@ -50,9 +48,7 @@ impl Node for LLMMessageSessionCacheGetNode {
                 DataValue::LLMMessageSessionCacheRef(cache_ref) => Some(cache_ref.clone()),
                 _ => None,
             })
-            .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("cache_ref is required".to_string())
-            })?;
+            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("cache_ref is required".to_string()))?;
 
         let sender_id = inputs
             .get("sender_id")
@@ -60,9 +56,7 @@ impl Node for LLMMessageSessionCacheGetNode {
                 DataValue::String(sender_id) => Some(sender_id.clone()),
                 _ => None,
             })
-            .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("sender_id is required".to_string())
-            })?;
+            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("sender_id is required".to_string()))?;
 
         let fallback_messages = inputs
             .get("fallback")

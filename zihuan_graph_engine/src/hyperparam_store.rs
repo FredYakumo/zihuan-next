@@ -22,11 +22,7 @@ fn hp_data_dir() -> Option<PathBuf> {
         std::env::var("XDG_CONFIG_HOME")
             .ok()
             .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var("HOME")
-                    .ok()
-                    .map(|h| PathBuf::from(h).join(".config"))
-            })
+            .or_else(|| std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".config")))
     }?;
 
     Some(base.join("zihuan-next_aibot").join("hyperparams"))
@@ -79,11 +75,7 @@ fn load_yaml_map(yaml_path: &Path) -> HashMap<String, Value> {
             .filter_map(|(k, v)| yaml_to_json_value(v).map(|jv| (k, jv)))
             .collect(),
         Err(e) => {
-            warn!(
-                "[HyperParamStore] Failed to parse {}: {}",
-                yaml_path.display(),
-                e
-            );
+            warn!("[HyperParamStore] Failed to parse {}: {}", yaml_path.display(), e);
             HashMap::new()
         }
     }
@@ -99,9 +91,8 @@ fn save_yaml_map(yaml_path: &Path, values: &HashMap<String, Value>) -> Result<()
         .filter_map(|(k, v)| json_to_yaml_value(v).map(|yv| (k.clone(), yv)))
         .collect();
 
-    let content = serde_yaml::to_string(&yaml_map).map_err(|e| {
-        zihuan_core::error::Error::StringError(format!("yaml serialize error: {e}"))
-    })?;
+    let content = serde_yaml::to_string(&yaml_map)
+        .map_err(|e| zihuan_core::error::Error::StringError(format!("yaml serialize error: {e}")))?;
     fs::write(yaml_path, content)?;
     Ok(())
 }
@@ -153,9 +144,7 @@ fn migrate_legacy_values_into_shared_store(
                 if path.extension().and_then(|ext| ext.to_str()) != Some("yaml") {
                     return None;
                 }
-                if path.file_name().and_then(|name| name.to_str())
-                    == Some("shared_hyperparameters.yaml")
-                {
+                if path.file_name().and_then(|name| name.to_str()) == Some("shared_hyperparameters.yaml") {
                     return None;
                 }
                 let modified = entry
@@ -203,10 +192,7 @@ fn migrate_legacy_values_into_shared_store(
 ///
 /// Values are shared across graphs by `(group, name)`. Legacy per-graph YAML files are
 /// imported automatically when matching values are found.
-pub fn load_hyperparameter_values(
-    graph_path: &Path,
-    graph: &NodeGraphDefinition,
-) -> HashMap<String, Value> {
+pub fn load_hyperparameter_values(graph_path: &Path, graph: &NodeGraphDefinition) -> HashMap<String, Value> {
     let shared_path = match shared_hyperparam_yaml_path() {
         Some(p) => p,
         None => return HashMap::new(),
@@ -216,10 +202,7 @@ pub fn load_hyperparameter_values(
     let migrated = migrate_legacy_values_into_shared_store(graph_path, graph, &mut shared_store);
     if migrated {
         if let Err(e) = save_yaml_map(&shared_path, &shared_store) {
-            warn!(
-                "[HyperParamStore] Failed to persist shared store migration: {}",
-                e
-            );
+            warn!("[HyperParamStore] Failed to persist shared store migration: {}", e);
         }
     }
 

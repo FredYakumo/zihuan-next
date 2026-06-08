@@ -6,24 +6,15 @@ use zihuan_core::llm::{LLMMessage, MessagePart, MessageRole};
 const IMAGE_OMITTED_PLACEHOLDER: &str = "[image omitted]";
 const VIDEO_OMITTED_PLACEHOLDER: &str = "[video omitted]";
 
-pub fn downgrade_messages_for_model(
-    messages: Vec<LLMMessage>,
-    supports_multimodal_input: bool,
-) -> Vec<LLMMessage> {
+pub fn downgrade_messages_for_model(messages: Vec<LLMMessage>, supports_multimodal_input: bool) -> Vec<LLMMessage> {
     if supports_multimodal_input {
         return messages;
     }
 
-    messages
-        .into_iter()
-        .map(downgrade_message_for_text_only_model)
-        .collect()
+    messages.into_iter().map(downgrade_message_for_text_only_model).collect()
 }
 
-pub fn downgrade_message_for_model(
-    message: LLMMessage,
-    supports_multimodal_input: bool,
-) -> LLMMessage {
+pub fn downgrade_message_for_model(message: LLMMessage, supports_multimodal_input: bool) -> LLMMessage {
     if supports_multimodal_input {
         return message;
     }
@@ -32,10 +23,7 @@ pub fn downgrade_message_for_model(
 }
 
 fn downgrade_message_for_text_only_model(mut message: LLMMessage) -> LLMMessage {
-    let has_non_text_parts = message
-        .parts
-        .iter()
-        .any(|part| !matches!(part, MessagePart::Text { .. }));
+    let has_non_text_parts = message.parts.iter().any(|part| !matches!(part, MessagePart::Text { .. }));
     if has_non_text_parts {
         message.parts = vec![MessagePart::text(parts_to_text(message.parts))];
     }

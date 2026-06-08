@@ -33,14 +33,9 @@ impl Node for AgentEmbeddingModelNode {
         Vec::new()
     }
 
-    node_output![
-        port! { name = "embedding_model", ty = EmbeddingModel, desc = "Agent 文本向量模型引用" },
-    ];
+    node_output![port! { name = "embedding_model", ty = EmbeddingModel, desc = "Agent 文本向量模型引用" },];
 
-    fn execute(
-        &mut self,
-        _inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, _inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let config = current_qq_chat_agent_config()?;
         let model = build_embedding_from_ref_id(config.embedding_model_ref_id.as_deref())?;
         zihuan_graph_engine::return_with_node_output![self;

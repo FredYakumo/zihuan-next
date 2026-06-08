@@ -5,10 +5,8 @@ use std::path::PathBuf;
 mod git_metadata;
 
 fn main() {
-    let crate_dir =
-        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("missing manifest dir"));
-    let repo_root = git_metadata::find_repo_root(&crate_dir)
-        .expect("failed to locate repository root from crate dir");
+    let crate_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("missing manifest dir"));
+    let repo_root = git_metadata::find_repo_root(&crate_dir).expect("failed to locate repository root from crate dir");
 
     git_metadata::emit_git_rerun_hints(repo_root);
 

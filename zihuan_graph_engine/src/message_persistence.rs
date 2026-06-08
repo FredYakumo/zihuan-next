@@ -1,12 +1,11 @@
 use crate::data_value::RedisConfig;
 use crate::message_mysql_chunking::{
-    split_content_chunks, truncate_field_if_needed, truncate_optional_field_if_needed,
-    AT_TARGET_LIST_MAX_CHARS, CONTENT_MAX_CHARS, GROUP_ID_MAX_CHARS, GROUP_NAME_MAX_CHARS,
-    MEDIA_JSON_MAX_CHARS, MESSAGE_ID_MAX_CHARS, SENDER_ID_MAX_CHARS, SENDER_NAME_MAX_CHARS,
+    split_content_chunks, truncate_field_if_needed, truncate_optional_field_if_needed, AT_TARGET_LIST_MAX_CHARS,
+    CONTENT_MAX_CHARS, GROUP_ID_MAX_CHARS, GROUP_NAME_MAX_CHARS, MEDIA_JSON_MAX_CHARS, MESSAGE_ID_MAX_CHARS,
+    SENDER_ID_MAX_CHARS, SENDER_NAME_MAX_CHARS,
 };
 use crate::message_restore::{
-    cache_message_snapshot, register_mysql_ref, register_rdb_pool, register_redis_ref,
-    CachedMessageSnapshotPayload,
+    cache_message_snapshot, register_mysql_ref, register_rdb_pool, register_redis_ref, CachedMessageSnapshotPayload,
 };
 use log::{info, warn};
 use once_cell::sync::Lazy;
@@ -19,8 +18,7 @@ use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
 use zihuan_core::ims_bot_adapter::models::message::{collect_media_records, Message};
 
 static LATEST_MYSQL_REF: Lazy<RwLock<Option<Arc<MySqlConfig>>>> = Lazy::new(|| RwLock::new(None));
-static LATEST_RDB_POOL: Lazy<RwLock<Option<RelationalDbConnection>>> =
-    Lazy::new(|| RwLock::new(None));
+static LATEST_RDB_POOL: Lazy<RwLock<Option<RelationalDbConnection>>> = Lazy::new(|| RwLock::new(None));
 static LATEST_REDIS_REF: Lazy<RwLock<Option<Arc<RedisConfig>>>> = Lazy::new(|| RwLock::new(None));
 
 pub fn register_mysql_persistence_ref(config: Arc<MySqlConfig>) {
@@ -57,10 +55,7 @@ fn latest_redis_ref() -> Option<Arc<RedisConfig>> {
 }
 
 fn is_connection_error(e: &sqlx::Error) -> bool {
-    matches!(
-        e,
-        sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed | sqlx::Error::Io(_)
-    )
+    matches!(e, sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed | sqlx::Error::Io(_))
 }
 
 fn render_content(messages: &[Message]) -> String {
@@ -118,29 +113,16 @@ fn persist_message_to_mysql(event: &MessageEvent, mysql_ref: &Arc<MySqlConfig>) 
     };
 
     let raw_message_id = event.message_id.to_string();
-    let message_id = truncate_field_if_needed(
-        "message_id",
-        raw_message_id.clone(),
-        MESSAGE_ID_MAX_CHARS,
-        &raw_message_id,
-    );
-    let sender_id = truncate_field_if_needed(
-        "sender_id",
-        event.sender.user_id.to_string(),
-        SENDER_ID_MAX_CHARS,
-        &message_id,
-    );
+    let message_id =
+        truncate_field_if_needed("message_id", raw_message_id.clone(), MESSAGE_ID_MAX_CHARS, &raw_message_id);
+    let sender_id =
+        truncate_field_if_needed("sender_id", event.sender.user_id.to_string(), SENDER_ID_MAX_CHARS, &message_id);
     let sender_name = if event.sender.card.is_empty() {
         event.sender.nickname.clone()
     } else {
         event.sender.card.clone()
     };
-    let sender_name = truncate_field_if_needed(
-        "sender_name",
-        sender_name,
-        SENDER_NAME_MAX_CHARS,
-        &message_id,
-    );
+    let sender_name = truncate_field_if_needed("sender_name", sender_name, SENDER_NAME_MAX_CHARS, &message_id);
     let send_time = chrono::Local::now().naive_local();
     let group_id = truncate_optional_field_if_needed(
         "group_id",
@@ -148,12 +130,8 @@ fn persist_message_to_mysql(event: &MessageEvent, mysql_ref: &Arc<MySqlConfig>) 
         GROUP_ID_MAX_CHARS,
         &message_id,
     );
-    let group_name = truncate_optional_field_if_needed(
-        "group_name",
-        event.group_name.clone(),
-        GROUP_NAME_MAX_CHARS,
-        &message_id,
-    );
+    let group_name =
+        truncate_optional_field_if_needed("group_name", event.group_name.clone(), GROUP_NAME_MAX_CHARS, &message_id);
     let content = render_content(&event.message_list);
     let at_targets: Vec<String> = event
         .message_list
@@ -177,12 +155,7 @@ fn persist_message_to_mysql(event: &MessageEvent, mysql_ref: &Arc<MySqlConfig>) 
             Some(serde_json::to_string(&records)?)
         }
     };
-    let media_json = truncate_optional_field_if_needed(
-        "media_json",
-        media_json,
-        MEDIA_JSON_MAX_CHARS,
-        &message_id,
-    );
+    let media_json = truncate_optional_field_if_needed("media_json", media_json, MEDIA_JSON_MAX_CHARS, &message_id);
     let raw_message_json = Some(serde_json::to_string(&event.message_list)?);
     let content_chunks = split_content_chunks(&content, CONTENT_MAX_CHARS);
 
@@ -282,29 +255,16 @@ fn persist_message_to_mysql(event: &MessageEvent, mysql_ref: &Arc<MySqlConfig>) 
 
 fn persist_message_to_rdb(event: &MessageEvent, connection: &RelationalDbConnection) -> Result<()> {
     let raw_message_id = event.message_id.to_string();
-    let message_id = truncate_field_if_needed(
-        "message_id",
-        raw_message_id.clone(),
-        MESSAGE_ID_MAX_CHARS,
-        &raw_message_id,
-    );
-    let sender_id = truncate_field_if_needed(
-        "sender_id",
-        event.sender.user_id.to_string(),
-        SENDER_ID_MAX_CHARS,
-        &message_id,
-    );
+    let message_id =
+        truncate_field_if_needed("message_id", raw_message_id.clone(), MESSAGE_ID_MAX_CHARS, &raw_message_id);
+    let sender_id =
+        truncate_field_if_needed("sender_id", event.sender.user_id.to_string(), SENDER_ID_MAX_CHARS, &message_id);
     let sender_name = if event.sender.card.is_empty() {
         event.sender.nickname.clone()
     } else {
         event.sender.card.clone()
     };
-    let sender_name = truncate_field_if_needed(
-        "sender_name",
-        sender_name,
-        SENDER_NAME_MAX_CHARS,
-        &message_id,
-    );
+    let sender_name = truncate_field_if_needed("sender_name", sender_name, SENDER_NAME_MAX_CHARS, &message_id);
     let send_time = chrono::Local::now().naive_local().to_string();
     let group_id = truncate_optional_field_if_needed(
         "group_id",
@@ -312,12 +272,8 @@ fn persist_message_to_rdb(event: &MessageEvent, connection: &RelationalDbConnect
         GROUP_ID_MAX_CHARS,
         &message_id,
     );
-    let group_name = truncate_optional_field_if_needed(
-        "group_name",
-        event.group_name.clone(),
-        GROUP_NAME_MAX_CHARS,
-        &message_id,
-    );
+    let group_name =
+        truncate_optional_field_if_needed("group_name", event.group_name.clone(), GROUP_NAME_MAX_CHARS, &message_id);
     let content = render_content(&event.message_list);
     let at_targets: Vec<String> = event
         .message_list
@@ -341,12 +297,7 @@ fn persist_message_to_rdb(event: &MessageEvent, connection: &RelationalDbConnect
             Some(serde_json::to_string(&records)?)
         }
     };
-    let media_json = truncate_optional_field_if_needed(
-        "media_json",
-        media_json,
-        MEDIA_JSON_MAX_CHARS,
-        &message_id,
-    );
+    let media_json = truncate_optional_field_if_needed("media_json", media_json, MEDIA_JSON_MAX_CHARS, &message_id);
     let raw_message_json = Some(serde_json::to_string(&event.message_list)?);
     let content_chunks = split_content_chunks(&content, CONTENT_MAX_CHARS);
 
@@ -532,16 +483,12 @@ pub fn persist_message_event(
 
 fn mysql_pool(config: &Arc<MySqlConfig>) -> Result<&sqlx::mysql::MySqlPool> {
     config.pool.as_ref().ok_or_else(|| {
-        zihuan_core::error::Error::ValidationError(
-            "message persistence mysql pool is not initialized".to_string(),
-        )
+        zihuan_core::error::Error::ValidationError("message persistence mysql pool is not initialized".to_string())
     })
 }
 
 fn sqlite_pool(config: &Arc<SqliteConfig>) -> Result<&sqlx::sqlite::SqlitePool> {
     config.pool.as_ref().ok_or_else(|| {
-        zihuan_core::error::Error::ValidationError(
-            "message persistence sqlite pool is not initialized".to_string(),
-        )
+        zihuan_core::error::Error::ValidationError("message persistence sqlite pool is not initialized".to_string())
     })
 }

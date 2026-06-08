@@ -15,10 +15,7 @@ fn image_understand_workflow_derives_optional_message_id_parameter() {
         enabled: true,
         run_duration: ToolRunDuration::Short,
         tool_type: AgentToolType::NodeGraph(NodeGraphToolConfig::FilePath {
-            path: format!(
-                "{}/../workflow_set/image_understand.json",
-                env!("CARGO_MANIFEST_DIR")
-            ),
+            path: format!("{}/../workflow_set/image_understand.json", env!("CARGO_MANIFEST_DIR")),
             parameters: Vec::new(),
             outputs: Vec::new(),
         }),
@@ -56,15 +53,9 @@ fn image_understand_workflow_derives_optional_message_id_parameter() {
     );
 
     let schema = tool_parameters_to_json_schema(&definition.parameters);
-    let required = schema
-        .get("required")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
+    let required = schema.get("required").and_then(Value::as_array).cloned().unwrap_or_default();
     assert!(
-        !required
-            .iter()
-            .any(|item| item.as_str() == Some("message_id")),
+        !required.iter().any(|item| item.as_str() == Some("message_id")),
         "message_id should not be required in tool JSON schema"
     );
 }

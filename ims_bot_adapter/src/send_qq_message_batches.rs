@@ -4,9 +4,7 @@ use std::time::Duration;
 
 use crate::adapter::SharedBotAdapter;
 use crate::models::message::{ForwardMessage, ForwardNodeMessage, Message};
-use crate::ws_action::{
-    json_i64, qq_message_list_to_send_json, response_message_id, response_success, ws_send_action,
-};
+use crate::ws_action::{json_i64, qq_message_list_to_send_json, response_message_id, response_success, ws_send_action};
 use log::{info, warn};
 use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
@@ -44,19 +42,14 @@ impl SendQQMessageBatchesNode {
 
 fn normalize_target_type(value: Option<&DataValue>) -> &'static str {
     match value {
-        Some(DataValue::String(target_type))
-            if target_type.eq_ignore_ascii_case(TARGET_TYPE_GROUP) =>
-        {
+        Some(DataValue::String(target_type)) if target_type.eq_ignore_ascii_case(TARGET_TYPE_GROUP) => {
             TARGET_TYPE_GROUP
         }
         _ => TARGET_TYPE_FRIEND,
     }
 }
 
-pub fn qq_messages_from_data_value(
-    value: Option<&DataValue>,
-    input_name: &str,
-) -> Result<Vec<Message>> {
+pub fn qq_messages_from_data_value(value: Option<&DataValue>, input_name: &str) -> Result<Vec<Message>> {
     match value {
         Some(DataValue::Vec(_, items)) => Ok(items
             .iter()
@@ -65,24 +58,17 @@ pub fn qq_messages_from_data_value(
                 _ => None,
             })
             .collect()),
-        _ => Err(Error::InvalidNodeInput(format!(
-            "{input_name} input is required"
-        ))),
+        _ => Err(Error::InvalidNodeInput(format!("{input_name} input is required"))),
     }
 }
 
-pub fn qq_message_batches_from_data_value(
-    value: Option<&DataValue>,
-    input_name: &str,
-) -> Result<Vec<Vec<Message>>> {
+pub fn qq_message_batches_from_data_value(value: Option<&DataValue>, input_name: &str) -> Result<Vec<Vec<Message>>> {
     match value {
         Some(DataValue::Vec(_, batch_values)) => batch_values
             .iter()
             .map(|batch_value| qq_messages_from_data_value(Some(batch_value), input_name))
             .collect(),
-        _ => Err(Error::InvalidNodeInput(format!(
-            "{input_name} input is required"
-        ))),
+        _ => Err(Error::InvalidNodeInput(format!("{input_name} input is required"))),
     }
 }
 
@@ -102,11 +88,7 @@ pub fn qq_message_text_length(messages: &[Message]) -> usize {
         .map(|message| match message {
             Message::PlainText(text) => text.text.chars().count(),
             Message::Image(_) => 0,
-            Message::Forward(forward) => forward
-                .content
-                .iter()
-                .map(|node| qq_message_text_length(&node.content))
-                .sum(),
+            Message::Forward(forward) => forward.content.iter().map(|node| qq_message_text_length(&node.content)).sum(),
             _ => 0,
         })
         .sum()
@@ -161,30 +143,15 @@ fn forward_nodes_to_send_json(
                     data.insert("id".to_string(), serde_json::Value::String(id.to_string()));
                 }
                 if let Some(ref user_id) = node.user_id {
-                    data.insert(
-                        "user_id".to_string(),
-                        serde_json::Value::String(user_id.to_string()),
-                    );
-                    data.insert(
-                        "uin".to_string(),
-                        serde_json::Value::String(user_id.to_string()),
-                    );
+                    data.insert("user_id".to_string(), serde_json::Value::String(user_id.to_string()));
+                    data.insert("uin".to_string(), serde_json::Value::String(user_id.to_string()));
                 }
                 if let Some(ref nickname) = node.nickname {
-                    data.insert(
-                        "nickname".to_string(),
-                        serde_json::Value::String(nickname.to_string()),
-                    );
-                    data.insert(
-                        "name".to_string(),
-                        serde_json::Value::String(nickname.to_string()),
-                    );
+                    data.insert("nickname".to_string(), serde_json::Value::String(nickname.to_string()));
+                    data.insert("name".to_string(), serde_json::Value::String(nickname.to_string()));
                 }
                 if !node.content.is_empty() {
-                    data.insert(
-                        "content".to_string(),
-                        qq_message_list_to_send_json(adapter_ref, &node.content)?,
-                    );
+                    data.insert("content".to_string(), qq_message_list_to_send_json(adapter_ref, &node.content)?);
                 }
 
                 Ok(serde_json::json!({
@@ -236,9 +203,7 @@ fn send_one_batch(
     batch_index: usize,
     messages: &[Message],
 ) -> Result<SendBatchResult> {
-    let contains_forward = messages
-        .iter()
-        .any(|message| matches!(message, Message::Forward(_)));
+    let contains_forward = messages.iter().any(|message| matches!(message, Message::Forward(_)));
     if contains_forward && (messages.len() != 1 || !matches!(messages[0], Message::Forward(_))) {
         return Err(Error::ValidationError(
             "forward message batch must contain exactly one forward message".to_string(),
@@ -416,14 +381,7 @@ pub fn send_qq_message_batches(
     target_id: &str,
     batches: &[Vec<Message>],
 ) -> Vec<SendBatchResult> {
-    send_qq_message_batches_with_delay(
-        adapter_ref,
-        target_type,
-        target_id,
-        batches,
-        0,
-        DEFAULT_LOG_PREFIX,
-    )
+    send_qq_message_batches_with_delay(adapter_ref, target_type, target_id, batches, 0, DEFAULT_LOG_PREFIX)
 }
 
 pub fn message_ids_from_results(results: &[SendBatchResult]) -> Vec<i64> {
@@ -431,23 +389,15 @@ pub fn message_ids_from_results(results: &[SendBatchResult]) -> Vec<i64> {
 }
 
 pub fn actual_sends_all_successful(results: &[SendBatchResult]) -> bool {
-    results
-        .iter()
-        .filter(|result| !result.skipped)
-        .all(|result| result.success)
+    results.iter().filter(|result| !result.skipped).all(|result| result.success)
 }
 
-pub fn build_send_summary(
-    target_type: &str,
-    target_id: &str,
-    results: &[SendBatchResult],
-) -> String {
+pub fn build_send_summary(target_type: &str, target_id: &str, results: &[SendBatchResult]) -> String {
     if results.is_empty() {
         return format!("未发送任何批次，目标={target_type}:{target_id}，共接收 0 批。");
     }
 
-    let sent_results: Vec<&SendBatchResult> =
-        results.iter().filter(|result| !result.skipped).collect();
+    let sent_results: Vec<&SendBatchResult> = results.iter().filter(|result| !result.skipped).collect();
     let success_count = sent_results.iter().filter(|result| result.success).count();
     let failure_count = sent_results.len().saturating_sub(success_count);
     let skipped_count = results.iter().filter(|result| result.skipped).count();
@@ -513,18 +463,13 @@ pub fn execute_fixed_target_batch_send(
 ) -> Result<HashMap<String, DataValue>> {
     let ims_bot_adapter = match inputs.get("ims_bot_adapter") {
         Some(DataValue::BotAdapterRef(handle)) => crate::adapter::shared_from_handle(handle),
-        _ => {
-            return Err(Error::InvalidNodeInput(
-                "ims_bot_adapter is required".to_string(),
-            ))
-        }
+        _ => return Err(Error::InvalidNodeInput("ims_bot_adapter is required".to_string())),
     };
     let target_id = match inputs.get("target_id") {
         Some(DataValue::String(value)) => value.clone(),
         _ => return Err(Error::InvalidNodeInput("target_id is required".to_string())),
     };
-    let batches =
-        qq_message_batches_from_data_value(inputs.get("message_batches"), "message_batches")?;
+    let batches = qq_message_batches_from_data_value(inputs.get("message_batches"), "message_batches")?;
     let delay_millis = delay_millis_from_data_value(inputs.get("delay_millis"), "delay_millis")?;
     let results = send_qq_message_batches_with_delay(
         &ims_bot_adapter,
@@ -540,18 +485,12 @@ pub fn execute_fixed_target_batch_send(
             "summary".to_string(),
             DataValue::String(build_send_summary(target_type, &target_id, &results)),
         ),
-        (
-            "success".to_string(),
-            DataValue::Boolean(actual_sends_all_successful(&results)),
-        ),
+        ("success".to_string(), DataValue::Boolean(actual_sends_all_successful(&results))),
         (
             "message_ids".to_string(),
             DataValue::Vec(
                 Box::new(DataType::Integer),
-                message_ids_from_results(&results)
-                    .into_iter()
-                    .map(DataValue::Integer)
-                    .collect(),
+                message_ids_from_results(&results).into_iter().map(DataValue::Integer).collect(),
             ),
         ),
     ]))
@@ -582,29 +521,20 @@ impl Node for SendQQMessageBatchesNode {
         port! { name = "success", ty = Boolean, desc = "是否全部发送成功" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let ims_bot_adapter_ref = match inputs.get("ims_bot_adapter_ref") {
             Some(DataValue::BotAdapterRef(handle)) => crate::adapter::shared_from_handle(handle),
-            _ => {
-                return Err(Error::InvalidNodeInput(
-                    "ims_bot_adapter_ref is required".to_string(),
-                ))
-            }
+            _ => return Err(Error::InvalidNodeInput("ims_bot_adapter_ref is required".to_string())),
         };
         let target_id = match inputs.get("target_id") {
             Some(DataValue::String(value)) => value.clone(),
             _ => return Err(Error::InvalidNodeInput("target_id is required".to_string())),
         };
         let target_type = normalize_target_type(inputs.get("target_type"));
-        let batches =
-            qq_message_batches_from_data_value(inputs.get("message_batches"), "message_batches")?;
-        let results =
-            send_qq_message_batches(&ims_bot_adapter_ref, target_type, &target_id, &batches);
+        let batches = qq_message_batches_from_data_value(inputs.get("message_batches"), "message_batches")?;
+        let results = send_qq_message_batches(&ims_bot_adapter_ref, target_type, &target_id, &batches);
 
         zihuan_graph_engine::return_with_node_output![self;
             "summary" => DataValue::String(build_send_summary(target_type, &target_id, &results)),

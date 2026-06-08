@@ -16,13 +16,12 @@ use std::path::Path;
 
 use crate::brain_tool_spec::{
     brain_shared_inputs_from_value, brain_tool_input_signature, is_tool_subgraph_owner,
-    normalized_tool_outputs_for_owner, BrainToolDefinition, BRAIN_SHARED_INPUTS_PORT,
-    BRAIN_TOOLS_CONFIG_PORT,
+    normalized_tool_outputs_for_owner, BrainToolDefinition, BRAIN_SHARED_INPUTS_PORT, BRAIN_TOOLS_CONFIG_PORT,
 };
 use crate::data_value::DataType;
 use crate::function_graph::{
-    default_embedded_function_config, embedded_function_config_from_node,
-    sync_function_node_definition, sync_function_subgraph_signature,
+    default_embedded_function_config, embedded_function_config_from_node, sync_function_node_definition,
+    sync_function_subgraph_signature,
 };
 use crate::graph_boundary::sync_root_graph_io;
 use crate::{DataValue, Node, NodeConfigFlow, NodeGraph, NodeOutputFlow, Port};
@@ -190,22 +189,16 @@ pub fn refresh_port_types(graph: &mut NodeGraphDefinition) {
 fn refresh_port_types_internal(graph: &mut NodeGraphDefinition) {
     use crate::registry::NODE_REGISTRY;
     for node in &mut graph.nodes {
-        if let Some((canonical_inputs, canonical_outputs)) =
-            NODE_REGISTRY.get_node_ports(&node.node_type)
-        {
-            if let Some((dynamic_inputs, dynamic_outputs)) =
-                NODE_REGISTRY.get_node_dynamic_port_flags(&node.node_type)
+        if let Some((canonical_inputs, canonical_outputs)) = NODE_REGISTRY.get_node_ports(&node.node_type) {
+            if let Some((dynamic_inputs, dynamic_outputs)) = NODE_REGISTRY.get_node_dynamic_port_flags(&node.node_type)
             {
                 node.dynamic_input_ports = dynamic_inputs;
                 node.dynamic_output_ports = dynamic_outputs;
             }
 
             if !node.dynamic_input_ports {
-                node.input_ports.retain(|port| {
-                    canonical_inputs
-                        .iter()
-                        .any(|canonical| canonical.name == port.name)
-                });
+                node.input_ports
+                    .retain(|port| canonical_inputs.iter().any(|canonical| canonical.name == port.name));
             }
             for canon in &canonical_inputs {
                 if !node.input_ports.iter().any(|p| p.name == canon.name) {
@@ -219,11 +212,8 @@ fn refresh_port_types_internal(graph: &mut NodeGraphDefinition) {
             }
 
             if !node.dynamic_output_ports {
-                node.output_ports.retain(|port| {
-                    canonical_outputs
-                        .iter()
-                        .any(|canonical| canonical.name == port.name)
-                });
+                node.output_ports
+                    .retain(|port| canonical_outputs.iter().any(|canonical| canonical.name == port.name));
             }
             for canon in &canonical_outputs {
                 if !node.output_ports.iter().any(|p| p.name == canon.name) {
@@ -237,17 +227,14 @@ fn refresh_port_types_internal(graph: &mut NodeGraphDefinition) {
             }
 
             if !node.dynamic_input_ports {
-                let config_fields = NODE_REGISTRY
-                    .get_node_config_fields(&node.node_type)
-                    .unwrap_or_default();
+                let config_fields = NODE_REGISTRY.get_node_config_fields(&node.node_type).unwrap_or_default();
                 let all_port_names = canonical_inputs
                     .iter()
                     .chain(canonical_outputs.iter())
                     .map(|port| port.name.as_str())
                     .chain(config_fields.iter().map(|field| field.key.as_str()))
                     .collect::<Vec<_>>();
-                node.inline_values
-                    .retain(|key, _| all_port_names.contains(&key.as_str()));
+                node.inline_values.retain(|key, _| all_port_names.contains(&key.as_str()));
             }
         }
     }
@@ -276,9 +263,7 @@ pub fn refresh_node_dynamic_ports(node: &mut NodeDefinition) {
         return;
     }
 
-    let Ok(mut runtime_node) =
-        NODE_REGISTRY.create_node(&node.node_type, node.id.clone(), node.name.clone())
-    else {
+    let Ok(mut runtime_node) = NODE_REGISTRY.create_node(&node.node_type, node.id.clone(), node.name.clone()) else {
         return;
     };
 
@@ -323,16 +308,11 @@ pub fn refresh_node_dynamic_ports(node: &mut NodeDefinition) {
 /// 保存了错误类型的条目（如旧版转换时将 BotAdapterRef/SessionStateRef 写成了 String）。
 /// 这是对旧 JSON 的加载迁移：以边另一端的源端口（已经过注册表刷新）为准，覆盖config里的错误类型。
 fn fix_function_node_input_types_from_edges(graph: &mut NodeGraphDefinition) {
-    use crate::function_graph::{
-        embedded_function_config_from_node, sync_function_node_definition,
-    };
+    use crate::function_graph::{embedded_function_config_from_node, sync_function_node_definition};
 
     // 构建 node_id → output_ports 映射（端口类型已经过注册表刷新）
-    let output_port_map: HashMap<String, Vec<Port>> = graph
-        .nodes
-        .iter()
-        .map(|n| (n.id.clone(), n.output_ports.clone()))
-        .collect();
+    let output_port_map: HashMap<String, Vec<Port>> =
+        graph.nodes.iter().map(|n| (n.id.clone(), n.output_ports.clone())).collect();
 
     // 收集每个 function 节点应被修正的 (port_name → canonical DataType)
     let mut corrections: HashMap<String, Vec<(String, DataType)>> = HashMap::new();
@@ -432,8 +412,7 @@ fn validate_graph_definition_local(graph: &NodeGraphDefinition) -> Vec<Validatio
     let mut issues = Vec::new();
 
     // Build a quick lookup: node_id → NodeDefinition
-    let node_map: HashMap<String, &NodeDefinition> =
-        graph.nodes.iter().map(|n| (n.id.clone(), n)).collect();
+    let node_map: HashMap<String, &NodeDefinition> = graph.nodes.iter().map(|n| (n.id.clone(), n)).collect();
 
     for node in &graph.nodes {
         match NODE_REGISTRY.get_node_ports(&node.node_type) {
@@ -444,15 +423,11 @@ fn validate_graph_definition_local(graph: &NodeGraphDefinition) -> Vec<Validatio
                 )));
             }
             Some((canonical_inputs, canonical_outputs)) => {
-                let config_fields = NODE_REGISTRY
-                    .get_node_config_fields(&node.node_type)
-                    .unwrap_or_default();
+                let config_fields = NODE_REGISTRY.get_node_config_fields(&node.node_type).unwrap_or_default();
                 // Check for REQUIRED ports in registry but missing from JSON (inputs)
                 if !node.dynamic_input_ports {
                     for canon_port in &canonical_inputs {
-                        if canon_port.required
-                            && !node.input_ports.iter().any(|p| p.name == canon_port.name)
-                        {
+                        if canon_port.required && !node.input_ports.iter().any(|p| p.name == canon_port.name) {
                             issues.push(ValidationIssue::error(format!(
                                 "节点 \"{}\" 缺少必要输入端口 \"{}\"",
                                 node.name, canon_port.name
@@ -474,9 +449,7 @@ fn validate_graph_definition_local(graph: &NodeGraphDefinition) -> Vec<Validatio
                 // Check for REQUIRED ports in registry but missing from JSON (outputs)
                 if !node.dynamic_output_ports {
                     for canon_port in &canonical_outputs {
-                        if canon_port.required
-                            && !node.output_ports.iter().any(|p| p.name == canon_port.name)
-                        {
+                        if canon_port.required && !node.output_ports.iter().any(|p| p.name == canon_port.name) {
                             issues.push(ValidationIssue::error(format!(
                                 "节点 \"{}\" 缺少必要输出端口 \"{}\"",
                                 node.name, canon_port.name
@@ -582,9 +555,9 @@ fn auto_fix_graph_definition_local(graph: &mut NodeGraphDefinition) {
     }
     if !unknown_node_ids.is_empty() {
         graph.nodes.retain(|n| !unknown_node_ids.contains(&n.id));
-        graph.edges.retain(|e| {
-            !unknown_node_ids.contains(&e.from_node_id) && !unknown_node_ids.contains(&e.to_node_id)
-        });
+        graph
+            .edges
+            .retain(|e| !unknown_node_ids.contains(&e.from_node_id) && !unknown_node_ids.contains(&e.to_node_id));
     }
 
     // Track (node_id, port_name) of ports that no longer exist after fix –
@@ -609,10 +582,8 @@ fn auto_fix_graph_definition_local(graph: &mut NodeGraphDefinition) {
 
                 // Remove input ports not present in registry
                 if !node.dynamic_input_ports {
-                    let before: Vec<String> =
-                        node.input_ports.iter().map(|p| p.name.clone()).collect();
-                    node.input_ports
-                        .retain(|p| canonical_inputs.iter().any(|c| c.name == p.name));
+                    let before: Vec<String> = node.input_ports.iter().map(|p| p.name.clone()).collect();
+                    node.input_ports.retain(|p| canonical_inputs.iter().any(|c| c.name == p.name));
                     for removed in &before {
                         if !node.input_ports.iter().any(|p| &p.name == removed) {
                             removed_input_ports.push((node.id.clone(), removed.clone()));
@@ -628,10 +599,8 @@ fn auto_fix_graph_definition_local(graph: &mut NodeGraphDefinition) {
 
                 // Remove output ports not present in registry
                 if !node.dynamic_output_ports {
-                    let before: Vec<String> =
-                        node.output_ports.iter().map(|p| p.name.clone()).collect();
-                    node.output_ports
-                        .retain(|p| canonical_outputs.iter().any(|c| c.name == p.name));
+                    let before: Vec<String> = node.output_ports.iter().map(|p| p.name.clone()).collect();
+                    node.output_ports.retain(|p| canonical_outputs.iter().any(|c| c.name == p.name));
                     for removed in &before {
                         if !node.output_ports.iter().any(|p| &p.name == removed) {
                             removed_output_ports.push((node.id.clone(), removed.clone()));
@@ -652,20 +621,17 @@ fn auto_fix_graph_definition_local(graph: &mut NodeGraphDefinition) {
                         .chain(canonical_outputs.iter())
                         .map(|p| p.name.as_str())
                         .collect();
-                    node.inline_values
-                        .retain(|k, _| all_canonical_names.contains(&k.as_str()));
+                    node.inline_values.retain(|k, _| all_canonical_names.contains(&k.as_str()));
                 }
 
                 // Remove inline_values for ports that have port_bindings
-                node.inline_values
-                    .retain(|k, _| !node.port_bindings.contains_key(k.as_str()));
+                node.inline_values.retain(|k, _| !node.port_bindings.contains_key(k.as_str()));
             }
         }
     }
 
     // Build set of valid (node_id, output_port) and (node_id, input_port) for edge validation
-    let node_map: HashMap<String, &NodeDefinition> =
-        graph.nodes.iter().map(|n| (n.id.clone(), n)).collect();
+    let node_map: HashMap<String, &NodeDefinition> = graph.nodes.iter().map(|n| (n.id.clone(), n)).collect();
 
     graph.edges.retain(|edge| {
         // Drop if referencing a port we just removed
@@ -701,12 +667,7 @@ fn prune_invalid_edges(graph: &mut NodeGraphDefinition) {
     let node_map: HashMap<&str, (&[Port], &[Port])> = graph
         .nodes
         .iter()
-        .map(|node| {
-            (
-                node.id.as_str(),
-                (node.input_ports.as_slice(), node.output_ports.as_slice()),
-            )
-        })
+        .map(|node| (node.id.as_str(), (node.input_ports.as_slice(), node.output_ports.as_slice())))
         .collect();
 
     graph.edges.retain(|edge| {
@@ -762,8 +723,7 @@ fn refresh_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
         }
 
         if let Ok(value) = serde_json::to_value(&tools) {
-            node.inline_values
-                .insert(BRAIN_TOOLS_CONFIG_PORT.to_string(), value);
+            node.inline_values.insert(BRAIN_TOOLS_CONFIG_PORT.to_string(), value);
         }
     }
 }
@@ -797,10 +757,8 @@ fn validate_embedded_subgraphs(graph: &NodeGraphDefinition) -> Vec<ValidationIss
                         if !tool.uses_subgraph() {
                             continue;
                         }
-                        let prefix = format!(
-                            "{} 节点 \"{}\" 的 Tool \"{}\" 子图",
-                            node.node_type, node.name, tool.name
-                        );
+                        let prefix =
+                            format!("{} 节点 \"{}\" 的 Tool \"{}\" 子图", node.node_type, node.name, tool.name);
                         issues.extend(
                             validate_graph_definition(&tool.subgraph)
                                 .into_iter()
@@ -859,8 +817,7 @@ fn auto_fix_embedded_subgraphs(graph: &mut NodeGraphDefinition) {
         }
 
         if let Ok(value) = serde_json::to_value(&tools) {
-            node.inline_values
-                .insert(BRAIN_TOOLS_CONFIG_PORT.to_string(), value);
+            node.inline_values.insert(BRAIN_TOOLS_CONFIG_PORT.to_string(), value);
         }
     }
 }
@@ -872,10 +829,7 @@ fn prefixed_issue(prefix: String, issue: ValidationIssue) -> ValidationIssue {
     }
 }
 
-pub fn save_graph_definition_to_json(
-    path: impl AsRef<Path>,
-    graph: &NodeGraphDefinition,
-) -> Result<()> {
+pub fn save_graph_definition_to_json(path: impl AsRef<Path>, graph: &NodeGraphDefinition) -> Result<()> {
     let mut graph = graph.clone();
     sync_root_graph_io(&mut graph);
     let content = serde_json::to_string_pretty(&graph)?;
@@ -910,18 +864,10 @@ fn collect_cycle_members(graph: &NodeGraphDefinition) -> (HashSet<String>, HashS
         components: Vec<Vec<String>>,
     }
 
-    fn strong_connect(
-        node_id: &str,
-        adjacency: &HashMap<String, Vec<String>>,
-        state: &mut TarjanState,
-    ) {
+    fn strong_connect(node_id: &str, adjacency: &HashMap<String, Vec<String>>, state: &mut TarjanState) {
         let node_id_string = node_id.to_string();
-        state
-            .index_by_node
-            .insert(node_id_string.clone(), state.next_index);
-        state
-            .lowlink_by_node
-            .insert(node_id_string.clone(), state.next_index);
+        state.index_by_node.insert(node_id_string.clone(), state.next_index);
+        state.lowlink_by_node.insert(node_id_string.clone(), state.next_index);
         state.next_index += 1;
         state.stack.push(node_id_string.clone());
         state.on_stack.insert(node_id_string.clone());
@@ -930,8 +876,7 @@ fn collect_cycle_members(graph: &NodeGraphDefinition) -> (HashSet<String>, HashS
             for neighbor in neighbors {
                 if !state.index_by_node.contains_key(neighbor) {
                     strong_connect(neighbor, adjacency, state);
-                    let neighbor_lowlink =
-                        *state.lowlink_by_node.get(neighbor).unwrap_or(&usize::MAX);
+                    let neighbor_lowlink = *state.lowlink_by_node.get(neighbor).unwrap_or(&usize::MAX);
                     if let Some(lowlink) = state.lowlink_by_node.get_mut(&node_id_string) {
                         *lowlink = (*lowlink).min(neighbor_lowlink);
                     }
@@ -944,14 +889,8 @@ fn collect_cycle_members(graph: &NodeGraphDefinition) -> (HashSet<String>, HashS
             }
         }
 
-        let node_index = *state
-            .index_by_node
-            .get(&node_id_string)
-            .unwrap_or(&usize::MAX);
-        let node_lowlink = *state
-            .lowlink_by_node
-            .get(&node_id_string)
-            .unwrap_or(&usize::MAX);
+        let node_index = *state.index_by_node.get(&node_id_string).unwrap_or(&usize::MAX);
+        let node_lowlink = *state.lowlink_by_node.get(&node_id_string).unwrap_or(&usize::MAX);
         if node_index == node_lowlink {
             let mut component = Vec::new();
             while let Some(current) = state.stack.pop() {
@@ -965,11 +904,8 @@ fn collect_cycle_members(graph: &NodeGraphDefinition) -> (HashSet<String>, HashS
         }
     }
 
-    let mut adjacency: HashMap<String, Vec<String>> = graph
-        .nodes
-        .iter()
-        .map(|node| (node.id.clone(), Vec::new()))
-        .collect();
+    let mut adjacency: HashMap<String, Vec<String>> =
+        graph.nodes.iter().map(|node| (node.id.clone(), Vec::new())).collect();
     let mut self_loops = HashSet::new();
     for edge in &graph.edges {
         adjacency
@@ -1001,11 +937,8 @@ fn collect_cycle_members(graph: &NodeGraphDefinition) -> (HashSet<String>, HashS
     let mut cyclic_components = HashSet::new();
 
     for (component_index, component) in state.components.iter().enumerate() {
-        let is_cycle_component = component.len() > 1
-            || component
-                .first()
-                .map(|node_id| self_loops.contains(node_id))
-                .unwrap_or(false);
+        let is_cycle_component =
+            component.len() > 1 || component.first().map(|node_id| self_loops.contains(node_id)).unwrap_or(false);
         for node_id in component {
             node_component_index.insert(node_id.clone(), component_index);
             if is_cycle_component {
@@ -1063,9 +996,7 @@ fn calc_node_height(node: &NodeDefinition) -> f32 {
 /// Compute node width, matching the geometry module logic.
 fn calc_node_width(node: &NodeDefinition) -> f32 {
     const MIN_WIDTH: f32 = 200.0;
-    node.size
-        .as_ref()
-        .map_or(MIN_WIDTH, |s| s.width.max(MIN_WIDTH))
+    node.size.as_ref().map_or(MIN_WIDTH, |s| s.width.max(MIN_WIDTH))
 }
 
 /// Auto-layout all nodes in a hierarchical left-to-right arrangement following data flow.
@@ -1178,9 +1109,7 @@ pub fn auto_layout(graph: &mut NodeGraphDefinition) {
     let fallback_track = roots.len();
     for node in &graph.nodes {
         track.entry(node.id.clone()).or_insert(fallback_track);
-        discovery_order
-            .entry(node.id.clone())
-            .or_insert(order_counter);
+        discovery_order.entry(node.id.clone()).or_insert(order_counter);
         order_counter += 1;
     }
 
@@ -1205,10 +1134,7 @@ pub fn auto_layout(graph: &mut NodeGraphDefinition) {
     let mut col_max_width: HashMap<(usize, usize), f32> = HashMap::new();
     let mut col_total_height: HashMap<(usize, usize), f32> = HashMap::new();
     for (&key, nodes_in_col) in &col_groups {
-        let max_w = nodes_in_col
-            .iter()
-            .map(|id| node_dims[id].0)
-            .fold(0.0f32, f32::max);
+        let max_w = nodes_in_col.iter().map(|id| node_dims[id].0).fold(0.0f32, f32::max);
         let total_h = nodes_in_col.iter().map(|id| node_dims[id].1).sum::<f32>()
             + (nodes_in_col.len().saturating_sub(1) as f32) * V_GAP;
         col_max_width.insert(key, max_w);

@@ -32,9 +32,7 @@ impl Node for QQMessageToImageNode {
         Some("将 QQMessage(Image) 转换为 Image 数据类型，附带对象存储路径")
     }
 
-    node_input![
-        port! { name = "qq_message", ty = QQMessage, desc = "输入 QQ 消息段，必须是 image 类型" },
-    ];
+    node_input![port! { name = "qq_message", ty = QQMessage, desc = "输入 QQ 消息段，必须是 image 类型" },];
 
     node_output![
         port! { name = "image", ty = Image, desc = "输出 Image 数据（metadata + object_storage_path）" },
@@ -54,20 +52,14 @@ impl Node for QQMessageToImageNode {
 
         let image = match qq_message {
             Message::Image(image) => image,
-            _ => {
-                return Err(Error::ValidationError(
-                    "qq_message must be image variant".to_string(),
-                ))
-            }
+            _ => return Err(Error::ValidationError("qq_message must be image variant".to_string())),
         };
 
         let object_storage_path = image
             .rustfs_path()
             .map(ToOwned::to_owned)
             .or_else(|| image.original_source().map(ToOwned::to_owned))
-            .ok_or_else(|| {
-                Error::ValidationError("image has no resolvable object_storage_path".to_string())
-            })?;
+            .ok_or_else(|| Error::ValidationError("image has no resolvable object_storage_path".to_string()))?;
 
         let image_value = ImageData {
             metadata: image,
@@ -77,10 +69,7 @@ impl Node for QQMessageToImageNode {
 
         let mut outputs = HashMap::new();
         outputs.insert("image".to_string(), DataValue::Image(image_value));
-        outputs.insert(
-            "object_storage_path".to_string(),
-            DataValue::String(object_storage_path),
-        );
+        outputs.insert("object_storage_path".to_string(), DataValue::String(object_storage_path));
 
         let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;

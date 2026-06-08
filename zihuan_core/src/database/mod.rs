@@ -19,10 +19,7 @@ pub async fn ensure_tables_mysql(conn: &mut MySqlConnection) -> Result<()> {
             if let Err(e) = sqlx::query(idx).execute(&mut *conn).await {
                 let msg = e.to_string();
                 if msg.contains("Duplicate key name") || msg.contains("1061") {
-                    log::debug!(
-                        "MySQL index already exists, skipping: {}",
-                        &idx[..idx.len().min(120)]
-                    );
+                    log::debug!("MySQL index already exists, skipping: {}", &idx[..idx.len().min(120)]);
                     continue;
                 }
                 return Err(Error::Database(sqlx::Error::Protocol(format!(
@@ -43,12 +40,7 @@ pub async fn ensure_tables_sqlite(conn: &mut SqliteConnection) -> Result<()> {
     sqlx::query("PRAGMA foreign_keys = ON")
         .execute(&mut *conn)
         .await
-        .map_err(|e| {
-            Error::Database(sqlx::Error::Protocol(format!(
-                "SQLite PRAGMA failed: {}",
-                e
-            )))
-        })?;
+        .map_err(|e| Error::Database(sqlx::Error::Protocol(format!("SQLite PRAGMA failed: {}", e))))?;
 
     for (ddl, indexes) in ddl::SQLITE_TABLES {
         sqlx::query(ddl).execute(&mut *conn).await.map_err(|e| {

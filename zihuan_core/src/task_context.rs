@@ -79,10 +79,7 @@ pub struct AgentTaskHandle {
 }
 
 impl AgentTaskHandle {
-    pub fn new(
-        task_id: String,
-        finish: impl FnOnce(AgentTaskResult) + Send + 'static,
-    ) -> Arc<Self> {
+    pub fn new(task_id: String, finish: impl FnOnce(AgentTaskResult) + Send + 'static) -> Arc<Self> {
         Arc::new(Self {
             task_id,
             finish: Mutex::new(Some(Box::new(finish))),
@@ -123,11 +120,8 @@ pub trait AgentTaskRuntime: Send + Sync {
     /// The runtime creates a task record, spawns the runner via
     /// `tokio::spawn`, and returns a handle. The runner is responsible for
     /// calling [`AgentTaskHandle::finish`] when done.
-    fn spawn_task(
-        &self,
-        request: AgentTaskRequest,
-        runner: Box<dyn FnOnce() + Send + 'static>,
-    ) -> Arc<AgentTaskHandle>;
+    fn spawn_task(&self, request: AgentTaskRequest, runner: Box<dyn FnOnce() + Send + 'static>)
+        -> Arc<AgentTaskHandle>;
 
     /// Look up a task by id.
     fn query_task(&self, task_id: &str) -> Option<AgentTaskInfo>;

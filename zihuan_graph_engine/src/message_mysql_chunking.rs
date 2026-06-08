@@ -15,20 +15,11 @@ fn truncate_to_char_limit(value: &str, max_chars: usize) -> Option<String> {
         return None;
     }
 
-    let truncated_end = value
-        .char_indices()
-        .nth(max_chars)
-        .map(|(idx, _)| idx)
-        .unwrap_or(value.len());
+    let truncated_end = value.char_indices().nth(max_chars).map(|(idx, _)| idx).unwrap_or(value.len());
     Some(value[..truncated_end].to_string())
 }
 
-pub fn truncate_field_if_needed(
-    field_name: &str,
-    value: String,
-    max_chars: usize,
-    message_id: &str,
-) -> String {
+pub fn truncate_field_if_needed(field_name: &str, value: String, max_chars: usize, message_id: &str) -> String {
     let original_chars = value.chars().count();
     if let Some(truncated) = truncate_to_char_limit(&value, max_chars) {
         warn!(

@@ -28,31 +28,22 @@ impl Node for LoadLocalTextEmbedderNode {
         &self.name
     }
     fn description(&self) -> Option<&str> {
-        Some(
-            "从 models/text_embedding/<model_name> 加载本地 Candle embedding 模型，输出 EmbeddingModel 引用",
-        )
+        Some("从 models/text_embedding/<model_name> 加载本地 Candle embedding 模型，输出 EmbeddingModel 引用")
     }
 
     node_input![
         port! { name = "model_name", ty = String, desc = "models/text_embedding 下的模型目录名，例如 Qwen3-Embedding-0.6B" },
     ];
 
-    node_output![
-        port! { name = "embedding_model", ty = EmbeddingModel, desc = "Embedding 模型引用" },
-    ];
+    node_output![port! { name = "embedding_model", ty = EmbeddingModel, desc = "Embedding 模型引用" },];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let model_name = match inputs.get("model_name") {
             Some(DataValue::String(value)) if !value.trim().is_empty() => value.trim().to_string(),
             _ => {
-                return Err(Error::ValidationError(
-                    "Missing required input: model_name".to_string(),
-                ));
+                return Err(Error::ValidationError("Missing required input: model_name".to_string()));
             }
         };
 

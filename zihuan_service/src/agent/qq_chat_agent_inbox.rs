@@ -24,10 +24,7 @@ const REDIS_QUEUE_PREFIX: &str = "qq_chat_agent:inbox";
 
 #[derive(Debug, Clone)]
 pub enum QqChatAgentSupervisorEvent {
-    AdapterFinished {
-        success: bool,
-        error_msg: Option<String>,
-    },
+    AdapterFinished { success: bool, error_msg: Option<String> },
     RedisConsumerFinished,
     MemoryConsumerFinished,
 }
@@ -148,11 +145,7 @@ impl QqChatAgentInbox {
         self.inner.shutdown.request_shutdown();
     }
 
-    pub async fn enqueue(
-        &self,
-        event: MessageEvent,
-        time: String,
-    ) -> Result<QqChatAgentInboxBackend> {
+    pub async fn enqueue(&self, event: MessageEvent, time: String) -> Result<QqChatAgentInboxBackend> {
         let item = QqChatAgentInboxItem {
             event,
             adapter: Arc::clone(&self.inner.adapter),
@@ -226,28 +219,18 @@ impl QqChatAgentInbox {
         Ok(())
     }
 
-    async fn run_redis_consumer(
-        &self,
-        consumer_idx: usize,
-        mut redis_blpop: RedisBlockingPopConnection,
-    ) {
+    async fn run_redis_consumer(&self, consumer_idx: usize, mut redis_blpop: RedisBlockingPopConnection) {
         loop {
             if self.inner.shutdown.is_closing() {
                 break;
             }
-            match self
-                .dequeue_from_redis(consumer_idx, &mut redis_blpop)
-                .await
-            {
+            match self.dequeue_from_redis(consumer_idx, &mut redis_blpop).await {
                 Ok(Some(item)) => {
                     self.process_item(item).await;
                 }
                 Ok(None) => continue,
                 Err(err) => {
-                    warn!(
-                        "[service][qq_agent][inbox][redis:{}] dequeue failed: {}",
-                        consumer_idx, err
-                    );
+                    warn!("[service][qq_agent][inbox][redis:{}] dequeue failed: {}", consumer_idx, err);
                     sleep(Duration::from_millis(REDIS_RETRY_DELAY_MS)).await;
                 }
             }
@@ -306,9 +289,7 @@ impl QqChatAgentInbox {
         let message_id = event.message_id;
         let sender_id = event.sender.user_id;
 
-        let result =
-            tokio::task::spawn_blocking(move || service.handle_event(&event, &adapter, &time))
-                .await;
+        let result = tokio::task::spawn_blocking(move || service.handle_event(&event, &adapter, &time)).await;
 
         match result {
             Ok(Ok(())) => {}

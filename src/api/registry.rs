@@ -50,16 +50,12 @@ pub async fn get_registry(_req: &mut Request, res: &mut Response, _depot: &mut D
     let mut types: Vec<NodeTypeInfo> = all_types
         .iter()
         .map(|meta| {
-            let (input_ports, output_ports) = NODE_REGISTRY
-                .get_node_ports(&meta.type_id)
-                .unwrap_or_default();
+            let (input_ports, output_ports) = NODE_REGISTRY.get_node_ports(&meta.type_id).unwrap_or_default();
 
             let (has_dyn_in, has_dyn_out) = NODE_REGISTRY
                 .get_node_dynamic_port_flags(&meta.type_id)
                 .unwrap_or((false, false));
-            let config_fields = NODE_REGISTRY
-                .get_node_config_fields(&meta.type_id)
-                .unwrap_or_default();
+            let config_fields = NODE_REGISTRY.get_node_config_fields(&meta.type_id).unwrap_or_default();
 
             NodeTypeInfo {
                 type_id: meta.type_id.clone(),
@@ -108,11 +104,7 @@ pub async fn get_registry(_req: &mut Request, res: &mut Response, _depot: &mut D
         .collect();
 
     // Stable sort by category then display_name
-    types.sort_by(|a, b| {
-        a.category
-            .cmp(&b.category)
-            .then_with(|| a.display_name.cmp(&b.display_name))
-    });
+    types.sort_by(|a, b| a.category.cmp(&b.category).then_with(|| a.display_name.cmp(&b.display_name)));
 
     let categories: Vec<String> = {
         let mut cats: Vec<String> = types.iter().map(|t| t.category.clone()).collect();

@@ -9,45 +9,34 @@ use zihuan_agent::utils::build_state_system_prefix_lines;
 pub(crate) use super::qq_chat_agent_logging::QqChatTaskTrace;
 use super::qq_chat_agent_msg_send::QqReplyDirective;
 use super::qq_chat_agent_msg_send::{
-    build_long_task_complete_content, build_long_task_start_text, send_forward_content,
-    send_notification_text, QqSendContext,
+    build_long_task_complete_content, build_long_task_start_text, send_forward_content, send_notification_text,
+    QqSendContext,
 };
 pub(crate) use super::tools::build_info_brain_tools;
 use super::tools::{
-    DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST,
-    DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES, DEFAULT_TOOL_GET_RECENT_USER_MESSAGES,
-    DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS,
-    DEFAULT_TOOL_REMEMBER_CONTENT, DEFAULT_TOOL_SEARCH_MEMORY_CONTENT,
-    DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES, DEFAULT_TOOL_WEB_SEARCH,
+    DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO, DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
+    DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND, DEFAULT_TOOL_LIST_AVAILABLE_MEMORY_KEYS,
+    DEFAULT_TOOL_REMEMBER_CONTENT, DEFAULT_TOOL_SEARCH_MEMORY_CONTENT, DEFAULT_TOOL_SEARCH_SIMILAR_IMAGES,
+    DEFAULT_TOOL_WEB_SEARCH,
 };
-use crate::nodes::tool_subgraph::{
-    validate_shared_inputs, validate_tool_definitions, ToolResultMode,
-};
+use crate::nodes::tool_subgraph::{validate_shared_inputs, validate_tool_definitions, ToolResultMode};
 use crate::storage::qq_chat_history_store::clear_history;
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
-use ims_bot_adapter::{
-    IMAGE_ANALYSIS_LABEL,
-};
-use ims_bot_adapter::models::message::{
-    Message, PersistedMedia, PersistedMediaSource,
-};
+use ims_bot_adapter::models::message::{Message, PersistedMedia, PersistedMediaSource};
+use ims_bot_adapter::IMAGE_ANALYSIS_LABEL;
 use zihuan_agent::brain::LongTaskNotifier;
 use zihuan_core::agent_config::QqChatEmotionDimensionConfig;
-use zihuan_core::steer::{PendingSteerStore, PROCESSING_INSTRUCTION};
-use zihuan_core::command::{
-    CommandChannel, CommandContext, NewConversationRequest, SideEffectContext,
-};
+use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
 use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::{LLMMessage, MessagePart};
 use zihuan_core::rag::WebSearchEngineRef;
+use zihuan_core::steer::{PendingSteerStore, PROCESSING_INSTRUCTION};
 use zihuan_core::task_context::AgentTaskRuntime;
 use zihuan_core::utils::string_utils::extract_string_field;
 use zihuan_core::weaviate::WeaviateRef;
-use zihuan_graph_engine::brain_tool_spec::{
-    BrainToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE,
-};
+use zihuan_graph_engine::brain_tool_spec::{BrainToolDefinition, QQ_AGENT_TOOL_OWNER_TYPE};
 use zihuan_graph_engine::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::message_restore::register_media;
@@ -55,9 +44,8 @@ use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
 
 pub(crate) use crate::qq_chat_user_input::{
-    append_prepared_parts, build_prepared_input_metadata, expand_messages_for_inference,
-    flush_text_part, prepare_current_turn_user_input, prepare_current_turn_user_input_from_event,
-    PreparedCurrentTurnUserInput,
+    append_prepared_parts, build_prepared_input_metadata, expand_messages_for_inference, flush_text_part,
+    prepare_current_turn_user_input, prepare_current_turn_user_input_from_event, PreparedCurrentTurnUserInput,
 };
 
 pub(crate) const LOG_PREFIX: &str = "[QqChatAgent]";
@@ -119,10 +107,7 @@ impl SideEffectContext for QqCommandSideEffectContext<'_> {
 
     fn start_new_conversation(&self, request: &NewConversationRequest) -> Result<()> {
         let CommandChannel::QqChat {
-            sender_id,
-            is_group,
-            group_id,
-            ..
+            sender_id, is_group, group_id, ..
         } = &request.channel
         else {
             return Err(Error::ValidationError(
@@ -142,12 +127,7 @@ impl SideEffectContext for QqCommandSideEffectContext<'_> {
             bot_id: self.bot_id,
             bot_name: self.bot_name,
             mention_target_id: None,
-            persistence: build_outbound_persistence(
-                self.rdb_pool,
-                self.mysql_ref,
-                self.group_name,
-                self.bot_name,
-            ),
+            persistence: build_outbound_persistence(self.rdb_pool, self.mysql_ref, self.group_name, self.bot_name),
             max_text_chars: MAX_REPLY_CHARS,
         };
         send_forward_content(&send_ctx, content)
@@ -205,20 +185,13 @@ fn build_common_system_rules(identity_example: &str, agent_system_prompt: Option
 }
 
 /// System prompt template (shared, private variant).
-pub(crate) fn build_private_system_prompt(
-    bot_name: &str,
-    agent_system_prompt: Option<&str>,
-) -> String {
+pub(crate) fn build_private_system_prompt(bot_name: &str, agent_system_prompt: Option<&str>) -> String {
     build_common_system_rules(&format!("你的名字叫{bot_name}。"), agent_system_prompt)
 }
 
 /// System prompt template (group variant).
-pub(crate) fn build_group_system_prompt(
-    bot_name: &str,
-    agent_system_prompt: Option<&str>,
-) -> String {
-    let mut rules =
-        build_common_system_rules(&format!("你的名字叫{bot_name}。"), agent_system_prompt);
+pub(crate) fn build_group_system_prompt(bot_name: &str, agent_system_prompt: Option<&str>) -> String {
+    let mut rules = build_common_system_rules(&format!("你的名字叫{bot_name}。"), agent_system_prompt);
     rules.push_str(&format!(
         "\n- 群聊里如果需要明确提醒对方，可在调用 `send_natural_language_reply` 时把 mention_sender 设为 true。"
     ));
@@ -285,8 +258,7 @@ pub(crate) fn build_user_message(
     session_state: &QqChatAgentSessionState,
     emotion_dimensions: &[QqChatEmotionDimensionConfig],
 ) -> LLMMessage {
-    let state_lines =
-        build_state_system_prefix_lines(session_state, emotion_dimensions, character_instructions);
+    let state_lines = build_state_system_prefix_lines(session_state, emotion_dimensions, character_instructions);
 
     let environment = format!("[Environment]\n- Your name: {bot_name}");
 
@@ -304,10 +276,7 @@ pub(crate) fn build_user_message(
     let at_targets = if current_input.at_target_list.is_empty() {
         String::new()
     } else {
-        format!(
-            "\n- At targets: {}",
-            current_input.at_target_list.join(", ")
-        )
+        format!("\n- At targets: {}", current_input.at_target_list.join(", "))
     };
 
     let metadata = format!(
@@ -341,10 +310,7 @@ pub(crate) fn build_user_message(
     let state_text = format!("{}\n", state_lines.join("\n"));
     let mut parts = vec![MessagePart::text(state_text)];
     let metadata_text = format!("{environment}\n\n{metadata}");
-    let mut text_buffer = format!(
-        "{metadata_text}\n\n{}",
-        ims_bot_adapter::CURRENT_MESSAGE_LABEL
-    );
+    let mut text_buffer = format!("{metadata_text}\n\n{}", ims_bot_adapter::CURRENT_MESSAGE_LABEL);
     append_prepared_parts(&mut parts, &mut text_buffer, "\n", &current_input.parts);
     flush_text_part(&mut parts, &mut text_buffer);
     parts.push(MessagePart::text(PROCESSING_INSTRUCTION.to_string()));
@@ -375,9 +341,7 @@ fn persisted_media_from_tool_value(value: &Value) -> Option<PersistedMedia> {
     })
 }
 
-pub(crate) fn collect_available_media_from_brain_output(
-    messages: &[LLMMessage],
-) -> HashMap<String, PersistedMedia> {
+pub(crate) fn collect_available_media_from_brain_output(messages: &[LLMMessage]) -> HashMap<String, PersistedMedia> {
     let mut media_by_id = HashMap::new();
 
     for message in messages {
@@ -478,9 +442,7 @@ impl LongTaskNotifier for QqLongTaskNotifier {
             max_text_chars: MAX_REPLY_CHARS,
         };
         if let Err(err) = send_forward_content(&send_ctx, &content) {
-            warn!(
-                "{LOG_PREFIX} failed to send long-task completion forward message for task_id={task_id}: {err}"
-            );
+            warn!("{LOG_PREFIX} failed to send long-task completion forward message for task_id={task_id}: {err}");
         }
     }
 }
@@ -556,10 +518,7 @@ impl QqChatAgent {
     }
 
     pub(crate) fn is_default_tool_enabled(&self, tool_name: &str) -> bool {
-        self.default_tools_enabled
-            .get(tool_name)
-            .copied()
-            .unwrap_or(true)
+        self.default_tools_enabled.get(tool_name).copied().unwrap_or(true)
     }
 
     pub(crate) fn wrap_err(&self, msg: impl Into<String>) -> Error {
@@ -649,11 +608,7 @@ impl QqChatAgentService {
         adapter: &ims_bot_adapter::adapter::SharedBotAdapter,
         time: &str,
     ) -> Result<()> {
-        let task_db_connection_id = self
-            .config
-            .qq_chat_config
-            .resolved_rdb_id()
-            .map(ToOwned::to_owned);
+        let task_db_connection_id = self.config.qq_chat_config.resolved_rdb_id().map(ToOwned::to_owned);
 
         let ctx = QqChatAgentContext {
             adapter,
@@ -686,19 +641,10 @@ impl QqChatAgentService {
             task_db_connection_id,
         };
 
-        zihuan_core::agent_config::with_current_qq_chat_agent_config(
-            self.config.qq_chat_config.clone(),
-            || {
-                self.inner.handle(
-                    event,
-                    time,
-                    &self.config.agent_id,
-                    &self.config.session,
-                    None,
-                    &ctx,
-                )
-            },
-        )
+        zihuan_core::agent_config::with_current_qq_chat_agent_config(self.config.qq_chat_config.clone(), || {
+            self.inner
+                .handle(event, time, &self.config.agent_id, &self.config.session, None, &ctx)
+        })
     }
 }
 

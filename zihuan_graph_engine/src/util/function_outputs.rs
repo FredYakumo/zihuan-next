@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use serde_json::Value;
 
 use crate::function_graph::{
-    function_outputs_ports, function_signature_from_value, hidden_function_signature_port,
-    FunctionPortDef, FUNCTION_SIGNATURE_PORT,
+    function_outputs_ports, function_signature_from_value, hidden_function_signature_port, FunctionPortDef,
+    FUNCTION_SIGNATURE_PORT,
 };
 use crate::{DataValue, Node, Port};
 use zihuan_core::error::{Error, Result};
@@ -25,9 +25,8 @@ impl FunctionOutputsNode {
     }
 
     fn apply_signature_json(&mut self, value: &Value) -> Result<()> {
-        self.signature = function_signature_from_value(value).ok_or_else(|| {
-            Error::ValidationError("function_outputs.signature 不是有效的函数签名 JSON".to_string())
-        })?;
+        self.signature = function_signature_from_value(value)
+            .ok_or_else(|| Error::ValidationError("function_outputs.signature 不是有效的函数签名 JSON".to_string()))?;
         Ok(())
     }
 }

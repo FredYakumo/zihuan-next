@@ -1,13 +1,9 @@
 use std::collections::HashMap;
 
 use model_inference::agent_config_support::{build_llm_from_ref_id, LLM_KIND_FIELD};
-use zihuan_core::agent_config::{
-    current_qq_chat_agent_config, llm_ref_id_for_kind, normalize_llm_kind, LLM_KIND_MAIN,
-};
+use zihuan_core::agent_config::{current_qq_chat_agent_config, llm_ref_id_for_kind, normalize_llm_kind, LLM_KIND_MAIN};
 use zihuan_core::error::Result;
-use zihuan_graph_engine::{
-    node_output, DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port,
-};
+use zihuan_graph_engine::{node_output, DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port};
 
 pub struct AgentLlmNode {
     id: String,
@@ -39,36 +35,24 @@ impl Node for AgentLlmNode {
         Vec::new()
     }
 
-    node_output![
-        port! { name = "llm_model", ty = LLModel, desc = "当前 Agent 选定类型的 LLM 引用" },
-    ];
+    node_output![port! { name = "llm_model", ty = LLModel, desc = "当前 Agent 选定类型的 LLM 引用" },];
 
     fn config_fields(&self) -> Vec<NodeConfigField> {
-        vec![NodeConfigField::new(
-            LLM_KIND_FIELD,
-            DataType::String,
-            NodeConfigWidget::AgentLlmKindSelect,
-        )
-        .with_description("选择读取主模型、数学编程模型或自然语言回复模型")]
+        vec![
+            NodeConfigField::new(LLM_KIND_FIELD, DataType::String, NodeConfigWidget::AgentLlmKindSelect)
+                .with_description("选择读取主模型、数学编程模型或自然语言回复模型"),
+        ]
     }
 
-    fn apply_inline_config(
-        &mut self,
-        inline_values: &zihuan_graph_engine::NodeConfigFlow,
-    ) -> Result<()> {
-        self.llm_kind = inline_values
-            .get(LLM_KIND_FIELD)
-            .and_then(|value| match value {
-                DataValue::String(value) => Some(value.clone()),
-                _ => None,
-            });
+    fn apply_inline_config(&mut self, inline_values: &zihuan_graph_engine::NodeConfigFlow) -> Result<()> {
+        self.llm_kind = inline_values.get(LLM_KIND_FIELD).and_then(|value| match value {
+            DataValue::String(value) => Some(value.clone()),
+            _ => None,
+        });
         Ok(())
     }
 
-    fn execute(
-        &mut self,
-        _inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, _inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let config = current_qq_chat_agent_config()?;
         let llm_kind = normalize_llm_kind(self.llm_kind.as_deref())?;
         let llm = build_llm_from_ref_id(llm_ref_id_for_kind(&config, llm_kind))?;

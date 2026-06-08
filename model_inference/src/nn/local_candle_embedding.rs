@@ -72,25 +72,21 @@ impl LocalCandleEmbeddingModel {
 
     fn load_runtime_model(&self, device: &Device) -> Result<Model> {
         let dtype = device.bf16_default_to_f32();
-        let tensors =
-            safetensors::load(self.model_dir.join("model.safetensors"), device).map_err(|err| {
-                Error::StringError(format!(
-                    "failed to load local embedding weights '{}' for model '{}': {}",
-                    self.model_dir.join("model.safetensors").display(),
-                    self.model_name,
-                    err
-                ))
-            })?;
+        let tensors = safetensors::load(self.model_dir.join("model.safetensors"), device).map_err(|err| {
+            Error::StringError(format!(
+                "failed to load local embedding weights '{}' for model '{}': {}",
+                self.model_dir.join("model.safetensors").display(),
+                self.model_name,
+                err
+            ))
+        })?;
         let tensors: HashMap<String, Tensor> = tensors
             .into_iter()
             .map(|(name, tensor)| (format!("model.{name}"), tensor))
             .collect();
         let vb = VarBuilder::from_tensors(tensors, dtype, device);
         Model::new(&self.config, vb).map_err(|err| {
-            Error::StringError(format!(
-                "failed to load Candle Qwen3 model for '{}': {}",
-                self.model_name, err
-            ))
+            Error::StringError(format!("failed to load Candle Qwen3 model for '{}': {}", self.model_name, err))
         })
     }
 
@@ -119,9 +115,7 @@ impl LocalCandleEmbeddingModel {
                 max_length: self.max_length.min(32768),
                 ..Default::default()
             }))
-            .map_err(|err| {
-                Error::StringError(format!("failed to enable tokenizer truncation: {err}"))
-            })?;
+            .map_err(|err| Error::StringError(format!("failed to enable tokenizer truncation: {err}")))?;
 
         let encodings = tokenizer
             .encode_batch(texts.to_vec(), true)
@@ -129,30 +123,16 @@ impl LocalCandleEmbeddingModel {
 
         let token_rows = encodings
             .iter()
-            .map(|encoding| {
-                encoding
-                    .get_ids()
-                    .iter()
-                    .map(|id| *id as u32)
-                    .collect::<Vec<_>>()
-            })
+            .map(|encoding| encoding.get_ids().iter().map(|id| *id as u32).collect::<Vec<_>>())
             .collect::<Vec<_>>();
         let lengths = encodings
             .iter()
-            .map(|encoding| {
-                encoding
-                    .get_attention_mask()
-                    .iter()
-                    .filter(|&&flag| flag != 0)
-                    .count()
-            })
+            .map(|encoding| encoding.get_attention_mask().iter().filter(|&&flag| flag != 0).count())
             .collect::<Vec<_>>();
 
         let max_len = token_rows.iter().map(Vec::len).max().unwrap_or(0);
         if max_len == 0 {
-            return Err(Error::ValidationError(
-                "texts input must not be empty".to_string(),
-            ));
+            return Err(Error::ValidationError("texts input must not be empty".to_string()));
         }
 
         let tokens = token_rows.concat();
@@ -185,9 +165,7 @@ impl LocalCandleEmbeddingModel {
                 .i((batch_index, token_index))
                 .and_then(|tensor| tensor.to_dtype(DType::F32))
                 .and_then(|tensor| tensor.to_vec1::<f32>())
-                .map_err(|err| {
-                    Error::StringError(format!("failed to read embedding tensor: {err}"))
-                })?;
+                .map_err(|err| Error::StringError(format!("failed to read embedding tensor: {err}")))?;
             let mut embedding = embedding;
             Self::normalize_embedding(&mut embedding);
             embeddings.push(embedding);
@@ -232,9 +210,7 @@ impl EmbeddingBase for LocalCandleEmbeddingModel {
     fn inference(&self, text: &str) -> Result<Vec<f32>> {
         let text = text.trim();
         if text.is_empty() {
-            return Err(Error::ValidationError(
-                "text input must not be blank".to_string(),
-            ));
+            return Err(Error::ValidationError("text input must not be blank".to_string()));
         }
         let texts = vec![text.to_string()];
         let mut embeddings = self.infer_batch(&texts)?;
@@ -245,9 +221,7 @@ impl EmbeddingBase for LocalCandleEmbeddingModel {
 
     fn batch_inference(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
         if texts.is_empty() {
-            return Err(Error::ValidationError(
-                "texts input must not be empty".to_string(),
-            ));
+            return Err(Error::ValidationError("texts input must not be empty".to_string()));
         }
         self.infer_batch(texts)
     }
@@ -312,9 +286,7 @@ fn available_local_models() -> Result<Vec<String>> {
         .filter_map(|entry| {
             let path = entry.path();
             if path.is_dir() {
-                path.file_name()
-                    .and_then(|name| name.to_str())
-                    .map(|name| name.to_string())
+                path.file_name().and_then(|name| name.to_str()).map(|name| name.to_string())
             } else {
                 None
             }
@@ -331,10 +303,7 @@ fn current_dir_display() -> String {
 }
 
 fn display_path(path: &Path) -> String {
-    path.canonicalize()
-        .unwrap_or_else(|_| path.to_path_buf())
-        .display()
-        .to_string()
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf()).display().to_string()
 }
 
 fn select_preferred_device(model_name: &str) -> Device {
@@ -342,10 +311,7 @@ fn select_preferred_device(model_name: &str) -> Device {
     {
         match Device::new_cuda(0) {
             Ok(device) => {
-                log::info!(
-                    "Local embedding model '{}' will use CUDA device 0",
-                    model_name
-                );
+                log::info!("Local embedding model '{}' will use CUDA device 0", model_name);
                 return device;
             }
             Err(err) => {
@@ -362,10 +328,7 @@ fn select_preferred_device(model_name: &str) -> Device {
     {
         match Device::new_metal(0) {
             Ok(device) => {
-                log::info!(
-                    "Local embedding model '{}' will use Metal device 0",
-                    model_name
-                );
+                log::info!("Local embedding model '{}' will use Metal device 0", model_name);
                 return device;
             }
             Err(err) => {
@@ -378,10 +341,7 @@ fn select_preferred_device(model_name: &str) -> Device {
         }
     }
 
-    log::info!(
-        "Local embedding model '{}' will use CPU fallback",
-        model_name
-    );
+    log::info!("Local embedding model '{}' will use CPU fallback", model_name);
     Device::Cpu
 }
 

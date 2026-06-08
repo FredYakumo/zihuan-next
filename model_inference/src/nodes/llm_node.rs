@@ -5,9 +5,7 @@ use crate::llm_api::LLMAPI;
 use crate::system_config::{load_llm_refs, LlmApiStyle, LlmServiceConfig, ModelRefSpec};
 use zihuan_core::error::Result;
 use zihuan_core::llm::llm_base::LLMBase;
-use zihuan_graph_engine::{
-    node_output, DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port,
-};
+use zihuan_graph_engine::{node_output, DataType, DataValue, Node, NodeConfigField, NodeConfigWidget, Port};
 
 pub fn build_llm(config: LlmServiceConfig) -> Result<Arc<dyn LLMBase>> {
     match config.api_style {
@@ -53,12 +51,8 @@ impl LlmNode {
     }
 
     fn llm_ref_select_field() -> NodeConfigField {
-        NodeConfigField::new(
-            LLM_REF_ID_FIELD,
-            DataType::String,
-            NodeConfigWidget::LlmRefSelect,
-        )
-        .with_description("选择系统中的聊天 LLM 配置")
+        NodeConfigField::new(LLM_REF_ID_FIELD, DataType::String, NodeConfigWidget::LlmRefSelect)
+            .with_description("选择系统中的聊天 LLM 配置")
     }
 
     fn resolve_llm_config(&self) -> Result<LlmServiceConfig> {
@@ -67,19 +61,12 @@ impl LlmNode {
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .ok_or_else(|| {
-                zihuan_core::error::Error::ValidationError("llm_ref_id is required".to_string())
-            })?;
+            .ok_or_else(|| zihuan_core::error::Error::ValidationError("llm_ref_id is required".to_string()))?;
 
         let llm_ref = load_llm_refs()?
             .into_iter()
             .find(|item| item.id == llm_ref_id || item.config_id == llm_ref_id)
-            .ok_or_else(|| {
-                zihuan_core::error::Error::ValidationError(format!(
-                    "llm_ref '{}' not found",
-                    llm_ref_id
-                ))
-            })?;
+            .ok_or_else(|| zihuan_core::error::Error::ValidationError(format!("llm_ref '{}' not found", llm_ref_id)))?;
 
         if !llm_ref.enabled {
             return Err(zihuan_core::error::Error::ValidationError(format!(
@@ -90,12 +77,10 @@ impl LlmNode {
 
         match llm_ref.model {
             ModelRefSpec::ChatLlm { llm } => Ok(llm),
-            ModelRefSpec::TextEmbeddingLocal { .. } => {
-                Err(zihuan_core::error::Error::ValidationError(format!(
-                    "llm_ref '{}' is not a chat LLM config",
-                    llm_ref.name
-                )))
-            }
+            ModelRefSpec::TextEmbeddingLocal { .. } => Err(zihuan_core::error::Error::ValidationError(format!(
+                "llm_ref '{}' is not a chat LLM config",
+                llm_ref.name
+            ))),
         }
     }
 }
@@ -114,31 +99,21 @@ impl Node for LlmNode {
         Vec::new()
     }
 
-    node_output![
-        port! { name = "llm_model", ty = LLModel, desc = "LLM模型引用，传递给推理节点使用" },
-    ];
+    node_output![port! { name = "llm_model", ty = LLModel, desc = "LLM模型引用，传递给推理节点使用" },];
 
     fn config_fields(&self) -> Vec<NodeConfigField> {
         vec![Self::llm_ref_select_field()]
     }
 
-    fn apply_inline_config(
-        &mut self,
-        inline_values: &zihuan_graph_engine::NodeConfigFlow,
-    ) -> Result<()> {
-        self.llm_ref_id = inline_values
-            .get(LLM_REF_ID_FIELD)
-            .and_then(|value| match value {
-                DataValue::String(value) => Some(value.clone()),
-                _ => None,
-            });
+    fn apply_inline_config(&mut self, inline_values: &zihuan_graph_engine::NodeConfigFlow) -> Result<()> {
+        self.llm_ref_id = inline_values.get(LLM_REF_ID_FIELD).and_then(|value| match value {
+            DataValue::String(value) => Some(value.clone()),
+            _ => None,
+        });
         Ok(())
     }
 
-    fn execute(
-        &mut self,
-        _inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, _inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let llm_config = self.resolve_llm_config()?;
         let llm = build_llm(llm_config)?;
         zihuan_graph_engine::return_with_node_output![self;

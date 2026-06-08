@@ -19,9 +19,7 @@ pub async fn get_hyperparameters(req: &mut Request, res: &mut Response, depot: &
             let values = s
                 .file_path
                 .as_deref()
-                .map(|fp| {
-                    hyperparam_store::load_hyperparameter_values(std::path::Path::new(fp), &s.graph)
-                })
+                .map(|fp| hyperparam_store::load_hyperparameter_values(std::path::Path::new(fp), &s.graph))
                 .unwrap_or_default();
 
             res.render(Json(serde_json::json!({
@@ -43,11 +41,7 @@ pub struct UpdateHyperparametersRequest {
 }
 
 #[handler]
-pub async fn update_hyperparameter_values(
-    req: &mut Request,
-    res: &mut Response,
-    depot: &mut Depot,
-) {
+pub async fn update_hyperparameter_values(req: &mut Request, res: &mut Response, depot: &mut Depot) {
     let state = depot.obtain::<Arc<AppState>>().unwrap();
     let id = req.param::<String>("id").unwrap_or_default();
     let body: UpdateHyperparametersRequest = match req.parse_json().await {
@@ -70,11 +64,7 @@ pub async fn update_hyperparameter_values(
     };
 
     if let Some(fp) = &session.file_path {
-        match hyperparam_store::save_hyperparameter_values(
-            std::path::Path::new(fp),
-            &session.graph,
-            &body.values,
-        ) {
+        match hyperparam_store::save_hyperparameter_values(std::path::Path::new(fp), &session.graph, &body.values) {
             Ok(()) => res.render(Json(serde_json::json!({"ok": true}))),
             Err(e) => {
                 res.status_code(StatusCode::INTERNAL_SERVER_ERROR);

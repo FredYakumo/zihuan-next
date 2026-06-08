@@ -3,9 +3,7 @@ use std::collections::HashMap;
 use serde_json::{json, Value};
 
 use zihuan_core::error::{Error, Result};
-use zihuan_core::weaviate::{
-    gql_escape, graphql_value, WeaviateCollectionConfig, WeaviateObjectInput, WeaviateRef,
-};
+use zihuan_core::weaviate::{gql_escape, graphql_value, WeaviateCollectionConfig, WeaviateObjectInput, WeaviateRef};
 
 pub trait WeaviateClient {
     fn list_collections(&self) -> Result<Vec<String>>;
@@ -66,15 +64,9 @@ pub trait WeaviateClient {
         include_distance: bool,
     ) -> Result<Value>;
 
-    fn query_all(&self, class_name: &str, limit: usize, property_names: &[String])
-        -> Result<Value>;
+    fn query_all(&self, class_name: &str, limit: usize, property_names: &[String]) -> Result<Value>;
 
-    fn query_with_args(
-        &self,
-        class_name: &str,
-        args: &str,
-        property_names: &[String],
-    ) -> Result<Value>;
+    fn query_with_args(&self, class_name: &str, args: &str, property_names: &[String]) -> Result<Value>;
 
     fn query_near_vector(
         &self,
@@ -91,28 +83,16 @@ pub trait WeaviateClient {
 impl WeaviateClient for WeaviateRef {
     fn list_collections(&self) -> Result<Vec<String>> {
         let schema = self.schema()?;
-        let classes = schema
-            .get("classes")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
+        let classes = schema.get("classes").and_then(Value::as_array).cloned().unwrap_or_default();
 
         Ok(classes
             .into_iter()
-            .filter_map(|class| {
-                class
-                    .get("class")
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
-            })
+            .filter_map(|class| class.get("class").and_then(Value::as_str).map(str::to_string))
             .collect())
     }
 
     fn collection_exists(&self, class_name: &str) -> Result<bool> {
-        Ok(self
-            .list_collections()?
-            .iter()
-            .any(|existing| existing == class_name))
+        Ok(self.list_collections()?.iter().any(|existing| existing == class_name))
     }
 
     fn create_collection(&self, collection: &WeaviateCollectionConfig) -> Result<Value> {
@@ -130,11 +110,7 @@ impl WeaviateClient for WeaviateRef {
 
     fn find_collection_schema(&self, class_name: &str) -> Result<Option<Value>> {
         let schema = self.schema()?;
-        let classes = schema
-            .get("classes")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
+        let classes = schema.get("classes").and_then(Value::as_array).cloned().unwrap_or_default();
 
         Ok(classes.into_iter().find(|class| {
             class
@@ -258,21 +234,11 @@ impl WeaviateClient for WeaviateRef {
         )
     }
 
-    fn query_all(
-        &self,
-        class_name: &str,
-        limit: usize,
-        property_names: &[String],
-    ) -> Result<Value> {
+    fn query_all(&self, class_name: &str, limit: usize, property_names: &[String]) -> Result<Value> {
         self.query_with_args(class_name, &format!("limit: {limit}"), property_names)
     }
 
-    fn query_with_args(
-        &self,
-        class_name: &str,
-        args: &str,
-        property_names: &[String],
-    ) -> Result<Value> {
+    fn query_with_args(&self, class_name: &str, args: &str, property_names: &[String]) -> Result<Value> {
         let mut requested_fields = property_names
             .iter()
             .filter(|value| !value.trim().is_empty())
