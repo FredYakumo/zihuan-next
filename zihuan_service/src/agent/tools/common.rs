@@ -205,6 +205,18 @@ pub(crate) fn optional_bool_argument(arguments: &Value, key: &str) -> Option<boo
     arguments.get(key).and_then(Value::as_bool)
 }
 
+pub(crate) fn optional_string_list_argument(arguments: &Value, key: &str) -> Option<Vec<String>> {
+    let values = arguments.get(key)?.as_array()?;
+    let items = values
+        .iter()
+        .filter_map(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    Some(items)
+}
+
 pub(crate) fn extract_string_field(value: &Value, key: &str) -> Option<String> {
     value
         .get(key)

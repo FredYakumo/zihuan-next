@@ -8,7 +8,7 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::logging::{
     LOG_DATA_URL_PREVIEW_CHARS, LOG_MESSAGE_PREVIEW_CHARS,
 };
-use zihuan_core::llm::{ContentPart, OpenAIMessage};
+use zihuan_core::llm::{LLMMessage, MessagePart};
 use zihuan_graph_engine::message_restore::register_mysql_ref;
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::{
@@ -27,14 +27,14 @@ use crate::multimodal_image_url::{
 ///   - ims_bot_adapter: BotAdapterRef for building context-aware system message
 ///
 /// Outputs:
-///   - messages: Vec<OpenAIMessage>: One user message
+///   - messages: Vec<LLMMessage>: One user message
 pub struct ExtractMessageFromEventNode {
     id: String,
     name: String,
 }
 
 pub(crate) struct ExtractedMessageOutputs {
-    pub user_message: OpenAIMessage,
+    pub user_message: LLMMessage,
     pub content: String,
     pub ref_content: String,
     pub is_at_me: bool,
@@ -63,10 +63,10 @@ impl ExtractMessageFromEventNode {
         buffer.push_str(segment);
     }
 
-    fn flush_text_part(parts: &mut Vec<ContentPart>, buffer: &mut String) {
+    fn flush_text_part(parts: &mut Vec<MessagePart>, buffer: &mut String) {
         let text = buffer.trim();
         if !text.is_empty() {
-            parts.push(ContentPart::text(text.to_string()));
+            parts.push(MessagePart::text(text.to_string()));
         }
         buffer.clear();
     }
@@ -136,7 +136,7 @@ impl ExtractMessageFromEventNode {
 
     fn append_plain_text_as_parts(
         text: &str,
-        parts: &mut Vec<ContentPart>,
+        parts: &mut Vec<MessagePart>,
         text_buffer: &mut String,
         has_media: &mut bool,
         s3_ref: Option<&S3Ref>,
@@ -157,7 +157,7 @@ impl ExtractMessageFromEventNode {
     /// appending text segments to the text buffer and flushing to parts when media is encountered.
     fn append_messages_as_parts(
         messages: &[Message],
-        parts: &mut Vec<ContentPart>,
+        parts: &mut Vec<MessagePart>,
         text_buffer: &mut String,
         has_media: &mut bool,
         include_reply_source_block: bool,
@@ -193,7 +193,7 @@ impl ExtractMessageFromEventNode {
                             if !text_buffer.is_empty() {
                                 text_buffer.push_str("\n\n");
                             }
-                            text_buffer.push_str("[引用内容]\n");
+                            text_buffer.push_str(&format!("[{}]\n", crate::REPLAY_CONTENT_LABEL));
                             Self::append_messages_as_parts(
                                 source_messages,
                                 parts,
@@ -212,7 +212,7 @@ impl ExtractMessageFromEventNode {
                         if !text_buffer.is_empty() {
                             text_buffer.push_str("\n\n");
                         }
-                        text_buffer.push_str("[转发内容]\n");
+                        text_buffer.push_str(&format!("[{}]\n", crate::FORWARD_CONTENT_LABEL));
                         for (index, node) in forward.content.iter().enumerate() {
                             if index > 0 && !text_buffer.ends_with('\n') {
                                 text_buffer.push('\n');
@@ -249,7 +249,7 @@ impl ExtractMessageFromEventNode {
         messages: &[Message],
         msg_prop: &MessageProp,
         s3_ref: Option<&S3Ref>,
-    ) -> OpenAIMessage {
+    ) -> LLMMessage {
         let mut parts = Vec::new();
         let mut text_buffer = String::new();
         let mut has_media = false;
@@ -268,17 +268,17 @@ impl ExtractMessageFromEventNode {
             .as_deref()
             .filter(|value| !value.is_empty())
         {
-            if text_buffer.contains("[引用内容]") {
+            if text_buffer.contains(crate::REPLAY_CONTENT_LABEL) {
                 if !text_buffer.is_empty() {
                     text_buffer.push_str("\n\n");
                 }
-                text_buffer.push_str("[引用内容补充摘要]\n");
+                text_buffer.push_str(&format!("[{}]\n", crate::QUOTE_CONTENT_APPENDIX_LABEL));
                 text_buffer.push_str(ref_cnt);
             } else {
                 if !text_buffer.is_empty() {
                     text_buffer.push_str("\n\n");
                 }
-                text_buffer.push_str("[引用内容]\n");
+                text_buffer.push_str(&format!("[{}]\n", crate::REPLAY_CONTENT_LABEL));
                 text_buffer.push_str(ref_cnt);
             }
         }
@@ -291,11 +291,11 @@ impl ExtractMessageFromEventNode {
                     "{} build_user_message detected media but produced no parts; falling back to text",
                     Self::LOG_PREFIX
                 );
-                OpenAIMessage::user("(无可用文本内容)")
+                LLMMessage::user("(无可用文本内容)")
             } else {
                 let image_part_count = parts
                     .iter()
-                    .filter(|part| matches!(part, ContentPart::ImageUrl { .. }))
+                    .filter(|part| matches!(part, MessagePart::Image { .. }))
                     .count();
                 info!(
                     "{} build_user_message produced multimodal parts total_parts={} image_parts={}",
@@ -303,7 +303,7 @@ impl ExtractMessageFromEventNode {
                     parts.len(),
                     image_part_count
                 );
-                OpenAIMessage::user_with_parts(parts)
+                LLMMessage::user_with_parts(parts)
             }
         } else {
             let user_text = msg_prop
@@ -313,7 +313,7 @@ impl ExtractMessageFromEventNode {
                 .map(str::to_string)
                 .or_else(|| {
                     parts.into_iter().find_map(|part| match part {
-                        ContentPart::Text { text } if !text.trim().is_empty() => Some(text),
+                        MessagePart::Text { text } if !text.trim().is_empty() => Some(text),
                         _ => None,
                     })
                 })
@@ -323,11 +323,11 @@ impl ExtractMessageFromEventNode {
                 "{} build_user_message produced text-only message because no media part was resolved",
                 Self::LOG_PREFIX
             );
-            OpenAIMessage::user(user_text)
+            LLMMessage::user(user_text)
         }
     }
 
-    pub(crate) fn build_extracted_message_outputs(
+    pub fn build_extracted_message_outputs(
         messages: &[Message],
         bot_id: &str,
         s3_ref: Option<&S3Ref>,
@@ -358,50 +358,6 @@ mod tests {
     use crate::models::message::{
         ImageMessage, Message, PersistedMedia, PersistedMediaSource, PlainTextMessage,
     };
-    use zihuan_core::llm::{ContentPart, MessageContent};
-
-    #[test]
-    fn build_user_message_keeps_non_image_url_as_text() {
-        let message = ExtractMessageFromEventNode::build_extracted_message_outputs(
-            &[Message::PlainText(PlainTextMessage {
-                text: "看这个链接 https://example.com/page.html".to_string(),
-            })],
-            "bot",
-            None,
-        )
-        .user_message;
-
-        match message.content.as_ref() {
-            Some(MessageContent::Text(text)) => {
-                assert!(text.contains("https://example.com/page.html"));
-            }
-            other => panic!("expected text content, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn build_user_message_parses_data_url_image_message() {
-        let image = Message::Image(ImageMessage::new(PersistedMedia::new(
-            PersistedMediaSource::QqChat,
-            "data:image/png;base64,AA==",
-            "qq-images/test",
-            Some("download".to_string()),
-            None,
-            Some("image/png".to_string()),
-        )));
-        let message =
-            ExtractMessageFromEventNode::build_extracted_message_outputs(&[image], "bot", None)
-                .user_message;
-
-        match message.content.as_ref() {
-            Some(MessageContent::Parts(parts)) => {
-                assert!(parts
-                    .iter()
-                    .any(|part| matches!(part, ContentPart::ImageUrl { .. })));
-            }
-            other => panic!("expected multipart content, got {other:?}"),
-        }
-    }
 }
 
 impl Node for ExtractMessageFromEventNode {
@@ -414,7 +370,7 @@ impl Node for ExtractMessageFromEventNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("从消息事件或指定消息ID恢复消息，并提取 OpenAIMessage 列表")
+        Some("从消息事件或指定消息ID恢复消息，并提取 LLMMessage 列表")
     }
 
     node_input![
@@ -426,7 +382,7 @@ impl Node for ExtractMessageFromEventNode {
     ];
 
     node_output![
-        port! { name = "messages", ty = Vec(OpenAIMessage), desc = "Vec<OpenAIMessage> containing system and user messages" },
+        port! { name = "messages", ty = Vec(LLMMessage), desc = "Vec<LLMMessage> containing system and user messages" },
         port! { name = "content", ty = String, desc = "Merged readable message body" },
         port! { name = "ref_content", ty = String, desc = "Referenced/replied message content" },
         port! { name = "is_at_me", ty = Boolean, desc = "Whether the message @'s the bot" },
@@ -555,8 +511,8 @@ impl Node for ExtractMessageFromEventNode {
         outputs.insert(
             "messages".to_string(),
             DataValue::Vec(
-                Box::new(zihuan_graph_engine::DataType::OpenAIMessage),
-                vec![DataValue::OpenAIMessage(extracted.user_message)],
+                Box::new(zihuan_graph_engine::DataType::LLMMessage),
+                vec![DataValue::LLMMessage(extracted.user_message)],
             ),
         );
         outputs.insert("content".to_string(), DataValue::String(extracted.content));

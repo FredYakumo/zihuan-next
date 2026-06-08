@@ -7,15 +7,15 @@ use zihuan_core::weaviate::{
     WeaviateNamedVectorizerConfig, WeaviatePropertyConfig, WeaviateRef, WeaviateVectorConfigEntry,
 };
 
+use crate::WeaviateClient;
+
 pub fn collection_config_for_schema(
     schema: WeaviateCollectionSchema,
     class_name: String,
 ) -> WeaviateCollectionConfig {
     match schema {
-        WeaviateCollectionSchema::MessageRecordSemantic => {
-            message_vector_collection_config(class_name)
-        }
         WeaviateCollectionSchema::ImageSemantic => image_vector_collection_config(class_name),
+        WeaviateCollectionSchema::AgentMemory => agent_memory_collection_config(class_name),
     }
 }
 
@@ -147,26 +147,6 @@ pub fn ensure_collection_schema(
     }
 }
 
-fn message_vector_collection_config(class_name: String) -> WeaviateCollectionConfig {
-    WeaviateCollectionConfig {
-        class_name,
-        description: Some("QQ message vector storage".to_string()),
-        properties: vec![
-            text_property("message_id", "QQ platform message ID"),
-            text_property("sender_id", "Sender ID"),
-            text_property("sender_name", "Sender name"),
-            date_property("send_time", "Message send time"),
-            text_property("group_id", "Group ID, may be empty"),
-            text_property("group_name", "Group name, may be empty"),
-            text_property("content", "Aggregated message text"),
-            text_property("at_target_list", "@ mention target list"),
-            text_property("media_json", "Message media metadata JSON"),
-        ],
-        vectorizer: Some("none".to_string()),
-        vector_config: None,
-    }
-}
-
 fn text_property(name: &str, description: &str) -> WeaviatePropertyConfig {
     WeaviatePropertyConfig {
         name: name.to_string(),
@@ -179,6 +159,14 @@ fn date_property(name: &str, description: &str) -> WeaviatePropertyConfig {
     WeaviatePropertyConfig {
         name: name.to_string(),
         data_type: vec!["date".to_string()],
+        description: Some(description.to_string()),
+    }
+}
+
+fn text_array_property(name: &str, description: &str) -> WeaviatePropertyConfig {
+    WeaviatePropertyConfig {
+        name: name.to_string(),
+        data_type: vec!["text[]".to_string()],
         description: Some(description.to_string()),
     }
 }
@@ -213,6 +201,24 @@ fn image_vector_collection_config(class_name: String) -> WeaviateCollectionConfi
         ],
         vectorizer: None,
         vector_config: Some(vector_config),
+    }
+}
+
+fn agent_memory_collection_config(class_name: String) -> WeaviateCollectionConfig {
+    WeaviateCollectionConfig {
+        class_name,
+        description: Some("Agent runtime memory storage".to_string()),
+        properties: vec![
+            text_property("key", "Memory title / search keyword"),
+            text_property("value", "Memory content"),
+            date_property("expires_at", "Memory expiry time"),
+            text_array_property("sender_id_list", "Accessible sender ids"),
+            text_array_property("group_id_list", "Accessible group ids"),
+            date_property("created_at", "Record creation time"),
+            date_property("updated_at", "Record update time"),
+        ],
+        vectorizer: Some("none".to_string()),
+        vector_config: None,
     }
 }
 
@@ -255,6 +261,28 @@ mod tests {
                 "description",
                 "mime_type",
                 "source"
+            ]
+        );
+    }
+
+    #[test]
+    fn agent_memory_collection_schema_matches_memory_fields() {
+        let config = agent_memory_collection_config("AgentMemory".to_string());
+        let fields = config
+            .properties
+            .iter()
+            .map(|property| property.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            fields,
+            vec![
+                "key",
+                "value",
+                "expires_at",
+                "sender_id_list",
+                "group_id_list",
+                "created_at",
+                "updated_at"
             ]
         );
     }

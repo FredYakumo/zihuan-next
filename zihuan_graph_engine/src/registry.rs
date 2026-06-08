@@ -309,8 +309,8 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
             .collect::<Option<Vec<_>>>()
             .map(DataValue::Vector),
 
-        // Single OpenAIMessage from a JSON object: {"role": "user", "content": "..."}
-        (Value::Object(map), DataType::OpenAIMessage) => {
+        // Single LLMMessage from a JSON object: {"role": "user", "content": "..."}
+        (Value::Object(map), DataType::LLMMessage) => {
             fn parse_role(v: &Value) -> zihuan_core::llm::MessageRole {
                 let s = v.as_str().unwrap_or("user").to_ascii_lowercase();
                 match s.as_str() {
@@ -325,20 +325,27 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
                 .get("role")
                 .map(|v| parse_role(v))
                 .unwrap_or(zihuan_core::llm::MessageRole::User);
-            let content = match map.get("content") {
-                Some(Value::Null) | None => None,
+            let parts = match map.get("parts") {
+                Some(Value::Array(parts)) => parts
+                    .iter()
+                    .filter_map(|part| {
+                        serde_json::from_value::<zihuan_core::llm::MessagePart>(part.clone()).ok()
+                    })
+                    .collect(),
+                Some(Value::Null) | None => map
+                    .get("content")
+                    .and_then(Value::as_str)
+                    .map(|content| vec![zihuan_core::llm::MessagePart::text(content)])
+                    .unwrap_or_default(),
                 Some(other) => {
-                    serde_json::from_value::<zihuan_core::llm::MessageContent>(other.clone()).ok()
+                    serde_json::from_value::<zihuan_core::llm::MessagePart>(other.clone())
+                        .map(|part| vec![part])
+                        .unwrap_or_default()
                 }
             };
-            let api_style = map
-                .get("api_style")
-                .and_then(|value| value.as_str())
-                .map(ToOwned::to_owned);
-            Some(DataValue::OpenAIMessage(zihuan_core::llm::OpenAIMessage {
+            Some(DataValue::LLMMessage(zihuan_core::llm::LLMMessage {
                 role,
-                api_style,
-                content,
+                parts,
                 reasoning_content: None,
                 tool_calls: Vec::new(),
                 tool_call_id: None,
@@ -367,7 +374,7 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
         }
 
         // Generic Vec: recurse per element using the inner type.
-        // Handles Vec<OpenAIMessage>, Vec<QQMessage>, and any other Vec<X>.
+        // Handles Vec<LLMMessage>, Vec<QQMessage>, and any other Vec<X>.
         (Value::Array(items), DataType::Vec(inner)) => {
             let parsed: Vec<DataValue> = items
                 .iter()
@@ -397,19 +404,19 @@ fn infer_any_data_value(json: &Value) -> Option<DataValue> {
 /// in-crate tests that need the registry populated.
 pub fn init_node_registry() -> zihuan_core::error::Result<()> {
     use crate::util::{
-        AndThenNode, AnyOfNode, ArrayGetNode, AtQQTargetMessageNode, BinaryToImageContentPartNode,
+        AndThenNode, AnyOfNode, ArrayGetNode, AtQQTargetMessageNode, BinaryToImageMessagePartNode,
         BooleanBranchNode, BooleanNotNode, BuildMultimodalUserMessageNode, ConcatVecNode,
         ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode,
         FunctionInputsNode, FunctionNode, FunctionOutputsNode, GraphInputsNode, GraphOutputsNode,
         JoinStringNode, JsonExtractNode, JsonParserNode, JsonToQQMessageVecNode,
-        MessageContentNode, MessageListDataNode, OpenAIMessageContentAsJsonNode,
-        OpenAIMessageSessionCacheClearNode, OpenAIMessageSessionCacheGetNode,
-        OpenAIMessageSessionCacheNode, OpenAIMessageSessionCacheSetNode, OpenAIMessageToStringNode,
-        PreviewMessageListNode, PreviewQQMessageListNode, PreviewStringNode, PushBackVecNode,
+        LLMMessageContentAsJsonNode, LLMMessageSessionCacheClearNode,
+        LLMMessageSessionCacheGetNode, LLMMessageSessionCacheNode, LLMMessageSessionCacheSetNode,
+        LLMMessageToStringNode, MessageContentNode, MessageListDataNode, PreviewMessageListNode,
+        PreviewQQMessageListNode, PreviewStringNode, PushBackVecNode,
         QQMessageJsonOutputSystemPromptProviderNode, QQMessageListDataNode, QQMessageToImageNode,
         SessionStateClearNode, SessionStateGetNode, SessionStateReleaseNode,
         SessionStateTryClaimNode, SetVariableNode, StackNode, StringDataNode, StringIsNotEmptyNode,
-        StringToImageContentPartNode, StringToOpenAIMessageNode, StringToPlainTextNode, SwitchNode,
+        StringToImageMessagePartNode, StringToLLMMessageNode, StringToPlainTextNode, SwitchNode,
         ToolResultNode,
     };
 
@@ -562,38 +569,38 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
     );
     register_node!(
         "message_content",
-        "提取 OpenAIMessage 内容",
+        "提取 LLMMessage 内容",
         "消息",
-        "从 OpenAIMessage 中提取 content 字段，以字符串形式输出",
+        "从 LLMMessage 中提取 content 字段，以字符串形式输出",
         MessageContentNode
     );
     register_node!(
-        "string_to_openai_message",
-        "字符串转 OpenAIMessage",
+        "string_to_llm_message",
+        "字符串转 LLMMessage",
         "消息",
-        "将字符串封装为可选 role 的 OpenAIMessage",
-        StringToOpenAIMessageNode
+        "将字符串封装为可选 role 的 LLMMessage",
+        StringToLLMMessageNode
     );
     register_node!(
-        "openai_message_content_as_json",
-        "OpenAIMessage内容转JSON",
+        "llm_message_content_as_json",
+        "LLMMessage内容转JSON",
         "消息",
-        "将 OpenAIMessage 的 content 字符串解析为 JSON",
-        OpenAIMessageContentAsJsonNode
+        "将 LLMMessage 的 content 字符串解析为 JSON",
+        LLMMessageContentAsJsonNode
     );
     register_node!(
-        "openai_message_to_string",
-        "OpenAIMessage转字符串",
+        "llm_message_to_string",
+        "LLMMessage转字符串",
         "消息",
-        "将 OpenAIMessage 的 reasoning_content（如有）与 content 拼接为字符串",
-        OpenAIMessageToStringNode
+        "将 LLMMessage 的 reasoning_content（如有）与 content 拼接为字符串",
+        LLMMessageToStringNode
     );
     register_node!(
-        "as_system_openai_message",
-        "字符串转 OpenAIMessage",
+        "as_system_llm_message",
+        "字符串转 LLMMessage",
         "消息",
-        "兼容旧节点类型 ID：将字符串封装为可选 role 的 OpenAIMessage，默认 role=system",
-        StringToOpenAIMessageNode
+        "兼容旧节点类型 ID：将字符串封装为可选 role 的 LLMMessage，默认 role=system",
+        StringToLLMMessageNode
     );
     register_node!(
         "preview_string",
@@ -625,9 +632,9 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
     );
     register_node!(
         "preview_message_list",
-        "Preview OpenAIMessage List",
+        "Preview LLMMessage List",
         "工具",
-        "在节点卡片内预览 OpenAIMessage 列表",
+        "在节点卡片内预览 LLMMessage 列表",
         PreviewMessageListNode
     );
     register_node!(
@@ -639,9 +646,9 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
     );
     register_node!(
         "message_list_data",
-        "OpenAIMessage List Data",
+        "LLMMessage List Data",
         "数据",
-        "OpenAIMessage 列表数据源，通过 UI 容器编辑器提供列表数据",
+        "LLMMessage 列表数据源，通过 UI 容器编辑器提供列表数据",
         MessageListDataNode
     );
     register_node!(
@@ -683,30 +690,36 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         "tool_result",
         "Tool 结果消息",
         "AI",
-        "将工具执行结果封装为 role=tool 的 OpenAIMessage，供 agentic loop 回写对话列表",
+        "将工具执行结果封装为 role=tool 的 LLMMessage，供 agentic loop 回写对话列表",
         ToolResultNode
     );
     register_node!(
-        "openai_message_session_cache",
-        "OpenAIMessage 会话暂存",
+        "llm_message_session_cache",
+        "LLMMessage 会话暂存",
         "消息存储",
-        "根据缓存 Ref、sender_id 和消息列表向当前运行期会话历史追加 Vec<OpenAIMessage>",
-        OpenAIMessageSessionCacheNode
+        "根据缓存 Ref、sender_id 和消息列表向当前运行期会话历史追加 Vec<LLMMessage>",
+        LLMMessageSessionCacheNode
     );
     register_node!(
-        "openai_message_session_cache_get",
-        "获取 OpenAIMessage 历史",
+        "llm_message_session_cache_get",
+        "获取 LLMMessage 历史",
         "消息存储",
-        "根据 OpenAIMessage 会话缓存 Ref 和 sender_id 读取当前运行期累计的 Vec<OpenAIMessage>",
-        OpenAIMessageSessionCacheGetNode
+        "根据 LLMMessage 会话缓存 Ref 和 sender_id 读取当前运行期累计的 Vec<LLMMessage>",
+        LLMMessageSessionCacheGetNode
     );
-    register_node!("openai_message_session_cache_set", "覆写 OpenAIMessage 历史", "消息存储", "根据 OpenAIMessage 会话缓存 Ref、sender_id 和消息列表覆写当前运行期累计的 Vec<OpenAIMessage>", OpenAIMessageSessionCacheSetNode);
     register_node!(
-        "openai_message_session_cache_clear",
-        "清空 OpenAIMessage 历史",
+        "llm_message_session_cache_set",
+        "覆写 LLMMessage 历史",
         "消息存储",
-        "根据 OpenAIMessage 会话缓存 Ref 和 sender_id 清空当前运行期累计的历史消息",
-        OpenAIMessageSessionCacheClearNode
+        "根据 LLMMessage 会话缓存 Ref、sender_id 和消息列表覆写当前运行期累计的 Vec<LLMMessage>",
+        LLMMessageSessionCacheSetNode
+    );
+    register_node!(
+        "llm_message_session_cache_clear",
+        "清空 LLMMessage 历史",
+        "消息存储",
+        "根据 LLMMessage 会话缓存 Ref 和 sender_id 清空当前运行期累计的历史消息",
+        LLMMessageSessionCacheClearNode
     );
     register_node!(
         "session_state_get",
@@ -745,23 +758,23 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
     );
     register_node!(
         "string_to_image_content_part",
-        "字符串转图片/视频 ContentPart",
+        "字符串转图片/视频 MessagePart",
         "消息",
-        "将字符串 URL（或 data: URL）封装为 LLM 多模态 ContentPart，用于装配多模态 OpenAIMessage",
-        StringToImageContentPartNode
+        "将字符串 URL（或 data: URL）封装为 LLM 多模态 MessagePart，用于装配多模态 LLMMessage",
+        StringToImageMessagePartNode
     );
     register_node!(
         "binary_to_image_content_part",
-        "二进制转图片/视频 ContentPart",
+        "二进制转图片/视频 MessagePart",
         "消息",
-        "将二进制字节 + MIME 编码为 base64 data URL，并封装为 LLM 多模态 ContentPart",
-        BinaryToImageContentPartNode
+        "将二进制字节 + MIME 编码为 base64 data URL，并封装为 LLM 多模态 MessagePart",
+        BinaryToImageMessagePartNode
     );
     register_node!(
         "build_multimodal_user_message",
-        "构建多模态 OpenAIMessage",
+        "构建多模态 LLMMessage",
         "消息",
-        "将可选文本和若干 ContentPart 拼接为多模态 OpenAIMessage，下游 LLM 推理节点直接消费",
+        "将可选文本和若干 MessagePart 拼接为多模态 LLMMessage，下游 LLM 推理节点直接消费",
         BuildMultimodalUserMessageNode
     );
 

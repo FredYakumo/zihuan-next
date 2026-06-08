@@ -2,19 +2,20 @@ use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingM
 use redis::AsyncCommands;
 use salvo::prelude::*;
 use salvo::writing::Json;
-use serde::Serialize;
-use serde_json::{Map, Value};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Map, Value};
 use sqlx::Row as SqlxRow;
 
 use crate::system_config::load_connections;
 use storage_handler::{
-    resource_resolver, weaviate::build_weaviate_ref as build_storage_weaviate_ref, ConnectionKind,
+    create_memory_record_with_vector, delete_memory_record, get_memory_record,
+    list_recent_memory_keys, resource_resolver, search_memory_content_by_vector,
+    update_memory_record_with_vector, weaviate::build_weaviate_ref as build_storage_weaviate_ref,
+    AgentMemoryAccessContext, AgentMemoryUpsert, ConnectionKind, WeaviateClient,
     WeaviateCollectionSchema,
 };
 
 use super::config::{render_bad_request, render_internal_error};
-
-// ── MySQL ──────────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
 struct MysqlExploreResponse {
@@ -485,6 +486,19 @@ struct WeaviateSearchResult {
     properties: Value,
 }
 
+#[derive(Deserialize)]
+struct AgentMemoryMutationRequest {
+    #[serde(alias = "key")]
+    title: String,
+    value: String,
+    #[serde(default)]
+    expires_at: Option<String>,
+    #[serde(default)]
+    sender_id_list: Vec<String>,
+    #[serde(default)]
+    group_id_list: Vec<String>,
+}
+
 #[handler]
 pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
     let connection_id = match req.query::<String>("connection_id") {
@@ -533,6 +547,73 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
         Err(err) => return render_internal_error(res, err),
     };
 
+    if collection_schema == WeaviateCollectionSchema::AgentMemory {
+        let access = AgentMemoryAccessContext {
+            admin: true,
+            skip_expiry_extend: true,
+            ..Default::default()
+        };
+        let items = if let Some(query) = query {
+            let embedding_model_ref_id = match req.query::<String>("embedding_model_ref_id") {
+                Some(id) => id,
+                None => {
+                    return render_bad_request(
+                        res,
+                        "embedding_model_ref_id is required for agent_memory semantic search"
+                            .into(),
+                    )
+                }
+            };
+            let embedding_model = match RuntimeEmbeddingModelManager::shared()
+                .get_or_create_embedding_model(&embedding_model_ref_id)
+                .await
+            {
+                Ok(model) => model,
+                Err(err) => return render_internal_error(res, err),
+            };
+            let vector = match tokio::task::block_in_place(|| embedding_model.inference(&query)) {
+                Ok(vector) if !vector.is_empty() => vector,
+                Ok(_) => {
+                    return render_internal_error(res, "embedding model returned an empty vector")
+                }
+                Err(err) => return render_internal_error(res, err),
+            };
+            match search_memory_content_by_vector(&weaviate_ref, &access, &vector, limit) {
+                Ok(items) => items,
+                Err(err) => return render_internal_error(res, err),
+            }
+        } else {
+            match list_recent_memory_keys(&weaviate_ref, &access, limit, None) {
+                Ok(items) => items,
+                Err(err) => return render_internal_error(res, err),
+            }
+        };
+        let results = items
+            .into_iter()
+            .map(|item| WeaviateSearchResult {
+                object_id: Some(item.record.object_id),
+                distance: item.distance,
+                properties: json!({
+                    "title": item.record.key,
+                    "value": item.record.value,
+                    "expires_at": item.record.expires_at,
+                    "sender_id_list": item.record.sender_id_list,
+                    "group_id_list": item.record.group_id_list,
+                    "created_at": item.record.created_at,
+                    "updated_at": item.record.updated_at,
+                }),
+            })
+            .collect::<Vec<_>>();
+        res.render(Json(WeaviateExploreResponse {
+            total: results.len(),
+            limit,
+            class_name: weaviate_ref.class_name.clone(),
+            collection_schema,
+            items: results,
+        }));
+        return;
+    }
+
     let response = if let Some(query) = query {
         let embedding_model = match RuntimeEmbeddingModelManager::shared()
             .get_or_create_embedding_model(&embedding_model_ref_id)
@@ -549,8 +630,8 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
         };
 
         let target_vector = match collection_schema {
-            WeaviateCollectionSchema::MessageRecordSemantic => None,
             WeaviateCollectionSchema::ImageSemantic => Some("description_vector".to_string()),
+            WeaviateCollectionSchema::AgentMemory => None,
         };
 
         match weaviate_ref.query_near_vector(
@@ -590,6 +671,145 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
         collection_schema,
         items,
     }));
+}
+
+#[handler]
+pub async fn create_agent_memory(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let connection_id = match req.query::<String>("connection_id") {
+        Some(id) => id,
+        None => return render_bad_request(res, "connection_id is required".into()),
+    };
+    let embedding_model_ref_id = match req.query::<String>("embedding_model_ref_id") {
+        Some(id) => id,
+        None => return render_bad_request(res, "embedding_model_ref_id is required".into()),
+    };
+    let body: AgentMemoryMutationRequest = match req.parse_json().await {
+        Ok(body) => body,
+        Err(err) => return render_bad_request(res, err.to_string()),
+    };
+    let weaviate_ref = match resolve_agent_memory_weaviate_ref(&connection_id) {
+        Ok(weaviate_ref) => weaviate_ref,
+        Err(err) => return render_internal_error(res, err),
+    };
+    let embedding_model = match RuntimeEmbeddingModelManager::shared()
+        .get_or_create_embedding_model(&embedding_model_ref_id)
+        .await
+    {
+        Ok(model) => model,
+        Err(err) => return render_internal_error(res, err),
+    };
+    let vector = match tokio::task::block_in_place(|| {
+        embedding_model.inference(&format!("{}\n{}", body.title.trim(), body.value.trim()))
+    }) {
+        Ok(vector) => vector,
+        Err(err) => return render_internal_error(res, err),
+    };
+    match create_memory_record_with_vector(
+        &weaviate_ref,
+        &AgentMemoryUpsert {
+            key: body.title,
+            value: body.value,
+            expires_at: body.expires_at,
+            sender_id_list: body.sender_id_list,
+            group_id_list: body.group_id_list,
+        },
+        Some(vector),
+    ) {
+        Ok(record) => res.render(Json(record)),
+        Err(err) => render_internal_error(res, err),
+    }
+}
+
+#[handler]
+pub async fn update_agent_memory(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let connection_id = match req.query::<String>("connection_id") {
+        Some(id) => id,
+        None => return render_bad_request(res, "connection_id is required".into()),
+    };
+    let embedding_model_ref_id = match req.query::<String>("embedding_model_ref_id") {
+        Some(id) => id,
+        None => return render_bad_request(res, "embedding_model_ref_id is required".into()),
+    };
+    let object_id = req.param::<String>("object_id").unwrap_or_default();
+    if object_id.trim().is_empty() {
+        return render_bad_request(res, "object_id is required".into());
+    }
+    let body: AgentMemoryMutationRequest = match req.parse_json().await {
+        Ok(body) => body,
+        Err(err) => return render_bad_request(res, err.to_string()),
+    };
+    let weaviate_ref = match resolve_agent_memory_weaviate_ref(&connection_id) {
+        Ok(weaviate_ref) => weaviate_ref,
+        Err(err) => return render_internal_error(res, err),
+    };
+    let embedding_model = match RuntimeEmbeddingModelManager::shared()
+        .get_or_create_embedding_model(&embedding_model_ref_id)
+        .await
+    {
+        Ok(model) => model,
+        Err(err) => return render_internal_error(res, err),
+    };
+    let vector = match tokio::task::block_in_place(|| {
+        embedding_model.inference(&format!("{}\n{}", body.title.trim(), body.value.trim()))
+    }) {
+        Ok(vector) => vector,
+        Err(err) => return render_internal_error(res, err),
+    };
+    match update_memory_record_with_vector(
+        &weaviate_ref,
+        &object_id,
+        &AgentMemoryUpsert {
+            key: body.title,
+            value: body.value,
+            expires_at: body.expires_at,
+            sender_id_list: body.sender_id_list,
+            group_id_list: body.group_id_list,
+        },
+        Some(vector),
+    ) {
+        Ok(record) => res.render(Json(record)),
+        Err(err) => render_internal_error(res, err),
+    }
+}
+
+#[handler]
+pub async fn delete_agent_memory(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let connection_id = match req.query::<String>("connection_id") {
+        Some(id) => id,
+        None => return render_bad_request(res, "connection_id is required".into()),
+    };
+    let object_id = req.param::<String>("object_id").unwrap_or_default();
+    if object_id.trim().is_empty() {
+        return render_bad_request(res, "object_id is required".into());
+    }
+    let weaviate_ref = match resolve_agent_memory_weaviate_ref(&connection_id) {
+        Ok(weaviate_ref) => weaviate_ref,
+        Err(err) => return render_internal_error(res, err),
+    };
+    match delete_memory_record(&weaviate_ref, &object_id) {
+        Ok(()) => res.render(Json(serde_json::json!({ "ok": true }))),
+        Err(err) => render_internal_error(res, err),
+    }
+}
+
+#[handler]
+pub async fn get_agent_memory(req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let connection_id = match req.query::<String>("connection_id") {
+        Some(id) => id,
+        None => return render_bad_request(res, "connection_id is required".into()),
+    };
+    let object_id = req.param::<String>("object_id").unwrap_or_default();
+    if object_id.trim().is_empty() {
+        return render_bad_request(res, "object_id is required".into());
+    }
+    let weaviate_ref = match resolve_agent_memory_weaviate_ref(&connection_id) {
+        Ok(weaviate_ref) => weaviate_ref,
+        Err(err) => return render_internal_error(res, err),
+    };
+    match get_memory_record(&weaviate_ref, &object_id) {
+        Ok(record) => res.render(Json(record)),
+        Err(err) => render_internal_error(res, err),
+    }
 }
 
 fn list_weaviate_class_properties(
@@ -645,4 +865,31 @@ fn weaviate_search_result_from_value(value: Value) -> WeaviateSearchResult {
         distance,
         properties: Value::Object(properties),
     }
+}
+
+fn resolve_agent_memory_weaviate_ref(
+    connection_id: &str,
+) -> zihuan_core::error::Result<std::sync::Arc<zihuan_core::weaviate::WeaviateRef>> {
+    let connections = load_connections()?;
+    let connection = resource_resolver::find_connection(&connections, connection_id)?;
+    let ConnectionKind::Weaviate(weaviate) = &connection.kind else {
+        return Err(zihuan_core::error::Error::ValidationError(
+            "connection is not a weaviate connection".to_string(),
+        ));
+    };
+    if weaviate.collection_schema != WeaviateCollectionSchema::AgentMemory {
+        return Err(zihuan_core::error::Error::ValidationError(format!(
+            "connection '{}' is not an agent_memory collection",
+            connection.name
+        )));
+    }
+    let weaviate_ref = build_storage_weaviate_ref(
+        &weaviate.base_url,
+        &weaviate.class_name,
+        weaviate.username.clone(),
+        weaviate.password.clone(),
+        weaviate.api_key.clone(),
+        weaviate.collection_schema,
+    )?;
+    Ok(weaviate_ref)
 }

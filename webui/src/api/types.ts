@@ -11,9 +11,9 @@ export type DataTypeMetaDataObject = { Vec: DataTypeMetaData } | { Custom: strin
  * or a JSON object (tuple variant). Mirrors the Rust `DataType` enum.
  *
  * Unit variants:  "Any" | "String" | "Integer" | "Float" | "Boolean" | "Json" | "Binary" |
- *                 "Password" | "MessageEvent" | "Sender" | "OpenAIMessage" | "QQMessage" | "FunctionTools" |
+ *                 "Password" | "MessageEvent" | "Sender" | "LLMMessage" | "QQMessage" | "FunctionTools" |
  *                 "BotAdapterRef" | "S3Ref" | "RedisRef" | "MySqlRef" | "WebSearchEngineRef" | "SqliteRef" |
- *                 "SessionStateRef" | "OpenAIMessageSessionCacheRef" | "LLModel" | "LoopControlRef"
+ *                 "SessionStateRef" | "LLMMessageSessionCacheRef" | "LLModel" | "LoopControlRef"
  * Tuple variants: { Vec: DataTypeMetaData } | { Custom: string }
  */
 export type DataTypeMetaData = string | DataTypeMetaDataObject;

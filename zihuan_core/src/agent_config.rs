@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -6,8 +7,8 @@ use crate::error::{Error, Result};
 
 pub const LLM_KIND_FIELD: &str = "llm_kind";
 pub const LLM_KIND_MAIN: &str = "main";
-pub const LLM_KIND_INTENT: &str = "intent";
 pub const LLM_KIND_MATH_PROGRAMMING: &str = "math_programming";
+pub const LLM_KIND_NATURAL_LANGUAGE_REPLY: &str = "natural_language_reply";
 
 thread_local! {
     static CURRENT_QQ_CHAT_AGENT_CONFIG: RefCell<Vec<QqChatAgentConfig>> = const { RefCell::new(Vec::new()) };
@@ -41,11 +42,11 @@ pub fn normalize_llm_kind(llm_kind: Option<&str>) -> Result<&'static str> {
         .unwrap_or(LLM_KIND_MAIN)
     {
         LLM_KIND_MAIN => Ok(LLM_KIND_MAIN),
-        LLM_KIND_INTENT => Ok(LLM_KIND_INTENT),
         LLM_KIND_MATH_PROGRAMMING => Ok(LLM_KIND_MATH_PROGRAMMING),
+        LLM_KIND_NATURAL_LANGUAGE_REPLY => Ok(LLM_KIND_NATURAL_LANGUAGE_REPLY),
         other => Err(Error::ValidationError(format!(
             "unsupported llm_kind '{}', expected one of: {}, {}, {}",
-            other, LLM_KIND_MAIN, LLM_KIND_INTENT, LLM_KIND_MATH_PROGRAMMING
+            other, LLM_KIND_MAIN, LLM_KIND_MATH_PROGRAMMING, LLM_KIND_NATURAL_LANGUAGE_REPLY
         ))),
     }
 }
@@ -53,14 +54,11 @@ pub fn normalize_llm_kind(llm_kind: Option<&str>) -> Result<&'static str> {
 pub fn llm_ref_id_for_kind<'a>(config: &'a QqChatAgentConfig, llm_kind: &str) -> Option<&'a str> {
     match llm_kind {
         LLM_KIND_MAIN => config.llm_ref_id.as_deref(),
-        LLM_KIND_INTENT => config
-            .intent_llm_ref_id
-            .as_deref()
-            .or(config.llm_ref_id.as_deref()),
         LLM_KIND_MATH_PROGRAMMING => config
             .math_programming_llm_ref_id
             .as_deref()
             .or(config.llm_ref_id.as_deref()),
+        LLM_KIND_NATURAL_LANGUAGE_REPLY => config.natural_language_reply_llm_ref_id.as_deref(),
         _ => None,
     }
 }
@@ -72,7 +70,18 @@ pub fn image_understand_llm_ref_id<'a>(config: &'a QqChatAgentConfig) -> Option<
         .or(config.llm_ref_id.as_deref())
 }
 
-use std::collections::HashMap;
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QqChatEmotionDimensionConfig {
+    pub name: String,
+    #[serde(default = "default_emotion_adjust_weight")]
+    pub increase_weight: f64,
+    #[serde(default = "default_emotion_adjust_weight")]
+    pub decrease_weight: f64,
+    #[serde(default)]
+    pub positive_prompt: Option<String>,
+    #[serde(default)]
+    pub negative_prompt: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QqChatAgentConfig {
@@ -88,9 +97,11 @@ pub struct QqChatAgentConfig {
     #[serde(default)]
     pub image_understand_llm_ref_id: Option<String>,
     #[serde(default)]
-    pub intent_llm_ref_id: Option<String>,
-    #[serde(default)]
     pub math_programming_llm_ref_id: Option<String>,
+    #[serde(default)]
+    pub natural_language_reply_llm_ref_id: Option<String>,
+    #[serde(default)]
+    pub natural_language_reply_system_prompt: Option<String>,
     #[serde(default)]
     pub embedding_model_ref_id: Option<String>,
     #[serde(default)]
@@ -108,6 +119,8 @@ pub struct QqChatAgentConfig {
     pub task_db_connection_id: Option<String>,
     #[serde(default)]
     pub weaviate_image_connection_id: Option<String>,
+    #[serde(default)]
+    pub weaviate_memory_connection_id: Option<String>,
     #[serde(default = "default_max_message_length")]
     pub max_message_length: usize,
     #[serde(default)]
@@ -116,6 +129,8 @@ pub struct QqChatAgentConfig {
     pub max_steer_count: usize,
     #[serde(default = "default_qq_chat_default_tools_enabled")]
     pub default_tools_enabled: HashMap<String, bool>,
+    #[serde(default = "default_qq_chat_emotion_dimensions")]
+    pub emotion_dimensions: Vec<QqChatEmotionDimensionConfig>,
     #[serde(default)]
     pub event_handler_threads: Option<usize>,
 }
@@ -138,6 +153,31 @@ impl QqChatAgentConfig {
                     .map(str::trim)
                     .filter(|value| !value.is_empty())
             })
+    }
+
+    pub fn resolved_emotion_dimensions(&self) -> Vec<QqChatEmotionDimensionConfig> {
+        let mut dimensions = Vec::new();
+        for dimension in &self.emotion_dimensions {
+            let name = dimension.name.trim();
+            if name.is_empty()
+                || dimensions
+                    .iter()
+                    .any(|existing: &QqChatEmotionDimensionConfig| existing.name == name)
+            {
+                continue;
+            }
+            dimensions.push(QqChatEmotionDimensionConfig {
+                name: name.to_string(),
+                increase_weight: sanitize_emotion_adjust_weight(dimension.increase_weight),
+                decrease_weight: sanitize_emotion_adjust_weight(dimension.decrease_weight),
+                positive_prompt: dimension.positive_prompt.clone(),
+                negative_prompt: dimension.negative_prompt.clone(),
+            });
+        }
+        if dimensions.is_empty() {
+            return default_qq_chat_emotion_dimensions();
+        }
+        dimensions
     }
 }
 
@@ -170,11 +210,38 @@ fn default_qq_chat_default_tools_enabled() -> HashMap<String, bool> {
         "get_recent_user_messages",
         "search_similar_images",
         "image_understand",
-        "reply_message",
+        "list_available_memory_keys",
+        "search_memory_content",
+        "remember_content",
     ]
     .into_iter()
     .map(|name| (name.to_string(), true))
     .collect()
+}
+
+fn default_qq_chat_emotion_dimensions() -> Vec<QqChatEmotionDimensionConfig> {
+    ["开心", "烦恼", "生气", "伤心", "害怕", "焦虑", "激动"]
+        .into_iter()
+        .map(|name| QqChatEmotionDimensionConfig {
+            name: name.to_string(),
+            increase_weight: default_emotion_adjust_weight(),
+            decrease_weight: default_emotion_adjust_weight(),
+            positive_prompt: None,
+            negative_prompt: None,
+        })
+        .collect()
+}
+
+fn default_emotion_adjust_weight() -> f64 {
+    1.0
+}
+
+fn sanitize_emotion_adjust_weight(weight: f64) -> f64 {
+    if weight.is_finite() && weight > 0.0 {
+        weight
+    } else {
+        default_emotion_adjust_weight()
+    }
 }
 
 fn default_timeout_secs() -> u64 {

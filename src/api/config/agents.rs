@@ -512,9 +512,7 @@ pub async fn create_agent(req: &mut Request, res: &mut Response, _depot: &mut De
         Ok(llm_refs) => llm_refs,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) =
-        validate_qq_chat_image_understand_llm(&body.agent_type, &llm_refs, &body.name)
-    {
+    if let Err(message) = validate_qq_chat_agent_llms(&body.agent_type, &llm_refs, &body.name) {
         return render_unprocessable_entity(res, message);
     }
 
@@ -569,9 +567,7 @@ pub async fn update_agent(req: &mut Request, res: &mut Response, _depot: &mut De
         Ok(llm_refs) => llm_refs,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) =
-        validate_qq_chat_image_understand_llm(&body.agent_type, &llm_refs, &body.name)
-    {
+    if let Err(message) = validate_qq_chat_agent_llms(&body.agent_type, &llm_refs, &body.name) {
         return render_unprocessable_entity(res, message);
     }
 
@@ -623,9 +619,7 @@ pub async fn start_agent(req: &mut Request, res: &mut Response, depot: &mut Depo
         Ok(llm_refs) => llm_refs,
         Err(err) => return render_internal_error(res, err),
     };
-    if let Err(message) =
-        validate_qq_chat_image_understand_llm(&agent.agent_type, &llm_refs, &agent.name)
-    {
+    if let Err(message) = validate_qq_chat_agent_llms(&agent.agent_type, &llm_refs, &agent.name) {
         return render_unprocessable_entity(res, message);
     }
 
@@ -710,79 +704,187 @@ fn validate_agent_connection_schemas(
     agent_type: &AgentType,
     connections: &[ConnectionConfig],
 ) -> Result<(), String> {
-    let AgentType::QqChat(config) = agent_type else {
-        return Ok(());
-    };
-    validate_rdb_connection(connections, config.resolved_rdb_id())?;
-    validate_weaviate_connection_schema(
-        connections,
-        config.weaviate_image_connection_id.as_deref(),
-        WeaviateCollectionSchema::ImageSemantic,
-        "weaviate_image_connection_id",
-    )?;
-    Ok(())
+    match agent_type {
+        AgentType::QqChat(config) => {
+            validate_rdb_connection(connections, config.resolved_rdb_id())?;
+            validate_weaviate_connection_schema(
+                connections,
+                config.weaviate_image_connection_id.as_deref(),
+                WeaviateCollectionSchema::ImageSemantic,
+                "weaviate_image_connection_id",
+            )?;
+            validate_weaviate_connection_schema(
+                connections,
+                config.weaviate_memory_connection_id.as_deref(),
+                WeaviateCollectionSchema::AgentMemory,
+                "weaviate_memory_connection_id",
+            )?;
+            Ok(())
+        }
+        AgentType::HttpStream(config) => validate_weaviate_connection_schema(
+            connections,
+            config.weaviate_memory_connection_id.as_deref(),
+            WeaviateCollectionSchema::AgentMemory,
+            "weaviate_memory_connection_id",
+        ),
+    }
 }
 
-fn validate_qq_chat_image_understand_llm(
+fn validate_qq_chat_agent_llms(
     agent_type: &AgentType,
     llm_refs: &[LlmRefConfig],
     agent_name: &str,
 ) -> Result<(), String> {
-    let AgentType::QqChat(config) = agent_type else {
-        return Ok(());
-    };
-    let llm_ref_id = config
-        .llm_ref_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| format!("agent '{}' is missing llm_ref_id", agent_name))?;
-    let resolved_llm_ref_id = config
-        .image_understand_llm_ref_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or(llm_ref_id);
-
-    let llm_ref = llm_refs
-        .iter()
-        .find(|item| item.id == resolved_llm_ref_id || item.config_id == resolved_llm_ref_id)
-        .ok_or_else(|| {
-            format!(
-                "agent '{}' references missing llm_ref '{}'",
-                agent_name, resolved_llm_ref_id
-            )
-        })?;
-    if !llm_ref.enabled {
-        return Err(format!(
-            "agent '{}' references disabled llm_ref '{}'",
-            agent_name, llm_ref.name
-        ));
-    }
-    match &llm_ref.model {
-        model_inference::system_config::ModelRefSpec::ChatLlm { llm } => {
-            if llm.supports_multimodal_input {
-                Ok(())
-            } else if config
+    match agent_type {
+        AgentType::QqChat(config) => {
+            let llm_ref_id = config
+                .llm_ref_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| format!("agent '{}' is missing llm_ref_id", agent_name))?;
+            let resolved_llm_ref_id = config
                 .image_understand_llm_ref_id
                 .as_deref()
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
-                .is_some()
-            {
-                Err(format!(
-                    "image_understand_llm_ref_id '{}' does not support multimodal input",
-                    llm_ref.name
-                ))
-            } else {
-                Err(format!(
-                    "main llm_ref_id '{}' does not support multimodal input; please choose a multimodal model for image_understand_llm_ref_id",
-                    llm_ref.name
-                ))
+                .unwrap_or(llm_ref_id);
+
+            let llm_ref = llm_refs
+                .iter()
+                .find(|item| {
+                    item.id == resolved_llm_ref_id || item.config_id == resolved_llm_ref_id
+                })
+                .ok_or_else(|| {
+                    format!(
+                        "agent '{}' references missing llm_ref '{}'",
+                        agent_name, resolved_llm_ref_id
+                    )
+                })?;
+            if !llm_ref.enabled {
+                return Err(format!(
+                    "agent '{}' references disabled llm_ref '{}'",
+                    agent_name, llm_ref.name
+                ));
             }
+            match &llm_ref.model {
+                model_inference::system_config::ModelRefSpec::ChatLlm { llm } => {
+                    if llm.supports_multimodal_input {
+                        Ok(())
+                    } else if config
+                        .image_understand_llm_ref_id
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .is_some()
+                    {
+                        Err(format!(
+                            "image_understand_llm_ref_id '{}' does not support multimodal input",
+                            llm_ref.name
+                        ))
+                    } else {
+                        Err(format!(
+                            "main llm_ref_id '{}' does not support multimodal input; please choose a multimodal model for image_understand_llm_ref_id",
+                            llm_ref.name
+                        ))
+                    }
+                }
+                model_inference::system_config::ModelRefSpec::TextEmbeddingLocal { .. } => {
+                    Err(format!(
+                    "agent '{}' references non-chat model_ref '{}' as image_understand_llm_ref_id",
+                    agent_name, llm_ref.name
+                ))
+                }
+            }?;
+
+            validate_chat_llm_ref(
+                llm_refs,
+                config
+                    .natural_language_reply_llm_ref_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty()),
+                agent_name,
+                "natural_language_reply_llm_ref_id",
+            )?;
+
+            validate_embedding_model_ref(
+                llm_refs,
+                config.embedding_model_ref_id.as_deref(),
+                agent_name,
+            )
         }
+        AgentType::HttpStream(config) => validate_embedding_model_ref(
+            llm_refs,
+            config.embedding_model_ref_id.as_deref(),
+            agent_name,
+        ),
+    }
+}
+
+fn validate_chat_llm_ref(
+    llm_refs: &[LlmRefConfig],
+    llm_ref_id: Option<&str>,
+    agent_name: &str,
+    field_name: &str,
+) -> Result<(), String> {
+    let llm_ref_id =
+        llm_ref_id.ok_or_else(|| format!("agent '{}' is missing {}", agent_name, field_name))?;
+    let llm_ref = llm_refs
+        .iter()
+        .find(|item| item.id == llm_ref_id || item.config_id == llm_ref_id)
+        .ok_or_else(|| {
+            format!(
+                "agent '{}' references missing {} '{}'",
+                agent_name, field_name, llm_ref_id
+            )
+        })?;
+    if !llm_ref.enabled {
+        return Err(format!(
+            "agent '{}' references disabled {} '{}'",
+            agent_name, field_name, llm_ref.name
+        ));
+    }
+    match llm_ref.model {
+        model_inference::system_config::ModelRefSpec::ChatLlm { .. } => Ok(()),
         model_inference::system_config::ModelRefSpec::TextEmbeddingLocal { .. } => Err(format!(
-            "agent '{}' references non-chat model_ref '{}' as image_understand_llm_ref_id",
+            "agent '{}' references non-chat model_ref '{}' as {}",
+            agent_name, llm_ref.name, field_name
+        )),
+    }
+}
+
+fn validate_embedding_model_ref(
+    llm_refs: &[LlmRefConfig],
+    embedding_model_ref_id: Option<&str>,
+    agent_name: &str,
+) -> Result<(), String> {
+    let Some(embedding_model_ref_id) = embedding_model_ref_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(());
+    };
+
+    let llm_ref = llm_refs
+        .iter()
+        .find(|item| item.id == embedding_model_ref_id || item.config_id == embedding_model_ref_id)
+        .ok_or_else(|| {
+            format!(
+                "agent '{}' references missing embedding_model_ref '{}'",
+                agent_name, embedding_model_ref_id
+            )
+        })?;
+    if !llm_ref.enabled {
+        return Err(format!(
+            "agent '{}' references disabled embedding model_ref '{}'",
+            agent_name, llm_ref.name
+        ));
+    }
+    match llm_ref.model {
+        model_inference::system_config::ModelRefSpec::TextEmbeddingLocal { .. } => Ok(()),
+        model_inference::system_config::ModelRefSpec::ChatLlm { .. } => Err(format!(
+            "agent '{}' references chat model_ref '{}' as embedding_model_ref_id",
             agent_name, llm_ref.name
         )),
     }

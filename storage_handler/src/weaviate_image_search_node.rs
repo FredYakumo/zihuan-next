@@ -5,6 +5,8 @@ use serde_json::{Map, Value};
 use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
 
+use crate::WeaviateClient;
+
 pub struct WeaviateImageSearchNode {
     id: String,
     name: String,

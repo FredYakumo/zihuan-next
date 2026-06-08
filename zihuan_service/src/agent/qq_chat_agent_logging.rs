@@ -7,11 +7,10 @@ use log::info;
 use serde::Serialize;
 use serde_json::Value;
 
-use super::classify_intent::IntentClassificationTrace;
 use ims_bot_adapter::models::message::Message;
 use zihuan_agent::brain::{BrainObserver, BrainStopReason};
 use zihuan_core::llm::tooling::ToolCalls;
-use zihuan_core::llm::{OpenAIMessage, TokenUsage};
+use zihuan_core::llm::{LLMMessage, TokenUsage};
 
 const LOG_PREFIX: &str = "[QqChatAgent]";
 const LOG_TEXT_PREVIEW_CHARS: usize = 1_200;
@@ -43,8 +42,6 @@ struct ToolCallTrace {
 struct QqChatTaskTraceInner {
     ims_adapter_received_at: TracePoint,
     task_created_at: TracePoint,
-    intent_finished_at: Option<TracePoint>,
-    intent_trace: Option<IntentClassificationTrace>,
     llm_request_started_at: Option<TracePoint>,
     llm_final_result_at: Option<TracePoint>,
     llm_result_parsed_at: Option<TracePoint>,
@@ -79,8 +76,6 @@ impl QqChatTaskTrace {
                     at: task_created_at,
                     instant: Instant::now(),
                 },
-                intent_finished_at: None,
-                intent_trace: None,
                 llm_request_started_at: None,
                 llm_final_result_at: None,
                 llm_result_parsed_at: None,
@@ -119,23 +114,6 @@ impl QqChatTaskTrace {
         self.log_key_event("收到用户消息", 0, details);
     }
 
-    pub(crate) fn record_intent(&self, trace: IntentClassificationTrace) {
-        let finished_at = TracePoint::now();
-        let details = format!(
-            "意图={} path={} embedding_used={} llm_used={} raw_label={}",
-            trace.category.label(),
-            trace.path.label(),
-            trace.used_embedding,
-            trace.used_llm,
-            trace.raw_label.as_deref().unwrap_or("<none>")
-        );
-        self.log_key_event("意图识别完成", trace.total_duration_ms, details);
-
-        let mut inner = self.inner.lock().unwrap();
-        inner.intent_finished_at = Some(finished_at);
-        inner.intent_trace = Some(trace);
-    }
-
     pub(crate) fn record_history_stats(
         &self,
         history_message_count: usize,
@@ -172,7 +150,7 @@ impl QqChatTaskTrace {
         accepted_steer_count: usize,
         max_steer_count: usize,
         remaining_queue_len: usize,
-        messages: &[OpenAIMessage],
+        messages: &[LLMMessage],
     ) {
         self.log_key_event(
             "插嘴已注入当前对话",
@@ -219,7 +197,7 @@ impl QqChatTaskTrace {
 
     pub(crate) fn log_llm_conversation(
         &self,
-        conversation: &[OpenAIMessage],
+        conversation: &[LLMMessage],
         prompt_tokens_estimated: usize,
     ) {
         self.log_key_event(
@@ -310,7 +288,7 @@ impl QqChatTaskTrace {
     pub(crate) fn record_llm_final_result(
         &self,
         stop_reason: &BrainStopReason,
-        brain_output: &[OpenAIMessage],
+        brain_output: &[LLMMessage],
     ) {
         let now = TracePoint::now();
         let duration_ms = self
@@ -468,34 +446,9 @@ impl QqChatTaskTrace {
             Some(&inner.ims_adapter_received_at),
         ));
         lines.push(format_timeline_line(
-            "意图分类识别时间点",
-            inner.intent_finished_at.as_ref(),
-            Some(&inner.task_created_at),
-        ));
-
-        if let Some(intent_trace) = inner.intent_trace.as_ref() {
-            if intent_trace.used_embedding {
-                let embedding_duration = intent_trace.embedding_duration_ms.unwrap_or_default();
-                let embedding_time = inner
-                    .intent_finished_at
-                    .as_ref()
-                    .map(|finished| finished.at.format("%Y-%m-%d %H:%M:%S%.3f").to_string())
-                    .unwrap_or_else(|| "unknown".to_string());
-                lines.push(format!(
-                    "text embedding推理时间点 {} [耗时 {} ms]",
-                    embedding_time, embedding_duration
-                ));
-            } else {
-                lines.push("text embedding推理时间点 未触发".to_string());
-            }
-        } else {
-            lines.push("text embedding推理时间点 未触发".to_string());
-        }
-
-        lines.push(format_timeline_line(
             "开始组件system prompt等message发送给大模型的时间点",
             inner.llm_request_started_at.as_ref(),
-            inner.intent_finished_at.as_ref(),
+            Some(&inner.task_created_at),
         ));
 
         for (index, tool_call) in inner.tool_calls.iter().enumerate() {
@@ -537,8 +490,7 @@ impl QqChatTaskTrace {
             inner
                 .reply_send_finished_at
                 .as_ref()
-                .or(inner.llm_result_parsed_at.as_ref())
-                .or(inner.intent_finished_at.as_ref()),
+                .or(inner.llm_result_parsed_at.as_ref()),
         ));
         lines.push("---".to_string());
 

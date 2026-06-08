@@ -56,7 +56,7 @@ impl Node for AgentImageDbRefNode {
         let weaviate_ref = resource_resolver::build_weaviate_ref(
             Some(weaviate_image_connection_id),
             &connections,
-            true,
+            Some(WeaviateCollectionSchema::ImageSemantic),
         )?
         .ok_or_else(|| {
             zihuan_core::error::Error::ValidationError(

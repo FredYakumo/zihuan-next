@@ -2,6 +2,8 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use zihuan_core::data_refs::{MySqlConfig, RelationalDbConnection};
+
 use ims_bot_adapter::adapter::SharedBotAdapter;
 use ims_bot_adapter::message_helpers::{
     get_bot_id, send_friend_batches_with_persistence, send_group_batches_with_persistence,
@@ -13,14 +15,17 @@ use ims_bot_adapter::models::message::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use zihuan_agent::utils::string_utils::is_no_reply_directive;
 use zihuan_core::error::{Error, Result};
+use zihuan_core::utils::string_utils::{parse_at_segment, parse_tag_value};
 use zihuan_graph_engine::data_value::DataValue;
-use zihuan_graph_engine::message_restore::restore_media_by_id;
 use zihuan_nlp::{PunctuationSegmenter, TextSegmenter};
 
-use super::qq_chat_agent_core::{
+pub(crate) use super::qq_chat_agent_core::{
     QqAgentReplyBatchBuilder, QqAgentReplyBuildRequest, QqAgentReplyBuildResult,
 };
+use crate::agent::qq_chat_agent_logging::QqChatTaskTrace;
+use crate::storage::media::resolve_media_references;
 
 const MAX_FORWARD_NODE_CHARS: usize = 800;
 const DEFAULT_NOTIFICATION_TEXT_CHARS: usize = 250;
@@ -534,62 +539,6 @@ fn resolve_bot_name(adapter: &SharedBotAdapter, fallback: &str) -> String {
     }
 }
 
-fn resolve_media_references(
-    batches: &mut [Vec<Message>],
-    available_media: &HashMap<String, PersistedMedia>,
-) -> Result<()> {
-    for batch in batches {
-        for message in batch {
-            resolve_message_media_reference(message, available_media)?;
-        }
-    }
-    Ok(())
-}
-
-fn resolve_message_media_reference(
-    message: &mut Message,
-    available_media: &HashMap<String, PersistedMedia>,
-) -> Result<()> {
-    match message {
-        Message::Image(image) => {
-            if image.rustfs_path().is_some() || image.original_source().is_some() {
-                return Ok(());
-            }
-
-            let media_id = image.media.media_id.trim();
-            if media_id.is_empty() {
-                return Err(Error::ValidationError(
-                    "outbound image marker is missing media_id".to_string(),
-                ));
-            }
-
-            if let Some(media) = available_media.get(media_id) {
-                image.media = media.clone();
-                return Ok(());
-            }
-
-            if let Some(media) = restore_media_by_id(media_id)? {
-                image.media = media;
-                return Ok(());
-            }
-
-            Err(Error::ValidationError(format!(
-                "failed to resolve outbound image media_id '{}'",
-                media_id
-            )))
-        }
-        Message::Forward(forward) => {
-            for node in &mut forward.content {
-                for nested in &mut node.content {
-                    resolve_message_media_reference(nested, available_media)?;
-                }
-            }
-            Ok(())
-        }
-        _ => Ok(()),
-    }
-}
-
 fn ensure_space_after_at(batches: &mut [Vec<Message>]) {
     for batch in batches {
         for index in 0..batch.len().saturating_sub(1) {
@@ -784,39 +733,14 @@ fn is_mention_prefix_boundary(chars: &[char], index: usize) -> bool {
     !chars[index - 1].is_ascii_alphanumeric()
 }
 
-fn parse_at_segment(chars: &[char], start: usize) -> Option<(String, usize)> {
-    let mut end = start + 1;
-    while end < chars.len() && chars[end].is_ascii_digit() {
-        end += 1;
-    }
-
-    if end == start + 1 {
-        return None;
-    }
-
-    if end < chars.len() {
-        let boundary = chars[end];
-        if !boundary.is_whitespace()
-            && !matches!(
-                boundary,
-                ',' | '，' | '。' | ':' | '：' | '!' | '！' | '?' | '？' | ')' | '）' | ']' | '】'
-            )
-        {
-            return None;
-        }
-    }
-
-    Some((chars[start + 1..end].iter().collect(), end))
-}
-
 fn parse_bracket_segment(chars: &[char], start: usize) -> Option<(ReplySegment, usize)> {
     let mut end = start + 1;
     while end < chars.len() {
         if chars[end] == ']' {
             let inner: String = chars[start + 1..end].iter().collect();
             let inner = inner.trim();
-            if let Some(control) = parse_bracket_control(inner) {
-                return Some((control, end + 1));
+            if is_no_reply_directive(inner) {
+                return Some((ReplySegment::NoReply, end + 1));
             }
             if let Some(message) = parse_bracket_message(inner) {
                 return Some((message, end + 1));
@@ -844,134 +768,100 @@ fn parse_bracket_message(inner: &str) -> Option<ReplySegment> {
     })))
 }
 
-fn parse_bracket_control(inner: &str) -> Option<ReplySegment> {
-    if inner.eq_ignore_ascii_case("no reply") {
-        return Some(ReplySegment::NoReply);
+/// Build a `QqAgentReplyBuildResult` from raw reply parameters by calling the
+/// provided `reply_batch_builder`.
+pub(crate) fn build_reply_result(
+    reply_text: &str,
+    is_group: bool,
+    sender_id: &str,
+    sender_nickname: &str,
+    sender_card: &str,
+    bot_id: &str,
+    bot_name: &str,
+    max_message_length: usize,
+    reply_directive: Option<QqReplyDirective>,
+    trigger_message_id: Option<i64>,
+    available_media: HashMap<String, PersistedMedia>,
+    reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
+) -> Result<QqAgentReplyBuildResult> {
+    let request = QqAgentReplyBuildRequest {
+        assistant_text: reply_text.to_string(),
+        is_group,
+        sender_id: sender_id.to_string(),
+        sender_nickname: sender_nickname.to_string(),
+        sender_card: sender_card.to_string(),
+        bot_id: bot_id.to_string(),
+        bot_name: bot_name.to_string(),
+        max_message_length,
+        reply_directive,
+        trigger_message_id,
+        available_media,
+    };
+
+    if let Some(builder) = reply_batch_builder {
+        builder(&request)
+    } else {
+        Err(Error::ValidationError(
+            "no reply_batch_builder available for build_reply_result".to_string(),
+        ))
     }
-    None
 }
 
-fn parse_tag_value(value: &str) -> Option<String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return None;
+/// Send a direct text reply to the user, constructing reply batches via the
+/// provided `reply_batch_builder` and dispatching them through the QQ adapter.
+pub(crate) fn send_direct_text_reply(
+    trace: &QqChatTaskTrace,
+    adapter: &SharedBotAdapter,
+    target_id: &str,
+    rdb_pool: Option<&RelationalDbConnection>,
+    mysql_ref: Option<&Arc<MySqlConfig>>,
+    group_name: Option<&str>,
+    bot_name: &str,
+    bot_id: &str,
+    text: &str,
+    is_group: bool,
+    sender_id: &str,
+    sender_name: &str,
+    sender_card: &str,
+    max_message_length: usize,
+    reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
+) -> Result<()> {
+    let persistence = crate::storage::qq_chat_session_store::build_outbound_persistence(
+        rdb_pool, mysql_ref, group_name, bot_name,
+    );
+
+    let reply_result = build_reply_result(
+        text,
+        is_group,
+        sender_id,
+        sender_name,
+        sender_card,
+        bot_id,
+        bot_name,
+        max_message_length,
+        None,
+        None,
+        HashMap::new(),
+        reply_batch_builder,
+    )?;
+
+    if reply_result.suppress_send || reply_result.batches.is_empty() {
+        trace.record_reply_send(reply_result.suppress_send, true, &reply_result.batches);
+        return Ok(());
     }
 
-    if trimmed.len() >= 2 {
-        let quoted = trimmed
-            .strip_prefix('"')
-            .and_then(|value| value.strip_suffix('"'))
-            .or_else(|| {
-                trimmed
-                    .strip_prefix('\'')
-                    .and_then(|value| value.strip_suffix('\''))
-            });
-        if let Some(value) = quoted {
-            let inner = value.trim();
-            if !inner.is_empty() {
-                return Some(inner.to_string());
-            }
-        }
-    }
-
-    Some(trimmed.to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn sample_request(text: &str) -> QqAgentReplyBuildRequest {
-        QqAgentReplyBuildRequest {
-            assistant_text: text.to_string(),
-            is_group: true,
-            sender_id: "123456".to_string(),
-            sender_nickname: "tester".to_string(),
-            sender_card: String::new(),
-            bot_id: "999".to_string(),
-            bot_name: "bot".to_string(),
-            max_message_length: 4,
-            trigger_message_id: Some(42),
-            available_media: HashMap::new(),
-            reply_directive: None,
-        }
-    }
-
-    #[test]
-    fn parse_bracket_message_supports_media_id_marker() {
-        let parsed = parse_bracket_message("Image media_id=media-123").expect("parse image tag");
-        match parsed {
-            ReplySegment::Image(image) => {
-                assert_eq!(image.media.media_id, "media-123");
-            }
-            other => panic!("expected image segment, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn three_text_chunks_become_forward() {
-        let plan = plan_model_reply(
-            &sample_request("第一段。第二段。第三段。"),
-            &PunctuationSegmenter,
-        )
-        .expect("plan reply");
-        assert!(matches!(
-            plan.batches.as_slice(),
-            [batch] if matches!(batch.as_slice(), [Message::Forward(_)])
-        ));
-    }
-
-    #[test]
-    fn multi_image_becomes_forward() {
-        let mut request = sample_request("[Image media_id=a][Image media_id=b]");
-        request.available_media = HashMap::from([
-            (
-                "a".to_string(),
-                PersistedMedia {
-                    media_id: "a".to_string(),
-                    source: PersistedMediaSource::Upload,
-                    original_source: "https://example.com/a.png".to_string(),
-                    rustfs_path: String::new(),
-                    name: None,
-                    description: None,
-                    mime_type: None,
-                },
-            ),
-            (
-                "b".to_string(),
-                PersistedMedia {
-                    media_id: "b".to_string(),
-                    source: PersistedMediaSource::Upload,
-                    original_source: "https://example.com/b.png".to_string(),
-                    rustfs_path: String::new(),
-                    name: None,
-                    description: None,
-                    mime_type: None,
-                },
-            ),
-        ]);
-
-        let plan = plan_model_reply(&request, &PunctuationSegmenter).expect("plan reply");
-        assert!(matches!(
-            plan.batches.as_slice(),
-            [batch] if matches!(batch.as_slice(), [Message::Forward(_)])
-        ));
-    }
-
-    #[test]
-    fn reply_directive_extracts_first_text_outside_forward() {
-        let mut request = sample_request("@sender 第一段。第二段。第三段。");
-        request.reply_directive = Some(QqReplyDirective::TriggerMessage);
-
-        let plan = plan_model_reply(&request, &PunctuationSegmenter).expect("plan reply");
-        assert_eq!(plan.batches.len(), 2);
-        assert!(matches!(plan.batches[0].first(), Some(Message::Reply(_))));
-        assert!(plan.batches[0]
-            .iter()
-            .any(|message| matches!(message, Message::At(_))));
-        assert!(plan.batches[0]
-            .iter()
-            .any(|message| matches!(message, Message::PlainText(_))));
-        assert!(matches!(plan.batches[1].as_slice(), [Message::Forward(_)]));
-    }
+    trace.record_reply_send(false, false, &reply_result.batches);
+    let send_ctx = QqSendContext {
+        adapter,
+        target_id,
+        is_group,
+        group_name,
+        bot_name,
+        bot_id,
+        mention_target_id: None,
+        persistence,
+        max_text_chars: max_message_length,
+    };
+    send_planned_batches(&send_ctx, &reply_result.batches);
+    Ok(())
 }

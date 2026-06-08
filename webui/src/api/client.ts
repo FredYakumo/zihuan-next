@@ -637,7 +637,18 @@ export interface WeaviateExploreResponse {
   total: number;
   limit: number;
   class_name: string;
-  collection_schema: "message_record_semantic" | "image_semantic";
+  collection_schema: "image_semantic" | "agent_memory";
+}
+
+export interface AgentMemoryRecord {
+  object_id: string;
+  title: string;
+  value: string;
+  expires_at: string | null;
+  sender_id_list: string[];
+  group_id_list: string[];
+  created_at: string;
+  updated_at: string;
 }
 
 function buildQueryString(params: Record<string, unknown>): string {
@@ -691,12 +702,59 @@ export const explorer = {
 
   queryWeaviate(params: {
     connection_id: string;
-    embedding_model_ref_id: string;
-    query: string;
+    embedding_model_ref_id?: string;
+    query?: string;
     limit?: number;
   }): Promise<WeaviateExploreResponse> {
     const qs = buildQueryString(params as Record<string, unknown>);
     return request("GET", `/explorer/weaviate?${qs}`);
+  },
+
+  createAgentMemory(
+    connectionId: string,
+    embeddingModelRefId: string,
+    payload: {
+      title: string;
+      value: string;
+      expires_at?: string | null;
+      sender_id_list?: string[];
+      group_id_list?: string[];
+    },
+  ): Promise<AgentMemoryRecord> {
+    const qs = buildQueryString({
+      connection_id: connectionId,
+      embedding_model_ref_id: embeddingModelRefId,
+    });
+    return request("POST", `/explorer/agent-memory?${qs}`, payload);
+  },
+
+  updateAgentMemory(
+    connectionId: string,
+    embeddingModelRefId: string,
+    objectId: string,
+    payload: {
+      title: string;
+      value: string;
+      expires_at?: string | null;
+      sender_id_list?: string[];
+      group_id_list?: string[];
+    },
+  ): Promise<AgentMemoryRecord> {
+    const qs = buildQueryString({
+      connection_id: connectionId,
+      embedding_model_ref_id: embeddingModelRefId,
+    });
+    return request("PUT", `/explorer/agent-memory/${encodeURIComponent(objectId)}?${qs}`, payload);
+  },
+
+  getAgentMemory(connectionId: string, objectId: string): Promise<AgentMemoryRecord> {
+    const qs = buildQueryString({ connection_id: connectionId });
+    return request("GET", `/explorer/agent-memory/${encodeURIComponent(objectId)}?${qs}`);
+  },
+
+  deleteAgentMemory(connectionId: string, objectId: string): Promise<{ ok: boolean }> {
+    const qs = buildQueryString({ connection_id: connectionId });
+    return request("DELETE", `/explorer/agent-memory/${encodeURIComponent(objectId)}?${qs}`);
   },
 };
 

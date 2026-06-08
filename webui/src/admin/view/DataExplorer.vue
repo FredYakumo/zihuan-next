@@ -121,11 +121,11 @@
       <div v-if="redis.connectionId" class="explorer-search">
         <label class="field" style="flex: 2;">
           <span class="field-label">Key Pattern</span>
-          <input v-model="redis.pattern" class="field-input" placeholder="* 或 openai_message_session:*" />
+          <input v-model="redis.pattern" class="field-input" placeholder="* 或 llm_message_session:*" />
         </label>
         <div class="field" style="flex: 0; align-self: flex-end; display: flex; gap: 6px;">
           <button class="btn ghost" @click="redis.pattern = '*'">All Keys</button>
-          <button class="btn ghost" @click="redis.pattern = 'openai_message_session:*'">LLM Sessions</button>
+          <button class="btn ghost" @click="redis.pattern = 'llm_message_session:*'">LLM Sessions</button>
           <button class="btn" :disabled="redis.loading" @click="searchRedis">搜索</button>
         </div>
       </div>
@@ -198,6 +198,9 @@
         <template v-if="selectedWeaviateSchema">
           · Schema: {{ selectedWeaviateSchema }}
         </template>
+        <template v-if="isAgentMemorySchema">
+          · <button class="btn ghost" style="margin-left: 8px;" @click="createAgentMemory">新建记忆</button>
+        </template>
       </div>
 
       <div v-if="weaviate.loading" class="empty-state">检索中…</div>
@@ -210,22 +213,14 @@
             <span v-if="item.object_id" class="td-mono explorer-weaviate-object-id">{{ item.object_id }}</span>
           </div>
           <div class="explorer-weaviate-card-body">
-            <div v-if="isMessageWeaviateSchema && readStringProperty(item.properties, 'content')" class="explorer-weaviate-content">
-              {{ readStringProperty(item.properties, 'content') }}
-            </div>
             <div v-if="isImageWeaviateSchema && readStringProperty(item.properties, 'description')" class="explorer-weaviate-content">
               {{ readStringProperty(item.properties, 'description') }}
             </div>
+            <div v-if="isAgentMemorySchema && readStringProperty(item.properties, 'value')" class="explorer-weaviate-content">
+              {{ readStringProperty(item.properties, 'value') }}
+            </div>
             <div class="explorer-weaviate-grid">
-              <template v-if="isMessageWeaviateSchema">
-                <div v-if="readStringProperty(item.properties, 'sender_name')" class="key-value"><strong>Sender</strong><span>{{ readStringProperty(item.properties, 'sender_name') }}</span></div>
-                <div v-if="readStringProperty(item.properties, 'sender_id')" class="key-value"><strong>Sender ID</strong><span class="mono">{{ readStringProperty(item.properties, 'sender_id') }}</span></div>
-                <div v-if="readStringProperty(item.properties, 'group_name')" class="key-value"><strong>Group</strong><span>{{ readStringProperty(item.properties, 'group_name') }}</span></div>
-                <div v-if="readStringProperty(item.properties, 'group_id')" class="key-value"><strong>Group ID</strong><span class="mono">{{ readStringProperty(item.properties, 'group_id') }}</span></div>
-                <div v-if="readStringProperty(item.properties, 'send_time')" class="key-value"><strong>Send Time</strong><span>{{ readStringProperty(item.properties, 'send_time') }}</span></div>
-                <div v-if="readStringProperty(item.properties, 'message_id')" class="key-value"><strong>Message ID</strong><span class="mono">{{ readStringProperty(item.properties, 'message_id') }}</span></div>
-              </template>
-              <template v-else-if="isImageWeaviateSchema">
+              <template v-if="isImageWeaviateSchema">
                 <div v-if="readStringProperty(item.properties, 'name')" class="key-value"><strong>Name</strong><span>{{ readStringProperty(item.properties, 'name') }}</span></div>
                 <div v-if="readStringProperty(item.properties, 'media_id')" class="key-value"><strong>Media ID</strong><span class="mono">{{ readStringProperty(item.properties, 'media_id') }}</span></div>
                 <div v-if="readStringProperty(item.properties, 'source')" class="key-value"><strong>Source</strong><span>{{ readStringProperty(item.properties, 'source') }}</span></div>
@@ -233,6 +228,18 @@
                 <div v-if="readStringProperty(item.properties, 'rustfs_path')" class="key-value"><strong>RustFS Path</strong><span class="mono">{{ readStringProperty(item.properties, 'rustfs_path') }}</span></div>
                 <div v-if="readStringProperty(item.properties, 'original_source')" class="key-value"><strong>Original Source</strong><span class="mono">{{ readStringProperty(item.properties, 'original_source') }}</span></div>
               </template>
+              <template v-else-if="isAgentMemorySchema">
+                <div v-if="readStringProperty(item.properties, 'title')" class="key-value"><strong>标题</strong><span>{{ readStringProperty(item.properties, 'title') }}</span></div>
+                <div v-if="readStringProperty(item.properties, 'expires_at')" class="key-value"><strong>Expires</strong><span>{{ readStringProperty(item.properties, 'expires_at') }}</span></div>
+                <div class="key-value"><strong>Sender Scope</strong><span>{{ readStringListProperty(item.properties, 'sender_id_list').join(", ") || "全局" }}</span></div>
+                <div class="key-value"><strong>Group Scope</strong><span>{{ readStringListProperty(item.properties, 'group_id_list').join(", ") || "无" }}</span></div>
+                <div v-if="readStringProperty(item.properties, 'created_at')" class="key-value"><strong>Created</strong><span>{{ readStringProperty(item.properties, 'created_at') }}</span></div>
+                <div v-if="readStringProperty(item.properties, 'updated_at')" class="key-value"><strong>Updated</strong><span>{{ readStringProperty(item.properties, 'updated_at') }}</span></div>
+              </template>
+            </div>
+            <div v-if="isAgentMemorySchema && item.object_id" style="display: flex; gap: 8px; margin-top: 12px;">
+              <button class="btn ghost" @click="editAgentMemory(item)">编辑</button>
+              <button class="btn ghost" @click="removeAgentMemory(item)">删除</button>
             </div>
             <details class="explorer-weaviate-details">
               <summary>查看原始字段</summary>
@@ -370,8 +377,8 @@ const selectedWeaviateSchema = computed(() => {
   const schema = selectedWeaviateConnection.value?.kind.collection_schema;
   return typeof schema === "string" ? schema as WeaviateCollectionSchema : weaviate.value.collectionSchema;
 });
-const isMessageWeaviateSchema = computed(() => selectedWeaviateSchema.value === "message_record_semantic");
 const isImageWeaviateSchema = computed(() => selectedWeaviateSchema.value === "image_semantic");
+const isAgentMemorySchema = computed(() => selectedWeaviateSchema.value === "agent_memory");
 const rustfsConnections = computed(() =>
   connections.value.filter((c) => c.kind.type === "rustfs" && c.enabled)
 );
@@ -522,15 +529,18 @@ const weaviate = ref({
   query: "",
   limit: 10,
   className: "",
-  collectionSchema: "message_record_semantic" as WeaviateCollectionSchema,
+  collectionSchema: "agent_memory" as WeaviateCollectionSchema,
   items: [] as WeaviateSearchResult[],
 });
 
 function onWeaviateConnectionChange() {
   weaviate.value.items = [];
   weaviate.value.className = "";
-  weaviate.value.collectionSchema = "message_record_semantic";
+  weaviate.value.collectionSchema = "agent_memory";
   weaviate.value.searched = false;
+  if (isAgentMemorySchema.value) {
+    searchWeaviate();
+  }
 }
 
 function onWeaviateEmbeddingChange() {
@@ -542,7 +552,7 @@ async function searchWeaviate() {
   if (!weaviate.value.connectionId) {
     return;
   }
-  if (!weaviate.value.embeddingModelRefId) {
+  if (weaviate.value.query.trim() && !weaviate.value.embeddingModelRefId) {
     alert("请选择 Text Embedding 模型");
     return;
   }
@@ -551,8 +561,8 @@ async function searchWeaviate() {
   try {
     const res = await explorer.queryWeaviate({
       connection_id: weaviate.value.connectionId,
-      embedding_model_ref_id: weaviate.value.embeddingModelRefId,
-      query: weaviate.value.query.trim(),
+      embedding_model_ref_id: weaviate.value.embeddingModelRefId || undefined,
+      query: weaviate.value.query.trim() || undefined,
       limit: weaviate.value.limit,
     });
     weaviate.value.items = res.items;
@@ -570,12 +580,98 @@ function readStringProperty(properties: Record<string, unknown>, key: string): s
   return typeof value === "string" ? value : "";
 }
 
+function readStringListProperty(properties: Record<string, unknown>, key: string): string[] {
+  const value = properties[key];
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === "string");
+}
+
 function formatWeaviateDistance(distance: number | null): string {
   return typeof distance === "number" ? distance.toFixed(4) : "—";
 }
 
 function stringifyWeaviateProperties(properties: Record<string, unknown>): string {
   return JSON.stringify(properties, null, 2);
+}
+
+async function createAgentMemory() {
+  if (!weaviate.value.connectionId) return;
+  if (!weaviate.value.embeddingModelRefId) {
+    alert("创建记忆前请先选择 Text Embedding 模型");
+    return;
+  }
+  const title = window.prompt("记忆标题");
+  if (!title?.trim()) return;
+  const value = window.prompt("记忆内容");
+  if (!value?.trim()) return;
+  const expiresAt = window.prompt("过期时间 RFC3339，可留空表示永久");
+  const senderCsv = window.prompt("sender_id_list，多个用逗号分隔，可留空");
+  const groupCsv = window.prompt("group_id_list，多个用逗号分隔，可留空");
+  await explorer.createAgentMemory(
+    weaviate.value.connectionId,
+    weaviate.value.embeddingModelRefId,
+    {
+      title: title.trim(),
+      value: value.trim(),
+      expires_at: expiresAt?.trim() || null,
+      sender_id_list: csvToList(senderCsv),
+      group_id_list: csvToList(groupCsv),
+    },
+  );
+  await searchWeaviate();
+}
+
+async function editAgentMemory(item: WeaviateSearchResult) {
+  if (!weaviate.value.connectionId || !item.object_id) return;
+  if (!weaviate.value.embeddingModelRefId) {
+    alert("编辑记忆前请先选择 Text Embedding 模型");
+    return;
+  }
+  const title = window.prompt("记忆标题", readStringProperty(item.properties, "title"));
+  if (!title?.trim()) return;
+  const value = window.prompt("记忆内容", readStringProperty(item.properties, "value"));
+  if (!value?.trim()) return;
+  const expiresAt = window.prompt(
+    "过期时间 RFC3339，可留空表示永久",
+    readStringProperty(item.properties, "expires_at"),
+  );
+  const senderCsv = window.prompt(
+    "sender_id_list，多个用逗号分隔，可留空",
+    readStringListProperty(item.properties, "sender_id_list").join(","),
+  );
+  const groupCsv = window.prompt(
+    "group_id_list，多个用逗号分隔，可留空",
+    readStringListProperty(item.properties, "group_id_list").join(","),
+  );
+  await explorer.updateAgentMemory(
+    weaviate.value.connectionId,
+    weaviate.value.embeddingModelRefId,
+    item.object_id,
+    {
+      title: title.trim(),
+      value: value.trim(),
+      expires_at: expiresAt?.trim() || null,
+      sender_id_list: csvToList(senderCsv),
+      group_id_list: csvToList(groupCsv),
+    },
+  );
+  await searchWeaviate();
+}
+
+async function removeAgentMemory(item: WeaviateSearchResult) {
+  if (!weaviate.value.connectionId || !item.object_id) return;
+  if (!window.confirm("确认删除这条记忆吗？")) return;
+  await explorer.deleteAgentMemory(weaviate.value.connectionId, item.object_id);
+  await searchWeaviate();
+}
+
+function csvToList(value: string | null | undefined): string[] {
+  return String(value ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 // ── RustFS ─────────────────────────────────────────────────────

@@ -49,7 +49,7 @@ impl Node for AgentLlmNode {
             DataType::String,
             NodeConfigWidget::AgentLlmKindSelect,
         )
-        .with_description("选择读取主模型、意图分类模型或数学编程模型")]
+        .with_description("选择读取主模型、数学编程模型或自然语言回复模型")]
     }
 
     fn apply_inline_config(

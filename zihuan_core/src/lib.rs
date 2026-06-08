@@ -10,11 +10,15 @@ pub mod database;
 pub mod error;
 pub mod ims_bot_adapter;
 pub mod llm;
+pub mod message_part;
 pub mod rag;
 pub mod runtime;
+pub mod steer;
 pub mod system_config;
 pub mod task_context;
 pub mod tool_runtime;
 pub mod url_utils;
 pub mod weaviate;
 pub mod worker_pool;
+
+pub use message_part::MessagePart;

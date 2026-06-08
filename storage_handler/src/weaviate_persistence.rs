@@ -14,6 +14,8 @@ use zihuan_core::ims_bot_adapter::models::message::{
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::weaviate::WeaviateRef;
 
+use crate::WeaviateClient;
+
 pub fn upsert_message_event(
     weaviate_ref: &WeaviateRef,
     event: &MessageEvent,

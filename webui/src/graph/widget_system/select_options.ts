@@ -16,8 +16,8 @@ export const LLM_PLACEHOLDER_VALUE = "__zihuan_no_llm__";
 
 export const AGENT_LLM_KIND_OPTIONS = [
   { value: "main", label: "主模型" },
-  { value: "intent", label: "意图分类模型" },
   { value: "math_programming", label: "数学编程模型" },
+  { value: "natural_language_reply", label: "自然语言回复模型" },
 ] as const;
 
 let cachedTextEmbeddingModels: string[] | null = null;

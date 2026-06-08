@@ -11,7 +11,7 @@ use zihuan_core::agent_config::{current_qq_chat_agent_config, image_understand_l
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::llm::{ContentPart, InferenceParam, OpenAIMessage};
+use zihuan_core::llm::{InferenceParam, LLMMessage, MessagePart};
 use zihuan_core::runtime::block_async;
 use zihuan_graph_engine::message_restore::{
     find_media_in_messages, register_mysql_ref, restore_media_by_id,
@@ -73,12 +73,12 @@ impl BrainTool for ImageUnderstandBrainTool {
 pub(crate) fn build_image_understand_spec() -> StaticFunctionToolSpec {
     StaticFunctionToolSpec {
         name: DEFAULT_TOOL_IMAGE_UNDERSTAND,
-        description: "通过 media_id 分析图片内容，返回简洁文字描述",
+        description: "Understand image content by media_id and return a concise, objective text description",
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
-                "media_id": { "type": "string", "description": "要分析的图片 media_id" },
-                "question": { "type": "string", "description": "可选：本次关注点、问题或分析要求" }
+                "media_id": { "type": "string", "description": "The media_id of the image to analyze" },
+                "question": { "type": "string", "description": "Optional: focus point, question, or analysis requirement" }
             },
             "required": ["media_id"]
         }),
@@ -187,34 +187,31 @@ fn analyze_persisted_media(
     s3_ref: Option<&S3Ref>,
 ) -> Result<String> {
     let image_message = ImageMessage::new(media.clone());
-    let resolved = ims_bot_adapter::multimodal_image_url::resolve_image_message_part(
+    let resolved = match ims_bot_adapter::multimodal_image_url::resolve_image_message_part(
         &image_message,
         s3_ref,
         false,
         LOG_PREFIX,
-    )
-    .ok_or_else(|| {
-        Error::ValidationError(format!(
-            "image_understand failed to resolve image bytes for media_id='{}'",
-            media.media_id
-        ))
-    })?;
+    ) {
+        Some(resolved) => resolved,
+        None => return Ok("Not any image found".to_string()),
+    };
 
     let llm = load_multimodal_llm()?;
 
     let prompt = match focus_text.map(str::trim).filter(|value| !value.is_empty()) {
         Some(text) => format!(
-            "请基于图片回答下面这个关注点，给出简洁、客观的中文描述。\n关注点：{}",
+            "Answer the following focus point based on the image and provide a concise, objective description.\nFocus: {}",
             text
         ),
-        None => "请用简洁、客观的中文描述这张图片的主要内容。".to_string(),
+        None => "Describe the main content of this image concisely and objectively.".to_string(),
     };
 
     let messages = vec![
-        OpenAIMessage::system(
-            "你是一个图片理解助手。只输出简洁、客观的中文描述，不要输出多余寒暄。".to_string(),
+        LLMMessage::system(
+            "You are an image understanding assistant. Output only concise, objective descriptions without extra pleasantries. If the image content is empty, invalid, or unrecognizable, output only \"No image recognized.\"".to_string(),
         ),
-        OpenAIMessage::user_with_parts(vec![ContentPart::text(prompt), resolved.part]),
+        LLMMessage::user_with_parts(vec![MessagePart::text(prompt), resolved.part]),
     ];
     let response = llm.inference(&InferenceParam {
         messages: &messages,

@@ -48,8 +48,12 @@ pub struct HttpStreamAgentConfig {
     #[serde(default)]
     pub llm_ref_id: Option<String>,
     #[serde(default)]
+    pub embedding_model_ref_id: Option<String>,
+    #[serde(default)]
     #[serde(alias = "tavily_connection_id")]
     pub web_search_engine_connection_id: Option<String>,
+    #[serde(default)]
+    pub weaviate_memory_connection_id: Option<String>,
     #[serde(default)]
     pub task_db_connection_id: String,
     #[serde(default = "default_http_stream_default_tools_enabled")]
@@ -78,7 +82,14 @@ fn default_include_reasoning_content() -> bool {
 }
 
 fn default_http_stream_default_tools_enabled() -> std::collections::HashMap<String, bool> {
-    [("web_search".to_string(), true)].into_iter().collect()
+    [
+        ("web_search".to_string(), true),
+        ("list_available_memory_keys".to_string(), true),
+        ("search_memory_content".to_string(), true),
+        ("remember_content".to_string(), true),
+    ]
+    .into_iter()
+    .collect()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use storage_handler::{
     build_mysql_ref, build_redis_ref, build_s3_ref, build_weaviate_ref,
-    build_web_search_engine_ref, load_connections, ConnectionConfig,
+    build_web_search_engine_ref, load_connections, ConnectionConfig, WeaviateCollectionSchema,
 };
 use zihuan_core::error::Result;
 use zihuan_graph_engine::data_value::DataType;
@@ -149,7 +149,7 @@ async fn resolve_connection_hyperparameter(
         DataType::RedisRef => build_redis_ref(Some(connection_id), connections)
             .map(|value| value.map(|value| (DataValue::RedisRef(value), None))),
         DataType::WeaviateRef => tokio::task::block_in_place(|| {
-            build_weaviate_ref(Some(connection_id), connections, false)
+            build_weaviate_ref(Some(connection_id), connections, None)
         })
         .map(|value| value.map(|value| (DataValue::WeaviateRef(value), None))),
         DataType::S3Ref => build_s3_ref(Some(connection_id), connections)

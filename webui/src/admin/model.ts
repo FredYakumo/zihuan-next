@@ -8,8 +8,17 @@ import type {
   LlmServiceConfig,
 } from "../api/client";
 
-export type ConnectionType = "mysql" | "redis" | "weaviate" | "rustfs" | "bot_adapter" | "ims_bot_adapter" | "web_search_engine" | "tokenizer" | "sqlite";
-export type WeaviateCollectionSchema = "message_record_semantic" | "image_semantic";
+export type ConnectionType =
+  | "mysql"
+  | "redis"
+  | "weaviate"
+  | "rustfs"
+  | "bot_adapter"
+  | "ims_bot_adapter"
+  | "web_search_engine"
+  | "tokenizer"
+  | "sqlite";
+export type WeaviateCollectionSchema = "image_semantic" | "agent_memory";
 export type AgentTypeName = "qq_chat" | "http_stream";
 export type ModelRefType = "chat_llm" | "text_embedding_local";
 export type ToolRunDuration = "Short" | "Long";
@@ -103,20 +112,25 @@ export interface AgentFormState {
   system_prompt: string;
   llm_ref_id: string;
   image_understand_llm_ref_id: string;
-  intent_llm_ref_id: string;
   math_programming_llm_ref_id: string;
+  natural_language_reply_llm_ref_id: string;
+  natural_language_reply_system_prompt: string;
   embedding_model_ref_id: string;
   tokenizer_connection_id: string;
   web_search_engine_connection_id: string;
   rdb_id: string;
   weaviate_image_connection_id: string;
+  weaviate_memory_connection_id: string;
   max_message_length: number;
   compact_context_length: number;
   max_steer_count: number;
+  emotion_dimensions: QqChatEmotionDimensionFormItem[];
   default_tools_enabled: Record<string, boolean>;
   http_bind: string;
   http_api_key: string;
   http_web_search_engine_connection_id: string;
+  http_embedding_model_ref_id: string;
+  http_weaviate_memory_connection_id: string;
   task_db_connection_id: string;
   tools: ToolFormState[];
 }
@@ -127,31 +141,112 @@ export type DefaultToolOption = {
   description: string;
 };
 
-export function isBotAdapterConnectionType(type: string): type is "bot_adapter" | "ims_bot_adapter" {
+export type QqChatEmotionDimensionFormItem = {
+  name: string;
+  increase_weight?: number;
+  decrease_weight?: number;
+  positive_prompt?: string;
+  negative_prompt?: string;
+};
+
+export function isBotAdapterConnectionType(
+  type: string,
+): type is "bot_adapter" | "ims_bot_adapter" {
   return type === "bot_adapter" || type === "ims_bot_adapter";
 }
 
 export const QQ_CHAT_DEFAULT_TOOLS: DefaultToolOption[] = [
-  { id: "web_search", label: "web_search", description: "联网搜索（Tavily）" },
-  { id: "get_agent_public_info", label: "get_agent_public_info", description: "返回智能体公开信息" },
-  { id: "get_function_list", label: "get_function_list", description: "获取功能列表" },
-  { id: "get_recent_group_messages", label: "get_recent_group_messages", description: "只看群里最近几条消息，不适合按时段分析" },
-  { id: "get_recent_user_messages", label: "get_recent_user_messages", description: "查询用户近期消息" },
-  { id: "search_similar_images", label: "search_similar_images", description: "语义检索相似图片" },
-  { id: "image_understand", label: "image_understand", description: "按 media_id 理解图片内容" },
-  { id: "reply_message", label: "reply_message", description: "显式引用某条消息" },
+  { id: "web_search", label: "web_search", description: "联网搜索" },
+  {
+    id: "get_agent_public_info",
+    label: "get_agent_public_info",
+    description: "返回智能体公开信息",
+  },
+  {
+    id: "get_function_list",
+    label: "get_function_list",
+    description: "获取功能列表",
+  },
+  {
+    id: "get_recent_group_messages",
+    label: "get_recent_group_messages",
+    description: "只看群里最近几条消息，不适合按时段分析",
+  },
+  {
+    id: "get_recent_user_messages",
+    label: "get_recent_user_messages",
+    description: "查询用户近期消息",
+  },
+  {
+    id: "search_similar_images",
+    label: "search_similar_images",
+    description: "语义检索相似图片",
+  },
+  {
+    id: "image_understand",
+    label: "image_understand",
+    description: "按 media_id 理解图片内容",
+  },
+  {
+    id: "list_available_memory_keys",
+    label: "list_available_memory_keys",
+    description: "列出当前可访问的记忆标题",
+  },
+  {
+    id: "search_memory_content",
+    label: "search_memory_content",
+    description: "搜索当前可访问的记忆内容",
+  },
+  {
+    id: "remember_content",
+    label: "remember_content",
+    description: "把内容整理后写入记忆",
+  },
 ];
 
 export const HTTP_STREAM_DEFAULT_TOOLS: DefaultToolOption[] = [
-  { id: "web_search", label: "web_search", description: "联网搜索（Tavily）" },
+  { id: "web_search", label: "web_search", description: "联网搜索" },
+  {
+    id: "list_available_memory_keys",
+    label: "list_available_memory_keys",
+    description: "列出当前可访问的记忆标题",
+  },
+  {
+    id: "search_memory_content",
+    label: "search_memory_content",
+    description: "搜索当前可访问的记忆内容",
+  },
+  {
+    id: "remember_content",
+    label: "remember_content",
+    description: "把内容整理后写入记忆",
+  },
 ];
 
 export function defaultQqChatDefaultToolsEnabled(): Record<string, boolean> {
-  return Object.fromEntries(QQ_CHAT_DEFAULT_TOOLS.map((tool) => [tool.id, true]));
+  return Object.fromEntries(
+    QQ_CHAT_DEFAULT_TOOLS.map((tool) => [tool.id, true]),
+  );
 }
 
-export function defaultHttpStreamDefaultToolsEnabled(): Record<string, boolean> {
-  return Object.fromEntries(HTTP_STREAM_DEFAULT_TOOLS.map((tool) => [tool.id, true]));
+export function defaultQqChatEmotionDimensions(): QqChatEmotionDimensionFormItem[] {
+  return [
+    { name: "开心", increase_weight: 1, decrease_weight: 1 },
+    { name: "烦恼", increase_weight: 1, decrease_weight: 1 },
+    { name: "生气", increase_weight: 1, decrease_weight: 1 },
+    { name: "伤心", increase_weight: 1, decrease_weight: 1 },
+    { name: "害怕", increase_weight: 1, decrease_weight: 1 },
+    { name: "焦虑", increase_weight: 1, decrease_weight: 1 },
+    { name: "激动", increase_weight: 1, decrease_weight: 1 },
+  ];
+}
+export function defaultHttpStreamDefaultToolsEnabled(): Record<
+  string,
+  boolean
+> {
+  return Object.fromEntries(
+    HTTP_STREAM_DEFAULT_TOOLS.map((tool) => [tool.id, true]),
+  );
 }
 
 export function defaultLlmConfig(): LlmServiceConfig {
@@ -190,7 +285,7 @@ export function defaultConnectionForm(): ConnectionFormState {
     weaviate_username: "",
     weaviate_password: "",
     weaviate_api_key: "",
-    weaviate_collection_schema: "message_record_semantic",
+    weaviate_collection_schema: "agent_memory",
     rustfs_endpoint: "",
     rustfs_username: "",
     rustfs_password: "",
@@ -233,7 +328,8 @@ export function defaultToolForm(): ToolFormState {
     targetType: "workflow_set",
     workflowName: "",
     filePath: "",
-    inlineGraphJson: "{\n  \"nodes\": [],\n  \"edges\": [],\n  \"graph_inputs\": [],\n  \"graph_outputs\": [],\n  \"hyperparameter_groups\": [],\n  \"hyperparameters\": [],\n  \"variables\": [],\n  \"metadata\": { \"name\": null, \"description\": null, \"version\": null }\n}",
+    inlineGraphJson:
+      '{\n  "nodes": [],\n  "edges": [],\n  "graph_inputs": [],\n  "graph_outputs": [],\n  "hyperparameter_groups": [],\n  "hyperparameters": [],\n  "variables": [],\n  "metadata": { "name": null, "description": null, "version": null }\n}',
     parametersJson: "[]",
     outputsJson: "[]",
   };
@@ -253,33 +349,40 @@ export function defaultAgentForm(): AgentFormState {
     system_prompt: "",
     llm_ref_id: "",
     image_understand_llm_ref_id: "",
-    intent_llm_ref_id: "",
     math_programming_llm_ref_id: "",
+    natural_language_reply_llm_ref_id: "",
+    natural_language_reply_system_prompt: "",
     embedding_model_ref_id: "",
     tokenizer_connection_id: "",
     web_search_engine_connection_id: "",
     rdb_id: "",
     weaviate_image_connection_id: "",
+    weaviate_memory_connection_id: "",
     max_message_length: 500,
     compact_context_length: 0,
     max_steer_count: 4,
+    emotion_dimensions: defaultQqChatEmotionDimensions(),
     default_tools_enabled: defaultQqChatDefaultToolsEnabled(),
     http_bind: "127.0.0.1:18080",
     http_api_key: "",
     http_web_search_engine_connection_id: "",
+    http_embedding_model_ref_id: "",
+    http_weaviate_memory_connection_id: "",
     task_db_connection_id: "",
     tools: [],
   };
 }
 
-export function connectionFormFromConfig(connection: ConnectionConfig): ConnectionFormState {
+export function connectionFormFromConfig(
+  connection: ConnectionConfig,
+): ConnectionFormState {
   const form = defaultConnectionForm();
   form.id = connection.config_id;
   form.name = connection.name;
   form.enabled = connection.enabled;
   form.type = isBotAdapterConnectionType(String(connection.kind.type ?? ""))
     ? "bot_adapter"
-    : connection.kind.type as ConnectionType;
+    : (connection.kind.type as ConnectionType);
   switch (connection.kind.type) {
     case "mysql":
       form.mysql_url = String(connection.kind.url ?? "");
@@ -287,7 +390,8 @@ export function connectionFormFromConfig(connection: ConnectionConfig): Connecti
         connection.kind.max_connections ?? DEFAULT_MYSQL_MAX_CONNECTIONS,
       );
       form.mysql_acquire_timeout_secs = Number(
-        connection.kind.acquire_timeout_secs ?? DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS,
+        connection.kind.acquire_timeout_secs ??
+          DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS,
       );
       applyMysqlUrlToForm(form, form.mysql_url);
       break;
@@ -303,7 +407,7 @@ export function connectionFormFromConfig(connection: ConnectionConfig): Connecti
       form.weaviate_password = String(connection.kind.password ?? "");
       form.weaviate_api_key = String(connection.kind.api_key ?? "");
       form.weaviate_collection_schema = String(
-        connection.kind.collection_schema ?? "message_record_semantic",
+        connection.kind.collection_schema ?? "agent_memory",
       ) as WeaviateCollectionSchema;
       break;
     case "rustfs":
@@ -314,20 +418,30 @@ export function connectionFormFromConfig(connection: ConnectionConfig): Connecti
       form.rustfs_region = String(connection.kind.region ?? "");
       form.rustfs_access_key = String(connection.kind.access_key ?? "");
       form.rustfs_secret_key = String(connection.kind.secret_key ?? "");
-      form.rustfs_public_base_url = String(connection.kind.public_base_url ?? "");
+      form.rustfs_public_base_url = String(
+        connection.kind.public_base_url ?? "",
+      );
       form.rustfs_path_style = Boolean(connection.kind.path_style ?? false);
       break;
     case "bot_adapter":
     case "ims_bot_adapter":
       form.bot_server_url = String(connection.kind.bot_server_url ?? "");
-      form.adapter_server_url = String(connection.kind.adapter_server_url ?? "");
+      form.adapter_server_url = String(
+        connection.kind.adapter_server_url ?? "",
+      );
       form.bot_server_token = String(connection.kind.bot_server_token ?? "");
       form.qq_id = String(connection.kind.qq_id ?? "");
       break;
     case "web_search_engine":
-      form.web_search_engine_provider = String(connection.kind.provider ?? "tavily");
-      form.web_search_engine_api_token = String(connection.kind.api_token ?? "");
-      form.web_search_engine_timeout_secs = Number(connection.kind.timeout_secs ?? 30);
+      form.web_search_engine_provider = String(
+        connection.kind.provider ?? "tavily",
+      );
+      form.web_search_engine_api_token = String(
+        connection.kind.api_token ?? "",
+      );
+      form.web_search_engine_timeout_secs = Number(
+        connection.kind.timeout_secs ?? 30,
+      );
       break;
     case "tokenizer":
       form.tokenizer_model_name = String(connection.kind.model_name ?? "");
@@ -349,14 +463,21 @@ function applyMysqlUrlToForm(form: ConnectionFormState, rawUrl: string) {
     form.mysql_port = parsed.port || "3306";
     form.mysql_user = decodeURIComponent(parsed.username ?? "");
     form.mysql_password = decodeURIComponent(parsed.password ?? "");
-    form.mysql_database = decodeURIComponent(parsed.pathname.replace(/^\//, ""));
+    form.mysql_database = decodeURIComponent(
+      parsed.pathname.replace(/^\//, ""),
+    );
   } catch {
     // Keep the raw URL for backward compatibility if parsing fails.
   }
 }
 
 function buildMysqlUrl(form: ConnectionFormState): string {
-  if (form.mysql_host || form.mysql_user || form.mysql_password || form.mysql_database) {
+  if (
+    form.mysql_host ||
+    form.mysql_user ||
+    form.mysql_password ||
+    form.mysql_database
+  ) {
     const auth = form.mysql_user
       ? `${encodeURIComponent(form.mysql_user)}:${encodeURIComponent(form.mysql_password)}@`
       : "";
@@ -470,10 +591,15 @@ export function llmFormFromConfig(config: LlmConfig): LlmFormState {
       model_name: config.model.llm.model_name,
       api_endpoint: config.model.llm.api_endpoint,
       api_key: config.model.llm.api_key ?? "",
-      api_style: (config.model.llm.api_style ?? "open_ai_chat_completions") as LlmApiStyle,
+      api_style: (config.model.llm.api_style ??
+        "open_ai_chat_completions") as LlmApiStyle,
       stream: Boolean(config.model.llm.stream ?? false),
-      supports_multimodal_input: Boolean(config.model.llm.supports_multimodal_input ?? false),
-      include_reasoning_content: Boolean(config.model.llm.include_reasoning_content ?? false),
+      supports_multimodal_input: Boolean(
+        config.model.llm.supports_multimodal_input ?? false,
+      ),
+      include_reasoning_content: Boolean(
+        config.model.llm.include_reasoning_content ?? false,
+      ),
       timeout_secs: config.model.llm.timeout_secs,
       retry_count: config.model.llm.retry_count,
     },
@@ -488,7 +614,9 @@ export function toolFormFromConfig(tool: AgentToolConfig): ToolFormState {
   form.enabled = tool.enabled;
   form.runDuration = (tool.run_duration ?? "Short") as ToolRunDuration;
   const nodeGraph = tool.tool_type as Record<string, unknown>;
-  const targetType = String(nodeGraph.target_type ?? "workflow_set") as ToolTargetType;
+  const targetType = String(
+    nodeGraph.target_type ?? "workflow_set",
+  ) as ToolTargetType;
   form.targetType = targetType;
   form.parametersJson = JSON.stringify(nodeGraph.parameters ?? [], null, 2);
   form.outputsJson = JSON.stringify(nodeGraph.outputs ?? [], null, 2);
@@ -515,7 +643,9 @@ export function toolFormFromConfig(tool: AgentToolConfig): ToolFormState {
   return form;
 }
 
-export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): AgentFormState {
+export function agentFormFromConfig(
+  agent: AgentWithRuntime | AgentConfig,
+): AgentFormState {
   const form = defaultAgentForm();
   form.id = agent.config_id;
   form.name = agent.name;
@@ -526,23 +656,56 @@ export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): Agen
   const agentType = agent.agent_type as Record<string, unknown>;
   form.type = String(agentType.type) as AgentTypeName;
   if (form.type === "qq_chat") {
-    form.ims_bot_adapter_connection_id = String(agentType.ims_bot_adapter_connection_id ?? "");
+    form.ims_bot_adapter_connection_id = String(
+      agentType.ims_bot_adapter_connection_id ?? "",
+    );
     form.rustfs_connection_id = String(agentType.rustfs_connection_id ?? "");
     form.bot_name = String(agentType.bot_name ?? "");
     form.system_prompt = String(agentType.system_prompt ?? "");
     form.llm_ref_id = String(agentType.llm_ref_id ?? "");
-    form.image_understand_llm_ref_id = String(agentType.image_understand_llm_ref_id ?? "");
-    form.intent_llm_ref_id = String(agentType.intent_llm_ref_id ?? "");
-    form.math_programming_llm_ref_id = String(agentType.math_programming_llm_ref_id ?? "");
-    form.embedding_model_ref_id = String(agentType.embedding_model_ref_id ?? "");
-    form.tokenizer_connection_id = String(agentType.tokenizer_connection_id ?? "");
-    form.web_search_engine_connection_id = String(agentType.web_search_engine_connection_id ?? "");
-    form.rdb_id = String(agentType.rdb_id ?? agentType.mysql_connection_id ?? agentType.task_db_connection_id ?? "");
-    form.weaviate_image_connection_id = String(agentType.weaviate_image_connection_id ?? "");
+    form.image_understand_llm_ref_id = String(
+      agentType.image_understand_llm_ref_id ?? "",
+    );
+    form.math_programming_llm_ref_id = String(
+      agentType.math_programming_llm_ref_id ?? "",
+    );
+    form.natural_language_reply_llm_ref_id = String(
+      agentType.natural_language_reply_llm_ref_id ?? "",
+    );
+    form.natural_language_reply_system_prompt = String(
+      agentType.natural_language_reply_system_prompt ?? "",
+    );
+    form.embedding_model_ref_id = String(
+      agentType.embedding_model_ref_id ?? "",
+    );
+    form.tokenizer_connection_id = String(
+      agentType.tokenizer_connection_id ?? "",
+    );
+    form.web_search_engine_connection_id = String(
+      agentType.web_search_engine_connection_id ?? "",
+    );
+    form.rdb_id = String(
+      agentType.rdb_id ??
+        agentType.mysql_connection_id ??
+        agentType.task_db_connection_id ??
+        "",
+    );
+    form.weaviate_image_connection_id = String(
+      agentType.weaviate_image_connection_id ?? "",
+    );
+    form.weaviate_memory_connection_id = String(
+      agentType.weaviate_memory_connection_id ?? "",
+    );
     form.max_message_length = Number(agentType.max_message_length ?? 500);
     form.compact_context_length = Number(agentType.compact_context_length ?? 0);
     form.max_steer_count = Number(agentType.max_steer_count ?? 4);
-    const source = (agentType.default_tools_enabled ?? {}) as Record<string, unknown>;
+    form.emotion_dimensions = normalizeQqChatEmotionDimensions(
+      agentType.emotion_dimensions,
+    );
+    const source = (agentType.default_tools_enabled ?? {}) as Record<
+      string,
+      unknown
+    >;
     form.default_tools_enabled = defaultQqChatDefaultToolsEnabled();
     for (const tool of QQ_CHAT_DEFAULT_TOOLS) {
       const value = source[tool.id];
@@ -554,9 +717,20 @@ export function agentFormFromConfig(agent: AgentWithRuntime | AgentConfig): Agen
     form.http_bind = String(agentType.bind ?? "127.0.0.1:18080");
     form.http_api_key = String(agentType.api_key ?? "");
     form.llm_ref_id = String(agentType.llm_ref_id ?? "");
-    form.http_web_search_engine_connection_id = String(agentType.web_search_engine_connection_id ?? "");
+    form.http_web_search_engine_connection_id = String(
+      agentType.web_search_engine_connection_id ?? "",
+    );
+    form.http_embedding_model_ref_id = String(
+      agentType.embedding_model_ref_id ?? "",
+    );
+    form.http_weaviate_memory_connection_id = String(
+      agentType.weaviate_memory_connection_id ?? "",
+    );
     form.task_db_connection_id = String(agentType.task_db_connection_id ?? "");
-    const source = (agentType.default_tools_enabled ?? {}) as Record<string, unknown>;
+    const source = (agentType.default_tools_enabled ?? {}) as Record<
+      string,
+      unknown
+    >;
     form.default_tools_enabled = defaultHttpStreamDefaultToolsEnabled();
     for (const tool of HTTP_STREAM_DEFAULT_TOOLS) {
       const value = source[tool.id];
@@ -625,7 +799,10 @@ export function buildAgentPayload(form: AgentFormState): {
   };
   if (form.type === "qq_chat") {
     const defaultToolsEnabled = Object.fromEntries(
-      QQ_CHAT_DEFAULT_TOOLS.map((tool) => [tool.id, form.default_tools_enabled[tool.id] !== false]),
+      QQ_CHAT_DEFAULT_TOOLS.map((tool) => [
+        tool.id,
+        form.default_tools_enabled[tool.id] !== false,
+      ]),
     );
     return {
       ...common,
@@ -637,17 +814,25 @@ export function buildAgentPayload(form: AgentFormState): {
         system_prompt: form.system_prompt.trim() || null,
         llm_ref_id: form.llm_ref_id || null,
         image_understand_llm_ref_id: form.image_understand_llm_ref_id || null,
-        intent_llm_ref_id: form.intent_llm_ref_id || null,
         math_programming_llm_ref_id: form.math_programming_llm_ref_id || null,
+        natural_language_reply_llm_ref_id:
+          form.natural_language_reply_llm_ref_id || null,
+        natural_language_reply_system_prompt:
+          form.natural_language_reply_system_prompt.trim() || null,
         embedding_model_ref_id: form.embedding_model_ref_id || null,
         tokenizer_connection_id: form.tokenizer_connection_id || null,
         web_search_engine_connection_id: form.web_search_engine_connection_id,
         embedding: null,
         rdb_id: form.rdb_id || null,
         weaviate_image_connection_id: form.weaviate_image_connection_id || null,
+        weaviate_memory_connection_id:
+          form.weaviate_memory_connection_id || null,
         max_message_length: form.max_message_length,
         compact_context_length: form.compact_context_length,
         max_steer_count: form.max_steer_count,
+        emotion_dimensions: normalizeQqChatEmotionDimensions(
+          form.emotion_dimensions,
+        ),
         default_tools_enabled: defaultToolsEnabled,
       },
     };
@@ -660,13 +845,85 @@ export function buildAgentPayload(form: AgentFormState): {
       bind: form.http_bind.trim(),
       api_key: form.http_api_key.trim() || null,
       llm_ref_id: form.llm_ref_id || null,
-      web_search_engine_connection_id: form.http_web_search_engine_connection_id || null,
+      embedding_model_ref_id: form.http_embedding_model_ref_id || null,
+      web_search_engine_connection_id:
+        form.http_web_search_engine_connection_id || null,
+      weaviate_memory_connection_id:
+        form.http_weaviate_memory_connection_id || null,
       task_db_connection_id: form.task_db_connection_id || null,
       default_tools_enabled: Object.fromEntries(
-        HTTP_STREAM_DEFAULT_TOOLS.map((tool) => [tool.id, form.default_tools_enabled[tool.id] !== false]),
+        HTTP_STREAM_DEFAULT_TOOLS.map((tool) => [
+          tool.id,
+          form.default_tools_enabled[tool.id] !== false,
+        ]),
       ),
     },
   };
+}
+
+function normalizeQqChatEmotionDimensions(
+  rawValue: unknown,
+): QqChatEmotionDimensionFormItem[] {
+  if (rawValue == null) {
+    return defaultQqChatEmotionDimensions();
+  }
+
+  if (!Array.isArray(rawValue)) {
+    throw new Error("情绪维度配置必须是数组");
+  }
+
+  const normalized = rawValue.map((item, index) => {
+    if (!item || typeof item !== "object") {
+      throw new Error(`情绪维度配置第 ${index + 1} 项必须是对象`);
+    }
+
+    const name = String((item as Record<string, unknown>).name ?? "").trim();
+    if (!name) {
+      throw new Error(`情绪维度配置第 ${index + 1} 项缺少 name`);
+    }
+
+    const increaseWeight = Number(
+      (item as Record<string, unknown>).increase_weight ?? 1,
+    );
+    const decreaseWeight = Number(
+      (item as Record<string, unknown>).decrease_weight ?? 1,
+    );
+    if (!Number.isFinite(increaseWeight) || increaseWeight <= 0) {
+      throw new Error(`情绪维度 '${name}' 的 increase_weight 必须大于 0`);
+    }
+    if (!Number.isFinite(decreaseWeight) || decreaseWeight <= 0) {
+      throw new Error(`情绪维度 '${name}' 的 decrease_weight 必须大于 0`);
+    }
+
+    const positivePrompt = String(
+      (item as Record<string, unknown>).positive_prompt ?? "",
+    ).trim();
+    const negativePrompt = String(
+      (item as Record<string, unknown>).negative_prompt ?? "",
+    ).trim();
+
+    return {
+      name,
+      increase_weight: increaseWeight,
+      decrease_weight: decreaseWeight,
+      ...(positivePrompt ? { positive_prompt: positivePrompt } : {}),
+      ...(negativePrompt ? { negative_prompt: negativePrompt } : {}),
+    };
+  });
+
+  if (normalized.length === 0) {
+    throw new Error("至少需要配置一个情绪维度");
+  }
+
+  const nameSet = new Set<string>();
+  for (const item of normalized) {
+    if (nameSet.has(item.name)) {
+      throw new Error(`情绪维度 '${item.name}' 重复了`);
+    }
+    nameSet.add(item.name);
+  }
+
+  return normalized;
 }
 
 export function buildModelRefPayload(form: LlmFormState): ModelRefSpec {

@@ -9,7 +9,7 @@ import type {
   BrainToolDefinition,
   EmbeddedFunctionConfig,
   FunctionPortDef,
-  OpenAIMessageItem,
+  LLMMessageItem,
   QQMessageItem,
   ToolParamDef,
 } from "./types";
@@ -985,18 +985,18 @@ export function openQQMessageListEditor(
   render();
 }
 
-export function openOpenAIMessageListEditor(
+export function openLLMMessageListEditor(
   nodeDef: NodeDefinition,
   sessionId: string,
   onSaved: () => void,
 ): void {
   const { dialog, close } = openOverlay();
 
-  const rawMessages = (nodeDef.inline_values?.["messages"] as OpenAIMessageItem[] | undefined) ?? [];
-  const messages: OpenAIMessageItem[] = JSON.parse(JSON.stringify(rawMessages));
+  const rawMessages = (nodeDef.inline_values?.["messages"] as LLMMessageItem[] | undefined) ?? [];
+  const messages: LLMMessageItem[] = JSON.parse(JSON.stringify(rawMessages));
 
   const render = () => {
-    dialog.innerHTML = `<h3>编辑 OpenAI 消息列表</h3>`;
+    dialog.innerHTML = `<h3>编辑 LLM 消息列表</h3>`;
 
     const listLabel = document.createElement("div");
     listLabel.className = "zh-section-label";
@@ -1020,7 +1020,7 @@ export function openOpenAIMessageListEditor(
     addBtn.addEventListener("click", () => {
       messages.push({ role: "user", content: "" });
       close();
-      openOpenAIMessageListEditor(
+      openLLMMessageListEditor(
         { ...nodeDef, inline_values: { ...nodeDef.inline_values, messages } },
         sessionId,
         onSaved,
@@ -1057,7 +1057,7 @@ export function openOpenAIMessageListEditor(
     dialog.appendChild(btns);
   };
 
-  const buildMessageCard = (msg: OpenAIMessageItem, idx: number): HTMLElement => {
+  const buildMessageCard = (msg: LLMMessageItem, idx: number): HTMLElement => {
     const card = document.createElement("div");
     card.className = "zh-tool-card";
 
@@ -1076,7 +1076,7 @@ export function openOpenAIMessageListEditor(
     roleSelect.style.flex = "1";
     roleSelect.style.minWidth = "120px";
     roleSelect.addEventListener("change", () => {
-      messages[idx].role = roleSelect.value as OpenAIMessageItem["role"];
+      messages[idx].role = roleSelect.value as LLMMessageItem["role"];
       if (messages[idx].role !== "tool") {
         delete messages[idx].tool_call_id;
       }
@@ -1089,7 +1089,7 @@ export function openOpenAIMessageListEditor(
     deleteBtn.addEventListener("click", () => {
       messages.splice(idx, 1);
       close();
-      openOpenAIMessageListEditor(
+      openLLMMessageListEditor(
         { ...nodeDef, inline_values: { ...nodeDef.inline_values, messages } },
         sessionId,
         onSaved,

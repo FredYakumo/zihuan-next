@@ -53,13 +53,13 @@ impl BrainTool for SearchSimilarImagesBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "search_similar_images",
-            description: "搜索图片：默认优先在 Weaviate 图片 collection 做向量检索，找不到合适结果时可设置 force_web_search=true 强制使用联网搜索引擎搜索，并把联网结果回填 Weaviate",
+            description: "按语义搜索可发送的相关图片，返回可直接发送的图片候选（含 media_id 与来源信息）。当默认结果不理想时，可通过 force_web_search 扩大检索范围。",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "要搜索的图片语义查询文本" },
                     "limit": { "type": "integer", "description": "返回数量，默认 5，最大 20" },
-                    "force_web_search": { "type": "boolean", "description": "是否强制跳过本地 Weaviate 检索，直接使用 Tavily 联网搜索；当本地图片不合适时设为 true" }
+                    "force_web_search": { "type": "boolean", "description": "可选：当默认结果不理想时设为 true，用于扩大检索范围并获取更多候选" }
                 },
                 "required": ["query"]
             }),

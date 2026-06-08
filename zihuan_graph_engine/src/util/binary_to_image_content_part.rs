@@ -4,15 +4,15 @@ use std::collections::HashMap;
 
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::{ContentPart, MediaUrlSpec};
+use zihuan_core::llm::MessagePart;
 
-/// Encodes raw `Vec<u8>` bytes as a base64 data URL and wraps them as a multimodal `ContentPart`.
-pub struct BinaryToImageContentPartNode {
+/// Encodes raw `Vec<u8>` bytes as a base64 data URL and wraps them as a multimodal `MessagePart`.
+pub struct BinaryToImageMessagePartNode {
     id: String,
     name: String,
 }
 
-impl BinaryToImageContentPartNode {
+impl BinaryToImageMessagePartNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -21,7 +21,7 @@ impl BinaryToImageContentPartNode {
     }
 }
 
-impl Node for BinaryToImageContentPartNode {
+impl Node for BinaryToImageMessagePartNode {
     fn id(&self) -> &str {
         &self.id
     }
@@ -31,7 +31,7 @@ impl Node for BinaryToImageContentPartNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("将二进制字节 + MIME 编码为 base64 data URL，并封装为多模态 ContentPart")
+        Some("将二进制字节 + MIME 编码为 base64 data URL，并封装为多模态 MessagePart")
     }
 
     node_input![
@@ -41,7 +41,7 @@ impl Node for BinaryToImageContentPartNode {
     ];
 
     node_output![
-        port! { name = "content_part", ty = ContentPart, desc = "封装后的多模态 ContentPart" },
+        port! { name = "content_part", ty = MessagePart, desc = "封装后的多模态 MessagePart" },
     ];
 
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
@@ -70,12 +70,8 @@ impl Node for BinaryToImageContentPartNode {
         let data_url = format!("data:{mime};base64,{}", STANDARD.encode(&bytes));
 
         let part = match media_type.as_str() {
-            "" | "image" => ContentPart::ImageUrl {
-                image_url: MediaUrlSpec::Bare(data_url),
-            },
-            "video" => ContentPart::VideoUrl {
-                video_url: MediaUrlSpec::Bare(data_url),
-            },
+            "" | "image" => MessagePart::image_url_string(data_url),
+            "video" => MessagePart::video_url_string(data_url),
             other => {
                 return Err(Error::ValidationError(format!(
                     "media_type must be 'image' or 'video', got '{other}'"
@@ -84,7 +80,7 @@ impl Node for BinaryToImageContentPartNode {
         };
 
         crate::return_with_node_output![self;
-            "content_part" => DataValue::ContentPart(part),
+            "content_part" => DataValue::MessagePart(part),
         ]
     }
 }

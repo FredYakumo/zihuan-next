@@ -3,7 +3,7 @@ use node_macros::node_output_flow;
 use std::collections::HashMap;
 use zihuan_core::{error::Result, validation_error};
 
-/// Extracts the `content` field of an `OpenAIMessage` as a plain string.
+/// Extracts the `content` field of an `LLMMessage` as a plain string.
 pub struct MessageContentNode {
     id: String,
     name: String,
@@ -28,13 +28,13 @@ impl Node for MessageContentNode {
     }
 
     fn description(&self) -> Option<&str> {
-        Some("从 OpenAIMessage 中提取 content 字段，以字符串形式输出")
+        Some("从 LLMMessage 中提取 content 字段，以字符串形式输出")
     }
 
-    node_input![port! { name = "message", ty = OpenAIMessage, desc = "输入的 LLM OpenAIMessage" },];
+    node_input![port! { name = "message", ty = LLMMessage, desc = "输入的 LLM LLMMessage" },];
 
     node_output![
-        port! { name = "content", ty = String, desc = "OpenAIMessage 的 content 字符串，若为 None 则输出空字符串" },
+        port! { name = "content", ty = String, desc = "LLMMessage 的 content 字符串，若为 None 则输出空字符串" },
     ];
 
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
@@ -43,10 +43,10 @@ impl Node for MessageContentNode {
         let content = inputs
             .get("message")
             .and_then(|v| match v {
-                DataValue::OpenAIMessage(m) => m.content_text_owned(),
+                DataValue::LLMMessage(m) => m.content_text_owned(),
                 _ => None,
             })
-            .ok_or(validation_error!("OpenAIMessage content is None",))?;
+            .ok_or(validation_error!("LLMMessage content is None",))?;
 
         crate::return_with_node_output![self;
             "content" => DataValue::String(content),

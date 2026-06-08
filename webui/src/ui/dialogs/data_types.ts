@@ -22,7 +22,7 @@ export function cloneDataTypeMetaData(dt: DataTypeMetaData): DataTypeMetaData {
   return "Any";
 }
 
-/** Parse a display string such as `Vec<OpenAIMessage>` back into raw DataType metadata. */
+/** Parse a display string such as `Vec<LLMMessage>` back into raw DataType metadata. */
 export function parseDisplayDataType(value: string): DataTypeMetaData {
   const trimmed = value.trim();
   if (!trimmed) return "Any";
@@ -53,7 +53,7 @@ export const DATA_TYPES: readonly string[] = [
   // Message / Bot types
   "MessageEvent",
   "Sender",
-  "OpenAIMessage",
+  "LLMMessage",
   "QQMessage",
   "FunctionTools",
 
@@ -64,7 +64,7 @@ export const DATA_TYPES: readonly string[] = [
   "Vec<Boolean>",
   "Vec<Json>",
   "Vec<Any>",
-  "Vec<OpenAIMessage>",
+  "Vec<LLMMessage>",
   "Vec<QQMessage>",
 
   // Reference handles
@@ -74,14 +74,14 @@ export const DATA_TYPES: readonly string[] = [
   "MySqlRef",
   "TavilyRef",
   "SessionStateRef",
-  "OpenAIMessageSessionCacheRef",
+  "LLMMessageSessionCacheRef",
   "LLModel",
   "LoopControlRef",
 ];
 
 /**
  * Normalize a DataType value from the backend (either a plain string like "String"
- * or a Rust serde JSON object like {"Vec": "OpenAIMessage"}) into a display string.
+ * or a Rust serde JSON object like {"Vec": "LLMMessage"}) into a display string.
  *
  * Handles nested Vec types recursively, e.g. {"Vec": {"Vec": "String"}} → "Vec<Vec<String>>".
  */

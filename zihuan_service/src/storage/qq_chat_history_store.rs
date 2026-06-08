@@ -3,9 +3,9 @@ use std::sync::Arc;
 use log::warn;
 
 use zihuan_core::error::{Error, Result};
-use zihuan_core::llm::OpenAIMessage;
+use zihuan_core::llm::LLMMessage;
 use zihuan_core::runtime::block_async;
-use zihuan_graph_engine::data_value::OpenAIMessageSessionCacheRef;
+use zihuan_graph_engine::data_value::LLMMessageSessionCacheRef;
 
 const LOG_PREFIX: &str = "[QqChatAgent]";
 
@@ -26,10 +26,10 @@ pub(crate) fn conversation_history_key(
 }
 
 pub(crate) fn load_history(
-    cache: &Arc<OpenAIMessageSessionCacheRef>,
+    cache: &Arc<LLMMessageSessionCacheRef>,
     history_key: &str,
     legacy_key: &str,
-) -> Vec<OpenAIMessage> {
+) -> Vec<LLMMessage> {
     let history = block_async(cache.get_messages(history_key)).unwrap_or_default();
     if history.is_empty() && history_key != legacy_key {
         block_async(cache.get_messages(legacy_key)).unwrap_or_default()
@@ -39,16 +39,16 @@ pub(crate) fn load_history(
 }
 
 pub(crate) fn save_history(
-    cache: &Arc<OpenAIMessageSessionCacheRef>,
+    cache: &Arc<LLMMessageSessionCacheRef>,
     history_key: &str,
-    messages: Vec<OpenAIMessage>,
+    messages: Vec<LLMMessage>,
 ) {
     if let Err(err) = block_async(cache.set_messages(history_key, messages)) {
         warn!("{LOG_PREFIX} Failed to save history for {history_key}: {err}");
     }
 }
 
-fn clear_history_key(cache: &Arc<OpenAIMessageSessionCacheRef>, history_key: &str) -> Result<()> {
+fn clear_history_key(cache: &Arc<LLMMessageSessionCacheRef>, history_key: &str) -> Result<()> {
     block_async(cache.clear_messages(history_key))
         .map(|_| ())
         .map_err(|err| {
@@ -59,7 +59,7 @@ fn clear_history_key(cache: &Arc<OpenAIMessageSessionCacheRef>, history_key: &st
 }
 
 pub(crate) fn clear_history(
-    cache: &Arc<OpenAIMessageSessionCacheRef>,
+    cache: &Arc<LLMMessageSessionCacheRef>,
     bot_id: &str,
     sender_id: &str,
     is_group: bool,

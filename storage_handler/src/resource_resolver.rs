@@ -71,7 +71,7 @@ pub fn build_redis_ref(
 pub fn build_weaviate_ref(
     connection_id: Option<&str>,
     connections: &[ConnectionConfig],
-    image_collection: bool,
+    expected_schema: Option<WeaviateCollectionSchema>,
 ) -> Result<Option<Arc<WeaviateRef>>> {
     let Some(connection_id) = connection_id else {
         return Ok(None);
@@ -84,16 +84,13 @@ pub fn build_weaviate_ref(
         )));
     };
 
-    let expected_schema = if image_collection {
-        WeaviateCollectionSchema::ImageSemantic
-    } else {
-        WeaviateCollectionSchema::MessageRecordSemantic
-    };
-    if weaviate.collection_schema != expected_schema {
-        return Err(Error::ValidationError(format!(
-            "weaviate connection '{}' schema mismatch: expected {:?}, got {:?}",
-            connection.name, expected_schema, weaviate.collection_schema
-        )));
+    if let Some(expected_schema) = expected_schema {
+        if weaviate.collection_schema != expected_schema {
+            return Err(Error::ValidationError(format!(
+                "weaviate connection '{}' schema mismatch: expected {:?}, got {:?}",
+                connection.name, expected_schema, weaviate.collection_schema
+            )));
+        }
     }
     Ok(Some(zihuan_core::runtime::block_async(
         RuntimeStorageConnectionManager::shared().get_or_create_weaviate_ref(connection_id),
@@ -187,7 +184,7 @@ pub async fn resolve_connection_data_value(
                 .map(|value| value.map(DataValue::RedisRef))
         }
         zihuan_graph_engine::DataType::WeaviateRef => {
-            build_weaviate_ref(Some(connection_id), connections, false)
+            build_weaviate_ref(Some(connection_id), connections, None)
                 .map(|value| value.map(DataValue::WeaviateRef))
         }
         zihuan_graph_engine::DataType::S3Ref => build_s3_ref(Some(connection_id), connections)

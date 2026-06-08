@@ -1,12 +1,15 @@
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use super::inference::{InferenceToolContext, InferenceToolProvider};
 use super::qq_chat_agent_core::{
-    build_info_brain_tools, QqAgentReplyBatchBuilder, QqChatAgentService, QqChatAgentServiceConfig,
+    build_info_brain_tools, expand_messages_for_inference, prepare_current_turn_user_input_from_event, QqAgentReplyBatchBuilder, QqChatAgent,
+    QqChatAgentContext, QqChatAgentService, QqChatAgentServiceConfig, QqChatTaskTrace,
+    LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
 };
 use super::qq_chat_agent_msg_send::build_reply_batch_builder as build_unified_reply_batch_builder;
+use super::qq_chat_agent_ignore_store::should_ignore_message_blocking;
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
 use crate::agent::qq_chat_agent_inbox::{QqChatAgentInbox, QqChatAgentSupervisorEvent};
 use crate::agent::tool_definitions::build_enabled_tool_definitions;
@@ -14,9 +17,13 @@ use crate::resource_resolver::{
     build_embedding_model, build_llm_model, resolve_llm_service_config,
     resolve_local_embedding_model_name,
 };
+use crate::storage::qq_chat_session_store::{release_session, try_claim_session};
 use chrono::Local;
 use ims_bot_adapter::adapter::BotAdapter;
 use ims_bot_adapter::event::EventHandler;
+use ims_bot_adapter::message_helpers::get_bot_id;
+use ims_bot_adapter::models::event_model::MessageType;
+use ims_bot_adapter::models::message::MessageProp;
 use ims_bot_adapter::{build_ims_bot_adapter, parse_ims_bot_adapter_connection};
 use log::{error, info, warn};
 use model_inference::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
@@ -24,22 +31,30 @@ use model_inference::system_config::{load_llm_refs, AgentConfig, LlmRefConfig};
 use storage_handler::{
     build_mysql_ref, build_relational_db_connection_for_connection, build_s3_ref,
     build_weaviate_ref, build_web_search_engine_ref, find_connection, ConnectionConfig,
-    ConnectionKind,
+    ConnectionKind, WeaviateCollectionSchema,
 };
 use tokio::task::JoinHandle;
 use zihuan_agent::brain::BrainTool;
+use zihuan_agent::session_state::QqChatAgentSessionState;
 use zihuan_core::agent_config::QqChatAgentConfig;
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::embedding_base::EmbeddingBase;
-use zihuan_core::llm::OpenAIMessage;
+use zihuan_core::llm::llm_base::LLMBase;
+use zihuan_core::llm::LLMMessage;
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::runtime::block_async;
-use zihuan_core::task_context::AgentTaskRuntime;
+use zihuan_core::steer::PendingSteerEvent;
+use zihuan_core::task_context::{
+    scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime,
+    AgentTaskStatus,
+};
+use zihuan_core::utils::string_utils::shorten_text;
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
-use zihuan_graph_engine::data_value::{OpenAIMessageSessionCacheRef, SessionStateRef};
+use zihuan_graph_engine::data_value::{LLMMessageSessionCacheRef, SessionStateRef};
 use zihuan_graph_engine::function_graph::FunctionPortDef;
+use zihuan_graph_engine::message_persistence::persist_message_event;
 use zihuan_graph_engine::message_restore::{register_mysql_ref, register_rdb_pool};
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_nlp::{build_segmenter, TextSegmenter};
@@ -52,7 +67,21 @@ fn build_reply_batch_builder(segmenter: Arc<dyn TextSegmenter>) -> QqAgentReplyB
 pub fn expand_message_event_for_tool_input(
     event: &ims_bot_adapter::models::event_model::MessageEvent,
 ) -> ims_bot_adapter::models::event_model::MessageEvent {
-    super::qq_chat_agent_core::expand_event_for_inference(event)
+    let mut expanded = event.clone();
+    expanded.message_list = expand_messages_for_inference(&event.message_list);
+    expanded
+}
+
+#[doc(hidden)]
+pub use crate::qq_chat_user_input::PreparedCurrentTurnUserInput;
+
+#[doc(hidden)]
+pub fn prepare_message_event_user_input_for_test(
+    event: &ims_bot_adapter::models::event_model::MessageEvent,
+    bot_id: &str,
+    bot_name: &str,
+) -> PreparedCurrentTurnUserInput {
+    prepare_current_turn_user_input_from_event(event, bot_id, bot_name, None)
 }
 
 #[derive(Clone)]
@@ -63,7 +92,9 @@ struct QqLoadedInferenceResources {
     mysql_ref: Option<Arc<MySqlConfig>>,
     s3_ref: Option<Arc<S3Ref>>,
     weaviate_image_ref: Option<Arc<WeaviateRef>>,
+    weaviate_memory_ref: Option<Arc<WeaviateRef>>,
     embedding_model: Option<Arc<dyn EmbeddingBase>>,
+    memory_llm: Option<Arc<dyn LLMBase>>,
 }
 
 pub struct QqInferenceToolProvider {
@@ -72,10 +103,10 @@ pub struct QqInferenceToolProvider {
 }
 
 impl InferenceToolProvider for QqInferenceToolProvider {
-    fn augment_messages(&self, messages: &mut Vec<OpenAIMessage>, _context: &InferenceToolContext) {
+    fn augment_messages(&self, messages: &mut Vec<LLMMessage>, _context: &InferenceToolContext) {
         messages.insert(
             0,
-            OpenAIMessage::system(format!(
+            LLMMessage::system(format!(
                 "你是 {}。请保持回答简洁、友好、准确；当可调用工具时优先使用工具获取事实。",
                 self.resources.bot_name
             )),
@@ -89,7 +120,10 @@ impl InferenceToolProvider for QqInferenceToolProvider {
             self.resources.mysql_ref.clone(),
             self.resources.s3_ref.clone(),
             self.resources.weaviate_image_ref.clone(),
+            self.resources.weaviate_memory_ref.clone(),
             self.resources.embedding_model.clone(),
+            self.resources.memory_llm.clone(),
+            storage_handler::AgentMemoryAccessContext::default(),
             context.last_user_text.clone(),
         )
     }
@@ -152,11 +186,25 @@ fn load_qq_resources(
                 config.weaviate_image_connection_id.as_deref()
             },
             connections,
-            true,
+            Some(WeaviateCollectionSchema::ImageSemantic),
         )
     })
     .unwrap_or_else(|e| {
         warn!("[inference][qq_agent] weaviate image connection unavailable: {e}");
+        None
+    });
+    let weaviate_memory_ref = tokio::task::block_in_place(|| {
+        build_weaviate_ref(
+            config
+                .weaviate_memory_connection_id
+                .as_deref()
+                .filter(|value| !value.trim().is_empty()),
+            connections,
+            Some(WeaviateCollectionSchema::AgentMemory),
+        )
+    })
+    .unwrap_or_else(|e| {
+        warn!("[inference][qq_agent] weaviate memory connection unavailable: {e}");
         None
     });
 
@@ -176,6 +224,24 @@ fn load_qq_resources(
     } else {
         config.embedding.as_ref().map(build_embedding_model)
     };
+    let memory_llm = config
+        .llm_ref_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(|llm_ref_id| {
+            resolve_llm_service_config(
+                Some(llm_ref_id),
+                &load_llm_refs().unwrap_or_default(),
+                &agent.name,
+            )
+        })
+        .transpose()?
+        .map(|llm_config| build_llm_model(&llm_config))
+        .transpose()
+        .unwrap_or_else(|err| {
+            warn!("[inference][qq_agent] memory llm unavailable: {err}");
+            None
+        });
 
     Ok(QqLoadedInferenceResources {
         bot_name: if config.bot_name.trim().is_empty() {
@@ -188,7 +254,9 @@ fn load_qq_resources(
         mysql_ref,
         s3_ref,
         weaviate_image_ref,
+        weaviate_memory_ref,
         embedding_model,
+        memory_llm,
     })
 }
 
@@ -249,15 +317,6 @@ pub async fn spawn(
     let llm_config =
         resolve_llm_service_config(config.llm_ref_id.as_deref(), &llm_refs, &agent.name)?;
     let llm = build_llm_model(&llm_config)?;
-    let intent_llm_config = resolve_llm_service_config(
-        config
-            .intent_llm_ref_id
-            .as_deref()
-            .or(config.llm_ref_id.as_deref()),
-        &llm_refs,
-        &agent.name,
-    )?;
-    let intent_llm = build_llm_model(&intent_llm_config)?;
     let math_programming_llm_config = resolve_llm_service_config(
         config
             .math_programming_llm_ref_id
@@ -267,6 +326,12 @@ pub async fn spawn(
         &agent.name,
     )?;
     let math_programming_llm = build_llm_model(&math_programming_llm_config)?;
+    let natural_language_reply_llm_config = resolve_llm_service_config(
+        config.natural_language_reply_llm_ref_id.as_deref(),
+        &llm_refs,
+        &agent.name,
+    )?;
+    let natural_language_reply_llm = build_llm_model(&natural_language_reply_llm_config)?;
     let embedding_model = if let Some(model_ref_id) = config.embedding_model_ref_id.as_deref() {
         let model_name =
             resolve_local_embedding_model_name(Some(model_ref_id), &llm_refs, &agent.name)?;
@@ -299,7 +364,17 @@ pub async fn spawn(
         build_weaviate_ref(
             config.weaviate_image_connection_id.as_deref(),
             &connections,
-            true,
+            Some(WeaviateCollectionSchema::ImageSemantic),
+        )
+    })?;
+    let weaviate_memory_ref = tokio::task::block_in_place(|| {
+        build_weaviate_ref(
+            config
+                .weaviate_memory_connection_id
+                .as_deref()
+                .filter(|value| !value.trim().is_empty()),
+            &connections,
+            Some(WeaviateCollectionSchema::AgentMemory),
         )
     })?;
     let tool_definitions = build_enabled_tool_definitions(&agent.tools)?;
@@ -322,7 +397,7 @@ pub async fn spawn(
             config.bot_name.clone()
         },
         system_prompt: config.system_prompt.clone(),
-        cache: Arc::new(OpenAIMessageSessionCacheRef::new(format!(
+        cache: Arc::new(LLMMessageSessionCacheRef::new(format!(
             "service_agent_cache_{}",
             agent.id
         ))),
@@ -331,20 +406,12 @@ pub async fn spawn(
             agent.id
         ))),
         llm,
-        intent_llm,
         math_programming_llm,
+        natural_language_reply_llm,
         main_llm_display_name: resolve_llm_ref_display_name(
             config.llm_ref_id.as_deref(),
             &llm_refs,
             &llm_config.model_name,
-        ),
-        intent_llm_display_name: resolve_llm_ref_display_name(
-            config
-                .intent_llm_ref_id
-                .as_deref()
-                .or(config.llm_ref_id.as_deref()),
-            &llm_refs,
-            &intent_llm_config.model_name,
         ),
         math_programming_llm_display_name: resolve_llm_ref_display_name(
             config
@@ -354,9 +421,15 @@ pub async fn spawn(
             &llm_refs,
             &math_programming_llm_config.model_name,
         ),
+        natural_language_reply_llm_display_name: resolve_llm_ref_display_name(
+            config.natural_language_reply_llm_ref_id.as_deref(),
+            &llm_refs,
+            &natural_language_reply_llm_config.model_name,
+        ),
         rdb_pool,
         mysql_ref,
         weaviate_image_ref,
+        weaviate_memory_ref,
         embedding_model,
         web_search_engine,
         s3_ref: object_storage.clone(),
@@ -368,6 +441,7 @@ pub async fn spawn(
         shared_inputs: Vec::<FunctionPortDef>::new(),
         tool_definitions,
         shared_runtime_values: HashMap::new(),
+        session_state_store: Arc::new(Mutex::new(QqChatAgentSessionState::default())),
         task_runtime,
     })?);
 
@@ -538,4 +612,136 @@ fn resolve_inbox_redis_ref(
         }
     });
     storage_handler::build_redis_ref(redis_connection_id, connections)
+}
+
+impl QqChatAgent {
+    /// Entry point for handling a single inbound QQ message event.
+    ///
+    /// The flow is:
+    /// - **Validation** — persists the message and checks ignore rules.
+    /// - **Group mention filter** — silently drops group messages that do not `@` the bot.
+    /// - **Session claim** — tries to acquire a per-sender session lock. If the session is busy,
+    ///   the message is enqueued as a steer event instead.
+    /// - **Task tracking** — starts a runtime task (if available) and builds a [`QqChatTaskTrace`].
+    /// - **Delegation** — forwards to [`handle_claimed`] for the actual brain loop and reply.
+    /// - **Cleanup** — releases the session lock, finalizes steer state, and marks the task
+    ///   as completed or failed.
+    pub(crate) fn handle(
+        &self,
+        event: &ims_bot_adapter::models::MessageEvent,
+        time: &str,
+        agent_id: &str,
+        session: &Arc<SessionStateRef>,
+        user_ip: Option<String>,
+        ctx: &QqChatAgentContext<'_>,
+    ) -> Result<()> {
+        let is_group = event.message_type == MessageType::Group;
+        let sender_id = event.sender.user_id.to_string();
+        let target_id = if is_group {
+            event
+                .group_id
+                .ok_or_else(|| self.wrap_err("group_id missing on group message"))?
+                .to_string()
+        } else {
+            sender_id.clone()
+        };
+
+        info!(
+            "{LOG_PREFIX} Handling {} message: message_id={} sender={} target={}",
+            if is_group { "group" } else { "private" },
+            event.message_id,
+            sender_id,
+            target_id
+        );
+
+        if let Err(err) = persist_message_event(event, ctx.rdb_pool, ctx.mysql_ref, None) {
+            warn!("{LOG_PREFIX} Message persistence failed: {err}");
+        }
+
+        if let Some(rdb_pool) = ctx.rdb_pool {
+            let group_id_text = event.group_id.map(|value| value.to_string());
+            if should_ignore_message_blocking(
+                rdb_pool,
+                agent_id,
+                &sender_id,
+                group_id_text.as_deref(),
+            )? {
+                info!(
+                    "{LOG_PREFIX} Ignored inbound message: message_id={} sender={} group={:?}",
+                    event.message_id, sender_id, event.group_id
+                );
+                return Ok(());
+            }
+        }
+
+        if is_group {
+            let bot_id = get_bot_id(ctx.adapter);
+            let msg_prop = MessageProp::from_messages_with_bot_name(
+                &event.message_list,
+                Some(&bot_id),
+                Some(ctx.bot_name),
+            );
+            if !msg_prop.is_at_me {
+                return Ok(());
+            }
+        }
+
+        let (claimed, claim_token) = try_claim_session(session, &sender_id);
+        if !claimed {
+            return self.try_handle_busy_session_steer(
+                event, ctx, &sender_id, &target_id, is_group, time,
+            );
+        }
+
+        ctx.pending_steer.ensure_session_entry(&sender_id);
+
+        let task_created_at = Local::now();
+        let task_handle = ctx.task_runtime.as_ref().map(|runtime| {
+            runtime.start_task(AgentTaskRequest {
+                task_name: format!("回复[{sender_id}]的消息"),
+                agent_id: agent_id.to_string(),
+                agent_name: ctx.bot_name.to_string(),
+                user_ip,
+                owner_id: Some(sender_id.to_string()),
+                task_db_connection_id: ctx.task_db_connection_id.clone(),
+            })
+        });
+        let trace = QqChatTaskTrace::new(task_created_at);
+        let result = if let Some(task_handle) = task_handle.as_ref() {
+            if let Some(task_runtime) = ctx.task_runtime.as_ref() {
+                scope_task_runtime(Arc::clone(task_runtime), || {
+                    scope_task_id(task_handle.task_id.clone(), || {
+                        self.handle_claimed(
+                            &trace, event, time, &sender_id, &target_id, is_group, ctx,
+                        )
+                    })
+                })
+            } else {
+                scope_task_id(task_handle.task_id.clone(), || {
+                    self.handle_claimed(&trace, event, time, &sender_id, &target_id, is_group, ctx)
+                })
+            }
+        } else {
+            self.handle_claimed(&trace, event, time, &sender_id, &target_id, is_group, ctx)
+        };
+        trace.finish_with_summary();
+
+        release_session(session, &sender_id, claim_token);
+        ctx.pending_steer.finish_session(&sender_id);
+        if let Some(task_handle) = task_handle {
+            match &result {
+                Ok(report) => task_handle.finish(AgentTaskResult {
+                    status: Some(AgentTaskStatus::Success),
+                    result_summary: Some(report.result_summary.clone()),
+                    error_message: None,
+                }),
+                Err(err) => task_handle.finish(AgentTaskResult {
+                    status: Some(AgentTaskStatus::Failed),
+                    result_summary: Some(format!("回复[{sender_id}]失败: {err}")),
+                    error_message: Some(err.to_string()),
+                }),
+            }
+        }
+        result.map(|_| ())
+    }
 }

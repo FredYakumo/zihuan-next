@@ -67,7 +67,7 @@ impl BrainTool for GetRecentGroupMessagesBrainTool {
         Arc::new(StaticFunctionToolSpec {
             name: "get_recent_group_messages",
             description:
-                "只查看指定群或当前群里最新的少量消息，适合“刚刚/最近几条”；不适合按时间段检索、总结或详细分析历史聊天",
+                "获取指定群或当前群的最近消息，用于快速了解最新上下文。仅在当前用户message意图不明确，分不清头绪的时候使用。",
             parameters: schema,
         })
     }
@@ -139,7 +139,7 @@ impl BrainTool for GetRecentUserMessagesBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "get_recent_user_messages",
-            description: "查看某人最近的 n 条消息，可选用 group_id 限定是否在某个群内",
+            description: "获取某个用户最近的消息，可选限定在指定群内。仅在当前用户message意图不明确，分不清头绪的时候使用。",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {

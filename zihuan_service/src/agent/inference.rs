@@ -13,7 +13,7 @@ use zihuan_agent::brain::{
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::llm::{MessageRole, OpenAIMessage};
+use zihuan_core::llm::{LLMMessage, MessageRole};
 use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
 
 use crate::resource_resolver::{build_llm_model, resolve_llm_service_config};
@@ -24,12 +24,7 @@ pub struct InferenceToolContext {
 }
 
 pub trait InferenceToolProvider: Send + Sync {
-    fn augment_messages(
-        &self,
-        _messages: &mut Vec<OpenAIMessage>,
-        _context: &InferenceToolContext,
-    ) {
-    }
+    fn augment_messages(&self, _messages: &mut Vec<LLMMessage>, _context: &InferenceToolContext) {}
 
     fn build_default_tools(&self, _context: &InferenceToolContext) -> Vec<Box<dyn BrainTool>> {
         Vec::new()
@@ -148,7 +143,7 @@ impl LoadedInferenceAgent {
         &self.model_name
     }
 
-    pub fn infer_response(&self, messages: Vec<OpenAIMessage>) -> Result<OpenAIMessage> {
+    pub fn infer_response(&self, messages: Vec<LLMMessage>) -> Result<LLMMessage> {
         let output_messages = self.infer_response_with_trace(messages)?;
         output_messages
             .into_iter()
@@ -164,10 +159,7 @@ impl LoadedInferenceAgent {
             })
     }
 
-    pub fn infer_response_with_trace(
-        &self,
-        messages: Vec<OpenAIMessage>,
-    ) -> Result<Vec<OpenAIMessage>> {
+    pub fn infer_response_with_trace(&self, messages: Vec<LLMMessage>) -> Result<Vec<LLMMessage>> {
         let context = build_inference_tool_context(&messages);
 
         let mut conversation = sanitize_messages_for_inference(messages);
@@ -191,10 +183,10 @@ impl LoadedInferenceAgent {
 
     pub async fn infer_response_streaming_with_trace(
         &self,
-        messages: Vec<OpenAIMessage>,
+        messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<String>,
         observer: Option<Arc<dyn BrainObserver>>,
-    ) -> Result<Vec<OpenAIMessage>> {
+    ) -> Result<Vec<LLMMessage>> {
         let context = build_inference_tool_context(&messages);
 
         let mut conversation = sanitize_messages_for_inference(messages);
@@ -223,8 +215,8 @@ impl LoadedInferenceAgent {
 pub fn infer_agent_response(
     agent: &AgentConfig,
     llm_refs: &[LlmRefConfig],
-    messages: Vec<OpenAIMessage>,
-) -> Result<OpenAIMessage> {
+    messages: Vec<LLMMessage>,
+) -> Result<LLMMessage> {
     let connections = load_connections().unwrap_or_default();
     LoadedInferenceAgent::load_with_refs(agent, llm_refs, &connections)?.infer_response(messages)
 }
@@ -232,8 +224,8 @@ pub fn infer_agent_response(
 pub fn infer_agent_response_with_trace(
     agent: &AgentConfig,
     llm_refs: &[LlmRefConfig],
-    messages: Vec<OpenAIMessage>,
-) -> Result<Vec<OpenAIMessage>> {
+    messages: Vec<LLMMessage>,
+) -> Result<Vec<LLMMessage>> {
     let connections = load_connections().unwrap_or_default();
     LoadedInferenceAgent::load_with_refs(agent, llm_refs, &connections)?
         .infer_response_with_trace(messages)
@@ -247,7 +239,7 @@ pub fn resolve_agent_model_name(agent: &AgentConfig, llm_refs: &[LlmRefConfig]) 
     Ok(resolve_llm_service_config(llm_ref_id, llm_refs, &agent.name)?.model_name)
 }
 
-fn build_inference_tool_context(messages: &[OpenAIMessage]) -> InferenceToolContext {
+fn build_inference_tool_context(messages: &[LLMMessage]) -> InferenceToolContext {
     InferenceToolContext {
         last_user_text: messages
             .iter()
@@ -291,9 +283,9 @@ fn build_brain(
 
 fn handle_brain_result(
     agent_name: &str,
-    output_messages: Vec<OpenAIMessage>,
+    output_messages: Vec<LLMMessage>,
     stop_reason: BrainStopReason,
-) -> Result<Vec<OpenAIMessage>> {
+) -> Result<Vec<LLMMessage>> {
     match stop_reason {
         BrainStopReason::Done => Ok(output_messages),
         BrainStopReason::TransportError(content) => Err(Error::StringError(format!(
@@ -312,8 +304,8 @@ fn run_agent_brain(
     llm: Arc<dyn LLMBase>,
     default_tools: Vec<Box<dyn BrainTool>>,
     tool_definitions: Vec<BrainToolDefinition>,
-    messages: Vec<OpenAIMessage>,
-) -> Result<Vec<OpenAIMessage>> {
+    messages: Vec<LLMMessage>,
+) -> Result<Vec<LLMMessage>> {
     let brain = build_brain(agent, llm, default_tools, tool_definitions);
     let (output_messages, stop_reason) = brain.run(messages);
     handle_brain_result(&agent.name, output_messages, stop_reason)
@@ -324,10 +316,10 @@ async fn run_agent_brain_streaming(
     llm: Arc<dyn LLMBase>,
     default_tools: Vec<Box<dyn BrainTool>>,
     tool_definitions: Vec<BrainToolDefinition>,
-    messages: Vec<OpenAIMessage>,
+    messages: Vec<LLMMessage>,
     token_tx: mpsc::UnboundedSender<String>,
     observer: Option<Arc<dyn BrainObserver>>,
-) -> Result<Vec<OpenAIMessage>> {
+) -> Result<Vec<LLMMessage>> {
     let mut brain = build_brain(agent, llm, default_tools, tool_definitions);
     if let Some(obs) = observer {
         brain.set_observer(obs);

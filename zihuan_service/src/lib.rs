@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod command;
 pub mod nodes;
+pub mod qq_chat_user_input;
 mod resource_resolver;
 pub mod scheduled_task;
 pub mod storage;
@@ -27,7 +28,7 @@ pub fn init_node_registry() -> Result<()> {
         "agent_llm",
         "读取Agent LLM",
         "Agent",
-        "从当前 Agent 工具调用上下文中读取主模型、意图分类模型或数学编程模型，并输出 LLModel 引用",
+        "从当前 Agent 工具调用上下文中读取主模型、数学编程模型或自然语言回复模型，并输出 LLModel 引用",
         AgentLlmNode
     );
     register_node!(

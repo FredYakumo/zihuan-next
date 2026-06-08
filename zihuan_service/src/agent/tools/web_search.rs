@@ -61,12 +61,12 @@ impl BrainTool for WebSearchBrainTool {
         Arc::new(StaticFunctionToolSpec {
             name: "web_search",
             description:
-                "使用联网搜索引擎在互联网上搜索信息，或对单个 URL 精确抽取页面内容，返回标题、链接和内容摘要",
+                "在互联网上检索信息，或读取单个 URL 页面内容，返回可用于回答的问题相关结果与摘要",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "搜索关键词或问题；需要联网搜索多个结果时填写" },
-                    "url": { "type": "string", "description": "要单独读取的网页 URL；用户明确给出单个 URL 并要求查看内容时填写，此时优先使用 Tavily Extract 精确抽取页面内容" },
+                    "url": { "type": "string", "description": "要单独读取的网页 URL；用户明确给出单个 URL 并要求查看页面内容时填写" },
                     "search_count": { "type": "integer", "description": "搜索结果数量，通常为 3，最大 10" }
                 },
                 "required": []

@@ -10,7 +10,7 @@ use tokio::sync::mpsc;
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::tooling::ToolCalls;
-use zihuan_core::llm::{ContentPart, InferenceParam, MessageContent, MessageRole, OpenAIMessage};
+use zihuan_core::llm::{InferenceParam, LLMMessage, MessagePart, MessageRole};
 use zihuan_core::task_context::{
     scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime,
     AgentTaskStatus,
@@ -159,15 +159,15 @@ pub trait BrainObserver: Send + Sync + 'static {
 
     fn on_tool_finish(&self, _name: &str, _call_id: &str, _result: &str) {}
 
-    fn on_final_assistant(&self, _response: &OpenAIMessage, _stop_reason: &BrainStopReason) {}
+    fn on_final_assistant(&self, _response: &LLMMessage, _stop_reason: &BrainStopReason) {}
 }
 
 pub trait BrainIterationHook: Send + Sync + 'static {
     fn on_before_inference(
         &self,
         _iteration: usize,
-        _conversation: &[OpenAIMessage],
-    ) -> Vec<OpenAIMessage> {
+        _conversation: &[LLMMessage],
+    ) -> Vec<LLMMessage> {
         Vec::new()
     }
 }
@@ -288,7 +288,7 @@ impl Brain {
         tool.execute(call_content, arguments)
     }
 
-    fn log_llm_usage(&self, response: &OpenAIMessage) {
+    fn log_llm_usage(&self, response: &LLMMessage) {
         let Some(usage) = response.usage.as_ref() else {
             return;
         };
@@ -332,10 +332,10 @@ impl Brain {
     ///
     /// `new_messages` contains all assistant and tool-result messages produced
     /// during this run. The caller's original `messages` are not included.
-    pub fn run(&self, messages: Vec<OpenAIMessage>) -> (Vec<OpenAIMessage>, BrainStopReason) {
+    pub fn run(&self, messages: Vec<LLMMessage>) -> (Vec<LLMMessage>, BrainStopReason) {
         let tool_specs: Vec<Arc<dyn FunctionTool>> = self.tools.iter().map(|t| t.spec()).collect();
         let mut conversation = sanitize_messages_for_inference(messages);
-        let mut output: Vec<OpenAIMessage> = Vec::new();
+        let mut output: Vec<LLMMessage> = Vec::new();
         for iteration in 0..MAX_TOOL_ITERATIONS {
             if iteration > 0 {
                 self.append_iteration_messages(iteration + 1, &mut conversation);
@@ -452,10 +452,7 @@ impl Brain {
                 if let Some(observer) = self.observer.as_ref() {
                     observer.on_tool_finish(&tc.function.name, &tc.id, &result);
                 }
-                let mut msg = OpenAIMessage::tool_result(tc.id.clone(), result);
-                if let Some(api_style) = self.llm.api_style() {
-                    msg.api_style = Some(api_style.to_string());
-                }
+                let msg = LLMMessage::tool_result(tc.id.clone(), result);
                 conversation.push(msg.clone());
                 output.push(msg);
             }
@@ -467,12 +464,12 @@ impl Brain {
 
     pub async fn run_streaming(
         &self,
-        messages: Vec<OpenAIMessage>,
+        messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<String>,
-    ) -> (Vec<OpenAIMessage>, BrainStopReason) {
+    ) -> (Vec<LLMMessage>, BrainStopReason) {
         let tool_specs: Vec<Arc<dyn FunctionTool>> = self.tools.iter().map(|t| t.spec()).collect();
         let mut conversation = sanitize_messages_for_inference(messages);
-        let mut output: Vec<OpenAIMessage> = Vec::new();
+        let mut output: Vec<LLMMessage> = Vec::new();
 
         let streaming_llm = self.llm.as_streaming();
 
@@ -614,10 +611,7 @@ impl Brain {
                 if let Some(observer) = self.observer.as_ref() {
                     observer.on_tool_finish(&tc.function.name, &tc.id, &result);
                 }
-                let mut msg = OpenAIMessage::tool_result(tc.id.clone(), result);
-                if let Some(api_style) = self.llm.api_style() {
-                    msg.api_style = Some(api_style.to_string());
-                }
+                let msg = LLMMessage::tool_result(tc.id.clone(), result);
                 conversation.push(msg.clone());
                 output.push(msg);
             }
@@ -627,7 +621,7 @@ impl Brain {
         (output, BrainStopReason::MaxIterationsReached)
     }
 
-    fn append_iteration_messages(&self, iteration: usize, conversation: &mut Vec<OpenAIMessage>) {
+    fn append_iteration_messages(&self, iteration: usize, conversation: &mut Vec<LLMMessage>) {
         let Some(hook) = self.iteration_hook.as_ref() else {
             return;
         };
@@ -647,7 +641,7 @@ impl Brain {
 }
 
 /// Count tool calls already present in `messages` by tool name.
-fn count_tool_calls(messages: &[OpenAIMessage]) -> HashMap<String, usize> {
+fn count_tool_calls(messages: &[LLMMessage]) -> HashMap<String, usize> {
     let mut counts = HashMap::new();
     for msg in messages {
         for tc in &msg.tool_calls {
@@ -659,10 +653,7 @@ fn count_tool_calls(messages: &[OpenAIMessage]) -> HashMap<String, usize> {
 
 /// Append a tool-call summary to the first system message in `messages`,
 /// or push a new system message if none exists.
-fn append_tool_summary_to_system(
-    messages: &mut Vec<OpenAIMessage>,
-    counts: &HashMap<String, usize>,
-) {
+fn append_tool_summary_to_system(messages: &mut Vec<LLMMessage>, counts: &HashMap<String, usize>) {
     if counts.is_empty() {
         return;
     }
@@ -680,24 +671,18 @@ fn append_tool_summary_to_system(
 
     for msg in messages.iter_mut() {
         if matches!(msg.role, MessageRole::System) {
-            if let Some(ref mut content) = msg.content {
-                match content {
-                    MessageContent::Text(text) => {
-                        text.push('\n');
-                        text.push('\n');
-                        text.push_str(&summary);
-                        return;
-                    }
-                    MessageContent::Parts(parts) => {
-                        parts.push(ContentPart::text(summary));
-                        return;
-                    }
-                }
+            if let Some(MessagePart::Text { text }) = msg.parts.first_mut() {
+                text.push('\n');
+                text.push('\n');
+                text.push_str(&summary);
+                return;
             }
+            msg.parts.push(MessagePart::text(summary));
+            return;
         }
     }
 
-    messages.push(OpenAIMessage::system(summary));
+    messages.push(LLMMessage::system(summary));
 }
 
 #[cfg(test)]
@@ -710,12 +695,12 @@ mod tests {
     use super::{Brain, BrainIterationHook, BrainTool};
     use zihuan_core::llm::llm_base::LLMBase;
     use zihuan_core::llm::tooling::{FunctionTool, ToolCalls, ToolCallsFuncSpec};
-    use zihuan_core::llm::{InferenceParam, MessageRole, OpenAIMessage};
+    use zihuan_core::llm::{InferenceParam, LLMMessage, MessagePart, MessageRole};
 
     #[derive(Debug, Default)]
     struct RecordingLlmState {
         calls: usize,
-        conversations: Vec<Vec<OpenAIMessage>>,
+        conversations: Vec<Vec<LLMMessage>>,
     }
 
     #[derive(Debug)]
@@ -728,18 +713,15 @@ mod tests {
             "test-llm"
         }
 
-        fn inference(&self, param: &InferenceParam) -> OpenAIMessage {
+        fn inference(&self, param: &InferenceParam) -> LLMMessage {
             let mut state = self.state.lock().unwrap();
             state.calls += 1;
             state.conversations.push(param.messages.to_vec());
 
             if state.calls == 1 {
-                OpenAIMessage {
+                LLMMessage {
                     role: MessageRole::Assistant,
-                    api_style: None,
-                    content: Some(zihuan_core::llm::MessageContent::Text(
-                        "先调用工具".to_string(),
-                    )),
+                    parts: vec![MessagePart::text("先调用工具")],
                     reasoning_content: None,
                     tool_calls: vec![ToolCalls {
                         id: "call-1".to_string(),
@@ -753,7 +735,7 @@ mod tests {
                     usage: None,
                 }
             } else {
-                OpenAIMessage::assistant_text("最终回复")
+                LLMMessage::assistant_text("最终回复")
             }
         }
     }
@@ -812,10 +794,10 @@ mod tests {
         fn on_before_inference(
             &self,
             iteration: usize,
-            _conversation: &[OpenAIMessage],
-        ) -> Vec<OpenAIMessage> {
+            _conversation: &[LLMMessage],
+        ) -> Vec<LLMMessage> {
             if iteration == 2 {
-                vec![OpenAIMessage::user("【用户插嘴】继续回答新的问题")]
+                vec![LLMMessage::user("【用户插嘴】继续回答新的问题")]
             } else {
                 Vec::new()
             }
@@ -829,10 +811,10 @@ mod tests {
         fn on_before_inference(
             &self,
             iteration: usize,
-            _conversation: &[OpenAIMessage],
-        ) -> Vec<OpenAIMessage> {
+            _conversation: &[LLMMessage],
+        ) -> Vec<LLMMessage> {
             if iteration == 2 {
-                vec![OpenAIMessage::user(
+                vec![LLMMessage::user(
                     "【用户插嘴】\n\n1. 124\n2. 5341\n3. 21345",
                 )]
             } else {
@@ -852,7 +834,7 @@ mod tests {
             .with_tool(EchoTool)
             .with_iteration_hook(Arc::new(InjectUserHook));
 
-        let (_output, _stop_reason) = brain.run(vec![OpenAIMessage::user("原始问题")]);
+        let (_output, _stop_reason) = brain.run(vec![LLMMessage::user("原始问题")]);
 
         let state = state.lock().unwrap();
         assert_eq!(state.calls, 2);
@@ -876,7 +858,7 @@ mod tests {
             .with_tool(EchoTool)
             .with_iteration_hook(Arc::new(InjectMergedUserHook));
 
-        let (_output, _stop_reason) = brain.run(vec![OpenAIMessage::user("原始问题")]);
+        let (_output, _stop_reason) = brain.run(vec![LLMMessage::user("原始问题")]);
 
         let state = state.lock().unwrap();
         assert_eq!(state.calls, 2);
