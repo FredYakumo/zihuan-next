@@ -34,6 +34,11 @@ use super::qq_chat_agent_core::{
 };
 use super::qq_chat_agent_logging::QqChatTaskTrace;
 
+const CURRENT_USER_MESSAGE_LABEL: &str = "[Current User Message]";
+const REFERENCED_CONTEXT_LABEL: &str = "[Referenced Context]";
+const REFERENCE_ONLY_NOTICE: &str =
+    "The following content is reference only. Do not automatically treat it as the current sender's own statement.";
+
 fn build_steer_user_message(
     current_input: &PreparedCurrentTurnUserInput,
     bot_name: &str,
@@ -69,16 +74,36 @@ fn build_merged_steer_user_message(
 
     let build_entry_text = |index: usize, input: &PreparedCurrentTurnUserInput| -> String {
         let metadata_text = build_prepared_input_metadata(input, bot_name);
-        let image_section = if input.image_reference_lines.is_empty() {
+        let current_image_section = if input.current_image_reference_lines.is_empty() {
             String::new()
         } else {
-            format!("\n\n[{}]\n{}", IMAGE_ANALYSIS_LABEL, input.image_reference_lines.join("\n"))
+            format!(
+                "\n\n[{}]\n{}",
+                IMAGE_ANALYSIS_LABEL,
+                input.current_image_reference_lines.join("\n")
+            )
+        };
+        let referenced_context = if input.has_reference_context() {
+            let reference_image_section = if input.reference_image_reference_lines.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "\n\n[{}]\n{}",
+                    IMAGE_ANALYSIS_LABEL,
+                    input.reference_image_reference_lines.join("\n")
+                )
+            };
+            format!(
+                "\n\n{REFERENCED_CONTEXT_LABEL}\n{REFERENCE_ONLY_NOTICE}\n{}{reference_image_section}",
+                input.referenced_context_text()
+            )
+        } else {
+            String::new()
         };
         format!(
-            "{}. {metadata_text}\n{}\n{input_text}{image_section}",
+            "{}. {metadata_text}\n{CURRENT_USER_MESSAGE_LABEL}\n{input_text}{current_image_section}{referenced_context}",
             index + 1,
-            CURRENT_MESSAGE_LABEL,
-            input_text = input.text,
+            input_text = input.current_text_for_prompt(),
         )
     };
 
@@ -103,14 +128,34 @@ fn build_merged_steer_user_message(
             text_buffer.push_str("\n\n");
         }
         let metadata_text = build_prepared_input_metadata(current_input, bot_name);
-        text_buffer.push_str(&format!("{}. {metadata_text}\n{}\n", index + 1, CURRENT_MESSAGE_LABEL));
-        append_prepared_parts(&mut parts, &mut text_buffer, "", &current_input.parts);
-        if !current_input.image_reference_lines.is_empty() {
+        text_buffer.push_str(&format!(
+            "{}. {metadata_text}\n{CURRENT_USER_MESSAGE_LABEL}\n{}",
+            index + 1,
+            current_input.current_text_for_prompt()
+        ));
+        append_prepared_parts(&mut parts, &mut text_buffer, "\n", &current_input.current_parts);
+        if !current_input.current_image_reference_lines.is_empty() {
             text_buffer.push_str(&format!(
                 "\n\n[{}]\n{}",
                 IMAGE_ANALYSIS_LABEL,
-                current_input.image_reference_lines.join("\n")
+                current_input.current_image_reference_lines.join("\n")
             ));
+        }
+        if current_input.has_reference_context() {
+            text_buffer.push_str(&format!("\n\n{REFERENCED_CONTEXT_LABEL}\n{REFERENCE_ONLY_NOTICE}"));
+            let reference_text = current_input.referenced_context_text();
+            if !reference_text.trim().is_empty() {
+                text_buffer.push('\n');
+                text_buffer.push_str(reference_text.trim());
+            }
+            append_prepared_parts(&mut parts, &mut text_buffer, "\n", &current_input.reference_parts);
+            if !current_input.reference_image_reference_lines.is_empty() {
+                text_buffer.push_str(&format!(
+                    "\n\n[{}]\n{}",
+                    IMAGE_ANALYSIS_LABEL,
+                    current_input.reference_image_reference_lines.join("\n")
+                ));
+            }
         }
     }
 
@@ -171,7 +216,7 @@ impl BrainIterationHook for QqChatSteerHook {
                 &self.bot_name,
                 self.s3_ref.as_ref(),
             );
-            let current_message = prepared_input.text.clone();
+            let current_message = prepared_input.current_text_for_prompt().to_string();
             self.trace.record_steer_received(&current_message);
             prepared_inputs.push(prepared_input);
             injected.push(inference_event);
@@ -235,7 +280,9 @@ impl QqChatAgent {
         let mut inference_event = prepared_input.event.clone();
         inference_event.message_list = expand_messages_for_inference(&prepared_input.event.message_list);
         let current_message =
-            prepare_current_turn_user_input_from_event(&inference_event, &bot_id, ctx.bot_name, ctx.s3_ref).text;
+            prepare_current_turn_user_input_from_event(&inference_event, &bot_id, ctx.bot_name, ctx.s3_ref)
+                .current_text_for_prompt()
+                .to_string();
         if let Some(command_registry) = crate::command::global_command_registry() {
             let cmd_ctx = self.build_command_context(sender_id, target_id, is_group, inference_event.group_id);
             if let Some(preview) = command_registry.preview(&cmd_ctx, &current_message) {
@@ -350,7 +397,8 @@ impl QqChatAgent {
                     ctx.bot_name,
                     ctx.s3_ref,
                 )
-                .text;
+                .current_text_for_prompt()
+                .to_string();
                 trace.record_steer_follow_up(
                     next_event.message_id,
                     steer_count,

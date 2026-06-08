@@ -330,6 +330,8 @@ fn build_reply_llm_messages(
          - Output @sender when the group chat needs to mention the other party\n\
          - Output [Image media_id=media-***] when sending images\n\
          - Do not fabricate non-existent media_ids\n\
+         - Do not invent extra factual background beyond the provided reply goal and key points\n\
+         - If the reply goal is clarifying or correcting a previous joke, tone, or misunderstanding, do not add new claims such as 'I actually know/saw/judged ...'\n\
          - Do not output the reply_message tool name or any internal protocol description\n\
          - Do not output any extra text beyond the final reply content"
             .to_string(),

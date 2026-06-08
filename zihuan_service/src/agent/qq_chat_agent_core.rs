@@ -54,6 +54,11 @@ pub(crate) const LOG_TEXT_PREVIEW_CHARS: usize = 1_200;
 const LOG_TOOL_PREVIEW_CHARS: usize = 600;
 pub(crate) const DIRECT_REPLY_NO_SYSTEM_PROMPT: &str = "没有系统提示词";
 const MODEL_NAME_REPLY_PREFIX: &str = "我不是模型，不过我会调用: ";
+const CURRENT_USER_MESSAGE_LABEL: &str = "[Current User Message]";
+const REFERENCED_CONTEXT_LABEL: &str = "[Referenced Context]";
+const INTERPRETATION_RULES_LABEL: &str = "[Interpretation Rules]";
+const REFERENCE_ONLY_NOTICE: &str =
+    "The following content is reference only. Do not automatically treat it as the current sender's own statement.";
 
 #[derive(Debug, Clone)]
 pub(crate) struct QqChatHandleReport {
@@ -157,6 +162,7 @@ fn build_common_system_rules(identity_example: &str, agent_system_prompt: Option
         "你是 QQ Chat Agent 的主模型。你负责理解用户、维护 bot 自身状态、决定是否调用工具，以及在需要时调用自然语言回复子代理发送最终消息。\n\
          约束：\n\
          - 当前 user 始终代表发送者；消息里出现 @你，也不表示说话人切换\n\
+         - bot 先前的可见回复属于对话内容，不天然是真实世界事实；当用户追问你上一句里的模糊指代时，先判断那是不是玩笑、修辞或口嗨，再决定是否需要澄清\n\
          - 用户问“你是谁/你叫什么”时，直接用你自己的身份回答，例如：{identity_example}\n\
          - 最终发给用户的话必须通过 `send_natural_language_reply` 工具发送；不要把主模型 assistant 文本直接当作用户可见回复\n\
          - 如果不需要回复用户，就不要调用 `send_natural_language_reply`\n\
@@ -284,21 +290,45 @@ pub(crate) fn build_user_message(
         ty = current_input.event.message_type.as_str(),
     );
 
-    let image_section = if current_input.image_reference_lines.is_empty() {
+    let current_image_section = if current_input.current_image_reference_lines.is_empty() {
         String::new()
     } else {
         format!(
             "\n\n[{}]\n{}",
             IMAGE_ANALYSIS_LABEL,
-            current_input.image_reference_lines.join("\n")
+            current_input.current_image_reference_lines.join("\n")
         )
     };
 
+    let referenced_context_section = if current_input.has_reference_context() {
+        let reference_image_section = if current_input.reference_image_reference_lines.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "\n\n[{}]\n{}",
+                IMAGE_ANALYSIS_LABEL,
+                current_input.reference_image_reference_lines.join("\n")
+            )
+        };
+        format!(
+            "\n\n{REFERENCED_CONTEXT_LABEL}\n{REFERENCE_ONLY_NOTICE}\n{}{reference_image_section}",
+            current_input.referenced_context_text()
+        )
+    } else {
+        String::new()
+    };
+    let interpretation_rules = format!(
+        "{INTERPRETATION_RULES_LABEL}\n\
+         - Determine the current user's intent from {CURRENT_USER_MESSAGE_LABEL} first.\n\
+         - {REFERENCED_CONTEXT_LABEL} is reference-only context and must not be assumed to be the current sender's own self-report.\n\
+         - Previous bot messages, especially first-person jokes, emotional expressions, roleplay, or casual banter, do not automatically become reliable facts.\n\
+         - If the current follow-up depends on an implicit subject or an unstated fact that the conversation does not directly prove, ask for clarification or reply conservatively instead of inventing background."
+    );
+
     let user_text = format!(
-        "{}\n\n{environment}\n\n{metadata}\n{}\n{}{image_section}\n\n{PROCESSING_INSTRUCTION}",
+        "{}\n\n{environment}\n\n{metadata}\n\n{CURRENT_USER_MESSAGE_LABEL}\n{}{current_image_section}{referenced_context_section}\n\n{interpretation_rules}\n\n{PROCESSING_INSTRUCTION}",
         state_lines.join("\n"),
-        ims_bot_adapter::CURRENT_MESSAGE_LABEL,
-        current_input.text,
+        current_input.current_text_for_prompt(),
     );
 
     if !llm_supports_multimodal_input || !current_input.has_media {
@@ -309,10 +339,37 @@ pub(crate) fn build_user_message(
 
     let state_text = format!("{}\n", state_lines.join("\n"));
     let mut parts = vec![MessagePart::text(state_text)];
-    let metadata_text = format!("{environment}\n\n{metadata}");
-    let mut text_buffer = format!("{metadata_text}\n\n{}", ims_bot_adapter::CURRENT_MESSAGE_LABEL);
-    append_prepared_parts(&mut parts, &mut text_buffer, "\n", &current_input.parts);
+    let metadata_text = format!(
+        "{environment}\n\n{metadata}\n\n{CURRENT_USER_MESSAGE_LABEL}\n{}",
+        current_input.current_text_for_prompt()
+    );
+    let mut text_buffer = metadata_text;
+    append_prepared_parts(&mut parts, &mut text_buffer, "\n", &current_input.current_parts);
+    if !current_input.current_image_reference_lines.is_empty() {
+        text_buffer.push_str(&format!(
+            "\n\n[{}]\n{}",
+            IMAGE_ANALYSIS_LABEL,
+            current_input.current_image_reference_lines.join("\n")
+        ));
+    }
+    if current_input.has_reference_context() {
+        text_buffer.push_str(&format!("\n\n{REFERENCED_CONTEXT_LABEL}\n{REFERENCE_ONLY_NOTICE}"));
+        let reference_text = current_input.referenced_context_text();
+        if !reference_text.trim().is_empty() {
+            text_buffer.push('\n');
+            text_buffer.push_str(reference_text.trim());
+        }
+        append_prepared_parts(&mut parts, &mut text_buffer, "\n", &current_input.reference_parts);
+        if !current_input.reference_image_reference_lines.is_empty() {
+            text_buffer.push_str(&format!(
+                "\n\n[{}]\n{}",
+                IMAGE_ANALYSIS_LABEL,
+                current_input.reference_image_reference_lines.join("\n")
+            ));
+        }
+    }
     flush_text_part(&mut parts, &mut text_buffer);
+    parts.push(MessagePart::text(interpretation_rules));
     parts.push(MessagePart::text(PROCESSING_INSTRUCTION.to_string()));
 
     LLMMessage::user_with_parts(parts)
@@ -650,3 +707,104 @@ impl QqChatAgentService {
 
 #[path = "qq_chat_agent_claimed.rs"]
 mod qq_chat_agent_claimed;
+
+#[cfg(test)]
+mod tests {
+    use super::build_user_message;
+    use crate::qq_chat_user_input::{MultimodalImageStats, PreparedCurrentTurnUserInput};
+    use ims_bot_adapter::models::event_model::{MessageEvent, MessageType, Sender};
+    use zihuan_agent::session_state::QqChatAgentSessionState;
+    use zihuan_core::llm::MessagePart;
+
+    fn build_event() -> MessageEvent {
+        MessageEvent {
+            message_id: 1001,
+            message_type: MessageType::Group,
+            sender: Sender {
+                user_id: 2001,
+                nickname: "fredyakumo".to_string(),
+                card: String::new(),
+                role: None,
+            },
+            message_list: Vec::new(),
+            group_id: Some(3001),
+            group_name: Some("test-group".to_string()),
+            is_group_message: true,
+        }
+    }
+
+    fn build_input() -> PreparedCurrentTurnUserInput {
+        PreparedCurrentTurnUserInput {
+            event: build_event(),
+            current_text: "不是吧，不仅限这个群的呢".to_string(),
+            reference_blocks: vec![format!(
+                "[Replay Content]\n刚才“原那边”就是口嗨一下，我不是真能看到你加了啥群"
+            )],
+            is_at_me: true,
+            at_target_list: vec!["2721394556".to_string()],
+            current_parts: vec![MessagePart::text("不是吧，不仅限这个群的呢".to_string())],
+            reference_parts: vec![MessagePart::text(
+                "[Replay Content]\n刚才“原那边”就是口嗨一下，我不是真能看到你加了啥群".to_string(),
+            )],
+            has_media: false,
+            current_image_reference_lines: Vec::new(),
+            reference_image_reference_lines: Vec::new(),
+            multimodal_stats: MultimodalImageStats::default(),
+        }
+    }
+
+    #[test]
+    fn build_user_message_separates_current_and_reference_sections() {
+        let message = build_user_message(
+            &build_input(),
+            "黑紫幻",
+            false,
+            "test prompt",
+            &QqChatAgentSessionState::default(),
+            &[],
+        );
+        let content = message.content_text().expect("user content text");
+        assert!(content.contains("[Current User Message]"));
+        assert!(content.contains("[Referenced Context]"));
+        assert!(content.contains("[Interpretation Rules]"));
+        let current_index = content.find("[Current User Message]").expect("current section present");
+        let reference_index = content.find("[Referenced Context]").expect("reference section present");
+        let current_section = &content[current_index..reference_index];
+        assert!(current_section.contains("不是吧，不仅限这个群的呢"));
+        assert!(!current_section.contains("原那边"));
+    }
+
+    #[test]
+    fn build_user_message_omits_reference_section_when_empty() {
+        let mut input = build_input();
+        input.reference_blocks.clear();
+        input.reference_parts.clear();
+        let message =
+            build_user_message(&input, "黑紫幻", false, "test prompt", &QqChatAgentSessionState::default(), &[]);
+        let content = message.content_text().expect("user content text");
+        assert!(content.contains("[Current User Message]"));
+        assert!(!content.contains("\n[Referenced Context]\n"));
+    }
+
+    #[test]
+    fn build_user_message_marks_multimodal_reference_as_reference_only() {
+        let mut input = build_input();
+        input.has_media = true;
+        input
+            .reference_parts
+            .push(MessagePart::image_url_string("https://example.com/reference.png"));
+        let message =
+            build_user_message(&input, "黑紫幻", true, "test prompt", &QqChatAgentSessionState::default(), &[]);
+        let joined_text = message
+            .parts
+            .iter()
+            .filter_map(|part| match part {
+                MessagePart::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(joined_text.contains("reference only"));
+        assert!(joined_text.contains("[Referenced Context]"));
+    }
+}

@@ -195,8 +195,8 @@ impl QqChatAgent {
         inference_event.message_list = expand_messages_for_inference(&prepared_input.event.message_list);
         let inference_input =
             prepare_current_turn_user_input_from_event(&inference_event, bot_id, ctx.bot_name, ctx.s3_ref);
-        let raw_user_message = prepared_input.text.clone();
-        let mut current_message = inference_input.text.clone();
+        let raw_user_message = prepared_input.current_text_for_prompt().to_string();
+        let mut current_message = inference_input.current_text_for_prompt().to_string();
         trace.log_user_message(&raw_user_message, &current_message);
 
         let history_key = conversation_history_key(bot_id, sender_id, is_group, inference_event.group_id);
