@@ -14,8 +14,11 @@ pub use openai_chat_completions::{
     build_chat_completions_request_body, parse_chat_completions_response,
     parse_chat_completions_sse_response, parse_chat_completions_sse_stream_response,
 };
-pub use openai_chat_completions_tencent_multimodal_compat::
-    build_tencent_multimodal_chat_completions_request_body;
+pub use openai_chat_completions_tencent_multimodal_compat::build_tencent_multimodal_chat_completions_request_body;
+pub use openai_responses::{
+    build_responses_request_body, parse_responses_response, parse_responses_sse_response,
+    parse_responses_sse_stream_response,
+};
 pub use openai_responses_image_url_object_compat::{
     build_responses_image_url_object_compat_request_body,
     parse_responses_image_url_object_compat_response,
@@ -27,15 +30,11 @@ pub use openai_responses_message_compat::{
     parse_responses_message_compat_sse_response,
     parse_responses_message_compat_sse_stream_response,
 };
-pub use openai_responses::{
-    build_responses_request_body, parse_responses_response, parse_responses_sse_response,
-    parse_responses_sse_stream_response,
-};
 
 pub fn has_multimodal_messages(messages: &[LLMMessage]) -> bool {
     messages.iter().any(|msg| {
-        msg.parts.iter().any(|part| {
-            matches!(part, MessagePart::Image { .. } | MessagePart::Video { .. })
-        })
+        msg.parts
+            .iter()
+            .any(|part| matches!(part, MessagePart::Image { .. } | MessagePart::Video { .. }))
     })
 }

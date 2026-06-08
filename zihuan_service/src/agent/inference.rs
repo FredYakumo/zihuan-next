@@ -13,7 +13,7 @@ use zihuan_agent::brain::{
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::llm::{MessageRole, LLMMessage};
+use zihuan_core::llm::{LLMMessage, MessageRole};
 use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
 
 use crate::resource_resolver::{build_llm_model, resolve_llm_service_config};
@@ -24,12 +24,7 @@ pub struct InferenceToolContext {
 }
 
 pub trait InferenceToolProvider: Send + Sync {
-    fn augment_messages(
-        &self,
-        _messages: &mut Vec<LLMMessage>,
-        _context: &InferenceToolContext,
-    ) {
-    }
+    fn augment_messages(&self, _messages: &mut Vec<LLMMessage>, _context: &InferenceToolContext) {}
 
     fn build_default_tools(&self, _context: &InferenceToolContext) -> Vec<Box<dyn BrainTool>> {
         Vec::new()
@@ -164,10 +159,7 @@ impl LoadedInferenceAgent {
             })
     }
 
-    pub fn infer_response_with_trace(
-        &self,
-        messages: Vec<LLMMessage>,
-    ) -> Result<Vec<LLMMessage>> {
+    pub fn infer_response_with_trace(&self, messages: Vec<LLMMessage>) -> Result<Vec<LLMMessage>> {
         let context = build_inference_tool_context(&messages);
 
         let mut conversation = sanitize_messages_for_inference(messages);

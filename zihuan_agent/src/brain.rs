@@ -653,10 +653,7 @@ fn count_tool_calls(messages: &[LLMMessage]) -> HashMap<String, usize> {
 
 /// Append a tool-call summary to the first system message in `messages`,
 /// or push a new system message if none exists.
-fn append_tool_summary_to_system(
-    messages: &mut Vec<LLMMessage>,
-    counts: &HashMap<String, usize>,
-) {
+fn append_tool_summary_to_system(messages: &mut Vec<LLMMessage>, counts: &HashMap<String, usize>) {
     if counts.is_empty() {
         return;
     }

@@ -116,8 +116,9 @@ pub(crate) fn prepare_current_turn_user_input_from_event(
     if msg_prop.is_at_me {
         for part in &mut parts {
             if let MessagePart::Text { text } = part {
-                let stripped =
-                    zihuan_core::utils::string_utils::strip_leading_bot_mention(text, bot_id, bot_name);
+                let stripped = zihuan_core::utils::string_utils::strip_leading_bot_mention(
+                    text, bot_id, bot_name,
+                );
                 if stripped.len() < text.len() {
                     *text = stripped;
                     break;
@@ -185,7 +186,13 @@ pub(crate) fn expand_messages_for_inference(messages: &[Message]) -> Vec<Message
                         .or(node.user_id.as_deref())
                         .unwrap_or("unknown");
                     expanded.push(Message::PlainText(PlainTextMessage {
-                        text: format!("[{} {} {}: {}]", FORWARD_NODE_LABEL, index + 1, SENDER_LABEL, sender),
+                        text: format!(
+                            "[{} {} {}: {}]",
+                            FORWARD_NODE_LABEL,
+                            index + 1,
+                            SENDER_LABEL,
+                            sender
+                        ),
                     }));
                     expanded.extend(expand_messages_for_inference(&node.content));
                 }
@@ -436,16 +443,20 @@ fn collect_reply_reference_text(messages: &[Message]) -> Vec<String> {
     messages
         .iter()
         .filter_map(|message| match message {
-            Message::Reply(reply) => valid_reply_source_messages(reply).and_then(|source_messages| {
-                let rendered =
-                    zihuan_core::ims_bot_adapter::models::message::render_messages_readable(source_messages);
-                let trimmed = rendered.trim();
-                if trimmed.is_empty() {
-                    None
-                } else {
-                    Some(trimmed.to_string())
-                }
-            }),
+            Message::Reply(reply) => {
+                valid_reply_source_messages(reply).and_then(|source_messages| {
+                    let rendered =
+                        zihuan_core::ims_bot_adapter::models::message::render_messages_readable(
+                            source_messages,
+                        );
+                    let trimmed = rendered.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                })
+            }
             _ => None,
         })
         .collect()
@@ -476,7 +487,11 @@ fn traverse_messages_for_image_references(
             }
             Message::Reply(reply) => {
                 if let Some(source_messages) = valid_reply_source_messages(reply) {
-                    traverse_messages_for_image_references(source_messages, REPLY_MESSAGE_LABEL, references);
+                    traverse_messages_for_image_references(
+                        source_messages,
+                        REPLY_MESSAGE_LABEL,
+                        references,
+                    );
                 }
             }
             Message::Forward(forward) => {
@@ -488,7 +503,13 @@ fn traverse_messages_for_image_references(
                         .unwrap_or("unknown");
                     traverse_messages_for_image_references(
                         &node.content,
-                        &format!("{} / {} {}({})", current_path, FORWARD_NODE_LABEL, node_index + 1, sender),
+                        &format!(
+                            "{} / {} {}({})",
+                            current_path,
+                            FORWARD_NODE_LABEL,
+                            node_index + 1,
+                            sender
+                        ),
                         references,
                     );
                 }

@@ -15,9 +15,9 @@ use ims_bot_adapter::models::message::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use zihuan_agent::utils::string_utils::is_no_reply_directive;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::utils::string_utils::{parse_at_segment, parse_tag_value};
-use zihuan_agent::utils::string_utils::is_no_reply_directive;
 use zihuan_graph_engine::data_value::DataValue;
 use zihuan_nlp::{PunctuationSegmenter, TextSegmenter};
 
@@ -827,10 +827,7 @@ pub(crate) fn send_direct_text_reply(
     reply_batch_builder: Option<&QqAgentReplyBatchBuilder>,
 ) -> Result<()> {
     let persistence = crate::storage::qq_chat_session_store::build_outbound_persistence(
-        rdb_pool,
-        mysql_ref,
-        group_name,
-        bot_name,
+        rdb_pool, mysql_ref, group_name, bot_name,
     );
 
     let reply_result = build_reply_result(

@@ -329,8 +329,7 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
                 Some(Value::Array(parts)) => parts
                     .iter()
                     .filter_map(|part| {
-                        serde_json::from_value::<zihuan_core::llm::MessagePart>(part.clone())
-                            .ok()
+                        serde_json::from_value::<zihuan_core::llm::MessagePart>(part.clone()).ok()
                     })
                     .collect(),
                 Some(Value::Null) | None => map
@@ -338,11 +337,11 @@ pub(crate) fn json_to_data_value(json: &Value, target_type: &DataType) -> Option
                     .and_then(Value::as_str)
                     .map(|content| vec![zihuan_core::llm::MessagePart::text(content)])
                     .unwrap_or_default(),
-                Some(other) => serde_json::from_value::<zihuan_core::llm::MessagePart>(
-                    other.clone(),
-                )
-                .map(|part| vec![part])
-                .unwrap_or_default(),
+                Some(other) => {
+                    serde_json::from_value::<zihuan_core::llm::MessagePart>(other.clone())
+                        .map(|part| vec![part])
+                        .unwrap_or_default()
+                }
             };
             Some(DataValue::LLMMessage(zihuan_core::llm::LLMMessage {
                 role,
@@ -410,10 +409,10 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         ConditionalNode, ConditionalRouterNode, CurrentTimeNode, FormatStringNode,
         FunctionInputsNode, FunctionNode, FunctionOutputsNode, GraphInputsNode, GraphOutputsNode,
         JoinStringNode, JsonExtractNode, JsonParserNode, JsonToQQMessageVecNode,
-        MessageContentNode, MessageListDataNode, LLMMessageContentAsJsonNode,
-        LLMMessageSessionCacheClearNode, LLMMessageSessionCacheGetNode,
-        LLMMessageSessionCacheNode, LLMMessageSessionCacheSetNode, LLMMessageToStringNode,
-        PreviewMessageListNode, PreviewQQMessageListNode, PreviewStringNode, PushBackVecNode,
+        LLMMessageContentAsJsonNode, LLMMessageSessionCacheClearNode,
+        LLMMessageSessionCacheGetNode, LLMMessageSessionCacheNode, LLMMessageSessionCacheSetNode,
+        LLMMessageToStringNode, MessageContentNode, MessageListDataNode, PreviewMessageListNode,
+        PreviewQQMessageListNode, PreviewStringNode, PushBackVecNode,
         QQMessageJsonOutputSystemPromptProviderNode, QQMessageListDataNode, QQMessageToImageNode,
         SessionStateClearNode, SessionStateGetNode, SessionStateReleaseNode,
         SessionStateTryClaimNode, SetVariableNode, StackNode, StringDataNode, StringIsNotEmptyNode,
@@ -708,7 +707,13 @@ pub fn init_node_registry() -> zihuan_core::error::Result<()> {
         "根据 LLMMessage 会话缓存 Ref 和 sender_id 读取当前运行期累计的 Vec<LLMMessage>",
         LLMMessageSessionCacheGetNode
     );
-    register_node!("llm_message_session_cache_set", "覆写 LLMMessage 历史", "消息存储", "根据 LLMMessage 会话缓存 Ref、sender_id 和消息列表覆写当前运行期累计的 Vec<LLMMessage>", LLMMessageSessionCacheSetNode);
+    register_node!(
+        "llm_message_session_cache_set",
+        "覆写 LLMMessage 历史",
+        "消息存储",
+        "根据 LLMMessage 会话缓存 Ref、sender_id 和消息列表覆写当前运行期累计的 Vec<LLMMessage>",
+        LLMMessageSessionCacheSetNode
+    );
     register_node!(
         "llm_message_session_cache_clear",
         "清空 LLMMessage 历史",

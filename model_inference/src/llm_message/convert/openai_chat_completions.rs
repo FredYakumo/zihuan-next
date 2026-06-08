@@ -2,7 +2,9 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use tokio::sync::mpsc;
 use zihuan_core::llm::tooling::{ToolCalls, ToolCallsFuncSpec};
-use zihuan_core::llm::{str_to_role, InferenceParam, LLMMessage, LLMMessageConvertStyle, MessagePart, TokenUsage};
+use zihuan_core::llm::{
+    str_to_role, InferenceParam, LLMMessage, LLMMessageConvertStyle, MessagePart, TokenUsage,
+};
 
 #[derive(Default)]
 struct StreamToolCallDelta {
@@ -221,7 +223,10 @@ pub fn parse_chat_completions_sse_response(response_text: &str) -> Option<LLMMes
             if let Some(piece) = delta.get("content").and_then(|value| value.as_str()) {
                 content.push_str(piece);
             }
-            if let Some(piece) = delta.get("reasoning_content").and_then(|value| value.as_str()) {
+            if let Some(piece) = delta
+                .get("reasoning_content")
+                .and_then(|value| value.as_str())
+            {
                 reasoning_content.push_str(piece);
             }
             if let Some(tool_calls) = delta.get("tool_calls").and_then(|value| value.as_array()) {
@@ -237,7 +242,8 @@ pub fn parse_chat_completions_sse_response(response_text: &str) -> Option<LLMMes
                             entry.id = Some(id.to_string());
                         }
                     }
-                    if let Some(type_name) = tool_call.get("type").and_then(|value| value.as_str()) {
+                    if let Some(type_name) = tool_call.get("type").and_then(|value| value.as_str())
+                    {
                         if !type_name.is_empty() {
                             entry.type_name = Some(type_name.to_string());
                         }
@@ -263,7 +269,10 @@ pub fn parse_chat_completions_sse_response(response_text: &str) -> Option<LLMMes
             if let Some(text) = message.get("content").and_then(|value| value.as_str()) {
                 content.push_str(text);
             }
-            if let Some(text) = message.get("reasoning_content").and_then(|value| value.as_str()) {
+            if let Some(text) = message
+                .get("reasoning_content")
+                .and_then(|value| value.as_str())
+            {
                 reasoning_content.push_str(text);
             }
             if let Some(tool_calls_value) = message.get("tool_calls") {
@@ -288,7 +297,9 @@ pub fn parse_chat_completions_sse_response(response_text: &str) -> Option<LLMMes
                         .unwrap_or_else(|_| Value::String(call.function_arguments.clone()))
                 };
                 ToolCalls {
-                    id: call.id.unwrap_or_else(|| format!("stream_tool_call_{index}")),
+                    id: call
+                        .id
+                        .unwrap_or_else(|| format!("stream_tool_call_{index}")),
                     type_name: call.type_name.unwrap_or_else(|| "function".to_string()),
                     function: ToolCallsFuncSpec {
                         name: call.function_name.unwrap_or_default(),
@@ -449,7 +460,9 @@ pub async fn parse_chat_completions_sse_stream_response(
                         .unwrap_or_else(|_| Value::String(call.function_arguments.clone()))
                 };
                 ToolCalls {
-                    id: call.id.unwrap_or_else(|| format!("stream_tool_call_{index}")),
+                    id: call
+                        .id
+                        .unwrap_or_else(|| format!("stream_tool_call_{index}")),
                     type_name: call.type_name.unwrap_or_else(|| "function".to_string()),
                     function: ToolCallsFuncSpec {
                         name: call.function_name.unwrap_or_default(),
@@ -460,7 +473,11 @@ pub async fn parse_chat_completions_sse_stream_response(
             .collect::<Vec<_>>()
     };
 
-    if content.is_empty() && reasoning_content.is_empty() && tool_calls.is_empty() && usage.is_none() {
+    if content.is_empty()
+        && reasoning_content.is_empty()
+        && tool_calls.is_empty()
+        && usage.is_none()
+    {
         return LLMMessage::assistant_text("");
     }
 

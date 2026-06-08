@@ -67,19 +67,17 @@ impl Node for LLMMessageSessionCacheGetNode {
         let fallback_messages = inputs
             .get("fallback")
             .and_then(|value| match value {
-                DataValue::Vec(inner_type, items) if **inner_type == DataType::LLMMessage => {
-                    Some(
-                        items
-                            .iter()
-                            .map(|item| match item {
-                                DataValue::LLMMessage(message) => Ok(message.clone()),
-                                _ => Err(zihuan_core::error::Error::InvalidNodeInput(
-                                    "fallback must contain LLMMessage items".to_string(),
-                                )),
-                            })
-                            .collect::<Result<Vec<_>>>(),
-                    )
-                }
+                DataValue::Vec(inner_type, items) if **inner_type == DataType::LLMMessage => Some(
+                    items
+                        .iter()
+                        .map(|item| match item {
+                            DataValue::LLMMessage(message) => Ok(message.clone()),
+                            _ => Err(zihuan_core::error::Error::InvalidNodeInput(
+                                "fallback must contain LLMMessage items".to_string(),
+                            )),
+                        })
+                        .collect::<Result<Vec<_>>>(),
+                ),
                 _ => None,
             })
             .transpose()?

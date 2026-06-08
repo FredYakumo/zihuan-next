@@ -9,21 +9,19 @@ use super::super::message_role::MessageRole;
 use crate::llm::util::role_to_str;
 
 pub(crate) fn build_tool_calls_json(tool_calls: &[ToolCalls]) -> Value {
-    json!(
-        tool_calls
-            .iter()
-            .map(|tc| {
-                json!({
-                    "id": tc.id,
-                    "type": tc.type_name,
-                    "function": {
-                        "name": tc.function.name,
-                        "arguments": tc.function.arguments.to_string(),
-                    }
-                })
+    json!(tool_calls
+        .iter()
+        .map(|tc| {
+            json!({
+                "id": tc.id,
+                "type": tc.type_name,
+                "function": {
+                    "name": tc.function.name,
+                    "arguments": tc.function.arguments.to_string(),
+                }
             })
-            .collect::<Vec<_>>()
-    )
+        })
+        .collect::<Vec<_>>())
 }
 
 pub(crate) fn build_chat_multimodal_parts(parts: &[MessagePart]) -> Value {
@@ -97,7 +95,11 @@ pub(crate) fn build_responses_content_items(
         .collect()
 }
 
-pub(crate) fn with_reasoning(mut msg_obj: Value, message: &LLMMessage, include_reasoning_content: bool) -> Value {
+pub(crate) fn with_reasoning(
+    mut msg_obj: Value,
+    message: &LLMMessage,
+    include_reasoning_content: bool,
+) -> Value {
     if include_reasoning_content {
         if let Some(reasoning_content) = &message.reasoning_content {
             msg_obj["reasoning_content"] = json!(reasoning_content);

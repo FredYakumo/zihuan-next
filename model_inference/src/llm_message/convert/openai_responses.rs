@@ -43,20 +43,34 @@ fn parse_token_usage(value: Option<&Value>) -> Option<TokenUsage> {
                 .and_then(|v| v.as_u64())
                 .map(|v| v as usize)
         })
-        .or_else(|| value.get("cache_hit_tokens").and_then(|v| v.as_u64()).map(|v| v as usize));
+        .or_else(|| {
+            value
+                .get("cache_hit_tokens")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+        });
 
     let prompt_cache_miss_tokens = value
         .get("prompt_cache_miss_tokens")
         .and_then(|v| v.as_u64())
         .map(|v| v as usize)
-        .or_else(|| value.get("cache_miss_tokens").and_then(|v| v.as_u64()).map(|v| v as usize));
+        .or_else(|| {
+            value
+                .get("cache_miss_tokens")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+        });
 
     let prompt_tokens = value
         .get("prompt_tokens")
         .and_then(|v| v.as_u64())
         .or_else(|| value.get("input_tokens").and_then(|v| v.as_u64()))
         .map(|v| v as usize)
-        .or_else(|| cached_prompt_tokens.zip(prompt_cache_miss_tokens).map(|(hit, miss)| hit + miss));
+        .or_else(|| {
+            cached_prompt_tokens
+                .zip(prompt_cache_miss_tokens)
+                .map(|(hit, miss)| hit + miss)
+        });
 
     Some(TokenUsage {
         prompt_tokens,
@@ -67,7 +81,10 @@ fn parse_token_usage(value: Option<&Value>) -> Option<TokenUsage> {
             .and_then(|v| v.as_u64())
             .or_else(|| value.get("output_tokens").and_then(|v| v.as_u64()))
             .map(|v| v as usize),
-        total_tokens: value.get("total_tokens").and_then(|v| v.as_u64()).map(|v| v as usize),
+        total_tokens: value
+            .get("total_tokens")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize),
     })
 }
 
@@ -159,7 +176,9 @@ pub(crate) fn build_responses_request_body_for_style(
 ) -> Value {
     let convert_style = match style {
         ResponsesRequestStyle::Default => LLMMessageConvertStyle::OpenAiResponses,
-        ResponsesRequestStyle::MessageCompat => LLMMessageConvertStyle::OpenAiResponsesMessageCompat,
+        ResponsesRequestStyle::MessageCompat => {
+            LLMMessageConvertStyle::OpenAiResponsesMessageCompat
+        }
         ResponsesRequestStyle::ImageUrlObjectCompat => {
             LLMMessageConvertStyle::OpenAiResponsesImageUrlObjectCompat
         }
@@ -287,13 +306,21 @@ pub fn parse_responses_response(api_resp: &Value) -> Option<LLMMessage> {
         }
     }
 
-    if content.is_empty() && reasoning_content.is_empty() && tool_calls.is_empty() && usage.is_none() {
+    if content.is_empty()
+        && reasoning_content.is_empty()
+        && tool_calls.is_empty()
+        && usage.is_none()
+    {
         return None;
     }
 
     Some(LLMMessage {
         role,
-        parts: if content.is_empty() { Vec::new() } else { vec![MessagePart::text(content)] },
+        parts: if content.is_empty() {
+            Vec::new()
+        } else {
+            vec![MessagePart::text(content)]
+        },
         reasoning_content: if reasoning_content.is_empty() {
             None
         } else {
@@ -364,7 +391,9 @@ pub fn parse_responses_sse_response(response_text: &str) -> Option<LLMMessage> {
                             entry.function_name = Some(name.to_string());
                         }
                         if entry.function_arguments.is_empty() {
-                            if let Some(arguments) = item.get("arguments").and_then(|value| value.as_str()) {
+                            if let Some(arguments) =
+                                item.get("arguments").and_then(|value| value.as_str())
+                            {
                                 entry.function_arguments.push_str(arguments);
                             }
                         }
@@ -410,7 +439,8 @@ pub fn parse_responses_sse_response(response_text: &str) -> Option<LLMMessage> {
                 );
                 entry.type_name = Some("function".to_string());
                 if entry.function_arguments.is_empty() {
-                    if let Some(arguments) = chunk.get("arguments").and_then(|value| value.as_str()) {
+                    if let Some(arguments) = chunk.get("arguments").and_then(|value| value.as_str())
+                    {
                         entry.function_arguments.push_str(arguments);
                     }
                 }
@@ -434,7 +464,11 @@ pub fn parse_responses_sse_response(response_text: &str) -> Option<LLMMessage> {
     } else {
         Some(LLMMessage {
             role: str_to_role("assistant"),
-            parts: if content.is_empty() { Vec::new() } else { vec![MessagePart::text(content)] },
+            parts: if content.is_empty() {
+                Vec::new()
+            } else {
+                vec![MessagePart::text(content)]
+            },
             reasoning_content: None,
             tool_calls,
             tool_call_id: None,
@@ -496,7 +530,9 @@ pub async fn parse_responses_sse_stream_response(
                 }
                 Some("response.output_item.added") | Some("response.output_item.done") => {
                     if let Some(item) = chunk_data.get("item") {
-                        if item.get("type").and_then(|value| value.as_str()) == Some("function_call") {
+                        if item.get("type").and_then(|value| value.as_str())
+                            == Some("function_call")
+                        {
                             let item_id = item.get("id").and_then(|value| value.as_str());
                             let call_id = item.get("call_id").and_then(|value| value.as_str());
                             let key = canonical_responses_tool_key(
@@ -521,7 +557,9 @@ pub async fn parse_responses_sse_stream_response(
                                 entry.function_name = Some(name.to_string());
                             }
                             if entry.function_arguments.is_empty() {
-                                if let Some(arguments) = item.get("arguments").and_then(|value| value.as_str()) {
+                                if let Some(arguments) =
+                                    item.get("arguments").and_then(|value| value.as_str())
+                                {
                                     entry.function_arguments.push_str(arguments);
                                 }
                             }
@@ -567,7 +605,9 @@ pub async fn parse_responses_sse_stream_response(
                     );
                     entry.type_name = Some("function".to_string());
                     if entry.function_arguments.is_empty() {
-                        if let Some(arguments) = chunk_data.get("arguments").and_then(|value| value.as_str()) {
+                        if let Some(arguments) =
+                            chunk_data.get("arguments").and_then(|value| value.as_str())
+                        {
                             entry.function_arguments.push_str(arguments);
                         }
                     }
@@ -588,7 +628,11 @@ pub async fn parse_responses_sse_stream_response(
 
     LLMMessage {
         role: str_to_role("assistant"),
-        parts: if content.is_empty() { Vec::new() } else { vec![MessagePart::text(content)] },
+        parts: if content.is_empty() {
+            Vec::new()
+        } else {
+            vec![MessagePart::text(content)]
+        },
         reasoning_content: None,
         tool_calls: collect_responses_stream_tool_calls(streamed_tool_calls),
         tool_call_id: None,

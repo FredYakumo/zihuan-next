@@ -36,9 +36,7 @@ impl Node for BuildMultimodalUserMessageNode {
         port! { name = "role", ty = String, desc = "消息角色，可选 system / user / assistant / tool，默认 user", optional },
     ];
 
-    node_output![
-        port! { name = "message", ty = LLMMessage, desc = "封装后的多模态 LLMMessage" },
-    ];
+    node_output![port! { name = "message", ty = LLMMessage, desc = "封装后的多模态 LLMMessage" },];
 
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;

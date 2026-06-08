@@ -1,18 +1,16 @@
-use crate::system_config::LlmApiStyle;
 use crate::llm_message::convert::{
-    build_chat_completions_request_body, build_responses_request_body,
-    build_responses_image_url_object_compat_request_body,
-    build_responses_message_compat_request_body,
+    build_chat_completions_request_body, build_responses_image_url_object_compat_request_body,
+    build_responses_message_compat_request_body, build_responses_request_body,
     build_tencent_multimodal_chat_completions_request_body, has_multimodal_messages,
     parse_chat_completions_response, parse_chat_completions_sse_response,
-    parse_chat_completions_sse_stream_response, parse_responses_response,
-    parse_responses_image_url_object_compat_response,
+    parse_chat_completions_sse_stream_response, parse_responses_image_url_object_compat_response,
     parse_responses_image_url_object_compat_sse_response,
     parse_responses_image_url_object_compat_sse_stream_response,
     parse_responses_message_compat_response, parse_responses_message_compat_sse_response,
-    parse_responses_message_compat_sse_stream_response,
+    parse_responses_message_compat_sse_stream_response, parse_responses_response,
     parse_responses_sse_response, parse_responses_sse_stream_response,
 };
+use crate::system_config::LlmApiStyle;
 use log::{debug, error, warn};
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
@@ -69,11 +67,7 @@ impl LLMAPI {
         }
     }
 
-    fn log_usage(
-        &self,
-        request_context: &RequestContext,
-        usage: &zihuan_core::llm::TokenUsage,
-    ) {
+    fn log_usage(&self, request_context: &RequestContext, usage: &zihuan_core::llm::TokenUsage) {
         let prompt_tokens = usage.prompt_tokens.or_else(|| {
             usage
                 .cached_prompt_tokens
@@ -276,10 +270,7 @@ impl LLMAPI {
         let response = request.send().map_err(|e| {
             let err_detail = format!(
                 "{} detail={} message={}",
-                self.format_request_context(
-                    request_context,
-                    Some((attempt, max_attempts)),
-                ),
+                self.format_request_context(request_context, Some((attempt, max_attempts)),),
                 Self::describe_reqwest_error(&e),
                 e
             );
@@ -312,10 +303,7 @@ impl LLMAPI {
         if !status.is_success() {
             let err_msg = format!(
                 "{} status={} body={}",
-                self.format_request_context(
-                    request_context,
-                    Some((attempt, max_attempts)),
-                ),
+                self.format_request_context(request_context, Some((attempt, max_attempts)),),
                 status,
                 string_utils::shorten_text(&response_text, 800)
             );
@@ -330,10 +318,7 @@ impl LLMAPI {
             RequestError::NonRetryable {
                 message: format!(
                     "{} parse_error={} body={}",
-                    self.format_request_context(
-                        request_context,
-                        Some((attempt, max_attempts)),
-                    ),
+                    self.format_request_context(request_context, Some((attempt, max_attempts)),),
                     e,
                     string_utils::shorten_text(&response_text, 800)
                 ),
@@ -358,10 +343,7 @@ impl LLMAPI {
             .ok_or_else(|| RequestError::NonRetryable {
                 message: format!(
                     "{} invalid_response choices_present={} body={}",
-                    self.format_request_context(
-                        request_context,
-                        Some((attempt, max_attempts)),
-                    ),
+                    self.format_request_context(request_context, Some((attempt, max_attempts)),),
                     api_resp.get("choices").is_some() || api_resp.get("output").is_some(),
                     string_utils::shorten_text(&response_text, 800)
                 ),
@@ -452,10 +434,7 @@ impl LLMBase for LLMAPI {
         for attempt in 1..=max_attempts {
             debug!(
                 "Sending LLM API request: {}",
-                self.format_request_context(
-                    &request_context,
-                    Some((attempt, max_attempts)),
-                )
+                self.format_request_context(&request_context, Some((attempt, max_attempts)),)
             );
 
             match self.send_request(

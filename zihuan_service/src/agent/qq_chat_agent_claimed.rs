@@ -301,7 +301,8 @@ impl QqChatAgent {
         let prepared_input =
             prepare_current_turn_user_input(event, ctx.adapter, bot_id, ctx.bot_name, ctx.s3_ref);
         let mut inference_event = prepared_input.event.clone();
-        inference_event.message_list = expand_messages_for_inference(&prepared_input.event.message_list);
+        inference_event.message_list =
+            expand_messages_for_inference(&prepared_input.event.message_list);
         let inference_input = prepare_current_turn_user_input_from_event(
             &inference_event,
             bot_id,
@@ -356,27 +357,16 @@ impl QqChatAgent {
             }
         }
 
-        let current_session_state = {
-            ctx.session_state_store
-                .lock()
-                .unwrap()
-                .clone()
-        };
+        let current_session_state = { ctx.session_state_store.lock().unwrap().clone() };
         let emotion_dimensions = current_qq_chat_agent_config()?.resolved_emotion_dimensions();
         let mut current_session_state = current_session_state;
         current_session_state.sync_emotion_dimensions(&emotion_dimensions);
         let turn_session_state = Arc::new(Mutex::new(current_session_state));
 
         let system_prompt = if is_group {
-            build_group_system_prompt(
-                ctx.bot_name,
-                ctx.agent_system_prompt,
-            )
+            build_group_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
         } else {
-            build_private_system_prompt(
-                ctx.bot_name,
-                ctx.agent_system_prompt,
-            )
+            build_private_system_prompt(ctx.bot_name, ctx.agent_system_prompt)
         };
 
         let user_msg = message_with_api_style(
@@ -528,6 +518,29 @@ impl QqChatAgent {
             ctx.s3_ref.cloned(),
             Some(prepared_input.event.clone()),
             ToolNotificationTarget::dashboard(),
+            if let (Some(memory_ref), Some(embedding_model)) = (
+                ctx.weaviate_memory_ref.cloned(),
+                ctx.embedding_model.cloned(),
+            ) {
+                Some(AgentMemoryToolResources {
+                    memory_ref,
+                    embedding_model,
+                    llm: Arc::clone(ctx.llm),
+                    access: AgentMemoryAccessContext {
+                        sender_id: Some(sender_id.to_string()),
+                        group_id: if is_group {
+                            Some(target_id.to_string())
+                        } else {
+                            prepared_input.event.group_id.map(|value| value.to_string())
+                        },
+                        is_group,
+                        admin: false,
+                        skip_expiry_extend: false,
+                    },
+                })
+            } else {
+                None
+            },
         ));
         brain = brain.with_tool(SendNaturalLanguageReplyBrainTool::new(
             ctx.adapter.clone(),
@@ -820,8 +833,7 @@ impl QqChatAgent {
             ));
         }
         save_history(ctx.cache, &history_key, history);
-        *ctx.session_state_store.lock().unwrap() =
-            turn_session_state.lock().unwrap().clone();
+        *ctx.session_state_store.lock().unwrap() = turn_session_state.lock().unwrap().clone();
 
         let result_summary = if let Some(ref assistant_text) = visible_assistant_history_text {
             format!(

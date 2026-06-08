@@ -42,11 +42,7 @@ impl MessagePart {
     pub fn image_data_url<M: AsRef<str>, B: AsRef<str>>(mime: M, base64_payload: B) -> Self {
         MessagePart::image_media(PersistedMedia::new(
             PersistedMediaSource::Upload,
-            format!(
-                "data:{};base64,{}",
-                mime.as_ref(),
-                base64_payload.as_ref()
-            ),
+            format!("data:{};base64,{}", mime.as_ref(), base64_payload.as_ref()),
             "",
             None,
             None,
@@ -70,11 +66,7 @@ impl MessagePart {
     pub fn video_data_url<M: AsRef<str>, B: AsRef<str>>(mime: M, base64_payload: B) -> Self {
         MessagePart::video_media(PersistedMedia::new(
             PersistedMediaSource::Upload,
-            format!(
-                "data:{};base64,{}",
-                mime.as_ref(),
-                base64_payload.as_ref()
-            ),
+            format!("data:{};base64,{}", mime.as_ref(), base64_payload.as_ref()),
             "",
             None,
             None,

@@ -1,7 +1,7 @@
 use serde_json::{json, Value};
 
-use super::common::{build_chat_multimodal_parts, role_json, with_reasoning, with_tool_fields};
 use super::super::llm_message::LLMMessage;
+use super::common::{build_chat_multimodal_parts, role_json, with_reasoning, with_tool_fields};
 
 pub(crate) fn convert(message: &LLMMessage, include_reasoning_content: bool) -> Vec<Value> {
     let content = if message.parts.is_empty() {
@@ -20,5 +20,8 @@ pub(crate) fn convert(message: &LLMMessage, include_reasoning_content: bool) -> 
         "content": content,
     });
 
-    vec![with_tool_fields(with_reasoning(msg_obj, message, include_reasoning_content), message)]
+    vec![with_tool_fields(
+        with_reasoning(msg_obj, message, include_reasoning_content),
+        message,
+    )]
 }

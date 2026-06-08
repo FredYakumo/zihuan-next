@@ -4,13 +4,11 @@ use std::sync::Mutex;
 use crate::ims_bot_adapter::models::MessageEvent;
 use crate::llm::{LLMMessage, MessagePart};
 
-pub const STEER_PREFIX: &str =
-    "[User-STEER Message] User steer a new message:";
+pub const STEER_PREFIX: &str = "[User-STEER Message] User steer a new message:";
 
 /// Processing instruction appended to user messages, telling the model how to
 /// respond to the current turn.
-pub const PROCESSING_INSTRUCTION: &str =
-    "[Processing Instructions]\n\
+pub const PROCESSING_INSTRUCTION: &str = "[Processing Instructions]\n\
      - This is the user's message the assistant needs to process.\n\
      - Ensure your reply addresses the user's request directly and naturally.";
 
@@ -130,9 +128,7 @@ impl PendingSteerStore {
 
 /// Merge multiple pending steer events into a single `MessageEvent` by
 /// concatenating their message lists (preserving order).
-pub fn build_merged_follow_up_event(
-    pending_events: &[PendingSteerEvent],
-) -> MessageEvent {
+pub fn build_merged_follow_up_event(pending_events: &[PendingSteerEvent]) -> MessageEvent {
     let first_event = pending_events
         .first()
         .expect("merged follow-up requires at least one pending steer event");

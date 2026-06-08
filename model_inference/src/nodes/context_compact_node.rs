@@ -18,10 +18,7 @@ impl ContextCompactNode {
         }
     }
 
-    fn parse_messages_input(
-        &self,
-        inputs: &HashMap<String, DataValue>,
-    ) -> Result<Vec<LLMMessage>> {
+    fn parse_messages_input(&self, inputs: &HashMap<String, DataValue>) -> Result<Vec<LLMMessage>> {
         match inputs.get("messages") {
             Some(DataValue::Vec(inner_type, items)) if **inner_type == DataType::LLMMessage => {
                 items

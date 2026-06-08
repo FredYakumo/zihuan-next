@@ -6,13 +6,11 @@ use super::inference::{InferenceToolContext, InferenceToolProvider};
 use super::qq_chat_agent_core::{
     build_info_brain_tools, expand_messages_for_inference, prepare_current_turn_user_input,
     prepare_current_turn_user_input_from_event, QqAgentReplyBatchBuilder, QqChatAgent,
-    QqChatAgentContext, QqChatAgentService, QqChatAgentServiceConfig, QqChatTaskTrace,
-    LOG_PREFIX, LOG_TEXT_PREVIEW_CHARS,
+    QqChatAgentContext, QqChatAgentService, QqChatAgentServiceConfig, QqChatTaskTrace, LOG_PREFIX,
+    LOG_TEXT_PREVIEW_CHARS,
 };
-use zihuan_core::steer::PendingSteerEvent;
-use zihuan_core::utils::string_utils::shorten_text;
-use super::qq_chat_agent_msg_send::build_reply_batch_builder as build_unified_reply_batch_builder;
 use super::qq_chat_agent_ignore_store::should_ignore_message_blocking;
+use super::qq_chat_agent_msg_send::build_reply_batch_builder as build_unified_reply_batch_builder;
 use super::{AgentManager, AgentRuntimeState, AgentRuntimeStatus};
 use crate::agent::qq_chat_agent_inbox::{QqChatAgentInbox, QqChatAgentSupervisorEvent};
 use crate::agent::tool_definitions::build_enabled_tool_definitions;
@@ -48,10 +46,12 @@ use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::LLMMessage;
 use zihuan_core::rag::WebSearchEngineRef;
 use zihuan_core::runtime::block_async;
+use zihuan_core::steer::PendingSteerEvent;
 use zihuan_core::task_context::{
     scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime,
     AgentTaskStatus,
 };
+use zihuan_core::utils::string_utils::shorten_text;
 use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
 use zihuan_graph_engine::data_value::{LLMMessageSessionCacheRef, SessionStateRef};

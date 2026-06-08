@@ -23,7 +23,7 @@ use zihuan_core::command::{
 };
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::ToolCalls;
-use zihuan_core::llm::{MessageRole, LLMMessage};
+use zihuan_core::llm::{LLMMessage, MessageRole};
 
 const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
 const APP_DIR_NAME: &str = "zihuan-next_aibot";

@@ -385,8 +385,7 @@ impl LLMMessageSessionCacheRef {
             if let Some(cm) = cm_guard.as_mut() {
                 let existing_json: Option<String> = cm.get(&key).await?;
                 if let Some(raw) = existing_json {
-                    let messages: Vec<zihuan_core::llm::LLMMessage> =
-                        serde_json::from_str(&raw)?;
+                    let messages: Vec<zihuan_core::llm::LLMMessage> = serde_json::from_str(&raw)?;
                     return Ok(messages);
                 }
             }

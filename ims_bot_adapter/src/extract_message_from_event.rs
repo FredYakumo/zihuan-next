@@ -8,7 +8,7 @@ use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::logging::{
     LOG_DATA_URL_PREVIEW_CHARS, LOG_MESSAGE_PREVIEW_CHARS,
 };
-use zihuan_core::llm::{MessagePart, LLMMessage};
+use zihuan_core::llm::{LLMMessage, MessagePart};
 use zihuan_graph_engine::message_restore::register_mysql_ref;
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::{

@@ -31,5 +31,9 @@ pub fn event_to_llm_message(
     bot_id: &str,
     s3_ref: Option<&S3Ref>,
 ) -> Result<LLMMessage> {
-    Ok(qq_messages_to_llm_message(&event.message_list, bot_id, s3_ref))
+    Ok(qq_messages_to_llm_message(
+        &event.message_list,
+        bot_id,
+        s3_ref,
+    ))
 }

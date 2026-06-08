@@ -1,8 +1,8 @@
 use serde_json::{json, Value};
 
-use super::common::{build_responses_content_items, role_json};
 use super::super::llm_message::LLMMessage;
 use super::super::message_role::MessageRole;
+use super::common::{build_responses_content_items, role_json};
 
 pub(crate) fn convert(message: &LLMMessage) -> Vec<Value> {
     match message.role {

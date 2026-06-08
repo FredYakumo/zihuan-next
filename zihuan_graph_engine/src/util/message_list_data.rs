@@ -50,9 +50,7 @@ impl Node for MessageListDataNode {
             .get("messages")
             .cloned()
             .filter(|v| matches!(v, DataValue::Vec(..)))
-            .unwrap_or_else(|| {
-                DataValue::Vec(Box::new(crate::DataType::LLMMessage), Vec::new())
-            });
+            .unwrap_or_else(|| DataValue::Vec(Box::new(crate::DataType::LLMMessage), Vec::new()));
         outputs.insert("messages".to_string(), value);
 
         let outputs = crate::NodeOutputFlow::from(outputs);

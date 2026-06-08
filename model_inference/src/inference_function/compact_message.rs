@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use log::warn;
 use zihuan_core::llm::llm_base::LLMBase;
-use zihuan_core::llm::{InferenceParam, MessageRole, LLMMessage};
+use zihuan_core::llm::{InferenceParam, LLMMessage, MessageRole};
 
 use crate::message_content_utils::{is_transport_error, sanitize_messages_for_inference};
 
