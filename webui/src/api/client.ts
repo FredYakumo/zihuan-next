@@ -764,6 +764,7 @@ export const chat = {
       agent_id: string;
       session_id?: string | null;
       stream?: boolean;
+      model_config_id?: string | null;
       messages: Array<{
         role: string;
         content: string;

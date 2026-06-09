@@ -213,6 +213,21 @@
               />
               <div class="chat-input-actions">
                 <button class="btn ghost" @click="startNewSession">新对话</button>
+                <select
+                  v-if="selectedAgent?.agent_type?.type === 'http_stream'"
+                  v-model="selectedModelId"
+                  class="chat-model-select"
+                  title="选择模型"
+                >
+                  <option value="">默认模型</option>
+                  <option
+                    v-for="model in chatModels"
+                    :key="model.config_id"
+                    :value="model.config_id"
+                  >
+                    {{ model.name }}
+                  </option>
+                </select>
                 <button class="btn primary" :disabled="sending || !canSend" @click="sendMessage">
                   {{ sending ? "推理中..." : "发送" }}
                 </button>
@@ -237,6 +252,7 @@ import {
   type ChatToolCall,
   type ChatSessionSummary,
   type ChatStreamEvent,
+  type LlmConfig,
 } from "../../api/client";
 import { formatTime } from "../model";
 
@@ -285,6 +301,8 @@ const messagesContainer = ref<HTMLElement | null>(null);
 const messages = ref<DashboardMessage[]>([]);
 const activeToolCallId = ref("");
 const expandedLiveToolCalls = ref(new Set<string>());
+const llmModels = ref<LlmConfig[]>([]);
+const selectedModelId = ref("");
 const stats = reactive({
   connections: 0,
   llm: 0,
@@ -297,6 +315,15 @@ const markdown = new MarkdownIt({
 });
 
 const selectedAgent = computed(() => agents.value.find((agent) => agent.config_id === selectedAgentId.value) ?? null);
+const chatModels = computed(() => llmModels.value.filter((item) => item.model.type === "chat_llm"));
+const defaultAgentModelId = computed(() => {
+  const agent = selectedAgent.value;
+  if (!agent) {
+    return "";
+  }
+  const agentType = agent.agent_type as Record<string, unknown>;
+  return String(agentType.llm_ref_id ?? "");
+});
 const canSend = computed(() =>
   !!selectedAgent.value &&
   selectedAgent.value.runtime.status === "running" &&
@@ -516,6 +543,7 @@ function startNewSession() {
 watch(selectedAgentId, async () => {
   await reloadSessions();
   startNewSession();
+  selectedModelId.value = defaultAgentModelId.value;
 });
 
 async function removeSession(sessionId: string) {
@@ -721,6 +749,7 @@ async function sendMessage() {
         agent_id: selectedAgentId.value,
         session_id: activeSessionId.value || null,
         stream: true,
+        model_config_id: selectedModelId.value || null,
         messages: requestMessages,
       },
       (event) => applyStreamEvent(event, streamState),
@@ -758,10 +787,12 @@ async function load() {
     stats.llm = llm.length;
     stats.agents = loadedAgents.length;
     agents.value = loadedAgents;
+    llmModels.value = llm;
 
     if (!selectedAgentId.value || !loadedAgents.some((agent) => agent.config_id === selectedAgentId.value)) {
       selectedAgentId.value = loadedAgents[0]?.config_id ?? "";
     }
+    selectedModelId.value = defaultAgentModelId.value;
   } finally {
     agentsLoading.value = false;
   }
@@ -1313,6 +1344,24 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
+}
+
+.chat-model-select {
+  background: var(--admin-bg);
+  color: var(--admin-ink);
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 14px;
+  cursor: pointer;
+  max-width: 180px;
+  min-width: 120px;
+}
+
+.chat-model-select:focus {
+  border-color: var(--admin-accent);
+  outline: none;
 }
 
 .chat-bubble-content :deep(*) {

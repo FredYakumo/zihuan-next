@@ -150,6 +150,14 @@ impl LoadedInferenceAgent {
     }
 
     pub fn infer_response_with_trace(&self, messages: Vec<LLMMessage>) -> Result<Vec<LLMMessage>> {
+        self.infer_response_with_trace_and_llm(messages, Arc::clone(&self.llm))
+    }
+
+    pub fn infer_response_with_trace_and_llm(
+        &self,
+        messages: Vec<LLMMessage>,
+        llm: Arc<dyn LLMBase>,
+    ) -> Result<Vec<LLMMessage>> {
         let context = build_inference_tool_context(&messages);
 
         let mut conversation = sanitize_messages_for_inference(messages);
@@ -164,7 +172,7 @@ impl LoadedInferenceAgent {
 
         run_agent_brain(
             &self.agent,
-            Arc::clone(&self.llm),
+            llm,
             default_brain_tools,
             self.tools.tool_definitions(),
             conversation,
@@ -176,6 +184,17 @@ impl LoadedInferenceAgent {
         messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<String>,
         observer: Option<Arc<dyn BrainObserver>>,
+    ) -> Result<Vec<LLMMessage>> {
+        self.infer_response_streaming_with_trace_and_llm(messages, token_tx, observer, Arc::clone(&self.llm))
+            .await
+    }
+
+    pub async fn infer_response_streaming_with_trace_and_llm(
+        &self,
+        messages: Vec<LLMMessage>,
+        token_tx: mpsc::UnboundedSender<String>,
+        observer: Option<Arc<dyn BrainObserver>>,
+        llm: Arc<dyn LLMBase>,
     ) -> Result<Vec<LLMMessage>> {
         let context = build_inference_tool_context(&messages);
 
@@ -191,7 +210,7 @@ impl LoadedInferenceAgent {
 
         run_agent_brain_streaming(
             &self.agent,
-            Arc::clone(&self.llm),
+            llm,
             default_brain_tools,
             self.tools.tool_definitions(),
             conversation,
@@ -207,8 +226,31 @@ pub fn infer_agent_response(
     llm_refs: &[LlmRefConfig],
     messages: Vec<LLMMessage>,
 ) -> Result<LLMMessage> {
+    infer_agent_response_with_model(agent, llm_refs, messages, None)
+}
+
+pub fn infer_agent_response_with_model(
+    agent: &AgentConfig,
+    llm_refs: &[LlmRefConfig],
+    messages: Vec<LLMMessage>,
+    model_override: Option<&str>,
+) -> Result<LLMMessage> {
     let connections = load_connections().unwrap_or_default();
-    LoadedInferenceAgent::load_with_refs(agent, llm_refs, &connections)?.infer_response(messages)
+    let loaded = LoadedInferenceAgent::load_with_refs(agent, llm_refs, &connections)?;
+    let output_messages = if let Some(model_id) = model_override {
+        let llm_config = resolve_llm_service_config(Some(model_id), llm_refs, &agent.name)?;
+        let llm = build_llm_model(&llm_config)?;
+        loaded.infer_response_with_trace_and_llm(messages, llm)?
+    } else {
+        loaded.infer_response_with_trace(messages)?
+    };
+    output_messages
+        .into_iter()
+        .rev()
+        .find(|message| matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty())
+        .ok_or_else(|| {
+            Error::StringError(format!("agent '{}' did not produce a final assistant message", agent.name))
+        })
 }
 
 pub fn infer_agent_response_with_trace(
@@ -221,9 +263,20 @@ pub fn infer_agent_response_with_trace(
 }
 
 pub fn resolve_agent_model_name(agent: &AgentConfig, llm_refs: &[LlmRefConfig]) -> Result<String> {
-    let llm_ref_id = match &agent.agent_type {
-        AgentType::HttpStream(config) => config.llm_ref_id.as_deref(),
-        AgentType::QqChat(config) => config.llm_ref_id.as_deref(),
+    resolve_agent_model_name_with_override(agent, llm_refs, None)
+}
+
+pub fn resolve_agent_model_name_with_override(
+    agent: &AgentConfig,
+    llm_refs: &[LlmRefConfig],
+    model_override: Option<&str>,
+) -> Result<String> {
+    let llm_ref_id = match model_override {
+        Some(id) => Some(id),
+        None => match &agent.agent_type {
+            AgentType::HttpStream(config) => config.llm_ref_id.as_deref(),
+            AgentType::QqChat(config) => config.llm_ref_id.as_deref(),
+        },
     };
     Ok(resolve_llm_service_config(llm_ref_id, llm_refs, &agent.name)?.model_name)
 }

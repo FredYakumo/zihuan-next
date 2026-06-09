@@ -145,10 +145,32 @@ impl AgentManager {
         token_tx: mpsc::UnboundedSender<String>,
         observer: Option<Arc<dyn BrainObserver>>,
     ) -> Result<Vec<LLMMessage>> {
+        self.infer_agent_response_streaming_with_model(agent_id, messages, token_tx, observer, None)
+            .await
+    }
+
+    pub async fn infer_agent_response_streaming_with_model(
+        &self,
+        agent_id: &str,
+        messages: Vec<LLMMessage>,
+        token_tx: mpsc::UnboundedSender<String>,
+        observer: Option<Arc<dyn BrainObserver>>,
+        model_config_id: Option<&str>,
+    ) -> Result<Vec<LLMMessage>> {
         let agent = self.running_agent(agent_id).ok_or_else(|| {
             zihuan_core::error::Error::ValidationError(format!("agent '{}' is not running", agent_id))
         })?;
-        agent.infer_response_streaming_with_trace(messages, token_tx, observer).await
+        if let Some(model_id) = model_config_id {
+            let llm_refs = model_inference::system_config::load_llm_refs()?;
+            let llm_config =
+                crate::resource_resolver::resolve_llm_service_config(Some(model_id), &llm_refs, &agent.agent_config().name)?;
+            let llm = crate::resource_resolver::build_llm_model(&llm_config)?;
+            agent
+                .infer_response_streaming_with_trace_and_llm(messages, token_tx, observer, llm)
+                .await
+        } else {
+            agent.infer_response_streaming_with_trace(messages, token_tx, observer).await
+        }
     }
 
     pub async fn start_agent(

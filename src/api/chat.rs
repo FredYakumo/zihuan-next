@@ -22,6 +22,7 @@ use zihuan_core::command::{CommandChannel, CommandContext, NewConversationReques
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::ToolCalls;
 use zihuan_core::llm::{LLMMessage, MessageRole};
+use zihuan_core::message_part::MessagePart;
 
 const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
 const APP_DIR_NAME: &str = "zihuan-next_aibot";
@@ -72,6 +73,44 @@ impl BrainObserver for SseBrainObserver {
 /// Incoming request body for the `/chat/stream` endpoint.
 ///
 /// **Purpose:** Carries the agent to talk to, an optional session ID for continuing an existing
+/// Incoming message shape sent by the dashboard frontend.
+///
+/// The frontend uses the flat OpenAI-style `content: String` field.
+/// This type accepts that wire format and converts to the internal
+/// `LLMMessage` (which uses `parts`) at the API boundary.
+#[derive(Debug, Deserialize)]
+struct DashboardChatMessage {
+    pub role: MessageRole,
+    #[serde(default)]
+    pub content: String,
+    #[serde(default)]
+    pub parts: Vec<MessagePart>,
+    #[serde(default)]
+    pub tool_calls: Vec<ToolCalls>,
+    #[serde(default)]
+    pub tool_call_id: Option<String>,
+}
+
+impl From<DashboardChatMessage> for LLMMessage {
+    fn from(msg: DashboardChatMessage) -> Self {
+        let parts = if !msg.parts.is_empty() {
+            msg.parts
+        } else if !msg.content.is_empty() {
+            vec![MessagePart::text(msg.content)]
+        } else {
+            Vec::new()
+        };
+        LLMMessage {
+            role: msg.role,
+            parts,
+            reasoning_content: None,
+            tool_calls: msg.tool_calls,
+            tool_call_id: msg.tool_call_id,
+            usage: None,
+        }
+    }
+}
+
 /// conversation, the full message history, and a stream toggle.
 ///
 /// **Design:** Mirrors the OpenAI chat-completion request shape but adds `agent_id` and
@@ -81,9 +120,11 @@ pub struct ChatStreamRequest {
     pub agent_id: String,
     #[serde(default)]
     pub session_id: Option<String>,
-    pub messages: Vec<LLMMessage>,
+    messages: Vec<DashboardChatMessage>,
     #[serde(default)]
     pub stream: Option<bool>,
+    #[serde(default)]
+    pub model_config_id: Option<String>,
 }
 
 /// Summary row returned by the session-list endpoint.
@@ -689,9 +730,11 @@ async fn execute_chat_streaming(
     let ChatStreamRequest {
         agent_id,
         session_id: requested_session_id,
-        mut messages,
+        messages: raw_messages,
         stream,
+        model_config_id,
     } = body;
+    let mut messages: Vec<LLMMessage> = raw_messages.into_iter().map(Into::into).collect();
 
     let ChatAgentInfo { agent, agent_snapshot } = match resolve_chat_agent(&state.agent_manager, &agent_id) {
         Ok(info) => info,
@@ -789,10 +832,17 @@ async fn execute_chat_streaming(
     let inference_handle = tokio::spawn({
         let state = state.clone();
         let agent_id = agent_id.clone();
+        let model_config_id = model_config_id.clone();
         async move {
             state
                 .agent_manager
-                .infer_agent_response_streaming(&agent_id, messages, token_tx, Some(observer))
+                .infer_agent_response_streaming_with_model(
+                    &agent_id,
+                    messages,
+                    token_tx,
+                    Some(observer),
+                    model_config_id.as_deref(),
+                )
                 .await
         }
     });

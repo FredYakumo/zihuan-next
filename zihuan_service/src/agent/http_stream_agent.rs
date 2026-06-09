@@ -23,7 +23,7 @@ use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
 
 use zihuan_graph_engine::data_value::EXECUTION_TASK_ID;
 
-use super::inference::{infer_agent_response, resolve_agent_model_name};
+use super::inference::{infer_agent_response, infer_agent_response_with_model, resolve_agent_model_name, resolve_agent_model_name_with_override};
 use super::inference::{InferenceToolContext, InferenceToolProvider};
 use super::tool_definitions::build_enabled_tool_definitions;
 use super::tools::build_info_brain_tools;
@@ -368,7 +368,14 @@ async fn execute_http_stream_completion(
     let llm_refs = load_llm_refs()?;
     let agents = load_agents()?;
     let target_agent = resolve_http_stream_target_agent(runtime, &agents, agent_id.as_deref())?;
-    let model_name = resolve_agent_model_name(&target_agent, &llm_refs)?;
+    let user_model = model.as_deref().filter(|value| !value.trim().is_empty());
+    let model_override_for_inference = user_model.and_then(|m| {
+        llm_refs.iter().find(|r| r.id == m || r.config_id == m).map(|_| m)
+    });
+    let resolved_model_name = resolve_agent_model_name_with_override(&target_agent, &llm_refs, model_override_for_inference)
+        .unwrap_or_else(|_| {
+            resolve_agent_model_name(&target_agent, &llm_refs).unwrap_or_else(|_| "unknown".to_string())
+        });
     let completion_id = format!("chatcmpl-{}", uuid::Uuid::new_v4().simple());
     let created = chrono::Utc::now().timestamp();
 
@@ -406,12 +413,12 @@ async fn execute_http_stream_completion(
                     }
                 } else {
                     let final_message = LLMMessage::assistant_text(dispatch_result.result.reply);
-                    let model_name = model.unwrap_or(model_name);
+                    let response_model = user_model.unwrap_or(&resolved_model_name).to_string();
                     if stream {
                         return Ok(HttpStreamCompletion::Sse(build_sse_response(
                             &completion_id,
                             created,
-                            &model_name,
+                            &response_model,
                             &final_message,
                         )));
                     }
@@ -420,7 +427,7 @@ async fn execute_http_stream_completion(
                         "id": completion_id,
                         "object": "chat.completion",
                         "created": created,
-                        "model": model_name,
+                        "model": response_model,
                         "choices": [{
                             "index": 0,
                             "message": final_message,
@@ -432,14 +439,18 @@ async fn execute_http_stream_completion(
         }
     }
 
-    let final_message = infer_agent_response(&target_agent, &llm_refs, messages)?;
+    let final_message = if let Some(model_id) = model_override_for_inference {
+        infer_agent_response_with_model(&target_agent, &llm_refs, messages, Some(model_id))?
+    } else {
+        infer_agent_response(&target_agent, &llm_refs, messages)?
+    };
 
-    let model_name = model.unwrap_or(model_name);
+    let response_model = user_model.unwrap_or(&resolved_model_name).to_string();
     if stream {
         Ok(HttpStreamCompletion::Sse(build_sse_response(
             &completion_id,
             created,
-            &model_name,
+            &response_model,
             &final_message,
         )))
     } else {
@@ -447,7 +458,7 @@ async fn execute_http_stream_completion(
             "id": completion_id,
             "object": "chat.completion",
             "created": created,
-            "model": model_name,
+            "model": response_model,
             "choices": [{
                 "index": 0,
                 "message": final_message,

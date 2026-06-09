@@ -55,7 +55,7 @@
             </div>
 
             <div class="field">
-              <label>模型配置</label>
+              <label>{{ form.type === 'http_stream' ? '默认模型配置' : '模型配置' }}</label>
               <select v-model="form.llm_ref_id">
                 <option value="">请选择</option>
                 <option
@@ -658,7 +658,7 @@
             </div>
 
             <div class="field">
-              <label>模型配置</label>
+              <label>{{ form.type === 'http_stream' ? '默认模型配置' : '模型配置' }}</label>
               <select v-model="form.llm_ref_id">
                 <option value="">请选择</option>
                 <option
