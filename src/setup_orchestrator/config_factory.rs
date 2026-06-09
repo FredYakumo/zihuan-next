@@ -366,7 +366,8 @@ fn build_qq_chat_agent() -> AgentConfig {
 
 fn parse_api_style(value: &str) -> model_inference::system_config::LlmApiStyle {
     match value {
-        "candle" => model_inference::system_config::LlmApiStyle::Candle,
+        "candle" | "candle_gguf" => model_inference::system_config::LlmApiStyle::CandleGguf,
+        "candle_hf" => model_inference::system_config::LlmApiStyle::CandleHf,
         "open_ai_responses" => model_inference::system_config::LlmApiStyle::OpenAiResponses,
         "open_ai_responses_message_compat" => model_inference::system_config::LlmApiStyle::OpenAiResponsesMessageCompat,
         "open_ai_responses_image_url_object_compat" => {

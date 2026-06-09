@@ -220,6 +220,9 @@ export const fileIO = {
   listTextEmbeddingModels(): Promise<{ models: string[] }> {
     return request("GET", "/models/text-embedding");
   },
+  listLocalLlmModels(): Promise<{ models: LocalLlmModelInfo[] }> {
+    return request("GET", "/models/llm");
+  },
   listTokenizerModels(): Promise<{ models: string[] }> {
     return request("GET", "/models/tokenizer");
   },
@@ -327,7 +330,8 @@ export interface LlmServiceConfig {
   api_endpoint: string;
   api_key?: string | null;
   api_style:
-    | "candle"
+    | "candle_gguf"
+    | "candle_hf"
     | "open_ai_chat_completions"
     | "open_ai_chat_completions_tencent_multimodal_compat"
     | "open_ai_responses"
@@ -340,6 +344,16 @@ export interface LlmServiceConfig {
   reasoning_effort?: "low" | "medium" | "high" | "max" | null;
   timeout_secs: number;
   retry_count: number;
+}
+
+export interface LocalLlmModelInfo {
+  model_name: string;
+  kind: "text" | "vision_language";
+  layout: "gguf" | "hf" | "unknown";
+  available: boolean;
+  reason?: string | null;
+  weight_file?: string | null;
+  supports_multimodal_input: boolean;
 }
 
 export type ModelRefSpec =

@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use chrono::{Datelike, Utc};
 use log::{info, warn};
+use model_inference::nn::local_llm_registry::list_local_llm_models as scan_local_llm_models;
 use model_inference::system_config::{load_agents, AgentConfig, AgentToolType, NodeGraphToolConfig};
 use salvo::prelude::*;
 use salvo::writing::Json;
@@ -76,6 +77,11 @@ pub async fn list_text_embedding_models(_req: &mut Request, res: &mut Response, 
     };
 
     res.render(Json(serde_json::json!({ "models": models })));
+}
+
+#[handler]
+pub async fn list_local_llm_models(_req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    res.render(Json(serde_json::json!({ "models": scan_local_llm_models() })));
 }
 
 #[handler]

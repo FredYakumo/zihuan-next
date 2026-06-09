@@ -1,12 +1,11 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use zihuan_core::error::Result;
 use zihuan_core::llm::embedding_base::EmbeddingBase;
 use zihuan_core::llm::llm_base::LLMBase;
 
-use crate::llm_api::LLMAPI;
 use crate::nn::embedding::embedding_runtime_manager::RuntimeEmbeddingModelManager;
+use crate::nodes::llm_node::build_llm;
 use crate::system_config::{load_llm_refs, ModelRefSpec};
 
 pub const LLM_KIND_FIELD: &str = "llm_kind";
@@ -36,21 +35,7 @@ pub fn build_llm_from_ref_id(llm_ref_id: Option<&str>) -> Result<Arc<dyn LLMBase
         )));
     };
 
-    Ok(Arc::new(
-        LLMAPI::new(
-            llm.model_name,
-            llm.api_endpoint,
-            llm.api_key,
-            llm.api_style,
-            llm.stream,
-            llm.supports_multimodal_input,
-            llm.include_reasoning_content,
-            llm.thinking_type,
-            llm.reasoning_effort,
-            Duration::from_secs(llm.timeout_secs),
-        )
-        .with_retry_count(llm.retry_count),
-    ))
+    build_llm(llm)
 }
 
 pub fn build_embedding_from_ref_id(embedding_model_ref_id: Option<&str>) -> Result<Arc<dyn EmbeddingBase>> {

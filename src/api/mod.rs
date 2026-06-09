@@ -177,6 +177,7 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast, canonical_loca
         .push(Router::with_path("file/open").post(file_io::open_file))
         .push(Router::with_path("file/upload").post(file_io::upload_graph))
         .push(Router::with_path("file/upload-image").post(file_io::upload_image))
+        .push(Router::with_path("models/llm").get(file_io::list_local_llm_models))
         .push(Router::with_path("models/text-embedding").get(file_io::list_text_embedding_models))
         .push(Router::with_path("models/tokenizer").get(file_io::list_tokenizer_models))
         .push(Router::with_path("uploaded-images/<**rest>").get(file_io::serve_uploaded_image))

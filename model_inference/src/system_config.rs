@@ -61,7 +61,9 @@ pub struct HttpStreamAgentConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LlmApiStyle {
-    Candle,
+    #[serde(alias = "candle")]
+    CandleGguf,
+    CandleHf,
     #[serde(alias = "open_ai_chat_completions_api")]
     OpenAiChatCompletions,
     OpenAiChatCompletionsTencentMultimodalCompat,
@@ -316,7 +318,9 @@ impl ConfigRecord for LlmRefConfig {
                 if llm.model_name.trim().is_empty() {
                     return Err(zihuan_core::string_error!("chat_llm model_name must not be empty"));
                 }
-                if !matches!(llm.api_style, LlmApiStyle::Candle) && llm.api_endpoint.trim().is_empty() {
+                if !matches!(llm.api_style, LlmApiStyle::CandleGguf | LlmApiStyle::CandleHf)
+                    && llm.api_endpoint.trim().is_empty()
+                {
                     return Err(zihuan_core::string_error!("chat_llm api_endpoint must not be empty"));
                 }
             }

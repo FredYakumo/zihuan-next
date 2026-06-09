@@ -23,7 +23,8 @@ export type AgentTypeName = "qq_chat" | "http_stream";
 export type ModelRefType = "chat_llm" | "text_embedding_local";
 export type ToolRunDuration = "Short" | "Long";
 export type LlmApiStyle =
-  | "candle"
+  | "candle_gguf"
+  | "candle_hf"
   | "open_ai_chat_completions"
   | "open_ai_chat_completions_tencent_multimodal_compat"
   | "open_ai_responses"
@@ -942,7 +943,14 @@ export function buildModelRefPayload(form: LlmFormState): ModelRefSpec {
     type: "chat_llm",
     llm: {
       ...form.llm,
-      api_key: form.llm.api_key?.trim() || null,
+      api_endpoint:
+        form.llm.api_style === "candle_gguf" || form.llm.api_style === "candle_hf"
+          ? ""
+          : form.llm.api_endpoint.trim(),
+      api_key:
+        form.llm.api_style === "candle_gguf" || form.llm.api_style === "candle_hf"
+          ? null
+          : form.llm.api_key?.trim() || null,
     },
   };
 }

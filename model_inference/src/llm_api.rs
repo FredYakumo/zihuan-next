@@ -222,7 +222,8 @@ impl LLMAPI {
 
     fn api_style_label(&self) -> &'static str {
         match self.api_style {
-            LlmApiStyle::Candle => "candle",
+            LlmApiStyle::CandleGguf => "candle_gguf",
+            LlmApiStyle::CandleHf => "candle_hf",
             LlmApiStyle::OpenAiChatCompletions => "open_ai_chat_completions",
             LlmApiStyle::OpenAiChatCompletionsTencentMultimodalCompat => {
                 "open_ai_chat_completions_tencent_multimodal_compat"
@@ -359,8 +360,8 @@ impl LLMBase for LLMAPI {
     }
 
     fn inference(&self, param: &InferenceParam) -> LLMMessage {
-        if matches!(self.api_style, LlmApiStyle::Candle) {
-            error!("Candle chat backend is not implemented yet");
+        if matches!(self.api_style, LlmApiStyle::CandleGguf | LlmApiStyle::CandleHf) {
+            error!("Local Candle styles should be routed through the local runtime, not LLMAPI");
             return LLMMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR);
         }
 
@@ -477,8 +478,8 @@ impl LLMAPI {
         param: &InferenceParam<'_>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
     ) -> LLMMessage {
-        if matches!(self.api_style, LlmApiStyle::Candle) {
-            error!("Candle chat backend is not implemented yet");
+        if matches!(self.api_style, LlmApiStyle::CandleGguf | LlmApiStyle::CandleHf) {
+            error!("Local Candle styles should be routed through the local runtime, not LLMAPI");
             return LLMMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR);
         }
 

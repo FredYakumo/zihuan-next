@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use crate::llm_api::LLMAPI;
+use crate::nn::local_candle_llm_gguf::build_local_candle_gguf_llm;
+use crate::nn::local_candle_llm_hf::build_local_candle_hf_llm;
 use crate::system_config::{load_llm_refs, LlmApiStyle, LlmServiceConfig, ModelRefSpec};
 use zihuan_core::error::Result;
 use zihuan_core::llm::llm_base::LLMBase;
@@ -28,9 +30,8 @@ pub fn build_llm(config: LlmServiceConfig) -> Result<Arc<dyn LLMBase>> {
             .with_retry_count(config.retry_count);
             Ok(Arc::new(api))
         }
-        LlmApiStyle::Candle => Err(zihuan_core::error::Error::ValidationError(
-            "Candle backend is not implemented yet".to_string(),
-        )),
+        LlmApiStyle::CandleGguf => build_local_candle_gguf_llm(config),
+        LlmApiStyle::CandleHf => build_local_candle_hf_llm(config),
     }
 }
 
