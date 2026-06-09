@@ -1,6 +1,4 @@
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
-use node_macros::node_output_flow;
-use std::collections::HashMap;
 use zihuan_core::{error::Result, validation_error};
 
 /// Extracts the `content` field of an `LLMMessage` as a plain string.

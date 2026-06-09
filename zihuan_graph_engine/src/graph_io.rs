@@ -24,7 +24,7 @@ use crate::function_graph::{
     sync_function_subgraph_signature,
 };
 use crate::graph_boundary::sync_root_graph_io;
-use crate::{DataValue, Node, NodeConfigFlow, NodeGraph, NodeOutputFlow, Port};
+use crate::{Node, NodeConfigFlow, NodeGraph, NodeOutputFlow, Port};
 use zihuan_core::error::Result;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

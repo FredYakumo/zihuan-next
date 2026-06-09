@@ -1,4 +1,4 @@
-use crate::{node_input, node_output, node_output_flow, DataType, DataValue, Node, Port};
+use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use zihuan_core::error::Result;
 
 /// Routes one of two inputs to the output based on a boolean condition.

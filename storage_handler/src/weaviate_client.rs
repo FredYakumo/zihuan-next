@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde_json::{json, Value};
 
-use zihuan_core::error::{Error, Result};
+use zihuan_core::error::Result;
 use zihuan_core::weaviate::{gql_escape, graphql_value, WeaviateCollectionConfig, WeaviateObjectInput, WeaviateRef};
 
 pub trait WeaviateClient {

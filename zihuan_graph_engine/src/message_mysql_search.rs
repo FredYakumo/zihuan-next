@@ -3,7 +3,6 @@ use crate::message_mysql_history_common::{
     SearchMessagesQueryBuilder,
 };
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
-use std::collections::HashMap;
 use zihuan_core::error::{Error, Result};
 
 pub struct MessageMySQLSearchNode {

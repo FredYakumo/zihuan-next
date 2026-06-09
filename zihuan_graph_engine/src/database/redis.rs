@@ -4,7 +4,6 @@ use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::{info, warn};
 use redis::aio::Connection;
 use redis::AsyncCommands;
-use std::collections::HashMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;

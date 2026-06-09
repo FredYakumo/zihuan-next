@@ -1,7 +1,6 @@
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::{info, warn};
 use serde_json::Value;
-use std::collections::HashMap;
 use zihuan_core::error::{Error, Result};
 
 /// Parses the `content` string of an `LLMMessage` into JSON.

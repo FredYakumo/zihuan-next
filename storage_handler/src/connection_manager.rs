@@ -8,7 +8,7 @@ use log::info;
 use once_cell::sync::Lazy;
 use reqwest::blocking::Client;
 use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
-use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
+use sqlx::sqlite::SqlitePoolOptions;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 use zihuan_core::connection_manager::{

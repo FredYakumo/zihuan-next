@@ -35,12 +35,6 @@ impl Node for PreviewQQMessageListNode {
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
-        let outputs = if let Some(value) = inputs.get("messages") {
-            node_output_flow!["messages" => value.clone()]
-        } else {
-            node_output_flow![]
-        };
-
         let outputs = inputs
             .get("messages")
             .cloned()

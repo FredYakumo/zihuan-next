@@ -7,7 +7,6 @@ use crate::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 use chrono::Local;
 use log::{debug, error, info, warn};
 use sqlx;
-use std::collections::HashMap;
 use tokio::task::block_in_place;
 use zihuan_core::error::Result;
 use zihuan_core::ims_bot_adapter::models::message::{collect_media_records, Message};

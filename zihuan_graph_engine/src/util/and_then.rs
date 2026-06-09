@@ -1,4 +1,4 @@
-use crate::{node_input, node_output, node_output_flow, DataType, Node, Port};
+use crate::{node_input, node_output, DataType, Node, Port};
 use zihuan_core::error::Result;
 
 /// Waits for two inputs, then forwards the second one unchanged.

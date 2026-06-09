@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::load_connections;
 use crate::resource_resolver::build_web_search_engine_ref;
 use zihuan_core::error::{Error, Result};
