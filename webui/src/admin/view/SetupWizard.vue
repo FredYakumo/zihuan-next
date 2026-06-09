@@ -40,9 +40,9 @@
         @back="onLlmBack"
       />
 
-      <NapCatConfigStep
-        v-else-if="step === 'napcat'"
-        v-model="napcatConfig"
+      <ImsBotAdapterConfigStep
+        v-else-if="step === 'ims_bot_adapter'"
+        v-model="imsBotAdapterConfig"
         @next="startInstallation"
         @back="step = 'llm'"
       />
@@ -72,13 +72,13 @@ import ModeSelection from "../setup/ModeSelection.vue";
 import RoleSelection from "../setup/RoleSelection.vue";
 import EnvironmentCheck from "../setup/EnvironmentCheck.vue";
 import LlmConfigStep from "../setup/LlmConfigStep.vue";
-import NapCatConfigStep from "../setup/NapCatConfigStep.vue";
+import ImsBotAdapterConfigStep from "../setup/ImsBotAdapterConfigStep.vue";
 import InstallationProgress from "../setup/InstallationProgress.vue";
 import SetupComplete from "../setup/SetupComplete.vue";
-import { setup as setupApi, type LlmSetupConfig, type NapCatSetupConfig, type SetupProgressEvent } from "../../api/client";
+import { setup as setupApi, type LlmSetupConfig, type ImsBotAdapterSetupConfig, type SetupProgressEvent } from "../../api/client";
 import { setLiveLogConsoleVisible } from "../../ui/live_log_console";
 
-type Step = "mode" | "role" | "environment" | "llm" | "napcat" | "install" | "complete";
+type Step = "mode" | "role" | "environment" | "llm" | "ims_bot_adapter" | "install" | "complete";
 type SetupRole = "chat_assistant" | "code_dev_assistant" | "qq_chat_bot" | "ai_butler";
 
 const router = useRouter();
@@ -100,7 +100,8 @@ const llmConfig = ref<LlmSetupConfig>({
   api_key: null,
   api_style: "open_ai_chat_completions",
 });
-const napcatConfig = ref<NapCatSetupConfig>({
+const imsBotAdapterConfig = ref<ImsBotAdapterSetupConfig>({
+  platform: "qq_napcat",
   ws_url: "ws://127.0.0.1:3001",
   qq_id: null,
   token: null,
@@ -111,14 +112,14 @@ const installError = ref<string | null>(null);
 let cleanupProgress = (() => {}) as () => void;
 
 const showProgressBar = computed(() =>
-  ["environment", "llm", "napcat", "install", "complete"].includes(step.value)
+  ["environment", "llm", "ims_bot_adapter", "install", "complete"].includes(step.value)
 );
 
 const progressPercent = computed(() => {
   switch (step.value) {
     case "environment": return 20;
     case "llm": return 40;
-    case "napcat": return 55;
+    case "ims_bot_adapter": return 55;
     case "install": return 70;
     case "complete": return 100;
     default: return 0;
@@ -152,7 +153,7 @@ function onRoleSelect(role: SetupRole) {
 
 function onLlmNext() {
   if (selectedRole.value === "qq_chat_bot") {
-    step.value = "napcat";
+    step.value = "ims_bot_adapter";
   } else {
     startInstallation();
   }
@@ -177,7 +178,7 @@ async function startInstallation() {
       mode: "role_based",
       role: selectedRole.value ?? undefined,
       llm_config: llmConfig.value,
-      napcat_config: selectedRole.value === "qq_chat_bot" ? napcatConfig.value : undefined,
+      ims_bot_adapter_config: selectedRole.value === "qq_chat_bot" ? imsBotAdapterConfig.value : undefined,
     });
     taskId.value = res.task_id;
 

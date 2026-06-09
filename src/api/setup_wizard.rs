@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::api::config::{now_rfc3339, ok_response, render_internal_error};
 use crate::api::state::AppState;
 use crate::setup_orchestrator::{
-    LlmSetupConfig, NapCatSetupConfig, SetupOptions, SetupOrchestrator, SetupRole,
+    LlmSetupConfig, ImsBotAdapterSetupConfig, SetupOptions, SetupOrchestrator, SetupRole,
 };
 use zihuan_core::setup_wizard::{clear_setup_wizard_state, load_setup_wizard_state, save_setup_wizard_state};
 
@@ -20,7 +20,7 @@ pub struct ExecuteSetupRequest {
     #[serde(default)]
     pub llm_config: Option<LlmSetupConfig>,
     #[serde(default)]
-    pub napcat_config: Option<NapCatSetupConfig>,
+    pub ims_bot_adapter_config: Option<ImsBotAdapterSetupConfig>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -134,12 +134,12 @@ pub async fn post_execute_setup(req: &mut Request, res: &mut Response, depot: &m
         guard.insert(task_id.clone(), progress_tx);
     }
 
-    let napcat_config = body.napcat_config;
+    let ims_bot_adapter_config = body.ims_bot_adapter_config;
     let options = body.options;
     let task_id_for_spawn = task_id.clone();
 
     tokio::spawn(async move {
-        let result = orchestrator.run(role, options, llm_config, napcat_config).await;
+        let result = orchestrator.run(role, options, llm_config, ims_bot_adapter_config).await;
         if let Err(err) = result {
             log::warn!("[setup_orchestrator] task {} failed: {}", task_id_for_spawn, err);
         }

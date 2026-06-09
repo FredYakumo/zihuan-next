@@ -33,7 +33,7 @@ impl SetupOrchestrator {
         role: SetupRole,
         options: SetupOptions,
         llm_config: LlmSetupConfig,
-        napcat_config: Option<NapCatSetupConfig>,
+        ims_bot_adapter_config: Option<ImsBotAdapterSetupConfig>,
     ) -> Result<(), String> {
         self.emit("detecting_environment", "running", "Detecting environment...", Some(5));
 
@@ -51,6 +51,24 @@ impl SetupOrchestrator {
             SetupRole::AiButler => vec!["redis", "weaviate", "rustfs"],
         };
 
+        // Track native NapCat install path so we can persist it in the bot adapter config.
+        let mut napcat_native_path: Option<String> = None;
+
+        // Use auto-detected proxy as fallback when none was explicitly provided.
+        let effective_proxy = options
+            .http_proxy
+            .as_deref()
+            .or(env.proxy.as_deref());
+
+        if let Some(proxy) = effective_proxy {
+            self.emit(
+                "detecting_environment",
+                "success",
+                &format!("Using proxy: {proxy}"),
+                Some(12),
+            );
+        }
+
         if !required_services.is_empty() {
             self.emit("installing_dependencies", "running", "Installing dependencies...", Some(15));
 
@@ -64,7 +82,7 @@ impl SetupOrchestrator {
                         Some(pct),
                     );
 
-                    match run_docker_compose_for_service(service, options.http_proxy.as_deref()).await {
+                    match run_docker_compose_for_service(service, effective_proxy).await {
                         Ok(_) => {
                             self.emit(
                                 &format!("installing_{service}"),
@@ -87,10 +105,52 @@ impl SetupOrchestrator {
             } else {
                 self.emit(
                     "installing_dependencies",
-                    "skipped",
-                    "Docker not available. Binary auto-installation will be implemented in a future update.",
-                    Some(60),
+                    "running",
+                    "Docker not available, installing dependencies natively...",
+                    Some(15),
                 );
+
+                for (i, service) in required_services.iter().enumerate() {
+                    let pct = 15 + ((i + 1) as u8 * 50 / required_services.len() as u8);
+                    if *service == "napcat" {
+                        let qq_id = ims_bot_adapter_config
+                            .as_ref()
+                            .and_then(|c| c.qq_id.as_deref());
+                        self.emit(
+                            "installing_napcat",
+                            "running",
+                            "Downloading and installing NapCat...",
+                            Some(pct - 5),
+                        );
+                        match install_napcat_native(effective_proxy, qq_id).await {
+                            Ok(install_path) => {
+                                napcat_native_path = Some(install_path.clone());
+                                self.emit(
+                                    "installing_napcat",
+                                    "success",
+                                    &format!("NapCat installed at {install_path}"),
+                                    Some(pct),
+                                );
+                            }
+                            Err(e) => {
+                                self.emit(
+                                    "installing_napcat",
+                                    "error",
+                                    &format!("Failed to install NapCat: {e}"),
+                                    Some(pct),
+                                );
+                                return Err(e);
+                            }
+                        }
+                    } else {
+                        self.emit(
+                            &format!("installing_{service}"),
+                            "skipped",
+                            &format!("{service} requires Docker; please install Docker for full functionality"),
+                            Some(pct),
+                        );
+                    }
+                }
             }
 
             self.emit(
@@ -103,7 +163,7 @@ impl SetupOrchestrator {
 
         self.emit("creating_configs", "running", "Creating system configurations...", Some(70));
 
-        match self.create_configs(&role, &llm_config, napcat_config.as_ref()).await {
+        match self.create_configs(&role, &llm_config, ims_bot_adapter_config.as_ref(), napcat_native_path.as_deref()).await {
             Ok(_) => {
                 self.emit("creating_configs", "success", "Configurations created successfully", Some(90));
             }
@@ -129,15 +189,17 @@ impl SetupOrchestrator {
         &self,
         role: &SetupRole,
         llm_config: &LlmSetupConfig,
-        napcat_config: Option<&NapCatSetupConfig>,
+        ims_bot_adapter_config: Option<&ImsBotAdapterSetupConfig>,
+        napcat_native_path: Option<&str>,
     ) -> Result<(), String> {
         match role {
             SetupRole::ChatAssistant | SetupRole::CodeDevAssistant => {
                 config_factory::create_chat_assistant_stack(llm_config).await
             }
             SetupRole::QqChatBot => {
-                let napcat = napcat_config.ok_or("NapCat configuration is required for QQ Chat Bot")?;
-                config_factory::create_qq_bot_stack(llm_config, napcat).await
+                let ims_config = ims_bot_adapter_config
+                    .ok_or("IMS Bot Adapter configuration is required for QQ Chat Bot")?;
+                config_factory::create_qq_bot_stack(llm_config, ims_config, napcat_native_path).await
             }
             SetupRole::AiButler => config_factory::create_butler_stack(llm_config).await,
         }
@@ -189,7 +251,8 @@ pub struct LlmSetupConfig {
 }
 
 #[derive(Clone, Deserialize)]
-pub struct NapCatSetupConfig {
+pub struct ImsBotAdapterSetupConfig {
+    pub platform: String,
     pub ws_url: String,
     #[serde(default)]
     pub qq_id: Option<String>,
@@ -425,4 +488,187 @@ async fn run_docker_compose_for_service(service: &str, http_proxy: Option<&str>)
         return Err(String::from_utf8_lossy(&output.stderr).to_string());
     }
     Ok(())
+}
+
+const NAPCAT_WIN_ONEKEY_URL: &str =
+    "https://github.com/NapNeko/NapCatQQ/releases/latest/download/NapCat.Shell.Windows.OneKey.zip";
+
+/// Installs NapCat natively on Windows using the OneKey package.
+/// Returns the install directory path on success.
+async fn install_napcat_native(
+    http_proxy: Option<&str>,
+    qq_id: Option<&str>,
+) -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let data_dir = zihuan_core::system_config::app_data_dir();
+        let install_root = data_dir.join("zihuan-next_aibot").join("napcat_install");
+        let zip_path = install_root.join("NapCat.OneKey.zip");
+        let extract_dir = install_root.join("NapCat");
+
+        tokio::fs::create_dir_all(&install_root)
+            .await
+            .map_err(|e| format!("Failed to create install directory: {e}"))?;
+
+        // Download
+        let mut client_builder =
+            reqwest::Client::builder().timeout(std::time::Duration::from_secs(600));
+        if let Some(proxy) = http_proxy {
+            if let Ok(p) = reqwest::Proxy::all(proxy) {
+                client_builder = client_builder.proxy(p);
+            }
+        }
+        let client = client_builder
+            .build()
+            .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
+
+        let response = client
+            .get(NAPCAT_WIN_ONEKEY_URL)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to download NapCat OneKey: {e}"))?;
+
+        if !response.status().is_success() {
+            return Err(format!(
+                "Download failed with status {}: {}. \
+                 Please download NapCat manually from https://github.com/NapNeko/NapCatQQ/releases",
+                response.status().as_u16(),
+                response.status().canonical_reason().unwrap_or("Unknown")
+            ));
+        }
+
+        let total_size = response.content_length().unwrap_or(0);
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| format!("Failed to read download response: {e}"))?;
+
+        tokio::fs::write(&zip_path, &bytes)
+            .await
+            .map_err(|e| format!("Failed to save downloaded zip: {e}"))?;
+
+        // Extract
+        let file =
+            std::fs::File::open(&zip_path).map_err(|e| format!("Failed to open zip: {e}"))?;
+        let mut archive =
+            zip::ZipArchive::new(file).map_err(|e| format!("Failed to read zip archive: {e}"))?;
+        archive
+            .extract(&extract_dir)
+            .map_err(|e| format!("Failed to extract NapCat: {e}"))?;
+
+        // Find and run NapCatInstaller.exe
+        let installer = find_napcat_installer(&extract_dir)?;
+        let output = tokio::process::Command::new(&installer)
+            .current_dir(&extract_dir)
+            .output()
+            .await
+            .map_err(|e| format!("Failed to run NapCatInstaller.exe: {e}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("NapCatInstaller failed: {stderr}"));
+        }
+
+        // Find napcat.bat for the installed shell
+        let shell_dir = find_napcat_shell_dir(&extract_dir).unwrap_or_else(|| extract_dir.clone());
+
+        // Quick login: run napcat.bat with QQ number
+        if let Some(qq) = qq_id {
+            let napcat_bat = shell_dir.join("napcat.bat");
+            if napcat_bat.exists() {
+                let _ = tokio::process::Command::new("cmd")
+                    .args(["/c", "start", "NapCat QQ"])
+                    .arg(napcat_bat.to_string_lossy().as_ref())
+                    .arg(qq)
+                    .current_dir(&shell_dir)
+                    .spawn();
+            }
+        }
+
+        // Open NapCat web UI in browser
+        open_url_in_browser("http://127.0.0.1:6099/webui/");
+
+        let size_mb = total_size as f64 / (1024.0 * 1024.0);
+        log::info!(
+            "NapCat installed ({size_mb:.1} MB) at {}",
+            shell_dir.display()
+        );
+
+        Ok(shell_dir.to_string_lossy().to_string())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = http_proxy;
+        let _ = qq_id;
+        Err(
+            "Automatic NapCat installation is currently only supported on Windows with the OneKey package. \
+             Please install NapCat manually: https://github.com/NapNeko/NapCatQQ/releases"
+                .to_string(),
+        )
+    }
+}
+
+/// Open a URL in the system default browser.
+fn open_url_in_browser(url: &str) {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("cmd")
+            .args(["/c", "start", url])
+            .spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open")
+            .arg(url)
+            .spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("xdg-open")
+            .arg(url)
+            .spawn();
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn find_napcat_installer(extract_dir: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let root_installer = extract_dir.join("NapCatInstaller.exe");
+    if root_installer.exists() {
+        return Ok(root_installer);
+    }
+    for entry in std::fs::read_dir(extract_dir).map_err(|e| format!("Cannot read extract dir: {e}"))? {
+        let entry = entry.map_err(|e| format!("Dir entry error: {e}"))?;
+        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with("NapCat") && name.contains("Shell") {
+                let installer = entry.path().join("NapCatInstaller.exe");
+                if installer.exists() {
+                    return Ok(installer);
+                }
+            }
+            if let Ok(sub_entries) = std::fs::read_dir(entry.path()) {
+                for sub in sub_entries.flatten() {
+                    if sub.file_name().to_string_lossy().to_lowercase() == "napcatinstaller.exe" {
+                        return Ok(sub.path());
+                    }
+                }
+            }
+        }
+    }
+    Err("Could not find NapCatInstaller.exe in the extracted package".to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn find_napcat_shell_dir(extract_dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    for entry in std::fs::read_dir(extract_dir).ok()? {
+        let entry = entry.ok()?;
+        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.contains("Shell") && entry.path().join("napcat.bat").exists() {
+                return Some(entry.path());
+            }
+        }
+    }
+    None
 }

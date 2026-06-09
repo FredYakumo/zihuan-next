@@ -888,7 +888,10 @@ export interface LlmSetupConfig {
   api_style: string;
 }
 
-export interface NapCatSetupConfig {
+export type ImsPlatform = "qq_napcat" | "wechat" | "telegram";
+
+export interface ImsBotAdapterSetupConfig {
+  platform: ImsPlatform;
   ws_url: string;
   qq_id?: string | null;
   token?: string | null;
@@ -906,7 +909,7 @@ export const setup = {
     role?: string;
     options?: { http_proxy?: string; docker_compose_path?: string };
     llm_config?: LlmSetupConfig;
-    napcat_config?: NapCatSetupConfig;
+    ims_bot_adapter_config?: ImsBotAdapterSetupConfig;
   }): Promise<{ accepted: boolean; task_id: string }> {
     return request("POST", "/setup", payload);
   },

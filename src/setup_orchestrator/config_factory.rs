@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::api::config::now_rfc3339;
-use crate::setup_orchestrator::{LlmSetupConfig, NapCatSetupConfig};
+use crate::setup_orchestrator::{LlmSetupConfig, ImsBotAdapterSetupConfig};
 use crate::system_config;
 use ims_bot_adapter::BotAdapterConnection;
 use model_inference::system_config::{
@@ -32,7 +32,11 @@ pub async fn create_chat_assistant_stack(llm_config: &LlmSetupConfig) -> Result<
     Ok(())
 }
 
-pub async fn create_qq_bot_stack(llm_config: &LlmSetupConfig, napcat_config: &NapCatSetupConfig) -> Result<(), String> {
+pub async fn create_qq_bot_stack(
+    llm_config: &LlmSetupConfig,
+    ims_config: &ImsBotAdapterSetupConfig,
+    napcat_native_path: Option<&str>,
+) -> Result<(), String> {
     let llm_ref = build_llm_ref(llm_config, "setup-default-llm", "Default LLM");
     save_llm_ref(llm_ref)?;
 
@@ -95,13 +99,14 @@ pub async fn create_qq_bot_stack(llm_config: &LlmSetupConfig, napcat_config: &Na
 
     let bot_adapter = build_connection(
         "setup-default-bot-adapter",
-        "NapCat Bot Adapter",
+        "QQ Bot Adapter (NapCat)",
         ConnectionKind::BotAdapter(
             serde_json::to_value(BotAdapterConnection {
-                bot_server_url: napcat_config.ws_url.clone(),
+                bot_server_url: ims_config.ws_url.clone(),
                 adapter_server_url: None,
-                bot_server_token: napcat_config.token.clone(),
-                qq_id: napcat_config.qq_id.clone(),
+                bot_server_token: ims_config.token.clone(),
+                qq_id: ims_config.qq_id.clone(),
+                napcat_install_path: napcat_native_path.map(|s| s.to_string()),
             })
             .unwrap_or(serde_json::Value::Null),
         ),

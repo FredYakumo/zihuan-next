@@ -15,6 +15,10 @@ pub struct BotAdapterConnection {
     pub bot_server_token: Option<String>,
     #[serde(default)]
     pub qq_id: Option<String>,
+    /// When set, NapCat was installed natively (not Docker) and this is the
+    /// path to the install directory containing napcat.bat / NapCatWinBootMain.exe.
+    #[serde(default)]
+    pub napcat_install_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

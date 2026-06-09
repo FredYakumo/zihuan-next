@@ -71,6 +71,9 @@ async fn main() {
     startup_recover_orphan_tasks(&state).await;
     spawn_task_ttl_cleanup(Arc::clone(&state));
 
+    // Auto-start NapCat for any natively-installed bot adapters before starting agents.
+    startup_napcat_native().await;
+
     {
         let agents = crate::system_config::load_agents().unwrap_or_else(|e| {
             error!("Failed to load agents for auto start: {e}");
@@ -215,4 +218,76 @@ fn spawn_task_ttl_cleanup(state: std::sync::Arc<api::state::AppState>) {
             }
         }
     });
+}
+
+/// Auto-start NapCat for any natively-installed bot adapter connections.
+async fn startup_napcat_native() {
+    let connections = match crate::system_config::load_connections() {
+        Ok(conns) => conns,
+        Err(e) => {
+            log::warn!("[startup] failed to load connections for NapCat auto-start: {e}");
+            return;
+        }
+    };
+
+    for conn in &connections {
+        if !conn.enabled {
+            continue;
+        }
+        let storage_handler::ConnectionKind::BotAdapter(ref raw) = conn.kind else {
+            continue;
+        };
+        let Ok(adapter) =
+            serde_json::from_value::<ims_bot_adapter::BotAdapterConnection>(raw.clone())
+        else {
+            continue;
+        };
+        let Some(ref install_path) = adapter.napcat_install_path else {
+            continue;
+        };
+
+        let install_dir = std::path::Path::new(install_path);
+        let napcat_bat = install_dir.join("napcat.bat");
+
+        if !napcat_bat.exists() {
+            log::warn!(
+                "[startup] NapCat install path '{}' exists but napcat.bat not found; \
+                 skipping auto-start for connection '{}'",
+                install_path,
+                conn.name
+            );
+            continue;
+        }
+
+        log::info!(
+            "[startup] Auto-starting NapCat from '{}' for connection '{}'",
+            install_path,
+            conn.name
+        );
+
+        let mut cmd = tokio::process::Command::new("cmd");
+        cmd.args(["/c", "start", "NapCat QQ (zihuan)"])
+            .arg(napcat_bat.to_string_lossy().as_ref())
+            .current_dir(install_dir);
+
+        // Quick login: pass QQ number if configured
+        if let Some(ref qq) = adapter.qq_id {
+            cmd.arg(qq);
+        }
+
+        match cmd.spawn() {
+            Ok(_) => {
+                log::info!(
+                    "[startup] NapCat launched successfully for connection '{}'",
+                    conn.name
+                );
+            }
+            Err(e) => {
+                log::warn!(
+                    "[startup] Failed to launch NapCat for connection '{}': {e}",
+                    conn.name
+                );
+            }
+        }
+    }
 }
