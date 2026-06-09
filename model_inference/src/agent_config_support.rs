@@ -45,6 +45,8 @@ pub fn build_llm_from_ref_id(llm_ref_id: Option<&str>) -> Result<Arc<dyn LLMBase
             llm.stream,
             llm.supports_multimodal_input,
             llm.include_reasoning_content,
+            llm.thinking_type,
+            llm.reasoning_effort,
             Duration::from_secs(llm.timeout_secs),
         )
         .with_retry_count(llm.retry_count),

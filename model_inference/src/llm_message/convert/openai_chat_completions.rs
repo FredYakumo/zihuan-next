@@ -1,8 +1,9 @@
+use crate::system_config::{ReasoningEffort, ThinkingType};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use tokio::sync::mpsc;
 use zihuan_core::llm::tooling::{ToolCalls, ToolCallsFuncSpec};
-use zihuan_core::llm::{str_to_role, InferenceParam, LLMMessage, LLMMessageConvertStyle, MessagePart, TokenUsage};
+use zihuan_core::llm::{str_to_role, InferenceParam, LLMMessage, LLMMessageConvertStyle, MessagePart, StreamToken, TokenUsage};
 
 #[derive(Default)]
 struct StreamToolCallDelta {
@@ -106,6 +107,8 @@ pub fn build_chat_completions_request_body(
     param: &InferenceParam<'_>,
     stream: bool,
     include_reasoning_content: bool,
+    thinking_type: Option<&ThinkingType>,
+    reasoning_effort: Option<&ReasoningEffort>,
 ) -> Value {
     let mut request_body = serde_json::json!({
         "model": model_name,
@@ -116,6 +119,14 @@ pub fn build_chat_completions_request_body(
         ),
         "stream": stream,
     });
+
+    if let Some(effort) = reasoning_effort {
+        request_body["reasoning_effort"] = serde_json::json!(effort);
+    }
+
+    if let Some(thinking) = thinking_type {
+        request_body["thinking"] = serde_json::json!({ "type": thinking });
+    }
 
     if stream {
         request_body["stream_options"] = serde_json::json!({ "include_usage": true });
@@ -289,7 +300,7 @@ pub fn parse_chat_completions_sse_response(response_text: &str) -> Option<LLMMes
 
 pub async fn parse_chat_completions_sse_stream_response(
     response: reqwest::Response,
-    token_tx: mpsc::UnboundedSender<String>,
+    token_tx: mpsc::UnboundedSender<StreamToken>,
 ) -> LLMMessage {
     use futures_util::StreamExt;
 
@@ -342,11 +353,12 @@ pub async fn parse_chat_completions_sse_stream_response(
                 if let Some(piece) = delta.get("content").and_then(|v| v.as_str()) {
                     if !piece.is_empty() {
                         content.push_str(piece);
-                        let _ = token_tx.send(piece.to_string());
+                        let _ = token_tx.send(StreamToken::content(piece));
                     }
                 }
                 if let Some(piece) = delta.get("reasoning_content").and_then(|v| v.as_str()) {
                     reasoning_content.push_str(piece);
+                    let _ = token_tx.send(StreamToken::thinking(piece));
                 }
                 if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
                     for tool_call in tool_calls {
@@ -383,10 +395,11 @@ pub async fn parse_chat_completions_sse_stream_response(
                 }
                 if let Some(text) = message.get("content").and_then(|v| v.as_str()) {
                     content.push_str(text);
-                    let _ = token_tx.send(text.to_string());
+                    let _ = token_tx.send(StreamToken::content(text));
                 }
                 if let Some(text) = message.get("reasoning_content").and_then(|v| v.as_str()) {
                     reasoning_content.push_str(text);
+                    let _ = token_tx.send(StreamToken::thinking(text));
                 }
                 if let Some(tool_calls_value) = message.get("tool_calls") {
                     let parsed = parse_tool_calls(tool_calls_value);

@@ -47,6 +47,24 @@
                 <label for="llm-reasoning-content-enabled">推理时回灌 reasoning_content</label>
               </div>
               <div class="field">
+                <label>思考模式</label>
+                <select v-model="form.llm.thinking_type">
+                  <option :value="null">未配置</option>
+                  <option value="enabled">启用</option>
+                  <option value="disabled">关闭</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>思考强度</label>
+                <select v-model="form.llm.reasoning_effort">
+                  <option :value="null">未配置</option>
+                  <option value="low">低</option>
+                  <option value="medium">中</option>
+                  <option value="high">高</option>
+                  <option value="max">最高</option>
+                </select>
+              </div>
+              <div class="field">
                 <label>后端格式</label>
                 <select v-model="form.llm.api_style">
                   <option value="candle">Candle推理引擎(待实现)</option>
@@ -162,6 +180,24 @@
                   </label>
                 </div>
                 <div class="key-value connection-card-edit-row">
+                  <strong>思考模式</strong>
+                  <select v-model="form.llm.thinking_type" class="connection-card-inline-input">
+                    <option :value="null">未配置</option>
+                    <option value="enabled">启用</option>
+                    <option value="disabled">关闭</option>
+                  </select>
+                </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>思考强度</strong>
+                  <select v-model="form.llm.reasoning_effort" class="connection-card-inline-input">
+                    <option :value="null">未配置</option>
+                    <option value="low">低</option>
+                    <option value="medium">中</option>
+                    <option value="high">高</option>
+                    <option value="max">最高</option>
+                  </select>
+                </div>
+                <div class="key-value connection-card-edit-row">
                   <strong>后端格式</strong>
                   <select v-model="form.llm.api_style" class="connection-card-inline-input">
                     <option value="candle">Candle（待实现）</option>
@@ -230,6 +266,8 @@
                 <div class="key-value"><strong>Stream</strong><span>{{ item.model.llm.stream ? "是" : "否" }}</span></div>
                 <div class="key-value"><strong>多模态</strong><span>{{ item.model.llm.supports_multimodal_input ? "是" : "否" }}</span></div>
                 <div class="key-value"><strong>回灌 Reasoning</strong><span>{{ item.model.llm.include_reasoning_content ? "是" : "否" }}</span></div>
+                <div class="key-value"><strong>思考模式</strong><span>{{ item.model.llm.thinking_type ?? "未配置" }}</span></div>
+                <div class="key-value"><strong>思考强度</strong><span>{{ item.model.llm.reasoning_effort ?? "未配置" }}</span></div>
                 <div class="key-value"><strong>Timeout</strong><span>{{ item.model.llm.timeout_secs }}s</span></div>
                 <div class="key-value"><strong>Retry</strong><span>{{ item.model.llm.retry_count }} 次</span></div>
               </template>

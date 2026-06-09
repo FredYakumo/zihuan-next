@@ -21,7 +21,7 @@ use zihuan_core::agent_config::QqChatAgentConfig;
 use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::ToolCalls;
-use zihuan_core::llm::{LLMMessage, MessageRole};
+use zihuan_core::llm::{LLMMessage, MessageRole, StreamToken};
 use zihuan_core::message_part::MessagePart;
 
 const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
@@ -125,6 +125,10 @@ pub struct ChatStreamRequest {
     pub stream: Option<bool>,
     #[serde(default)]
     pub model_config_id: Option<String>,
+    #[serde(default)]
+    pub thinking_type: Option<model_inference::system_config::ThinkingType>,
+    #[serde(default)]
+    pub reasoning_effort: Option<model_inference::system_config::ReasoningEffort>,
 }
 
 /// Summary row returned by the session-list endpoint.
@@ -166,6 +170,8 @@ pub struct ChatHistoryRecord {
     pub agent_avatar_url: Option<String>,
     pub role: String,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
     pub timestamp: String,
     #[serde(default)]
     pub stream_index: Option<usize>,
@@ -536,7 +542,7 @@ async fn emit_immediate_output(
 async fn relay_inference_stream(
     sender: &mut BodySender,
     assistant_message_id: &str,
-    token_rx: &mut mpsc::UnboundedReceiver<String>,
+    token_rx: &mut mpsc::UnboundedReceiver<StreamToken>,
     event_rx: &mut mpsc::UnboundedReceiver<Value>,
 ) {
     loop {
@@ -550,10 +556,14 @@ async fn relay_inference_stream(
             token_opt = token_rx.recv() => {
                 match token_opt {
                     Some(token) => {
+                        let event_type = match &token {
+                            StreamToken::Thinking(_) => "thinking_delta",
+                            StreamToken::Content(_) => "delta",
+                        };
                         let delta_event = json!({
-                            "type": "delta",
+                            "type": event_type,
                             "message_id": assistant_message_id,
-                            "token": token,
+                            "token": token.as_str(),
                         });
                         if sender.send_data(format!("data: {delta_event}\n\n")).await.is_err() {
                             break;
@@ -583,7 +593,7 @@ async fn relay_inference_stream(
 async fn relay_collected_text(
     sender: &mut BodySender,
     assistant_message_id: &str,
-    token_rx: &mut mpsc::UnboundedReceiver<String>,
+    token_rx: &mut mpsc::UnboundedReceiver<StreamToken>,
     event_rx: &mut mpsc::UnboundedReceiver<Value>,
 ) {
     let mut full_content = String::new();
@@ -595,7 +605,7 @@ async fn relay_collected_text(
             }
             token_opt = token_rx.recv() => {
                 match token_opt {
-                    Some(token) => full_content.push_str(&token),
+                    Some(token) => full_content.push_str(token.as_str()),
                     None => {
                         while let Ok(brain_event) = event_rx.try_recv() {
                             let _ = sender.send_data(format!("data: {brain_event}\n\n")).await;
@@ -733,6 +743,8 @@ async fn execute_chat_streaming(
         messages: raw_messages,
         stream,
         model_config_id,
+        thinking_type,
+        reasoning_effort,
     } = body;
     let mut messages: Vec<LLMMessage> = raw_messages.into_iter().map(Into::into).collect();
 
@@ -822,7 +834,7 @@ async fn execute_chat_streaming(
     let assistant_message_id =
         assistant_message_id.expect("assistant_message_id must exist when inference is required");
 
-    let (token_tx, mut token_rx) = mpsc::unbounded_channel::<String>();
+    let (token_tx, mut token_rx) = mpsc::unbounded_channel::<StreamToken>();
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<Value>();
     let observer: Arc<dyn BrainObserver> = Arc::new(SseBrainObserver {
         event_tx,
@@ -842,6 +854,8 @@ async fn execute_chat_streaming(
                     token_tx,
                     Some(observer),
                     model_config_id.as_deref(),
+                    thinking_type,
+                    reasoning_effort,
                 )
                 .await
         }
@@ -960,6 +974,7 @@ fn persist_chat_records(
             agent_avatar_url: agent_snapshot.avatar_url.clone(),
             role: "user".to_string(),
             content: user_message.content_text_owned().unwrap_or_default(),
+            reasoning_content: None,
             timestamp: now.clone(),
             stream_index: None,
             trace_id: trace_id.to_string(),
@@ -985,6 +1000,7 @@ fn persist_chat_records(
             agent_avatar_url: agent_snapshot.avatar_url.clone(),
             role: role.to_string(),
             content: message.content_text_owned().unwrap_or_default(),
+            reasoning_content: message.reasoning_content.clone(),
             timestamp: now.clone(),
             stream_index: None,
             trace_id: trace_id.to_string(),

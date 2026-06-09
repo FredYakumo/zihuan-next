@@ -71,6 +71,22 @@ pub enum LlmApiStyle {
     OpenAiResponsesImageUrlObjectCompat,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThinkingType {
+    Enabled,
+    Disabled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReasoningEffort {
+    Low,
+    Medium,
+    High,
+    Max,
+}
+
 fn default_llm_api_style() -> LlmApiStyle {
     LlmApiStyle::OpenAiChatCompletions
 }
@@ -104,6 +120,10 @@ pub struct LlmServiceConfig {
     pub supports_multimodal_input: bool,
     #[serde(default = "default_include_reasoning_content")]
     pub include_reasoning_content: bool,
+    #[serde(default)]
+    pub thinking_type: Option<ThinkingType>,
+    #[serde(default)]
+    pub reasoning_effort: Option<ReasoningEffort>,
     #[serde(default = "default_timeout_secs")]
     pub timeout_secs: u64,
     #[serde(default = "default_retry_count")]

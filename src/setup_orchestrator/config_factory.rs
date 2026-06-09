@@ -235,6 +235,8 @@ fn build_llm_ref(config: &LlmSetupConfig, id: &str, name: &str) -> LlmRefConfig 
                 stream: true,
                 supports_multimodal_input: false,
                 include_reasoning_content: false,
+                thinking_type: None,
+                reasoning_effort: None,
                 timeout_secs: 120,
                 retry_count: 2,
             },

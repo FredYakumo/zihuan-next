@@ -10,7 +10,7 @@ use tokio::sync::mpsc;
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::tooling::ToolCalls;
-use zihuan_core::llm::{InferenceParam, LLMMessage, MessagePart, MessageRole};
+use zihuan_core::llm::{InferenceParam, LLMMessage, MessagePart, MessageRole, StreamToken};
 use zihuan_core::task_context::{
     scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
 };
@@ -272,6 +272,14 @@ impl Brain {
             return;
         };
 
+        if let Some(reasoning) = &response.reasoning_content {
+            info!(
+                "[Brain] llm reasoning ({} chars): {}",
+                reasoning.len(),
+                truncate_for_log(reasoning, LOG_PREVIEW_CHARS)
+            );
+        }
+
         info!(
             "[Brain] llm usage model={} prompt_tokens={} cached_prompt_tokens={} prompt_cache_miss_tokens={} completion_tokens={} total_tokens={} cache_hit_rate={}",
             self.llm.get_model_name(),
@@ -366,6 +374,14 @@ impl Brain {
             }
 
             let tool_call_content = response.content_text_owned().unwrap_or_default();
+            if let Some(reasoning) = &response.reasoning_content {
+                info!(
+                    "[Brain] iteration {} reasoning ({} chars): {}",
+                    iteration + 1,
+                    reasoning.len(),
+                    truncate_for_log(reasoning, LOG_PREVIEW_CHARS)
+                );
+            }
             if !tool_call_content.is_empty() {
                 info!(
                     "[Brain] iteration {} assistant content: {}",
@@ -428,7 +444,7 @@ impl Brain {
     pub async fn run_streaming(
         &self,
         messages: Vec<LLMMessage>,
-        token_tx: mpsc::UnboundedSender<String>,
+        token_tx: mpsc::UnboundedSender<StreamToken>,
     ) -> (Vec<LLMMessage>, BrainStopReason) {
         let tool_specs: Vec<Arc<dyn FunctionTool>> = self.tools.iter().map(|t| t.spec()).collect();
         let mut conversation = sanitize_messages_for_inference(messages);
@@ -508,6 +524,14 @@ impl Brain {
             }
 
             let tool_call_content = response.content_text_owned().unwrap_or_default();
+            if let Some(reasoning) = &response.reasoning_content {
+                info!(
+                    "[Brain] iteration {} reasoning ({} chars): {}",
+                    iteration + 1,
+                    reasoning.len(),
+                    truncate_for_log(reasoning, LOG_PREVIEW_CHARS)
+                );
+            }
             if !tool_call_content.is_empty() {
                 info!(
                     "[Brain] iteration {} assistant content: {}",

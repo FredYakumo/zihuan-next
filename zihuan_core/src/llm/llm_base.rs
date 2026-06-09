@@ -1,4 +1,5 @@
 use crate::llm::model::{InferenceParam, LLMMessage};
+use crate::llm::StreamToken;
 use tokio::sync::mpsc;
 
 pub trait LLMBase: std::fmt::Debug + Send + Sync {
@@ -23,6 +24,6 @@ pub trait StreamingLLMBase: LLMBase {
     fn inference_streaming<'a>(
         &'a self,
         param: &'a InferenceParam<'a>,
-        token_tx: mpsc::UnboundedSender<String>,
+        token_tx: mpsc::UnboundedSender<StreamToken>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = LLMMessage> + Send + 'a>>;
 }

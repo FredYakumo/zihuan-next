@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::llm_api::LLMAPI;
@@ -22,6 +21,8 @@ pub fn build_llm(config: LlmServiceConfig) -> Result<Arc<dyn LLMBase>> {
                 config.stream,
                 config.supports_multimodal_input,
                 config.include_reasoning_content,
+                config.thinking_type,
+                config.reasoning_effort,
                 std::time::Duration::from_secs(config.timeout_secs),
             )
             .with_retry_count(config.retry_count);

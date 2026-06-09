@@ -187,7 +187,28 @@
                       </div>
                     </div>
                   </div>
-                  <div class="chat-bubble" :class="message.role">
+                  <div
+                    v-if="message.thinkingContent"
+                    class="chat-thinking-block"
+                    :class="{ collapsed: !message.thinkingExpanded }"
+                  >
+                    <button
+                      class="chat-thinking-toggle"
+                      @click="message.thinkingExpanded = !message.thinkingExpanded"
+                    >
+                      <span class="chat-thinking-icon">{{ message.thinkingExpanded ? '▼' : '▶' }}</span>
+                      思考过程
+                      <span v-if="message.streaming && message.thinkingExpanded" class="live-tool-spinner"></span>
+                    </button>
+                    <div v-if="message.thinkingExpanded" class="chat-thinking-content">
+                      {{ message.thinkingContent }}
+                    </div>
+                  </div>
+                  <div
+                    v-if="message.content.trim().length > 0 || message.streaming"
+                    class="chat-bubble"
+                    :class="message.role"
+                  >
                     <div
                       class="chat-bubble-content markdown-body"
                       v-html="renderMessageContent(message.content, message.streaming)"
@@ -213,24 +234,179 @@
               />
               <div class="chat-input-actions">
                 <button class="btn ghost" @click="startNewSession">新对话</button>
-                <select
-                  v-if="selectedAgent?.agent_type?.type === 'http_stream'"
-                  v-model="selectedModelId"
-                  class="chat-model-select"
-                  title="选择模型"
-                >
-                  <option value="">默认模型</option>
-                  <option
-                    v-for="model in chatModels"
-                    :key="model.config_id"
-                    :value="model.config_id"
+                <div class="chat-input-right">
+                  <div
+                    v-if="selectedAgent?.agent_type?.type === 'http_stream'"
+                    class="chat-model-bar"
                   >
-                    {{ model.name }}
-                  </option>
-                </select>
-                <button class="btn primary" :disabled="sending || !canSend" @click="sendMessage">
-                  {{ sending ? "推理中..." : "发送" }}
-                </button>
+                    <div class="model-picker" :class="{ open: openPicker === 'model' }">
+                      <button
+                        class="model-chip"
+                        @click.stop="openPicker = openPicker === 'model' ? null : 'model'"
+                      >
+                        {{ selectedModelLabel }}
+                        <svg
+                          class="chip-chevron"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </button>
+                      <div v-if="openPicker === 'model'" class="model-picker-dropdown">
+                        <button
+                          class="model-picker-item"
+                          :class="{ active: selectedModelId === '' }"
+                          @click.stop="selectModel('')"
+                        >
+                          默认模型
+                        </button>
+                        <button
+                          v-for="model in chatModels"
+                          :key="model.config_id"
+                          class="model-picker-item"
+                          :class="{ active: selectedModelId === model.config_id }"
+                          @click.stop="selectModel(model.config_id)"
+                        >
+                          {{ model.name }}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="model-picker" :class="{ open: openPicker === 'thinking' }">
+                      <button
+                        class="model-chip"
+                        @click.stop="openPicker = openPicker === 'thinking' ? null : 'thinking'"
+                      >
+                        {{ selectedThinkingLabel }}
+                        <svg
+                          class="chip-chevron"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </button>
+                      <div v-if="openPicker === 'thinking'" class="model-picker-dropdown">
+                        <button
+                          class="model-picker-item"
+                          :class="{ active: selectedThinkingType === '' }"
+                          @click.stop="selectThinkingType('')"
+                        >
+                          默认{{ selectedModelLlmConfig?.thinking_type ? (selectedModelLlmConfig.thinking_type === 'enabled' ? '(启用)' : '(禁用)') : '' }}
+                        </button>
+                        <button
+                          class="model-picker-item"
+                          :class="{ active: selectedThinkingType === 'enabled' }"
+                          @click.stop="selectThinkingType('enabled')"
+                        >
+                          启用
+                        </button>
+                        <button
+                          class="model-picker-item"
+                          :class="{ active: selectedThinkingType === 'disabled' }"
+                          @click.stop="selectThinkingType('disabled')"
+                        >
+                          禁用
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="model-picker" :class="{ open: openPicker === 'effort' }">
+                      <button
+                        class="model-chip"
+                        @click.stop="openPicker = openPicker === 'effort' ? null : 'effort'"
+                      >
+                        {{ selectedEffortLabel }}
+                        <svg
+                          class="chip-chevron"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </button>
+                      <div v-if="openPicker === 'effort'" class="model-picker-dropdown">
+                        <button
+                          class="model-picker-item"
+                          :class="{ active: selectedReasoningEffort === '' }"
+                          @click.stop="selectReasoningEffort('')"
+                        >
+                          默认{{ selectedModelLlmConfig?.reasoning_effort ? `(${selectedModelLlmConfig.reasoning_effort})` : '' }}
+                        </button>
+                        <button
+                          class="model-picker-item"
+                          :class="{ active: selectedReasoningEffort === 'low' }"
+                          @click.stop="selectReasoningEffort('low')"
+                        >
+                          low
+                        </button>
+                        <button
+                          class="model-picker-item"
+                          :class="{ active: selectedReasoningEffort === 'medium' }"
+                          @click.stop="selectReasoningEffort('medium')"
+                        >
+                          medium
+                        </button>
+                        <button
+                          class="model-picker-item"
+                          :class="{ active: selectedReasoningEffort === 'high' }"
+                          @click.stop="selectReasoningEffort('high')"
+                        >
+                          high
+                        </button>
+                        <button
+                          class="model-picker-item"
+                          :class="{ active: selectedReasoningEffort === 'max' }"
+                          @click.stop="selectReasoningEffort('max')"
+                        >
+                          max
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="model-settings" :class="{ open: openPicker === 'settings' }">
+                      <button
+                        class="model-chip icon-only"
+                        title="模型设置"
+                        @click.stop="openPicker = openPicker === 'settings' ? null : 'settings'"
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <circle cx="12" cy="12" r="3" />
+                          <path
+                            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <button
+                    class="btn primary"
+                    :disabled="sending || !canSend"
+                    @click="sendMessage"
+                  >
+                    {{ sending ? "推理中..." : "发送" }}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -241,7 +417,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import MarkdownIt from "markdown-it";
 
 import {
@@ -268,6 +444,8 @@ type DashboardMessage = {
   id: string;
   role: ChatRole;
   content: string;
+  thinkingContent?: string;
+  thinkingExpanded?: boolean;
   streaming?: boolean;
   timestamp?: string;
   toolCalls: ChatToolCall[];
@@ -303,6 +481,9 @@ const activeToolCallId = ref("");
 const expandedLiveToolCalls = ref(new Set<string>());
 const llmModels = ref<LlmConfig[]>([]);
 const selectedModelId = ref("");
+const selectedThinkingType = ref<"" | "enabled" | "disabled">("");
+const selectedReasoningEffort = ref<"" | "low" | "medium" | "high" | "max">("");
+const openPicker = ref<'model' | 'thinking' | 'effort' | 'settings' | null>(null);
 const stats = reactive({
   connections: 0,
   llm: 0,
@@ -316,6 +497,14 @@ const markdown = new MarkdownIt({
 
 const selectedAgent = computed(() => agents.value.find((agent) => agent.config_id === selectedAgentId.value) ?? null);
 const chatModels = computed(() => llmModels.value.filter((item) => item.model.type === "chat_llm"));
+const selectedModelLlmConfig = computed(() => {
+  const modelId = selectedModelId.value || defaultAgentModelId.value;
+  const model = chatModels.value.find((m) => m.config_id === modelId);
+  if (model?.model.type === "chat_llm") {
+    return model.model.llm;
+  }
+  return null;
+});
 const defaultAgentModelId = computed(() => {
   const agent = selectedAgent.value;
   if (!agent) {
@@ -323,6 +512,29 @@ const defaultAgentModelId = computed(() => {
   }
   const agentType = agent.agent_type as Record<string, unknown>;
   return String(agentType.llm_ref_id ?? "");
+});
+const selectedModelLabel = computed(() => {
+  if (!selectedModelId.value) {
+    return "默认模型";
+  }
+  const model = chatModels.value.find((m) => m.config_id === selectedModelId.value);
+  return model?.name ?? "默认模型";
+});
+const selectedThinkingLabel = computed(() => {
+  const defaultType = selectedModelLlmConfig.value?.thinking_type;
+  const defaultLabel = defaultType ? (defaultType === 'enabled' ? '(启用)' : '(禁用)') : '';
+  if (!selectedThinkingType.value) {
+    return `默认${defaultLabel}`;
+  }
+  return selectedThinkingType.value === 'enabled' ? '启用' : '禁用';
+});
+const selectedEffortLabel = computed(() => {
+  const defaultEffort = selectedModelLlmConfig.value?.reasoning_effort;
+  const defaultLabel = defaultEffort ? `(${defaultEffort})` : '';
+  if (!selectedReasoningEffort.value) {
+    return `默认${defaultLabel}`;
+  }
+  return selectedReasoningEffort.value;
 });
 const canSend = computed(() =>
   !!selectedAgent.value &&
@@ -416,12 +628,14 @@ function toApiMessages() {
 }
 
 function applyHistory(records: ChatHistoryRecord[]) {
-  const mapped = records
+  const mapped: DashboardMessage[] = records
     .filter((item) => item.role === "user" || item.role === "assistant" || item.role === "tool")
     .map((item) => ({
       id: item.message_id,
       role: item.role as ChatRole,
       content: item.content,
+      thinkingContent: item.reasoning_content ?? undefined,
+      thinkingExpanded: !!item.reasoning_content,
       timestamp: item.timestamp,
       toolCalls: item.tool_calls ?? [],
       toolCallId: item.tool_call_id ?? null,
@@ -540,10 +754,39 @@ function startNewSession() {
   expandedLiveToolCalls.value = new Set();
 }
 
+function selectModel(id: string) {
+  selectedModelId.value = id;
+  openPicker.value = null;
+}
+
+function selectThinkingType(value: "" | "enabled" | "disabled") {
+  selectedThinkingType.value = value;
+  openPicker.value = null;
+}
+
+function selectReasoningEffort(value: "" | "low" | "medium" | "high" | "max") {
+  selectedReasoningEffort.value = value;
+  openPicker.value = null;
+}
+
+function closePickersOnClickOutside(event: MouseEvent) {
+  const target = event.target as HTMLElement;
+  if (!target.closest(".model-picker") && !target.closest(".model-settings")) {
+    openPicker.value = null;
+  }
+}
+
 watch(selectedAgentId, async () => {
   await reloadSessions();
   startNewSession();
   selectedModelId.value = defaultAgentModelId.value;
+  selectedThinkingType.value = "";
+  selectedReasoningEffort.value = "";
+});
+
+watch(selectedModelId, () => {
+  selectedThinkingType.value = "";
+  selectedReasoningEffort.value = "";
 });
 
 async function removeSession(sessionId: string) {
@@ -640,6 +883,23 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
     const message = messages.value.find((item) => item.id === targetId);
     if (message) {
       message.content += event.token ?? "";
+      message.streaming = true;
+      scrollToBottom();
+    }
+  }
+
+  if (event.type === "thinking_delta") {
+    const targetId = event.message_id || streamState.assistantMessageId;
+    if (!targetId) {
+      return;
+    }
+    const message = messages.value.find((item) => item.id === targetId);
+    if (message) {
+      if (!message.thinkingContent) {
+        message.thinkingContent = "";
+        message.thinkingExpanded = true;
+      }
+      message.thinkingContent += event.token ?? "";
       message.streaming = true;
       scrollToBottom();
     }
@@ -750,6 +1010,8 @@ async function sendMessage() {
         session_id: activeSessionId.value || null,
         stream: true,
         model_config_id: selectedModelId.value || null,
+        thinking_type: selectedThinkingType.value || null,
+        reasoning_effort: selectedReasoningEffort.value || null,
         messages: requestMessages,
       },
       (event) => applyStreamEvent(event, streamState),
@@ -805,6 +1067,11 @@ onMounted(() => {
     console.error(error);
     alert(`仪表盘加载失败: ${(error as Error).message}`);
   });
+  document.addEventListener("click", closePickersOnClickOutside);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", closePickersOnClickOutside);
 });
 </script>
 
@@ -1172,6 +1439,52 @@ onMounted(() => {
   max-width: 100%;
 }
 
+.chat-thinking-block {
+  margin-bottom: 10px;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--admin-accent) 6%, var(--admin-bg-panel) 94%);
+}
+
+.chat-thinking-block.collapsed {
+  background: transparent;
+  border-color: transparent;
+}
+
+.chat-thinking-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--admin-subtle);
+  cursor: pointer;
+  text-align: left;
+  line-height: 1.4;
+}
+
+.chat-thinking-toggle:hover {
+  color: var(--admin-accent);
+}
+
+.chat-thinking-icon {
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.chat-thinking-content {
+  padding: 8px 12px 10px;
+  font-size: 13px;
+  color: var(--admin-subtle);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  border-top: 1px solid var(--admin-border);
+}
+
 .chat-bubble-time {
   margin-top: 6px;
   font-size: 12px;
@@ -1347,19 +1660,152 @@ onMounted(() => {
   gap: 10px;
 }
 
-.chat-model-select {
+.chat-input-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.chat-model-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.model-picker {
+  position: relative;
+}
+
+.model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--admin-bg);
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--admin-ink);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.model-chip:hover {
+  border-color: color-mix(in srgb, var(--admin-accent) 40%, var(--admin-border) 60%);
+  background: var(--admin-bg-elevated);
+}
+
+.model-chip.icon-only {
+  padding: 6px;
+  color: var(--admin-muted);
+}
+
+.model-chip.icon-only:hover {
+  color: var(--admin-accent);
+}
+
+.model-chip svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.chip-chevron {
+  transition: transform 0.2s ease;
+}
+
+.model-picker.open .chip-chevron {
+  transform: rotate(180deg);
+}
+
+.model-picker-dropdown {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 200px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--admin-bg-panel);
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--admin-bg) 60%, transparent);
+  z-index: 10;
+}
+
+.model-picker-item {
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--admin-ink);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.model-picker-item:hover {
+  background: var(--admin-bg-soft);
+}
+
+.model-picker-item.active {
+  background: color-mix(in srgb, var(--admin-accent) 12%, var(--admin-bg-soft) 88%);
+  color: var(--admin-accent);
+  font-weight: 600;
+}
+
+.model-settings {
+  position: relative;
+}
+
+.model-settings-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  min-width: 220px;
+  background: var(--admin-bg-panel);
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--admin-bg) 60%, transparent);
+  z-index: 10;
+}
+
+.model-settings-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.model-settings-row label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--admin-muted);
+}
+
+.model-settings-row select {
   background: var(--admin-bg);
   color: var(--admin-ink);
   border: 1px solid var(--admin-border);
   border-radius: 8px;
-  padding: 6px 10px;
-  font-size: 14px;
+  padding: 6px 8px;
+  font-size: 13px;
   cursor: pointer;
-  max-width: 180px;
-  min-width: 120px;
 }
 
-.chat-model-select:focus {
+.model-settings-row select:focus {
   border-color: var(--admin-accent);
   outline: none;
 }

@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use tokio::sync::mpsc;
 use zihuan_core::llm::tooling::{ToolCalls, ToolCallsFuncSpec};
-use zihuan_core::llm::{str_to_role, InferenceParam, LLMMessage, LLMMessageConvertStyle, MessagePart, TokenUsage};
+use zihuan_core::llm::{str_to_role, InferenceParam, LLMMessage, LLMMessageConvertStyle, MessagePart, StreamToken, TokenUsage};
 
 #[derive(Default)]
 struct StreamToolCallDelta {
@@ -414,7 +414,7 @@ pub fn parse_responses_sse_response(response_text: &str) -> Option<LLMMessage> {
 
 pub async fn parse_responses_sse_stream_response(
     response: reqwest::Response,
-    token_tx: mpsc::UnboundedSender<String>,
+    token_tx: mpsc::UnboundedSender<StreamToken>,
 ) -> LLMMessage {
     use futures_util::StreamExt;
 
@@ -459,7 +459,7 @@ pub async fn parse_responses_sse_stream_response(
                     if let Some(delta) = chunk_data.get("delta").and_then(|value| value.as_str()) {
                         if !delta.is_empty() {
                             content.push_str(delta);
-                            let _ = token_tx.send(delta.to_string());
+                            let _ = token_tx.send(StreamToken::content(delta));
                         }
                     }
                 }

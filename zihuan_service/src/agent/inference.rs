@@ -11,7 +11,7 @@ use zihuan_agent::brain::{Brain, BrainObserver, BrainStopReason, BrainTool, Tool
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::llm::{LLMMessage, MessageRole};
+use zihuan_core::llm::{LLMMessage, MessageRole, StreamToken};
 use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
 
 use crate::resource_resolver::{build_llm_model, resolve_llm_service_config};
@@ -182,7 +182,7 @@ impl LoadedInferenceAgent {
     pub async fn infer_response_streaming_with_trace(
         &self,
         messages: Vec<LLMMessage>,
-        token_tx: mpsc::UnboundedSender<String>,
+        token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn BrainObserver>>,
     ) -> Result<Vec<LLMMessage>> {
         self.infer_response_streaming_with_trace_and_llm(messages, token_tx, observer, Arc::clone(&self.llm))
@@ -192,7 +192,7 @@ impl LoadedInferenceAgent {
     pub async fn infer_response_streaming_with_trace_and_llm(
         &self,
         messages: Vec<LLMMessage>,
-        token_tx: mpsc::UnboundedSender<String>,
+        token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn BrainObserver>>,
         llm: Arc<dyn LLMBase>,
     ) -> Result<Vec<LLMMessage>> {
@@ -359,7 +359,7 @@ async fn run_agent_brain_streaming(
     default_tools: Vec<Box<dyn BrainTool>>,
     tool_definitions: Vec<BrainToolDefinition>,
     messages: Vec<LLMMessage>,
-    token_tx: mpsc::UnboundedSender<String>,
+    token_tx: mpsc::UnboundedSender<StreamToken>,
     observer: Option<Arc<dyn BrainObserver>>,
 ) -> Result<Vec<LLMMessage>> {
     let mut brain = build_brain(agent, llm, default_tools, tool_definitions);

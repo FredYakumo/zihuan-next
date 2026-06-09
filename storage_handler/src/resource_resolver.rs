@@ -182,6 +182,7 @@ pub async fn resolve_connection_data_value(
     }
 }
 
+#[allow(dead_code)]
 fn ensure_endpoint_bypasses_proxy(endpoint: &str) {
     let Some(host) = extract_host(endpoint) else {
         return;

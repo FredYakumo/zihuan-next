@@ -336,6 +336,8 @@ export interface LlmServiceConfig {
   stream: boolean;
   supports_multimodal_input: boolean;
   include_reasoning_content: boolean;
+  thinking_type?: "enabled" | "disabled" | null;
+  reasoning_effort?: "low" | "medium" | "high" | "max" | null;
   timeout_secs: number;
   retry_count: number;
 }
@@ -406,7 +408,7 @@ export interface QqChatAgentIgnoreRule {
 }
 
 export interface ChatStreamEvent {
-  type: "start" | "delta" | "done" | "error" | "tool_call_start" | "tool_call_result";
+  type: "start" | "delta" | "thinking_delta" | "done" | "error" | "tool_call_start" | "tool_call_result";
   session_id?: string;
   message_id?: string;
   index?: number;
@@ -436,6 +438,7 @@ export interface ChatHistoryRecord {
   agent_avatar_url: string | null;
   role: string;
   content: string;
+  reasoning_content?: string | null;
   timestamp: string;
   stream_index?: number | null;
   trace_id: string;
@@ -765,6 +768,8 @@ export const chat = {
       session_id?: string | null;
       stream?: boolean;
       model_config_id?: string | null;
+      thinking_type?: "enabled" | "disabled" | null;
+      reasoning_effort?: "low" | "medium" | "high" | "max" | null;
       messages: Array<{
         role: string;
         content: string;

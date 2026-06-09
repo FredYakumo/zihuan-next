@@ -1,3 +1,4 @@
+use crate::system_config::{ReasoningEffort, ThinkingType};
 use serde_json::Value;
 use zihuan_core::llm::{InferenceParam, LLMMessage, LLMMessageConvertStyle};
 
@@ -6,6 +7,8 @@ pub fn build_tencent_multimodal_chat_completions_request_body(
     param: &InferenceParam<'_>,
     stream: bool,
     include_reasoning_content: bool,
+    thinking_type: Option<&ThinkingType>,
+    reasoning_effort: Option<&ReasoningEffort>,
 ) -> Value {
     let mut request_body = serde_json::json!({
         "model": model_name,
@@ -16,6 +19,14 @@ pub fn build_tencent_multimodal_chat_completions_request_body(
         ),
         "stream": stream,
     });
+
+    if let Some(effort) = reasoning_effort {
+        request_body["reasoning_effort"] = serde_json::json!(effort);
+    }
+
+    if let Some(thinking) = thinking_type {
+        request_body["thinking"] = serde_json::json!({ "type": thinking });
+    }
 
     if stream {
         request_body["stream_options"] = serde_json::json!({ "include_usage": true });

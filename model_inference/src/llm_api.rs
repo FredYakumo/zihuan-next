@@ -8,7 +8,7 @@ use crate::llm_message::convert::{
     parse_responses_message_compat_sse_response, parse_responses_message_compat_sse_stream_response,
     parse_responses_response, parse_responses_sse_response, parse_responses_sse_stream_response,
 };
-use crate::system_config::LlmApiStyle;
+use crate::system_config::{LlmApiStyle, ReasoningEffort, ThinkingType};
 use log::{debug, error, warn};
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
@@ -19,7 +19,7 @@ use std::thread;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use zihuan_core::llm::llm_base::{LLMBase, StreamingLLMBase};
-use zihuan_core::llm::{InferenceParam, LLMMessage};
+use zihuan_core::llm::{InferenceParam, LLMMessage, StreamToken};
 use zihuan_core::utils::string_utils;
 
 const DEFAULT_RETRY_COUNT: u32 = 2;
@@ -47,6 +47,8 @@ pub struct LLMAPI {
     stream: bool,
     supports_multimodal_input: bool,
     include_reasoning_content: bool,
+    thinking_type: Option<ThinkingType>,
+    reasoning_effort: Option<ReasoningEffort>,
     pub timeout: Duration,
     retry_count: u32,
 }
@@ -69,7 +71,7 @@ impl LLMAPI {
                 .map(|(hit, miss)| hit + miss)
         });
         log::info!(
-            "[LLMAPI] usage model={} endpoint={} api_style={:?} format={} messages={} tools={} multimodal={} include_reasoning_content={} prompt_tokens={} cached_prompt_tokens={} prompt_cache_miss_tokens={} completion_tokens={} total_tokens={} cache_hit_rate={}",
+            "[LLMAPI] usage model={} endpoint={} api_style={:?} format={} messages={} tools={} multimodal={} include_reasoning_content={} thinking_type={} reasoning_effort={} prompt_tokens={} cached_prompt_tokens={} prompt_cache_miss_tokens={} completion_tokens={} total_tokens={} cache_hit_rate={}",
             self.model_name,
             self.endpoint_label(),
             self.api_style,
@@ -78,6 +80,8 @@ impl LLMAPI {
             request_context.tool_count,
             request_context.has_multimodal_input,
             self.include_reasoning_content,
+            self.thinking_type.as_ref().map(|t| format!("{:?}", t)).unwrap_or_else(|| "none".to_string()),
+            self.reasoning_effort.as_ref().map(|e| format!("{:?}", e)).unwrap_or_else(|| "none".to_string()),
             usage
                 .prompt_tokens
                 .map(|value| value.to_string())
@@ -110,6 +114,8 @@ impl LLMAPI {
         stream: bool,
         supports_multimodal_input: bool,
         include_reasoning_content: bool,
+        thinking_type: Option<ThinkingType>,
+        reasoning_effort: Option<ReasoningEffort>,
         timeout: Duration,
     ) -> Self {
         Self {
@@ -120,6 +126,8 @@ impl LLMAPI {
             stream,
             supports_multimodal_input,
             include_reasoning_content,
+            thinking_type,
+            reasoning_effort,
             timeout,
             retry_count: DEFAULT_RETRY_COUNT,
         }
@@ -153,7 +161,7 @@ impl LLMAPI {
 
     fn format_request_context(&self, request_context: &RequestContext, attempt: Option<(u32, u32)>) -> String {
         let mut context = format!(
-            "model={} endpoint={} api_style={:?} format={} timeout_secs={} messages={} tools={} multimodal={} include_reasoning_content={}",
+            "model={} endpoint={} api_style={:?} format={} timeout_secs={} messages={} tools={} multimodal={} include_reasoning_content={} thinking_type={} reasoning_effort={}",
             self.model_name,
             self.endpoint_label(),
             self.api_style,
@@ -162,7 +170,9 @@ impl LLMAPI {
             request_context.message_count,
             request_context.tool_count,
             request_context.has_multimodal_input,
-            self.include_reasoning_content
+            self.include_reasoning_content,
+            self.thinking_type.as_ref().map(|t| format!("{:?}", t)).unwrap_or_else(|| "none".to_string()),
+            self.reasoning_effort.as_ref().map(|e| format!("{:?}", e)).unwrap_or_else(|| "none".to_string()),
         );
 
         if let Some((current, total)) = attempt {
@@ -391,9 +401,18 @@ impl LLMBase for LLMAPI {
                 param,
                 self.stream,
                 self.include_reasoning_content,
+                self.thinking_type.as_ref(),
+                self.reasoning_effort.as_ref(),
             )
         } else {
-            build_chat_completions_request_body(&self.model_name, param, self.stream, self.include_reasoning_content)
+            build_chat_completions_request_body(
+                &self.model_name,
+                param,
+                self.stream,
+                self.include_reasoning_content,
+                self.thinking_type.as_ref(),
+                self.reasoning_effort.as_ref(),
+            )
         };
         let max_attempts = self.retry_count.saturating_add(1);
         let mut last_error = None;
@@ -456,7 +475,7 @@ impl LLMAPI {
     pub async fn inference_streaming(
         &self,
         param: &InferenceParam<'_>,
-        token_tx: mpsc::UnboundedSender<String>,
+        token_tx: mpsc::UnboundedSender<StreamToken>,
     ) -> LLMMessage {
         if matches!(self.api_style, LlmApiStyle::Candle) {
             error!("Candle chat backend is not implemented yet");
@@ -495,9 +514,18 @@ impl LLMAPI {
                 param,
                 true,
                 self.include_reasoning_content,
+                self.thinking_type.as_ref(),
+                self.reasoning_effort.as_ref(),
             )
         } else {
-            build_chat_completions_request_body(&self.model_name, param, true, self.include_reasoning_content)
+            build_chat_completions_request_body(
+                &self.model_name,
+                param,
+                true,
+                self.include_reasoning_content,
+                self.thinking_type.as_ref(),
+                self.reasoning_effort.as_ref(),
+            )
         };
 
         let client = reqwest::Client::builder()
@@ -560,7 +588,7 @@ impl StreamingLLMBase for LLMAPI {
     fn inference_streaming<'a>(
         &'a self,
         param: &'a InferenceParam<'a>,
-        token_tx: mpsc::UnboundedSender<String>,
+        token_tx: mpsc::UnboundedSender<StreamToken>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = LLMMessage> + Send + 'a>> {
         Box::pin(async move { self.inference_streaming(param, token_tx).await })
     }
