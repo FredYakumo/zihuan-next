@@ -846,3 +846,93 @@ export const chat = {
     return request("DELETE", `/chat/sessions/${sessionId}`);
   },
 };
+
+// Setup Wizard
+export interface SetupWizardState {
+  completed: boolean;
+  skipped: boolean;
+  completed_at: string | null;
+  mode: string | null;
+  last_step: string | null;
+  last_error: string | null;
+}
+
+export interface EnvironmentInfo {
+  os: string;
+  os_detail: string;
+  docker_available: boolean;
+  docker_compose_available: boolean;
+  cuda_version: string | null;
+  compiler_version: string | null;
+  proxy: string | null;
+  services: Array<{
+    service: string;
+    detected: boolean;
+    connection_test_result: string | null;
+  }>;
+}
+
+export interface SetupProgressEvent {
+  step: string;
+  status: string;
+  message: string;
+  progress_percent: number | null;
+  error: string | null;
+}
+
+export interface LlmSetupConfig {
+  mode: string;
+  model_name: string;
+  api_endpoint: string;
+  api_key?: string | null;
+  api_style: string;
+}
+
+export interface NapCatSetupConfig {
+  ws_url: string;
+  qq_id?: string | null;
+  token?: string | null;
+}
+
+export const setup = {
+  getStatus(): Promise<SetupWizardState> {
+    return request("GET", "/setup/status");
+  },
+  getEnvironment(): Promise<EnvironmentInfo> {
+    return request("GET", "/setup/environment");
+  },
+  execute(payload: {
+    mode: "role_based" | "detailed" | "skip";
+    role?: string;
+    options?: { http_proxy?: string; docker_compose_path?: string };
+    llm_config?: LlmSetupConfig;
+    napcat_config?: NapCatSetupConfig;
+  }): Promise<{ accepted: boolean; task_id: string }> {
+    return request("POST", "/setup", payload);
+  },
+  skip(): Promise<{ ok: boolean }> {
+    return request("POST", "/setup/skip");
+  },
+  reset(): Promise<{ ok: boolean }> {
+    return request("POST", "/setup/reset");
+  },
+  streamProgress(taskId: string, onEvent: (event: SetupProgressEvent) => void): () => void {
+    const es = new EventSource(`/api/setup/progress?task_id=${taskId}`);
+    es.onmessage = (e) => {
+      try {
+        const event = JSON.parse(e.data) as SetupProgressEvent;
+        onEvent(event);
+        if (event.step === "finished" || event.status === "error") {
+          es.close();
+        }
+      } catch (err) {
+        console.warn("Failed to parse setup progress event", err, e.data);
+      }
+    };
+    es.onerror = (err) => {
+      console.warn("Setup progress SSE error", err);
+      es.close();
+    };
+    return () => es.close();
+  },
+};

@@ -13,11 +13,13 @@ import Tasks from "./admin/view/Tasks.vue";
 import Commands from "./admin/view/Commands.vue";
 import DataExplorer from "./admin/view/DataExplorer.vue";
 import Settings from "./admin/view/Settings.vue";
+import SetupWizard from "./admin/view/SetupWizard.vue";
 import "./admin/admin.scss";
 import "./ui/theme.css";
 import { initTheme, loadThemes } from "./ui/theme";
 import { ws } from "./api/ws";
 import { mountLiveLogConsole } from "./ui/live_log_console";
+import { setup as setupApi } from "./api/client";
 
 async function main() {
   if (window.location.pathname.startsWith("/editor")) {
@@ -43,7 +45,25 @@ async function main() {
       { path: "/commands", component: Commands },
       { path: "/data-explorer", component: DataExplorer },
       { path: "/settings", component: Settings },
+      { path: "/setup", component: SetupWizard, meta: { public: true } },
     ],
+  });
+
+  router.beforeEach(async (to, from, next) => {
+    if (to.path === "/setup") {
+      next();
+      return;
+    }
+    try {
+      const status = await setupApi.getStatus();
+      if (!status.completed && !status.skipped) {
+        next("/setup");
+        return;
+      }
+    } catch {
+      // fail open
+    }
+    next();
   });
 
   const app = createApp(AdminApp);

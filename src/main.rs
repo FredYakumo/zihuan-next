@@ -2,6 +2,7 @@ mod api;
 mod error;
 mod init_registry;
 mod log_forwarder;
+mod setup_orchestrator;
 mod system_config;
 mod util;
 

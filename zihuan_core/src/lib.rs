@@ -13,6 +13,7 @@ pub mod llm;
 pub mod message_part;
 pub mod rag;
 pub mod runtime;
+pub mod setup_wizard;
 pub mod steer;
 pub mod system_config;
 pub mod task_context;

@@ -9,6 +9,7 @@ pub mod hyperparams;
 pub mod log;
 pub mod registry;
 pub mod settings;
+pub mod setup_wizard;
 pub mod state;
 pub mod task_store;
 pub mod themes;
@@ -108,6 +109,17 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast, canonical_loca
                 .push(Router::with_path("commands").push(
                     Router::with_path("registry").get(config::commands::get_registered_commands),
                 )),
+        )
+        // Setup wizard
+        .push(
+            Router::with_path("setup")
+                .get(setup_wizard::get_setup_status)
+                .post(setup_wizard::post_execute_setup)
+                .push(Router::with_path("status").get(setup_wizard::get_setup_status))
+                .push(Router::with_path("environment").get(setup_wizard::get_environment_info))
+                .push(Router::with_path("progress").get(setup_wizard::stream_setup_progress))
+                .push(Router::with_path("skip").post(setup_wizard::post_skip_setup))
+                .push(Router::with_path("reset").post(setup_wizard::post_reset_setup)),
         )
         // Graph management
         .push(

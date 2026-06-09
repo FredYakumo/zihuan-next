@@ -482,6 +482,11 @@ function bindSocket(): void {
   });
 }
 
+export function setLiveLogConsoleVisible(visible: boolean): void {
+  const el = document.querySelector(".zh-live-log") as HTMLElement | null;
+  if (el) el.style.display = visible ? "" : "none";
+}
+
 export function mountLiveLogConsole(): void {
   if (mounted) return;
   mounted = true;

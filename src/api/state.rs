@@ -7,16 +7,20 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
+use tokio::sync::broadcast;
 use uuid::Uuid;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_graph_engine::graph_io::NodeGraphDefinition;
 
 use zihuan_service::AgentManager;
 
+use crate::setup_orchestrator::SetupProgressEvent;
+
 pub struct AppState {
     pub sessions: RwLock<HashMap<String, GraphSession>>,
     pub tasks: Mutex<TaskManager>,
     pub agent_manager: AgentManager,
+    pub setup_tasks: Mutex<HashMap<String, broadcast::Sender<SetupProgressEvent>>>,
 }
 
 impl AppState {
@@ -25,6 +29,7 @@ impl AppState {
             sessions: RwLock::new(HashMap::new()),
             tasks: Mutex::new(TaskManager::new()),
             agent_manager: AgentManager::new(),
+            setup_tasks: Mutex::new(HashMap::new()),
         }
     }
 }
