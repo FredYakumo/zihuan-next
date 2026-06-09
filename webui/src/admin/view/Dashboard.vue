@@ -231,6 +231,7 @@
                 v-model="draftMessage"
                 placeholder="输入消息"
                 @keydown.ctrl.enter.prevent="sendMessage"
+                @input="clearChatError"
               />
               <div class="chat-input-actions">
                 <button class="btn ghost" @click="startNewSession">新对话</button>
@@ -408,6 +409,9 @@
                   </button>
                 </div>
               </div>
+              <div v-if="chatErrorMessage" class="chat-error-box" role="alert">
+                {{ chatErrorMessage }}
+              </div>
             </div>
           </div>
         </div>
@@ -466,6 +470,7 @@ type PendingNewConversationCommand = {
 type StreamState = {
   assistantMessageId: string | null;
   pendingNewConversation: PendingNewConversationCommand | null;
+  requestText: string;
 };
 
 const agents = ref<AgentWithRuntime[]>([]);
@@ -475,6 +480,7 @@ const activeSessionId = ref("");
 const selectedAgentId = ref("");
 const draftMessage = ref("");
 const sending = ref(false);
+const chatErrorMessage = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
 const messages = ref<DashboardMessage[]>([]);
 const activeToolCallId = ref("");
@@ -731,6 +737,37 @@ function scrollToBottom() {
   });
 }
 
+function clearChatError() {
+  chatErrorMessage.value = "";
+}
+
+function pruneFailedAssistantPlaceholder(assistantMessageId: string | null) {
+  if (!assistantMessageId) {
+    return;
+  }
+  const index = messages.value.findIndex((item) => item.id === assistantMessageId);
+  if (index < 0) {
+    return;
+  }
+
+  const message = messages.value[index];
+  message.streaming = false;
+
+  const hasVisibleContent = message.content.trim().length > 0 || (message.thinkingContent?.trim().length ?? 0) > 0;
+  const hasToolActivity = (message.liveToolCalls?.length ?? 0) > 0 || message.toolCalls.length > 0;
+  if (!hasVisibleContent && !hasToolActivity) {
+    messages.value.splice(index, 1);
+  }
+}
+
+function applyInferenceFailure(streamState: StreamState, errorMessage: string) {
+  pruneFailedAssistantPlaceholder(streamState.assistantMessageId);
+  chatErrorMessage.value = `推理失败: ${errorMessage}`;
+  if (!draftMessage.value.trim()) {
+    draftMessage.value = streamState.requestText;
+  }
+}
+
 async function reloadSessions() {
   const result = await chat.listSessions(selectedAgentId.value || undefined);
   sessions.value = result.sessions;
@@ -738,6 +775,7 @@ async function reloadSessions() {
 
 async function openSession(sessionId: string) {
   activeSessionId.value = sessionId;
+  clearChatError();
   const result = await chat.getSessionMessages(sessionId);
   // Auto-select the agent associated with this session
   const firstRecord = result.messages[0];
@@ -752,6 +790,7 @@ function startNewSession() {
   messages.value = [];
   activeToolCallId.value = "";
   expandedLiveToolCalls.value = new Set();
+  clearChatError();
 }
 
 function selectModel(id: string) {
@@ -806,17 +845,7 @@ async function removeSession(sessionId: string) {
 
 function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
   if (event.type === "error") {
-    if (streamState.assistantMessageId) {
-      const message = messages.value.find((item) => item.id === streamState.assistantMessageId);
-      if (message) {
-        message.streaming = false;
-        if (!message.content) {
-          message.content = `推理失败: ${event.error ?? "未知错误"}`;
-        }
-      }
-    } else if (event.error) {
-      console.error(event.error);
-    }
+    applyInferenceFailure(streamState, event.error ?? "未知错误");
     return;
   }
 
@@ -959,6 +988,7 @@ async function sendMessage() {
   }
 
   const userText = draftMessage.value.trim();
+  clearChatError();
   const pendingNewConversation = parseNewConversationCommand(userText);
   const requestMessages = [
     ...toApiMessages(),
@@ -974,6 +1004,7 @@ async function sendMessage() {
   const streamState: StreamState = {
     assistantMessageId: null,
     pendingNewConversation,
+    requestText: userText,
   };
 
   if (!pendingNewConversation) {
@@ -1021,17 +1052,7 @@ async function sendMessage() {
       await openSession(activeSessionId.value);
     }
   } catch (error) {
-    const message = streamState.assistantMessageId
-      ? messages.value.find((item) => item.id === streamState.assistantMessageId)
-      : undefined;
-    if (message) {
-      message.streaming = false;
-      if (!message.content) {
-        message.content = `推理失败: ${(error as Error).message}`;
-      }
-    } else {
-      alert(`推理失败: ${(error as Error).message}`);
-    }
+    applyInferenceFailure(streamState, (error as Error).message);
   } finally {
     sending.value = false;
   }
@@ -1658,6 +1679,17 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   gap: 10px;
+}
+
+.chat-error-box {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--admin-danger, #ef4444) 40%, var(--admin-border) 60%);
+  background: color-mix(in srgb, var(--admin-danger, #ef4444) 12%, var(--admin-bg-panel) 88%);
+  color: color-mix(in srgb, var(--admin-danger, #ef4444) 82%, var(--admin-ink) 18%);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
 }
 
 .chat-input-right {
