@@ -14,8 +14,8 @@ use zihuan_core::llm::{InferenceParam, LLMMessage, StreamToken};
 
 use crate::nn::local_candle_embedding::describe_device;
 use crate::nn::local_candle_llm_common::{
-    build_usage, decode_token_piece, parse_local_response, prepare_prompt, DEFAULT_MAX_NEW_TOKENS,
-    USER_VISIBLE_REQUEST_ERROR,
+    build_usage, decode_token_piece, parse_local_response, prepare_prompt, LocalResponseStreamRenderer,
+    DEFAULT_MAX_NEW_TOKENS, USER_VISIBLE_REQUEST_ERROR,
 };
 use crate::nn::local_llm_registry::{get_local_llm_model_info, resolve_model_dir, LocalLlmModelLayout};
 use crate::system_config::LlmServiceConfig;
@@ -140,6 +140,7 @@ impl LocalCandleGgufLlm {
         let prompt_token_count = tokens.len();
         let mut generated = Vec::new();
         let mut logits_processor = LogitsProcessor::from_sampling(42, Sampling::ArgMax);
+        let mut stream_renderer = LocalResponseStreamRenderer::default();
         engine.model.clear_kv_cache();
 
         for step in 0..DEFAULT_MAX_NEW_TOKENS {
@@ -165,8 +166,16 @@ impl LocalCandleGgufLlm {
 
             if let Some(sink) = token_sink.as_mut() {
                 if let Some(piece) = decode_token_piece(&engine.tokenizer, next_token) {
-                    sink(piece);
+                    for token in stream_renderer.push_piece(&piece) {
+                        sink(token);
+                    }
                 }
+            }
+        }
+
+        if let Some(sink) = token_sink.as_mut() {
+            for token in stream_renderer.finish() {
+                sink(token);
             }
         }
 
@@ -174,7 +183,14 @@ impl LocalCandleGgufLlm {
             .tokenizer
             .decode(&generated, false)
             .map_err(|err| Error::StringError(format!("failed to decode local llm output: {err}")))?;
-        let mut message = parse_local_response(&output_text);
+        let parsed = parse_local_response(&output_text);
+        if parsed.saw_tool_call_marker && !parsed.parsed_tool_call {
+            warn!(
+                "Local Candle GGUF model '{}' produced an invalid CALL_TOOL payload: {}",
+                self.model_name, output_text
+            );
+        }
+        let mut message = parsed.into_message();
         message.usage = build_usage(prompt_token_count, generated.len());
         Ok(message)
     }
