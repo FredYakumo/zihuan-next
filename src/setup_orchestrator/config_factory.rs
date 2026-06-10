@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::api::config::now_rfc3339;
-use crate::setup_orchestrator::{LlmSetupConfig, ImsBotAdapterSetupConfig};
+use crate::setup_orchestrator::{ImsBotAdapterSetupConfig, LlmSetupConfig};
 use crate::system_config;
 use ims_bot_adapter::BotAdapterConnection;
 use model_inference::system_config::{

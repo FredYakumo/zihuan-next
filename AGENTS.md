@@ -132,6 +132,7 @@ See `/zihuan-frontend-dev` for detailed development instructions.
 - Keep PRs small — aim for focused changes. Separate cosmetic changes from functional ones.
 - Build and test locally before submitting: `cargo build --release` and `cargo test` should pass.
 - Run `cargo clippy --all-targets --all-features` and `cargo fmt --all` before committing.
+- CI enforces formatting with `cargo fmt --all -- --check` (fails the build if code is not formatted).
 - The PR author is responsible for merging after approval.
 
 ## Code Search

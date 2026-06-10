@@ -164,8 +164,11 @@ impl AgentManager {
         })?;
         if let Some(model_id) = model_config_id {
             let llm_refs = model_inference::system_config::load_llm_refs()?;
-            let mut llm_config =
-                crate::resource_resolver::resolve_llm_service_config(Some(model_id), &llm_refs, &agent.agent_config().name)?;
+            let mut llm_config = crate::resource_resolver::resolve_llm_service_config(
+                Some(model_id),
+                &llm_refs,
+                &agent.agent_config().name,
+            )?;
             if let Some(override_value) = thinking_type {
                 llm_config.thinking_type = Some(override_value);
             }

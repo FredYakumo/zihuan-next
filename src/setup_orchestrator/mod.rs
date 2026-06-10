@@ -55,18 +55,10 @@ impl SetupOrchestrator {
         let mut napcat_native_path: Option<String> = None;
 
         // Use auto-detected proxy as fallback when none was explicitly provided.
-        let effective_proxy = options
-            .http_proxy
-            .as_deref()
-            .or(env.proxy.as_deref());
+        let effective_proxy = options.http_proxy.as_deref().or(env.proxy.as_deref());
 
         if let Some(proxy) = effective_proxy {
-            self.emit(
-                "detecting_environment",
-                "success",
-                &format!("Using proxy: {proxy}"),
-                Some(12),
-            );
+            self.emit("detecting_environment", "success", &format!("Using proxy: {proxy}"), Some(12));
         }
 
         if !required_services.is_empty() {
@@ -113,9 +105,7 @@ impl SetupOrchestrator {
                 for (i, service) in required_services.iter().enumerate() {
                     let pct = 15 + ((i + 1) as u8 * 50 / required_services.len() as u8);
                     if *service == "napcat" {
-                        let qq_id = ims_bot_adapter_config
-                            .as_ref()
-                            .and_then(|c| c.qq_id.as_deref());
+                        let qq_id = ims_bot_adapter_config.as_ref().and_then(|c| c.qq_id.as_deref());
                         self.emit(
                             "installing_napcat",
                             "running",
@@ -163,7 +153,15 @@ impl SetupOrchestrator {
 
         self.emit("creating_configs", "running", "Creating system configurations...", Some(70));
 
-        match self.create_configs(&role, &llm_config, ims_bot_adapter_config.as_ref(), napcat_native_path.as_deref()).await {
+        match self
+            .create_configs(
+                &role,
+                &llm_config,
+                ims_bot_adapter_config.as_ref(),
+                napcat_native_path.as_deref(),
+            )
+            .await
+        {
             Ok(_) => {
                 self.emit("creating_configs", "success", "Configurations created successfully", Some(90));
             }
@@ -197,8 +195,8 @@ impl SetupOrchestrator {
                 config_factory::create_chat_assistant_stack(llm_config).await
             }
             SetupRole::QqChatBot => {
-                let ims_config = ims_bot_adapter_config
-                    .ok_or("IMS Bot Adapter configuration is required for QQ Chat Bot")?;
+                let ims_config =
+                    ims_bot_adapter_config.ok_or("IMS Bot Adapter configuration is required for QQ Chat Bot")?;
                 config_factory::create_qq_bot_stack(llm_config, ims_config, napcat_native_path).await
             }
             SetupRole::AiButler => config_factory::create_butler_stack(llm_config).await,
@@ -323,9 +321,7 @@ async fn detect_cuda_version() -> Option<String> {
 
     #[cfg(target_os = "windows")]
     {
-        let cuda_path = std::path::PathBuf::from(
-            "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA",
-        );
+        let cuda_path = std::path::PathBuf::from("C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA");
         if let Ok(mut entries) = tokio::fs::read_dir(&cuda_path).await {
             while let Ok(Some(entry)) = entries.next_entry().await {
                 if let Ok(ft) = entry.file_type().await {
@@ -495,10 +491,7 @@ const NAPCAT_WIN_ONEKEY_URL: &str =
 
 /// Installs NapCat natively on Windows using the OneKey package.
 /// Returns the install directory path on success.
-async fn install_napcat_native(
-    http_proxy: Option<&str>,
-    qq_id: Option<&str>,
-) -> Result<String, String> {
+async fn install_napcat_native(http_proxy: Option<&str>, qq_id: Option<&str>) -> Result<String, String> {
     #[cfg(target_os = "windows")]
     {
         let data_dir = zihuan_core::system_config::app_data_dir();
@@ -511,8 +504,7 @@ async fn install_napcat_native(
             .map_err(|e| format!("Failed to create install directory: {e}"))?;
 
         // Download
-        let mut client_builder =
-            reqwest::Client::builder().timeout(std::time::Duration::from_secs(600));
+        let mut client_builder = reqwest::Client::builder().timeout(std::time::Duration::from_secs(600));
         if let Some(proxy) = http_proxy {
             if let Ok(p) = reqwest::Proxy::all(proxy) {
                 client_builder = client_builder.proxy(p);
@@ -548,10 +540,8 @@ async fn install_napcat_native(
             .map_err(|e| format!("Failed to save downloaded zip: {e}"))?;
 
         // Extract
-        let file =
-            std::fs::File::open(&zip_path).map_err(|e| format!("Failed to open zip: {e}"))?;
-        let mut archive =
-            zip::ZipArchive::new(file).map_err(|e| format!("Failed to read zip archive: {e}"))?;
+        let file = std::fs::File::open(&zip_path).map_err(|e| format!("Failed to open zip: {e}"))?;
+        let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Failed to read zip archive: {e}"))?;
         archive
             .extract(&extract_dir)
             .map_err(|e| format!("Failed to extract NapCat: {e}"))?;
@@ -589,10 +579,7 @@ async fn install_napcat_native(
         open_url_in_browser("http://127.0.0.1:6099/webui/");
 
         let size_mb = total_size as f64 / (1024.0 * 1024.0);
-        log::info!(
-            "NapCat installed ({size_mb:.1} MB) at {}",
-            shell_dir.display()
-        );
+        log::info!("NapCat installed ({size_mb:.1} MB) at {}", shell_dir.display());
 
         Ok(shell_dir.to_string_lossy().to_string())
     }
@@ -613,21 +600,15 @@ async fn install_napcat_native(
 fn open_url_in_browser(url: &str) {
     #[cfg(target_os = "windows")]
     {
-        let _ = std::process::Command::new("cmd")
-            .args(["/c", "start", url])
-            .spawn();
+        let _ = std::process::Command::new("cmd").args(["/c", "start", url]).spawn();
     }
     #[cfg(target_os = "macos")]
     {
-        let _ = std::process::Command::new("open")
-            .arg(url)
-            .spawn();
+        let _ = std::process::Command::new("open").arg(url).spawn();
     }
     #[cfg(target_os = "linux")]
     {
-        let _ = std::process::Command::new("xdg-open")
-            .arg(url)
-            .spawn();
+        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
     }
 }
 

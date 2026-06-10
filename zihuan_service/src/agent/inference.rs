@@ -248,9 +248,7 @@ pub fn infer_agent_response_with_model(
         .into_iter()
         .rev()
         .find(|message| matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty())
-        .ok_or_else(|| {
-            Error::StringError(format!("agent '{}' did not produce a final assistant message", agent.name))
-        })
+        .ok_or_else(|| Error::StringError(format!("agent '{}' did not produce a final assistant message", agent.name)))
 }
 
 pub fn infer_agent_response_with_trace(

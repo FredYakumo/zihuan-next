@@ -5,9 +5,7 @@ use std::sync::Arc;
 
 use crate::api::config::{now_rfc3339, ok_response, render_internal_error};
 use crate::api::state::AppState;
-use crate::setup_orchestrator::{
-    LlmSetupConfig, ImsBotAdapterSetupConfig, SetupOptions, SetupOrchestrator, SetupRole,
-};
+use crate::setup_orchestrator::{ImsBotAdapterSetupConfig, LlmSetupConfig, SetupOptions, SetupOrchestrator, SetupRole};
 use zihuan_core::setup_wizard::{clear_setup_wizard_state, load_setup_wizard_state, save_setup_wizard_state};
 
 #[derive(Deserialize, Clone)]

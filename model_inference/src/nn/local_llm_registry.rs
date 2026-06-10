@@ -53,7 +53,9 @@ pub fn list_local_llm_models() -> Vec<LocalLlmModelInfo> {
 pub fn resolve_model_dir(model_name: &str) -> Result<PathBuf> {
     let trimmed = model_name.trim();
     if trimmed.is_empty() {
-        return Err(Error::ValidationError("model_name is required for local llm models".to_string()));
+        return Err(Error::ValidationError(
+            "model_name is required for local llm models".to_string(),
+        ));
     }
     if trimmed.contains('/') || trimmed.contains('\\') || trimmed.contains("..") {
         return Err(Error::ValidationError(format!(

@@ -156,7 +156,11 @@ impl LocalCandleGgufLlm {
                 .forward(&input, if step == 0 { 0 } else { tokens.len().saturating_sub(1) })
                 .map_err(|err| Error::StringError(format!("local candle gguf forward failed: {err}")))?;
             let next_token = logits_processor
-                .sample(&logits.squeeze(0).map_err(|err| Error::StringError(format!("failed to squeeze logits: {err}")))?)
+                .sample(
+                    &logits
+                        .squeeze(0)
+                        .map_err(|err| Error::StringError(format!("failed to squeeze logits: {err}")))?,
+                )
                 .map_err(|err| Error::StringError(format!("failed to sample local token: {err}")))?;
             if engine.eos_token_ids.contains(&next_token) {
                 break;
@@ -246,7 +250,10 @@ impl StreamingLLMBase for LocalCandleGgufLlm {
             match self.infer_internal(param, Some(&mut sink)) {
                 Ok(message) => message,
                 Err(err) => {
-                    warn!("Local Candle GGUF streaming inference failed for '{}': {}", self.model_name, err);
+                    warn!(
+                        "Local Candle GGUF streaming inference failed for '{}': {}",
+                        self.model_name, err
+                    );
                     LLMMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR)
                 }
             }

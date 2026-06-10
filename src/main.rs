@@ -237,9 +237,7 @@ async fn startup_napcat_native() {
         let storage_handler::ConnectionKind::BotAdapter(ref raw) = conn.kind else {
             continue;
         };
-        let Ok(adapter) =
-            serde_json::from_value::<ims_bot_adapter::BotAdapterConnection>(raw.clone())
-        else {
+        let Ok(adapter) = serde_json::from_value::<ims_bot_adapter::BotAdapterConnection>(raw.clone()) else {
             continue;
         };
         let Some(ref install_path) = adapter.napcat_install_path else {
@@ -277,16 +275,10 @@ async fn startup_napcat_native() {
 
         match cmd.spawn() {
             Ok(_) => {
-                log::info!(
-                    "[startup] NapCat launched successfully for connection '{}'",
-                    conn.name
-                );
+                log::info!("[startup] NapCat launched successfully for connection '{}'", conn.name);
             }
             Err(e) => {
-                log::warn!(
-                    "[startup] Failed to launch NapCat for connection '{}': {e}",
-                    conn.name
-                );
+                log::warn!("[startup] Failed to launch NapCat for connection '{}': {e}", conn.name);
             }
         }
     }

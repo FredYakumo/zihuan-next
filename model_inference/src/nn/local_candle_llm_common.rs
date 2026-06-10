@@ -145,14 +145,7 @@ pub fn render_local_prompt(messages: &[LLMMessage], tools: Option<&Vec<Arc<dyn F
     if let Some(tools) = tools.filter(|tools| !tools.is_empty()) {
         let tool_descriptions = tools
             .iter()
-            .map(|tool| {
-                format!(
-                    "- {}: {}\n  parameters: {}",
-                    tool.name(),
-                    tool.description(),
-                    tool.parameters()
-                )
-            })
+            .map(|tool| format!("- {}: {}\n  parameters: {}", tool.name(), tool.description(), tool.parameters()))
             .collect::<Vec<_>>()
             .join("\n");
         sections.push(format!("Available tools:\n{}", tool_descriptions));
@@ -200,13 +193,10 @@ pub fn prepare_prompt(param: &InferenceParam, supports_multimodal_input: bool) -
 }
 
 pub fn decode_token_piece(tokenizer: &Tokenizer, token_id: u32) -> Option<String> {
-    tokenizer.decode(&[token_id], false).ok().and_then(|piece| {
-        if piece.is_empty() {
-            None
-        } else {
-            Some(piece)
-        }
-    })
+    tokenizer
+        .decode(&[token_id], false)
+        .ok()
+        .and_then(|piece| if piece.is_empty() { None } else { Some(piece) })
 }
 
 pub fn build_usage(prompt_tokens: usize, completion_tokens: usize) -> Option<TokenUsage> {
@@ -290,10 +280,7 @@ fn join_parts(parts: &[MessagePart]) -> String {
 fn parse_tool_call_payload(payload: &str) -> Option<ToolCalls> {
     let value = serde_json::from_str::<serde_json::Value>(payload).ok()?;
     let name = value.get("name")?.as_str()?;
-    let arguments = value
-        .get("arguments")
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!({}));
+    let arguments = value.get("arguments").cloned().unwrap_or_else(|| serde_json::json!({}));
 
     Some(ToolCalls {
         id: next_tool_call_id(),
@@ -367,9 +354,8 @@ mod tests {
 
     #[test]
     fn parse_local_response_extracts_reasoning_and_tool_call() {
-        let parsed = parse_local_response(
-            "<think>先思考一下</think>\n\nCALL_TOOL {\"name\":\"get_time\",\"arguments\":{}}",
-        );
+        let parsed =
+            parse_local_response("<think>先思考一下</think>\n\nCALL_TOOL {\"name\":\"get_time\",\"arguments\":{}}");
 
         assert_eq!(parsed.reasoning_content.as_deref(), Some("先思考一下"));
         assert!(parsed.content.is_empty());

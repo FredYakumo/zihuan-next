@@ -19,6 +19,7 @@ use zihuan_graph_engine::brain_tool_spec::{
 use zihuan_graph_engine::DataValue;
 
 use super::super::qq_chat_agent_logging::QqChatBrainObserver;
+use ims_bot_adapter::tools::group_members::GetCurrentGroupMembersBrainTool;
 use ims_bot_adapter::tools::qq_profile::{GetBotProfileBrainTool, GetQqUserProfileBrainTool};
 
 use super::super::tools::{
@@ -485,6 +486,10 @@ impl QqChatAgent {
             ctx.adapter.clone(),
             prepared_input.event.clone(),
             ctx.s3_ref.cloned(),
+        ));
+        brain = brain.with_tool(GetCurrentGroupMembersBrainTool::new(
+            ctx.adapter.clone(),
+            prepared_input.event.clone(),
         ));
 
         let qq_chat_agent_config = current_qq_chat_agent_config()?;
