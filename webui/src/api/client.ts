@@ -606,6 +606,9 @@ export const system = {
       return request("POST", `/system/agents/${configId}/stop`);
     },
   },
+  selectDirectory(): Promise<{ path: string | null }> {
+    return request("GET", "/system/select-directory");
+  },
 };
 
 // Data Explorer

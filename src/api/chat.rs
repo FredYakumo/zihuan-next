@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use storage_handler::{ConnectionConfig, ConnectionKind};
 use tokio::sync::mpsc;
+use tokio::task;
 use uuid::Uuid;
 use zihuan_agent::brain::{BrainObserver, BrainStopReason};
 use zihuan_core::agent_config::QqChatAgentConfig;
@@ -721,6 +722,20 @@ pub async fn delete_chat_session(req: &mut Request, res: &mut Response, _depot: 
     }
 }
 
+/// Opens a native folder-picker dialog and returns the selected path.
+///
+/// Uses `rfd::FileDialog` which delegates to the OS native dialog (Win32, macOS NSOpenPanel,
+/// or GTK/Zenity on Linux). Because the native dialog blocks the calling thread, it runs on
+/// a blocking Tokio task via `spawn_blocking`.
+#[handler]
+pub async fn select_directory(_req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let path = task::spawn_blocking(|| rfd::FileDialog::new().pick_folder())
+        .await
+        .unwrap_or(None);
+
+    res.render(Json(json!({ "path": path.map(|p| p.to_string_lossy().to_string()) })));
+}
+
 /// Orchestrates a single chat-streaming request from end to end.
 ///
 /// **Purpose:** This is the main entry point for the `/chat/stream` SSE pipeline. It
@@ -1207,8 +1222,13 @@ fn resolve_effective_workspace_path(
         }
     }
 
+    if let Ok(cwd) = std::env::current_dir() {
+        return Ok(Some(cwd.to_string_lossy().to_string()));
+    }
+
     Err(Error::ValidationError(
-        "workspace agent requires a workspace_path for new sessions".to_string(),
+        "workspace agent requires a workspace_path for new sessions and could not determine current directory"
+            .to_string(),
     ))
 }
 

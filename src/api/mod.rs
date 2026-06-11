@@ -108,7 +108,8 @@ pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast, canonical_loca
                 )
                 .push(Router::with_path("commands").push(
                     Router::with_path("registry").get(config::commands::get_registered_commands),
-                )),
+                ))
+                .push(Router::with_path("select-directory").get(chat::select_directory)),
         )
         // Setup wizard
         .push(

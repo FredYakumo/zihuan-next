@@ -32,7 +32,7 @@
               </div>
               <template v-else>
                 <button
-                  v-for="agent in agents"
+                  v-for="agent in agents.filter(a => chatEligibleAgentTypes.has(a.agent_type.type))"
                   :key="agent.config_id"
                   class="chat-agent-card"
                   :class="{
@@ -63,33 +63,47 @@
             </div>
           </div>
           <button class="btn ghost" @click="reloadSessions">刷新历史</button>
+          <button v-if="isWorkspaceAgent" class="btn ghost" :disabled="pickingDirectory" @click="pickDirectory">
+            {{ pickingDirectory ? "选择中..." : "打开目录" }}
+          </button>
         </div>
 
         <div class="chat-layout">
           <aside class="chat-sessions">
             <div class="chat-sessions-header">历史</div>
-            <div
-              v-for="session in sessions"
-              :key="session.session_id"
-              class="chat-session-item"
-              :class="{ active: session.session_id === activeSessionId }"
-            >
-              <button class="chat-session-main" @click="openSession(session.session_id)">
-                <strong>{{ session.session_id.slice(0, 8) }}</strong>
-                <span class="muted">{{ formatTime(session.updated_at) }}</span>
-              </button>
-              <button
-                class="chat-session-delete"
-                title="删除会话"
-                @click.stop="removeSession(session.session_id)"
+            <template v-for="group in groupedSessions" :key="group.pathKey">
+              <div class="chat-session-group-header" :title="group.path ?? undefined">
+                📁 {{ group.label }}
+              </div>
+              <div
+                v-for="session in group.sessions"
+                :key="session.session_id"
+                class="chat-session-item"
+                :class="{ active: session.session_id === activeSessionId }"
               >
-                ×
-              </button>
-            </div>
+                <button class="chat-session-main" @click="openSession(session.session_id)">
+                  <strong>{{ session.session_id.slice(0, 8) }}</strong>
+                  <span class="muted">{{ formatTime(session.updated_at) }}</span>
+                </button>
+                <button
+                  class="chat-session-delete"
+                  title="删除会话"
+                  @click.stop="removeSession(session.session_id)"
+                >
+                  ×
+                </button>
+              </div>
+            </template>
             <div v-if="sessions.length === 0" class="muted">暂无历史会话</div>
           </aside>
 
           <div class="chat-main">
+            <div v-if="isWorkspaceAgent" class="workspace-path-display">
+              <span class="path-label">当前工作目录：</span>
+              <span class="path-value" :class="{ 'path-unset': !workspacePath }">
+                {{ workspacePath || '未选择工作目录' }}
+              </span>
+            </div>
             <div class="chat-messages" ref="messagesContainer">
               <div v-if="messages.length === 0" class="empty-state">
                 
@@ -239,15 +253,6 @@
                 <div class="chat-not-supported-desc">请在 QQ 群或 HTTP Stream 端点中使用该 Agent。</div>
               </div>
               <template v-else>
-                <div v-if="isWorkspaceAgent" class="workspace-path-bar">
-                  <label>工作目录</label>
-                  <input
-                    v-model="workspacePath"
-                    type="text"
-                    placeholder="输入当前会话的工作目录路径"
-                    @input="clearChatError"
-                  />
-                </div>
                 <div v-if="pendingAskUser" class="ask-user-panel">
                   <div class="ask-user-question">{{ pendingAskUser.question }}</div>
                   <div v-if="pendingAskUser.details" class="ask-user-details">
@@ -280,7 +285,7 @@
                   <button class="btn ghost" @click="startNewSession">新对话</button>
                   <div class="chat-input-right">
                     <div
-                      v-if="selectedAgent?.agent_type?.type === 'http_stream'"
+                      v-if="isChatEligible"
                       class="chat-model-bar"
                     >
                     <div class="model-picker" :class="{ open: openPicker === 'model' }">
@@ -529,6 +534,7 @@ const activeSessionId = ref("");
 const selectedAgentId = ref("");
 const draftMessage = ref("");
 const workspacePath = ref("");
+const pickingDirectory = ref(false);
 const sending = ref(false);
 const chatErrorMessage = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
@@ -556,6 +562,33 @@ const selectedAgent = computed(() => agents.value.find((agent) => agent.config_i
 const selectedAgentType = computed(() => selectedAgent.value?.agent_type?.type ?? "");
 const isChatEligible = computed(() => chatEligibleAgentTypes.has(selectedAgentType.value));
 const isWorkspaceAgent = computed(() => selectedAgentType.value === "workspace");
+const groupedSessions = computed(() => {
+  const groups = new Map<string, ChatSessionSummary[]>();
+  for (const session of sessions.value) {
+    const key = session.workspace_path ?? "__default__";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(session);
+  }
+  const result: Array<{ pathKey: string; path: string | null; label: string; sessions: ChatSessionSummary[] }> = [];
+  for (const [key, items] of groups) {
+    items.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    result.push({
+      pathKey: key,
+      path: key === "__default__" ? null : key,
+      label: key === "__default__" ? "默认路径" : key,
+      sessions: items,
+    });
+  }
+  result.sort((a, b) => b.sessions[0].updated_at.localeCompare(a.sessions[0].updated_at));
+  return result;
+});
+const recentWorkspacePaths = computed(() => {
+  const paths = new Set<string>();
+  for (const session of sessions.value) {
+    if (session.workspace_path) paths.add(session.workspace_path);
+  }
+  return Array.from(paths).slice(0, 5);
+});
 const chatModels = computed(() => llmModels.value.filter((item) => item.model.type === "chat_llm"));
 const selectedModelLlmConfig = computed(() => {
   const modelId = selectedModelId.value || defaultAgentModelId.value;
@@ -874,6 +907,20 @@ async function openSession(sessionId: string) {
   applyHistory(result.messages);
 }
 
+async function pickDirectory() {
+  pickingDirectory.value = true;
+  try {
+    const result = await system.selectDirectory();
+    if (result.path) {
+      workspacePath.value = result.path;
+    }
+  } catch (error) {
+    chatErrorMessage.value = `选择目录失败: ${(error as Error).message}`;
+  } finally {
+    pickingDirectory.value = false;
+  }
+}
+
 function startNewSession() {
   activeSessionId.value = "";
   messages.value = [];
@@ -1112,10 +1159,6 @@ async function sendMessageWithText(rawInput: string, fromAskUser: boolean) {
     return;
   }
   if (fromAskUser && !canSubmitAskUser.value) {
-    return;
-  }
-  if (isWorkspaceAgent.value && !workspacePath.value.trim()) {
-    chatErrorMessage.value = "workspace agent 需要先选择工作目录";
     return;
   }
   clearChatError();
@@ -1830,6 +1873,103 @@ onUnmounted(() => {
   border: 1px solid var(--admin-border);
   border-radius: 10px;
   padding: 10px 12px;
+}
+
+.workspace-path-row {
+  display: flex;
+  gap: 8px;
+}
+
+.workspace-path-row input {
+  flex: 1;
+}
+
+.workspace-browse-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.workspace-path-display {
+  padding: 10px 16px;
+  background: var(--admin-bg-elevated);
+  border-bottom: 1px solid var(--admin-border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workspace-path-display .path-label {
+  font-size: 13px;
+  color: var(--admin-subtle);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.workspace-path-display .path-value {
+  font-size: 13px;
+  color: var(--admin-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-path-display .path-value.path-unset {
+  color: var(--admin-muted);
+  font-style: italic;
+}
+
+.workspace-recent-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.workspace-recent-label {
+  font-size: 12px;
+  color: var(--admin-muted);
+  margin-right: 2px;
+}
+
+.workspace-recent-chip {
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  background: var(--admin-bg-soft);
+  color: var(--admin-muted);
+  cursor: pointer;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.workspace-recent-chip:hover {
+  border-color: var(--admin-accent);
+  color: var(--admin-ink);
+}
+
+.workspace-recent-chip.active {
+  border-color: var(--admin-accent);
+  color: var(--admin-accent);
+  background: color-mix(in srgb, var(--admin-accent) 12%, transparent 88%);
+}
+
+.chat-session-group-header {
+  font-size: 12px;
+  color: var(--admin-muted);
+  padding: 6px 10px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--admin-border);
+  margin-top: 4px;
+}
+
+.chat-session-group-header:first-child {
+  margin-top: 0;
 }
 
 .ask-user-details {
