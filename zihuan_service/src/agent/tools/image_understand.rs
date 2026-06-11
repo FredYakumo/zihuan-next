@@ -6,7 +6,7 @@ use log::warn;
 use model_inference::system_config::load_llm_refs;
 use serde_json::Value;
 use storage_handler::RuntimeStorageConnectionManager;
-use zihuan_agent::brain::BrainTool;
+use zihuan_agent::brain::{BrainTool, ToolExecutionOutput};
 use zihuan_core::agent_config::{current_qq_chat_agent_config, image_understand_llm_ref_id};
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
@@ -65,6 +65,10 @@ impl BrainTool for ImageUnderstandBrainTool {
             Ok(text) => text,
             Err(error) => serde_json::json!({"error": error.to_string()}).to_string(),
         }
+    }
+
+    fn execute_with_outcome(&self, call_content: &str, arguments: &Value) -> ToolExecutionOutput {
+        ToolExecutionOutput::text(self.execute(call_content, arguments))
     }
 }
 

@@ -14,6 +14,7 @@ use zihuan_core::llm::{InferenceParam, LLMMessage, MessagePart, MessageRole, Str
 use zihuan_core::task_context::{
     scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
 };
+use zihuan_core::workspace::AskUserRequest;
 pub use zihuan_core::tool_runtime::ToolRunDuration;
 
 pub const MAX_TOOL_ITERATIONS: usize = 25;
@@ -134,6 +135,9 @@ pub trait BrainTool: Send + Sync + 'static {
     /// Execute the tool call. `call_content` is the assistant's text for this turn
     /// (used e.g. to send a progress notification before doing the actual work).
     fn execute(&self, call_content: &str, arguments: &Value) -> String;
+    fn execute_with_outcome(&self, call_content: &str, arguments: &Value) -> ToolExecutionOutput {
+        ToolExecutionOutput::text(self.execute(call_content, arguments))
+    }
     /// Declares whether this tool should be treated as short or long running.
     /// Long tools may emit task lifecycle updates, but still execute
     /// synchronously so the LLM receives the real result immediately.
@@ -148,6 +152,8 @@ pub trait BrainObserver: Send + Sync + 'static {
     fn on_tool_start(&self, _name: &str, _call_id: &str, _arguments: &Value) {}
 
     fn on_tool_finish(&self, _name: &str, _call_id: &str, _result: &str) {}
+
+    fn on_ask_user(&self, _call_id: &str, _request: &AskUserRequest) {}
 
     fn on_final_assistant(&self, _response: &LLMMessage, _stop_reason: &BrainStopReason) {}
 }
@@ -167,6 +173,30 @@ pub enum BrainStopReason {
     TransportError(String),
     /// Reached [`MAX_TOOL_ITERATIONS`] without a final assistant message.
     MaxIterationsReached,
+    /// A tool needs follow-up user input before the next LLM iteration can continue.
+    AwaitUserInput(AskUserRequest),
+}
+
+#[derive(Debug, Clone)]
+pub struct ToolExecutionOutput {
+    pub result: String,
+    pub ask_user: Option<AskUserRequest>,
+}
+
+impl ToolExecutionOutput {
+    pub fn text(result: impl Into<String>) -> Self {
+        Self {
+            result: result.into(),
+            ask_user: None,
+        }
+    }
+
+    pub fn ask_user(result: impl Into<String>, request: AskUserRequest) -> Self {
+        Self {
+            result: result.into(),
+            ask_user: Some(request),
+        }
+    }
 }
 
 /// Orchestrates a multi-turn LLM ↔ tool call loop.
@@ -234,7 +264,7 @@ impl Brain {
         call_content: &str,
         arguments: &Value,
         tool_name: &str,
-    ) -> String {
+    ) -> ToolExecutionOutput {
         if tool.run_duration() == ToolRunDuration::Long {
             if let Some(long_ctx) = &self.long_task_context {
                 let task_name = format!("工具: {tool_name}");
@@ -252,19 +282,19 @@ impl Brain {
                 }
                 long_ctx.notifier.on_start(&task_id, &task_name, call_content);
                 let result = scope_task_runtime(Arc::clone(&long_ctx.task_runtime), || {
-                    scope_task_id(task_id.clone(), || tool.execute(call_content, arguments))
+                    scope_task_id(task_id.clone(), || tool.execute_with_outcome(call_content, arguments))
                 });
                 handle.finish(AgentTaskResult {
                     status: Some(AgentTaskStatus::Success),
-                    result_summary: Some(result.clone()),
+                    result_summary: Some(result.result.clone()),
                     error_message: None,
                 });
-                long_ctx.notifier.on_complete(&task_id, &task_name, &result);
+                long_ctx.notifier.on_complete(&task_id, &task_name, &result.result);
                 info!("[Brain] tool '{}' completed as long task_id={}", tool_name, task_id);
                 return result;
             }
         }
-        tool.execute(call_content, arguments)
+        tool.execute_with_outcome(call_content, arguments)
     }
 
     fn log_llm_usage(&self, response: &LLMMessage) {
@@ -419,21 +449,29 @@ impl Brain {
                         "[Brain] Tool '{}' not found for call id={} arguments={}",
                         tc.function.name, tc.id, tc.function.arguments
                     );
-                    serde_json::json!({"error": format!("Tool '{}' not found", tc.function.name)}).to_string()
+                    ToolExecutionOutput::text(
+                        serde_json::json!({"error": format!("Tool '{}' not found", tc.function.name)}).to_string(),
+                    )
                 };
 
                 info!(
                     "[Brain] tool call id={} name={} result: {}",
                     tc.id,
                     tc.function.name,
-                    truncate_for_log(&result, LOG_PREVIEW_CHARS)
+                    truncate_for_log(&result.result, LOG_PREVIEW_CHARS)
                 );
                 if let Some(observer) = self.observer.as_ref() {
-                    observer.on_tool_finish(&tc.function.name, &tc.id, &result);
+                    observer.on_tool_finish(&tc.function.name, &tc.id, &result.result);
                 }
-                let msg = LLMMessage::tool_result(tc.id.clone(), result);
+                let msg = LLMMessage::tool_result(tc.id.clone(), result.result.clone());
                 conversation.push(msg.clone());
                 output.push(msg);
+                if let Some(request) = result.ask_user {
+                    if let Some(observer) = self.observer.as_ref() {
+                        observer.on_ask_user(&tc.id, &request);
+                    }
+                    return (output, BrainStopReason::AwaitUserInput(request));
+                }
             }
         }
 
@@ -569,21 +607,29 @@ impl Brain {
                         "[Brain] Tool '{}' not found for call id={} arguments={}",
                         tc.function.name, tc.id, tc.function.arguments
                     );
-                    serde_json::json!({"error": format!("Tool '{}' not found", tc.function.name)}).to_string()
+                    ToolExecutionOutput::text(
+                        serde_json::json!({"error": format!("Tool '{}' not found", tc.function.name)}).to_string(),
+                    )
                 };
 
                 info!(
                     "[Brain] tool call id={} name={} result: {}",
                     tc.id,
                     tc.function.name,
-                    truncate_for_log(&result, LOG_PREVIEW_CHARS)
+                    truncate_for_log(&result.result, LOG_PREVIEW_CHARS)
                 );
                 if let Some(observer) = self.observer.as_ref() {
-                    observer.on_tool_finish(&tc.function.name, &tc.id, &result);
+                    observer.on_tool_finish(&tc.function.name, &tc.id, &result.result);
                 }
-                let msg = LLMMessage::tool_result(tc.id.clone(), result);
+                let msg = LLMMessage::tool_result(tc.id.clone(), result.result.clone());
                 conversation.push(msg.clone());
                 output.push(msg);
+                if let Some(request) = result.ask_user {
+                    if let Some(observer) = self.observer.as_ref() {
+                        observer.on_ask_user(&tc.id, &request);
+                    }
+                    return (output, BrainStopReason::AwaitUserInput(request));
+                }
             }
         }
 

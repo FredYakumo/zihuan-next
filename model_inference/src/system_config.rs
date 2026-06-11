@@ -35,6 +35,7 @@ pub struct AgentConfig {
 pub enum AgentType {
     QqChat(QqChatAgentConfig),
     HttpStream(HttpStreamAgentConfig),
+    Workspace(WorkspaceAgentConfig),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,6 +56,14 @@ pub struct HttpStreamAgentConfig {
     #[serde(default)]
     pub task_db_connection_id: String,
     #[serde(default = "default_http_stream_default_tools_enabled")]
+    pub default_tools_enabled: std::collections::HashMap<String, bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceAgentConfig {
+    #[serde(default)]
+    pub llm_ref_id: Option<String>,
+    #[serde(default = "default_workspace_default_tools_enabled")]
     pub default_tools_enabled: std::collections::HashMap<String, bool>,
 }
 
@@ -103,6 +112,18 @@ fn default_http_stream_default_tools_enabled() -> std::collections::HashMap<Stri
         ("list_available_memory_keys".to_string(), true),
         ("search_memory_content".to_string(), true),
         ("remember_content".to_string(), true),
+    ]
+    .into_iter()
+    .collect()
+}
+
+fn default_workspace_default_tools_enabled() -> std::collections::HashMap<String, bool> {
+    [
+        ("create_file".to_string(), true),
+        ("delete_file".to_string(), true),
+        ("edit_file".to_string(), true),
+        ("exec_cmd".to_string(), true),
+        ("ask_user".to_string(), true),
     ]
     .into_iter()
     .collect()
@@ -262,6 +283,7 @@ impl ConfigRecord for AgentConfig {
         match self.agent_type {
             AgentType::QqChat(_) => ConfigKind::AgentQqChat,
             AgentType::HttpStream(_) => ConfigKind::AgentHttpStream,
+            AgentType::Workspace(_) => ConfigKind::AgentHttpStream,
         }
     }
 

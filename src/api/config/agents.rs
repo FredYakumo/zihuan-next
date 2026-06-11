@@ -283,7 +283,7 @@ pub async fn list_agents(_req: &mut Request, res: &mut Response, depot: &mut Dep
             for agent in agents {
                 let qq_chat_profile = match &agent.agent_type {
                     AgentType::QqChat(config) => resolve_qq_chat_profile(&connections, config).await,
-                    AgentType::HttpStream(_) => None,
+                    AgentType::HttpStream(_) | AgentType::Workspace(_) => None,
                 };
 
                 items.push(AgentWithRuntime {
@@ -692,6 +692,7 @@ fn validate_agent_connection_schemas(agent_type: &AgentType, connections: &[Conn
             WeaviateCollectionSchema::AgentMemory,
             "weaviate_memory_connection_id",
         ),
+        AgentType::Workspace(_) => Ok(()),
     }
 }
 
@@ -768,6 +769,12 @@ fn validate_qq_chat_agent_llms(
         AgentType::HttpStream(config) => {
             validate_embedding_model_ref(llm_refs, config.embedding_model_ref_id.as_deref(), agent_name)
         }
+        AgentType::Workspace(config) => validate_chat_llm_ref(
+            llm_refs,
+            config.llm_ref_id.as_deref().map(str::trim).filter(|value| !value.is_empty()),
+            agent_name,
+            "llm_ref_id",
+        ),
     }
 }
 

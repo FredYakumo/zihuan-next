@@ -5,7 +5,7 @@ use crate::setup_orchestrator::{ImsBotAdapterSetupConfig, LlmSetupConfig};
 use crate::system_config;
 use ims_bot_adapter::BotAdapterConnection;
 use model_inference::system_config::{
-    AgentConfig, AgentType, HttpStreamAgentConfig, LlmRefConfig, LlmServiceConfig, ModelRefSpec,
+    AgentConfig, AgentType, HttpStreamAgentConfig, LlmRefConfig, LlmServiceConfig, ModelRefSpec, WorkspaceAgentConfig,
 };
 use storage_handler::{
     ConnectionConfig, ConnectionKind, RedisConnection, RustfsConnection, SqliteConnection, WeaviateConnection,
@@ -142,79 +142,17 @@ pub async fn create_qq_bot_stack(
 pub async fn create_butler_stack(llm_config: &LlmSetupConfig) -> Result<(), String> {
     let llm_ref = build_llm_ref(llm_config, "setup-default-llm", "Default LLM");
     save_llm_ref(llm_ref)?;
+    let agent = build_workspace_agent("setup-default-agent", "AI Butler", Some("setup-default-llm".to_string()));
+    save_agent(agent)?;
 
-    let embedding_ref = build_embedding_ref("setup-default-embedding", "Default Embedding");
-    save_llm_ref(embedding_ref)?;
+    Ok(())
+}
 
-    let redis = build_connection(
-        "setup-default-redis",
-        "Redis",
-        ConnectionKind::Redis(RedisConnection {
-            url: "redis://127.0.0.1:6379".to_string(),
-            username: None,
-            password: None,
-        }),
-    );
-    save_connection(redis)?;
+pub async fn create_workspace_agent_stack(llm_config: &LlmSetupConfig, name: &str) -> Result<(), String> {
+    let llm_ref = build_llm_ref(llm_config, "setup-default-llm", "Default LLM");
+    save_llm_ref(llm_ref)?;
 
-    let weaviate_memory = build_connection(
-        "setup-default-weaviate-memory",
-        "Weaviate Memory",
-        ConnectionKind::Weaviate(WeaviateConnection {
-            base_url: "http://127.0.0.1:8080".to_string(),
-            class_name: "AgentMemory".to_string(),
-            username: None,
-            password: None,
-            api_key: None,
-            collection_schema: WeaviateCollectionSchema::AgentMemory,
-        }),
-    );
-    save_connection(weaviate_memory)?;
-
-    let rustfs = build_connection(
-        "setup-default-rustfs",
-        "RustFS",
-        ConnectionKind::Rustfs(RustfsConnection {
-            endpoint: "http://127.0.0.1:9000".to_string(),
-            bucket: "zihuan".to_string(),
-            region: "us-east-1".to_string(),
-            access_key: "minioadmin".to_string(),
-            secret_key: "minioadmin".to_string(),
-            public_base_url: None,
-            path_style: true,
-        }),
-    );
-    save_connection(rustfs)?;
-
-    let web_search = build_connection(
-        "setup-default-web-search",
-        "Web Search",
-        ConnectionKind::WebSearchEngine(WebSearchEngineConnection {
-            provider: "tavily".to_string(),
-            api_token: None,
-            timeout_secs: 30,
-        }),
-    );
-    save_connection(web_search)?;
-
-    let sqlite = build_connection(
-        "setup-default-sqlite",
-        "SQLite Task DB",
-        ConnectionKind::Sqlite(SqliteConnection {
-            path: "zihuan_data.db".to_string(),
-        }),
-    );
-    save_connection(sqlite)?;
-
-    let agent = build_http_stream_agent(
-        "setup-default-agent",
-        "AI Butler",
-        Some("setup-default-llm".to_string()),
-        Some("setup-default-embedding".to_string()),
-        Some("setup-default-web-search".to_string()),
-        Some("setup-default-weaviate-memory".to_string()),
-        "setup-default-sqlite".to_string(),
-    );
+    let agent = build_workspace_agent("setup-default-agent", name, Some("setup-default-llm".to_string()));
     save_agent(agent)?;
 
     Ok(())
@@ -364,6 +302,23 @@ fn build_qq_chat_agent() -> AgentConfig {
     }
 }
 
+fn build_workspace_agent(id: &str, name: &str, llm_ref_id: Option<String>) -> AgentConfig {
+    AgentConfig {
+        id: id.to_string(),
+        config_id: id.to_string(),
+        name: name.to_string(),
+        agent_type: AgentType::Workspace(WorkspaceAgentConfig {
+            llm_ref_id,
+            default_tools_enabled: default_workspace_tools(),
+        }),
+        enabled: true,
+        auto_start: false,
+        is_default: false,
+        updated_at: now_rfc3339(),
+        tools: vec![],
+    }
+}
+
 fn parse_api_style(value: &str) -> model_inference::system_config::LlmApiStyle {
     match value {
         "candle" | "candle_gguf" => model_inference::system_config::LlmApiStyle::CandleGguf,
@@ -386,6 +341,18 @@ fn default_http_stream_tools() -> HashMap<String, bool> {
         ("list_available_memory_keys".to_string(), true),
         ("search_memory_content".to_string(), true),
         ("remember_content".to_string(), true),
+    ]
+    .into_iter()
+    .collect()
+}
+
+fn default_workspace_tools() -> HashMap<String, bool> {
+    [
+        ("create_file".to_string(), true),
+        ("delete_file".to_string(), true),
+        ("edit_file".to_string(), true),
+        ("exec_cmd".to_string(), true),
+        ("ask_user".to_string(), true),
     ]
     .into_iter()
     .collect()

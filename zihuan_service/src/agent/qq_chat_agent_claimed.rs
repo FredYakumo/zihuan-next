@@ -600,6 +600,7 @@ impl QqChatAgent {
             .map(ToOwned::to_owned);
         final_assistant_text = match stop_reason {
             BrainStopReason::TransportError(_) => None,
+            BrainStopReason::AwaitUserInput(_) => None,
             _ => final_assistant_text,
         };
 
@@ -635,6 +636,7 @@ impl QqChatAgent {
                 .map(ToOwned::to_owned);
             final_assistant_text = match stop_reason {
                 BrainStopReason::TransportError(_) => None,
+                BrainStopReason::AwaitUserInput(_) => None,
                 _ => final_assistant_text,
             };
             visible_assistant_history_text = take_last_reply_result(&shared_runtime_values)
@@ -655,6 +657,9 @@ impl QqChatAgent {
                 }
                 BrainStopReason::Done => {
                     warn!("{LOG_PREFIX} Brain finished without any sendable reply content");
+                }
+                BrainStopReason::AwaitUserInput(ref request) => {
+                    warn!("{LOG_PREFIX} Brain paused for user input without reply: {}", request.question);
                 }
             }
         }

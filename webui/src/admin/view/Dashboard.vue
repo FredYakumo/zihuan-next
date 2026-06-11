@@ -35,7 +35,12 @@
                   v-for="agent in agents"
                   :key="agent.config_id"
                   class="chat-agent-card"
-                  :class="{ active: selectedAgentId === agent.config_id, inactive: agent.runtime.status !== 'running' }"
+                  :class="{
+                    active: selectedAgentId === agent.config_id,
+                    inactive: agent.runtime.status !== 'running' || !chatEligibleAgentTypes.has(agent.agent_type.type),
+                    unsupported: !chatEligibleAgentTypes.has(agent.agent_type.type),
+                  }"
+                  :disabled="!chatEligibleAgentTypes.has(agent.agent_type.type)"
                   @click="selectedAgentId = agent.config_id"
                 >
                   <img
@@ -51,7 +56,8 @@
                     <strong>{{ agent.name }}</strong>
                     <span>{{ readableAgentType(agent.agent_type.type) }}</span>
                   </div>
-                  <span v-if="agent.runtime.status !== 'running'" class="agent-status-badge">未运行</span>
+                  <span v-if="!chatEligibleAgentTypes.has(agent.agent_type.type)" class="agent-status-badge unsupported-badge">Dashboard 不可用</span>
+                  <span v-else-if="agent.runtime.status !== 'running'" class="agent-status-badge">未运行</span>
                 </button>
               </template>
             </div>
@@ -227,19 +233,56 @@
             </div>
 
             <div class="chat-input-area">
-              <textarea
-                v-model="draftMessage"
-                placeholder="输入消息"
-                @keydown.ctrl.enter.prevent="sendMessage"
-                @input="clearChatError"
-              />
-              <div class="chat-input-actions">
-                <button class="btn ghost" @click="startNewSession">新对话</button>
-                <div class="chat-input-right">
-                  <div
-                    v-if="selectedAgent?.agent_type?.type === 'http_stream'"
-                    class="chat-model-bar"
-                  >
+              <div v-if="!isChatEligible" class="chat-not-supported">
+                <div class="chat-not-supported-icon">🚫</div>
+                <div class="chat-not-supported-title">此 Agent 不支持在 Dashboard 聊天</div>
+                <div class="chat-not-supported-desc">请在 QQ 群或 HTTP Stream 端点中使用该 Agent。</div>
+              </div>
+              <template v-else>
+                <div v-if="isWorkspaceAgent" class="workspace-path-bar">
+                  <label>工作目录</label>
+                  <input
+                    v-model="workspacePath"
+                    type="text"
+                    placeholder="输入当前会话的工作目录路径"
+                    @input="clearChatError"
+                  />
+                </div>
+                <div v-if="pendingAskUser" class="ask-user-panel">
+                  <div class="ask-user-question">{{ pendingAskUser.question }}</div>
+                  <div v-if="pendingAskUser.details" class="ask-user-details">
+                    {{ pendingAskUser.details }}
+                  </div>
+                  <div class="ask-user-row">
+                    <input
+                      v-model="askUserAnswer"
+                      type="text"
+                      :placeholder="pendingAskUser.placeholder || '请输入补充信息'"
+                      @input="clearChatError"
+                      @keydown.enter.prevent="submitAskUserAnswer"
+                    />
+                    <button
+                      class="btn primary"
+                      :disabled="!canSubmitAskUser"
+                      @click="submitAskUserAnswer"
+                    >
+                      提交补充信息
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  v-model="draftMessage"
+                  placeholder="输入消息"
+                  @keydown.ctrl.enter.prevent="sendMessage"
+                  @input="clearChatError"
+                />
+                <div class="chat-input-actions">
+                  <button class="btn ghost" @click="startNewSession">新对话</button>
+                  <div class="chat-input-right">
+                    <div
+                      v-if="selectedAgent?.agent_type?.type === 'http_stream'"
+                      class="chat-model-bar"
+                    >
                     <div class="model-picker" :class="{ open: openPicker === 'model' }">
                       <button
                         class="model-chip"
@@ -409,6 +452,7 @@
                   </button>
                 </div>
               </div>
+              </template>
               <div v-if="chatErrorMessage" class="chat-error-box" role="alert">
                 {{ chatErrorMessage }}
               </div>
@@ -467,6 +511,11 @@ type ToolDetail = {
 type PendingNewConversationCommand = {
   passthroughText: string | null;
 };
+type PendingAskUser = {
+  question: string;
+  details?: string;
+  placeholder?: string;
+};
 type StreamState = {
   assistantMessageId: string | null;
   pendingNewConversation: PendingNewConversationCommand | null;
@@ -479,6 +528,7 @@ const sessions = ref<ChatSessionSummary[]>([]);
 const activeSessionId = ref("");
 const selectedAgentId = ref("");
 const draftMessage = ref("");
+const workspacePath = ref("");
 const sending = ref(false);
 const chatErrorMessage = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
@@ -501,7 +551,11 @@ const markdown = new MarkdownIt({
   linkify: true,
 });
 
+const chatEligibleAgentTypes = new Set(["http_stream", "workspace"]);
 const selectedAgent = computed(() => agents.value.find((agent) => agent.config_id === selectedAgentId.value) ?? null);
+const selectedAgentType = computed(() => selectedAgent.value?.agent_type?.type ?? "");
+const isChatEligible = computed(() => chatEligibleAgentTypes.has(selectedAgentType.value));
+const isWorkspaceAgent = computed(() => selectedAgentType.value === "workspace");
 const chatModels = computed(() => llmModels.value.filter((item) => item.model.type === "chat_llm"));
 const selectedModelLlmConfig = computed(() => {
   const modelId = selectedModelId.value || defaultAgentModelId.value;
@@ -544,6 +598,7 @@ const selectedEffortLabel = computed(() => {
 });
 const canSend = computed(() =>
   !!selectedAgent.value &&
+  isChatEligible.value &&
   selectedAgent.value.runtime.status === "running" &&
   draftMessage.value.trim().length > 0,
 );
@@ -552,6 +607,16 @@ const selectedAgentAvatarFallback = computed(() => {
   const name = selectedAgent.value?.name ?? "Bot";
   return agentInitial(name);
 });
+const pendingAskUser = ref<PendingAskUser | null>(null);
+const askUserAnswer = ref("");
+const canSubmitAskUser = computed(() =>
+  isChatEligible.value &&
+  isWorkspaceAgent.value &&
+  !!pendingAskUser.value &&
+  selectedAgent.value?.runtime.status === "running" &&
+  askUserAnswer.value.trim().length > 0 &&
+  !sending.value,
+);
 
 function parseNewConversationCommand(input: string): PendingNewConversationCommand | null {
   const match = input.trim().match(/^\/(new|clear|reset)(?:\s+([\s\S]*))?$/i);
@@ -599,7 +664,13 @@ const activeToolDetail = computed<ToolDetail | null>(() => {
 });
 
 function readableAgentType(type: string): string {
-  return type === "http_stream" ? "HTTP Stream Agent" : "QQ Chat Agent";
+  if (type === "http_stream") {
+    return "HTTP Stream Agent";
+  }
+  if (type === "workspace") {
+    return "Workspace Agent";
+  }
+  return "QQ Chat Agent";
 }
 
 function agentAvatarUrl(agent: AgentWithRuntime | null | undefined): string {
@@ -741,6 +812,11 @@ function clearChatError() {
   chatErrorMessage.value = "";
 }
 
+function clearPendingAskUser() {
+  pendingAskUser.value = null;
+  askUserAnswer.value = "";
+}
+
 function pruneFailedAssistantPlaceholder(assistantMessageId: string | null) {
   if (!assistantMessageId) {
     return;
@@ -776,11 +852,24 @@ async function reloadSessions() {
 async function openSession(sessionId: string) {
   activeSessionId.value = sessionId;
   clearChatError();
+  clearPendingAskUser();
   const result = await chat.getSessionMessages(sessionId);
   // Auto-select the agent associated with this session
   const firstRecord = result.messages[0];
   if (firstRecord?.agent_id && agents.value.some((a) => a.config_id === firstRecord.agent_id)) {
     selectedAgentId.value = firstRecord.agent_id;
+  }
+  workspacePath.value =
+    result.messages[result.messages.length - 1]?.workspace_path ??
+    firstRecord?.workspace_path ??
+    workspacePath.value;
+  const latestRecord = result.messages[result.messages.length - 1];
+  if (latestRecord?.pending_ask_user?.question) {
+    pendingAskUser.value = {
+      question: latestRecord.pending_ask_user.question,
+      details: latestRecord.pending_ask_user.details ?? undefined,
+      placeholder: latestRecord.pending_ask_user.placeholder ?? undefined,
+    };
   }
   applyHistory(result.messages);
 }
@@ -791,6 +880,7 @@ function startNewSession() {
   activeToolCallId.value = "";
   expandedLiveToolCalls.value = new Set();
   clearChatError();
+  clearPendingAskUser();
 }
 
 function selectModel(id: string) {
@@ -821,6 +911,12 @@ watch(selectedAgentId, async () => {
   selectedModelId.value = defaultAgentModelId.value;
   selectedThinkingType.value = "";
   selectedReasoningEffort.value = "";
+  if (!isWorkspaceAgent.value) {
+    workspacePath.value = "";
+  }
+  if (!isChatEligible.value) {
+    clearPendingAskUser();
+  }
 });
 
 watch(selectedModelId, () => {
@@ -846,6 +942,16 @@ async function removeSession(sessionId: string) {
 function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
   if (event.type === "error") {
     applyInferenceFailure(streamState, event.error ?? "未知错误");
+    return;
+  }
+
+  if (event.type === "ask_user" && event.question) {
+    pendingAskUser.value = {
+      question: event.question,
+      details: event.details ?? undefined,
+      placeholder: event.placeholder ?? undefined,
+    };
+    askUserAnswer.value = "";
     return;
   }
 
@@ -983,11 +1089,35 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
 }
 
 async function sendMessage() {
-  if (!canSend.value || sending.value) {
+  await sendMessageWithText(draftMessage.value, false);
+}
+
+async function submitAskUserAnswer() {
+  await sendMessageWithText(askUserAnswer.value, true);
+}
+
+async function sendMessageWithText(rawInput: string, fromAskUser: boolean) {
+  if (sending.value) {
     return;
   }
 
-  const userText = draftMessage.value.trim();
+  const userText = rawInput.trim();
+  if (!userText) {
+    return;
+  }
+  if (!selectedAgent.value || selectedAgent.value.runtime.status !== "running") {
+    return;
+  }
+  if (!fromAskUser && !canSend.value) {
+    return;
+  }
+  if (fromAskUser && !canSubmitAskUser.value) {
+    return;
+  }
+  if (isWorkspaceAgent.value && !workspacePath.value.trim()) {
+    chatErrorMessage.value = "workspace agent 需要先选择工作目录";
+    return;
+  }
   clearChatError();
   const pendingNewConversation = parseNewConversationCommand(userText);
   const requestMessages = [
@@ -998,7 +1128,11 @@ async function sendMessage() {
     },
   ];
 
-  draftMessage.value = "";
+  if (fromAskUser) {
+    askUserAnswer.value = "";
+  } else {
+    draftMessage.value = "";
+  }
   sending.value = true;
 
   const streamState: StreamState = {
@@ -1043,6 +1177,7 @@ async function sendMessage() {
         model_config_id: selectedModelId.value || null,
         thinking_type: selectedThinkingType.value || null,
         reasoning_effort: selectedReasoningEffort.value || null,
+        workspace_path: isWorkspaceAgent.value ? workspacePath.value.trim() || null : null,
         messages: requestMessages,
       },
       (event) => applyStreamEvent(event, streamState),
@@ -1073,7 +1208,8 @@ async function load() {
     llmModels.value = llm;
 
     if (!selectedAgentId.value || !loadedAgents.some((agent) => agent.config_id === selectedAgentId.value)) {
-      selectedAgentId.value = loadedAgents[0]?.config_id ?? "";
+      const firstEligible = loadedAgents.find((agent) => chatEligibleAgentTypes.has(agent.agent_type.type));
+      selectedAgentId.value = firstEligible?.config_id ?? loadedAgents[0]?.config_id ?? "";
     }
     selectedModelId.value = defaultAgentModelId.value;
   } finally {
@@ -1266,6 +1402,16 @@ onUnmounted(() => {
   opacity: 0.8;
 }
 
+.chat-agent-card.unsupported {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.chat-agent-card.unsupported:hover {
+  transform: none;
+  border-color: var(--admin-border);
+}
+
 .agent-status-badge {
   background: var(--admin-danger, #ef4444);
   color: white;
@@ -1275,6 +1421,10 @@ onUnmounted(() => {
   border-radius: 5px;
   margin-left: auto;
   flex-shrink: 0;
+}
+
+.agent-status-badge.unsupported-badge {
+  background: var(--admin-muted, #6b7280);
 }
 
 .chat-layout {
@@ -1655,6 +1805,50 @@ onUnmounted(() => {
   background: var(--admin-bg-elevated);
 }
 
+.workspace-path-bar,
+.ask-user-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--admin-bg-panel) 88%, var(--admin-bg) 12%);
+}
+
+.workspace-path-bar label,
+.ask-user-question {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--admin-ink);
+}
+
+.workspace-path-bar input,
+.ask-user-row input {
+  background: var(--admin-bg);
+  color: var(--admin-ink);
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.ask-user-details {
+  color: var(--admin-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.ask-user-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ask-user-row input {
+  flex: 1 1 320px;
+}
+
 .chat-input-area textarea {
   background: var(--admin-bg);
   color: var(--admin-ink);
@@ -1672,6 +1866,34 @@ onUnmounted(() => {
   border-color: var(--admin-accent);
   outline: none;
   box-shadow: 0 0 0 3px var(--admin-accent-soft);
+}
+
+.chat-not-supported {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 20px;
+  text-align: center;
+  color: var(--admin-muted);
+}
+
+.chat-not-supported-icon {
+  font-size: 32px;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.chat-not-supported-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--admin-ink);
+}
+
+.chat-not-supported-desc {
+  font-size: 13px;
+  color: var(--admin-subtle);
 }
 
 .chat-input-actions {

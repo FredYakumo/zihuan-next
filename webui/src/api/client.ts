@@ -422,7 +422,7 @@ export interface QqChatAgentIgnoreRule {
 }
 
 export interface ChatStreamEvent {
-  type: "start" | "delta" | "thinking_delta" | "done" | "error" | "tool_call_start" | "tool_call_result";
+  type: "start" | "delta" | "thinking_delta" | "done" | "error" | "tool_call_start" | "tool_call_result" | "ask_user";
   session_id?: string;
   message_id?: string;
   index?: number;
@@ -433,6 +433,9 @@ export interface ChatStreamEvent {
   name?: string;
   arguments?: unknown;
   result?: string;
+  question?: string;
+  details?: string;
+  placeholder?: string;
 }
 
 export interface ChatToolCall {
@@ -459,6 +462,12 @@ export interface ChatHistoryRecord {
   message_id: string;
   tool_calls?: ChatToolCall[];
   tool_call_id?: string | null;
+  workspace_path?: string | null;
+  pending_ask_user?: {
+    question: string;
+    details?: string | null;
+    placeholder?: string | null;
+  } | null;
 }
 
 export interface ChatSessionSummary {
@@ -468,6 +477,12 @@ export interface ChatSessionSummary {
   agent_name?: string | null;
   agent_type?: string | null;
   agent_avatar_url?: string | null;
+  workspace_path?: string | null;
+  pending_ask_user?: {
+    question: string;
+    details?: string | null;
+    placeholder?: string | null;
+  } | null;
 }
 
 export const system = {
@@ -784,6 +799,7 @@ export const chat = {
       model_config_id?: string | null;
       thinking_type?: "enabled" | "disabled" | null;
       reasoning_effort?: "low" | "medium" | "high" | "max" | null;
+      workspace_path?: string | null;
       messages: Array<{
         role: string;
         content: string;

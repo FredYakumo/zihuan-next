@@ -8,7 +8,7 @@ use crate::nodes::tool_subgraph::{
     shared_inputs_ports, validate_shared_inputs, validate_tool_definitions, SubgraphFunctionTool, ToolResultMode,
     ToolSubgraphRunner,
 };
-use zihuan_agent::brain::{Brain, BrainStopReason, BrainTool, ToolRunDuration, MAX_TOOL_ITERATIONS};
+use zihuan_agent::brain::{Brain, BrainStopReason, BrainTool, ToolExecutionOutput, ToolRunDuration, MAX_TOOL_ITERATIONS};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::LLMMessage;
@@ -33,6 +33,10 @@ impl BrainTool for SubgraphBrainTool {
 
     fn execute(&self, call_content: &str, arguments: &Value) -> String {
         self.runner.execute_to_string(call_content, arguments)
+    }
+
+    fn execute_with_outcome(&self, call_content: &str, arguments: &Value) -> ToolExecutionOutput {
+        ToolExecutionOutput::text(self.execute(call_content, arguments))
     }
 }
 
@@ -255,6 +259,9 @@ impl Node for BrainNode {
             }
             BrainStopReason::MaxIterationsReached => {
                 return Err(self.wrap_error(format!("Brain tool loop exceeded max iterations ({MAX_TOOL_ITERATIONS})")));
+            }
+            BrainStopReason::AwaitUserInput(request) => {
+                return Err(self.wrap_error(format!("Brain requested user input: {}", request.question)));
             }
             BrainStopReason::Done => {}
         }

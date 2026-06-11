@@ -21,6 +21,7 @@ pub mod task_context;
 pub mod tool_runtime;
 pub mod url_utils;
 pub mod weaviate;
+pub mod workspace;
 pub mod worker_pool;
 
 pub use message_part::MessagePart;

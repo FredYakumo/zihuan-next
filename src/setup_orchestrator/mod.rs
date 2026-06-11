@@ -48,7 +48,7 @@ impl SetupOrchestrator {
         let required_services = match &role {
             SetupRole::ChatAssistant | SetupRole::CodeDevAssistant => Vec::new(),
             SetupRole::QqChatBot => vec!["redis", "weaviate", "rustfs", "napcat"],
-            SetupRole::AiButler => vec!["redis", "weaviate", "rustfs"],
+            SetupRole::AiButler => Vec::new(),
         };
 
         // Track native NapCat install path so we can persist it in the bot adapter config.
@@ -191,8 +191,9 @@ impl SetupOrchestrator {
         napcat_native_path: Option<&str>,
     ) -> Result<(), String> {
         match role {
-            SetupRole::ChatAssistant | SetupRole::CodeDevAssistant => {
-                config_factory::create_chat_assistant_stack(llm_config).await
+            SetupRole::ChatAssistant => config_factory::create_chat_assistant_stack(llm_config).await,
+            SetupRole::CodeDevAssistant => {
+                config_factory::create_workspace_agent_stack(llm_config, "Project Dev Assistant").await
             }
             SetupRole::QqChatBot => {
                 let ims_config =

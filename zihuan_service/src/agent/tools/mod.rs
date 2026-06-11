@@ -24,6 +24,7 @@ mod recent_messages;
 mod reply_message;
 mod research;
 mod web_search;
+mod workspace_tools;
 
 mod build_metadata {
     include!(concat!(env!("OUT_DIR"), "/build_metadata.rs"));
@@ -47,6 +48,11 @@ pub(crate) use recent_messages::{GetRecentGroupMessagesBrainTool, GetRecentUserM
 pub(crate) use reply_message::ReplyMessageBrainTool;
 pub(crate) use research::RunResearchSubagentBrainTool;
 pub(crate) use web_search::WebSearchBrainTool;
+pub(crate) use workspace_tools::{
+    AskUserBrainTool, CreateFileBrainTool, DeleteFileBrainTool, EditFileBrainTool, ExecCmdBrainTool,
+    DEFAULT_TOOL_ASK_USER, DEFAULT_TOOL_CREATE_FILE, DEFAULT_TOOL_DELETE_FILE, DEFAULT_TOOL_EDIT_FILE,
+    DEFAULT_TOOL_EXEC_CMD,
+};
 
 pub(crate) const DEFAULT_TOOL_WEB_SEARCH: &str = "web_search";
 pub(crate) const DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO: &str = "get_agent_public_info";

@@ -2,6 +2,7 @@ pub mod http_stream_agent;
 pub mod inference;
 pub mod qq_chat_agent;
 pub mod tool_definitions;
+pub mod workspace_agent;
 
 mod agent_text_similarity;
 mod classify_intent;
@@ -144,9 +145,18 @@ impl AgentManager {
         messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn BrainObserver>>,
-    ) -> Result<Vec<LLMMessage>> {
-        self.infer_agent_response_streaming_with_model(agent_id, messages, token_tx, observer, None, None, None)
-            .await
+    ) -> Result<(Vec<LLMMessage>, zihuan_agent::brain::BrainStopReason)> {
+        self.infer_agent_response_streaming_with_model(
+            agent_id,
+            messages,
+            token_tx,
+            observer,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
     }
 
     pub async fn infer_agent_response_streaming_with_model(
@@ -158,7 +168,8 @@ impl AgentManager {
         model_config_id: Option<&str>,
         thinking_type: Option<model_inference::system_config::ThinkingType>,
         reasoning_effort: Option<model_inference::system_config::ReasoningEffort>,
-    ) -> Result<Vec<LLMMessage>> {
+        workspace_path: Option<String>,
+    ) -> Result<(Vec<LLMMessage>, zihuan_agent::brain::BrainStopReason)> {
         let agent = self.running_agent(agent_id).ok_or_else(|| {
             zihuan_core::error::Error::ValidationError(format!("agent '{}' is not running", agent_id))
         })?;
@@ -177,10 +188,12 @@ impl AgentManager {
             }
             let llm = crate::resource_resolver::build_llm_model(&llm_config)?;
             agent
-                .infer_response_streaming_with_trace_and_llm(messages, token_tx, observer, llm)
+                .infer_response_streaming_with_trace_and_llm(messages, token_tx, observer, llm, workspace_path)
                 .await
         } else {
-            agent.infer_response_streaming_with_trace(messages, token_tx, observer).await
+            agent
+                .infer_response_streaming_with_trace(messages, token_tx, observer, workspace_path)
+                .await
         }
     }
 
@@ -257,6 +270,21 @@ impl AgentManager {
                     };
                     entry.task = Some(task);
                     entry.on_finish = on_finish_shared;
+                    Ok(())
+                }
+                AgentType::Workspace(_config) => {
+                    let started_at = Local::now().to_rfc3339();
+                    let mut guard = self.inner.lock().unwrap();
+                    let entry = guard.entry(agent.id.clone()).or_default();
+                    entry.loaded_agent = Some(Arc::clone(&loaded_agent));
+                    entry.state = AgentRuntimeState {
+                        instance_id: Some(runtime_instance_id),
+                        status: AgentRuntimeStatus::Running,
+                        started_at: Some(started_at),
+                        last_error: None,
+                    };
+                    entry.task = None;
+                    entry.on_finish = Arc::new(Mutex::new(on_finish));
                     Ok(())
                 }
             }
@@ -346,5 +374,6 @@ pub fn build_inference_tool_provider(
     match &agent.agent_type {
         AgentType::QqChat(config) => qq_chat_agent::load_inference_tool_provider(agent, config, connections),
         AgentType::HttpStream(config) => http_stream_agent::load_inference_tool_provider(agent, config, connections),
+        AgentType::Workspace(config) => workspace_agent::load_inference_tool_provider(agent, config, connections),
     }
 }
