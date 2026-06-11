@@ -55,18 +55,14 @@ impl Node for SessionStateTryClaimNode {
                 DataValue::SessionStateRef(session_ref) => Some(session_ref.clone()),
                 _ => None,
             })
-            .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("session_ref is required".to_string())
-            })?;
+            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("session_ref is required".to_string()))?;
         let sender_id = inputs
             .get("sender_id")
             .and_then(|value| match value {
                 DataValue::String(sender_id) => Some(sender_id.clone()),
                 _ => None,
             })
-            .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("sender_id is required".to_string())
-            })?;
+            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("sender_id is required".to_string()))?;
         let desired_state = inputs.get("state_json").and_then(|value| match value {
             DataValue::Json(value) => Some(value.clone()),
             _ => None,
@@ -79,11 +75,7 @@ impl Node for SessionStateTryClaimNode {
         );
         let session_ref_for_try = session_ref.clone();
         let sender_id_for_try = sender_id.clone();
-        let try_claim = async move {
-            session_ref_for_try
-                .try_claim(&sender_id_for_try, desired_state)
-                .await
-        };
+        let try_claim = async move { session_ref_for_try.try_claim(&sender_id_for_try, desired_state).await };
         let (state, claimed) = if let Ok(handle) = tokio::runtime::Handle::try_current() {
             block_in_place(|| handle.block_on(try_claim))
         } else {
@@ -118,10 +110,7 @@ impl Node for SessionStateTryClaimNode {
 
         let outputs = HashMap::from([
             ("claimed".to_string(), DataValue::Boolean(claimed)),
-            (
-                "in_session".to_string(),
-                DataValue::Boolean(state.in_session),
-            ),
+            ("in_session".to_string(), DataValue::Boolean(state.in_session)),
             (
                 "state_json".to_string(),
                 DataValue::Json(match state.state_json {

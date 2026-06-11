@@ -158,15 +158,10 @@ impl BrainTool for RunResearchSubagentBrainTool {
 
             let trimmed = answer.trim().to_string();
             if trimmed.is_empty() {
-                return Err(Error::ValidationError(
-                    "research subagent returned empty response".to_string(),
-                ));
+                return Err(Error::ValidationError("research subagent returned empty response".to_string()));
             }
 
-            info!(
-                "{LOG_PREFIX} research completed, answer length: {}",
-                trimmed.len()
-            );
+            info!("{LOG_PREFIX} research completed, answer length: {}", trimmed.len());
             Ok(trimmed)
         })();
 

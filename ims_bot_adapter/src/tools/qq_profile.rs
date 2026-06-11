@@ -24,13 +24,7 @@ const FIELD_AGE: &str = "年龄";
 const FIELD_AVATAR_MEDIA_ID: &str = "头像media_id";
 const FIELD_IDENTITY: &str = "身份";
 
-const VALID_QUERY_FIELDS: &[&str] = &[
-    FIELD_QQ,
-    FIELD_SEX,
-    FIELD_AGE,
-    FIELD_AVATAR_MEDIA_ID,
-    FIELD_IDENTITY,
-];
+const VALID_QUERY_FIELDS: &[&str] = &[FIELD_QQ, FIELD_SEX, FIELD_AGE, FIELD_AVATAR_MEDIA_ID, FIELD_IDENTITY];
 
 const AVATAR_S3_KEY_PREFIX: &str = "qq_avatar";
 const AVATAR_CONTENT_TYPE: &str = "image/jpeg";
@@ -56,11 +50,7 @@ pub struct GetBotProfileBrainTool {
 
 impl GetBotProfileBrainTool {
     pub fn new(adapter: SharedBotAdapter, event: MessageEvent, s3_ref: Option<Arc<S3Ref>>) -> Self {
-        Self {
-            adapter,
-            event,
-            s3_ref,
-        }
+        Self { adapter, event, s3_ref }
     }
 }
 
@@ -95,11 +85,7 @@ pub struct GetQqUserProfileBrainTool {
 
 impl GetQqUserProfileBrainTool {
     pub fn new(adapter: SharedBotAdapter, event: MessageEvent, s3_ref: Option<Arc<S3Ref>>) -> Self {
-        Self {
-            adapter,
-            event,
-            s3_ref,
-        }
+        Self { adapter, event, s3_ref }
     }
 }
 
@@ -184,9 +170,7 @@ fn parse_query_fields(arguments: &Value) -> Result<Vec<String>> {
             .as_str()
             .map(str::trim)
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| {
-                Error::ValidationError("query 数组中的每一项必须是非空字符串".to_string())
-            })?;
+            .ok_or_else(|| Error::ValidationError("query 数组中的每一项必须是非空字符串".to_string()))?;
 
         let normalized = normalize_field_name(field);
         if VALID_QUERY_FIELDS.contains(&normalized.as_str()) {
@@ -278,20 +262,12 @@ fn execute_profile_query(
 /// Calls NapCat `get_stranger_info` action. Falls back to `get_login_info`
 /// (if S3 is available) when the stranger response is empty — this handles
 /// the case where the bot queries its own profile.
-fn fetch_stranger_info(
-    adapter: &SharedBotAdapter,
-    user_id: &str,
-    s3_ref: &Option<Arc<S3Ref>>,
-) -> Result<StrangerInfo> {
-    let response = ws_send_action(
-        adapter,
-        "get_stranger_info",
-        serde_json::json!({ "user_id": user_id }),
-    )?;
+fn fetch_stranger_info(adapter: &SharedBotAdapter, user_id: &str, s3_ref: &Option<Arc<S3Ref>>) -> Result<StrangerInfo> {
+    let response = ws_send_action(adapter, "get_stranger_info", serde_json::json!({ "user_id": user_id }))?;
 
-    let data = response.get("data").ok_or_else(|| {
-        Error::ValidationError("get_stranger_info 响应缺少 data 字段".to_string())
-    })?;
+    let data = response
+        .get("data")
+        .ok_or_else(|| Error::ValidationError("get_stranger_info 响应缺少 data 字段".to_string()))?;
 
     let result = StrangerInfo {
         user_id: user_id.to_string(),
@@ -325,16 +301,13 @@ fn fallback_get_login_info(
     }
     match ws_send_action(adapter, "get_login_info", serde_json::json!({})) {
         Ok(response) => {
-            let data = response.get("data").ok_or_else(|| {
-                Error::ValidationError("get_login_info 响应缺少 data 字段".to_string())
-            })?;
+            let data = response
+                .get("data")
+                .ok_or_else(|| Error::ValidationError("get_login_info 响应缺少 data 字段".to_string()))?;
             let user_id = data
                 .get("user_id")
                 .and_then(|v| v.as_i64().map(|id| id.to_string()))
-                .or_else(|| {
-                    data.get("user_id")
-                        .and_then(|v| v.as_str().map(ToOwned::to_owned))
-                })
+                .or_else(|| data.get("user_id").and_then(|v| v.as_str().map(ToOwned::to_owned)))
                 .unwrap_or_default();
             let nickname = string_field_or(data, "nickname", "");
             Ok(Some(crate::login_info::BotLoginInfo { user_id, nickname }))
@@ -346,11 +319,7 @@ fn fallback_get_login_info(
     }
 }
 
-fn fetch_group_member_info(
-    adapter: &SharedBotAdapter,
-    group_id: i64,
-    user_id: &str,
-) -> Result<MemberInfo> {
+fn fetch_group_member_info(adapter: &SharedBotAdapter, group_id: i64, user_id: &str) -> Result<MemberInfo> {
     let response = ws_send_action(
         adapter,
         "get_group_member_info",
@@ -360,9 +329,9 @@ fn fetch_group_member_info(
         }),
     )?;
 
-    let data = response.get("data").ok_or_else(|| {
-        Error::ValidationError("get_group_member_info 响应缺少 data 字段".to_string())
-    })?;
+    let data = response
+        .get("data")
+        .ok_or_else(|| Error::ValidationError("get_group_member_info 响应缺少 data 字段".to_string()))?;
 
     Ok(MemberInfo {
         role: string_field_or(data, "role", "member"),
@@ -379,8 +348,7 @@ fn resolve_avatar_media_id(user_id: &str, s3_ref: &Option<Arc<S3Ref>>) -> Option
     let key = avatar_s3_key(user_id);
     let media = avatar_media_from_s3_key(&key);
 
-    let cached = match zihuan_core::runtime::block_async(async { s3.get_object_bytes(&key).await })
-    {
+    let cached = match zihuan_core::runtime::block_async(async { s3.get_object_bytes(&key).await }) {
         Ok(bytes) if !bytes.is_empty() => {
             info!("{LOG_PREFIX} avatar cache hit for user_id={user_id} key={key}");
             Some(bytes)
@@ -418,9 +386,7 @@ fn resolve_avatar_media_id(user_id: &str, s3_ref: &Option<Arc<S3Ref>>) -> Option
         }
     };
 
-    match zihuan_core::runtime::block_async(async {
-        s3.put_object(&key, AVATAR_CONTENT_TYPE, &bytes).await
-    }) {
+    match zihuan_core::runtime::block_async(async { s3.put_object(&key, AVATAR_CONTENT_TYPE, &bytes).await }) {
         Ok(_) => {
             info!("{LOG_PREFIX} avatar uploaded to S3 for user_id={user_id} key={key}");
             register_media(media.clone());
@@ -479,10 +445,7 @@ fn build_profile_result(
 }
 
 fn is_group_event(event: &MessageEvent) -> bool {
-    matches!(
-        event.message_type,
-        crate::models::event_model::MessageType::Group
-    )
+    matches!(event.message_type, crate::models::event_model::MessageType::Group)
 }
 
 fn string_field_or(value: &Value, key: &str, default: &str) -> String {

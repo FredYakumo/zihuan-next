@@ -3,29 +3,17 @@ use std::path::PathBuf;
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("missing manifest dir"));
-    let include_dir = manifest_dir
-        .join("native")
-        .join("general-wheel-cpp")
-        .join("include");
+    let include_dir = manifest_dir.join("native").join("general-wheel-cpp").join("include");
     let src_dir = manifest_dir.join("src");
 
+    println!("cargo:rerun-if-changed={}", src_dir.join("ffi.cpp").display());
     println!(
         "cargo:rerun-if-changed={}",
-        src_dir.join("ffi.cpp").display()
+        include_dir.join("linalg_boost").join("linalg_boost.hpp").display()
     );
     println!(
         "cargo:rerun-if-changed={}",
-        include_dir
-            .join("linalg_boost")
-            .join("linalg_boost.hpp")
-            .display()
-    );
-    println!(
-        "cargo:rerun-if-changed={}",
-        include_dir
-            .join("linalg_boost")
-            .join("vec_ops.hpp")
-            .display()
+        include_dir.join("linalg_boost").join("vec_ops.hpp").display()
     );
 
     let mut build = cc::Build::new();

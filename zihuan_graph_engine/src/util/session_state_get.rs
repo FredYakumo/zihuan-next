@@ -1,5 +1,5 @@
 use crate::data_value::SessionStateRef;
-use crate::{node_input, node_output, node_output_flow, DataType, DataValue, Node, Port};
+use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::sync::Arc;
 use tokio::task::block_in_place;
 use zihuan_core::error::Result;
@@ -50,18 +50,14 @@ impl Node for SessionStateGetNode {
                 DataValue::SessionStateRef(session_ref) => Some(session_ref.clone()),
                 _ => None,
             })
-            .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("session_ref is required".to_string())
-            })?;
+            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("session_ref is required".to_string()))?;
         let sender_id = inputs
             .get("sender_id")
             .and_then(|value| match value {
                 DataValue::String(sender_id) => Some(sender_id.clone()),
                 _ => None,
             })
-            .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("sender_id is required".to_string())
-            })?;
+            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("sender_id is required".to_string()))?;
 
         let read_state = async move { session_ref.get_state(&sender_id).await };
         let state = if let Ok(handle) = tokio::runtime::Handle::try_current() {

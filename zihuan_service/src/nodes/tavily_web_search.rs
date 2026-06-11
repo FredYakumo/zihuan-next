@@ -40,27 +40,18 @@ impl Node for TavilyWebSearchNode {
         port! { name = "search_count", ty = Integer, desc = "搜索结果数量，默认 3", optional },
     ];
 
-    node_output![
-        port! { name = "results", ty = Vec(String), desc = "搜索或抽取得到的文本结果列表" },
-    ];
+    node_output![port! { name = "results", ty = Vec(String), desc = "搜索或抽取得到的文本结果列表" },];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let web_search_engine_ref = inputs
             .get("web_search_engine_ref")
             .and_then(|value| match value {
-                DataValue::WebSearchEngineRef(web_search_engine_ref) => {
-                    Some(web_search_engine_ref.clone())
-                }
+                DataValue::WebSearchEngineRef(web_search_engine_ref) => Some(web_search_engine_ref.clone()),
                 _ => None,
             })
-            .ok_or_else(|| {
-                Error::InvalidNodeInput("web_search_engine_ref is required".to_string())
-            })?;
+            .ok_or_else(|| Error::InvalidNodeInput("web_search_engine_ref is required".to_string()))?;
 
         let query = inputs
             .get("query")
@@ -87,9 +78,7 @@ impl Node for TavilyWebSearchNode {
             .unwrap_or(3);
 
         if url.is_empty() && query.is_empty() {
-            return Err(Error::ValidationError(
-                "query 和 url 不能同时为空".to_string(),
-            ));
+            return Err(Error::ValidationError("query 和 url 不能同时为空".to_string()));
         }
 
         let results = if !url.is_empty() {
@@ -123,10 +112,7 @@ impl Node for TavilyWebSearchNode {
         let mut outputs = HashMap::new();
         outputs.insert(
             "results".to_string(),
-            DataValue::Vec(
-                Box::new(DataType::String),
-                results.into_iter().map(DataValue::String).collect(),
-            ),
+            DataValue::Vec(Box::new(DataType::String), results.into_iter().map(DataValue::String).collect()),
         );
         let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;

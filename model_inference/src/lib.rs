@@ -23,13 +23,7 @@ pub fn init_node_registry() -> Result<()> {
     use nodes::top_k_similarity_node::TopKSimilarityNode;
     use nodes::vector_cosine_similarity_node::VectorCosineSimilarityNode;
 
-    register_node!(
-        "llm_api",
-        "llm配置",
-        "AI",
-        "配置语言模型连接，输出LLModel引用",
-        LlmNode
-    );
+    register_node!("llm_api", "llm配置", "AI", "配置语言模型连接，输出LLModel引用", LlmNode);
     register_node!(
         "llm_infer",
         "LLM推理",

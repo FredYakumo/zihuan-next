@@ -9,6 +9,7 @@ pub mod hyperparams;
 pub mod log;
 pub mod registry;
 pub mod settings;
+pub mod setup_wizard;
 pub mod state;
 pub mod task_store;
 pub mod themes;
@@ -30,11 +31,7 @@ use ws::{ws_handler, WsBroadcast};
 struct WebAssets;
 
 /// Build the Salvo router with all API endpoints and static file serving.
-pub fn build_router(
-    state: Arc<AppState>,
-    broadcast: WsBroadcast,
-    canonical_local_origin: Option<String>,
-) -> Router {
+pub fn build_router(state: Arc<AppState>, broadcast: WsBroadcast, canonical_local_origin: Option<String>) -> Router {
     // API routes
     let api = Router::new()
         // Registry
@@ -111,7 +108,19 @@ pub fn build_router(
                 )
                 .push(Router::with_path("commands").push(
                     Router::with_path("registry").get(config::commands::get_registered_commands),
-                )),
+                ))
+                .push(Router::with_path("select-directory").get(chat::select_directory)),
+        )
+        // Setup wizard
+        .push(
+            Router::with_path("setup")
+                .get(setup_wizard::get_setup_status)
+                .post(setup_wizard::post_execute_setup)
+                .push(Router::with_path("status").get(setup_wizard::get_setup_status))
+                .push(Router::with_path("environment").get(setup_wizard::get_environment_info))
+                .push(Router::with_path("progress").get(setup_wizard::stream_setup_progress))
+                .push(Router::with_path("skip").post(setup_wizard::post_skip_setup))
+                .push(Router::with_path("reset").post(setup_wizard::post_reset_setup)),
         )
         // Graph management
         .push(
@@ -169,6 +178,7 @@ pub fn build_router(
         .push(Router::with_path("file/open").post(file_io::open_file))
         .push(Router::with_path("file/upload").post(file_io::upload_graph))
         .push(Router::with_path("file/upload-image").post(file_io::upload_image))
+        .push(Router::with_path("models/llm").get(file_io::list_local_llm_models))
         .push(Router::with_path("models/text-embedding").get(file_io::list_text_embedding_models))
         .push(Router::with_path("models/tokenizer").get(file_io::list_tokenizer_models))
         .push(Router::with_path("uploaded-images/<**rest>").get(file_io::serve_uploaded_image))
@@ -247,25 +257,12 @@ impl CanonicalLocalRedirect {
 
 #[async_trait]
 impl Handler for CanonicalLocalRedirect {
-    async fn handle(
-        &self,
-        req: &mut Request,
-        depot: &mut Depot,
-        res: &mut Response,
-        ctrl: &mut FlowCtrl,
-    ) {
+    async fn handle(&self, req: &mut Request, depot: &mut Depot, res: &mut Response, ctrl: &mut FlowCtrl) {
         if matches!(*req.method(), Method::GET | Method::HEAD)
             && should_redirect_local_host(req.headers(), &self.canonical_origin)
         {
-            let path_and_query = req
-                .uri()
-                .path_and_query()
-                .map(|value| value.as_str())
-                .unwrap_or("/");
-            res.render(Redirect::temporary(format!(
-                "{}{}",
-                self.canonical_origin, path_and_query
-            )));
+            let path_and_query = req.uri().path_and_query().map(|value| value.as_str()).unwrap_or("/");
+            res.render(Redirect::temporary(format!("{}{}", self.canonical_origin, path_and_query)));
             ctrl.skip_rest();
             return;
         }
@@ -303,9 +300,7 @@ fn normalize_host(host: &str) -> Option<String> {
     }
 
     if host.starts_with('[') {
-        return host
-            .split_once(']')
-            .map(|(addr, _)| format!("{addr}]").to_ascii_lowercase());
+        return host.split_once(']').map(|(addr, _)| format!("{addr}]").to_ascii_lowercase());
     }
 
     match host.split_once(':') {

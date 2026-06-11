@@ -21,9 +21,7 @@ impl WebSearchBrainTool {
         web_search_engine_ref: Arc<WebSearchEngineRef>,
         _notification_target: ToolNotificationTarget,
     ) -> Self {
-        Self {
-            web_search_engine_ref,
-        }
+        Self { web_search_engine_ref }
     }
 
     fn extract_url_with_fallback(&self, url: &str) -> Result<Vec<String>> {
@@ -37,11 +35,7 @@ impl WebSearchBrainTool {
     }
 
     fn search_with_fallback(&self, query: &str, search_count: i64) -> Result<Vec<String>> {
-        match self
-            .web_search_engine_ref
-            .engine
-            .search(query, search_count)
-        {
+        match self.web_search_engine_ref.engine.search(query, search_count) {
             Ok(items) => Ok(items),
             Err(e) => {
                 let trimmed = query.trim();
@@ -60,8 +54,7 @@ impl BrainTool for WebSearchBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "web_search",
-            description:
-                "在互联网上检索信息，或读取单个 URL 页面内容，返回可用于回答的问题相关结果与摘要",
+            description: "在互联网上检索信息，或读取单个 URL 页面内容，返回可用于回答的问题相关结果与摘要",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -75,21 +68,9 @@ impl BrainTool for WebSearchBrainTool {
     }
 
     fn execute(&self, _call_content: &str, arguments: &Value) -> String {
-        let query = arguments
-            .get("query")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let url = arguments
-            .get("url")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .trim()
-            .to_string();
-        let search_count = arguments
-            .get("search_count")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(3);
+        let query = arguments.get("query").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let url = arguments.get("url").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let search_count = arguments.get("search_count").and_then(|v| v.as_i64()).unwrap_or(3);
 
         if url.is_empty() && query.trim().is_empty() {
             return serde_json::json!({"results": []}).to_string();

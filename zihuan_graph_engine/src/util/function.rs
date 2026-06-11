@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use serde_json::Value;
 
 use crate::function_graph::{
-    embedded_function_config_from_value, function_inputs_ports, function_outputs_ports,
-    hidden_function_config_port, sync_function_subgraph_signature, EmbeddedFunctionConfig,
-    FunctionPortDef, FUNCTION_CONFIG_PORT, FUNCTION_INPUTS_NODE_ID, FUNCTION_OUTPUTS_NODE_ID,
+    embedded_function_config_from_value, function_inputs_ports, function_outputs_ports, hidden_function_config_port,
+    sync_function_subgraph_signature, EmbeddedFunctionConfig, FunctionPortDef, FUNCTION_CONFIG_PORT,
+    FUNCTION_INPUTS_NODE_ID, FUNCTION_OUTPUTS_NODE_ID,
 };
 use crate::graph_io::refresh_port_types;
 use crate::registry::{build_node_graph_from_definition, json_to_data_value, NODE_REGISTRY};
@@ -55,11 +55,7 @@ impl FunctionNode {
         self.config
             .inputs
             .iter()
-            .filter_map(|port| {
-                inputs
-                    .get(&port.name)
-                    .map(|value| (port.name.clone(), value.clone()))
-            })
+            .filter_map(|port| inputs.get(&port.name).map(|value| (port.name.clone(), value.clone())))
             .collect::<HashMap<_, _>>()
             .into()
     }
@@ -84,9 +80,9 @@ impl FunctionNode {
 
         let mut outputs = HashMap::new();
         for port in &self.config.outputs {
-            let value = result_node_values.get(&port.name).ok_or_else(|| {
-                self.wrap_error(format!("函数输出 '{}' 未在子图中提供", port.name))
-            })?;
+            let value = result_node_values
+                .get(&port.name)
+                .ok_or_else(|| self.wrap_error(format!("函数输出 '{}' 未在子图中提供", port.name)))?;
             if !port.data_type.is_compatible_with(&value.data_type()) {
                 return Err(self.wrap_error(format!(
                     "函数输出 '{}' 类型不匹配：声明为 {}，实际为 {}",
@@ -144,10 +140,7 @@ impl Node for FunctionNode {
                     .ok_or_else(|| self.wrap_error("function_config 不是有效的函数配置 JSON"))?;
                 self.set_config(config)
             }
-            Some(other) => Err(self.wrap_error(format!(
-                "function_config 需要 Json，实际为 {}",
-                other.data_type()
-            ))),
+            Some(other) => Err(self.wrap_error(format!("function_config 需要 Json，实际为 {}", other.data_type()))),
             None => Ok(()),
         }
     }
@@ -199,10 +192,7 @@ impl Node for FunctionNode {
     }
 }
 
-pub fn data_value_from_json_with_declared_type(
-    port: &FunctionPortDef,
-    value: &Value,
-) -> Result<DataValue> {
+pub fn data_value_from_json_with_declared_type(port: &FunctionPortDef, value: &Value) -> Result<DataValue> {
     json_to_data_value(value, &port.data_type).ok_or_else(|| {
         Error::ValidationError(format!(
             "端口 '{}' 期望类型 {}，但无法从 JSON 值 {} 解析",
@@ -218,8 +208,6 @@ pub fn inject_runtime_values_into_function_inputs_node(
     let function_inputs_node = graph
         .nodes
         .get_mut(FUNCTION_INPUTS_NODE_ID)
-        .ok_or_else(|| {
-            Error::ValidationError("函数子图缺少 function_inputs 边界节点".to_string())
-        })?;
+        .ok_or_else(|| Error::ValidationError("函数子图缺少 function_inputs 边界节点".to_string()))?;
     function_inputs_node.set_function_runtime_values(runtime_values)
 }

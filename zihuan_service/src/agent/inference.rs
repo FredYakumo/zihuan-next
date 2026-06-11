@@ -8,12 +8,12 @@ use model_inference::system_config::{AgentConfig, AgentType, LlmRefConfig};
 use storage_handler::{load_connections, ConnectionConfig};
 use tokio::sync::mpsc;
 use zihuan_agent::brain::{
-    Brain, BrainObserver, BrainStopReason, BrainTool, ToolRunDuration, MAX_TOOL_ITERATIONS,
+    Brain, BrainObserver, BrainStopReason, BrainTool, ToolExecutionOutput, ToolRunDuration, MAX_TOOL_ITERATIONS,
 };
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
-use zihuan_core::llm::{LLMMessage, MessageRole};
+use zihuan_core::llm::{LLMMessage, MessageRole, StreamToken};
 use zihuan_graph_engine::brain_tool_spec::BrainToolDefinition;
 
 use crate::resource_resolver::{build_llm_model, resolve_llm_service_config};
@@ -21,6 +21,7 @@ use crate::resource_resolver::{build_llm_model, resolve_llm_service_config};
 #[derive(Clone)]
 pub struct InferenceToolContext {
     pub last_user_text: String,
+    pub workspace_path: Option<String>,
 }
 
 pub trait InferenceToolProvider: Send + Sync {
@@ -74,6 +75,10 @@ impl BrainTool for ServiceSubgraphBrainTool {
     fn execute(&self, call_content: &str, arguments: &serde_json::Value) -> String {
         self.runner.execute_to_string(call_content, arguments)
     }
+
+    fn execute_with_outcome(&self, call_content: &str, arguments: &serde_json::Value) -> ToolExecutionOutput {
+        ToolExecutionOutput::text(self.execute(call_content, arguments))
+    }
 }
 
 struct DynBrainToolWrapper(Box<dyn BrainTool>);
@@ -89,6 +94,10 @@ impl BrainTool for DynBrainToolWrapper {
 
     fn execute(&self, call_content: &str, arguments: &serde_json::Value) -> String {
         self.0.execute(call_content, arguments)
+    }
+
+    fn execute_with_outcome(&self, call_content: &str, arguments: &serde_json::Value) -> ToolExecutionOutput {
+        self.0.execute_with_outcome(call_content, arguments)
     }
 }
 
@@ -113,15 +122,13 @@ impl LoadedInferenceAgent {
         tools: Arc<dyn InferenceToolProvider>,
     ) -> Result<Self> {
         if !agent.enabled {
-            return Err(Error::ValidationError(format!(
-                "agent '{}' is disabled",
-                agent.name
-            )));
+            return Err(Error::ValidationError(format!("agent '{}' is disabled", agent.name)));
         }
 
         let llm_ref_id = match &agent.agent_type {
             AgentType::HttpStream(config) => config.llm_ref_id.as_deref(),
             AgentType::QqChat(config) => config.llm_ref_id.as_deref(),
+            AgentType::Workspace(config) => config.llm_ref_id.as_deref(),
         };
         let llm_config = resolve_llm_service_config(llm_ref_id, llm_refs, &agent.name)?;
         let model_name = llm_config.model_name.clone();
@@ -148,19 +155,23 @@ impl LoadedInferenceAgent {
         output_messages
             .into_iter()
             .rev()
-            .find(|message| {
-                matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty()
-            })
+            .find(|message| matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty())
             .ok_or_else(|| {
-                Error::StringError(format!(
-                    "agent '{}' did not produce a final assistant message",
-                    self.agent.name
-                ))
+                Error::StringError(format!("agent '{}' did not produce a final assistant message", self.agent.name))
             })
     }
 
     pub fn infer_response_with_trace(&self, messages: Vec<LLMMessage>) -> Result<Vec<LLMMessage>> {
-        let context = build_inference_tool_context(&messages);
+        self.infer_response_with_trace_and_llm(messages, Arc::clone(&self.llm), None)
+    }
+
+    pub fn infer_response_with_trace_and_llm(
+        &self,
+        messages: Vec<LLMMessage>,
+        llm: Arc<dyn LLMBase>,
+        workspace_path: Option<String>,
+    ) -> Result<Vec<LLMMessage>> {
+        let context = build_inference_tool_context(&messages, workspace_path);
 
         let mut conversation = sanitize_messages_for_inference(messages);
         if conversation.is_empty() {
@@ -174,7 +185,7 @@ impl LoadedInferenceAgent {
 
         run_agent_brain(
             &self.agent,
-            Arc::clone(&self.llm),
+            llm,
             default_brain_tools,
             self.tools.tool_definitions(),
             conversation,
@@ -184,10 +195,29 @@ impl LoadedInferenceAgent {
     pub async fn infer_response_streaming_with_trace(
         &self,
         messages: Vec<LLMMessage>,
-        token_tx: mpsc::UnboundedSender<String>,
+        token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn BrainObserver>>,
-    ) -> Result<Vec<LLMMessage>> {
-        let context = build_inference_tool_context(&messages);
+        workspace_path: Option<String>,
+    ) -> Result<(Vec<LLMMessage>, BrainStopReason)> {
+        self.infer_response_streaming_with_trace_and_llm(
+            messages,
+            token_tx,
+            observer,
+            Arc::clone(&self.llm),
+            workspace_path,
+        )
+            .await
+    }
+
+    pub async fn infer_response_streaming_with_trace_and_llm(
+        &self,
+        messages: Vec<LLMMessage>,
+        token_tx: mpsc::UnboundedSender<StreamToken>,
+        observer: Option<Arc<dyn BrainObserver>>,
+        llm: Arc<dyn LLMBase>,
+        workspace_path: Option<String>,
+    ) -> Result<(Vec<LLMMessage>, BrainStopReason)> {
+        let context = build_inference_tool_context(&messages, workspace_path);
 
         let mut conversation = sanitize_messages_for_inference(messages);
         if conversation.is_empty() {
@@ -201,7 +231,7 @@ impl LoadedInferenceAgent {
 
         run_agent_brain_streaming(
             &self.agent,
-            Arc::clone(&self.llm),
+            llm,
             default_brain_tools,
             self.tools.tool_definitions(),
             conversation,
@@ -217,8 +247,29 @@ pub fn infer_agent_response(
     llm_refs: &[LlmRefConfig],
     messages: Vec<LLMMessage>,
 ) -> Result<LLMMessage> {
+    infer_agent_response_with_model(agent, llm_refs, messages, None)
+}
+
+pub fn infer_agent_response_with_model(
+    agent: &AgentConfig,
+    llm_refs: &[LlmRefConfig],
+    messages: Vec<LLMMessage>,
+    model_override: Option<&str>,
+) -> Result<LLMMessage> {
     let connections = load_connections().unwrap_or_default();
-    LoadedInferenceAgent::load_with_refs(agent, llm_refs, &connections)?.infer_response(messages)
+    let loaded = LoadedInferenceAgent::load_with_refs(agent, llm_refs, &connections)?;
+    let output_messages = if let Some(model_id) = model_override {
+        let llm_config = resolve_llm_service_config(Some(model_id), llm_refs, &agent.name)?;
+        let llm = build_llm_model(&llm_config)?;
+        loaded.infer_response_with_trace_and_llm(messages, llm, None)?
+    } else {
+        loaded.infer_response_with_trace(messages)?
+    };
+    output_messages
+        .into_iter()
+        .rev()
+        .find(|message| matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty())
+        .ok_or_else(|| Error::StringError(format!("agent '{}' did not produce a final assistant message", agent.name)))
 }
 
 pub fn infer_agent_response_with_trace(
@@ -227,19 +278,30 @@ pub fn infer_agent_response_with_trace(
     messages: Vec<LLMMessage>,
 ) -> Result<Vec<LLMMessage>> {
     let connections = load_connections().unwrap_or_default();
-    LoadedInferenceAgent::load_with_refs(agent, llm_refs, &connections)?
-        .infer_response_with_trace(messages)
+    LoadedInferenceAgent::load_with_refs(agent, llm_refs, &connections)?.infer_response_with_trace(messages)
 }
 
 pub fn resolve_agent_model_name(agent: &AgentConfig, llm_refs: &[LlmRefConfig]) -> Result<String> {
-    let llm_ref_id = match &agent.agent_type {
-        AgentType::HttpStream(config) => config.llm_ref_id.as_deref(),
-        AgentType::QqChat(config) => config.llm_ref_id.as_deref(),
+    resolve_agent_model_name_with_override(agent, llm_refs, None)
+}
+
+pub fn resolve_agent_model_name_with_override(
+    agent: &AgentConfig,
+    llm_refs: &[LlmRefConfig],
+    model_override: Option<&str>,
+) -> Result<String> {
+    let llm_ref_id = match model_override {
+        Some(id) => Some(id),
+        None => match &agent.agent_type {
+            AgentType::HttpStream(config) => config.llm_ref_id.as_deref(),
+            AgentType::QqChat(config) => config.llm_ref_id.as_deref(),
+            AgentType::Workspace(config) => config.llm_ref_id.as_deref(),
+        },
     };
     Ok(resolve_llm_service_config(llm_ref_id, llm_refs, &agent.name)?.model_name)
 }
 
-fn build_inference_tool_context(messages: &[LLMMessage]) -> InferenceToolContext {
+fn build_inference_tool_context(messages: &[LLMMessage], workspace_path: Option<String>) -> InferenceToolContext {
     InferenceToolContext {
         last_user_text: messages
             .iter()
@@ -248,6 +310,7 @@ fn build_inference_tool_context(messages: &[LLMMessage]) -> InferenceToolContext
             .and_then(|m| m.content_text())
             .map(ToOwned::to_owned)
             .unwrap_or_default(),
+        workspace_path,
     }
 }
 
@@ -296,6 +359,31 @@ fn handle_brain_result(
             "chat stream exceeded max tool iterations ({MAX_TOOL_ITERATIONS}) for '{}'",
             agent_name
         ))),
+        BrainStopReason::AwaitUserInput(request) => Ok(output_messages
+            .into_iter()
+            .chain(std::iter::once(LLMMessage::assistant_text(format!(
+                "需要用户补充信息: {}",
+                request.question
+            ))))
+            .collect()),
+    }
+}
+
+fn handle_brain_result_with_reason(
+    agent_name: &str,
+    output_messages: Vec<LLMMessage>,
+    stop_reason: BrainStopReason,
+) -> Result<(Vec<LLMMessage>, BrainStopReason)> {
+    match &stop_reason {
+        BrainStopReason::Done | BrainStopReason::AwaitUserInput(_) => Ok((output_messages, stop_reason)),
+        BrainStopReason::TransportError(content) => Err(Error::StringError(format!(
+            "chat stream LLM request failed for '{}': {}",
+            agent_name, content
+        ))),
+        BrainStopReason::MaxIterationsReached => Err(Error::StringError(format!(
+            "chat stream exceeded max tool iterations ({MAX_TOOL_ITERATIONS}) for '{}'",
+            agent_name
+        ))),
     }
 }
 
@@ -317,13 +405,13 @@ async fn run_agent_brain_streaming(
     default_tools: Vec<Box<dyn BrainTool>>,
     tool_definitions: Vec<BrainToolDefinition>,
     messages: Vec<LLMMessage>,
-    token_tx: mpsc::UnboundedSender<String>,
+    token_tx: mpsc::UnboundedSender<StreamToken>,
     observer: Option<Arc<dyn BrainObserver>>,
-) -> Result<Vec<LLMMessage>> {
+) -> Result<(Vec<LLMMessage>, BrainStopReason)> {
     let mut brain = build_brain(agent, llm, default_tools, tool_definitions);
     if let Some(obs) = observer {
         brain.set_observer(obs);
     }
     let (output_messages, stop_reason) = brain.run_streaming(messages, token_tx).await;
-    handle_brain_result(&agent.name, output_messages, stop_reason)
+    handle_brain_result_with_reason(&agent.name, output_messages, stop_reason)
 }

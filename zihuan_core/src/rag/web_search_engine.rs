@@ -6,11 +6,7 @@ pub trait WebSearchEngine: Send + Sync {
     fn search(&self, query: &str, search_count: i64) -> crate::error::Result<Vec<String>>;
     fn extract_url(&self, url: &str) -> crate::error::Result<Vec<String>>;
     fn fetch_url_direct(&self, url: &str) -> crate::error::Result<Vec<String>>;
-    fn search_images(
-        &self,
-        query: &str,
-        max_results: i64,
-    ) -> crate::error::Result<Vec<WebSearchImage>>;
+    fn search_images(&self, query: &str, max_results: i64) -> crate::error::Result<Vec<WebSearchImage>>;
 }
 
 #[derive(Clone)]
@@ -35,11 +31,7 @@ impl WebSearchEngineRef {
         self.engine.fetch_url_direct(url)
     }
 
-    pub fn search_images(
-        &self,
-        query: &str,
-        max_results: i64,
-    ) -> crate::error::Result<Vec<WebSearchImage>> {
+    pub fn search_images(&self, query: &str, max_results: i64) -> crate::error::Result<Vec<WebSearchImage>> {
         self.engine.search_images(query, max_results)
     }
 }

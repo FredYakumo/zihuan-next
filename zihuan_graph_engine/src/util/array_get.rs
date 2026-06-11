@@ -1,5 +1,4 @@
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
-use std::collections::HashMap;
 use zihuan_core::error::Result;
 
 pub struct ArrayGetNode {
@@ -34,9 +33,7 @@ impl Node for ArrayGetNode {
         port! { name = "index", ty = Integer, desc = "元素下标，负数表示从末尾倒数（-1为最后一个）" },
     ];
 
-    node_output![
-        port! { name = "element", ty = Any, desc = "提取出的元素，类型与列表中元素的类型一致" },
-    ];
+    node_output![port! { name = "element", ty = Any, desc = "提取出的元素，类型与列表中元素的类型一致" },];
 
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;

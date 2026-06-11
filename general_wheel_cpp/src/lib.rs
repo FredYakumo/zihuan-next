@@ -17,13 +17,9 @@ impl std::fmt::Display for VectorError {
             VectorError::LengthMismatch { left, right } => {
                 write!(f, "vector length mismatch: left={left}, right={right}")
             }
-            VectorError::InvalidTopK {
-                requested,
-                available,
-            } => write!(
-                f,
-                "invalid top_k request: requested={requested}, available={available}"
-            ),
+            VectorError::InvalidTopK { requested, available } => {
+                write!(f, "invalid top_k request: requested={requested}, available={available}")
+            }
             VectorError::NativeError(message) => write!(f, "{message}"),
         }
     }
@@ -74,19 +70,12 @@ pub fn cosine_similarity(left: &[f32], right: &[f32]) -> Result<f32> {
     call_scalar(left, right, gw_cosine_similarity)
 }
 
-pub fn top_k_similar(
-    candidates: &[Vec<f32>],
-    query: &[f32],
-    top_k: usize,
-) -> Result<Vec<(usize, f32)>> {
+pub fn top_k_similar(candidates: &[Vec<f32>], query: &[f32], top_k: usize) -> Result<Vec<(usize, f32)>> {
     if query.is_empty() {
         return Err(VectorError::EmptyVector);
     }
     if candidates.is_empty() {
-        return Err(VectorError::InvalidTopK {
-            requested: top_k,
-            available: 0,
-        });
+        return Err(VectorError::InvalidTopK { requested: top_k, available: 0 });
     }
     if top_k == 0 || top_k > candidates.len() {
         return Err(VectorError::InvalidTopK {
@@ -141,14 +130,7 @@ fn validate_pair(left: &[f32], right: &[f32]) -> Result<()> {
 fn call_scalar(
     left: &[f32],
     right: &[f32],
-    callback: unsafe extern "C" fn(
-        *const f32,
-        *const f32,
-        usize,
-        *mut f32,
-        *mut c_char,
-        usize,
-    ) -> bool,
+    callback: unsafe extern "C" fn(*const f32, *const f32, usize, *mut f32, *mut c_char, usize) -> bool,
 ) -> Result<f32> {
     let mut out = 0f32;
     let mut err_buf = vec![0i8; ERROR_BUFFER_LEN];

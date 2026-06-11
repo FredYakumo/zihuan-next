@@ -26,9 +26,7 @@ pub fn apply_steer_prefix(mut message: LLMMessage, _api_style: Option<&str>) -> 
             *text = format!("{STEER_PREFIX}\n\n{text}");
         }
         _ => {
-            message
-                .parts
-                .insert(0, MessagePart::text(format!("{STEER_PREFIX}\n\n")));
+            message.parts.insert(0, MessagePart::text(format!("{STEER_PREFIX}\n\n")));
         }
     }
 

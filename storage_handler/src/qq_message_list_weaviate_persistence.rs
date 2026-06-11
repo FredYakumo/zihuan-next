@@ -52,10 +52,7 @@ impl Node for QQMessageListWeaviatePersistenceNode {
         port! { name = "qq_message_list", ty = Vec(QQMessage), desc = "Pass-through input message list" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let (msg_item_type, msg_items) = inputs
             .get("qq_message_list")
             .and_then(|v| match v {

@@ -3,8 +3,7 @@ use std::path::PathBuf;
 use model_inference::system_config::{AgentToolConfig, AgentToolType, NodeGraphToolConfig};
 use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::brain_tool_spec::{
-    fixed_tool_runtime_inputs, BrainToolDefinition, BrainToolImplementation, ToolParamDef,
-    QQ_AGENT_TOOL_OWNER_TYPE,
+    fixed_tool_runtime_inputs, BrainToolDefinition, BrainToolImplementation, ToolParamDef, QQ_AGENT_TOOL_OWNER_TYPE,
 };
 use zihuan_graph_engine::function_graph::FunctionPortDef;
 use zihuan_graph_engine::graph_boundary::{root_graph_to_tool_subgraph, sync_root_graph_io};
@@ -12,9 +11,7 @@ use zihuan_graph_engine::DataType;
 
 const LEGACY_QQ_AGENT_TOOL_OWNER_TYPE: &str = "qq_message_agent";
 
-pub fn build_enabled_tool_definitions(
-    tools: &[AgentToolConfig],
-) -> Result<Vec<BrainToolDefinition>> {
+pub fn build_enabled_tool_definitions(tools: &[AgentToolConfig]) -> Result<Vec<BrainToolDefinition>> {
     let mut definitions = Vec::new();
     for tool in tools.iter().filter(|tool| tool.enabled) {
         match &tool.tool_type {
@@ -31,29 +28,17 @@ fn build_node_graph_tool_definition(
     config: &NodeGraphToolConfig,
 ) -> Result<BrainToolDefinition> {
     let (mut graph, parameters, outputs) = match config {
-        NodeGraphToolConfig::FilePath {
-            path,
-            parameters,
-            outputs,
-        } => (
-            load_graph_from_path(PathBuf::from(path))?,
-            parameters.clone(),
-            outputs.clone(),
-        ),
-        NodeGraphToolConfig::WorkflowSet {
-            name,
-            parameters,
-            outputs,
-        } => (
+        NodeGraphToolConfig::FilePath { path, parameters, outputs } => {
+            (load_graph_from_path(PathBuf::from(path))?, parameters.clone(), outputs.clone())
+        }
+        NodeGraphToolConfig::WorkflowSet { name, parameters, outputs } => (
             load_graph_from_path(PathBuf::from("workflow_set").join(format!("{name}.json")))?,
             parameters.clone(),
             outputs.clone(),
         ),
-        NodeGraphToolConfig::InlineGraph {
-            graph,
-            parameters,
-            outputs,
-        } => (graph.clone(), parameters.clone(), outputs.clone()),
+        NodeGraphToolConfig::InlineGraph { graph, parameters, outputs } => {
+            (graph.clone(), parameters.clone(), outputs.clone())
+        }
     };
 
     sync_root_graph_io(&mut graph);
@@ -99,14 +84,9 @@ fn derive_parameters_from_graph_inputs(inputs: &[FunctionPortDef]) -> Vec<ToolPa
         .collect()
 }
 
-fn load_graph_from_path(
-    path: PathBuf,
-) -> Result<zihuan_graph_engine::graph_io::NodeGraphDefinition> {
+fn load_graph_from_path(path: PathBuf) -> Result<zihuan_graph_engine::graph_io::NodeGraphDefinition> {
     if !path.exists() {
-        return Err(Error::ValidationError(format!(
-            "tool graph file not found: {}",
-            path.display()
-        )));
+        return Err(Error::ValidationError(format!("tool graph file not found: {}", path.display())));
     }
     zihuan_graph_engine::load_graph_definition_from_json(&path)
 }
@@ -183,11 +163,7 @@ fn validate_tool_graph_input_port(tool: &AgentToolConfig, port: &FunctionPortDef
 
 fn reserved_tool_graph_input_type(name: &str) -> Option<DataType> {
     let trimmed = name.trim();
-    for owner_type in [
-        "brain",
-        QQ_AGENT_TOOL_OWNER_TYPE,
-        LEGACY_QQ_AGENT_TOOL_OWNER_TYPE,
-    ] {
+    for owner_type in ["brain", QQ_AGENT_TOOL_OWNER_TYPE, LEGACY_QQ_AGENT_TOOL_OWNER_TYPE] {
         for port in fixed_tool_runtime_inputs(owner_type) {
             if port.name == trimmed {
                 return Some(port.data_type);
@@ -204,9 +180,10 @@ fn same_param_signature(parameters: &[ToolParamDef], inputs: &[FunctionPortDef])
         .collect::<Vec<_>>();
 
     parameters.len() == exposed_inputs.len()
-        && parameters.iter().zip(exposed_inputs).all(|(param, input)| {
-            param.name.trim() == input.name.trim() && param.data_type == input.data_type
-        })
+        && parameters
+            .iter()
+            .zip(exposed_inputs)
+            .all(|(param, input)| param.name.trim() == input.name.trim() && param.data_type == input.data_type)
 }
 
 fn same_port_signature(left: &[FunctionPortDef], right: &[FunctionPortDef]) -> bool {
@@ -256,8 +233,7 @@ fn merge_output_descriptions_from_graph(
             if let Some(description) = graph_outputs
                 .iter()
                 .find(|graph_output| {
-                    graph_output.name.trim() == output.name.trim()
-                        && graph_output.data_type == output.data_type
+                    graph_output.name.trim() == output.name.trim() && graph_output.data_type == output.data_type
                 })
                 .map(|graph_output| graph_output.description.trim())
                 .filter(|description| !description.is_empty())

@@ -47,18 +47,14 @@ impl Node for SessionStateClearNode {
                 DataValue::SessionStateRef(session_ref) => Some(session_ref.clone()),
                 _ => None,
             })
-            .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("session_ref is required".to_string())
-            })?;
+            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("session_ref is required".to_string()))?;
         let sender_id = inputs
             .get("sender_id")
             .and_then(|value| match value {
                 DataValue::String(sender_id) => Some(sender_id.clone()),
                 _ => None,
             })
-            .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("sender_id is required".to_string())
-            })?;
+            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("sender_id is required".to_string()))?;
 
         let clear_state = async move { session_ref.clear_state(&sender_id).await };
         let cleared = if let Ok(handle) = tokio::runtime::Handle::try_current() {

@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
 
@@ -41,32 +39,21 @@ impl Node for BatchTextEmbeddingNode {
         port! { name = "dimension", ty = Integer, desc = "向量维度，若为空则为 0" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let embedding_model = match inputs.get("embedding_model") {
             Some(DataValue::EmbeddingModel(value)) => value.clone(),
             _ => {
-                return Err(Error::ValidationError(
-                    "Missing required input: embedding_model".to_string(),
-                ));
+                return Err(Error::ValidationError("Missing required input: embedding_model".to_string()));
             }
         };
 
         let texts = parse_string_list(inputs.get("texts"))?;
         let embeddings = embedding_model.batch_inference(&texts)?;
         let count = embeddings.len() as i64;
-        let dimension = embeddings
-            .first()
-            .map(|item| item.len() as i64)
-            .unwrap_or(0);
-        let values = embeddings
-            .into_iter()
-            .map(DataValue::Vector)
-            .collect::<Vec<_>>();
+        let dimension = embeddings.first().map(|item| item.len() as i64).unwrap_or(0);
+        let values = embeddings.into_iter().map(DataValue::Vector).collect::<Vec<_>>();
 
         zihuan_graph_engine::return_with_node_output![self;
             "embeddings" => DataValue::Vec(Box::new(DataType::Vector), values),
@@ -80,9 +67,7 @@ fn parse_string_list(value: Option<&DataValue>) -> Result<Vec<String>> {
     let values = match value {
         Some(DataValue::Vec(_, values)) => values,
         _ => {
-            return Err(Error::ValidationError(
-                "texts input must be Vec<String>".to_string(),
-            ));
+            return Err(Error::ValidationError("texts input must be Vec<String>".to_string()));
         }
     };
 
@@ -90,9 +75,9 @@ fn parse_string_list(value: Option<&DataValue>) -> Result<Vec<String>> {
         .iter()
         .map(|value| match value {
             DataValue::String(text) if !text.trim().is_empty() => Ok(text.trim().to_string()),
-            DataValue::String(_) => Err(Error::ValidationError(
-                "texts input must not contain blank strings".to_string(),
-            )),
+            DataValue::String(_) => {
+                Err(Error::ValidationError("texts input must not contain blank strings".to_string()))
+            }
             other => Err(Error::ValidationError(format!(
                 "texts input must contain String values, got {}",
                 other.data_type()
@@ -101,9 +86,7 @@ fn parse_string_list(value: Option<&DataValue>) -> Result<Vec<String>> {
         .collect::<Result<Vec<_>>>()?;
 
     if texts.is_empty() {
-        return Err(Error::ValidationError(
-            "texts input must not be empty".to_string(),
-        ));
+        return Err(Error::ValidationError("texts input must not be empty".to_string()));
     }
 
     Ok(texts)

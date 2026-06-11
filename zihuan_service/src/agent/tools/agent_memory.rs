@@ -17,8 +17,7 @@ use zihuan_core::llm::{InferenceParam, LLMMessage};
 use zihuan_core::weaviate::WeaviateRef;
 
 use super::common::{
-    optional_string_argument, optional_string_list_argument, sanitize_positive_limit,
-    StaticFunctionToolSpec,
+    optional_string_argument, optional_string_list_argument, sanitize_positive_limit, StaticFunctionToolSpec,
 };
 
 const DEFAULT_MEMORY_TOP_N: i64 = 5;
@@ -46,8 +45,7 @@ impl BrainTool for ListAvailableMemoryKeysBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "list_available_memory_keys",
-            description:
-                "列出当前上下文可访问的记忆标题，返回最近更新的记忆条目；可选按 query 过滤结果",
+            description: "列出当前上下文可访问的记忆标题，返回最近更新的记忆条目；可选按 query 过滤结果",
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -77,12 +75,7 @@ impl BrainTool for ListAvailableMemoryKeysBrainTool {
                 hits.sort_by(|left, right| right.record.updated_at.cmp(&left.record.updated_at));
                 hits
             } else {
-                list_recent_memory_keys(
-                    &self.resources.memory_ref,
-                    &self.resources.access,
-                    top_n,
-                    None,
-                )?
+                list_recent_memory_keys(&self.resources.memory_ref, &self.resources.access, top_n, None)?
             };
             Ok(json!({
                 "ok": true,
@@ -137,12 +130,8 @@ impl BrainTool for SearchMemoryContentBrainTool {
                 MAX_MEMORY_TOP_N,
             );
             let vector = self.resources.embedding_model.inference(&query)?;
-            let hits = search_memory_content_by_vector(
-                &self.resources.memory_ref,
-                &self.resources.access,
-                &vector,
-                top_n,
-            )?;
+            let hits =
+                search_memory_content_by_vector(&self.resources.memory_ref, &self.resources.access, &vector, top_n)?;
             Ok(json!({
                 "ok": true,
                 "items": hits.into_iter().map(|hit| {
@@ -202,10 +191,8 @@ impl BrainTool for RememberContentBrainTool {
         let result = (|| -> Result<Value> {
             let content = optional_string_argument(arguments, "content")
                 .ok_or_else(|| Error::ValidationError("content is required".to_string()))?;
-            let sender_id_list =
-                optional_string_list_argument(arguments, "sender_id_list").unwrap_or_default();
-            let group_id_list =
-                optional_string_list_argument(arguments, "group_id_list").unwrap_or_default();
+            let sender_id_list = optional_string_list_argument(arguments, "sender_id_list").unwrap_or_default();
+            let group_id_list = optional_string_list_argument(arguments, "group_id_list").unwrap_or_default();
             let items = split_memory_items(&self.resources, &content)?;
             let expires_at = (Utc::now() + Duration::days(2)).to_rfc3339();
             let stored = items
@@ -252,20 +239,14 @@ struct MemoryDraftItem {
     value: String,
 }
 
-fn split_memory_items(
-    resources: &AgentMemoryToolResources,
-    content: &str,
-) -> Result<Vec<MemoryDraftItem>> {
+fn split_memory_items(resources: &AgentMemoryToolResources, content: &str) -> Result<Vec<MemoryDraftItem>> {
     let prompt = vec![
         LLMMessage::system(
             "你是一个记忆整理器。把用户提供的内容拆成若干条适合长期检索的记忆。只返回 JSON 数组，不要 Markdown，不要解释。每项格式：{\"title\":\"记忆标题\",\"value\":\"记忆内容\"}。若内容只适合一条记忆，返回单元素数组。title 需要简洁明确，适合作为以后检索这条记忆的标题。不要泄露或引用当前对话之外的信息。",
         ),
         LLMMessage::user(format!("请整理下面的内容为记忆 JSON：\n{content}")),
     ];
-    let response = resources.llm.inference(&InferenceParam {
-        messages: &prompt,
-        tools: None,
-    });
+    let response = resources.llm.inference(&InferenceParam { messages: &prompt, tools: None });
     if let Some(text) = response.content_text_owned() {
         if let Some(parsed) = parse_memory_json(&text) {
             let normalized = normalize_draft_items(parsed);

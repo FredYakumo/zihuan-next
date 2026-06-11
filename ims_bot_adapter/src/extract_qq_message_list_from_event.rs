@@ -35,20 +35,13 @@ impl Node for ExtractQQMessageListFromEventNode {
 
     node_output![port! { name = "message_list", ty = Vec(QQMessage), desc = "QQ 消息列表" },];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let event = match inputs.get("message_event") {
             Some(DataValue::MessageEvent(e)) => e.clone(),
             _ => return Err("message_event input is required".into()),
         };
 
-        let message_list: Vec<DataValue> = event
-            .message_list
-            .into_iter()
-            .map(DataValue::QQMessage)
-            .collect();
+        let message_list: Vec<DataValue> = event.message_list.into_iter().map(DataValue::QQMessage).collect();
 
         zihuan_graph_engine::return_with_node_output![self;
             "message_list" => DataValue::Vec(Box::new(DataType::QQMessage), message_list),

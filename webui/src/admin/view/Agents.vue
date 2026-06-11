@@ -35,6 +35,7 @@
               <select v-model="form.type">
                 <option value="qq_chat">QQ Chat Agent</option>
                 <option value="http_stream">HTTP Stream Agent</option>
+                <option value="workspace">Workspace Agent</option>
               </select>
             </div>
 
@@ -55,7 +56,7 @@
             </div>
 
             <div class="field">
-              <label>模型配置</label>
+              <label>{{ form.type === 'http_stream' ? '默认模型配置' : '模型配置' }}</label>
               <select v-model="form.llm_ref_id">
                 <option value="">请选择</option>
                 <option
@@ -285,7 +286,7 @@
               </div>
             </template>
 
-            <template v-else>
+            <template v-else-if="form.type === 'http_stream'">
               <div class="field">
                 <label>Bind</label
                 ><input
@@ -362,6 +363,40 @@
                 </select>
               </div>
             </template>
+
+            <template v-else>
+              <div class="editor-card" style="margin-top: 12px">
+                <div class="split-header">
+                  <div>
+                    <h3>默认工具</h3>
+                  </div>
+                </div>
+                <div class="list" style="margin-top: 12px">
+                  <label
+                    v-for="tool in workspaceDefaultTools"
+                    :key="tool.id"
+                    class="field-check"
+                    style="
+                      display: flex;
+                      align-items: flex-start;
+                      gap: 8px;
+                      margin-bottom: 8px;
+                    "
+                  >
+                    <input
+                      v-model="form.default_tools_enabled[tool.id]"
+                      type="checkbox"
+                    />
+                    <span>
+                      <strong>{{ tool.label }}</strong>
+                      <span class="muted" style="display: block">{{
+                        tool.description
+                      }}</span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </template>
           </div>
 
           <div
@@ -435,7 +470,7 @@
             </div>
           </div>
 
-          <div v-else class="editor-card" style="margin-top: 12px">
+          <div v-else-if="form.type === 'http_stream'" class="editor-card" style="margin-top: 12px">
             <div class="split-header">
               <div>
                 <h3>默认工具</h3>
@@ -444,6 +479,38 @@
             <div class="list" style="margin-top: 12px">
               <label
                 v-for="tool in httpStreamDefaultTools"
+                :key="tool.id"
+                class="field-check"
+                style="
+                  display: flex;
+                  align-items: flex-start;
+                  gap: 8px;
+                  margin-bottom: 8px;
+                "
+              >
+                <input
+                  v-model="form.default_tools_enabled[tool.id]"
+                  type="checkbox"
+                />
+                <span>
+                  <strong>{{ tool.label }}</strong>
+                  <span class="muted" style="display: block">{{
+                    tool.description
+                  }}</span>
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <div v-else class="editor-card" style="margin-top: 12px">
+            <div class="split-header">
+              <div>
+                <h3>默认工具</h3>
+              </div>
+            </div>
+            <div class="list" style="margin-top: 12px">
+              <label
+                v-for="tool in workspaceDefaultTools"
                 :key="tool.id"
                 class="field-check"
                 style="
@@ -638,6 +705,7 @@
               <select v-model="form.type">
                 <option value="qq_chat">QQ Chat Agent</option>
                 <option value="http_stream">HTTP Stream Agent</option>
+                <option value="workspace">Workspace Agent</option>
               </select>
             </div>
 
@@ -658,7 +726,7 @@
             </div>
 
             <div class="field">
-              <label>模型配置</label>
+              <label>{{ form.type === 'http_stream' ? '默认模型配置' : '模型配置' }}</label>
               <select v-model="form.llm_ref_id">
                 <option value="">请选择</option>
                 <option
@@ -954,7 +1022,7 @@
               </div>
             </template>
 
-            <template v-else>
+            <template v-else-if="form.type === 'http_stream'">
               <div class="field">
                 <label>Bind</label
                 ><input
@@ -1732,10 +1800,14 @@ import {
   agentFormFromConfig,
   buildAgentPayload,
   HTTP_STREAM_DEFAULT_TOOLS,
+  WORKSPACE_DEFAULT_TOOLS,
   isBotAdapterConnectionType,
   QQ_CHAT_DEFAULT_TOOLS,
   defaultAgentForm,
+  defaultHttpStreamDefaultToolsEnabled,
+  defaultQqChatDefaultToolsEnabled,
   defaultToolForm,
+  defaultWorkspaceDefaultToolsEnabled,
   compactId,
   formatTime,
   statusTone,
@@ -1761,6 +1833,11 @@ const agentTypes: AgentTypeOption[] = [
     value: "http_stream",
     label: "HTTP Stream Agent",
     hint: "通过 HTTP 流式接口对外提供服务",
+  },
+  {
+    value: "workspace",
+    label: "Workspace Agent",
+    hint: "面向项目目录的开发型 Agent",
   },
 ];
 
@@ -1807,6 +1884,7 @@ const emotionDimensionDraft = reactive<{
 const emotionDimensionEditingIndex = ref<number | null>(null);
 const qqChatDefaultTools = QQ_CHAT_DEFAULT_TOOLS;
 const httpStreamDefaultTools = HTTP_STREAM_DEFAULT_TOOLS;
+const workspaceDefaultTools = WORKSPACE_DEFAULT_TOOLS;
 const chatModels = computed(() =>
   llm.value.filter((item) => item.model.type === "chat_llm"),
 );
@@ -1917,6 +1995,13 @@ function pickCreateType(type: AgentTypeName) {
   resetForm();
   clearEditingAgent();
   form.type = type;
+  if (type === "qq_chat") {
+    form.default_tools_enabled = defaultQqChatDefaultToolsEnabled();
+  } else if (type === "http_stream") {
+    form.default_tools_enabled = defaultHttpStreamDefaultToolsEnabled();
+  } else {
+    form.default_tools_enabled = defaultWorkspaceDefaultToolsEnabled();
+  }
   showCreatePicker.value = true;
   showCreateForm.value = true;
 }
@@ -2538,7 +2623,7 @@ function summarizeAgent(
         ),
       },
     );
-  } else {
+  } else if (agent.agent_type.type === "http_stream") {
     items.push(
       {
         label: "Bind",
@@ -2577,6 +2662,35 @@ function summarizeAgent(
               | Record<string, unknown>
               | undefined
           )?.web_search === false
+            ? "关闭"
+            : "开启",
+      },
+    );
+  } else {
+    items.push(
+      {
+        label: "工作模式",
+        value: "Dashboard Session Workspace",
+      },
+      {
+        label: "create_file",
+        value:
+          (
+            agentType.default_tools_enabled as
+              | Record<string, unknown>
+              | undefined
+          )?.create_file === false
+            ? "关闭"
+            : "开启",
+      },
+      {
+        label: "exec_cmd",
+        value:
+          (
+            agentType.default_tools_enabled as
+              | Record<string, unknown>
+              | undefined
+          )?.exec_cmd === false
             ? "关闭"
             : "开启",
       },

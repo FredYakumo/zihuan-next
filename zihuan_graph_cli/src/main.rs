@@ -4,11 +4,7 @@ use clap::Parser;
 use zihuan_core::error::{Error, Result};
 
 #[derive(Debug, Parser)]
-#[command(
-    author,
-    version,
-    about = "Execute a zihuan graph from the command line"
-)]
+#[command(author, version, about = "Execute a zihuan graph from the command line")]
 struct Args {
     #[arg(long, conflicts_with = "workflow")]
     file: Option<PathBuf>,
@@ -44,9 +40,7 @@ fn resolve_graph_path(args: &Args) -> Result<PathBuf> {
         (None, None) => Err(Error::ValidationError(
             "missing input: pass --file <PATH> or --workflow <NAME>".to_string(),
         )),
-        (Some(_), Some(_)) => Err(Error::ValidationError(
-            "choose either --file or --workflow".to_string(),
-        )),
+        (Some(_), Some(_)) => Err(Error::ValidationError("choose either --file or --workflow".to_string())),
     }
 }
 

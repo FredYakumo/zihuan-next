@@ -101,10 +101,7 @@ mod tests {
     fn two_args_with_passthrough() {
         let parsed = parse_command("/cmd a b and the rest here", 2).unwrap();
         assert_eq!(parsed.args, vec!["a", "b"]);
-        assert_eq!(
-            parsed.passthrough_text.as_deref(),
-            Some("and the rest here")
-        );
+        assert_eq!(parsed.passthrough_text.as_deref(), Some("and the rest here"));
     }
 
     #[test]

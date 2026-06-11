@@ -54,9 +54,7 @@ pub fn json_to_qq_message_vec(content: &str) -> Result<Vec<Vec<Message>>> {
 pub fn json_value_to_qq_message_vec(value: &serde_json::Value) -> Result<Vec<Vec<Message>>> {
     let batches: Vec<Vec<QQMessageJsonItem>> = serde_json::from_value(value.clone())?;
     if batches.is_empty() {
-        return Err(Error::ValidationError(
-            "QQ message JSON array must not be empty".to_string(),
-        ));
+        return Err(Error::ValidationError("QQ message JSON array must not be empty".to_string()));
     }
 
     batches
@@ -83,9 +81,7 @@ fn append_item(messages: &mut Vec<Message>, item: QQMessageJsonItem) -> Result<(
     match item {
         QQMessageJsonItem::PlainText { content } => {
             if content.trim().is_empty() {
-                return Err(Error::ValidationError(
-                    "plain_text.content must not be blank".to_string(),
-                ));
+                return Err(Error::ValidationError("plain_text.content must not be blank".to_string()));
             }
 
             messages.push(Message::PlainText(PlainTextMessage { text: content }));
@@ -93,14 +89,10 @@ fn append_item(messages: &mut Vec<Message>, item: QQMessageJsonItem) -> Result<(
         QQMessageJsonItem::At { target } => {
             let target = target.trim().to_string();
             if target.is_empty() {
-                return Err(Error::ValidationError(
-                    "at.target must not be empty".to_string(),
-                ));
+                return Err(Error::ValidationError("at.target must not be empty".to_string()));
             }
 
-            messages.push(Message::At(AtTargetMessage {
-                target: Some(target),
-            }));
+            messages.push(Message::At(AtTargetMessage { target: Some(target) }));
         }
         QQMessageJsonItem::CombineText { content_list } => {
             if content_list.is_empty() {
@@ -126,22 +118,17 @@ fn append_item(messages: &mut Vec<Message>, item: QQMessageJsonItem) -> Result<(
                     QQMessageJsonContentItem::At { target } => {
                         let target = target.trim().to_string();
                         if target.is_empty() {
-                            return Err(Error::ValidationError(
-                                "combine_text at.target must not be empty".to_string(),
-                            ));
+                            return Err(Error::ValidationError("combine_text at.target must not be empty".to_string()));
                         }
 
-                        messages.push(Message::At(AtTargetMessage {
-                            target: Some(target),
-                        }));
+                        messages.push(Message::At(AtTargetMessage { target: Some(target) }));
                     }
                 }
             }
 
             if !contains_substantive_text {
                 return Err(Error::ValidationError(
-                    "combine_text must contain at least one substantive plain_text item"
-                        .to_string(),
+                    "combine_text must contain at least one substantive plain_text item".to_string(),
                 ));
             }
         }

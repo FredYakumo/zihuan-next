@@ -15,8 +15,8 @@ use zihuan_core::weaviate::WeaviateRef;
 use zihuan_graph_engine::object_storage::S3Ref;
 
 use super::common::{
-    extract_string_field, optional_bool_argument, optional_string_argument,
-    sanitize_positive_limit, StaticFunctionToolSpec, ToolNotificationTarget,
+    extract_string_field, optional_bool_argument, optional_string_argument, sanitize_positive_limit,
+    StaticFunctionToolSpec, ToolNotificationTarget,
 };
 use zihuan_core::url_utils::content_type_from_url;
 
@@ -75,23 +75,15 @@ impl BrainTool for SearchSimilarImagesBrainTool {
                 DEFAULT_SEMANTIC_SEARCH_LIMIT,
                 MAX_SEMANTIC_SEARCH_LIMIT,
             );
-            let force_web_search =
-                optional_bool_argument(arguments, "force_web_search").unwrap_or(false);
+            let force_web_search = optional_bool_argument(arguments, "force_web_search").unwrap_or(false);
 
             if !force_web_search {
-                if let (Some(weaviate_image_ref), Some(embedding_model)) = (
-                    self.weaviate_image_ref.as_ref(),
-                    self.embedding_model.as_ref(),
-                ) {
+                if let (Some(weaviate_image_ref), Some(embedding_model)) =
+                    (self.weaviate_image_ref.as_ref(), self.embedding_model.as_ref())
+                {
                     let vector = embedding_model.inference(&query)?;
-                    let mut items = run_weaviate_image_get_query(
-                        weaviate_image_ref,
-                        limit,
-                        Some(&vector),
-                        None,
-                        None,
-                        true,
-                    )?;
+                    let mut items =
+                        run_weaviate_image_get_query(weaviate_image_ref, limit, Some(&vector), None, None, true)?;
                     items.sort_by(semantic_result_order);
                     items.retain(|item| {
                         extract_string_field(item, "rustfs_path")
@@ -163,8 +155,7 @@ impl BrainTool for SearchSimilarImagesBrainTool {
 
             let Some(s3_ref) = self.s3_ref.as_ref() else {
                 return Err(Error::ValidationError(
-                    "search_similar_images requires RustFS before returning image send candidates"
-                        .to_string(),
+                    "search_similar_images requires RustFS before returning image send candidates".to_string(),
                 ));
             };
 
@@ -199,20 +190,14 @@ impl BrainTool for SearchSimilarImagesBrainTool {
                     "source": media.source.to_string(),
                 }));
 
-                if let (Some(weaviate_image_ref), Some(embedding_model)) = (
-                    self.weaviate_image_ref.as_ref(),
-                    self.embedding_model.as_ref(),
-                ) {
+                if let (Some(weaviate_image_ref), Some(embedding_model)) =
+                    (self.weaviate_image_ref.as_ref(), self.embedding_model.as_ref())
+                {
                     let description_vector = embedding_model
                         .inference(description)
                         .unwrap_or_else(|_| embedding_model.inference(&query).unwrap_or_default());
                     if !description_vector.is_empty() {
-                        if let Err(err) = upsert_image_record(
-                            weaviate_image_ref,
-                            &media,
-                            &description_vector,
-                            None,
-                        ) {
+                        if let Err(err) = upsert_image_record(weaviate_image_ref, &media, &description_vector, None) {
                             warn!(
                                 "{LOG_PREFIX} Failed to persist web search image fallback result into weaviate: {}",
                                 err
@@ -275,8 +260,7 @@ fn extract_distance(value: &Value) -> Option<f64> {
 }
 
 fn format_weaviate_image_candidate_for_log(value: &Value) -> String {
-    let path =
-        extract_string_field(value, "rustfs_path").unwrap_or_else(|| "<missing-path>".to_string());
+    let path = extract_string_field(value, "rustfs_path").unwrap_or_else(|| "<missing-path>".to_string());
     let distance = extract_distance(value)
         .map(|d| format!("{d:.4}"))
         .unwrap_or_else(|| "none".to_string());
@@ -326,10 +310,7 @@ fn run_weaviate_image_get_query(
         fields.push_str(" _additional { id distance }");
     }
 
-    let query = format!(
-        "{{ Get {{ {}{} {{ {} }} }} }}",
-        weaviate_ref.class_name, arguments, fields
-    );
+    let query = format!("{{ Get {{ {}{} {{ {} }} }} }}", weaviate_ref.class_name, arguments, fields);
     let response = weaviate_ref.execute_graphql_query(&query)?;
     Ok(response
         .get("data")
@@ -344,11 +325,7 @@ fn s3_local_base(s3_ref: &S3Ref) -> String {
     if let Some(ref pub_base) = s3_ref.public_base_url {
         pub_base.trim_end_matches('/').to_string()
     } else if s3_ref.path_style {
-        format!(
-            "{}/{}",
-            s3_ref.endpoint.trim_end_matches('/'),
-            s3_ref.bucket.trim_matches('/')
-        )
+        format!("{}/{}", s3_ref.endpoint.trim_end_matches('/'), s3_ref.bucket.trim_matches('/'))
     } else {
         s3_ref.endpoint.trim_end_matches('/').to_string()
     }
@@ -362,9 +339,7 @@ fn semantic_result_order(left: &Value, right: &Value) -> Ordering {
     let left_distance = extract_distance(left).unwrap_or(f64::INFINITY);
     let right_distance = extract_distance(right).unwrap_or(f64::INFINITY);
     match left_distance.total_cmp(&right_distance) {
-        Ordering::Equal => {
-            extract_string_field(right, "send_time").cmp(&extract_string_field(left, "send_time"))
-        }
+        Ordering::Equal => extract_string_field(right, "send_time").cmp(&extract_string_field(left, "send_time")),
         other => other,
     }
 }

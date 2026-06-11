@@ -8,11 +8,10 @@ use sqlx::Row as SqlxRow;
 
 use crate::system_config::load_connections;
 use storage_handler::{
-    create_memory_record_with_vector, delete_memory_record, get_memory_record,
-    list_recent_memory_keys, resource_resolver, search_memory_content_by_vector,
-    update_memory_record_with_vector, weaviate::build_weaviate_ref as build_storage_weaviate_ref,
-    AgentMemoryAccessContext, AgentMemoryUpsert, ConnectionKind, WeaviateClient,
-    WeaviateCollectionSchema,
+    create_memory_record_with_vector, delete_memory_record, get_memory_record, list_recent_memory_keys,
+    resource_resolver, search_memory_content_by_vector, update_memory_record_with_vector,
+    weaviate::build_weaviate_ref as build_storage_weaviate_ref, AgentMemoryAccessContext, AgentMemoryUpsert,
+    ConnectionKind, WeaviateClient, WeaviateCollectionSchema,
 };
 
 use super::config::{render_bad_request, render_internal_error};
@@ -52,12 +51,11 @@ pub async fn query_mysql(req: &mut Request, res: &mut Response, _depot: &mut Dep
         Err(e) => return render_internal_error(res, e),
     };
 
-    let mysql_ref =
-        match resource_resolver::build_mysql_ref(Some(&connection_id), &connections).await {
-            Ok(Some(r)) => r,
-            Ok(None) => return render_bad_request(res, "connection not found".into()),
-            Err(e) => return render_internal_error(res, e),
-        };
+    let mysql_ref = match resource_resolver::build_mysql_ref(Some(&connection_id), &connections).await {
+        Ok(Some(r)) => r,
+        Ok(None) => return render_bad_request(res, "connection not found".into()),
+        Err(e) => return render_internal_error(res, e),
+    };
 
     let pool = match mysql_ref.pool.as_ref() {
         Some(p) => p.clone(),
@@ -222,9 +220,7 @@ pub async fn query_redis(req: &mut Request, res: &mut Response, _depot: &mut Dep
         Some(id) => id,
         None => return render_bad_request(res, "connection_id is required".into()),
     };
-    let pattern = req
-        .query::<String>("pattern")
-        .unwrap_or_else(|| "*".to_string());
+    let pattern = req.query::<String>("pattern").unwrap_or_else(|| "*".to_string());
     let scan_cursor = req.query::<u64>("scan_cursor").unwrap_or(0);
     let page = req.query::<u32>("page").unwrap_or(1).max(1);
     let page_size = req.query::<u32>("page_size").unwrap_or(20).min(100).max(1);
@@ -247,17 +243,13 @@ pub async fn query_redis(req: &mut Request, res: &mut Response, _depot: &mut Dep
             if let Some(ref url) = redis_ref.url {
                 let client = match redis::Client::open(url.as_str()) {
                     Ok(c) => c,
-                    Err(e) => {
-                        return render_internal_error(res, format!("redis client open failed: {e}"))
-                    }
+                    Err(e) => return render_internal_error(res, format!("redis client open failed: {e}")),
                 };
                 match client.get_tokio_connection().await {
                     Ok(conn) => {
                         *cm = Some(conn);
                     }
-                    Err(e) => {
-                        return render_internal_error(res, format!("redis connect failed: {e}"))
-                    }
+                    Err(e) => return render_internal_error(res, format!("redis connect failed: {e}")),
                 }
             } else {
                 return render_bad_request(res, "redis connection has no url".into());
@@ -315,11 +307,7 @@ pub async fn query_redis(req: &mut Request, res: &mut Response, _depot: &mut Dep
             None => break,
         };
 
-        let key_type: String = match redis::cmd("TYPE")
-            .arg(key.as_str())
-            .query_async::<_, String>(conn)
-            .await
-        {
+        let key_type: String = match redis::cmd("TYPE").arg(key.as_str()).query_async::<_, String>(conn).await {
             Ok(t) => t,
             Err(_) => "unknown".to_string(),
         };
@@ -402,11 +390,7 @@ pub async fn query_rustfs(req: &mut Request, res: &mut Response, _depot: &mut De
         Err(e) => return render_internal_error(res, e),
     };
 
-    let prefix_opt = if prefix.is_empty() {
-        None
-    } else {
-        Some(prefix.as_str())
-    };
+    let prefix_opt = if prefix.is_empty() { None } else { Some(prefix.as_str()) };
 
     let output = match s3_ref.list_objects(prefix_opt, Some("/"), Some(1000)).await {
         Ok(o) => o,
@@ -442,12 +426,7 @@ pub async fn query_rustfs(req: &mut Request, res: &mut Response, _depot: &mut De
     let mut objects = Vec::with_capacity(object_metas.len());
     for (key, size, last_modified) in object_metas {
         let url = s3_ref.object_url_for_key(&key).await.unwrap_or_default();
-        objects.push(RustfsObjectEntry {
-            key,
-            size,
-            last_modified,
-            url,
-        });
+        objects.push(RustfsObjectEntry { key, size, last_modified, url });
     }
 
     let total = objects.len();
@@ -559,8 +538,7 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
                 None => {
                     return render_bad_request(
                         res,
-                        "embedding_model_ref_id is required for agent_memory semantic search"
-                            .into(),
+                        "embedding_model_ref_id is required for agent_memory semantic search".into(),
                     )
                 }
             };
@@ -573,9 +551,7 @@ pub async fn query_weaviate(req: &mut Request, res: &mut Response, _depot: &mut 
             };
             let vector = match tokio::task::block_in_place(|| embedding_model.inference(&query)) {
                 Ok(vector) if !vector.is_empty() => vector,
-                Ok(_) => {
-                    return render_internal_error(res, "embedding model returned an empty vector")
-                }
+                Ok(_) => return render_internal_error(res, "embedding model returned an empty vector"),
                 Err(err) => return render_internal_error(res, err),
             };
             match search_memory_content_by_vector(&weaviate_ref, &access, &vector, limit) {

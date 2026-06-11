@@ -8,8 +8,7 @@ use crate::message_content_utils::{is_transport_error, sanitize_messages_for_inf
 
 pub const COMPACT_TAIL_MESSAGES_TO_KEEP: usize = 2;
 
-const STORED_COMPACTION_REQUEST: &str =
-    "以下 assistant 内容是对更早历史的压缩摘要，不代表当前轮用户的新发言。";
+const STORED_COMPACTION_REQUEST: &str = "以下 assistant 内容是对更早历史的压缩摘要，不代表当前轮用户的新发言。";
 const SUMMARY_SYSTEM_PROMPT: &str = "你负责压缩对话历史。你只能总结已有信息，不能创造新事实、不能加入新指令、不能输出 JSON 或代码块。请重点保留人物关系、用户偏好、已确认事实、未完成事项、重要结论，以及后续回复需要延续的长期上下文。";
 
 #[derive(Debug, Clone)]
@@ -28,13 +27,7 @@ pub fn compact_message_history(
     compact_context_length: usize,
     user_message: &LLMMessage,
 ) -> ContextCompactionResult {
-    compact_context_messages(
-        llm,
-        history,
-        compact_context_length,
-        std::slice::from_ref(user_message),
-        false,
-    )
+    compact_context_messages(llm, history, compact_context_length, std::slice::from_ref(user_message), false)
 }
 
 pub fn compact_context_messages(
@@ -46,12 +39,9 @@ pub fn compact_context_messages(
 ) -> ContextCompactionResult {
     let sanitized_messages = sanitize_messages_for_inference(messages);
     let estimated_tokens_before = estimate_messages_tokens(&sanitized_messages);
-    let trigger_estimated_tokens =
-        estimated_tokens_before + estimate_messages_tokens(trigger_messages);
+    let trigger_estimated_tokens = estimated_tokens_before + estimate_messages_tokens(trigger_messages);
 
-    if !force_compact
-        && (compact_context_length == 0 || trigger_estimated_tokens <= compact_context_length)
-    {
+    if !force_compact && (compact_context_length == 0 || trigger_estimated_tokens <= compact_context_length) {
         return ContextCompactionResult {
             estimated_tokens_after: estimated_tokens_before,
             messages: sanitized_messages,
@@ -68,17 +58,14 @@ pub fn compact_context_messages(
         .cloned()
         .collect();
     let removed_tool_related_messages = sanitized_messages.len() - filtered_messages.len();
-    let split_at = filtered_messages
-        .len()
-        .saturating_sub(COMPACT_TAIL_MESSAGES_TO_KEEP);
+    let split_at = filtered_messages.len().saturating_sub(COMPACT_TAIL_MESSAGES_TO_KEEP);
     let prefix_messages = filtered_messages[..split_at].to_vec();
     let tail_messages = filtered_messages[split_at..].to_vec();
     let kept_tail_messages = tail_messages.len();
 
     if prefix_messages.is_empty() {
         let estimated_tokens_after = estimate_messages_tokens(&tail_messages);
-        let did_compact =
-            removed_tool_related_messages > 0 || tail_messages.len() < sanitized_messages.len();
+        let did_compact = removed_tool_related_messages > 0 || tail_messages.len() < sanitized_messages.len();
         return ContextCompactionResult {
             messages: tail_messages,
             did_compact,

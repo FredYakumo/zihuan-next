@@ -1,6 +1,5 @@
 use zihuan_core::command::{
-    CommandContext, CommandHandler, CommandResult, CommandSideEffect, NewConversationRequest,
-    SideEffectContext,
+    CommandContext, CommandHandler, CommandResult, CommandSideEffect, NewConversationRequest, SideEffectContext,
 };
 use zihuan_core::error::Result;
 

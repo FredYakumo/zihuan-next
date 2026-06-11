@@ -91,7 +91,8 @@ impl BrainTool for RunDeepResearchSubagentBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "run_deep_research_subagent",
-            description: "调用深度研究子代理sub_agent，拥有更强大的分析能力。会对按研究点逐个推进，最终输出结构化的研究结论。",
+            description:
+                "调用深度研究子代理sub_agent，拥有更强大的分析能力。会对按研究点逐个推进，最终输出结构化的研究结论。",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -126,10 +127,7 @@ impl BrainTool for RunDeepResearchSubagentBrainTool {
             let output_requirements = optional_string_argument(arguments, "output_requirements");
 
             // Write initial task progress so the dashboard shows research has started.
-            let progress_msg = format!(
-                "我将开始深度研究这个问题: \"{}\"",
-                truncate_for_progress(&problem, 200)
-            );
+            let progress_msg = format!("我将开始深度研究这个问题: \"{}\"", truncate_for_progress(&problem, 200));
             append_current_task_progress(progress_msg);
 
             // Build the user message from problem + optional context and output requirements.
@@ -189,10 +187,7 @@ impl BrainTool for RunDeepResearchSubagentBrainTool {
                 ));
             }
 
-            info!(
-                "{LOG_PREFIX} deep research completed, answer length: {}",
-                trimmed.len()
-            );
+            info!("{LOG_PREFIX} deep research completed, answer length: {}", trimmed.len());
             Ok(trimmed)
         })();
 

@@ -88,9 +88,7 @@ pub mod llm_message_session_cache_clear {
             port! { name = "sender_id", ty = String, desc = "要清空历史消息的 sender_id" },
         ];
 
-        node_output![
-            port! { name = "cleared", ty = Boolean, desc = "是否成功清空至少一条历史消息" },
-        ];
+        node_output![port! { name = "cleared", ty = Boolean, desc = "是否成功清空至少一条历史消息" },];
 
         fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
             self.validate_inputs(&inputs)?;
@@ -101,9 +99,7 @@ pub mod llm_message_session_cache_clear {
                     DataValue::LLMMessageSessionCacheRef(cache_ref) => Some(cache_ref.clone()),
                     _ => None,
                 })
-                .ok_or_else(|| {
-                    zihuan_core::error::Error::InvalidNodeInput("cache_ref is required".to_string())
-                })?;
+                .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("cache_ref is required".to_string()))?;
 
             let sender_id = inputs
                 .get("sender_id")
@@ -111,9 +107,7 @@ pub mod llm_message_session_cache_clear {
                     DataValue::String(sender_id) => Some(sender_id.clone()),
                     _ => None,
                 })
-                .ok_or_else(|| {
-                    zihuan_core::error::Error::InvalidNodeInput("sender_id is required".to_string())
-                })?;
+                .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("sender_id is required".to_string()))?;
 
             let clear_messages = async move { cache_ref.clear_messages(&sender_id).await };
 

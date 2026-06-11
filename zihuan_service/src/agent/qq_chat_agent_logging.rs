@@ -100,10 +100,7 @@ impl QqChatTaskTrace {
 
     pub(crate) fn log_user_message(&self, raw_user_message: &str, current_message: &str) {
         let details = if raw_user_message.trim() == current_message.trim() {
-            format!(
-                "用户消息: {}",
-                truncate_for_log(current_message, LOG_TEXT_PREVIEW_CHARS)
-            )
+            format!("用户消息: {}", truncate_for_log(current_message, LOG_TEXT_PREVIEW_CHARS))
         } else {
             format!(
                 "用户消息: raw={} | inference={}",
@@ -114,11 +111,7 @@ impl QqChatTaskTrace {
         self.log_key_event("收到用户消息", 0, details);
     }
 
-    pub(crate) fn record_history_stats(
-        &self,
-        history_message_count: usize,
-        history_tokens_estimated: usize,
-    ) {
+    pub(crate) fn record_history_stats(&self, history_message_count: usize, history_tokens_estimated: usize) {
         self.log_key_event(
             "历史消息上下文",
             0,
@@ -136,10 +129,7 @@ impl QqChatTaskTrace {
         self.log_key_event(
             "收到插嘴消息",
             0,
-            format!(
-                "message={}",
-                truncate_for_log(current_message, LOG_TEXT_PREVIEW_CHARS)
-            ),
+            format!("message={}", truncate_for_log(current_message, LOG_TEXT_PREVIEW_CHARS)),
         );
     }
 
@@ -195,11 +185,7 @@ impl QqChatTaskTrace {
         inner.llm_request_started_at = Some(TracePoint::now());
     }
 
-    pub(crate) fn log_llm_conversation(
-        &self,
-        conversation: &[LLMMessage],
-        prompt_tokens_estimated: usize,
-    ) {
+    pub(crate) fn log_llm_conversation(&self, conversation: &[LLMMessage], prompt_tokens_estimated: usize) {
         self.log_key_event(
             "发送给大模型的消息列表",
             0,
@@ -214,12 +200,7 @@ impl QqChatTaskTrace {
         inner.prompt_tokens_estimated = Some(prompt_tokens_estimated);
     }
 
-    pub(crate) fn record_tool_request(
-        &self,
-        iteration: usize,
-        content: &str,
-        tool_calls: &[ToolCalls],
-    ) {
+    pub(crate) fn record_tool_request(&self, iteration: usize, content: &str, tool_calls: &[ToolCalls]) {
         let details = format!(
             "iteration={} assistant_content={} tool_calls={}",
             iteration,
@@ -241,10 +222,7 @@ impl QqChatTaskTrace {
         self.log_key_event(
             &format!("工具调用 {name}"),
             0,
-            format!(
-                "arguments={}",
-                truncate_for_log(&arguments.to_string(), LOG_TOOL_PREVIEW_CHARS)
-            ),
+            format!("arguments={}", truncate_for_log(&arguments.to_string(), LOG_TOOL_PREVIEW_CHARS)),
         );
 
         let mut inner = self.inner.lock().unwrap();
@@ -267,10 +245,7 @@ impl QqChatTaskTrace {
                 .find(|call| call.name == name && call.finished_at.is_none())
                 .map(|call| {
                     call.finished_at = Some(finished_at.clone());
-                    finished_at
-                        .instant
-                        .duration_since(call.started_at.instant)
-                        .as_millis()
+                    finished_at.instant.duration_since(call.started_at.instant).as_millis()
                 })
                 .unwrap_or_default()
         };
@@ -278,18 +253,11 @@ impl QqChatTaskTrace {
         self.log_key_event(
             &format!("工具调用结果 {name}"),
             duration_ms,
-            format!(
-                "result={}",
-                truncate_for_log(result, LOG_TOOL_PREVIEW_CHARS)
-            ),
+            format!("result={}", truncate_for_log(result, LOG_TOOL_PREVIEW_CHARS)),
         );
     }
 
-    pub(crate) fn record_llm_final_result(
-        &self,
-        stop_reason: &BrainStopReason,
-        brain_output: &[LLMMessage],
-    ) {
+    pub(crate) fn record_llm_final_result(&self, stop_reason: &BrainStopReason, brain_output: &[LLMMessage]) {
         let now = TracePoint::now();
         let duration_ms = self
             .inner
@@ -345,12 +313,7 @@ impl QqChatTaskTrace {
         inner.reply_send_started_at = Some(TracePoint::now());
     }
 
-    pub(crate) fn record_reply_send(
-        &self,
-        suppress_send: bool,
-        reply_sent: bool,
-        batches: &[Vec<Message>],
-    ) {
+    pub(crate) fn record_reply_send(&self, suppress_send: bool, reply_sent: bool, batches: &[Vec<Message>]) {
         let now = TracePoint::now();
         let duration_ms = self
             .inner
@@ -379,11 +342,7 @@ impl QqChatTaskTrace {
         inner.reply_sent = Some(reply_sent);
     }
 
-    pub(crate) fn record_token_usage(
-        &self,
-        completion_tokens_estimated: usize,
-        exact_usage: Option<TokenUsage>,
-    ) {
+    pub(crate) fn record_token_usage(&self, completion_tokens_estimated: usize, exact_usage: Option<TokenUsage>) {
         let mut inner = self.inner.lock().unwrap();
         if let Some(usage) = exact_usage {
             if let Some(prompt_tokens) = usage.prompt_tokens {
@@ -401,10 +360,7 @@ impl QqChatTaskTrace {
                 inner.completion_tokens_estimated = Some(completion_tokens_estimated);
             }
             inner.total_tokens_estimated = usage.total_tokens.or_else(|| {
-                match (
-                    inner.prompt_tokens_estimated,
-                    inner.completion_tokens_estimated,
-                ) {
+                match (inner.prompt_tokens_estimated, inner.completion_tokens_estimated) {
                     (Some(prompt), Some(completion)) => Some(prompt + completion),
                     _ => None,
                 }
@@ -414,19 +370,14 @@ impl QqChatTaskTrace {
         }
 
         inner.completion_tokens_estimated = Some(completion_tokens_estimated);
-        inner.total_tokens_estimated = inner
-            .prompt_tokens_estimated
-            .map(|prompt| prompt + completion_tokens_estimated);
+        inner.total_tokens_estimated = inner.prompt_tokens_estimated.map(|prompt| prompt + completion_tokens_estimated);
     }
 
     pub(crate) fn log_result_summary(&self, result_summary: &str) {
         self.log_key_event(
             "任务结果",
             0,
-            format!(
-                "summary={}",
-                truncate_for_log(result_summary, LOG_TEXT_PREVIEW_CHARS)
-            ),
+            format!("summary={}", truncate_for_log(result_summary, LOG_TEXT_PREVIEW_CHARS)),
         );
     }
 
@@ -479,18 +430,12 @@ impl QqChatTaskTrace {
         lines.push(format_timeline_line(
             "发送回文时间点",
             inner.reply_send_finished_at.as_ref(),
-            inner
-                .reply_send_started_at
-                .as_ref()
-                .or(inner.llm_result_parsed_at.as_ref()),
+            inner.reply_send_started_at.as_ref().or(inner.llm_result_parsed_at.as_ref()),
         ));
         lines.push(format_timeline_line(
             "任务结束时间点",
             inner.task_finished_at.as_ref(),
-            inner
-                .reply_send_finished_at
-                .as_ref()
-                .or(inner.llm_result_parsed_at.as_ref()),
+            inner.reply_send_finished_at.as_ref().or(inner.llm_result_parsed_at.as_ref()),
         ));
         lines.push("---".to_string());
 
@@ -555,10 +500,7 @@ impl QqChatTaskTrace {
     }
 
     fn log_key_event(&self, title: &str, duration_ms: u128, details: impl AsRef<str>) {
-        info!(
-            "{LOG_PREFIX} {title} [耗时 {duration_ms} ms] {}",
-            details.as_ref()
-        );
+        info!("{LOG_PREFIX} {title} [耗时 {duration_ms} ms] {}", details.as_ref());
     }
 }
 
@@ -568,8 +510,7 @@ pub(crate) struct QqChatBrainObserver {
 
 impl BrainObserver for QqChatBrainObserver {
     fn on_assistant_tool_request(&self, iteration: usize, content: &str, tool_calls: &[ToolCalls]) {
-        self.trace
-            .record_tool_request(iteration, content, tool_calls);
+        self.trace.record_tool_request(iteration, content, tool_calls);
     }
 
     fn on_tool_start(&self, name: &str, _call_id: &str, arguments: &Value) {
@@ -585,21 +526,13 @@ fn format_time(time: &DateTime<Local>) -> String {
     time.format("%Y-%m-%d %H:%M:%S%.3f").to_string()
 }
 
-fn format_timeline_line(
-    label: &str,
-    point: Option<&TracePoint>,
-    previous: Option<&TracePoint>,
-) -> String {
+fn format_timeline_line(label: &str, point: Option<&TracePoint>, previous: Option<&TracePoint>) -> String {
     match point {
         Some(point) => {
             let duration_ms = previous
                 .map(|previous| point.instant.duration_since(previous.instant).as_millis())
                 .unwrap_or_default();
-            format!(
-                "{label} {} [耗时 {} ms]",
-                format_time(&point.at),
-                duration_ms
-            )
+            format!("{label} {} [耗时 {} ms]", format_time(&point.at), duration_ms)
         }
         None => format!("{label} 未触发"),
     }

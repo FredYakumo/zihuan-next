@@ -109,10 +109,10 @@ pub struct SessionClaimContext {
 
 impl SessionClaimContext {
     pub fn register_claim(&self, claim: SessionClaim) {
-        self.claims.lock().unwrap().insert(
-            (claim.session_ref.node_id.clone(), claim.sender_id.clone()),
-            claim,
-        );
+        self.claims
+            .lock()
+            .unwrap()
+            .insert((claim.session_ref.node_id.clone(), claim.sender_id.clone()), claim);
     }
 
     pub fn unregister_claim(&self, session_node_id: &str, sender_id: &str) -> Option<SessionClaim> {
@@ -131,12 +131,7 @@ impl SessionClaimContext {
     }
 
     pub fn drain_claims(&self) -> Vec<SessionClaim> {
-        self.claims
-            .lock()
-            .unwrap()
-            .drain()
-            .map(|(_, claim)| claim)
-            .collect()
+        self.claims.lock().unwrap().drain().map(|(_, claim)| claim).collect()
     }
 }
 
@@ -150,27 +145,18 @@ impl SessionStateRef {
     }
 
     pub async fn get_state(&self, sender_id: &str) -> SessionStateEntry {
-        self.entries
-            .lock()
-            .await
-            .get(sender_id)
-            .cloned()
-            .unwrap_or(SessionStateEntry {
-                in_session: false,
-                state_json: Value::Null,
-                claim_token: None,
-            })
+        self.entries.lock().await.get(sender_id).cloned().unwrap_or(SessionStateEntry {
+            in_session: false,
+            state_json: Value::Null,
+            claim_token: None,
+        })
     }
 
     pub async fn clear_state(&self, sender_id: &str) -> bool {
         self.entries.lock().await.remove(sender_id).is_some()
     }
 
-    pub async fn try_claim(
-        &self,
-        sender_id: &str,
-        state_json: Option<Value>,
-    ) -> (SessionStateEntry, bool) {
+    pub async fn try_claim(&self, sender_id: &str, state_json: Option<Value>) -> (SessionStateEntry, bool) {
         let mut entries = self.entries.lock().await;
         if let Some(existing) = entries.get(sender_id) {
             if existing.in_session {
@@ -258,10 +244,7 @@ impl LLMMessageSessionCacheRef {
     }
 
     fn storage_key(&self, bucket_name: &str, sender_id: &str) -> String {
-        format!(
-            "llm_message_session:{}:{}:{}",
-            self.node_id, bucket_name, sender_id
-        )
+        format!("llm_message_session:{}:{}:{}", self.node_id, bucket_name, sender_id)
     }
 
     async fn default_bucket_name(&self) -> String {
@@ -290,8 +273,7 @@ impl LLMMessageSessionCacheRef {
         match catch_unwind(AssertUnwindSafe(run)) {
             Ok(result) => result,
             Err(_) => Err(zihuan_core::error::Error::StringError(
-                "Redis connection driver unexpectedly terminated while reading session cache"
-                    .to_string(),
+                "Redis connection driver unexpectedly terminated while reading session cache".to_string(),
             )),
         }
     }
@@ -314,8 +296,7 @@ impl LLMMessageSessionCacheRef {
         match catch_unwind(AssertUnwindSafe(run)) {
             Ok(result) => result,
             Err(_) => Err(zihuan_core::error::Error::StringError(
-                "Redis connection driver unexpectedly terminated while writing session cache"
-                    .to_string(),
+                "Redis connection driver unexpectedly terminated while writing session cache".to_string(),
             )),
         }
     }
@@ -338,23 +319,16 @@ impl LLMMessageSessionCacheRef {
         match catch_unwind(AssertUnwindSafe(run)) {
             Ok(result) => result,
             Err(_) => Err(zihuan_core::error::Error::StringError(
-                "Redis connection driver unexpectedly terminated while appending session cache"
-                    .to_string(),
+                "Redis connection driver unexpectedly terminated while appending session cache".to_string(),
             )),
         }
     }
 
-    pub async fn get_messages(
-        &self,
-        sender_id: &str,
-    ) -> zihuan_core::error::Result<Vec<zihuan_core::llm::LLMMessage>> {
+    pub async fn get_messages(&self, sender_id: &str) -> zihuan_core::error::Result<Vec<zihuan_core::llm::LLMMessage>> {
         let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
             let sender_bucket_map = self.sender_bucket_map.lock().await;
-            sender_bucket_map
-                .get(sender_id)
-                .cloned()
-                .unwrap_or(default_bucket_name)
+            sender_bucket_map.get(sender_id).cloned().unwrap_or(default_bucket_name)
         };
         let key = self.storage_key(&bucket_name, sender_id);
 
@@ -399,9 +373,7 @@ impl LLMMessageSessionCacheRef {
         let default_bucket_name = self.default_bucket_name().await;
         let bucket_name = {
             let mut sender_bucket_map = self.sender_bucket_map.lock().await;
-            sender_bucket_map
-                .remove(sender_id)
-                .unwrap_or(default_bucket_name)
+            sender_bucket_map.remove(sender_id).unwrap_or(default_bucket_name)
         };
         let key = self.storage_key(&bucket_name, sender_id);
         let mut cleared = false;
@@ -432,10 +404,7 @@ impl LLMMessageSessionCacheRef {
 
             if let Some(cm) = cm_guard.as_mut() {
                 let deleted_count: i32 = cm.del(&key).await?;
-                let tracker_key = format!(
-                    "llm_message_session:{}:bucket:{}:keys",
-                    self.node_id, bucket_name
-                );
+                let tracker_key = format!("llm_message_session:{}:bucket:{}:keys", self.node_id, bucket_name);
                 let _: () = cm.srem(&tracker_key, &key).await?;
                 cleared |= deleted_count > 0;
             }
@@ -489,15 +458,10 @@ impl LLMMessageSessionCacheRef {
             if let Some(cm) = cm_guard.as_mut() {
                 let serialized = serde_json::to_string(&messages)?;
                 cm.set::<_, _, ()>(&key, serialized).await?;
-                let tracker_key = format!(
-                    "llm_message_session:{}:bucket:{}:keys",
-                    self.node_id, bucket_name
-                );
-                let tracker_registry_key =
-                    format!("llm_message_session:{}:tracker_sets", self.node_id);
+                let tracker_key = format!("llm_message_session:{}:bucket:{}:keys", self.node_id, bucket_name);
+                let tracker_registry_key = format!("llm_message_session:{}:tracker_sets", self.node_id);
                 cm.sadd::<_, _, ()>(&tracker_key, &key).await?;
-                cm.sadd::<_, _, ()>(&tracker_registry_key, &tracker_key)
-                    .await?;
+                cm.sadd::<_, _, ()>(&tracker_registry_key, &tracker_key).await?;
             }
         }
 
@@ -557,15 +521,10 @@ impl LLMMessageSessionCacheRef {
 
                 let serialized = serde_json::to_string(&existing_messages)?;
                 cm.set::<_, _, ()>(&key, serialized).await?;
-                let tracker_key = format!(
-                    "llm_message_session:{}:bucket:{}:keys",
-                    self.node_id, bucket_name
-                );
-                let tracker_registry_key =
-                    format!("llm_message_session:{}:tracker_sets", self.node_id);
+                let tracker_key = format!("llm_message_session:{}:bucket:{}:keys", self.node_id, bucket_name);
+                let tracker_registry_key = format!("llm_message_session:{}:tracker_sets", self.node_id);
                 cm.sadd::<_, _, ()>(&tracker_key, &key).await?;
-                cm.sadd::<_, _, ()>(&tracker_registry_key, &tracker_key)
-                    .await?;
+                cm.sadd::<_, _, ()>(&tracker_registry_key, &tracker_key).await?;
             }
         }
 
@@ -825,9 +784,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
             }
 
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
-                let key: String = map
-                    .next_key()?
-                    .ok_or_else(|| de::Error::missing_field("variant key"))?;
+                let key: String = map.next_key()?.ok_or_else(|| de::Error::missing_field("variant key"))?;
                 match key.as_str() {
                     "Vec" => {
                         let inner: DataType = map.next_value()?;
@@ -926,9 +883,7 @@ impl DataValue {
             DataValue::WebSearchEngineRef(_) => "WebSearchEngineRef".to_string(),
             DataValue::LoopControlRef(_) => "LoopControlRef".to_string(),
             DataValue::EmbeddingModel(_) => "EmbeddingModel".to_string(),
-            other => {
-                serde_json::to_string(&other.to_json()).unwrap_or_else(|_| format!("{other:?}"))
-            }
+            other => serde_json::to_string(&other.to_json()).unwrap_or_else(|_| format!("{other:?}")),
         }
     }
 
@@ -939,18 +894,9 @@ impl DataValue {
             DataValue::Float(f) => serde_json::json!(f),
             DataValue::Boolean(b) => Value::Bool(*b),
             DataValue::Json(v) => v.clone(),
-            DataValue::Binary(bytes) => {
-                Value::Array(bytes.iter().map(|b| Value::Number((*b).into())).collect())
-            }
-            DataValue::Vector(values) => Value::Array(
-                values
-                    .iter()
-                    .map(|value| serde_json::json!(value))
-                    .collect(),
-            ),
-            DataValue::Vec(_, items) => {
-                Value::Array(items.iter().map(|item| item.to_json()).collect())
-            }
+            DataValue::Binary(bytes) => Value::Array(bytes.iter().map(|b| Value::Number((*b).into())).collect()),
+            DataValue::Vector(values) => Value::Array(values.iter().map(|value| serde_json::json!(value)).collect()),
+            DataValue::Vec(_, items) => Value::Array(items.iter().map(|item| item.to_json()).collect()),
             DataValue::LLMMessage(m) => serde_json::to_value(m).unwrap_or(Value::Null),
             DataValue::QQMessage(m) => serde_json::to_value(m).unwrap_or(Value::Null),
             DataValue::Image(image) => serde_json::to_value(image).unwrap_or(Value::Null),
@@ -1054,26 +1000,15 @@ impl fmt::Debug for DataValue {
             DataValue::RedisRef(config) => f.debug_tuple("RedisRef").field(config).finish(),
             DataValue::MySqlRef(config) => f.debug_tuple("MySqlRef").field(config).finish(),
             DataValue::SqliteRef(config) => f.debug_tuple("SqliteRef").field(config).finish(),
-            DataValue::WeaviateRef(weaviate_ref) => {
-                f.debug_tuple("WeaviateRef").field(weaviate_ref).finish()
+            DataValue::WeaviateRef(weaviate_ref) => f.debug_tuple("WeaviateRef").field(weaviate_ref).finish(),
+            DataValue::WebSearchEngineRef(tavily_ref) => f.debug_tuple("WebSearchEngineRef").field(tavily_ref).finish(),
+            DataValue::SessionStateRef(session_ref) => f.debug_tuple("SessionStateRef").field(session_ref).finish(),
+            DataValue::LLMMessageSessionCacheRef(cache_ref) => {
+                f.debug_tuple("LLMMessageSessionCacheRef").field(cache_ref).finish()
             }
-            DataValue::WebSearchEngineRef(tavily_ref) => f
-                .debug_tuple("WebSearchEngineRef")
-                .field(tavily_ref)
-                .finish(),
-            DataValue::SessionStateRef(session_ref) => {
-                f.debug_tuple("SessionStateRef").field(session_ref).finish()
-            }
-            DataValue::LLMMessageSessionCacheRef(cache_ref) => f
-                .debug_tuple("LLMMessageSessionCacheRef")
-                .field(cache_ref)
-                .finish(),
             DataValue::Password(value) => f.debug_tuple("Password").field(value).finish(),
             DataValue::LLModel(m) => f.debug_tuple("LLModel").field(&m.get_model_name()).finish(),
-            DataValue::EmbeddingModel(m) => f
-                .debug_tuple("EmbeddingModel")
-                .field(&m.get_model_name())
-                .finish(),
+            DataValue::EmbeddingModel(m) => f.debug_tuple("EmbeddingModel").field(&m.get_model_name()).finish(),
             DataValue::LoopControlRef(_) => f.debug_tuple("LoopControlRef").finish(),
         }
     }

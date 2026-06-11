@@ -30,9 +30,7 @@ pub async fn fetch_login_info(connection: &BotAdapterConnection) -> Result<BotLo
 /// This is preferred over `fetch_login_info` when the adapter is already running, because
 /// it reuses the existing WebSocket connection rather than creating a new one.
 pub async fn fetch_login_info_via_adapter_connection(connection_id: &str) -> Result<BotLoginInfo> {
-    let adapter = ActiveAdapterManager::shared()
-        .get_or_create(connection_id)
-        .await?;
+    let adapter = ActiveAdapterManager::shared().get_or_create(connection_id).await?;
 
     let max_retries = 10u32;
     let retry_delay = Duration::from_millis(500);
@@ -53,9 +51,8 @@ pub async fn fetch_login_info_via_adapter_connection(connection_id: &str) -> Res
         }
     }
 
-    Err(last_err.unwrap_or_else(|| {
-        Error::ValidationError("failed to fetch login info via adapter after retries".to_string())
-    }))
+    Err(last_err
+        .unwrap_or_else(|| Error::ValidationError("failed to fetch login info via adapter after retries".to_string())))
 }
 
 async fn fetch_login_info_via_websocket(connection: &BotAdapterConnection) -> Result<BotLoginInfo> {
@@ -71,9 +68,7 @@ async fn fetch_login_info_via_websocket(connection: &BotAdapterConnection) -> Re
     });
 
     ws_stream
-        .send(tokio_tungstenite::tungstenite::Message::Text(
-            payload.to_string().into(),
-        ))
+        .send(tokio_tungstenite::tungstenite::Message::Text(payload.to_string().into()))
         .await?;
 
     loop {
@@ -86,15 +81,11 @@ async fn fetch_login_info_via_websocket(connection: &BotAdapterConnection) -> Re
         let message = message?;
         let text = match message {
             tokio_tungstenite::tungstenite::Message::Text(text) => text,
-            tokio_tungstenite::tungstenite::Message::Binary(data) => {
-                String::from_utf8(data.to_vec())
-                    .map_err(|err| {
-                        Error::ValidationError(format!(
-                            "get_login_info WebSocket response is not valid UTF-8: {err}"
-                        ))
-                    })?
-                    .into()
-            }
+            tokio_tungstenite::tungstenite::Message::Binary(data) => String::from_utf8(data.to_vec())
+                .map_err(|err| {
+                    Error::ValidationError(format!("get_login_info WebSocket response is not valid UTF-8: {err}"))
+                })?
+                .into(),
             tokio_tungstenite::tungstenite::Message::Close(_) => {
                 return Err(Error::ValidationError(
                     "WebSocket closed before get_login_info response arrived".to_string(),
@@ -134,11 +125,7 @@ fn parse_login_info(payload: &serde_json::Value) -> Result<BotLoginInfo> {
     let data = payload
         .get("data")
         .and_then(|value| value.as_object())
-        .ok_or_else(|| {
-            Error::ValidationError(
-                "NapCat /get_login_info response missing data object".to_string(),
-            )
-        })?;
+        .ok_or_else(|| Error::ValidationError("NapCat /get_login_info response missing data object".to_string()))?;
 
     let user_id = data
         .get("user_id")
@@ -148,9 +135,7 @@ fn parse_login_info(payload: &serde_json::Value) -> Result<BotLoginInfo> {
                 .or_else(|| value.as_str().map(str::to_string))
         })
         .ok_or_else(|| {
-            Error::ValidationError(
-                "NapCat /get_login_info response missing valid data.user_id".to_string(),
-            )
+            Error::ValidationError("NapCat /get_login_info response missing valid data.user_id".to_string())
         })?;
 
     let nickname = data

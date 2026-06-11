@@ -126,9 +126,7 @@ pub fn build_command_registry() -> Arc<CommandRegistry> {
             accepted_arg_count: 0,
             allow_steer_bypass: false,
         },
-        Arc::new(HelpCommand {
-            registry: reg_ptr.clone(),
-        }),
+        Arc::new(HelpCommand { registry: reg_ptr.clone() }),
     );
 
     let registry = Arc::new(registry);

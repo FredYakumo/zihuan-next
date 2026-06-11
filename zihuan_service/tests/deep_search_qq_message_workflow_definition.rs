@@ -11,15 +11,13 @@ fn workflow_path(name: &str) -> PathBuf {
 
 #[test]
 fn deep_search_workflow_uses_optional_group_id_node() {
-    let graph = load_graph_definition_from_json(workflow_path("deep_search_qq_message"))
-        .expect("workflow should load");
+    let graph = load_graph_definition_from_json(workflow_path("deep_search_qq_message")).expect("workflow should load");
     let prompt_node = graph
         .nodes
         .iter()
         .find(|node| node.id == "e2e1823e-2765-4c5c-86d6-0c8e8f68e270")
         .expect("workflow should contain prompt builder function");
-    let prompt_json =
-        serde_json::to_string(&prompt_node.inline_values).expect("inline values should serialize");
+    let prompt_json = serde_json::to_string(&prompt_node.inline_values).expect("inline values should serialize");
 
     assert!(
         prompt_json.contains("\"node_type\":\"extract_optional_group_id_from_event\""),
@@ -29,16 +27,14 @@ fn deep_search_workflow_uses_optional_group_id_node() {
 
 #[test]
 fn deep_search_workflow_prompt_mentions_private_empty_group_id() {
-    let graph = load_graph_definition_from_json(workflow_path("deep_search_qq_message"))
-        .expect("workflow should load");
+    let graph = load_graph_definition_from_json(workflow_path("deep_search_qq_message")).expect("workflow should load");
 
     let prompt_node = graph
         .nodes
         .iter()
         .find(|node| node.id == "e2e1823e-2765-4c5c-86d6-0c8e8f68e270")
         .expect("workflow should contain prompt builder function");
-    let prompt_json =
-        serde_json::to_string(&prompt_node.inline_values).expect("inline values should serialize");
+    let prompt_json = serde_json::to_string(&prompt_node.inline_values).expect("inline values should serialize");
 
     assert!(
         prompt_json.contains("当前群号（私聊为空）"),

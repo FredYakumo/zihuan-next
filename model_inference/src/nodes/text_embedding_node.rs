@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
 
@@ -40,27 +38,20 @@ impl Node for TextEmbeddingNode {
         port! { name = "dimension", ty = Integer, desc = "向量维度" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let embedding_model = match inputs.get("embedding_model") {
             Some(DataValue::EmbeddingModel(value)) => value.clone(),
             _ => {
-                return Err(Error::ValidationError(
-                    "Missing required input: embedding_model".to_string(),
-                ));
+                return Err(Error::ValidationError("Missing required input: embedding_model".to_string()));
             }
         };
 
         let text = match inputs.get("text") {
             Some(DataValue::String(value)) if !value.trim().is_empty() => value.trim().to_string(),
             _ => {
-                return Err(Error::ValidationError(
-                    "Missing required input: text".to_string(),
-                ));
+                return Err(Error::ValidationError("Missing required input: text".to_string()));
             }
         };
 

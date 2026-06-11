@@ -63,10 +63,7 @@ pub struct AgentMemorySearchHit {
     pub distance: Option<f64>,
 }
 
-pub fn create_memory_record(
-    weaviate_ref: &WeaviateRef,
-    input: &AgentMemoryUpsert,
-) -> Result<AgentMemoryRecord> {
+pub fn create_memory_record(weaviate_ref: &WeaviateRef, input: &AgentMemoryUpsert) -> Result<AgentMemoryRecord> {
     create_memory_record_with_vector(weaviate_ref, input, None)
 }
 
@@ -77,8 +74,7 @@ pub fn create_memory_record_with_vector(
 ) -> Result<AgentMemoryRecord> {
     let now = Utc::now().to_rfc3339();
     let properties = build_memory_properties(input, &now, Some(&now))?;
-    let response =
-        weaviate_ref.upsert_object(&weaviate_ref.class_name, properties, vector, None)?;
+    let response = weaviate_ref.upsert_object(&weaviate_ref.class_name, properties, vector, None)?;
     parse_memory_record_with_fallback(response, None)
 }
 
@@ -106,12 +102,8 @@ pub fn update_memory_record_with_vector(
             .flatten()
             .unwrap_or_default()
     });
-    let response = weaviate_ref.update_object_with_vector(
-        &weaviate_ref.class_name,
-        object_id,
-        properties,
-        preserve_vector,
-    )?;
+    let response =
+        weaviate_ref.update_object_with_vector(&weaviate_ref.class_name, object_id, properties, preserve_vector)?;
     parse_memory_record_with_fallback(response, Some(object_id))
 }
 
@@ -136,10 +128,7 @@ pub fn list_recent_memory_keys(
     } else {
         list_memory_records(weaviate_ref, limit)?
     };
-    Ok(filter_and_sort_records(records, access)
-        .into_iter()
-        .take(top_n)
-        .collect())
+    Ok(filter_and_sort_records(records, access).into_iter().take(top_n).collect())
 }
 
 pub fn search_memory_content(
@@ -148,10 +137,7 @@ pub fn search_memory_content(
     query: &str,
     top_n: usize,
 ) -> Result<Vec<AgentMemorySearchHit>> {
-    let mut hits = filter_and_sort_records(
-        query_memory_records(weaviate_ref, query, candidate_limit(top_n))?,
-        access,
-    );
+    let mut hits = filter_and_sort_records(query_memory_records(weaviate_ref, query, candidate_limit(top_n))?, access);
     hits.truncate(top_n);
     if !access.skip_expiry_extend {
         extend_expiry_for_hits(weaviate_ref, &hits)?;
@@ -201,24 +187,14 @@ pub fn memory_is_accessible(record: &AgentMemoryRecord, access: &AgentMemoryAcce
     }
 
     if !record.group_id_list.is_empty() {
-        let Some(group_id) = access
-            .group_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        else {
+        let Some(group_id) = access.group_id.as_deref().map(str::trim).filter(|value| !value.is_empty()) else {
             return false;
         };
         return record.group_id_list.iter().any(|value| value == group_id);
     }
 
     if !record.sender_id_list.is_empty() {
-        let Some(sender_id) = access
-            .sender_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        else {
+        let Some(sender_id) = access.sender_id.as_deref().map(str::trim).filter(|value| !value.is_empty()) else {
             return false;
         };
         return record.sender_id_list.iter().any(|value| value == sender_id);
@@ -236,10 +212,7 @@ pub fn is_memory_expired(record: &AgentMemoryRecord) -> bool {
         .unwrap_or(false)
 }
 
-pub fn extend_expiry_for_hits(
-    weaviate_ref: &WeaviateRef,
-    hits: &[AgentMemorySearchHit],
-) -> Result<()> {
+pub fn extend_expiry_for_hits(weaviate_ref: &WeaviateRef, hits: &[AgentMemorySearchHit]) -> Result<()> {
     for hit in hits {
         let Some(current_expiry) = hit.record.expires_at.as_deref().and_then(parse_rfc3339) else {
             continue;
@@ -251,11 +224,7 @@ pub fn extend_expiry_for_hits(
         let remaining = current_expiry - now;
         let doubled = now + remaining + remaining;
         let max_expiry = now + Duration::days(365);
-        let next_expiry = if doubled > max_expiry {
-            max_expiry
-        } else {
-            doubled
-        };
+        let next_expiry = if doubled > max_expiry { max_expiry } else { doubled };
         let payload = AgentMemoryUpsert {
             key: hit.record.key.clone(),
             value: hit.record.value.clone(),
@@ -280,21 +249,13 @@ fn filter_and_sort_records(
     filtered
 }
 
-fn list_memory_records(
-    weaviate_ref: &WeaviateRef,
-    limit: usize,
-) -> Result<Vec<AgentMemorySearchHit>> {
+fn list_memory_records(weaviate_ref: &WeaviateRef, limit: usize) -> Result<Vec<AgentMemorySearchHit>> {
     let args = format!("limit: {limit}, sort: [{{ path: [\"updated_at\"], order: desc }}]");
-    let response =
-        weaviate_ref.query_with_args(&weaviate_ref.class_name, &args, &memory_property_names())?;
+    let response = weaviate_ref.query_with_args(&weaviate_ref.class_name, &args, &memory_property_names())?;
     parse_memory_hits(response)
 }
 
-fn query_memory_records(
-    weaviate_ref: &WeaviateRef,
-    query: &str,
-    limit: usize,
-) -> Result<Vec<AgentMemorySearchHit>> {
+fn query_memory_records(weaviate_ref: &WeaviateRef, query: &str, limit: usize) -> Result<Vec<AgentMemorySearchHit>> {
     let response = weaviate_ref.query_hybrid(
         &weaviate_ref.class_name,
         query,
@@ -356,10 +317,7 @@ fn parse_memory_hit(value: Value) -> Result<AgentMemorySearchHit> {
     Ok(AgentMemorySearchHit { record, distance })
 }
 
-fn parse_memory_record_with_fallback(
-    value: Value,
-    fallback_id: Option<&str>,
-) -> Result<AgentMemoryRecord> {
+fn parse_memory_record_with_fallback(value: Value, fallback_id: Option<&str>) -> Result<AgentMemoryRecord> {
     let object_id = value
         .get("id")
         .and_then(Value::as_str)
@@ -373,10 +331,7 @@ fn parse_memory_record_with_fallback(
         })
         .or_else(|| fallback_id.map(ToOwned::to_owned))
         .ok_or_else(|| Error::ValidationError("memory record missing object id".to_string()))?;
-    let properties = value
-        .get("properties")
-        .cloned()
-        .unwrap_or_else(|| value.clone());
+    let properties = value.get("properties").cloned().unwrap_or_else(|| value.clone());
     Ok(AgentMemoryRecord {
         object_id,
         key: required_string(&properties, "key")?,
@@ -389,29 +344,20 @@ fn parse_memory_record_with_fallback(
     })
 }
 
-fn build_memory_properties(
-    input: &AgentMemoryUpsert,
-    created_at: &str,
-    updated_at: Option<&str>,
-) -> Result<Value> {
+fn build_memory_properties(input: &AgentMemoryUpsert, created_at: &str, updated_at: Option<&str>) -> Result<Value> {
     let key = input.key.trim();
     if key.is_empty() {
-        return Err(Error::ValidationError(
-            "memory title must not be empty".to_string(),
-        ));
+        return Err(Error::ValidationError("memory title must not be empty".to_string()));
     }
     let value = input.value.trim();
     if value.is_empty() {
-        return Err(Error::ValidationError(
-            "memory value must not be empty".to_string(),
-        ));
+        return Err(Error::ValidationError("memory value must not be empty".to_string()));
     }
     let sender_id_list = normalize_memory_scope_lists(&input.sender_id_list);
     let group_id_list = normalize_memory_scope_lists(&input.group_id_list);
     if let Some(expires_at) = input.expires_at.as_deref() {
-        let _ = parse_rfc3339(expires_at).ok_or_else(|| {
-            Error::ValidationError(format!("invalid expires_at '{}'", expires_at))
-        })?;
+        let _ = parse_rfc3339(expires_at)
+            .ok_or_else(|| Error::ValidationError(format!("invalid expires_at '{}'", expires_at)))?;
     }
     Ok(json!({
         "key": key,
@@ -444,8 +390,7 @@ fn candidate_limit(top_n: usize) -> usize {
 }
 
 fn required_string(value: &Value, key: &str) -> Result<String> {
-    optional_string(value, key)
-        .ok_or_else(|| Error::ValidationError(format!("memory record missing '{}'", key)))
+    optional_string(value, key).ok_or_else(|| Error::ValidationError(format!("memory record missing '{}'", key)))
 }
 
 fn optional_string(value: &Value, key: &str) -> Option<String> {
@@ -471,7 +416,5 @@ fn string_list(value: &Value, key: &str) -> Vec<String> {
 }
 
 fn parse_rfc3339(value: &str) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(value)
-        .ok()
-        .map(|value| value.with_timezone(&Utc))
+    DateTime::parse_from_rfc3339(value).ok().map(|value| value.with_timezone(&Utc))
 }

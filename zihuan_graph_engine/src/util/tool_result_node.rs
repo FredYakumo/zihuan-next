@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::LLMMessage;
@@ -48,9 +46,7 @@ impl Node for ToolResultNode {
                 .get("tool_call_id")
                 .and_then(|id| id.as_str())
                 .map(|s| s.to_string())
-                .ok_or_else(|| {
-                    Error::ValidationError("tool_call missing 'tool_call_id' field".to_string())
-                })?,
+                .ok_or_else(|| Error::ValidationError("tool_call missing 'tool_call_id' field".to_string()))?,
             _ => return Err(Error::ValidationError("tool_call is required".to_string())),
         };
 

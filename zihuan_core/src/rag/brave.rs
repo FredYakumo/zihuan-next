@@ -45,11 +45,7 @@ impl BraveSearch {
         }
     }
 
-    async fn search_async(
-        &self,
-        query: &str,
-        search_count: i64,
-    ) -> crate::error::Result<Vec<String>> {
+    async fn search_async(&self, query: &str, search_count: i64) -> crate::error::Result<Vec<String>> {
         let response = self
             .client
             .get("https://api.search.brave.com/res/v1/web/search")
@@ -73,11 +69,8 @@ impl BraveSearch {
         }
 
         let body = response.text().await?;
-        let parsed: BraveSearchResponse = serde_json::from_str(&body).map_err(|err| {
-            crate::error::Error::StringError(format!(
-                "Failed to parse Brave search response: {err}"
-            ))
-        })?;
+        let parsed: BraveSearchResponse = serde_json::from_str(&body)
+            .map_err(|err| crate::error::Error::StringError(format!("Failed to parse Brave search response: {err}")))?;
 
         Ok(parsed
             .web
@@ -91,10 +84,7 @@ impl BraveSearch {
                         content.push_str(&snippets.join("\n"));
                     }
                 }
-                format!(
-                    "标题: {}\n链接: {}\n内容: {}",
-                    item.title, item.url, content
-                )
+                format!("标题: {}\n链接: {}\n内容: {}", item.title, item.url, content)
             })
             .collect())
     }
@@ -103,10 +93,7 @@ impl BraveSearch {
         let response = self
             .client
             .get(url)
-            .header(
-                reqwest::header::USER_AGENT,
-                "Mozilla/5.0 (compatible; zihuan-next/1.0)",
-            )
+            .header(reqwest::header::USER_AGENT, "Mozilla/5.0 (compatible; zihuan-next/1.0)")
             .send()
             .await?;
 
@@ -120,10 +107,7 @@ impl BraveSearch {
         }
 
         let body = response.text().await?;
-        Ok(vec![format!(
-            "链接: {url}\n内容: {}",
-            strip_html_tags(&body)
-        )])
+        Ok(vec![format!("链接: {url}\n内容: {}", strip_html_tags(&body))])
     }
 }
 
@@ -140,11 +124,7 @@ impl WebSearchEngine for BraveSearch {
         block_async(self.fetch_url_direct_async(url))
     }
 
-    fn search_images(
-        &self,
-        _query: &str,
-        _max_results: i64,
-    ) -> crate::error::Result<Vec<WebSearchImage>> {
+    fn search_images(&self, _query: &str, _max_results: i64) -> crate::error::Result<Vec<WebSearchImage>> {
         Ok(Vec::new())
     }
 }

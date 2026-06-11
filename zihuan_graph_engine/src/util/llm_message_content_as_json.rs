@@ -1,7 +1,6 @@
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::{info, warn};
 use serde_json::Value;
-use std::collections::HashMap;
 use zihuan_core::error::{Error, Result};
 
 /// Parses the `content` string of an `LLMMessage` into JSON.
@@ -55,10 +54,7 @@ impl Node for LLMMessageContentAsJsonNode {
 
         match serde_json::from_str(&content) {
             Ok(json) => {
-                info!(
-                    "[{}] LLMMessage content parsed as JSON successfully",
-                    self.id
-                );
+                info!("[{}] LLMMessage content parsed as JSON successfully", self.id);
                 crate::return_with_node_output![self;
                     "json" => DataValue::Json(json),
                 ]

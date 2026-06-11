@@ -147,47 +147,34 @@ impl ConfigRoot {
             Value::Null => Ok(Self::default()),
             Value::Object(object) => {
                 if object.contains_key("configs") {
-                    serde_json::from_value::<Self>(Value::Object(object)).map_err(|err| {
-                        Error::StringError(format!("failed to parse unified config root: {err}"))
-                    })
+                    serde_json::from_value::<Self>(Value::Object(object))
+                        .map_err(|err| Error::StringError(format!("failed to parse unified config root: {err}")))
                 } else {
                     Self::from_legacy_object(object)
                 }
             }
-            _ => Err(Error::StringError(
-                "system config root must be a JSON object".to_string(),
-            )),
+            _ => Err(Error::StringError("system config root must be a JSON object".to_string())),
         }
     }
 
     fn from_legacy_object(object: Map<String, Value>) -> Result<Self> {
         let mut root = Self::default();
-        root.configs.connections = migrate_legacy_collection(
-            object.get("connections").and_then(Value::as_array),
-            ConfigCategory::Connection,
-        )?;
-        root.configs.llm_refs = migrate_legacy_collection(
-            object.get("llm_refs").and_then(Value::as_array),
-            ConfigCategory::LlmRef,
-        )?;
-        root.configs.agents = migrate_legacy_collection(
-            object.get("agents").and_then(Value::as_array),
-            ConfigCategory::Agent,
-        )?;
+        root.configs.connections =
+            migrate_legacy_collection(object.get("connections").and_then(Value::as_array), ConfigCategory::Connection)?;
+        root.configs.llm_refs =
+            migrate_legacy_collection(object.get("llm_refs").and_then(Value::as_array), ConfigCategory::LlmRef)?;
+        root.configs.agents =
+            migrate_legacy_collection(object.get("agents").and_then(Value::as_array), ConfigCategory::Agent)?;
         Ok(root)
     }
 
     pub fn to_value(&self) -> Result<Value> {
-        serde_json::to_value(self).map_err(|err| {
-            Error::StringError(format!("failed to serialize unified config root: {err}"))
-        })
+        serde_json::to_value(self)
+            .map_err(|err| Error::StringError(format!("failed to serialize unified config root: {err}")))
     }
 }
 
-fn migrate_legacy_collection(
-    items: Option<&Vec<Value>>,
-    category: ConfigCategory,
-) -> Result<Vec<StoredConfigRecord>> {
+fn migrate_legacy_collection(items: Option<&Vec<Value>>, category: ConfigCategory) -> Result<Vec<StoredConfigRecord>> {
     let mut records = Vec::new();
     for item in items.into_iter().flatten() {
         let Some(object) = item.as_object() else {
@@ -195,20 +182,9 @@ fn migrate_legacy_collection(
         };
         let config_id = config_id_from_legacy_object(object);
         let kind = infer_kind_from_legacy_object(category, object)?;
-        let name = object
-            .get("name")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
-        let enabled = object
-            .get("enabled")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let updated_at = object
-            .get("updated_at")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
+        let name = object.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
+        let enabled = object.get("enabled").and_then(Value::as_bool).unwrap_or(false);
+        let updated_at = object.get("updated_at").and_then(Value::as_str).unwrap_or_default().to_string();
         let spec = legacy_object_to_spec(category, object)?;
         records.push(StoredConfigRecord {
             config_id,
@@ -237,10 +213,7 @@ fn config_id_from_legacy_object(object: &Map<String, Value>) -> String {
         .unwrap_or_else(|| Uuid::new_v4().to_string())
 }
 
-fn infer_kind_from_legacy_object(
-    category: ConfigCategory,
-    object: &Map<String, Value>,
-) -> Result<ConfigKind> {
+fn infer_kind_from_legacy_object(category: ConfigCategory, object: &Map<String, Value>) -> Result<ConfigKind> {
     match category {
         ConfigCategory::Connection => match object
             .get("kind")
@@ -255,12 +228,8 @@ fn infer_kind_from_legacy_object(
             Some("bot_adapter") | Some("ims_bot_adapter") => Ok(ConfigKind::ConnectionBotAdapter),
             Some("tavily") => Ok(ConfigKind::ConnectionWebSearchEngine),
             Some("tokenizer") => Ok(ConfigKind::ConnectionTokenizer),
-            Some(other) => Err(Error::ValidationError(format!(
-                "unsupported legacy connection kind '{other}'"
-            ))),
-            None => Err(Error::ValidationError(
-                "legacy connection is missing kind.type".to_string(),
-            )),
+            Some(other) => Err(Error::ValidationError(format!("unsupported legacy connection kind '{other}'"))),
+            None => Err(Error::ValidationError("legacy connection is missing kind.type".to_string())),
         },
         ConfigCategory::LlmRef => Ok(ConfigKind::LlmRef),
         ConfigCategory::Agent => match object
@@ -271,12 +240,8 @@ fn infer_kind_from_legacy_object(
         {
             Some("qq_chat") => Ok(ConfigKind::AgentQqChat),
             Some("http_stream") => Ok(ConfigKind::AgentHttpStream),
-            Some(other) => Err(Error::ValidationError(format!(
-                "unsupported legacy agent type '{other}'"
-            ))),
-            None => Err(Error::ValidationError(
-                "legacy agent is missing agent_type.type".to_string(),
-            )),
+            Some(other) => Err(Error::ValidationError(format!("unsupported legacy agent type '{other}'"))),
+            None => Err(Error::ValidationError("legacy agent is missing agent_type.type".to_string())),
         },
     }
 }
@@ -293,24 +258,15 @@ fn legacy_object_to_spec(category: ConfigCategory, object: &Map<String, Value>) 
             );
             spec.insert(
                 "auto_start".to_string(),
-                object
-                    .get("auto_start")
-                    .cloned()
-                    .unwrap_or(Value::Bool(false)),
+                object.get("auto_start").cloned().unwrap_or(Value::Bool(false)),
             );
             spec.insert(
                 "is_default".to_string(),
-                object
-                    .get("is_default")
-                    .cloned()
-                    .unwrap_or(Value::Bool(false)),
+                object.get("is_default").cloned().unwrap_or(Value::Bool(false)),
             );
             spec.insert(
                 "tools".to_string(),
-                object
-                    .get("tools")
-                    .cloned()
-                    .unwrap_or_else(|| Value::Array(Vec::new())),
+                object.get("tools").cloned().unwrap_or_else(|| Value::Array(Vec::new())),
             );
             Ok(Value::Object(spec))
         }
@@ -337,9 +293,8 @@ impl ConfigRepository for FsConfigRepository {
         }
 
         let content = fs::read_to_string(&self.path)?;
-        let value = serde_json::from_str::<Value>(&content).map_err(|err| {
-            Error::StringError(format!("failed to parse {}: {err}", self.path.display()))
-        })?;
+        let value = serde_json::from_str::<Value>(&content)
+            .map_err(|err| Error::StringError(format!("failed to parse {}: {err}", self.path.display())))?;
         ConfigRoot::from_value(value)
     }
 
@@ -348,9 +303,8 @@ impl ConfigRepository for FsConfigRepository {
             fs::create_dir_all(parent)?;
         }
         let value = root.to_value()?;
-        let content = serde_json::to_string_pretty(&value).map_err(|err| {
-            Error::StringError(format!("failed to serialize unified config root: {err}"))
-        })?;
+        let content = serde_json::to_string_pretty(&value)
+            .map_err(|err| Error::StringError(format!("failed to serialize unified config root: {err}")))?;
         let tmp_path = self.path.with_extension("json.tmp");
         fs::write(&tmp_path, content)?;
         fs::rename(&tmp_path, &self.path)?;
@@ -409,10 +363,7 @@ impl<R: ConfigRepository> ConfigCenter<R> {
     pub fn upsert_config(&self, record: StoredConfigRecord) -> Result<()> {
         let mut root = self.load_root()?;
         let bucket = bucket_mut(&mut root, record.kind.category());
-        if let Some(existing) = bucket
-            .iter_mut()
-            .find(|item| item.config_id == record.config_id)
-        {
+        if let Some(existing) = bucket.iter_mut().find(|item| item.config_id == record.config_id) {
             *existing = record;
         } else {
             bucket.push(record);

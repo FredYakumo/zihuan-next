@@ -1,6 +1,6 @@
 use crate::message_mysql_history_common::{
-    aggregate_history_rows, format_history_messages, history_query_row_limit,
-    message_history_chunk_row_from_row, run_mysql_query, user_history_query,
+    aggregate_history_rows, format_history_messages, history_query_row_limit, message_history_chunk_row_from_row,
+    run_mysql_query, user_history_query,
 };
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
@@ -30,9 +30,7 @@ fn extract_limit(inputs: &HashMap<String, DataValue>) -> Result<u32> {
         .ok_or_else(|| Error::InvalidNodeInput("limit is required".to_string()))?;
 
     if limit <= 0 {
-        return Err(Error::ValidationError(
-            "limit must be greater than 0".to_string(),
-        ));
+        return Err(Error::ValidationError("limit must be greater than 0".to_string()));
     }
 
     Ok(limit as u32)
@@ -48,9 +46,7 @@ fn extract_optional_group_id(inputs: &HashMap<String, DataValue>) -> Result<Opti
                 Ok(Some(group_id.to_string()))
             }
         }
-        Some(_) => Err(Error::InvalidNodeInput(
-            "group_id must be a string".to_string(),
-        )),
+        Some(_) => Err(Error::InvalidNodeInput("group_id must be a string".to_string())),
         None => Ok(None),
     }
 }
@@ -122,9 +118,7 @@ impl Node for MessageMySQLGetUserHistoryNode {
         })?;
 
         let messages = format_history_messages(aggregate_history_rows(
-            rows.into_iter()
-                .map(message_history_chunk_row_from_row)
-                .collect(),
+            rows.into_iter().map(message_history_chunk_row_from_row).collect(),
             limit as usize,
         ));
 

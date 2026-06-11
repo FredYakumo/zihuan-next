@@ -24,13 +24,9 @@ impl ImsBotAdapterProviderNode {
     }
 
     fn connection_select_field() -> NodeConfigField {
-        NodeConfigField::new(
-            CONFIG_ID_FIELD,
-            DataType::String,
-            NodeConfigWidget::ConnectionSelect,
-        )
-        .with_connection_kind("bot_adapter")
-        .with_description("选择系统中的 IMS Bot Adapter 连接配置")
+        NodeConfigField::new(CONFIG_ID_FIELD, DataType::String, NodeConfigWidget::ConnectionSelect)
+            .with_connection_kind("bot_adapter")
+            .with_description("选择系统中的 IMS Bot Adapter 连接配置")
     }
 }
 
@@ -52,18 +48,14 @@ impl Node for ImsBotAdapterProviderNode {
     }
 
     fn output_ports(&self) -> Vec<Port> {
-        vec![Port::new("ims_bot_adapter", DataType::BotAdapterRef)
-            .with_description("IMS Bot Adapter 引用")]
+        vec![Port::new("ims_bot_adapter", DataType::BotAdapterRef).with_description("IMS Bot Adapter 引用")]
     }
 
     fn config_fields(&self) -> Vec<NodeConfigField> {
         vec![Self::connection_select_field()]
     }
 
-    fn apply_inline_config(
-        &mut self,
-        inline_values: &zihuan_graph_engine::NodeConfigFlow,
-    ) -> Result<()> {
+    fn apply_inline_config(&mut self, inline_values: &zihuan_graph_engine::NodeConfigFlow) -> Result<()> {
         self.config_id = inline_values
             .get(CONFIG_ID_FIELD)
             .or_else(|| inline_values.get(LEGACY_CONNECTION_ID_FIELD))
@@ -74,19 +66,15 @@ impl Node for ImsBotAdapterProviderNode {
         Ok(())
     }
 
-    fn execute(
-        &mut self,
-        _inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, _inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let config_id = self
             .config_id
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| Error::ValidationError("config_id is required".to_string()))?;
-        let handle = zihuan_core::runtime::block_async(
-            ActiveAdapterManager::shared().get_active_bot_adapter_handle(config_id),
-        )?;
+        let handle =
+            zihuan_core::runtime::block_async(ActiveAdapterManager::shared().get_active_bot_adapter_handle(config_id))?;
 
         zihuan_graph_engine::return_with_node_output![self;
             "ims_bot_adapter" => DataValue::BotAdapterRef(handle),

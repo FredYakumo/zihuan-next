@@ -44,9 +44,7 @@ fn resolve_message_media_reference(
 
             let media_id = image.media.media_id.trim();
             if media_id.is_empty() {
-                return Err(Error::ValidationError(
-                    "outbound image marker is missing media_id".to_string(),
-                ));
+                return Err(Error::ValidationError("outbound image marker is missing media_id".to_string()));
             }
 
             if let Some(media) = available_media.get(media_id) {

@@ -17,22 +17,16 @@ pub trait SystemConfigSection {
     type Value: DeserializeOwned + Serialize + Default;
 
     fn read_from_root(root: &Value) -> Result<Self::Value> {
-        let value = root
-            .get(Self::SECTION_KEY)
-            .cloned()
-            .unwrap_or_else(|| Value::Array(Vec::new()));
+        let value = root.get(Self::SECTION_KEY).cloned().unwrap_or_else(|| Value::Array(Vec::new()));
         serde_json::from_value(value).map_err(|err| {
-            Error::StringError(format!(
-                "failed to parse system config section '{}': {err}",
-                Self::SECTION_KEY
-            ))
+            Error::StringError(format!("failed to parse system config section '{}': {err}", Self::SECTION_KEY))
         })
     }
 
     fn write_to_root(root: &mut Value, value: &Self::Value) -> Result<()> {
-        let object = root.as_object_mut().ok_or_else(|| {
-            Error::StringError("system config root must be a JSON object".to_string())
-        })?;
+        let object = root
+            .as_object_mut()
+            .ok_or_else(|| Error::StringError("system config root must be a JSON object".to_string()))?;
         object.insert(
             Self::SECTION_KEY.to_string(),
             serde_json::to_value(value).map_err(|err| {
@@ -123,11 +117,7 @@ fn normalize_root(root: &mut Value) -> Result<()> {
             *root = default_system_config_root();
             return Ok(());
         }
-        _ => {
-            return Err(Error::StringError(
-                "system config root must be a JSON object".to_string(),
-            ))
-        }
+        _ => return Err(Error::StringError("system config root must be a JSON object".to_string())),
     };
     ensure_version(object);
     Ok(())

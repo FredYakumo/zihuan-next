@@ -6,16 +6,14 @@ use log::warn;
 use model_inference::system_config::load_llm_refs;
 use serde_json::Value;
 use storage_handler::RuntimeStorageConnectionManager;
-use zihuan_agent::brain::BrainTool;
+use zihuan_agent::brain::{BrainTool, ToolExecutionOutput};
 use zihuan_core::agent_config::{current_qq_chat_agent_config, image_understand_llm_ref_id};
 use zihuan_core::data_refs::MySqlConfig;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::{InferenceParam, LLMMessage, MessagePart};
 use zihuan_core::runtime::block_async;
-use zihuan_graph_engine::message_restore::{
-    find_media_in_messages, register_mysql_ref, restore_media_by_id,
-};
+use zihuan_graph_engine::message_restore::{find_media_in_messages, register_mysql_ref, restore_media_by_id};
 use zihuan_graph_engine::object_storage::S3Ref;
 use zihuan_graph_engine::DataValue;
 
@@ -68,6 +66,10 @@ impl BrainTool for ImageUnderstandBrainTool {
             Err(error) => serde_json::json!({"error": error.to_string()}).to_string(),
         }
     }
+
+    fn execute_with_outcome(&self, call_content: &str, arguments: &Value) -> ToolExecutionOutput {
+        ToolExecutionOutput::text(self.execute(call_content, arguments))
+    }
 }
 
 pub(crate) fn build_image_understand_spec() -> StaticFunctionToolSpec {
@@ -89,18 +91,14 @@ pub(crate) fn execute_image_understand_tool(
     arguments: &Value,
     runtime_values: &HashMap<String, DataValue>,
 ) -> Result<String> {
-    let message_event = runtime_values
-        .get("message_event")
-        .and_then(|value| match value {
-            DataValue::MessageEvent(event) => Some(event),
-            _ => None,
-        });
-    let mysql_ref = runtime_values
-        .get("mysql_ref")
-        .and_then(|value| match value {
-            DataValue::MySqlRef(mysql_ref) => Some(mysql_ref.clone()),
-            _ => None,
-        });
+    let message_event = runtime_values.get("message_event").and_then(|value| match value {
+        DataValue::MessageEvent(event) => Some(event),
+        _ => None,
+    });
+    let mysql_ref = runtime_values.get("mysql_ref").and_then(|value| match value {
+        DataValue::MySqlRef(mysql_ref) => Some(mysql_ref.clone()),
+        _ => None,
+    });
     let s3_ref = runtime_values.get("s3_ref").and_then(|value| match value {
         DataValue::S3Ref(s3_ref) => Some(s3_ref.clone()),
         _ => None,
@@ -121,8 +119,7 @@ fn execute_image_understand(
 
     let persisted_media = resolve_image_understand_media(&media_id, current_event, mysql_ref)?;
     let s3_ref = resolve_image_understand_s3_ref(s3_ref)?;
-    let description =
-        analyze_persisted_media(&persisted_media, focus_text.as_deref(), s3_ref.as_deref())?;
+    let description = analyze_persisted_media(&persisted_media, focus_text.as_deref(), s3_ref.as_deref())?;
     Ok(description)
 }
 
@@ -143,12 +140,8 @@ fn resolve_image_understand_media(
         register_mysql_ref(mysql_ref);
     }
 
-    restore_media_by_id(media_id)?.ok_or_else(|| {
-        Error::ValidationError(format!(
-            "image_understand could not find media_id '{}'",
-            media_id
-        ))
-    })
+    restore_media_by_id(media_id)?
+        .ok_or_else(|| Error::ValidationError(format!("image_understand could not find media_id '{}'", media_id)))
 }
 
 fn resolve_image_understand_s3_ref(s3_ref: Option<Arc<S3Ref>>) -> Result<Option<Arc<S3Ref>>> {
@@ -160,10 +153,7 @@ fn resolve_image_understand_s3_ref(s3_ref: Option<Arc<S3Ref>>) -> Result<Option<
 
 fn load_agent_mysql_ref() -> Option<Result<Arc<MySqlConfig>>> {
     let config = current_qq_chat_agent_config().ok()?;
-    let connection_id = config
-        .resolved_rdb_id()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())?;
+    let connection_id = config.resolved_rdb_id().map(str::trim).filter(|value| !value.is_empty())?;
     Some(block_async(
         RuntimeStorageConnectionManager::shared().get_or_create_mysql_ref(connection_id),
     ))
@@ -181,11 +171,7 @@ fn load_agent_s3_ref() -> Option<Result<Arc<S3Ref>>> {
     ))
 }
 
-fn analyze_persisted_media(
-    media: &PersistedMedia,
-    focus_text: Option<&str>,
-    s3_ref: Option<&S3Ref>,
-) -> Result<String> {
+fn analyze_persisted_media(media: &PersistedMedia, focus_text: Option<&str>, s3_ref: Option<&S3Ref>) -> Result<String> {
     let image_message = ImageMessage::new(media.clone());
     let resolved = match ims_bot_adapter::multimodal_image_url::resolve_image_message_part(
         &image_message,
@@ -221,9 +207,7 @@ fn analyze_persisted_media(
     let content = response.content_text_owned().unwrap_or_default();
     let trimmed = content.trim();
     if trimmed.is_empty() {
-        return Err(Error::ValidationError(
-            "image_understand returned empty response".to_string(),
-        ));
+        return Err(Error::ValidationError("image_understand returned empty response".to_string()));
     }
 
     Ok(trimmed.to_string())
@@ -237,12 +221,10 @@ fn load_multimodal_llm() -> Result<Arc<dyn zihuan_core::llm::llm_base::LLMBase>>
         .filter(|value| !value.is_empty())
         .ok_or_else(|| {
             Error::ValidationError(
-                "image_understand requires a main llm_ref_id or a dedicated image_understand_llm_ref_id"
-                    .to_string(),
+                "image_understand requires a main llm_ref_id or a dedicated image_understand_llm_ref_id".to_string(),
             )
         })?;
-    let llm_config =
-        resolve_llm_service_config(Some(llm_ref_id), &llm_refs, DEFAULT_TOOL_IMAGE_UNDERSTAND)?;
+    let llm_config = resolve_llm_service_config(Some(llm_ref_id), &llm_refs, DEFAULT_TOOL_IMAGE_UNDERSTAND)?;
     if !llm_config.supports_multimodal_input {
         let error_message = if agent_config
             .image_understand_llm_ref_id
@@ -251,10 +233,7 @@ fn load_multimodal_llm() -> Result<Arc<dyn zihuan_core::llm::llm_base::LLMBase>>
             .filter(|value| !value.is_empty())
             .is_some()
         {
-            format!(
-                "image_understand_llm_ref_id '{}' does not support multimodal input",
-                llm_ref_id
-            )
+            format!("image_understand_llm_ref_id '{}' does not support multimodal input", llm_ref_id)
         } else {
             format!(
                 "main llm_ref_id '{}' does not support multimodal input; please choose a multimodal model for image_understand_llm_ref_id",

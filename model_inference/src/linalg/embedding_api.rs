@@ -30,12 +30,7 @@ struct EmbeddingData {
 }
 
 impl EmbeddingAPI {
-    pub fn new(
-        model_name: String,
-        api_endpoint: String,
-        api_key: Option<String>,
-        timeout: Duration,
-    ) -> Self {
+    pub fn new(model_name: String, api_endpoint: String, api_key: Option<String>, timeout: Duration) -> Self {
         Self {
             model_name,
             api_endpoint,
@@ -61,30 +56,21 @@ impl EmbeddingAPI {
                 Err(error) => {
                     let should_retry = attempt < attempts;
                     if should_retry {
-                        warn!(
-                            "[EmbeddingAPI] request failed on attempt {attempt}/{attempts}: {error}"
-                        );
+                        warn!("[EmbeddingAPI] request failed on attempt {attempt}/{attempts}: {error}");
                         std::thread::sleep(Duration::from_millis(RETRY_DELAY_MS));
                     } else {
-                        error!(
-                            "[EmbeddingAPI] request failed on final attempt {attempt}/{attempts}: {error}"
-                        );
+                        error!("[EmbeddingAPI] request failed on final attempt {attempt}/{attempts}: {error}");
                     }
                     last_error = Some(error);
                 }
             }
         }
 
-        Err(last_error.unwrap_or_else(|| {
-            Error::StringError("embedding request failed without a concrete error".to_string())
-        }))
+        Err(last_error
+            .unwrap_or_else(|| Error::StringError("embedding request failed without a concrete error".to_string())))
     }
 
-    fn try_execute_embedding_request(
-        &self,
-        client: &Client,
-        texts: &[String],
-    ) -> Result<Vec<Vec<f32>>> {
+    fn try_execute_embedding_request(&self, client: &Client, texts: &[String]) -> Result<Vec<Vec<f32>>> {
         let input = if texts.len() == 1 {
             json!(texts[0])
         } else {
@@ -136,9 +122,9 @@ impl EmbeddingBase for EmbeddingAPI {
         }
 
         let mut vectors = self.execute_embedding_request(&[text.to_string()])?;
-        vectors.pop().ok_or_else(|| {
-            Error::StringError("embedding API returned an empty data list".to_string())
-        })
+        vectors
+            .pop()
+            .ok_or_else(|| Error::StringError("embedding API returned an empty data list".to_string()))
     }
 
     fn batch_inference(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {

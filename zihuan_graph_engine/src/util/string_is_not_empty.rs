@@ -34,9 +34,7 @@ impl Node for StringIsNotEmptyNode {
         port! { name = "trim_before_check", ty = Boolean, optional, desc = "为 true 时先 trim 再判断，纯空格字符串将视为空；默认 false" },
     ];
 
-    node_output![
-        port! { name = "result", ty = Boolean, desc = "字符串非空则为 true，否则为 false" },
-    ];
+    node_output![port! { name = "result", ty = Boolean, desc = "字符串非空则为 true，否则为 false" },];
 
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;

@@ -5,6 +5,10 @@ import type { TaskLogEntry } from "../api/types";
 const MAX_LOG_ENTRIES = 500;
 const STYLE_ID = "zh-live-log-console-style";
 
+const ICON_CLIPBOARD = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>`;
+
+const ICON_MAXIMIZE = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>`;
+
 let mounted = false;
 let frameEl: HTMLDivElement | null = null;
 let bodyEl: HTMLDivElement | null = null;
@@ -70,8 +74,7 @@ function ensureStyles(): void {
 
 .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-title,
 .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-badge,
-.zh-live-log:not(.zh-live-log--expanded) .zh-live-log-btn-clear,
-.zh-live-log:not(.zh-live-log--expanded) .zh-live-log-btn-bottom {
+.zh-live-log:not(.zh-live-log--expanded) .zh-live-log-btn-clear {
   display: none;
 }
 
@@ -294,12 +297,11 @@ function ensureStyles(): void {
   .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-preview,
   .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-title,
   .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-badge,
-  .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-btn-clear,
-  .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-btn-bottom {
+  .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-btn-clear {
     display: none;
   }
 
-  .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-btn {
+  .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-toggle {
     position: absolute;
     top: 0;
     left: 0;
@@ -316,11 +318,8 @@ function ensureStyles(): void {
     justify-content: center;
   }
 
-  .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-btn::before {
-    content: "📋";
-  }
 
-  .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-btn:hover {
+  .zh-live-log:not(.zh-live-log--expanded) .zh-live-log-toggle:hover {
     background: color-mix(in srgb, var(--border) 40%, transparent 60%);
   }
 }
@@ -343,10 +342,10 @@ function render(): void {
 
   const mobile = isMobile();
   if (mobile && !expanded) {
-    toggleBtnEl.textContent = "";
+    toggleBtnEl.innerHTML = ICON_CLIPBOARD;
     toggleBtnEl.title = "展开实时日志";
   } else {
-    toggleBtnEl.textContent = expanded ? "缩小" : "⛶";
+    toggleBtnEl.innerHTML = expanded ? "缩小" : ICON_MAXIMIZE;
     toggleBtnEl.title = expanded ? "缩小实时日志" : "展开实时日志";
   }
   toggleBtnEl.setAttribute("aria-label", toggleBtnEl.title);
@@ -482,6 +481,11 @@ function bindSocket(): void {
   });
 }
 
+export function setLiveLogConsoleVisible(visible: boolean): void {
+  const el = document.querySelector(".zh-live-log") as HTMLElement | null;
+  if (el) el.style.display = visible ? "" : "none";
+}
+
 export function mountLiveLogConsole(): void {
   if (mounted) return;
   mounted = true;
@@ -504,7 +508,7 @@ export function mountLiveLogConsole(): void {
 
   toggleBtnEl = document.createElement("button");
   toggleBtnEl.type = "button";
-  toggleBtnEl.className = "zh-live-log-btn";
+  toggleBtnEl.className = "zh-live-log-btn zh-live-log-toggle";
   toggleBtnEl.addEventListener("click", () => {
     expanded = !expanded;
     render();
@@ -519,15 +523,7 @@ export function mountLiveLogConsole(): void {
     render();
   });
 
-  const bottomBtn = document.createElement("button");
-  bottomBtn.type = "button";
-  bottomBtn.className = "zh-live-log-btn zh-live-log-btn-bottom";
-  bottomBtn.textContent = "到底部";
-  bottomBtn.addEventListener("click", () => {
-    scrollToBottom();
-  });
-
-  bar.append(title, badge, toggleBtnEl, clearBtn, bottomBtn);
+  bar.append(title, badge, toggleBtnEl, clearBtn);
 
   bodyEl = document.createElement("div");
   bodyEl.className = "zh-live-log-body";

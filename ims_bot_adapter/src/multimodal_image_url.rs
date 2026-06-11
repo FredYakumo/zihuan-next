@@ -75,9 +75,7 @@ fn image_part_from_bytes_with_mime(mime_type: &str, bytes: Vec<u8>) -> MessagePa
 
 fn image_part_from_bytes(image: &ImageMessage, bytes: Vec<u8>) -> MessagePart {
     image_part_from_bytes_with_mime(
-        image
-            .mime_type()
-            .unwrap_or_else(|| infer_content_type(image_name(image))),
+        image.mime_type().unwrap_or_else(|| infer_content_type(image_name(image))),
         bytes,
     )
 }
@@ -105,10 +103,7 @@ fn derive_multimodal_cache_key(url: &str, file_name_hint: &str) -> String {
     let without_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
     let source_fragment = sanitize_object_storage_key_fragment(without_scheme, 160);
     let file_name_fragment = sanitize_object_storage_key_fragment(file_name_hint, 80);
-    format!(
-        "qq-images/multimodal-cache/{}_{}",
-        source_fragment, file_name_fragment
-    )
+    format!("qq-images/multimodal-cache/{}_{}", source_fragment, file_name_fragment)
 }
 
 fn lower_content_type_is_image(content_type: &str) -> bool {
@@ -121,10 +116,7 @@ fn lower_content_type_is_image(content_type: &str) -> bool {
 
 fn content_type_from_url_hint(url: &str) -> Option<&'static str> {
     let without_fragment = url.split('#').next().unwrap_or(url);
-    let path = without_fragment
-        .split('?')
-        .next()
-        .unwrap_or(without_fragment);
+    let path = without_fragment.split('?').next().unwrap_or(without_fragment);
     let ext = Path::new(path)
         .extension()
         .and_then(|value| value.to_str())
@@ -170,12 +162,7 @@ fn infer_file_name_from_url(url: &str, mime_type: Option<&str>) -> String {
     }
 
     let extension = mime_type.and_then(|value| {
-        match value
-            .split(';')
-            .next()
-            .map(|item| item.trim().to_ascii_lowercase())
-            .as_deref()
-        {
+        match value.split(';').next().map(|item| item.trim().to_ascii_lowercase()).as_deref() {
             Some("image/jpeg") => Some("jpg"),
             Some("image/png") => Some("png"),
             Some("image/gif") => Some("gif"),
@@ -209,10 +196,7 @@ async fn probe_remote_image_content_type(url: &str, log_prefix: &str) -> Option<
     let response = match client.head(url).send().await {
         Ok(response) => response,
         Err(error) => {
-            warn!(
-                "{log_prefix} failed to probe remote image HEAD url={}: {}",
-                url, error
-            );
+            warn!("{log_prefix} failed to probe remote image HEAD url={}: {}", url, error);
             return None;
         }
     };
@@ -278,9 +262,7 @@ async fn download_remote_image(url: &str, log_prefix: &str) -> Option<Downloaded
 
 fn run_async<T>(future: impl std::future::Future<Output = T>) -> Option<T> {
     if tokio::runtime::Handle::try_current().is_ok() {
-        Some(block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(future)
-        }))
+        Some(block_in_place(|| tokio::runtime::Handle::current().block_on(future)))
     } else {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -292,8 +274,8 @@ fn run_async<T>(future: impl std::future::Future<Output = T>) -> Option<T> {
 
 fn trim_trailing_url_punctuation(candidate: &str) -> (&str, &str) {
     let trimmed = candidate.trim_end_matches([
-        '.', ',', '!', '?', ';', ':', ')', ']', '}', '>', '"', '\'', '，', '。', '！', '？', '；',
-        '：', '）', '】', '》', '、',
+        '.', ',', '!', '?', ';', ':', ')', ']', '}', '>', '"', '\'', '，', '。', '！', '？', '；', '：', '）', '】',
+        '》', '、',
     ]);
     let suffix = &candidate[trimmed.len()..];
     (trimmed, suffix)
@@ -351,9 +333,7 @@ fn resolve_remote_url_as_image_part(
             let s3_ref = s3_ref.clone();
             let bytes = downloaded.bytes.clone();
             let content_type = final_content_type.clone();
-            match run_async(
-                async move { s3_ref.put_object(&object_key, &content_type, &bytes).await },
-            ) {
+            match run_async(async move { s3_ref.put_object(&object_key, &content_type, &bytes).await }) {
                 Some(Ok(object_url)) => {
                     info!(
                         "{log_prefix} cached remote image to object storage for multimodal input url={} object_url={}",
@@ -483,16 +463,10 @@ pub fn resolve_plain_text_segments(
         let (trimmed_url, trailing) = trim_trailing_url_punctuation(candidate);
 
         if !trimmed_url.is_empty() {
-            let file_name_hint =
-                infer_file_name_from_url(trimmed_url, content_type_from_url_hint(trimmed_url));
-            if let Some(resolved) = resolve_remote_url_as_image_part(
-                trimmed_url,
-                &file_name_hint,
-                None,
-                s3_ref,
-                cache_to_s3,
-                log_prefix,
-            ) {
+            let file_name_hint = infer_file_name_from_url(trimmed_url, content_type_from_url_hint(trimmed_url));
+            if let Some(resolved) =
+                resolve_remote_url_as_image_part(trimmed_url, &file_name_hint, None, s3_ref, cache_to_s3, log_prefix)
+            {
                 segments.push(ResolvedTextSegment::Image(resolved));
             } else {
                 segments.push(ResolvedTextSegment::Text(trimmed_url.to_string()));

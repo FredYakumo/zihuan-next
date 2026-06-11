@@ -20,15 +20,13 @@ impl ContextCompactNode {
 
     fn parse_messages_input(&self, inputs: &HashMap<String, DataValue>) -> Result<Vec<LLMMessage>> {
         match inputs.get("messages") {
-            Some(DataValue::Vec(inner_type, items)) if **inner_type == DataType::LLMMessage => {
-                items
-                    .iter()
-                    .map(|item| match item {
-                        DataValue::LLMMessage(message) => Ok(message.clone()),
-                        _ => Err(self.wrap_error("messages must contain LLMMessage items")),
-                    })
-                    .collect()
-            }
+            Some(DataValue::Vec(inner_type, items)) if **inner_type == DataType::LLMMessage => items
+                .iter()
+                .map(|item| match item {
+                    DataValue::LLMMessage(message) => Ok(message.clone()),
+                    _ => Err(self.wrap_error("messages must contain LLMMessage items")),
+                })
+                .collect(),
             _ => Err(self.wrap_error("messages is required")),
         }
     }
@@ -65,10 +63,7 @@ impl Node for ContextCompactNode {
         port! { name = "estimated_tokens_after", ty = Integer, desc = "压缩后的估算 token 数" },
     ];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let llm = match inputs.get("llm_model") {
@@ -83,8 +78,7 @@ impl Node for ContextCompactNode {
         };
         let force_compact = matches!(inputs.get("force_compact"), Some(DataValue::Boolean(true)));
 
-        let result =
-            compact_context_messages(&llm, messages, compact_context_length, &[], force_compact);
+        let result = compact_context_messages(&llm, messages, compact_context_length, &[], force_compact);
 
         zihuan_graph_engine::return_with_node_output![self;
             "messages" => DataValue::Vec(

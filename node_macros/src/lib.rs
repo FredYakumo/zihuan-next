@@ -83,12 +83,9 @@ fn expand_node_ports(input: TokenStream, kind: PortKind) -> TokenStream {
     let mut seen_names: HashSet<String> = HashSet::new();
     for port in &ports.ports {
         if !seen_names.insert(port.name.value()) {
-            return syn::Error::new(
-                port.name.span(),
-                format!("Duplicate port name '{}'", port.name.value()),
-            )
-            .to_compile_error()
-            .into();
+            return syn::Error::new(port.name.span(), format!("Duplicate port name '{}'", port.name.value()))
+                .to_compile_error()
+                .into();
         }
     }
 
@@ -122,12 +119,9 @@ fn expand_node_flow(input: TokenStream, kind: FlowKind) -> TokenStream {
     let mut seen_names: HashSet<String> = HashSet::new();
     for entry in &entries.entries {
         if !seen_names.insert(entry.key.value()) {
-            return syn::Error::new(
-                entry.key.span(),
-                format!("Duplicate flow key '{}'", entry.key.value()),
-            )
-            .to_compile_error()
-            .into();
+            return syn::Error::new(entry.key.span(), format!("Duplicate flow key '{}'", entry.key.value()))
+                .to_compile_error()
+                .into();
         }
     }
 
@@ -178,12 +172,9 @@ fn expand_return_with_node_output(input: TokenStream) -> TokenStream {
     let mut seen_names: HashSet<String> = HashSet::new();
     for entry in &entries.entries {
         if !seen_names.insert(entry.key.value()) {
-            return syn::Error::new(
-                entry.key.span(),
-                format!("Duplicate flow key '{}'", entry.key.value()),
-            )
-            .to_compile_error()
-            .into();
+            return syn::Error::new(entry.key.span(), format!("Duplicate flow key '{}'", entry.key.value()))
+                .to_compile_error()
+                .into();
         }
     }
 
@@ -242,10 +233,7 @@ impl Parse for FlowInput {
             let self_token: Token![self] = input.parse()?;
             input.parse::<Token![;]>()?;
             let entries: FlowEntryList = input.parse()?;
-            Ok(FlowInput::WithSelf {
-                self_token,
-                entries,
-            })
+            Ok(FlowInput::WithSelf { self_token, entries })
         } else {
             let entries: FlowEntryList = input.parse()?;
             Ok(FlowInput::Entries(entries))
@@ -452,10 +440,7 @@ fn datatype_tokens(expr: Expr) -> Result<proc_macro2::TokenStream> {
 
             if func_name == "Custom" {
                 if call.args.len() != 1 {
-                    return Err(syn::Error::new(
-                        call.span(),
-                        "Custom() expects one argument",
-                    ));
+                    return Err(syn::Error::new(call.span(), "Custom() expects one argument"));
                 }
                 let inner = call.args.first().cloned().unwrap();
                 if let Expr::Lit(lit) = inner {
@@ -463,10 +448,7 @@ fn datatype_tokens(expr: Expr) -> Result<proc_macro2::TokenStream> {
                         return Ok(quote! { DataType::Custom(#lit_str.to_string()) });
                     }
                 }
-                return Err(syn::Error::new(
-                    call.span(),
-                    "Custom() expects a string literal",
-                ));
+                return Err(syn::Error::new(call.span(), "Custom() expects a string literal"));
             }
 
             Err(syn::Error::new(call.span(), "Unsupported type constructor"))

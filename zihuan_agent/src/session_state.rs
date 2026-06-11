@@ -29,9 +29,7 @@ impl QqChatAgentSessionState {
                 continue;
             }
             allowed_names.push(name.to_string());
-            self.emotion_dimensions
-                .entry(name.to_string())
-                .or_insert(0.0);
+            self.emotion_dimensions.entry(name.to_string()).or_insert(0.0);
         }
         self.emotion_dimensions
             .retain(|name, _| allowed_names.iter().any(|allowed| allowed == name));
@@ -46,10 +44,7 @@ impl QqChatAgentSessionState {
         self.sync_emotion_dimensions(dimensions);
 
         let normalized_name = dimension_name.trim();
-        let Some(dimension) = dimensions
-            .iter()
-            .find(|item| item.name.trim() == normalized_name)
-        else {
+        let Some(dimension) = dimensions.iter().find(|item| item.name.trim() == normalized_name) else {
             return Err(Error::ValidationError(format!(
                 "unsupported emotion dimension '{}'",
                 dimension_name
@@ -65,18 +60,12 @@ impl QqChatAgentSessionState {
         } else {
             -weight
         };
-        let entry = self
-            .emotion_dimensions
-            .entry(dimension.name.trim().to_string())
-            .or_insert(0.0);
+        let entry = self.emotion_dimensions.entry(dimension.name.trim().to_string()).or_insert(0.0);
         *entry += delta;
         Ok(*entry)
     }
 
-    pub fn ordered_emotion_dimensions(
-        &self,
-        dimensions: &[QqChatEmotionDimensionConfig],
-    ) -> Vec<(String, f64)> {
+    pub fn ordered_emotion_dimensions(&self, dimensions: &[QqChatEmotionDimensionConfig]) -> Vec<(String, f64)> {
         dimensions
             .iter()
             .filter_map(|dimension| {
@@ -84,10 +73,7 @@ impl QqChatAgentSessionState {
                 if name.is_empty() {
                     return None;
                 }
-                Some((
-                    name.to_string(),
-                    *self.emotion_dimensions.get(name).unwrap_or(&0.0),
-                ))
+                Some((name.to_string(), *self.emotion_dimensions.get(name).unwrap_or(&0.0)))
             })
             .collect()
     }

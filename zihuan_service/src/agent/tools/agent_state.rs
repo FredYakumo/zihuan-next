@@ -59,19 +59,11 @@ impl BrainTool for UpdateAgentStateBrainTool {
             let direction = match direction.as_str() {
                 "increase" => EmotionAdjustmentDirection::Increase,
                 "decrease" => EmotionAdjustmentDirection::Decrease,
-                other => {
-                    return Err(Error::ValidationError(format!(
-                        "unsupported direction '{}'",
-                        other
-                    )))
-                }
+                other => return Err(Error::ValidationError(format!("unsupported direction '{}'", other))),
             };
             let mut session_state = self.session_state.lock().unwrap();
-            let current_value = session_state.apply_emotion_adjustment(
-                &self.emotion_dimensions,
-                &dimension,
-                direction,
-            )?;
+            let current_value =
+                session_state.apply_emotion_adjustment(&self.emotion_dimensions, &dimension, direction)?;
             Ok(serde_json::json!({
                 "ok": true,
                 "dimension": dimension,

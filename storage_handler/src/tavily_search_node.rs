@@ -36,63 +36,39 @@ impl Node for TavilySearchNode {
         port! { name = "search_count", ty = Integer, desc = "返回结果数量，必须大于 0" },
     ];
 
-    node_output![
-        port! { name = "results", ty = Vec(String), desc = "搜索结果列表，每项包含标题、链接、内容" },
-    ];
+    node_output![port! { name = "results", ty = Vec(String), desc = "搜索结果列表，每项包含标题、链接、内容" },];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let tavily_ref = match inputs.get("tavily_ref") {
             Some(DataValue::WebSearchEngineRef(value)) => value.clone(),
-            _ => {
-                return Err(Error::ValidationError(
-                    "Missing required input: tavily_ref".to_string(),
-                ))
-            }
+            _ => return Err(Error::ValidationError("Missing required input: tavily_ref".to_string())),
         };
 
         let query = match inputs.get("query") {
             Some(DataValue::String(value)) => value.trim().to_string(),
-            _ => {
-                return Err(Error::ValidationError(
-                    "Missing required input: query".to_string(),
-                ))
-            }
+            _ => return Err(Error::ValidationError("Missing required input: query".to_string())),
         };
 
         if query.is_empty() {
-            return Err(Error::ValidationError(
-                "query must not be blank".to_string(),
-            ));
+            return Err(Error::ValidationError("query must not be blank".to_string()));
         }
 
         let search_count = match inputs.get("search_count") {
             Some(DataValue::Integer(value)) => *value,
-            _ => {
-                return Err(Error::ValidationError(
-                    "Missing required input: search_count".to_string(),
-                ))
-            }
+            _ => return Err(Error::ValidationError("Missing required input: search_count".to_string())),
         };
 
         if search_count <= 0 {
-            return Err(Error::ValidationError(
-                "search_count must be greater than 0".to_string(),
-            ));
+            return Err(Error::ValidationError("search_count must be greater than 0".to_string()));
         }
 
         let results = tavily_ref.search(&query, search_count)?;
 
         let outputs = HashMap::from([(
             "results".to_string(),
-            DataValue::Vec(
-                Box::new(DataType::String),
-                results.into_iter().map(DataValue::String).collect(),
-            ),
+            DataValue::Vec(Box::new(DataType::String), results.into_iter().map(DataValue::String).collect()),
         )]);
 
         let outputs = zihuan_graph_engine::NodeOutputFlow::from(outputs);

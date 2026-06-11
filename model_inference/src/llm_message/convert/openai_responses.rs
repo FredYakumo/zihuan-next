@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use tokio::sync::mpsc;
 use zihuan_core::llm::tooling::{ToolCalls, ToolCallsFuncSpec};
 use zihuan_core::llm::{
-    str_to_role, InferenceParam, LLMMessage, LLMMessageConvertStyle, MessagePart, TokenUsage,
+    str_to_role, InferenceParam, LLMMessage, LLMMessageConvertStyle, MessagePart, StreamToken, TokenUsage,
 };
 
 #[derive(Default)]
@@ -43,34 +43,20 @@ fn parse_token_usage(value: Option<&Value>) -> Option<TokenUsage> {
                 .and_then(|v| v.as_u64())
                 .map(|v| v as usize)
         })
-        .or_else(|| {
-            value
-                .get("cache_hit_tokens")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as usize)
-        });
+        .or_else(|| value.get("cache_hit_tokens").and_then(|v| v.as_u64()).map(|v| v as usize));
 
     let prompt_cache_miss_tokens = value
         .get("prompt_cache_miss_tokens")
         .and_then(|v| v.as_u64())
         .map(|v| v as usize)
-        .or_else(|| {
-            value
-                .get("cache_miss_tokens")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as usize)
-        });
+        .or_else(|| value.get("cache_miss_tokens").and_then(|v| v.as_u64()).map(|v| v as usize));
 
     let prompt_tokens = value
         .get("prompt_tokens")
         .and_then(|v| v.as_u64())
         .or_else(|| value.get("input_tokens").and_then(|v| v.as_u64()))
         .map(|v| v as usize)
-        .or_else(|| {
-            cached_prompt_tokens
-                .zip(prompt_cache_miss_tokens)
-                .map(|(hit, miss)| hit + miss)
-        });
+        .or_else(|| cached_prompt_tokens.zip(prompt_cache_miss_tokens).map(|(hit, miss)| hit + miss));
 
     Some(TokenUsage {
         prompt_tokens,
@@ -81,10 +67,7 @@ fn parse_token_usage(value: Option<&Value>) -> Option<TokenUsage> {
             .and_then(|v| v.as_u64())
             .or_else(|| value.get("output_tokens").and_then(|v| v.as_u64()))
             .map(|v| v as usize),
-        total_tokens: value
-            .get("total_tokens")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as usize),
+        total_tokens: value.get("total_tokens").and_then(|v| v.as_u64()).map(|v| v as usize),
     })
 }
 
@@ -127,18 +110,13 @@ fn canonical_responses_tool_key(
     }
 
     if let Some(item_id) = item_id {
-        return tool_call_aliases
-            .get(item_id)
-            .cloned()
-            .unwrap_or_else(|| item_id.to_string());
+        return tool_call_aliases.get(item_id).cloned().unwrap_or_else(|| item_id.to_string());
     }
 
     "responses_function_call".to_string()
 }
 
-fn collect_responses_stream_tool_calls(
-    streamed_tool_calls: BTreeMap<String, StreamToolCallDelta>,
-) -> Vec<ToolCalls> {
+fn collect_responses_stream_tool_calls(streamed_tool_calls: BTreeMap<String, StreamToolCallDelta>) -> Vec<ToolCalls> {
     streamed_tool_calls
         .into_iter()
         .filter_map(|(index, call)| {
@@ -176,12 +154,8 @@ pub(crate) fn build_responses_request_body_for_style(
 ) -> Value {
     let convert_style = match style {
         ResponsesRequestStyle::Default => LLMMessageConvertStyle::OpenAiResponses,
-        ResponsesRequestStyle::MessageCompat => {
-            LLMMessageConvertStyle::OpenAiResponsesMessageCompat
-        }
-        ResponsesRequestStyle::ImageUrlObjectCompat => {
-            LLMMessageConvertStyle::OpenAiResponsesImageUrlObjectCompat
-        }
+        ResponsesRequestStyle::MessageCompat => LLMMessageConvertStyle::OpenAiResponsesMessageCompat,
+        ResponsesRequestStyle::ImageUrlObjectCompat => LLMMessageConvertStyle::OpenAiResponsesImageUrlObjectCompat,
     };
     let input = param
         .messages
@@ -248,16 +222,12 @@ pub fn parse_responses_response(api_resp: &Value) -> Option<LLMMessage> {
                     for content_item in contents {
                         match content_item.get("type").and_then(|value| value.as_str()) {
                             Some("output_text") | Some("text") => {
-                                if let Some(text) =
-                                    content_item.get("text").and_then(|value| value.as_str())
-                                {
+                                if let Some(text) = content_item.get("text").and_then(|value| value.as_str()) {
                                     content.push_str(text);
                                 }
                             }
                             Some("reasoning") => {
-                                if let Some(text) =
-                                    content_item.get("summary").and_then(|value| value.as_str())
-                                {
+                                if let Some(text) = content_item.get("summary").and_then(|value| value.as_str()) {
                                     reasoning_content.push_str(text);
                                 }
                             }
@@ -281,10 +251,7 @@ pub fn parse_responses_response(api_resp: &Value) -> Option<LLMMessage> {
                     );
                     continue;
                 };
-                let arguments_raw = item
-                    .get("arguments")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("{}");
+                let arguments_raw = item.get("arguments").and_then(|value| value.as_str()).unwrap_or("{}");
                 let arguments = serde_json::from_str::<Value>(arguments_raw)
                     .unwrap_or_else(|_| Value::String(arguments_raw.to_string()));
                 let id = item
@@ -306,11 +273,7 @@ pub fn parse_responses_response(api_resp: &Value) -> Option<LLMMessage> {
         }
     }
 
-    if content.is_empty()
-        && reasoning_content.is_empty()
-        && tool_calls.is_empty()
-        && usage.is_none()
-    {
+    if content.is_empty() && reasoning_content.is_empty() && tool_calls.is_empty() && usage.is_none() {
         return None;
     }
 
@@ -376,12 +339,7 @@ pub fn parse_responses_sse_response(response_text: &str) -> Option<LLMMessage> {
                             call_id,
                         );
                         let entry = streamed_tool_calls.entry(key.clone()).or_default();
-                        entry.id = Some(
-                            call_id
-                                .filter(|value| !value.trim().is_empty())
-                                .unwrap_or(&key)
-                                .to_string(),
-                        );
+                        entry.id = Some(call_id.filter(|value| !value.trim().is_empty()).unwrap_or(&key).to_string());
                         entry.type_name = Some("function".to_string());
                         if let Some(name) = item
                             .get("name")
@@ -391,9 +349,7 @@ pub fn parse_responses_sse_response(response_text: &str) -> Option<LLMMessage> {
                             entry.function_name = Some(name.to_string());
                         }
                         if entry.function_arguments.is_empty() {
-                            if let Some(arguments) =
-                                item.get("arguments").and_then(|value| value.as_str())
-                            {
+                            if let Some(arguments) = item.get("arguments").and_then(|value| value.as_str()) {
                                 entry.function_arguments.push_str(arguments);
                             }
                         }
@@ -403,19 +359,10 @@ pub fn parse_responses_sse_response(response_text: &str) -> Option<LLMMessage> {
             Some("response.function_call_arguments.delta") => {
                 let item_id = chunk.get("item_id").and_then(|value| value.as_str());
                 let call_id = chunk.get("call_id").and_then(|value| value.as_str());
-                let key = canonical_responses_tool_key(
-                    &mut streamed_tool_calls,
-                    &mut tool_call_aliases,
-                    item_id,
-                    call_id,
-                );
+                let key =
+                    canonical_responses_tool_key(&mut streamed_tool_calls, &mut tool_call_aliases, item_id, call_id);
                 let entry = streamed_tool_calls.entry(key.clone()).or_default();
-                entry.id = Some(
-                    call_id
-                        .filter(|value| !value.trim().is_empty())
-                        .unwrap_or(&key)
-                        .to_string(),
-                );
+                entry.id = Some(call_id.filter(|value| !value.trim().is_empty()).unwrap_or(&key).to_string());
                 entry.type_name = Some("function".to_string());
                 if let Some(delta) = chunk.get("delta").and_then(|value| value.as_str()) {
                     entry.function_arguments.push_str(delta);
@@ -424,23 +371,13 @@ pub fn parse_responses_sse_response(response_text: &str) -> Option<LLMMessage> {
             Some("response.function_call_arguments.done") => {
                 let item_id = chunk.get("item_id").and_then(|value| value.as_str());
                 let call_id = chunk.get("call_id").and_then(|value| value.as_str());
-                let key = canonical_responses_tool_key(
-                    &mut streamed_tool_calls,
-                    &mut tool_call_aliases,
-                    item_id,
-                    call_id,
-                );
+                let key =
+                    canonical_responses_tool_key(&mut streamed_tool_calls, &mut tool_call_aliases, item_id, call_id);
                 let entry = streamed_tool_calls.entry(key.clone()).or_default();
-                entry.id = Some(
-                    call_id
-                        .filter(|value| !value.trim().is_empty())
-                        .unwrap_or(&key)
-                        .to_string(),
-                );
+                entry.id = Some(call_id.filter(|value| !value.trim().is_empty()).unwrap_or(&key).to_string());
                 entry.type_name = Some("function".to_string());
                 if entry.function_arguments.is_empty() {
-                    if let Some(arguments) = chunk.get("arguments").and_then(|value| value.as_str())
-                    {
+                    if let Some(arguments) = chunk.get("arguments").and_then(|value| value.as_str()) {
                         entry.function_arguments.push_str(arguments);
                     }
                 }
@@ -479,7 +416,7 @@ pub fn parse_responses_sse_response(response_text: &str) -> Option<LLMMessage> {
 
 pub async fn parse_responses_sse_stream_response(
     response: reqwest::Response,
-    token_tx: mpsc::UnboundedSender<String>,
+    token_tx: mpsc::UnboundedSender<StreamToken>,
 ) -> LLMMessage {
     use futures_util::StreamExt;
 
@@ -524,15 +461,13 @@ pub async fn parse_responses_sse_stream_response(
                     if let Some(delta) = chunk_data.get("delta").and_then(|value| value.as_str()) {
                         if !delta.is_empty() {
                             content.push_str(delta);
-                            let _ = token_tx.send(delta.to_string());
+                            let _ = token_tx.send(StreamToken::content(delta));
                         }
                     }
                 }
                 Some("response.output_item.added") | Some("response.output_item.done") => {
                     if let Some(item) = chunk_data.get("item") {
-                        if item.get("type").and_then(|value| value.as_str())
-                            == Some("function_call")
-                        {
+                        if item.get("type").and_then(|value| value.as_str()) == Some("function_call") {
                             let item_id = item.get("id").and_then(|value| value.as_str());
                             let call_id = item.get("call_id").and_then(|value| value.as_str());
                             let key = canonical_responses_tool_key(
@@ -542,12 +477,8 @@ pub async fn parse_responses_sse_stream_response(
                                 call_id,
                             );
                             let entry = streamed_tool_calls.entry(key.clone()).or_default();
-                            entry.id = Some(
-                                call_id
-                                    .filter(|value| !value.trim().is_empty())
-                                    .unwrap_or(&key)
-                                    .to_string(),
-                            );
+                            entry.id =
+                                Some(call_id.filter(|value| !value.trim().is_empty()).unwrap_or(&key).to_string());
                             entry.type_name = Some("function".to_string());
                             if let Some(name) = item
                                 .get("name")
@@ -557,9 +488,7 @@ pub async fn parse_responses_sse_stream_response(
                                 entry.function_name = Some(name.to_string());
                             }
                             if entry.function_arguments.is_empty() {
-                                if let Some(arguments) =
-                                    item.get("arguments").and_then(|value| value.as_str())
-                                {
+                                if let Some(arguments) = item.get("arguments").and_then(|value| value.as_str()) {
                                     entry.function_arguments.push_str(arguments);
                                 }
                             }
@@ -576,12 +505,7 @@ pub async fn parse_responses_sse_stream_response(
                         call_id,
                     );
                     let entry = streamed_tool_calls.entry(key.clone()).or_default();
-                    entry.id = Some(
-                        call_id
-                            .filter(|value| !value.trim().is_empty())
-                            .unwrap_or(&key)
-                            .to_string(),
-                    );
+                    entry.id = Some(call_id.filter(|value| !value.trim().is_empty()).unwrap_or(&key).to_string());
                     entry.type_name = Some("function".to_string());
                     if let Some(delta) = chunk_data.get("delta").and_then(|value| value.as_str()) {
                         entry.function_arguments.push_str(delta);
@@ -597,17 +521,10 @@ pub async fn parse_responses_sse_stream_response(
                         call_id,
                     );
                     let entry = streamed_tool_calls.entry(key.clone()).or_default();
-                    entry.id = Some(
-                        call_id
-                            .filter(|value| !value.trim().is_empty())
-                            .unwrap_or(&key)
-                            .to_string(),
-                    );
+                    entry.id = Some(call_id.filter(|value| !value.trim().is_empty()).unwrap_or(&key).to_string());
                     entry.type_name = Some("function".to_string());
                     if entry.function_arguments.is_empty() {
-                        if let Some(arguments) =
-                            chunk_data.get("arguments").and_then(|value| value.as_str())
-                        {
+                        if let Some(arguments) = chunk_data.get("arguments").and_then(|value| value.as_str()) {
                             entry.function_arguments.push_str(arguments);
                         }
                     }

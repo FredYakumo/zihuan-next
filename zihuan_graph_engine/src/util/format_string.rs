@@ -36,10 +36,7 @@ fn clamp_to_char_boundary(text: &str, byte_offset: usize) -> usize {
     offset
 }
 
-pub fn find_incomplete_variable_at(
-    text: &str,
-    cursor_byte_offset: usize,
-) -> Option<IncompleteVariable> {
+pub fn find_incomplete_variable_at(text: &str, cursor_byte_offset: usize) -> Option<IncompleteVariable> {
     let cursor_index = clamp_to_char_boundary(text, cursor_byte_offset);
     let before_cursor = &text[..cursor_index];
     let open_index = before_cursor.rfind("${")?;
@@ -55,11 +52,7 @@ pub fn find_incomplete_variable_at(
     })
 }
 
-pub fn complete_incomplete_variable_at(
-    text: &str,
-    cursor_byte_offset: usize,
-    suggestion: &str,
-) -> Option<String> {
+pub fn complete_incomplete_variable_at(text: &str, cursor_byte_offset: usize, suggestion: &str) -> Option<String> {
     let ctx = find_incomplete_variable_at(text, cursor_byte_offset)?;
 
     // If there is already a closing brace after the cursor, replace the full
@@ -120,9 +113,11 @@ impl Node for FormatStringNode {
             .with_description("格式化模板字符串，使用 ${变量名} 语法引用输入变量")
             .optional()
             .hidden()];
-        ports.extend(self.variables.iter().map(|var| {
-            Port::new(var.clone(), DataType::Any).with_description(format!("变量 {var}"))
-        }));
+        ports.extend(
+            self.variables
+                .iter()
+                .map(|var| Port::new(var.clone(), DataType::Any).with_description(format!("变量 {var}"))),
+        );
         ports
     }
 

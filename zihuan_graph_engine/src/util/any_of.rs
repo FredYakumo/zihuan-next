@@ -1,4 +1,4 @@
-use crate::{node_input, node_output, node_output_flow, DataType, Node, Port};
+use crate::{node_input, node_output, DataType, Node, Port};
 use zihuan_core::error::Result;
 
 /// Waits for multiple inputs, then forwards one of them unchanged.
@@ -43,9 +43,7 @@ impl Node for AnyOfNode {
             .get("first")
             .or_else(|| inputs.get("second"))
             .cloned()
-            .ok_or_else(|| {
-                zihuan_core::validation_error!("AnyOfNode 至少需要一个输入 (first 或 second)")
-            })?;
+            .ok_or_else(|| zihuan_core::validation_error!("AnyOfNode 至少需要一个输入 (first 或 second)"))?;
 
         crate::return_with_node_output![self;
             "output" => output,

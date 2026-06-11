@@ -28,25 +28,17 @@ impl Node for PreviewQQMessageListNode {
         Some("在节点卡片内实时预览 QQMessage 列表（含图片）")
     }
 
-    node_input![
-        port! { name = "messages", ty = Vec(QQMessage), desc = "要预览的 QQ 消息列表", optional },
-    ];
+    node_input![port! { name = "messages", ty = Vec(QQMessage), desc = "要预览的 QQ 消息列表", optional },];
 
     node_output![];
 
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
-        let outputs = if let Some(value) = inputs.get("messages") {
-            node_output_flow!["messages" => value.clone()]
-        } else {
-            node_output_flow![]
-        };
-
-        let outputs = inputs.get("messages").cloned().map_or_else(
-            || node_output_flow![],
-            |messages| node_output_flow!["messages" => messages],
-        );
+        let outputs = inputs
+            .get("messages")
+            .cloned()
+            .map_or_else(|| node_output_flow![], |messages| node_output_flow!["messages" => messages]);
 
         self.validate_outputs(&outputs)?;
         Ok(outputs)

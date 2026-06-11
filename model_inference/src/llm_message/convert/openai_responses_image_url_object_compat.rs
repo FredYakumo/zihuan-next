@@ -1,6 +1,6 @@
 use serde_json::Value;
 use tokio::sync::mpsc;
-use zihuan_core::llm::{InferenceParam, LLMMessage};
+use zihuan_core::llm::{InferenceParam, LLMMessage, StreamToken};
 
 use super::openai_responses::{
     build_responses_request_body_for_style, parse_responses_response, parse_responses_sse_response,
@@ -26,15 +26,13 @@ pub fn parse_responses_image_url_object_compat_response(api_resp: &Value) -> Opt
     parse_responses_response(api_resp)
 }
 
-pub fn parse_responses_image_url_object_compat_sse_response(
-    response_text: &str,
-) -> Option<LLMMessage> {
+pub fn parse_responses_image_url_object_compat_sse_response(response_text: &str) -> Option<LLMMessage> {
     parse_responses_sse_response(response_text)
 }
 
 pub async fn parse_responses_image_url_object_compat_sse_stream_response(
     response: reqwest::Response,
-    token_tx: mpsc::UnboundedSender<String>,
+    token_tx: mpsc::UnboundedSender<StreamToken>,
 ) -> LLMMessage {
     parse_responses_sse_stream_response(response, token_tx).await
 }

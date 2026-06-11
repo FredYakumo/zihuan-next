@@ -49,17 +49,11 @@ fn tool_input_expands_reply_source_images_into_top_level_message_list() {
         "precondition failed: original event should still begin with reply shell"
     );
     assert!(
-        expanded
-            .message_list
-            .iter()
-            .any(|message| matches!(message, Message::Image(_))),
+        expanded.message_list.iter().any(|message| matches!(message, Message::Image(_))),
         "expanded tool input should expose referenced images at the top level"
     );
     assert!(
-        !expanded
-            .message_list
-            .iter()
-            .any(|message| matches!(message, Message::Reply(_))),
+        !expanded.message_list.iter().any(|message| matches!(message, Message::Reply(_))),
         "expanded tool input should replace reply shells with explicit content"
     );
 }

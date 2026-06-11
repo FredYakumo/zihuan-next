@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 

@@ -10,11 +10,11 @@ use tokio::sync::mpsc;
 use zihuan_core::llm::llm_base::LLMBase;
 use zihuan_core::llm::tooling::FunctionTool;
 use zihuan_core::llm::tooling::ToolCalls;
-use zihuan_core::llm::{InferenceParam, LLMMessage, MessagePart, MessageRole};
+use zihuan_core::llm::{InferenceParam, LLMMessage, MessagePart, MessageRole, StreamToken};
 use zihuan_core::task_context::{
-    scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime,
-    AgentTaskStatus,
+    scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskRuntime, AgentTaskStatus,
 };
+use zihuan_core::workspace::AskUserRequest;
 pub use zihuan_core::tool_runtime::ToolRunDuration;
 
 pub const MAX_TOOL_ITERATIONS: usize = 25;
@@ -40,10 +40,7 @@ fn truncate_for_log(text: &str, max_chars: usize) -> String {
     format!("{truncated}...(truncated,total_chars={total_chars})")
 }
 
-fn format_cache_hit_rate(
-    cached_prompt_tokens: Option<usize>,
-    prompt_tokens: Option<usize>,
-) -> String {
+fn format_cache_hit_rate(cached_prompt_tokens: Option<usize>, prompt_tokens: Option<usize>) -> String {
     match (cached_prompt_tokens, prompt_tokens) {
         (Some(cached), Some(prompt)) if prompt > 0 => {
             format!("{:.2}%", (cached as f64 / prompt as f64) * 100.0)
@@ -138,6 +135,9 @@ pub trait BrainTool: Send + Sync + 'static {
     /// Execute the tool call. `call_content` is the assistant's text for this turn
     /// (used e.g. to send a progress notification before doing the actual work).
     fn execute(&self, call_content: &str, arguments: &Value) -> String;
+    fn execute_with_outcome(&self, call_content: &str, arguments: &Value) -> ToolExecutionOutput {
+        ToolExecutionOutput::text(self.execute(call_content, arguments))
+    }
     /// Declares whether this tool should be treated as short or long running.
     /// Long tools may emit task lifecycle updates, but still execute
     /// synchronously so the LLM receives the real result immediately.
@@ -147,27 +147,19 @@ pub trait BrainTool: Send + Sync + 'static {
 }
 
 pub trait BrainObserver: Send + Sync + 'static {
-    fn on_assistant_tool_request(
-        &self,
-        _iteration: usize,
-        _content: &str,
-        _tool_calls: &[ToolCalls],
-    ) {
-    }
+    fn on_assistant_tool_request(&self, _iteration: usize, _content: &str, _tool_calls: &[ToolCalls]) {}
 
     fn on_tool_start(&self, _name: &str, _call_id: &str, _arguments: &Value) {}
 
     fn on_tool_finish(&self, _name: &str, _call_id: &str, _result: &str) {}
 
+    fn on_ask_user(&self, _call_id: &str, _request: &AskUserRequest) {}
+
     fn on_final_assistant(&self, _response: &LLMMessage, _stop_reason: &BrainStopReason) {}
 }
 
 pub trait BrainIterationHook: Send + Sync + 'static {
-    fn on_before_inference(
-        &self,
-        _iteration: usize,
-        _conversation: &[LLMMessage],
-    ) -> Vec<LLMMessage> {
+    fn on_before_inference(&self, _iteration: usize, _conversation: &[LLMMessage]) -> Vec<LLMMessage> {
         Vec::new()
     }
 }
@@ -181,6 +173,30 @@ pub enum BrainStopReason {
     TransportError(String),
     /// Reached [`MAX_TOOL_ITERATIONS`] without a final assistant message.
     MaxIterationsReached,
+    /// A tool needs follow-up user input before the next LLM iteration can continue.
+    AwaitUserInput(AskUserRequest),
+}
+
+#[derive(Debug, Clone)]
+pub struct ToolExecutionOutput {
+    pub result: String,
+    pub ask_user: Option<AskUserRequest>,
+}
+
+impl ToolExecutionOutput {
+    pub fn text(result: impl Into<String>) -> Self {
+        Self {
+            result: result.into(),
+            ask_user: None,
+        }
+    }
+
+    pub fn ask_user(result: impl Into<String>, request: AskUserRequest) -> Self {
+        Self {
+            result: result.into(),
+            ask_user: Some(request),
+        }
+    }
 }
 
 /// Orchestrates a multi-turn LLM ↔ tool call loop.
@@ -248,7 +264,7 @@ impl Brain {
         call_content: &str,
         arguments: &Value,
         tool_name: &str,
-    ) -> String {
+    ) -> ToolExecutionOutput {
         if tool.run_duration() == ToolRunDuration::Long {
             if let Some(long_ctx) = &self.long_task_context {
                 let task_name = format!("工具: {tool_name}");
@@ -262,36 +278,37 @@ impl Brain {
                 });
                 let task_id = handle.task_id.clone();
                 if let Some(progress_text) = current_task_progress_message(call_content) {
-                    long_ctx
-                        .task_runtime
-                        .append_task_progress(&task_id, progress_text);
+                    long_ctx.task_runtime.append_task_progress(&task_id, progress_text);
                 }
-                long_ctx
-                    .notifier
-                    .on_start(&task_id, &task_name, call_content);
+                long_ctx.notifier.on_start(&task_id, &task_name, call_content);
                 let result = scope_task_runtime(Arc::clone(&long_ctx.task_runtime), || {
-                    scope_task_id(task_id.clone(), || tool.execute(call_content, arguments))
+                    scope_task_id(task_id.clone(), || tool.execute_with_outcome(call_content, arguments))
                 });
                 handle.finish(AgentTaskResult {
                     status: Some(AgentTaskStatus::Success),
-                    result_summary: Some(result.clone()),
+                    result_summary: Some(result.result.clone()),
                     error_message: None,
                 });
-                long_ctx.notifier.on_complete(&task_id, &task_name, &result);
-                info!(
-                    "[Brain] tool '{}' completed as long task_id={}",
-                    tool_name, task_id
-                );
+                long_ctx.notifier.on_complete(&task_id, &task_name, &result.result);
+                info!("[Brain] tool '{}' completed as long task_id={}", tool_name, task_id);
                 return result;
             }
         }
-        tool.execute(call_content, arguments)
+        tool.execute_with_outcome(call_content, arguments)
     }
 
     fn log_llm_usage(&self, response: &LLMMessage) {
         let Some(usage) = response.usage.as_ref() else {
             return;
         };
+
+        if let Some(reasoning) = &response.reasoning_content {
+            info!(
+                "[Brain] llm reasoning ({} chars): {}",
+                reasoning.len(),
+                truncate_for_log(reasoning, LOG_PREVIEW_CHARS)
+            );
+        }
 
         info!(
             "[Brain] llm usage model={} prompt_tokens={} cached_prompt_tokens={} prompt_cache_miss_tokens={} completion_tokens={} total_tokens={} cache_hit_rate={}",
@@ -361,10 +378,7 @@ impl Brain {
                     warn!("[Brain] Transport error on iteration {iteration}: {content}");
                     let msg = content.to_string();
                     if let Some(observer) = self.observer.as_ref() {
-                        observer.on_final_assistant(
-                            &response,
-                            &BrainStopReason::TransportError(msg.clone()),
-                        );
+                        observer.on_final_assistant(&response, &BrainStopReason::TransportError(msg.clone()));
                     }
                     output.push(response);
                     return (output, BrainStopReason::TransportError(msg));
@@ -390,6 +404,14 @@ impl Brain {
             }
 
             let tool_call_content = response.content_text_owned().unwrap_or_default();
+            if let Some(reasoning) = &response.reasoning_content {
+                info!(
+                    "[Brain] iteration {} reasoning ({} chars): {}",
+                    iteration + 1,
+                    reasoning.len(),
+                    truncate_for_log(reasoning, LOG_PREVIEW_CHARS)
+                );
+            }
             if !tool_call_content.is_empty() {
                 info!(
                     "[Brain] iteration {} assistant content: {}",
@@ -403,11 +425,7 @@ impl Brain {
                 response.tool_calls.len()
             );
             if let Some(observer) = self.observer.as_ref() {
-                observer.on_assistant_tool_request(
-                    iteration + 1,
-                    &tool_call_content,
-                    &response.tool_calls,
-                );
+                observer.on_assistant_tool_request(iteration + 1, &tool_call_content, &response.tool_calls);
             }
             conversation.push(response.clone());
             output.push(response.clone());
@@ -423,38 +441,37 @@ impl Brain {
                 if let Some(observer) = self.observer.as_ref() {
                     observer.on_tool_start(&tc.function.name, &tc.id, &tc.function.arguments);
                 }
-                let matching_tool = self
-                    .tools
-                    .iter()
-                    .find(|t| t.spec().name() == tc.function.name);
+                let matching_tool = self.tools.iter().find(|t| t.spec().name() == tc.function.name);
                 let result = if let Some(tool) = matching_tool {
-                    self.execute_tool_call(
-                        tool,
-                        &tool_call_content,
-                        &tc.function.arguments,
-                        &tc.function.name,
-                    )
+                    self.execute_tool_call(tool, &tool_call_content, &tc.function.arguments, &tc.function.name)
                 } else {
                     warn!(
                         "[Brain] Tool '{}' not found for call id={} arguments={}",
                         tc.function.name, tc.id, tc.function.arguments
                     );
-                    serde_json::json!({"error": format!("Tool '{}' not found", tc.function.name)})
-                        .to_string()
+                    ToolExecutionOutput::text(
+                        serde_json::json!({"error": format!("Tool '{}' not found", tc.function.name)}).to_string(),
+                    )
                 };
 
                 info!(
                     "[Brain] tool call id={} name={} result: {}",
                     tc.id,
                     tc.function.name,
-                    truncate_for_log(&result, LOG_PREVIEW_CHARS)
+                    truncate_for_log(&result.result, LOG_PREVIEW_CHARS)
                 );
                 if let Some(observer) = self.observer.as_ref() {
-                    observer.on_tool_finish(&tc.function.name, &tc.id, &result);
+                    observer.on_tool_finish(&tc.function.name, &tc.id, &result.result);
                 }
-                let msg = LLMMessage::tool_result(tc.id.clone(), result);
+                let msg = LLMMessage::tool_result(tc.id.clone(), result.result.clone());
                 conversation.push(msg.clone());
                 output.push(msg);
+                if let Some(request) = result.ask_user {
+                    if let Some(observer) = self.observer.as_ref() {
+                        observer.on_ask_user(&tc.id, &request);
+                    }
+                    return (output, BrainStopReason::AwaitUserInput(request));
+                }
             }
         }
 
@@ -465,7 +482,7 @@ impl Brain {
     pub async fn run_streaming(
         &self,
         messages: Vec<LLMMessage>,
-        token_tx: mpsc::UnboundedSender<String>,
+        token_tx: mpsc::UnboundedSender<StreamToken>,
     ) -> (Vec<LLMMessage>, BrainStopReason) {
         let tool_specs: Vec<Arc<dyn FunctionTool>> = self.tools.iter().map(|t| t.spec()).collect();
         let mut conversation = sanitize_messages_for_inference(messages);
@@ -484,12 +501,11 @@ impl Brain {
                 append_tool_summary_to_system(&mut conversation, &counts);
             }
 
-            let tools_param: Option<&Vec<Arc<dyn FunctionTool>>> =
-                if is_last_iteration || tool_specs.is_empty() {
-                    None
-                } else {
-                    Some(&tool_specs)
-                };
+            let tools_param: Option<&Vec<Arc<dyn FunctionTool>>> = if is_last_iteration || tool_specs.is_empty() {
+                None
+            } else {
+                Some(&tool_specs)
+            };
 
             let response = if let Some(streaming) = streaming_llm {
                 streaming
@@ -513,10 +529,7 @@ impl Brain {
                     warn!("[Brain] Transport error on iteration {iteration}: {content}");
                     let msg = content.to_string();
                     if let Some(observer) = self.observer.as_ref() {
-                        observer.on_final_assistant(
-                            &response,
-                            &BrainStopReason::TransportError(msg.clone()),
-                        );
+                        observer.on_final_assistant(&response, &BrainStopReason::TransportError(msg.clone()));
                     }
                     output.push(response);
                     return (output, BrainStopReason::TransportError(msg));
@@ -549,6 +562,14 @@ impl Brain {
             }
 
             let tool_call_content = response.content_text_owned().unwrap_or_default();
+            if let Some(reasoning) = &response.reasoning_content {
+                info!(
+                    "[Brain] iteration {} reasoning ({} chars): {}",
+                    iteration + 1,
+                    reasoning.len(),
+                    truncate_for_log(reasoning, LOG_PREVIEW_CHARS)
+                );
+            }
             if !tool_call_content.is_empty() {
                 info!(
                     "[Brain] iteration {} assistant content: {}",
@@ -562,11 +583,7 @@ impl Brain {
                 response.tool_calls.len()
             );
             if let Some(observer) = self.observer.as_ref() {
-                observer.on_assistant_tool_request(
-                    iteration + 1,
-                    &tool_call_content,
-                    &response.tool_calls,
-                );
+                observer.on_assistant_tool_request(iteration + 1, &tool_call_content, &response.tool_calls);
             }
             conversation.push(response.clone());
             output.push(response.clone());
@@ -582,38 +599,37 @@ impl Brain {
                 if let Some(observer) = self.observer.as_ref() {
                     observer.on_tool_start(&tc.function.name, &tc.id, &tc.function.arguments);
                 }
-                let matching_tool = self
-                    .tools
-                    .iter()
-                    .find(|t| t.spec().name() == tc.function.name);
+                let matching_tool = self.tools.iter().find(|t| t.spec().name() == tc.function.name);
                 let result = if let Some(tool) = matching_tool {
-                    self.execute_tool_call(
-                        tool,
-                        &tool_call_content,
-                        &tc.function.arguments,
-                        &tc.function.name,
-                    )
+                    self.execute_tool_call(tool, &tool_call_content, &tc.function.arguments, &tc.function.name)
                 } else {
                     warn!(
                         "[Brain] Tool '{}' not found for call id={} arguments={}",
                         tc.function.name, tc.id, tc.function.arguments
                     );
-                    serde_json::json!({"error": format!("Tool '{}' not found", tc.function.name)})
-                        .to_string()
+                    ToolExecutionOutput::text(
+                        serde_json::json!({"error": format!("Tool '{}' not found", tc.function.name)}).to_string(),
+                    )
                 };
 
                 info!(
                     "[Brain] tool call id={} name={} result: {}",
                     tc.id,
                     tc.function.name,
-                    truncate_for_log(&result, LOG_PREVIEW_CHARS)
+                    truncate_for_log(&result.result, LOG_PREVIEW_CHARS)
                 );
                 if let Some(observer) = self.observer.as_ref() {
-                    observer.on_tool_finish(&tc.function.name, &tc.id, &result);
+                    observer.on_tool_finish(&tc.function.name, &tc.id, &result.result);
                 }
-                let msg = LLMMessage::tool_result(tc.id.clone(), result);
+                let msg = LLMMessage::tool_result(tc.id.clone(), result.result.clone());
                 conversation.push(msg.clone());
                 output.push(msg);
+                if let Some(request) = result.ask_user {
+                    if let Some(observer) = self.observer.as_ref() {
+                        observer.on_ask_user(&tc.id, &request);
+                    }
+                    return (output, BrainStopReason::AwaitUserInput(request));
+                }
             }
         }
 
@@ -660,10 +676,7 @@ fn append_tool_summary_to_system(messages: &mut Vec<LLMMessage>, counts: &HashMa
 
     let mut items: Vec<_> = counts.iter().collect();
     items.sort_by(|a, b| a.0.cmp(b.0));
-    let lines: Vec<String> = items
-        .iter()
-        .map(|(name, count)| format!("  - {name}: {count} 次"))
-        .collect();
+    let lines: Vec<String> = items.iter().map(|(name, count)| format!("  - {name}: {count} 次")).collect();
     let summary = format!(
         "工具调用次数已达上限。目前已调用的工具及次数如下：\n{}\n\n请基于已获取的信息直接作答，不再调用任何工具。",
         lines.join("\n")
@@ -779,10 +792,7 @@ mod tests {
             })
         }
 
-        fn call(
-            &self,
-            _arguments: serde_json::Value,
-        ) -> zihuan_core::error::Result<serde_json::Value> {
+        fn call(&self, _arguments: serde_json::Value) -> zihuan_core::error::Result<serde_json::Value> {
             Ok(json!({}))
         }
     }
@@ -791,11 +801,7 @@ mod tests {
     struct InjectUserHook;
 
     impl BrainIterationHook for InjectUserHook {
-        fn on_before_inference(
-            &self,
-            iteration: usize,
-            _conversation: &[LLMMessage],
-        ) -> Vec<LLMMessage> {
+        fn on_before_inference(&self, iteration: usize, _conversation: &[LLMMessage]) -> Vec<LLMMessage> {
             if iteration == 2 {
                 vec![LLMMessage::user("【用户插嘴】继续回答新的问题")]
             } else {
@@ -808,15 +814,9 @@ mod tests {
     struct InjectMergedUserHook;
 
     impl BrainIterationHook for InjectMergedUserHook {
-        fn on_before_inference(
-            &self,
-            iteration: usize,
-            _conversation: &[LLMMessage],
-        ) -> Vec<LLMMessage> {
+        fn on_before_inference(&self, iteration: usize, _conversation: &[LLMMessage]) -> Vec<LLMMessage> {
             if iteration == 2 {
-                vec![LLMMessage::user(
-                    "【用户插嘴】\n\n1. 124\n2. 5341\n3. 21345",
-                )]
+                vec![LLMMessage::user("【用户插嘴】\n\n1. 124\n2. 5341\n3. 21345")]
             } else {
                 Vec::new()
             }
@@ -826,9 +826,7 @@ mod tests {
     #[test]
     fn iteration_hook_appends_messages_before_next_inference() {
         let state = Arc::new(Mutex::new(RecordingLlmState::default()));
-        let llm = Arc::new(RecordingLlm {
-            state: Arc::clone(&state),
-        });
+        let llm = Arc::new(RecordingLlm { state: Arc::clone(&state) });
 
         let brain = Brain::new(llm)
             .with_tool(EchoTool)
@@ -850,9 +848,7 @@ mod tests {
     #[test]
     fn iteration_hook_can_inject_one_merged_message_for_multiple_steers() {
         let state = Arc::new(Mutex::new(RecordingLlmState::default()));
-        let llm = Arc::new(RecordingLlm {
-            state: Arc::clone(&state),
-        });
+        let llm = Arc::new(RecordingLlm { state: Arc::clone(&state) });
 
         let brain = Brain::new(llm)
             .with_tool(EchoTool)
@@ -866,9 +862,7 @@ mod tests {
 
         let merged_messages: Vec<_> = state.conversations[1]
             .iter()
-            .filter(|message| {
-                message.content_text() == Some("【用户插嘴】\n\n1. 124\n2. 5341\n3. 21345")
-            })
+            .filter(|message| message.content_text() == Some("【用户插嘴】\n\n1. 124\n2. 5341\n3. 21345"))
             .collect();
         assert_eq!(merged_messages.len(), 1);
     }

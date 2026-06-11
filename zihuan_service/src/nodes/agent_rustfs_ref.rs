@@ -38,19 +38,14 @@ impl Node for AgentRustfsRefNode {
 
     node_output![port! { name = "s3_ref", ty = S3Ref, desc = "Agent RustFS 对象存储引用" },];
 
-    fn execute(
-        &mut self,
-        _inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, _inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let config = current_qq_chat_agent_config()?;
         let rustfs_connection_id = config.rustfs_connection_id.as_deref();
         let rustfs_connection_id = rustfs_connection_id
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| {
-                zihuan_core::error::Error::ValidationError(
-                    "rustfs_connection_id is required".to_string(),
-                )
+                zihuan_core::error::Error::ValidationError("rustfs_connection_id is required".to_string())
             })?;
         let s3_ref = zihuan_core::runtime::block_async(
             RuntimeStorageConnectionManager::shared().get_or_create_s3_ref(rustfs_connection_id),

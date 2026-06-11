@@ -18,9 +18,7 @@ pub(crate) struct ReplyMessageBrainTool {
 
 impl ReplyMessageBrainTool {
     pub(crate) fn new(shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>) -> Self {
-        Self {
-            shared_runtime_values,
-        }
+        Self { shared_runtime_values }
     }
 }
 
@@ -28,8 +26,7 @@ impl BrainTool for ReplyMessageBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "reply_message",
-            description:
-                "设置本轮最终回复要引用的 QQ 消息；可选指定 message_id，不传则默认引用当前触发消息。",
+            description: "设置本轮最终回复要引用的 QQ 消息；可选指定 message_id，不传则默认引用当前触发消息。",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -47,13 +44,11 @@ impl BrainTool for ReplyMessageBrainTool {
         let result = (|| -> Result<String> {
             let directive = match arguments.get("message_id") {
                 Some(Value::Number(number)) => {
-                    let message_id = number.as_i64().ok_or_else(|| {
-                        Error::ValidationError("message_id must be an integer".to_string())
-                    })?;
+                    let message_id = number
+                        .as_i64()
+                        .ok_or_else(|| Error::ValidationError("message_id must be an integer".to_string()))?;
                     if message_id <= 0 {
-                        return Err(Error::ValidationError(
-                            "message_id must be a positive integer".to_string(),
-                        ));
+                        return Err(Error::ValidationError("message_id must be a positive integer".to_string()));
                     }
                     QqReplyDirective::Explicit { message_id }
                 }

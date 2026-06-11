@@ -7,16 +7,20 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
+use tokio::sync::broadcast;
 use uuid::Uuid;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_graph_engine::graph_io::NodeGraphDefinition;
 
 use zihuan_service::AgentManager;
 
+use crate::setup_orchestrator::SetupProgressEvent;
+
 pub struct AppState {
     pub sessions: RwLock<HashMap<String, GraphSession>>,
     pub tasks: Mutex<TaskManager>,
     pub agent_manager: AgentManager,
+    pub setup_tasks: Mutex<HashMap<String, broadcast::Sender<SetupProgressEvent>>>,
 }
 
 impl AppState {
@@ -25,6 +29,7 @@ impl AppState {
             sessions: RwLock::new(HashMap::new()),
             tasks: Mutex::new(TaskManager::new()),
             agent_manager: AgentManager::new(),
+            setup_tasks: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -214,14 +219,8 @@ impl TaskManager {
                 let entry_ref = entry.clone();
                 let pool_ref = pool.clone();
                 tokio::spawn(async move {
-                    if let Err(err) =
-                        crate::api::task_store::insert_task_entry(&pool_ref, &entry_ref).await
-                    {
-                        log::warn!(
-                            "Failed to insert task_entry '{}' into DB: {}",
-                            entry_ref.id,
-                            err
-                        );
+                    if let Err(err) = crate::api::task_store::insert_task_entry(&pool_ref, &entry_ref).await {
+                        log::warn!("Failed to insert task_entry '{}' into DB: {}", entry_ref.id, err);
                     }
                 });
             }
@@ -417,16 +416,10 @@ impl TaskManager {
                         next
                     };
                     tokio::spawn(async move {
-                        if let Err(err) = crate::api::task_store::append_task_progress(
-                            &pool, &task_id, seq, &message,
-                        )
-                        .await
+                        if let Err(err) =
+                            crate::api::task_store::append_task_progress(&pool, &task_id, seq, &message).await
                         {
-                            log::warn!(
-                                "Failed to append task_progress for task '{}': {}",
-                                task_id,
-                                err
-                            );
+                            log::warn!("Failed to append task_progress for task '{}': {}", task_id, err);
                         }
                     });
                 }
@@ -437,10 +430,7 @@ impl TaskManager {
     fn task_log_path(task_id: &str) -> std::io::Result<String> {
         let dir = Path::new("logs").join("tasks");
         fs::create_dir_all(&dir)?;
-        Ok(dir
-            .join(format!("{task_id}.jsonl"))
-            .to_string_lossy()
-            .to_string())
+        Ok(dir.join(format!("{task_id}.jsonl")).to_string_lossy().to_string())
     }
 
     fn task_index_path() -> PathBuf {
@@ -466,8 +456,7 @@ impl TaskManager {
         let index_path = Self::task_index_path();
         if index_path.exists() {
             let content = fs::read_to_string(&index_path)?;
-            let mut tasks =
-                serde_json::from_str::<Vec<TaskEntry>>(&content).map_err(std::io::Error::other)?;
+            let mut tasks = serde_json::from_str::<Vec<TaskEntry>>(&content).map_err(std::io::Error::other)?;
             for task in &mut tasks {
                 task.stop_flag = None;
                 if task.is_running {

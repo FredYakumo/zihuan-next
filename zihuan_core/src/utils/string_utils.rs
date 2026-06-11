@@ -45,18 +45,7 @@ pub fn strip_leading_bot_mention(text: &str, bot_id: &str, bot_name: &str) -> St
                     remaining = rest.trim_start_matches(|c: char| {
                         matches!(
                             c,
-                            ' ' | '\t'
-                                | '\n'
-                                | '\r'
-                                | ','
-                                | '，'
-                                | '。'
-                                | ':'
-                                | '：'
-                                | '!'
-                                | '！'
-                                | '?'
-                                | '？'
+                            ' ' | '\t' | '\n' | '\r' | ',' | '，' | '。' | ':' | '：' | '!' | '！' | '?' | '？'
                         )
                     });
                     stripped = true;
@@ -98,11 +87,7 @@ pub fn parse_tag_value(value: &str) -> Option<String> {
         let quoted = trimmed
             .strip_prefix('"')
             .and_then(|value| value.strip_suffix('"'))
-            .or_else(|| {
-                trimmed
-                    .strip_prefix('\'')
-                    .and_then(|value| value.strip_suffix('\''))
-            });
+            .or_else(|| trimmed.strip_prefix('\'').and_then(|value| value.strip_suffix('\'')));
         if let Some(value) = quoted {
             let inner = value.trim();
             if !inner.is_empty() {
@@ -120,10 +105,7 @@ use serde_json::Value;
 /// Returns `None` if the key is missing, the value is not a string, or the string
 /// is empty/blank.
 pub fn extract_string_field(value: &Value, key: &str) -> Option<String> {
-    value
-        .get(key)
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
+    value.get(key).and_then(Value::as_str).map(ToOwned::to_owned)
 }
 
 /// Parses an `@`-mention segment from a character array, extracting a sequence of

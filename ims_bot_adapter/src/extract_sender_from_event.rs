@@ -36,10 +36,7 @@ impl Node for ExtractSenderFromEventNode {
 
     node_output![port! { name = "result", ty = Sender, desc = "可用于发送消息的 Sender" },];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         let event = match inputs.get("message_event") {
             Some(DataValue::MessageEvent(event)) => event,
             _ => return Err("message_event input is required".into()),

@@ -29,9 +29,7 @@ impl Node for PreviewStringNode {
         Some("Preview input string inside the node card")
     }
 
-    node_input![
-        port! { name = "text", ty = String, desc = "Text to preview inside the node", optional },
-    ];
+    node_input![port! { name = "text", ty = String, desc = "Text to preview inside the node", optional },];
 
     node_output![];
 

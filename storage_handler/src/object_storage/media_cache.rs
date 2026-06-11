@@ -9,9 +9,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::models::event_model::MessageEvent;
-use zihuan_core::ims_bot_adapter::models::message::{
-    ForwardNodeMessage, ImageMessage, Message, PersistedMedia,
-};
+use zihuan_core::ims_bot_adapter::models::message::{ForwardNodeMessage, ImageMessage, Message, PersistedMedia};
 use zihuan_graph_engine::object_storage::S3Ref;
 
 use super::{save_image_to_object_storage, ImageObjectStorageInput};
@@ -51,11 +49,7 @@ pub async fn enrich_event_images<A: ImageCacheAdapter>(adapter: &A, event: &mut 
     enrich_message_images(adapter, event.message_id, &mut event.message_list).await;
 }
 
-pub async fn enrich_message_images<A: ImageCacheAdapter>(
-    adapter: &A,
-    message_id: i64,
-    messages: &mut [Message],
-) {
+pub async fn enrich_message_images<A: ImageCacheAdapter>(adapter: &A, message_id: i64, messages: &mut [Message]) {
     let Some(object_storage) = adapter.object_storage().await else {
         debug!("{LOG_PREFIX} Object storage is not configured; skipping image caching");
         return;
@@ -78,9 +72,7 @@ async fn enrich_message_images_with_storage<A: ImageCacheAdapter>(
                     continue;
                 }
 
-                match cache_one_image(adapter, object_storage, message_id, segment_index, image)
-                    .await
-                {
+                match cache_one_image(adapter, object_storage, message_id, segment_index, image).await {
                     Ok(Some(rustfs_path)) => {
                         info!(
                             "{LOG_PREFIX} Cached image for message {} segment {} to {}",
@@ -115,13 +107,7 @@ async fn enrich_message_images_with_storage<A: ImageCacheAdapter>(
                 }
             }
             Message::Forward(forward) => {
-                enrich_forward_node_images(
-                    adapter,
-                    object_storage,
-                    message_id,
-                    &mut forward.content,
-                )
-                .await;
+                enrich_forward_node_images(adapter, object_storage, message_id, &mut forward.content).await;
             }
             _ => {}
         }
@@ -136,8 +122,7 @@ async fn enrich_forward_node_images<A: ImageCacheAdapter>(
     nodes: &mut [ForwardNodeMessage],
 ) {
     for node in nodes {
-        enrich_message_images_with_storage(adapter, object_storage, message_id, &mut node.content)
-            .await;
+        enrich_message_images_with_storage(adapter, object_storage, message_id, &mut node.content).await;
     }
 }
 
@@ -209,11 +194,7 @@ async fn cache_one_image<A: ImageCacheAdapter>(
         image.media.source.clone(),
         image.media.original_source.clone(),
         saved.object_key.clone(),
-        image
-            .media
-            .name
-            .clone()
-            .or_else(|| Some(resolved.file_name.clone())),
+        image.media.name.clone().or_else(|| Some(resolved.file_name.clone())),
         image.media.description.clone(),
         Some(resolved.content_type.clone()),
     );
@@ -276,10 +257,7 @@ async fn resolve_image_payload<A: ImageCacheAdapter>(
     Ok(None)
 }
 
-async fn read_local_file(
-    path: &str,
-    preferred_name: Option<&str>,
-) -> Result<Option<ResolvedImagePayload>> {
+async fn read_local_file(path: &str, preferred_name: Option<&str>) -> Result<Option<ResolvedImagePayload>> {
     let file_path = Path::new(path);
     if !file_path.exists() {
         return Ok(None);
@@ -288,11 +266,7 @@ async fn read_local_file(
     let bytes = tokio::fs::read(file_path).await?;
     let file_name = preferred_name
         .map(ToOwned::to_owned)
-        .or_else(|| {
-            file_path
-                .file_name()
-                .map(|name| name.to_string_lossy().to_string())
-        })
+        .or_else(|| file_path.file_name().map(|name| name.to_string_lossy().to_string()))
         .unwrap_or_else(|| "image.bin".to_string());
 
     Ok(Some(ResolvedImagePayload {
@@ -302,10 +276,7 @@ async fn read_local_file(
     }))
 }
 
-async fn download_remote_file(
-    url: &str,
-    preferred_name: Option<&str>,
-) -> Result<Option<ResolvedImagePayload>> {
+async fn download_remote_file(url: &str, preferred_name: Option<&str>) -> Result<Option<ResolvedImagePayload>> {
     let response = Client::new().get(url).send().await?;
     if !response.status().is_success() {
         return Ok(None);

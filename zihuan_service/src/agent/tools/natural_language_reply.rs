@@ -24,9 +24,7 @@ use crate::agent::qq_chat_agent_msg_send::{
 use crate::storage::qq_chat_session_store::build_outbound_persistence;
 use zihuan_agent::emotion::utils::emotion_dimensions_snapshot_text;
 
-use super::common::{
-    optional_string_argument, optional_string_list_argument, StaticFunctionToolSpec,
-};
+use super::common::{optional_string_argument, optional_string_list_argument, StaticFunctionToolSpec};
 
 pub(crate) const QQ_CHAT_LAST_REPLY_RESULT_RUNTIME_KEY: &str = "qq_chat_last_reply_result";
 
@@ -176,9 +174,7 @@ impl BrainTool for SendNaturalLanguageReplyBrainTool {
                 .ok_or_else(|| Error::ValidationError("goal is required".to_string()))?;
             let key_points = optional_string_list_argument(arguments, "key_points")
                 .filter(|items| !items.is_empty())
-                .ok_or_else(|| {
-                    Error::ValidationError("key_points must contain at least one item".to_string())
-                })?;
+                .ok_or_else(|| Error::ValidationError("key_points must contain at least one item".to_string()))?;
             let tone_hint = optional_string_argument(arguments, "tone_hint");
             let mentions = parse_mentions(arguments)?;
             let image_ids = optional_string_list_argument(arguments, "images").unwrap_or_default();
@@ -234,12 +230,10 @@ impl BrainTool for SendNaturalLanguageReplyBrainTool {
 
             self.trace.mark_reply_send_started();
             let visible_reply_text = if reply_result.suppress_send {
-                self.trace
-                    .record_reply_send(true, false, &reply_result.batches);
+                self.trace.record_reply_send(true, false, &reply_result.batches);
                 None
             } else if reply_result.batches.is_empty() {
-                self.trace
-                    .record_reply_send(false, false, &reply_result.batches);
+                self.trace.record_reply_send(false, false, &reply_result.batches);
                 None
             } else {
                 let send_ctx = QqSendContext {
@@ -259,8 +253,7 @@ impl BrainTool for SendNaturalLanguageReplyBrainTool {
                     max_text_chars: self.max_message_length,
                 };
                 send_planned_batches(&send_ctx, &reply_result.batches);
-                self.trace
-                    .record_reply_send(false, true, &reply_result.batches);
+                self.trace.record_reply_send(false, true, &reply_result.batches);
                 Some(reply_text.clone())
             };
 
@@ -291,22 +284,15 @@ impl BrainTool for SendNaturalLanguageReplyBrainTool {
     }
 }
 
-fn parse_reply_directive(
-    arguments: &Value,
-    reply_target: &str,
-) -> Result<Option<QqReplyDirective>> {
+fn parse_reply_directive(arguments: &Value, reply_target: &str) -> Result<Option<QqReplyDirective>> {
     match reply_target {
         "trigger_message" => Ok(Some(QqReplyDirective::TriggerMessage)),
         "explicit_message_id" => {
-            let message_id = arguments
-                .get("explicit_message_id")
-                .and_then(Value::as_i64)
-                .ok_or_else(|| {
-                    Error::ValidationError(
-                        "explicit_message_id is required when reply_target=explicit_message_id"
-                            .to_string(),
-                    )
-                })?;
+            let message_id = arguments.get("explicit_message_id").and_then(Value::as_i64).ok_or_else(|| {
+                Error::ValidationError(
+                    "explicit_message_id is required when reply_target=explicit_message_id".to_string(),
+                )
+            })?;
             if message_id <= 0 {
                 return Err(Error::ValidationError(
                     "explicit_message_id must be a positive integer".to_string(),
@@ -315,10 +301,7 @@ fn parse_reply_directive(
             Ok(Some(QqReplyDirective::Explicit { message_id }))
         }
         "none" => Ok(None),
-        other => Err(Error::ValidationError(format!(
-            "unsupported reply_target '{}'",
-            other
-        ))),
+        other => Err(Error::ValidationError(format!("unsupported reply_target '{}'", other))),
     }
 }
 
@@ -347,14 +330,13 @@ fn build_reply_llm_messages(
          - Output @sender when the group chat needs to mention the other party\n\
          - Output [Image media_id=media-***] when sending images\n\
          - Do not fabricate non-existent media_ids\n\
+         - Do not invent extra factual background beyond the provided reply goal and key points\n\
+         - If the reply goal is clarifying or correcting a previous joke, tone, or misunderstanding, do not add new claims such as 'I actually know/saw/judged ...'\n\
          - Do not output the reply_message tool name or any internal protocol description\n\
          - Do not output any extra text beyond the final reply content"
             .to_string(),
     );
-    if let Some(extra_prompt) = reply_system_prompt
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
+    if let Some(extra_prompt) = reply_system_prompt.map(str::trim).filter(|value| !value.is_empty()) {
         system_prompt.push_str("\n\n");
         system_prompt.push_str(extra_prompt);
     }
@@ -436,9 +418,7 @@ fn resolve_emotion_prompt(
                 return None;
             }
 
-            let config = emotion_dimensions
-                .iter()
-                .find(|d| d.name.trim() == name.trim())?;
+            let config = emotion_dimensions.iter().find(|d| d.name.trim() == name.trim())?;
 
             let coordinate = (50.0 + value * 50.0).round() as i64;
             let is_positive = value >= 0.0;
@@ -454,11 +434,7 @@ fn resolve_emotion_prompt(
                         .unwrap_or(&name)
                         .to_string()
                 } else {
-                    let p = config
-                        .negative_prompt
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty());
+                    let p = config.negative_prompt.as_deref().map(str::trim).filter(|s| !s.is_empty());
                     match p {
                         Some(s) => s.to_string(),
                         None => format!("not {name}"),

@@ -36,16 +36,14 @@ impl Node for StackNode {
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
-        let element = inputs.get("element").cloned().ok_or_else(|| {
-            zihuan_core::error::Error::ValidationError("元素输入不存在".to_string())
-        })?;
+        let element = inputs
+            .get("element")
+            .cloned()
+            .ok_or_else(|| zihuan_core::error::Error::ValidationError("元素输入不存在".to_string()))?;
 
         let element_type = element.data_type();
         let mut outputs = HashMap::new();
-        outputs.insert(
-            "array".to_string(),
-            DataValue::Vec(Box::new(element_type), vec![element]),
-        );
+        outputs.insert("array".to_string(), DataValue::Vec(Box::new(element_type), vec![element]));
 
         let outputs = crate::NodeOutputFlow::from(outputs);
         self.validate_outputs(&outputs)?;

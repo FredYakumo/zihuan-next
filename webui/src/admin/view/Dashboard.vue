@@ -32,10 +32,15 @@
               </div>
               <template v-else>
                 <button
-                  v-for="agent in agents"
+                  v-for="agent in agents.filter(a => chatEligibleAgentTypes.has(a.agent_type.type))"
                   :key="agent.config_id"
                   class="chat-agent-card"
-                  :class="{ active: selectedAgentId === agent.config_id, inactive: agent.runtime.status !== 'running' }"
+                  :class="{
+                    active: selectedAgentId === agent.config_id,
+                    inactive: agent.runtime.status !== 'running' || !chatEligibleAgentTypes.has(agent.agent_type.type),
+                    unsupported: !chatEligibleAgentTypes.has(agent.agent_type.type),
+                  }"
+                  :disabled="!chatEligibleAgentTypes.has(agent.agent_type.type)"
                   @click="selectedAgentId = agent.config_id"
                 >
                   <img
@@ -51,39 +56,54 @@
                     <strong>{{ agent.name }}</strong>
                     <span>{{ readableAgentType(agent.agent_type.type) }}</span>
                   </div>
-                  <span v-if="agent.runtime.status !== 'running'" class="agent-status-badge">未运行</span>
+                  <span v-if="!chatEligibleAgentTypes.has(agent.agent_type.type)" class="agent-status-badge unsupported-badge">Dashboard 不可用</span>
+                  <span v-else-if="agent.runtime.status !== 'running'" class="agent-status-badge">未运行</span>
                 </button>
               </template>
             </div>
           </div>
           <button class="btn ghost" @click="reloadSessions">刷新历史</button>
+          <button v-if="isWorkspaceAgent" class="btn ghost" :disabled="pickingDirectory" @click="pickDirectory">
+            {{ pickingDirectory ? "选择中..." : "打开目录" }}
+          </button>
         </div>
 
         <div class="chat-layout">
           <aside class="chat-sessions">
             <div class="chat-sessions-header">历史</div>
-            <div
-              v-for="session in sessions"
-              :key="session.session_id"
-              class="chat-session-item"
-              :class="{ active: session.session_id === activeSessionId }"
-            >
-              <button class="chat-session-main" @click="openSession(session.session_id)">
-                <strong>{{ session.session_id.slice(0, 8) }}</strong>
-                <span class="muted">{{ formatTime(session.updated_at) }}</span>
-              </button>
-              <button
-                class="chat-session-delete"
-                title="删除会话"
-                @click.stop="removeSession(session.session_id)"
+            <template v-for="group in groupedSessions" :key="group.pathKey">
+              <div class="chat-session-group-header" :title="group.path ?? undefined">
+                📁 {{ group.label }}
+              </div>
+              <div
+                v-for="session in group.sessions"
+                :key="session.session_id"
+                class="chat-session-item"
+                :class="{ active: session.session_id === activeSessionId }"
               >
-                ×
-              </button>
-            </div>
+                <button class="chat-session-main" @click="openSession(session.session_id)">
+                  <strong>{{ session.session_id.slice(0, 8) }}</strong>
+                  <span class="muted">{{ formatTime(session.updated_at) }}</span>
+                </button>
+                <button
+                  class="chat-session-delete"
+                  title="删除会话"
+                  @click.stop="removeSession(session.session_id)"
+                >
+                  ×
+                </button>
+              </div>
+            </template>
             <div v-if="sessions.length === 0" class="muted">暂无历史会话</div>
           </aside>
 
           <div class="chat-main">
+            <div v-if="isWorkspaceAgent" class="workspace-path-display">
+              <span class="path-label">当前工作目录：</span>
+              <span class="path-value" :class="{ 'path-unset': !workspacePath }">
+                {{ workspacePath || '未选择工作目录' }}
+              </span>
+            </div>
             <div class="chat-messages" ref="messagesContainer">
               <div v-if="messages.length === 0" class="empty-state">
                 
@@ -187,7 +207,28 @@
                       </div>
                     </div>
                   </div>
-                  <div class="chat-bubble" :class="message.role">
+                  <div
+                    v-if="message.thinkingContent"
+                    class="chat-thinking-block"
+                    :class="{ collapsed: !message.thinkingExpanded }"
+                  >
+                    <button
+                      class="chat-thinking-toggle"
+                      @click="message.thinkingExpanded = !message.thinkingExpanded"
+                    >
+                      <span class="chat-thinking-icon">{{ message.thinkingExpanded ? '▼' : '▶' }}</span>
+                      思考过程
+                      <span v-if="message.streaming && message.thinkingExpanded" class="live-tool-spinner"></span>
+                    </button>
+                    <div v-if="message.thinkingExpanded" class="chat-thinking-content">
+                      {{ message.thinkingContent }}
+                    </div>
+                  </div>
+                  <div
+                    v-if="message.content.trim().length > 0 || message.streaming"
+                    class="chat-bubble"
+                    :class="message.role"
+                  >
                     <div
                       class="chat-bubble-content markdown-body"
                       v-html="renderMessageContent(message.content, message.streaming)"
@@ -206,16 +247,219 @@
             </div>
 
             <div class="chat-input-area">
-              <textarea
-                v-model="draftMessage"
-                placeholder="输入消息"
-                @keydown.ctrl.enter.prevent="sendMessage"
-              />
-              <div class="chat-input-actions">
-                <button class="btn ghost" @click="startNewSession">新对话</button>
-                <button class="btn primary" :disabled="sending || !canSend" @click="sendMessage">
-                  {{ sending ? "推理中..." : "发送" }}
-                </button>
+              <div v-if="!isChatEligible" class="chat-not-supported">
+                <div class="chat-not-supported-icon">🚫</div>
+                <div class="chat-not-supported-title">此 Agent 不支持在 Dashboard 聊天</div>
+                <div class="chat-not-supported-desc">请在 QQ 群或 HTTP Stream 端点中使用该 Agent。</div>
+              </div>
+              <template v-else>
+                <div v-if="pendingAskUser" class="ask-user-panel">
+                  <div class="ask-user-question">{{ pendingAskUser.question }}</div>
+                  <div v-if="pendingAskUser.details" class="ask-user-details">
+                    {{ pendingAskUser.details }}
+                  </div>
+                  <div class="ask-user-row">
+                    <input
+                      v-model="askUserAnswer"
+                      type="text"
+                      :placeholder="pendingAskUser.placeholder || '请输入补充信息'"
+                      @input="clearChatError"
+                      @keydown.enter.prevent="submitAskUserAnswer"
+                    />
+                    <button
+                      class="btn primary"
+                      :disabled="!canSubmitAskUser"
+                      @click="submitAskUserAnswer"
+                    >
+                      提交补充信息
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  v-model="draftMessage"
+                  placeholder="输入消息"
+                  @keydown.ctrl.enter.prevent="sendMessage"
+                  @input="clearChatError"
+                />
+                <div class="chat-input-actions">
+                  <button class="btn ghost" @click="startNewSession">新对话</button>
+                  <div class="chat-input-right">
+                    <div
+                      v-if="isChatEligible"
+                      class="chat-model-bar"
+                    >
+                    <div class="model-picker" :class="{ open: openPicker === 'model' }">
+                      <button
+                        class="model-chip"
+                        @click.stop="openPicker = openPicker === 'model' ? null : 'model'"
+                      >
+                        {{ selectedModelLabel }}
+                        <svg
+                          class="chip-chevron"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </button>
+                      <div v-if="openPicker === 'model'" class="model-picker-dropdown">
+                        <button
+                          class="model-picker-item"
+                          :class="{ active: selectedModelId === '' }"
+                          @click.stop="selectModel('')"
+                        >
+                          默认模型
+                        </button>
+                        <button
+                          v-for="model in chatModels"
+                          :key="model.config_id"
+                          class="model-picker-item"
+                          :class="{ active: selectedModelId === model.config_id }"
+                          @click.stop="selectModel(model.config_id)"
+                        >
+                          {{ model.name }}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="model-picker" :class="{ open: openPicker === 'thinking' }">
+                      <button
+                        class="model-chip"
+                        @click.stop="openPicker = openPicker === 'thinking' ? null : 'thinking'"
+                      >
+                        {{ selectedThinkingLabel }}
+                        <svg
+                          class="chip-chevron"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </button>
+                      <div v-if="openPicker === 'thinking'" class="model-picker-dropdown">
+                        <button
+                          class="model-picker-item"
+                          :class="{ active: selectedThinkingType === '' }"
+                          @click.stop="selectThinkingType('')"
+                        >
+                          默认{{ selectedModelLlmConfig?.thinking_type ? (selectedModelLlmConfig.thinking_type === 'enabled' ? '(启用)' : '(禁用)') : '' }}
+                        </button>
+                        <button
+                          class="model-picker-item"
+                          :class="{ active: selectedThinkingType === 'enabled' }"
+                          @click.stop="selectThinkingType('enabled')"
+                        >
+                          启用
+                        </button>
+                        <button
+                          class="model-picker-item"
+                          :class="{ active: selectedThinkingType === 'disabled' }"
+                          @click.stop="selectThinkingType('disabled')"
+                        >
+                          禁用
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="model-picker" :class="{ open: openPicker === 'effort' }">
+                      <button
+                        class="model-chip"
+                        @click.stop="openPicker = openPicker === 'effort' ? null : 'effort'"
+                      >
+                        {{ selectedEffortLabel }}
+                        <svg
+                          class="chip-chevron"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </button>
+                      <div v-if="openPicker === 'effort'" class="model-picker-dropdown">
+                        <button
+                          class="model-picker-item"
+                          :class="{ active: selectedReasoningEffort === '' }"
+                          @click.stop="selectReasoningEffort('')"
+                        >
+                          默认{{ selectedModelLlmConfig?.reasoning_effort ? `(${selectedModelLlmConfig.reasoning_effort})` : '' }}
+                        </button>
+                        <button
+                          class="model-picker-item"
+                          :class="{ active: selectedReasoningEffort === 'low' }"
+                          @click.stop="selectReasoningEffort('low')"
+                        >
+                          low
+                        </button>
+                        <button
+                          class="model-picker-item"
+                          :class="{ active: selectedReasoningEffort === 'medium' }"
+                          @click.stop="selectReasoningEffort('medium')"
+                        >
+                          medium
+                        </button>
+                        <button
+                          class="model-picker-item"
+                          :class="{ active: selectedReasoningEffort === 'high' }"
+                          @click.stop="selectReasoningEffort('high')"
+                        >
+                          high
+                        </button>
+                        <button
+                          class="model-picker-item"
+                          :class="{ active: selectedReasoningEffort === 'max' }"
+                          @click.stop="selectReasoningEffort('max')"
+                        >
+                          max
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="model-settings" :class="{ open: openPicker === 'settings' }">
+                      <button
+                        class="model-chip icon-only"
+                        title="模型设置"
+                        @click.stop="openPicker = openPicker === 'settings' ? null : 'settings'"
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <circle cx="12" cy="12" r="3" />
+                          <path
+                            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <button
+                    class="btn primary"
+                    :disabled="sending || !canSend"
+                    @click="sendMessage"
+                  >
+                    {{ sending ? "推理中..." : "发送" }}
+                  </button>
+                </div>
+              </div>
+              </template>
+              <div v-if="chatErrorMessage" class="chat-error-box" role="alert">
+                {{ chatErrorMessage }}
               </div>
             </div>
           </div>
@@ -226,7 +470,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import MarkdownIt from "markdown-it";
 
 import {
@@ -237,6 +481,7 @@ import {
   type ChatToolCall,
   type ChatSessionSummary,
   type ChatStreamEvent,
+  type LlmConfig,
 } from "../../api/client";
 import { formatTime } from "../model";
 
@@ -252,6 +497,8 @@ type DashboardMessage = {
   id: string;
   role: ChatRole;
   content: string;
+  thinkingContent?: string;
+  thinkingExpanded?: boolean;
   streaming?: boolean;
   timestamp?: string;
   toolCalls: ChatToolCall[];
@@ -269,9 +516,15 @@ type ToolDetail = {
 type PendingNewConversationCommand = {
   passthroughText: string | null;
 };
+type PendingAskUser = {
+  question: string;
+  details?: string;
+  placeholder?: string;
+};
 type StreamState = {
   assistantMessageId: string | null;
   pendingNewConversation: PendingNewConversationCommand | null;
+  requestText: string;
 };
 
 const agents = ref<AgentWithRuntime[]>([]);
@@ -280,11 +533,19 @@ const sessions = ref<ChatSessionSummary[]>([]);
 const activeSessionId = ref("");
 const selectedAgentId = ref("");
 const draftMessage = ref("");
+const workspacePath = ref("");
+const pickingDirectory = ref(false);
 const sending = ref(false);
+const chatErrorMessage = ref("");
 const messagesContainer = ref<HTMLElement | null>(null);
 const messages = ref<DashboardMessage[]>([]);
 const activeToolCallId = ref("");
 const expandedLiveToolCalls = ref(new Set<string>());
+const llmModels = ref<LlmConfig[]>([]);
+const selectedModelId = ref("");
+const selectedThinkingType = ref<"" | "enabled" | "disabled">("");
+const selectedReasoningEffort = ref<"" | "low" | "medium" | "high" | "max">("");
+const openPicker = ref<'model' | 'thinking' | 'effort' | 'settings' | null>(null);
 const stats = reactive({
   connections: 0,
   llm: 0,
@@ -296,9 +557,81 @@ const markdown = new MarkdownIt({
   linkify: true,
 });
 
+const chatEligibleAgentTypes = new Set(["http_stream", "workspace"]);
 const selectedAgent = computed(() => agents.value.find((agent) => agent.config_id === selectedAgentId.value) ?? null);
+const selectedAgentType = computed(() => selectedAgent.value?.agent_type?.type ?? "");
+const isChatEligible = computed(() => chatEligibleAgentTypes.has(selectedAgentType.value));
+const isWorkspaceAgent = computed(() => selectedAgentType.value === "workspace");
+const groupedSessions = computed(() => {
+  const groups = new Map<string, ChatSessionSummary[]>();
+  for (const session of sessions.value) {
+    const key = session.workspace_path ?? "__default__";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(session);
+  }
+  const result: Array<{ pathKey: string; path: string | null; label: string; sessions: ChatSessionSummary[] }> = [];
+  for (const [key, items] of groups) {
+    items.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    result.push({
+      pathKey: key,
+      path: key === "__default__" ? null : key,
+      label: key === "__default__" ? "默认路径" : key,
+      sessions: items,
+    });
+  }
+  result.sort((a, b) => b.sessions[0].updated_at.localeCompare(a.sessions[0].updated_at));
+  return result;
+});
+const recentWorkspacePaths = computed(() => {
+  const paths = new Set<string>();
+  for (const session of sessions.value) {
+    if (session.workspace_path) paths.add(session.workspace_path);
+  }
+  return Array.from(paths).slice(0, 5);
+});
+const chatModels = computed(() => llmModels.value.filter((item) => item.model.type === "chat_llm"));
+const selectedModelLlmConfig = computed(() => {
+  const modelId = selectedModelId.value || defaultAgentModelId.value;
+  const model = chatModels.value.find((m) => m.config_id === modelId);
+  if (model?.model.type === "chat_llm") {
+    return model.model.llm;
+  }
+  return null;
+});
+const defaultAgentModelId = computed(() => {
+  const agent = selectedAgent.value;
+  if (!agent) {
+    return "";
+  }
+  const agentType = agent.agent_type as Record<string, unknown>;
+  return String(agentType.llm_ref_id ?? "");
+});
+const selectedModelLabel = computed(() => {
+  if (!selectedModelId.value) {
+    return "默认模型";
+  }
+  const model = chatModels.value.find((m) => m.config_id === selectedModelId.value);
+  return model?.name ?? "默认模型";
+});
+const selectedThinkingLabel = computed(() => {
+  const defaultType = selectedModelLlmConfig.value?.thinking_type;
+  const defaultLabel = defaultType ? (defaultType === 'enabled' ? '(启用)' : '(禁用)') : '';
+  if (!selectedThinkingType.value) {
+    return `默认${defaultLabel}`;
+  }
+  return selectedThinkingType.value === 'enabled' ? '启用' : '禁用';
+});
+const selectedEffortLabel = computed(() => {
+  const defaultEffort = selectedModelLlmConfig.value?.reasoning_effort;
+  const defaultLabel = defaultEffort ? `(${defaultEffort})` : '';
+  if (!selectedReasoningEffort.value) {
+    return `默认${defaultLabel}`;
+  }
+  return selectedReasoningEffort.value;
+});
 const canSend = computed(() =>
   !!selectedAgent.value &&
+  isChatEligible.value &&
   selectedAgent.value.runtime.status === "running" &&
   draftMessage.value.trim().length > 0,
 );
@@ -307,6 +640,16 @@ const selectedAgentAvatarFallback = computed(() => {
   const name = selectedAgent.value?.name ?? "Bot";
   return agentInitial(name);
 });
+const pendingAskUser = ref<PendingAskUser | null>(null);
+const askUserAnswer = ref("");
+const canSubmitAskUser = computed(() =>
+  isChatEligible.value &&
+  isWorkspaceAgent.value &&
+  !!pendingAskUser.value &&
+  selectedAgent.value?.runtime.status === "running" &&
+  askUserAnswer.value.trim().length > 0 &&
+  !sending.value,
+);
 
 function parseNewConversationCommand(input: string): PendingNewConversationCommand | null {
   const match = input.trim().match(/^\/(new|clear|reset)(?:\s+([\s\S]*))?$/i);
@@ -354,7 +697,13 @@ const activeToolDetail = computed<ToolDetail | null>(() => {
 });
 
 function readableAgentType(type: string): string {
-  return type === "http_stream" ? "HTTP Stream Agent" : "QQ Chat Agent";
+  if (type === "http_stream") {
+    return "HTTP Stream Agent";
+  }
+  if (type === "workspace") {
+    return "Workspace Agent";
+  }
+  return "QQ Chat Agent";
 }
 
 function agentAvatarUrl(agent: AgentWithRuntime | null | undefined): string {
@@ -389,12 +738,14 @@ function toApiMessages() {
 }
 
 function applyHistory(records: ChatHistoryRecord[]) {
-  const mapped = records
+  const mapped: DashboardMessage[] = records
     .filter((item) => item.role === "user" || item.role === "assistant" || item.role === "tool")
     .map((item) => ({
       id: item.message_id,
       role: item.role as ChatRole,
       content: item.content,
+      thinkingContent: item.reasoning_content ?? undefined,
+      thinkingExpanded: !!item.reasoning_content,
       timestamp: item.timestamp,
       toolCalls: item.tool_calls ?? [],
       toolCallId: item.tool_call_id ?? null,
@@ -490,6 +841,42 @@ function scrollToBottom() {
   });
 }
 
+function clearChatError() {
+  chatErrorMessage.value = "";
+}
+
+function clearPendingAskUser() {
+  pendingAskUser.value = null;
+  askUserAnswer.value = "";
+}
+
+function pruneFailedAssistantPlaceholder(assistantMessageId: string | null) {
+  if (!assistantMessageId) {
+    return;
+  }
+  const index = messages.value.findIndex((item) => item.id === assistantMessageId);
+  if (index < 0) {
+    return;
+  }
+
+  const message = messages.value[index];
+  message.streaming = false;
+
+  const hasVisibleContent = message.content.trim().length > 0 || (message.thinkingContent?.trim().length ?? 0) > 0;
+  const hasToolActivity = (message.liveToolCalls?.length ?? 0) > 0 || message.toolCalls.length > 0;
+  if (!hasVisibleContent && !hasToolActivity) {
+    messages.value.splice(index, 1);
+  }
+}
+
+function applyInferenceFailure(streamState: StreamState, errorMessage: string) {
+  pruneFailedAssistantPlaceholder(streamState.assistantMessageId);
+  chatErrorMessage.value = `推理失败: ${errorMessage}`;
+  if (!draftMessage.value.trim()) {
+    draftMessage.value = streamState.requestText;
+  }
+}
+
 async function reloadSessions() {
   const result = await chat.listSessions(selectedAgentId.value || undefined);
   sessions.value = result.sessions;
@@ -497,13 +884,41 @@ async function reloadSessions() {
 
 async function openSession(sessionId: string) {
   activeSessionId.value = sessionId;
+  clearChatError();
+  clearPendingAskUser();
   const result = await chat.getSessionMessages(sessionId);
   // Auto-select the agent associated with this session
   const firstRecord = result.messages[0];
   if (firstRecord?.agent_id && agents.value.some((a) => a.config_id === firstRecord.agent_id)) {
     selectedAgentId.value = firstRecord.agent_id;
   }
+  workspacePath.value =
+    result.messages[result.messages.length - 1]?.workspace_path ??
+    firstRecord?.workspace_path ??
+    workspacePath.value;
+  const latestRecord = result.messages[result.messages.length - 1];
+  if (latestRecord?.pending_ask_user?.question) {
+    pendingAskUser.value = {
+      question: latestRecord.pending_ask_user.question,
+      details: latestRecord.pending_ask_user.details ?? undefined,
+      placeholder: latestRecord.pending_ask_user.placeholder ?? undefined,
+    };
+  }
   applyHistory(result.messages);
+}
+
+async function pickDirectory() {
+  pickingDirectory.value = true;
+  try {
+    const result = await system.selectDirectory();
+    if (result.path) {
+      workspacePath.value = result.path;
+    }
+  } catch (error) {
+    chatErrorMessage.value = `选择目录失败: ${(error as Error).message}`;
+  } finally {
+    pickingDirectory.value = false;
+  }
 }
 
 function startNewSession() {
@@ -511,11 +926,49 @@ function startNewSession() {
   messages.value = [];
   activeToolCallId.value = "";
   expandedLiveToolCalls.value = new Set();
+  clearChatError();
+  clearPendingAskUser();
+}
+
+function selectModel(id: string) {
+  selectedModelId.value = id;
+  openPicker.value = null;
+}
+
+function selectThinkingType(value: "" | "enabled" | "disabled") {
+  selectedThinkingType.value = value;
+  openPicker.value = null;
+}
+
+function selectReasoningEffort(value: "" | "low" | "medium" | "high" | "max") {
+  selectedReasoningEffort.value = value;
+  openPicker.value = null;
+}
+
+function closePickersOnClickOutside(event: MouseEvent) {
+  const target = event.target as HTMLElement;
+  if (!target.closest(".model-picker") && !target.closest(".model-settings")) {
+    openPicker.value = null;
+  }
 }
 
 watch(selectedAgentId, async () => {
   await reloadSessions();
   startNewSession();
+  selectedModelId.value = defaultAgentModelId.value;
+  selectedThinkingType.value = "";
+  selectedReasoningEffort.value = "";
+  if (!isWorkspaceAgent.value) {
+    workspacePath.value = "";
+  }
+  if (!isChatEligible.value) {
+    clearPendingAskUser();
+  }
+});
+
+watch(selectedModelId, () => {
+  selectedThinkingType.value = "";
+  selectedReasoningEffort.value = "";
 });
 
 async function removeSession(sessionId: string) {
@@ -535,17 +988,17 @@ async function removeSession(sessionId: string) {
 
 function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
   if (event.type === "error") {
-    if (streamState.assistantMessageId) {
-      const message = messages.value.find((item) => item.id === streamState.assistantMessageId);
-      if (message) {
-        message.streaming = false;
-        if (!message.content) {
-          message.content = `推理失败: ${event.error ?? "未知错误"}`;
-        }
-      }
-    } else if (event.error) {
-      console.error(event.error);
-    }
+    applyInferenceFailure(streamState, event.error ?? "未知错误");
+    return;
+  }
+
+  if (event.type === "ask_user" && event.question) {
+    pendingAskUser.value = {
+      question: event.question,
+      details: event.details ?? undefined,
+      placeholder: event.placeholder ?? undefined,
+    };
+    askUserAnswer.value = "";
     return;
   }
 
@@ -617,6 +1070,23 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
     }
   }
 
+  if (event.type === "thinking_delta") {
+    const targetId = event.message_id || streamState.assistantMessageId;
+    if (!targetId) {
+      return;
+    }
+    const message = messages.value.find((item) => item.id === targetId);
+    if (message) {
+      if (!message.thinkingContent) {
+        message.thinkingContent = "";
+        message.thinkingExpanded = true;
+      }
+      message.thinkingContent += event.token ?? "";
+      message.streaming = true;
+      scrollToBottom();
+    }
+  }
+
   if (event.type === "done") {
     const targetId = event.message_id || streamState.assistantMessageId;
     if (!targetId) {
@@ -666,11 +1136,32 @@ function applyStreamEvent(event: ChatStreamEvent, streamState: StreamState) {
 }
 
 async function sendMessage() {
-  if (!canSend.value || sending.value) {
+  await sendMessageWithText(draftMessage.value, false);
+}
+
+async function submitAskUserAnswer() {
+  await sendMessageWithText(askUserAnswer.value, true);
+}
+
+async function sendMessageWithText(rawInput: string, fromAskUser: boolean) {
+  if (sending.value) {
     return;
   }
 
-  const userText = draftMessage.value.trim();
+  const userText = rawInput.trim();
+  if (!userText) {
+    return;
+  }
+  if (!selectedAgent.value || selectedAgent.value.runtime.status !== "running") {
+    return;
+  }
+  if (!fromAskUser && !canSend.value) {
+    return;
+  }
+  if (fromAskUser && !canSubmitAskUser.value) {
+    return;
+  }
+  clearChatError();
   const pendingNewConversation = parseNewConversationCommand(userText);
   const requestMessages = [
     ...toApiMessages(),
@@ -680,12 +1171,17 @@ async function sendMessage() {
     },
   ];
 
-  draftMessage.value = "";
+  if (fromAskUser) {
+    askUserAnswer.value = "";
+  } else {
+    draftMessage.value = "";
+  }
   sending.value = true;
 
   const streamState: StreamState = {
     assistantMessageId: null,
     pendingNewConversation,
+    requestText: userText,
   };
 
   if (!pendingNewConversation) {
@@ -721,6 +1217,10 @@ async function sendMessage() {
         agent_id: selectedAgentId.value,
         session_id: activeSessionId.value || null,
         stream: true,
+        model_config_id: selectedModelId.value || null,
+        thinking_type: selectedThinkingType.value || null,
+        reasoning_effort: selectedReasoningEffort.value || null,
+        workspace_path: isWorkspaceAgent.value ? workspacePath.value.trim() || null : null,
         messages: requestMessages,
       },
       (event) => applyStreamEvent(event, streamState),
@@ -730,17 +1230,7 @@ async function sendMessage() {
       await openSession(activeSessionId.value);
     }
   } catch (error) {
-    const message = streamState.assistantMessageId
-      ? messages.value.find((item) => item.id === streamState.assistantMessageId)
-      : undefined;
-    if (message) {
-      message.streaming = false;
-      if (!message.content) {
-        message.content = `推理失败: ${(error as Error).message}`;
-      }
-    } else {
-      alert(`推理失败: ${(error as Error).message}`);
-    }
+    applyInferenceFailure(streamState, (error as Error).message);
   } finally {
     sending.value = false;
   }
@@ -758,10 +1248,13 @@ async function load() {
     stats.llm = llm.length;
     stats.agents = loadedAgents.length;
     agents.value = loadedAgents;
+    llmModels.value = llm;
 
     if (!selectedAgentId.value || !loadedAgents.some((agent) => agent.config_id === selectedAgentId.value)) {
-      selectedAgentId.value = loadedAgents[0]?.config_id ?? "";
+      const firstEligible = loadedAgents.find((agent) => chatEligibleAgentTypes.has(agent.agent_type.type));
+      selectedAgentId.value = firstEligible?.config_id ?? loadedAgents[0]?.config_id ?? "";
     }
+    selectedModelId.value = defaultAgentModelId.value;
   } finally {
     agentsLoading.value = false;
   }
@@ -774,6 +1267,11 @@ onMounted(() => {
     console.error(error);
     alert(`仪表盘加载失败: ${(error as Error).message}`);
   });
+  document.addEventListener("click", closePickersOnClickOutside);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", closePickersOnClickOutside);
 });
 </script>
 
@@ -947,6 +1445,16 @@ onMounted(() => {
   opacity: 0.8;
 }
 
+.chat-agent-card.unsupported {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.chat-agent-card.unsupported:hover {
+  transform: none;
+  border-color: var(--admin-border);
+}
+
 .agent-status-badge {
   background: var(--admin-danger, #ef4444);
   color: white;
@@ -956,6 +1464,10 @@ onMounted(() => {
   border-radius: 5px;
   margin-left: auto;
   flex-shrink: 0;
+}
+
+.agent-status-badge.unsupported-badge {
+  background: var(--admin-muted, #6b7280);
 }
 
 .chat-layout {
@@ -1141,6 +1653,52 @@ onMounted(() => {
   max-width: 100%;
 }
 
+.chat-thinking-block {
+  margin-bottom: 10px;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--admin-accent) 6%, var(--admin-bg-panel) 94%);
+}
+
+.chat-thinking-block.collapsed {
+  background: transparent;
+  border-color: transparent;
+}
+
+.chat-thinking-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--admin-subtle);
+  cursor: pointer;
+  text-align: left;
+  line-height: 1.4;
+}
+
+.chat-thinking-toggle:hover {
+  color: var(--admin-accent);
+}
+
+.chat-thinking-icon {
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.chat-thinking-content {
+  padding: 8px 12px 10px;
+  font-size: 13px;
+  color: var(--admin-subtle);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  border-top: 1px solid var(--admin-border);
+}
+
 .chat-bubble-time {
   margin-top: 6px;
   font-size: 12px;
@@ -1290,6 +1848,147 @@ onMounted(() => {
   background: var(--admin-bg-elevated);
 }
 
+.workspace-path-bar,
+.ask-user-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--admin-bg-panel) 88%, var(--admin-bg) 12%);
+}
+
+.workspace-path-bar label,
+.ask-user-question {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--admin-ink);
+}
+
+.workspace-path-bar input,
+.ask-user-row input {
+  background: var(--admin-bg);
+  color: var(--admin-ink);
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.workspace-path-row {
+  display: flex;
+  gap: 8px;
+}
+
+.workspace-path-row input {
+  flex: 1;
+}
+
+.workspace-browse-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.workspace-path-display {
+  padding: 10px 16px;
+  background: var(--admin-bg-elevated);
+  border-bottom: 1px solid var(--admin-border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workspace-path-display .path-label {
+  font-size: 13px;
+  color: var(--admin-subtle);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.workspace-path-display .path-value {
+  font-size: 13px;
+  color: var(--admin-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-path-display .path-value.path-unset {
+  color: var(--admin-muted);
+  font-style: italic;
+}
+
+.workspace-recent-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.workspace-recent-label {
+  font-size: 12px;
+  color: var(--admin-muted);
+  margin-right: 2px;
+}
+
+.workspace-recent-chip {
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  background: var(--admin-bg-soft);
+  color: var(--admin-muted);
+  cursor: pointer;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.workspace-recent-chip:hover {
+  border-color: var(--admin-accent);
+  color: var(--admin-ink);
+}
+
+.workspace-recent-chip.active {
+  border-color: var(--admin-accent);
+  color: var(--admin-accent);
+  background: color-mix(in srgb, var(--admin-accent) 12%, transparent 88%);
+}
+
+.chat-session-group-header {
+  font-size: 12px;
+  color: var(--admin-muted);
+  padding: 6px 10px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--admin-border);
+  margin-top: 4px;
+}
+
+.chat-session-group-header:first-child {
+  margin-top: 0;
+}
+
+.ask-user-details {
+  color: var(--admin-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.ask-user-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ask-user-row input {
+  flex: 1 1 320px;
+}
+
 .chat-input-area textarea {
   background: var(--admin-bg);
   color: var(--admin-ink);
@@ -1309,10 +2008,200 @@ onMounted(() => {
   box-shadow: 0 0 0 3px var(--admin-accent-soft);
 }
 
+.chat-not-supported {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 20px;
+  text-align: center;
+  color: var(--admin-muted);
+}
+
+.chat-not-supported-icon {
+  font-size: 32px;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.chat-not-supported-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--admin-ink);
+}
+
+.chat-not-supported-desc {
+  font-size: 13px;
+  color: var(--admin-subtle);
+}
+
 .chat-input-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
+}
+
+.chat-error-box {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--admin-danger, #ef4444) 40%, var(--admin-border) 60%);
+  background: color-mix(in srgb, var(--admin-danger, #ef4444) 12%, var(--admin-bg-panel) 88%);
+  color: color-mix(in srgb, var(--admin-danger, #ef4444) 82%, var(--admin-ink) 18%);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.chat-input-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.chat-model-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.model-picker {
+  position: relative;
+}
+
+.model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--admin-bg);
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--admin-ink);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.model-chip:hover {
+  border-color: color-mix(in srgb, var(--admin-accent) 40%, var(--admin-border) 60%);
+  background: var(--admin-bg-elevated);
+}
+
+.model-chip.icon-only {
+  padding: 6px;
+  color: var(--admin-muted);
+}
+
+.model-chip.icon-only:hover {
+  color: var(--admin-accent);
+}
+
+.model-chip svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.chip-chevron {
+  transition: transform 0.2s ease;
+}
+
+.model-picker.open .chip-chevron {
+  transform: rotate(180deg);
+}
+
+.model-picker-dropdown {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 200px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--admin-bg-panel);
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--admin-bg) 60%, transparent);
+  z-index: 10;
+}
+
+.model-picker-item {
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--admin-ink);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.model-picker-item:hover {
+  background: var(--admin-bg-soft);
+}
+
+.model-picker-item.active {
+  background: color-mix(in srgb, var(--admin-accent) 12%, var(--admin-bg-soft) 88%);
+  color: var(--admin-accent);
+  font-weight: 600;
+}
+
+.model-settings {
+  position: relative;
+}
+
+.model-settings-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  min-width: 220px;
+  background: var(--admin-bg-panel);
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--admin-bg) 60%, transparent);
+  z-index: 10;
+}
+
+.model-settings-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.model-settings-row label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--admin-muted);
+}
+
+.model-settings-row select {
+  background: var(--admin-bg);
+  color: var(--admin-ink);
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.model-settings-row select:focus {
+  border-color: var(--admin-accent);
+  outline: none;
 }
 
 .chat-bubble-content :deep(*) {

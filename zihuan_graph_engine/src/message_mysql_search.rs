@@ -1,9 +1,8 @@
 use crate::message_mysql_history_common::{
-    aggregate_history_rows, format_history_messages, message_history_chunk_row_from_row,
-    run_mysql_query, SearchMessagesQueryBuilder,
+    aggregate_history_rows, format_history_messages, message_history_chunk_row_from_row, run_mysql_query,
+    SearchMessagesQueryBuilder,
 };
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
-use std::collections::HashMap;
 use zihuan_core::error::{Error, Result};
 
 pub struct MessageMySQLSearchNode {
@@ -44,9 +43,7 @@ impl Node for MessageMySQLSearchNode {
         port! { name = "sort_by_time_desc", ty = Boolean, desc = "是否按发送时间从新到旧排序，默认true" },
     ];
 
-    node_output![
-        port! { name = "messages", ty = Vec(String), desc = "格式化后的搜索结果消息列表" },
-    ];
+    node_output![port! { name = "messages", ty = Vec(String), desc = "格式化后的搜索结果消息列表" },];
 
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
@@ -128,9 +125,7 @@ impl Node for MessageMySQLSearchNode {
             .unwrap_or(100);
 
         if limit <= 0 {
-            return Err(Error::ValidationError(
-                "limit must be greater than 0".to_string(),
-            ));
+            return Err(Error::ValidationError("limit must be greater than 0".to_string()));
         }
 
         let sort_by_time_desc = inputs
@@ -164,9 +159,7 @@ impl Node for MessageMySQLSearchNode {
         })?;
 
         let messages = format_history_messages(aggregate_history_rows(
-            rows.into_iter()
-                .map(message_history_chunk_row_from_row)
-                .collect(),
+            rows.into_iter().map(message_history_chunk_row_from_row).collect(),
             limit as usize,
         ));
 

@@ -4,8 +4,8 @@ use std::thread;
 
 use ims_bot_adapter::models::event_model::{MessageEvent, MessageType, Sender};
 use ims_bot_adapter::models::message::{
-    ForwardMessage, ForwardNodeMessage, ImageMessage, Message, PersistedMedia,
-    PersistedMediaSource, PlainTextMessage, ReplyMessage,
+    ForwardMessage, ForwardNodeMessage, ImageMessage, Message, PersistedMedia, PersistedMediaSource, PlainTextMessage,
+    ReplyMessage,
 };
 use ims_bot_adapter::REPLAY_CONTENT_LABEL;
 use zihuan_core::llm::MessagePart;
@@ -76,16 +76,19 @@ fn build_image_message(name: &str, source: &str) -> Message {
 #[test]
 fn prepare_user_input_keeps_plain_text_as_single_text_part() {
     let event = build_event(vec![Message::PlainText(PlainTextMessage {
-        text: "@bot 你好".to_string(),
+        text: "@bot 你好".to_string()
     })]);
 
     let prepared = prepare_message_event_user_input_for_test(&event, "bot", "bot");
 
-    assert_eq!(prepared.text, "你好");
+    assert_eq!(prepared.current_text, "你好");
+    assert!(prepared.reference_blocks.is_empty());
     assert!(!prepared.has_media);
-    assert!(prepared.image_reference_lines.is_empty());
-    assert_eq!(prepared.parts.len(), 1);
-    assert!(matches!(prepared.parts[0], MessagePart::Text { .. }));
+    assert!(prepared.current_image_reference_lines.is_empty());
+    assert!(prepared.reference_image_reference_lines.is_empty());
+    assert_eq!(prepared.current_parts.len(), 1);
+    assert!(matches!(prepared.current_parts[0], MessagePart::Text { .. }));
+    assert!(prepared.reference_parts.is_empty());
     assert!(prepared.is_at_me);
 }
 
@@ -98,9 +101,10 @@ fn prepare_user_input_turns_image_message_into_media_part() {
 
     assert!(prepared.has_media);
     assert_eq!(prepared.multimodal_stats.image_parts, 1);
-    assert_eq!(prepared.image_reference_lines.len(), 1);
+    assert_eq!(prepared.current_image_reference_lines.len(), 1);
+    assert!(prepared.reference_image_reference_lines.is_empty());
     assert!(prepared
-        .parts
+        .current_parts
         .iter()
         .any(|part| matches!(part, MessagePart::Image { .. })));
 }
@@ -116,18 +120,17 @@ fn prepare_user_input_resolves_inline_data_url_into_image_part() {
 
     assert!(prepared.has_media);
     assert_eq!(prepared.multimodal_stats.image_parts, 1);
-    assert_eq!(prepared.parts.len(), 2);
-    assert!(matches!(prepared.parts[0], MessagePart::Text { .. }));
-    assert!(matches!(prepared.parts[1], MessagePart::Image { .. }));
+    assert_eq!(prepared.current_parts.len(), 2);
+    assert!(matches!(prepared.current_parts[0], MessagePart::Text { .. }));
+    assert!(matches!(prepared.current_parts[1], MessagePart::Image { .. }));
+    assert!(prepared.reference_parts.is_empty());
 }
 
 #[test]
 fn prepare_user_input_includes_reply_source_text_and_media() {
     let image_url = spawn_test_image_server();
     let reply_source = vec![
-        Message::PlainText(PlainTextMessage {
-            text: "原消息".to_string(),
-        }),
+        Message::PlainText(PlainTextMessage { text: "原消息".to_string() }),
         build_image_message("reply.png", &image_url),
     ];
     let event = build_event(vec![
@@ -136,22 +139,25 @@ fn prepare_user_input_includes_reply_source_text_and_media() {
             message_source: Some(reply_source),
         }),
         Message::PlainText(PlainTextMessage {
-            text: "这是回复".to_string(),
+            text: "这是回复".to_string()
         }),
     ]);
 
     let prepared = prepare_message_event_user_input_for_test(&event, "bot", "bot");
 
-    assert!(prepared.text.contains(REPLAY_CONTENT_LABEL));
-    assert!(prepared.text.contains("原消息"));
+    assert_eq!(prepared.current_text, "这是回复");
+    assert_eq!(prepared.reference_blocks.len(), 1);
+    assert!(prepared.reference_blocks[0].contains(REPLAY_CONTENT_LABEL));
+    assert!(prepared.reference_blocks[0].contains("原消息"));
     assert!(prepared
-        .image_reference_lines
+        .reference_image_reference_lines
         .iter()
         .any(|line| line.contains("media_id=")));
     assert!(prepared
-        .parts
+        .reference_parts
         .iter()
         .any(|part| matches!(part, MessagePart::Image { .. })));
+    assert!(prepared.current_image_reference_lines.is_empty());
 }
 
 #[test]
@@ -164,9 +170,7 @@ fn prepare_user_input_handles_forward_nested_media() {
             nickname: Some("alice".to_string()),
             id: Some("node-1".to_string()),
             content: vec![
-                Message::PlainText(PlainTextMessage {
-                    text: "前文".to_string(),
-                }),
+                Message::PlainText(PlainTextMessage { text: "前文".to_string() }),
                 build_image_message("forward.png", &image_url),
             ],
         }],
@@ -175,12 +179,15 @@ fn prepare_user_input_handles_forward_nested_media() {
     let prepared = prepare_message_event_user_input_for_test(&event, "bot", "bot");
 
     assert!(prepared.has_media);
+    assert!(prepared.current_text.is_empty());
+    assert_eq!(prepared.reference_blocks.len(), 1);
     assert!(prepared
-        .image_reference_lines
+        .reference_image_reference_lines
         .iter()
         .any(|line| line.contains("media_id=")));
     assert!(prepared
-        .parts
+        .reference_parts
         .iter()
         .any(|part| matches!(part, MessagePart::Image { .. })));
+    assert!(prepared.current_parts.is_empty());
 }

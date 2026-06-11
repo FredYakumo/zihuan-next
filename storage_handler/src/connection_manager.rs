@@ -8,12 +8,11 @@ use log::info;
 use once_cell::sync::Lazy;
 use reqwest::blocking::Client;
 use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
-use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
+use sqlx::sqlite::SqlitePoolOptions;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 use zihuan_core::connection_manager::{
-    ConnectionManager as ConnectionManagerTrait, RuntimeConnectionInstanceSummary,
-    RuntimeConnectionStatus,
+    ConnectionManager as ConnectionManagerTrait, RuntimeConnectionInstanceSummary, RuntimeConnectionStatus,
 };
 use zihuan_core::data_refs::{MySqlConfig, SqliteConfig};
 use zihuan_core::error::{Error, Result};
@@ -25,8 +24,8 @@ use crate::resource_resolver::find_connection;
 use crate::rustfs::build_s3_ref as build_s3_direct_ref;
 use crate::weaviate::build_weaviate_ref as build_weaviate_direct_ref;
 use crate::{
-    db_schema::ensure_tables_for_connection, load_connections, ConnectionKind,
-    DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS, DEFAULT_MYSQL_MAX_CONNECTIONS,
+    db_schema::ensure_tables_for_connection, load_connections, ConnectionKind, DEFAULT_MYSQL_ACQUIRE_TIMEOUT_SECS,
+    DEFAULT_MYSQL_MAX_CONNECTIONS,
 };
 
 const STORAGE_INSTANCE_IDLE_TIMEOUT_SECS: i64 = 15 * 60;
@@ -131,17 +130,11 @@ impl RuntimeStorageConnectionManager {
         }
     }
 
-    async fn build_runtime_instance(
-        &self,
-        config_id: &str,
-    ) -> Result<(StorageRuntimeInstance, StorageRuntimeHandle)> {
+    async fn build_runtime_instance(&self, config_id: &str) -> Result<(StorageRuntimeInstance, StorageRuntimeHandle)> {
         let connections = load_connections()?;
         let connection = find_connection(&connections, config_id)?;
         if !connection.enabled {
-            return Err(Error::ValidationError(format!(
-                "connection '{}' is disabled",
-                connection.name
-            )));
+            return Err(Error::ValidationError(format!("connection '{}' is disabled", connection.name)));
         }
 
         let started_at = Utc::now();
@@ -168,9 +161,7 @@ impl RuntimeStorageConnectionManager {
                     .min_connections(1)
                     .acquire_timeout(Duration::from_secs(acquire_timeout_secs));
                 let masked_url = mask_url_credentials(&mysql.url);
-                let (pool, handle, runtime) = if let Ok(handle) =
-                    tokio::runtime::Handle::try_current()
-                {
+                let (pool, handle, runtime) = if let Ok(handle) = tokio::runtime::Handle::try_current() {
                     let pool = pool_options.connect(&mysql.url).await.map_err(|err| {
                             Error::Database(sqlx::Error::Configuration(Box::new(std::io::Error::other(
                                 format!(
@@ -206,7 +197,9 @@ impl RuntimeStorageConnectionManager {
                 if let Err(e) = ensure_tables_for_connection(&connection.kind).await {
                     log::warn!(
                         "[storage_instance_manager] ensure tables failed for mysql connection '{}' (id={}): {}",
-                        connection.name, connection.id, e
+                        connection.name,
+                        connection.id,
+                        e
                     );
                 }
                 let config = Arc::new(MySqlConfig {
@@ -216,11 +209,7 @@ impl RuntimeStorageConnectionManager {
                     pool: Some(pool),
                     runtime_handle: Some(handle),
                 });
-                (
-                    StorageRuntimePayload::MySql(config),
-                    "mysql".to_string(),
-                    runtime,
-                )
+                (StorageRuntimePayload::MySql(config), "mysql".to_string(), runtime)
             }
             ConnectionKind::Rustfs(rustfs) => {
                 let s3_ref = zihuan_core::runtime::block_async(build_s3_direct_ref(
@@ -232,11 +221,7 @@ impl RuntimeStorageConnectionManager {
                     rustfs.public_base_url.clone(),
                     rustfs.path_style,
                 ))?;
-                (
-                    StorageRuntimePayload::S3(s3_ref),
-                    "rustfs".to_string(),
-                    None,
-                )
+                (StorageRuntimePayload::S3(s3_ref), "rustfs".to_string(), None)
             }
             ConnectionKind::Weaviate(weaviate) => {
                 let weaviate_ref = build_weaviate_direct_ref(
@@ -247,11 +232,7 @@ impl RuntimeStorageConnectionManager {
                     weaviate.api_key.clone(),
                     weaviate.collection_schema,
                 )?;
-                (
-                    StorageRuntimePayload::Weaviate(weaviate_ref),
-                    "weaviate".to_string(),
-                    None,
-                )
+                (StorageRuntimePayload::Weaviate(weaviate_ref), "weaviate".to_string(), None)
             }
             ConnectionKind::Sqlite(sqlite) => {
                 info!(
@@ -260,44 +241,38 @@ impl RuntimeStorageConnectionManager {
                     sqlite.path,
                 );
                 let db_url = format!("sqlite://{}?mode=rwc", sqlite.path);
-                let pool_options = SqlitePoolOptions::new()
-                    .max_connections(4)
-                    .min_connections(1);
-                let (pool, handle, runtime) = if let Ok(handle) =
-                    tokio::runtime::Handle::try_current()
-                {
+                let pool_options = SqlitePoolOptions::new().max_connections(4).min_connections(1);
+                let (pool, handle, runtime) = if let Ok(handle) = tokio::runtime::Handle::try_current() {
                     let pool = pool_options.connect(&db_url).await.map_err(|err| {
-                            Error::Database(sqlx::Error::Configuration(Box::new(
-                                std::io::Error::other(format!(
-                                    "failed to create sqlite pool for connection '{}' (config_id={}, path={}): {}",
-                                    connection.name,
-                                    connection.canonical_config_id(),
-                                    sqlite.path,
-                                    err
-                                )),
-                            )))
-                        })?;
+                        Error::Database(sqlx::Error::Configuration(Box::new(std::io::Error::other(format!(
+                            "failed to create sqlite pool for connection '{}' (config_id={}, path={}): {}",
+                            connection.name,
+                            connection.canonical_config_id(),
+                            sqlite.path,
+                            err
+                        )))))
+                    })?;
                     (pool, handle, None)
                 } else {
                     let runtime = Arc::new(tokio::runtime::Runtime::new()?);
                     let handle = runtime.handle().clone();
                     let pool = handle.block_on(pool_options.connect(&db_url)).map_err(|err| {
-                            Error::Database(sqlx::Error::Configuration(Box::new(
-                                std::io::Error::other(format!(
-                                    "failed to create sqlite pool for connection '{}' (config_id={}, path={}): {}",
-                                    connection.name,
-                                    connection.canonical_config_id(),
-                                    sqlite.path,
-                                    err
-                                )),
-                            )))
-                        })?;
+                        Error::Database(sqlx::Error::Configuration(Box::new(std::io::Error::other(format!(
+                            "failed to create sqlite pool for connection '{}' (config_id={}, path={}): {}",
+                            connection.name,
+                            connection.canonical_config_id(),
+                            sqlite.path,
+                            err
+                        )))))
+                    })?;
                     (pool, handle, Some(runtime))
                 };
                 if let Err(e) = ensure_tables_for_connection(&connection.kind).await {
                     log::warn!(
                         "[storage_instance_manager] ensure tables failed for sqlite connection '{}' (id={}): {}",
-                        connection.name, connection.id, e
+                        connection.name,
+                        connection.id,
+                        e
                     );
                 }
                 let config = Arc::new(SqliteConfig {
@@ -305,11 +280,7 @@ impl RuntimeStorageConnectionManager {
                     pool: Some(pool),
                     runtime_handle: Some(handle),
                 });
-                (
-                    StorageRuntimePayload::Sqlite(config),
-                    "sqlite".to_string(),
-                    runtime,
-                )
+                (StorageRuntimePayload::Sqlite(config), "sqlite".to_string(), runtime)
             }
             other => {
                 return Err(Error::ValidationError(format!(
@@ -333,10 +304,7 @@ impl RuntimeStorageConnectionManager {
         };
         info!(
             "[storage_instance_manager] instantiated runtime instance_id={} config_id={} kind={} name='{}'",
-            summary.instance_id,
-            summary.config_id,
-            summary.kind,
-            summary.name
+            summary.instance_id, summary.config_id, summary.kind, summary.name
         );
         let handle = payload.clone_handle();
         Ok((
@@ -399,10 +367,7 @@ impl ConnectionManagerTrait for RuntimeStorageConnectionManager {
 
         let (instance, handle) = self.build_runtime_instance(config_id).await?;
         let mut instances = self.instances.write().await;
-        instances
-            .entry(config_id.to_string())
-            .or_default()
-            .push(instance);
+        instances.entry(config_id.to_string()).or_default().push(instance);
         Ok(handle)
     }
 
@@ -420,17 +385,11 @@ impl ConnectionManagerTrait for RuntimeStorageConnectionManager {
     async fn close_instance(&self, instance_id: &str) -> Result<bool> {
         let mut instances = self.instances.write().await;
         for bucket in instances.values_mut() {
-            if let Some(index) = bucket
-                .iter()
-                .position(|item| item.summary.instance_id == instance_id)
-            {
+            if let Some(index) = bucket.iter().position(|item| item.summary.instance_id == instance_id) {
                 let removed = bucket.remove(index);
                 info!(
                     "[storage_instance_manager] force closed runtime instance_id={} config_id={} kind={} name='{}'",
-                    removed.summary.instance_id,
-                    removed.summary.config_id,
-                    removed.summary.kind,
-                    removed.summary.name
+                    removed.summary.instance_id, removed.summary.config_id, removed.summary.kind, removed.summary.name
                 );
                 return Ok(true);
             }
@@ -440,10 +399,7 @@ impl ConnectionManagerTrait for RuntimeStorageConnectionManager {
 
     async fn close_instances_for_config(&self, config_id: &str) -> Result<usize> {
         let mut instances = self.instances.write().await;
-        Ok(instances
-            .remove(config_id)
-            .map(|items| items.len())
-            .unwrap_or(0))
+        Ok(instances.remove(config_id).map(|items| items.len()).unwrap_or(0))
     }
 
     async fn cleanup_stale_instances(&self) -> Result<usize> {
@@ -459,8 +415,7 @@ impl ConnectionManagerTrait for RuntimeStorageConnectionManager {
                 .unwrap_or(false);
             let mut retained = Vec::new();
             for item in bucket.drain(..) {
-                let stale = (now - item.summary.last_used_at).num_seconds()
-                    >= STORAGE_INSTANCE_IDLE_TIMEOUT_SECS;
+                let stale = (now - item.summary.last_used_at).num_seconds() >= STORAGE_INSTANCE_IDLE_TIMEOUT_SECS;
                 let externally_held_mysql = item.payload.has_external_mysql_refs();
                 if enabled && (!stale || externally_held_mysql) {
                     retained.push(item);
@@ -490,21 +445,15 @@ pub fn list_runtime_storage_instances() -> Result<Vec<RuntimeConnectionInstanceS
 }
 
 pub fn close_runtime_storage_instance(instance_id: &str) -> Result<bool> {
-    zihuan_core::runtime::block_async(
-        RuntimeStorageConnectionManager::shared().close_instance(instance_id),
-    )
+    zihuan_core::runtime::block_async(RuntimeStorageConnectionManager::shared().close_instance(instance_id))
 }
 
 pub fn close_runtime_storage_instances_for_config(config_id: &str) -> Result<usize> {
-    zihuan_core::runtime::block_async(
-        RuntimeStorageConnectionManager::shared().close_instances_for_config(config_id),
-    )
+    zihuan_core::runtime::block_async(RuntimeStorageConnectionManager::shared().close_instances_for_config(config_id))
 }
 
 pub fn cleanup_runtime_storage_instances() -> Result<usize> {
-    zihuan_core::runtime::block_async(
-        RuntimeStorageConnectionManager::shared().cleanup_stale_instances(),
-    )
+    zihuan_core::runtime::block_async(RuntimeStorageConnectionManager::shared().cleanup_stale_instances())
 }
 
 pub struct MessageStoreConnectionAccess {
@@ -523,10 +472,7 @@ impl std::fmt::Debug for MessageStoreConnectionAccess {
 
 impl MessageStoreConnectionAccess {
     pub fn new(mysql_ref: Arc<MySqlConfig>, redis_ref: Option<Arc<RedisConfig>>) -> Self {
-        Self {
-            mysql_ref,
-            redis_ref,
-        }
+        Self { mysql_ref, redis_ref }
     }
 
     pub fn mysql_ref(&self) -> &Arc<MySqlConfig> {
@@ -622,10 +568,7 @@ mod tests {
             }
 
             let mut guard = manager.instances.write().await;
-            let handle = manager
-                .mark_used_and_clone("cfg-1", &mut guard)
-                .await
-                .expect("cached handle");
+            let handle = manager.mark_used_and_clone("cfg-1", &mut guard).await.expect("cached handle");
             drop(guard);
 
             match handle {

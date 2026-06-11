@@ -127,9 +127,11 @@ pub trait SideEffectContext: Send + Sync {
     fn command_context(&self) -> &CommandContext;
 
     fn start_new_conversation(&self, _request: &NewConversationRequest) -> Result<()> {
-        Err(validation_error!("side effect 'start_new_conversation' is not supported for agent_type='{}' agent_id='{}'",
+        Err(validation_error!(
+            "side effect 'start_new_conversation' is not supported for agent_type='{}' agent_id='{}'",
             self.command_context().agent_type,
-            self.command_context().agent_id))
+            self.command_context().agent_id
+        ))
     }
 
     fn send_forward_content(&self, _content: &str) -> Result<()> {
@@ -308,9 +310,7 @@ pub struct CommandRegistry {
 
 impl CommandRegistry {
     pub fn new() -> Self {
-        Self {
-            commands: HashMap::new(),
-        }
+        Self { commands: HashMap::new() }
     }
 
     /// Register a command with its handler.
@@ -340,19 +340,12 @@ impl CommandRegistry {
         let command_name = body.split_whitespace().next()?.to_lowercase();
 
         let entry = self.commands.get(&command_name).or_else(|| {
-            self.commands.values().find(|e| {
-                e.definition
-                    .aliases
-                    .iter()
-                    .any(|a| a.eq_ignore_ascii_case(&command_name))
-            })
+            self.commands
+                .values()
+                .find(|e| e.definition.aliases.iter().any(|a| a.eq_ignore_ascii_case(&command_name)))
         })?;
 
-        if !entry
-            .definition
-            .scope
-            .matches(&ctx.agent_type, &ctx.agent_id)
-        {
+        if !entry.definition.scope.matches(&ctx.agent_type, &ctx.agent_id) {
             return None;
         }
 
@@ -387,11 +380,7 @@ impl CommandRegistry {
     }
 
     /// Preview a command without executing its handler.
-    pub fn preview<'a>(
-        &'a self,
-        ctx: &CommandContext,
-        raw_input: &str,
-    ) -> Option<CommandPreview<'a>> {
+    pub fn preview<'a>(&'a self, ctx: &CommandContext, raw_input: &str) -> Option<CommandPreview<'a>> {
         let (entry, parsed) = self.find_matching_entry(ctx, raw_input)?;
         Some(CommandPreview {
             definition: &entry.definition,
@@ -529,9 +518,6 @@ mod tests {
             .dispatch(&test_context(), "/t abc123 trailing text")
             .expect("dispatch should succeed");
         assert_eq!(dispatched.result.reply, "abc123");
-        assert_eq!(
-            dispatched.passthrough_text.as_deref(),
-            Some("trailing text")
-        );
+        assert_eq!(dispatched.passthrough_text.as_deref(), Some("trailing text"));
     }
 }

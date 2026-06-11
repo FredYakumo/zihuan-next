@@ -16,18 +16,15 @@ use crate::ConnectionKind;
 pub async fn ensure_tables_for_connection(kind: &ConnectionKind) -> Result<()> {
     match kind {
         ConnectionKind::Mysql(mysql) => {
-            info!(
-                "[db_schema] ensuring MySQL tables for url={}",
-                mask_url(&mysql.url)
-            );
+            info!("[db_schema] ensuring MySQL tables for url={}", mask_url(&mysql.url));
             let mut conn = MySqlConnection::connect(&mysql.url).await.map_err(|e| {
-                zihuan_core::error::Error::Database(sqlx::Error::Configuration(Box::new(
-                    std::io::Error::other(format!(
+                zihuan_core::error::Error::Database(sqlx::Error::Configuration(Box::new(std::io::Error::other(
+                    format!(
                         "failed to connect to MySQL for schema setup (url={}): {}",
                         mask_url(&mysql.url),
                         e
-                    )),
-                )))
+                    ),
+                ))))
             })?;
             database::ensure_tables_mysql(&mut conn).await?;
             conn.close().await.map_err(|e| {
@@ -40,17 +37,11 @@ pub async fn ensure_tables_for_connection(kind: &ConnectionKind) -> Result<()> {
         }
         ConnectionKind::Sqlite(sqlite) => {
             let db_url = format!("sqlite://{}?mode=rwc", sqlite.path);
-            info!(
-                "[db_schema] ensuring SQLite tables for path={}",
-                sqlite.path
-            );
+            info!("[db_schema] ensuring SQLite tables for path={}", sqlite.path);
             let mut conn = SqliteConnection::connect(&db_url).await.map_err(|e| {
-                zihuan_core::error::Error::Database(sqlx::Error::Configuration(Box::new(
-                    std::io::Error::other(format!(
-                        "failed to connect to SQLite for schema setup (path={}): {}",
-                        sqlite.path, e
-                    )),
-                )))
+                zihuan_core::error::Error::Database(sqlx::Error::Configuration(Box::new(std::io::Error::other(
+                    format!("failed to connect to SQLite for schema setup (path={}): {}", sqlite.path, e),
+                ))))
             })?;
             database::ensure_tables_sqlite(&mut conn).await?;
             conn.close().await.map_err(|e| {

@@ -220,6 +220,9 @@ export const fileIO = {
   listTextEmbeddingModels(): Promise<{ models: string[] }> {
     return request("GET", "/models/text-embedding");
   },
+  listLocalLlmModels(): Promise<{ models: LocalLlmModelInfo[] }> {
+    return request("GET", "/models/llm");
+  },
   listTokenizerModels(): Promise<{ models: string[] }> {
     return request("GET", "/models/tokenizer");
   },
@@ -327,7 +330,8 @@ export interface LlmServiceConfig {
   api_endpoint: string;
   api_key?: string | null;
   api_style:
-    | "candle"
+    | "candle_gguf"
+    | "candle_hf"
     | "open_ai_chat_completions"
     | "open_ai_chat_completions_tencent_multimodal_compat"
     | "open_ai_responses"
@@ -336,8 +340,20 @@ export interface LlmServiceConfig {
   stream: boolean;
   supports_multimodal_input: boolean;
   include_reasoning_content: boolean;
+  thinking_type?: "enabled" | "disabled" | null;
+  reasoning_effort?: "low" | "medium" | "high" | "max" | null;
   timeout_secs: number;
   retry_count: number;
+}
+
+export interface LocalLlmModelInfo {
+  model_name: string;
+  kind: "text" | "vision_language";
+  layout: "gguf" | "hf" | "unknown";
+  available: boolean;
+  reason?: string | null;
+  weight_file?: string | null;
+  supports_multimodal_input: boolean;
 }
 
 export type ModelRefSpec =
@@ -406,7 +422,7 @@ export interface QqChatAgentIgnoreRule {
 }
 
 export interface ChatStreamEvent {
-  type: "start" | "delta" | "done" | "error" | "tool_call_start" | "tool_call_result";
+  type: "start" | "delta" | "thinking_delta" | "done" | "error" | "tool_call_start" | "tool_call_result" | "ask_user";
   session_id?: string;
   message_id?: string;
   index?: number;
@@ -417,6 +433,9 @@ export interface ChatStreamEvent {
   name?: string;
   arguments?: unknown;
   result?: string;
+  question?: string;
+  details?: string;
+  placeholder?: string;
 }
 
 export interface ChatToolCall {
@@ -436,12 +455,19 @@ export interface ChatHistoryRecord {
   agent_avatar_url: string | null;
   role: string;
   content: string;
+  reasoning_content?: string | null;
   timestamp: string;
   stream_index?: number | null;
   trace_id: string;
   message_id: string;
   tool_calls?: ChatToolCall[];
   tool_call_id?: string | null;
+  workspace_path?: string | null;
+  pending_ask_user?: {
+    question: string;
+    details?: string | null;
+    placeholder?: string | null;
+  } | null;
 }
 
 export interface ChatSessionSummary {
@@ -451,6 +477,12 @@ export interface ChatSessionSummary {
   agent_name?: string | null;
   agent_type?: string | null;
   agent_avatar_url?: string | null;
+  workspace_path?: string | null;
+  pending_ask_user?: {
+    question: string;
+    details?: string | null;
+    placeholder?: string | null;
+  } | null;
 }
 
 export const system = {
@@ -573,6 +605,9 @@ export const system = {
     stop(configId: string): Promise<{ ok: boolean; runtime: AgentRuntimeInfo }> {
       return request("POST", `/system/agents/${configId}/stop`);
     },
+  },
+  selectDirectory(): Promise<{ path: string | null }> {
+    return request("GET", "/system/select-directory");
   },
 };
 
@@ -764,6 +799,10 @@ export const chat = {
       agent_id: string;
       session_id?: string | null;
       stream?: boolean;
+      model_config_id?: string | null;
+      thinking_type?: "enabled" | "disabled" | null;
+      reasoning_effort?: "low" | "medium" | "high" | "max" | null;
+      workspace_path?: string | null;
       messages: Array<{
         role: string;
         content: string;
@@ -844,5 +883,98 @@ export const chat = {
 
   deleteSession(sessionId: string): Promise<{ ok: boolean }> {
     return request("DELETE", `/chat/sessions/${sessionId}`);
+  },
+};
+
+// Setup Wizard
+export interface SetupWizardState {
+  completed: boolean;
+  skipped: boolean;
+  completed_at: string | null;
+  mode: string | null;
+  last_step: string | null;
+  last_error: string | null;
+}
+
+export interface EnvironmentInfo {
+  os: string;
+  os_detail: string;
+  docker_available: boolean;
+  docker_compose_available: boolean;
+  cuda_version: string | null;
+  compiler_version: string | null;
+  proxy: string | null;
+  services: Array<{
+    service: string;
+    detected: boolean;
+    connection_test_result: string | null;
+  }>;
+}
+
+export interface SetupProgressEvent {
+  step: string;
+  status: string;
+  message: string;
+  progress_percent: number | null;
+  error: string | null;
+}
+
+export interface LlmSetupConfig {
+  mode: string;
+  model_name: string;
+  api_endpoint: string;
+  api_key?: string | null;
+  api_style: string;
+}
+
+export type ImsPlatform = "qq_napcat" | "wechat" | "telegram";
+
+export interface ImsBotAdapterSetupConfig {
+  platform: ImsPlatform;
+  ws_url: string;
+  qq_id?: string | null;
+  token?: string | null;
+}
+
+export const setup = {
+  getStatus(): Promise<SetupWizardState> {
+    return request("GET", "/setup/status");
+  },
+  getEnvironment(): Promise<EnvironmentInfo> {
+    return request("GET", "/setup/environment");
+  },
+  execute(payload: {
+    mode: "role_based" | "detailed" | "skip";
+    role?: string;
+    options?: { http_proxy?: string; docker_compose_path?: string };
+    llm_config?: LlmSetupConfig;
+    ims_bot_adapter_config?: ImsBotAdapterSetupConfig;
+  }): Promise<{ accepted: boolean; task_id: string }> {
+    return request("POST", "/setup", payload);
+  },
+  skip(): Promise<{ ok: boolean }> {
+    return request("POST", "/setup/skip");
+  },
+  reset(): Promise<{ ok: boolean }> {
+    return request("POST", "/setup/reset");
+  },
+  streamProgress(taskId: string, onEvent: (event: SetupProgressEvent) => void): () => void {
+    const es = new EventSource(`/api/setup/progress?task_id=${taskId}`);
+    es.onmessage = (e) => {
+      try {
+        const event = JSON.parse(e.data) as SetupProgressEvent;
+        onEvent(event);
+        if (event.step === "finished" || event.status === "error") {
+          es.close();
+        }
+      } catch (err) {
+        console.warn("Failed to parse setup progress event", err, e.data);
+      }
+    };
+    es.onerror = (err) => {
+      console.warn("Setup progress SSE error", err);
+      es.close();
+    };
+    return () => es.close();
   },
 };

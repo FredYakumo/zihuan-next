@@ -22,50 +22,42 @@ mod weaviate_schema;
 use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use zihuan_core::config::{
-    ConfigCategory, ConfigCenter, ConfigKind, ConfigRecord, StoredConfigRecord,
-};
+use zihuan_core::config::{ConfigCategory, ConfigCenter, ConfigKind, ConfigRecord, StoredConfigRecord};
 use zihuan_core::error::Result;
 
 pub use agent_memory_weaviate::{
-    create_memory_record, create_memory_record_with_vector, delete_memory_record,
-    extend_expiry_for_hits, get_memory_record, is_memory_expired, list_recent_memory_keys,
-    memory_is_accessible, normalize_memory_scope_lists, search_memory_content,
-    search_memory_content_by_vector, update_memory_record, update_memory_record_with_vector,
+    create_memory_record, create_memory_record_with_vector, delete_memory_record, extend_expiry_for_hits,
+    get_memory_record, is_memory_expired, list_recent_memory_keys, memory_is_accessible, normalize_memory_scope_lists,
+    search_memory_content, search_memory_content_by_vector, update_memory_record, update_memory_record_with_vector,
     AgentMemoryAccessContext, AgentMemoryRecord, AgentMemorySearchHit, AgentMemoryUpsert,
 };
 pub use connection_manager::{
-    cleanup_runtime_storage_instances, close_runtime_storage_instance,
-    close_runtime_storage_instances_for_config, list_runtime_storage_instances,
-    MessageStoreConnectionAccess, RuntimeStorageConnectionManager, StorageRuntimeHandle,
+    cleanup_runtime_storage_instances, close_runtime_storage_instance, close_runtime_storage_instances_for_config,
+    list_runtime_storage_instances, MessageStoreConnectionAccess, RuntimeStorageConnectionManager,
+    StorageRuntimeHandle,
 };
 pub use db_schema::ensure_tables_for_connection;
 pub use message_store::{MessageRecord, MessageStore};
 pub use mysql::MySqlNode;
 pub use object_storage::{
-    enrich_event_images, enrich_message_images, save_image_to_object_storage,
-    upload_remote_image_to_s3, ImageCacheAdapter, ImageObjectStorageInput, ObjectStorageConfig,
-    PendingImageUpload, SavedImageObject,
+    enrich_event_images, enrich_message_images, save_image_to_object_storage, upload_remote_image_to_s3,
+    ImageCacheAdapter, ImageObjectStorageInput, ObjectStorageConfig, PendingImageUpload, SavedImageObject,
 };
-pub use rdb::{
-    build_relational_db_connection_for_connection, build_relational_db_connection_for_kind,
-};
+pub use rdb::{build_relational_db_connection_for_connection, build_relational_db_connection_for_kind};
 pub use redis::RedisNode;
 pub use resource_resolver::{
-    build_mysql_ref, build_redis_ref, build_s3_ref, build_sqlite_ref, build_weaviate_ref,
-    build_web_search_engine_ref, find_connection, resolve_connection_data_value,
+    build_mysql_ref, build_redis_ref, build_s3_ref, build_sqlite_ref, build_weaviate_ref, build_web_search_engine_ref,
+    find_connection, resolve_connection_data_value,
 };
 pub use rustfs::RustfsNode;
 pub use sqlite::SqliteNode;
 pub use weaviate::WeaviateNode;
 pub use weaviate_client::WeaviateClient;
 pub use weaviate_persistence::{
-    build_image_record_properties, deterministic_media_object_id, deterministic_message_object_id,
-    upsert_image_record, upsert_message_event, upsert_qq_message_list,
+    build_image_record_properties, deterministic_media_object_id, deterministic_message_object_id, upsert_image_record,
+    upsert_message_event, upsert_qq_message_list,
 };
-pub use weaviate_schema::{
-    collection_config_for_schema, ensure_collection_schema, validate_collection_schema,
-};
+pub use weaviate_schema::{collection_config_for_schema, ensure_collection_schema, validate_collection_schema};
 pub use zihuan_core::weaviate::WeaviateCollectionSchema;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -185,9 +177,7 @@ impl ConnectionConfig {
     pub fn is_valid(&self) -> bool {
         match &self.kind {
             ConnectionKind::Mysql(mysql) => {
-                !mysql.url.trim().is_empty()
-                    && mysql.max_connections > 0
-                    && mysql.acquire_timeout_secs > 0
+                !mysql.url.trim().is_empty() && mysql.max_connections > 0 && mysql.acquire_timeout_secs > 0
             }
             _ => true,
         }
@@ -226,28 +216,20 @@ impl ConfigRecord for ConnectionConfig {
 
     fn validate(&self) -> Result<()> {
         if self.canonical_config_id().trim().is_empty() {
-            return Err(zihuan_core::string_error!(
-                "connection config_id must not be empty"
-            ));
+            return Err(zihuan_core::string_error!("connection config_id must not be empty"));
         }
         if self.name.trim().is_empty() {
-            return Err(zihuan_core::string_error!(
-                "connection name must not be empty"
-            ));
+            return Err(zihuan_core::string_error!("connection name must not be empty"));
         }
         if let ConnectionKind::Mysql(mysql) = &self.kind {
             if mysql.url.trim().is_empty() {
                 return Err(zihuan_core::string_error!("mysql.url must not be empty"));
             }
             if mysql.max_connections == 0 {
-                return Err(zihuan_core::string_error!(
-                    "mysql.max_connections must be greater than 0"
-                ));
+                return Err(zihuan_core::string_error!("mysql.max_connections must be greater than 0"));
             }
             if mysql.acquire_timeout_secs == 0 {
-                return Err(zihuan_core::string_error!(
-                    "mysql.acquire_timeout_secs must be greater than 0"
-                ));
+                return Err(zihuan_core::string_error!("mysql.acquire_timeout_secs must be greater than 0"));
             }
         }
         if let ConnectionKind::Sqlite(sqlite) = &self.kind {
@@ -328,10 +310,7 @@ pub fn save_connections(connections: Vec<ConnectionConfig>) -> Result<()> {
     Ok(())
 }
 
-fn normalize_connection_identity(
-    mut connection: ConnectionConfig,
-    fallback_id: String,
-) -> ConnectionConfig {
+fn normalize_connection_identity(mut connection: ConnectionConfig, fallback_id: String) -> ConnectionConfig {
     let canonical = if connection.config_id.trim().is_empty() {
         if connection.id.trim().is_empty() {
             fallback_id
@@ -367,11 +346,7 @@ fn connection_from_record(record: StoredConfigRecord) -> Result<(ConnectionConfi
     }
     let (spec, migrated) = migrate_connection_spec(&record);
     let kind = serde_json::from_value::<ConnectionKind>(spec).map_err(|err| {
-        zihuan_core::string_error!(
-            "failed to parse connection spec for '{}': {}",
-            record.config_id,
-            err
-        )
+        zihuan_core::string_error!("failed to parse connection spec for '{}': {}", record.config_id, err)
     })?;
     Ok((
         ConnectionConfig {
@@ -397,23 +372,16 @@ fn migrate_connection_spec(record: &StoredConfigRecord) -> (Value, bool) {
     if object.contains_key("collection_schema") {
         return (spec, false);
     }
-    let class_name = object
-        .get("class_name")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
+    let class_name = object.get("class_name").and_then(Value::as_str).unwrap_or_default();
     let inferred = infer_weaviate_collection_schema(&record.name, class_name);
     object.insert(
         "collection_schema".to_string(),
-        serde_json::to_value(inferred)
-            .unwrap_or_else(|_| Value::String("agent_memory".to_string())),
+        serde_json::to_value(inferred).unwrap_or_else(|_| Value::String("agent_memory".to_string())),
     );
     (spec, true)
 }
 
-pub fn infer_weaviate_collection_schema(
-    connection_name: &str,
-    class_name: &str,
-) -> WeaviateCollectionSchema {
+pub fn infer_weaviate_collection_schema(connection_name: &str, class_name: &str) -> WeaviateCollectionSchema {
     let haystack = format!("{connection_name} {class_name}").to_lowercase();
     if ["image", "img", "picture", "photo", "图片", "图像"]
         .iter()

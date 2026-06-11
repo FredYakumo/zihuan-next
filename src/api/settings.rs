@@ -165,8 +165,7 @@ pub async fn export_config(_req: &mut Request, res: &mut Response) {
     let mut zip_buf = Cursor::new(Vec::new());
     {
         let mut zip = zip::ZipWriter::new(&mut zip_buf);
-        let options =
-            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
         if let Err(e) = zip.start_file("system_config.json", options) {
             res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
             res.render(Json(serde_json::json!({ "error": e.to_string() })));
@@ -189,23 +188,13 @@ pub async fn export_config(_req: &mut Request, res: &mut Response) {
     // Sanitize machine name for use in a filename.
     let safe_machine: String = machine
         .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' {
-                c
-            } else {
-                '_'
-            }
-        })
+        .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '_' })
         .collect();
     let filename = format!("zihuan-config_{safe_machine}_{datetime}.zip");
 
     res.add_header("Content-Type", "application/zip", true).ok();
-    res.add_header(
-        "Content-Disposition",
-        format!("attachment; filename=\"{filename}\""),
-        true,
-    )
-    .ok();
+    res.add_header("Content-Disposition", format!("attachment; filename=\"{filename}\""), true)
+        .ok();
     res.write_body(zip_buf.into_inner()).ok();
 }
 
@@ -233,9 +222,7 @@ pub async fn restore_config(req: &mut Request, res: &mut Response) {
         Ok(a) => a,
         Err(e) => {
             res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(
-                serde_json::json!({ "error": format!("invalid zip: {e}") }),
-            ));
+            res.render(Json(serde_json::json!({ "error": format!("invalid zip: {e}") })));
             return;
         }
     };
@@ -245,9 +232,7 @@ pub async fn restore_config(req: &mut Request, res: &mut Response) {
             let mut buf = Vec::new();
             if let Err(e) = std::io::Read::read_to_end(&mut entry, &mut buf) {
                 res.status_code(StatusCode::BAD_REQUEST);
-                res.render(Json(
-                    serde_json::json!({ "error": format!("failed to read zip entry: {e}") }),
-                ));
+                res.render(Json(serde_json::json!({ "error": format!("failed to read zip entry: {e}") })));
                 return;
             }
             buf
@@ -281,9 +266,7 @@ pub async fn restore_config(req: &mut Request, res: &mut Response) {
 
     if let Err(e) = zihuan_core::system_config::save_system_config_root(&root) {
         res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-        res.render(Json(
-            serde_json::json!({ "error": format!("failed to save config: {e}") }),
-        ));
+        res.render(Json(serde_json::json!({ "error": format!("failed to save config: {e}") })));
         return;
     }
 

@@ -80,11 +80,8 @@ impl crate::TextSegmenter for BpeSegmenter {
             }
         };
 
-        let token_end_char_positions: Vec<usize> = encoding
-            .get_offsets()
-            .iter()
-            .map(|(_, end)| to_char_index(*end))
-            .collect();
+        let token_end_char_positions: Vec<usize> =
+            encoding.get_offsets().iter().map(|(_, end)| to_char_index(*end)).collect();
 
         let chars: Vec<char> = text.chars().collect();
         let mut chunks = Vec::new();
@@ -92,11 +89,7 @@ impl crate::TextSegmenter for BpeSegmenter {
         while start < chars.len() {
             let hard_end = (start + max_chars).min(chars.len());
             if hard_end == chars.len() {
-                let chunk = chars[start..hard_end]
-                    .iter()
-                    .collect::<String>()
-                    .trim()
-                    .to_string();
+                let chunk = chars[start..hard_end].iter().collect::<String>().trim().to_string();
                 if !chunk.is_empty() {
                     chunks.push(chunk);
                 }
@@ -112,11 +105,7 @@ impl crate::TextSegmenter for BpeSegmenter {
                 .max();
 
             let split_end = token_boundary.unwrap_or(hard_end);
-            let chunk = chars[start..split_end]
-                .iter()
-                .collect::<String>()
-                .trim()
-                .to_string();
+            let chunk = chars[start..split_end].iter().collect::<String>().trim().to_string();
             if chunk.is_empty() {
                 start = hard_end;
                 continue;

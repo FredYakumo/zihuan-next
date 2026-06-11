@@ -1,4 +1,4 @@
-use crate::{node_input, node_output, node_output_flow, DataType, DataValue, Node, Port};
+use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use zihuan_core::error::Result;
 
 /// Routes one of two inputs to the output based on a boolean condition.
@@ -54,16 +54,18 @@ impl Node for ConditionalRouterNode {
 
         let (result, branch_taken) = if condition {
             (
-                inputs.get("primary").cloned().ok_or_else(|| {
-                    zihuan_core::error::Error::ValidationError("primary 输入不存在".to_string())
-                })?,
+                inputs
+                    .get("primary")
+                    .cloned()
+                    .ok_or_else(|| zihuan_core::error::Error::ValidationError("primary 输入不存在".to_string()))?,
                 "primary",
             )
         } else {
             (
-                inputs.get("fallback").cloned().ok_or_else(|| {
-                    zihuan_core::error::Error::ValidationError("fallback 输入不存在".to_string())
-                })?,
+                inputs
+                    .get("fallback")
+                    .cloned()
+                    .ok_or_else(|| zihuan_core::error::Error::ValidationError("fallback 输入不存在".to_string()))?,
                 "fallback",
             )
         };

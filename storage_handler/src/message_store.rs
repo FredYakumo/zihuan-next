@@ -80,10 +80,7 @@ impl MessageStore {
         .await
         .map_err(|e| Error::StringError(format!("Failed to query messages from MySQL: {}", e)))?;
 
-        info!(
-            "[MessageStore] Loaded {} message records from MySQL",
-            records.len()
-        );
+        info!("[MessageStore] Loaded {} message records from MySQL", records.len());
 
         let mut loaded_count = 0;
 
@@ -91,24 +88,14 @@ impl MessageStore {
             let message_id: String = row.get("message_id");
             let content: String = row.get("content");
 
-            match self
-                .connection_manager
-                .set_redis_value(&message_id, &content)
-                .await
-            {
+            match self.connection_manager.set_redis_value(&message_id, &content).await {
                 Ok(_) => {
                     loaded_count += 1;
-                    debug!(
-                        "[MessageStore] Loaded message {} into Redis from MySQL",
-                        message_id
-                    );
+                    debug!("[MessageStore] Loaded message {} into Redis from MySQL", message_id);
                     continue;
                 }
                 Err(e) if self.connection_manager.redis_ref().is_some() => {
-                    error!(
-                        "[MessageStore] Failed to load message {} into Redis: {}",
-                        message_id, e
-                    );
+                    error!("[MessageStore] Failed to load message {} into Redis: {}", message_id, e);
                 }
                 Err(_) => {}
             }
@@ -116,10 +103,7 @@ impl MessageStore {
             let mut mem = self.memory_store.lock().await;
             mem.insert(message_id.clone(), content.clone());
             loaded_count += 1;
-            debug!(
-                "[MessageStore] Loaded message {} into memory from MySQL",
-                message_id
-            );
+            debug!("[MessageStore] Loaded message {} into memory from MySQL", message_id);
         }
 
         info!(
@@ -140,10 +124,7 @@ impl MessageStore {
             let mem = self.mysql_memory_store.lock().await;
             let mut records: Vec<MessageRecord> = mem
                 .values()
-                .filter(|r| {
-                    r.sender_id == sender_id
-                        && (group_id.is_none() || r.group_id.as_deref() == group_id)
-                })
+                .filter(|r| r.sender_id == sender_id && (group_id.is_none() || r.group_id.as_deref() == group_id))
                 .cloned()
                 .collect();
 
@@ -217,11 +198,7 @@ impl MessageStore {
     }
 
     pub async fn store_message(&self, message_id: &str, message: &str) {
-        match self
-            .connection_manager
-            .set_redis_value(message_id, message)
-            .await
-        {
+        match self.connection_manager.set_redis_value(message_id, message).await {
             Ok(_) => {
                 debug!("[MessageStore] Message stored in Redis: {}", message_id);
                 return;
@@ -261,27 +238,18 @@ impl MessageStore {
 
             match result {
                 Ok(_) => {
-                    debug!(
-                        "[MessageStore] Message record persisted to MySQL: {}",
-                        record.message_id
-                    );
+                    debug!("[MessageStore] Message record persisted to MySQL: {}", record.message_id);
                     return Ok(());
                 }
                 Err(e) => {
-                    error!(
-                        "[MessageStore] Failed to store message record in MySQL: {}",
-                        e
-                    );
+                    error!("[MessageStore] Failed to store message record in MySQL: {}", e);
                 }
             }
         }
 
         let mut mem = self.mysql_memory_store.lock().await;
         mem.insert(record.message_id.clone(), record.clone());
-        debug!(
-            "[MessageStore] Message record stored in memory buffer: {}",
-            record.message_id
-        );
+        debug!("[MessageStore] Message record stored in memory buffer: {}", record.message_id);
         Ok(())
     }
 
@@ -314,23 +282,14 @@ impl MessageStore {
                         media_json: row.get("media_json"),
                         raw_message_json: row.get("raw_message_json"),
                     };
-                    debug!(
-                        "[MessageStore] Message record retrieved from MySQL: {}",
-                        message_id
-                    );
+                    debug!("[MessageStore] Message record retrieved from MySQL: {}", message_id);
                     return Ok(Some(record));
                 }
                 Ok(None) => {
-                    debug!(
-                        "[MessageStore] Message record not found in MySQL: {}",
-                        message_id
-                    );
+                    debug!("[MessageStore] Message record not found in MySQL: {}", message_id);
                 }
                 Err(e) => {
-                    error!(
-                        "[MessageStore] Failed to retrieve message record from MySQL: {}",
-                        e
-                    );
+                    error!("[MessageStore] Failed to retrieve message record from MySQL: {}", e);
                 }
             }
         }
@@ -370,17 +329,13 @@ impl MessageStore {
         }
 
         if let Some(pool) = self.mysql_pool() {
-            if let Ok(Some(record)) = sqlx::query_as::<_, (String,)>(
-                "SELECT content FROM message_record WHERE message_id = ? LIMIT 1",
-            )
-            .bind(message_id)
-            .fetch_optional(pool)
-            .await
+            if let Ok(Some(record)) =
+                sqlx::query_as::<_, (String,)>("SELECT content FROM message_record WHERE message_id = ? LIMIT 1")
+                    .bind(message_id)
+                    .fetch_optional(pool)
+                    .await
             {
-                debug!(
-                    "[MessageStore] Message retrieved from MySQL: {}",
-                    message_id
-                );
+                debug!("[MessageStore] Message retrieved from MySQL: {}", message_id);
                 return Some(record.0);
             }
         }

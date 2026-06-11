@@ -2,6 +2,7 @@ pub mod http_stream_agent;
 pub mod inference;
 pub mod qq_chat_agent;
 pub mod tool_definitions;
+pub mod workspace_agent;
 
 mod agent_text_similarity;
 mod classify_intent;
@@ -9,8 +10,8 @@ mod qq_chat_agent_core;
 pub mod qq_chat_agent_ignore_store;
 mod qq_chat_agent_inbox;
 mod qq_chat_agent_logging;
-mod qq_chat_agent_steer;
 pub(crate) mod qq_chat_agent_msg_send;
+mod qq_chat_agent_steer;
 mod tools;
 pub(crate) use tools::execute_image_understand_tool;
 pub(crate) use tools::CurrentTimeBrainTool;
@@ -29,7 +30,7 @@ use tokio::task::JoinHandle;
 use uuid::Uuid;
 use zihuan_agent::brain::BrainObserver;
 use zihuan_core::error::Result;
-use zihuan_core::llm::LLMMessage;
+use zihuan_core::llm::{LLMMessage, StreamToken};
 use zihuan_core::task_context::AgentTaskRuntime;
 
 use self::inference::{InferenceToolProvider, LoadedInferenceAgent};
@@ -71,8 +72,7 @@ impl Default for AgentRuntimeState {
     }
 }
 
-pub(super) type OnFinishShared =
-    Arc<Mutex<Option<Box<dyn FnOnce(bool, Option<String>) + Send + 'static>>>>;
+pub(super) type OnFinishShared = Arc<Mutex<Option<Box<dyn FnOnce(bool, Option<String>) + Send + 'static>>>>;
 
 pub(super) struct AgentRuntimeEntry {
     pub loaded_agent: Option<Arc<LoadedInferenceAgent>>,
@@ -134,10 +134,7 @@ impl AgentManager {
         messages: Vec<LLMMessage>,
     ) -> Result<Vec<LLMMessage>> {
         let agent = self.running_agent(agent_id).ok_or_else(|| {
-            zihuan_core::error::Error::ValidationError(format!(
-                "agent '{}' is not running",
-                agent_id
-            ))
+            zihuan_core::error::Error::ValidationError(format!("agent '{}' is not running", agent_id))
         })?;
         agent.infer_response_with_trace(messages)
     }
@@ -146,18 +143,58 @@ impl AgentManager {
         &self,
         agent_id: &str,
         messages: Vec<LLMMessage>,
-        token_tx: mpsc::UnboundedSender<String>,
+        token_tx: mpsc::UnboundedSender<StreamToken>,
         observer: Option<Arc<dyn BrainObserver>>,
-    ) -> Result<Vec<LLMMessage>> {
+    ) -> Result<(Vec<LLMMessage>, zihuan_agent::brain::BrainStopReason)> {
+        self.infer_agent_response_streaming_with_model(
+            agent_id,
+            messages,
+            token_tx,
+            observer,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+    }
+
+    pub async fn infer_agent_response_streaming_with_model(
+        &self,
+        agent_id: &str,
+        messages: Vec<LLMMessage>,
+        token_tx: mpsc::UnboundedSender<StreamToken>,
+        observer: Option<Arc<dyn BrainObserver>>,
+        model_config_id: Option<&str>,
+        thinking_type: Option<model_inference::system_config::ThinkingType>,
+        reasoning_effort: Option<model_inference::system_config::ReasoningEffort>,
+        workspace_path: Option<String>,
+    ) -> Result<(Vec<LLMMessage>, zihuan_agent::brain::BrainStopReason)> {
         let agent = self.running_agent(agent_id).ok_or_else(|| {
-            zihuan_core::error::Error::ValidationError(format!(
-                "agent '{}' is not running",
-                agent_id
-            ))
+            zihuan_core::error::Error::ValidationError(format!("agent '{}' is not running", agent_id))
         })?;
-        agent
-            .infer_response_streaming_with_trace(messages, token_tx, observer)
-            .await
+        if let Some(model_id) = model_config_id {
+            let llm_refs = model_inference::system_config::load_llm_refs()?;
+            let mut llm_config = crate::resource_resolver::resolve_llm_service_config(
+                Some(model_id),
+                &llm_refs,
+                &agent.agent_config().name,
+            )?;
+            if let Some(override_value) = thinking_type {
+                llm_config.thinking_type = Some(override_value);
+            }
+            if let Some(override_value) = reasoning_effort {
+                llm_config.reasoning_effort = Some(override_value);
+            }
+            let llm = crate::resource_resolver::build_llm_model(&llm_config)?;
+            agent
+                .infer_response_streaming_with_trace_and_llm(messages, token_tx, observer, llm, workspace_path)
+                .await
+        } else {
+            agent
+                .infer_response_streaming_with_trace(messages, token_tx, observer, workspace_path)
+                .await
+        }
     }
 
     pub async fn start_agent(
@@ -171,11 +208,7 @@ impl AgentManager {
         let start_result: Result<()> = async {
             let llm_refs = model_inference::system_config::load_llm_refs()?;
             let tool_provider = build_inference_tool_provider(&agent, &connections)?;
-            let loaded_agent = Arc::new(LoadedInferenceAgent::load_with_tools(
-                &agent,
-                &llm_refs,
-                tool_provider,
-            )?);
+            let loaded_agent = Arc::new(LoadedInferenceAgent::load_with_tools(&agent, &llm_refs, tool_provider)?);
 
             self.update_state(
                 &agent.id,
@@ -237,6 +270,21 @@ impl AgentManager {
                     };
                     entry.task = Some(task);
                     entry.on_finish = on_finish_shared;
+                    Ok(())
+                }
+                AgentType::Workspace(_config) => {
+                    let started_at = Local::now().to_rfc3339();
+                    let mut guard = self.inner.lock().unwrap();
+                    let entry = guard.entry(agent.id.clone()).or_default();
+                    entry.loaded_agent = Some(Arc::clone(&loaded_agent));
+                    entry.state = AgentRuntimeState {
+                        instance_id: Some(runtime_instance_id),
+                        status: AgentRuntimeStatus::Running,
+                        started_at: Some(started_at),
+                        last_error: None,
+                    };
+                    entry.task = None;
+                    entry.on_finish = Arc::new(Mutex::new(on_finish));
                     Ok(())
                 }
             }
@@ -301,14 +349,8 @@ impl AgentManager {
             }
         };
 
-        for agent in agents
-            .into_iter()
-            .filter(|agent| agent.enabled && agent.auto_start)
-        {
-            if let Err(err) = self
-                .start_agent(agent.clone(), connections.clone(), None, None)
-                .await
-            {
+        for agent in agents.into_iter().filter(|agent| agent.enabled && agent.auto_start) {
+            if let Err(err) = self.start_agent(agent.clone(), connections.clone(), None, None).await {
                 error!("Failed to auto start agent '{}': {}", agent.name, err);
             }
         }
@@ -330,11 +372,8 @@ pub fn build_inference_tool_provider(
     connections: &[ConnectionConfig],
 ) -> Result<Arc<dyn InferenceToolProvider>> {
     match &agent.agent_type {
-        AgentType::QqChat(config) => {
-            qq_chat_agent::load_inference_tool_provider(agent, config, connections)
-        }
-        AgentType::HttpStream(config) => {
-            http_stream_agent::load_inference_tool_provider(agent, config, connections)
-        }
+        AgentType::QqChat(config) => qq_chat_agent::load_inference_tool_provider(agent, config, connections),
+        AgentType::HttpStream(config) => http_stream_agent::load_inference_tool_provider(agent, config, connections),
+        AgentType::Workspace(config) => workspace_agent::load_inference_tool_provider(agent, config, connections),
     }
 }

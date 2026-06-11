@@ -18,19 +18,15 @@ fn main() {
     let status = run_frontend_build_unix();
 
     if !status.success() {
-        panic!(
-            "`pnpm run build` failed with exit code: {:?}",
-            status.code()
-        );
+        panic!("`pnpm run build` failed with exit code: {:?}", status.code());
     }
 
     let dist_index = Path::new("webui/dist/index.html");
-    let html = fs::read_to_string(dist_index)
-        .expect("Failed to read generated webui/dist/index.html after frontend build");
+    let html =
+        fs::read_to_string(dist_index).expect("Failed to read generated webui/dist/index.html after frontend build");
     let sanitized = html.replace(" crossorigin", "");
     if sanitized != html {
-        fs::write(dist_index, sanitized)
-            .expect("Failed to sanitize generated webui/dist/index.html");
+        fs::write(dist_index, sanitized).expect("Failed to sanitize generated webui/dist/index.html");
     }
 }
 
@@ -57,11 +53,7 @@ fn run_frontend_build_unix() -> std::process::ExitStatus {
         ("corepack", vec!["pnpm", "run", "build"]),
         ("npm", vec!["exec", "--", "pnpm", "run", "build"]),
     ] {
-        match Command::new(program)
-            .args(args)
-            .current_dir("webui")
-            .status()
-        {
+        match Command::new(program).args(args).current_dir("webui").status() {
             Ok(status) => return status,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
             Err(err) => panic!("Failed to run frontend build command `{program}`: {err}"),

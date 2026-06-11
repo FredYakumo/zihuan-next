@@ -15,15 +15,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use storage_handler::{ConnectionConfig, ConnectionKind};
 use tokio::sync::mpsc;
+use tokio::task;
 use uuid::Uuid;
-use zihuan_agent::brain::BrainObserver;
+use zihuan_agent::brain::{BrainObserver, BrainStopReason};
 use zihuan_core::agent_config::QqChatAgentConfig;
-use zihuan_core::command::{
-    CommandChannel, CommandContext, NewConversationRequest, SideEffectContext,
-};
+use zihuan_core::command::{CommandChannel, CommandContext, NewConversationRequest, SideEffectContext};
 use zihuan_core::error::{Error, Result};
 use zihuan_core::llm::tooling::ToolCalls;
-use zihuan_core::llm::{LLMMessage, MessageRole};
+use zihuan_core::llm::{LLMMessage, MessageRole, StreamToken};
+use zihuan_core::message_part::MessagePart;
+use zihuan_core::workspace::{normalized_workspace_path, AskUserRequest};
 
 const CHAT_HISTORY_DIR_NAME: &str = "chat_history";
 const APP_DIR_NAME: &str = "zihuan-next_aibot";
@@ -74,6 +75,44 @@ impl BrainObserver for SseBrainObserver {
 /// Incoming request body for the `/chat/stream` endpoint.
 ///
 /// **Purpose:** Carries the agent to talk to, an optional session ID for continuing an existing
+/// Incoming message shape sent by the dashboard frontend.
+///
+/// The frontend uses the flat OpenAI-style `content: String` field.
+/// This type accepts that wire format and converts to the internal
+/// `LLMMessage` (which uses `parts`) at the API boundary.
+#[derive(Debug, Deserialize)]
+struct DashboardChatMessage {
+    pub role: MessageRole,
+    #[serde(default)]
+    pub content: String,
+    #[serde(default)]
+    pub parts: Vec<MessagePart>,
+    #[serde(default)]
+    pub tool_calls: Vec<ToolCalls>,
+    #[serde(default)]
+    pub tool_call_id: Option<String>,
+}
+
+impl From<DashboardChatMessage> for LLMMessage {
+    fn from(msg: DashboardChatMessage) -> Self {
+        let parts = if !msg.parts.is_empty() {
+            msg.parts
+        } else if !msg.content.is_empty() {
+            vec![MessagePart::text(msg.content)]
+        } else {
+            Vec::new()
+        };
+        LLMMessage {
+            role: msg.role,
+            parts,
+            reasoning_content: None,
+            tool_calls: msg.tool_calls,
+            tool_call_id: msg.tool_call_id,
+            usage: None,
+        }
+    }
+}
+
 /// conversation, the full message history, and a stream toggle.
 ///
 /// **Design:** Mirrors the OpenAI chat-completion request shape but adds `agent_id` and
@@ -83,9 +122,17 @@ pub struct ChatStreamRequest {
     pub agent_id: String,
     #[serde(default)]
     pub session_id: Option<String>,
-    pub messages: Vec<LLMMessage>,
+    messages: Vec<DashboardChatMessage>,
     #[serde(default)]
     pub stream: Option<bool>,
+    #[serde(default)]
+    pub model_config_id: Option<String>,
+    #[serde(default)]
+    pub thinking_type: Option<model_inference::system_config::ThinkingType>,
+    #[serde(default)]
+    pub reasoning_effort: Option<model_inference::system_config::ReasoningEffort>,
+    #[serde(default)]
+    pub workspace_path: Option<String>,
 }
 
 /// Summary row returned by the session-list endpoint.
@@ -103,6 +150,10 @@ pub struct ChatSessionSummary {
     pub agent_name: Option<String>,
     pub agent_type: Option<String>,
     pub agent_avatar_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_ask_user: Option<AskUserRequest>,
 }
 
 /// Single line in a `.jsonl` chat-history file.
@@ -127,6 +178,8 @@ pub struct ChatHistoryRecord {
     pub agent_avatar_url: Option<String>,
     pub role: String,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
     pub timestamp: String,
     #[serde(default)]
     pub stream_index: Option<usize>,
@@ -136,6 +189,10 @@ pub struct ChatHistoryRecord {
     pub tool_calls: Vec<ToolCalls>,
     #[serde(default)]
     pub tool_call_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_ask_user: Option<AskUserRequest>,
 }
 
 /// Lightweight display metadata extracted from an `AgentConfig`.
@@ -166,9 +223,7 @@ struct DashboardCommandSideEffectState {
 impl DashboardCommandSideEffectState {
     fn issue_new_session_id(&self) -> String {
         let mut guard = self.next_session_id.lock().unwrap();
-        guard
-            .get_or_insert_with(|| Uuid::new_v4().to_string())
-            .clone()
+        guard.get_or_insert_with(|| Uuid::new_v4().to_string()).clone()
     }
 
     fn current_new_session_id(&self) -> Option<String> {
@@ -202,11 +257,12 @@ fn extract_agent_snapshot(agent: &AgentConfig, connections: &[ConnectionConfig])
     let agent_type = match &agent.agent_type {
         AgentType::QqChat(_) => "qq_chat",
         AgentType::HttpStream(_) => "http_stream",
+        AgentType::Workspace(_) => "workspace",
     };
 
     let avatar_url = match &agent.agent_type {
         AgentType::QqChat(config) => resolve_qq_avatar_url(connections, config),
-        AgentType::HttpStream(_) => None,
+        AgentType::HttpStream(_) | AgentType::Workspace(_) => None,
     };
 
     AgentSnapshot {
@@ -216,10 +272,7 @@ fn extract_agent_snapshot(agent: &AgentConfig, connections: &[ConnectionConfig])
     }
 }
 
-fn resolve_qq_avatar_url(
-    connections: &[ConnectionConfig],
-    config: &QqChatAgentConfig,
-) -> Option<String> {
+fn resolve_qq_avatar_url(connections: &[ConnectionConfig], config: &QqChatAgentConfig) -> Option<String> {
     let connection = connections
         .iter()
         .find(|item| item.id == config.ims_bot_adapter_connection_id)?;
@@ -282,19 +335,16 @@ fn resolve_chat_agent(
     agent_manager: &zihuan_service::agent::AgentManager,
     agent_id: &str,
 ) -> std::result::Result<ChatAgentInfo, Value> {
-    let running_agent = agent_manager.running_agent(agent_id).ok_or_else(
-        || json!({ "type": "error", "error": format!("agent '{}' is not running", agent_id) }),
-    )?;
+    let running_agent = agent_manager
+        .running_agent(agent_id)
+        .ok_or_else(|| json!({ "type": "error", "error": format!("agent '{}' is not running", agent_id) }))?;
     let agent = running_agent.agent_config().clone();
 
-    let connections = crate::system_config::load_connections()
-        .map_err(|err| json!({ "type": "error", "error": err.to_string() }))?;
+    let connections =
+        crate::system_config::load_connections().map_err(|err| json!({ "type": "error", "error": err.to_string() }))?;
     let agent_snapshot = extract_agent_snapshot(&agent, &connections);
 
-    Ok(ChatAgentInfo {
-        agent,
-        agent_snapshot,
-    })
+    Ok(ChatAgentInfo { agent, agent_snapshot })
 }
 
 /// Attempt to match and execute a dashboard slash-command against the user's latest message.
@@ -321,9 +371,7 @@ fn try_dispatch_dashboard_command(
     messages: Vec<LLMMessage>,
     latest_user_message: &Option<LLMMessage>,
 ) -> std::result::Result<CommandDispatchOutcome, Value> {
-    let requested_session_id = requested_session_id
-        .as_deref()
-        .filter(|value| !value.trim().is_empty());
+    let requested_session_id = requested_session_id.as_deref().filter(|value| !value.trim().is_empty());
     let mut session_id = requested_session_id
         .map(|s| s.to_string())
         .unwrap_or_else(|| Uuid::new_v4().to_string());
@@ -346,9 +394,7 @@ fn try_dispatch_dashboard_command(
         });
     };
 
-    let raw_user_text = latest_user_message
-        .as_ref()
-        .and_then(LLMMessage::content_text_owned);
+    let raw_user_text = latest_user_message.as_ref().and_then(LLMMessage::content_text_owned);
 
     let Some(raw_user_text) = raw_user_text else {
         return Ok(CommandDispatchOutcome {
@@ -420,9 +466,7 @@ fn try_dispatch_dashboard_command(
         latest_user_message = None;
     } else {
         should_run_inference = false;
-        immediate_output_messages = Some(vec![LLMMessage::assistant_text(
-            dispatch_result.result.reply,
-        )]);
+        immediate_output_messages = Some(vec![LLMMessage::assistant_text(dispatch_result.result.reply)]);
     }
 
     Ok(CommandDispatchOutcome {
@@ -458,6 +502,7 @@ async fn emit_immediate_output(
     agent_snapshot: &AgentSnapshot,
     trace_id: &str,
     latest_user_message: Option<&LLMMessage>,
+    workspace_path: Option<String>,
 ) -> bool {
     if let Some(content) = output_messages
         .iter()
@@ -470,11 +515,7 @@ async fn emit_immediate_output(
             "index": 0,
             "token": content,
         });
-        if sender
-            .send_data(format!("data: {delta_event}\n\n"))
-            .await
-            .is_err()
-        {
+        if sender.send_data(format!("data: {delta_event}\n\n")).await.is_err() {
             return false;
         }
     }
@@ -488,6 +529,8 @@ async fn emit_immediate_output(
             assistant_message_id,
             latest_user_message,
             output_messages,
+            workspace_path,
+            None,
         ) {
             let event = json!({ "type": "error", "error": err.to_string() });
             let _ = sender.send_data(format!("data: {event}\n\n")).await;
@@ -515,7 +558,7 @@ async fn emit_immediate_output(
 async fn relay_inference_stream(
     sender: &mut BodySender,
     assistant_message_id: &str,
-    token_rx: &mut mpsc::UnboundedReceiver<String>,
+    token_rx: &mut mpsc::UnboundedReceiver<StreamToken>,
     event_rx: &mut mpsc::UnboundedReceiver<Value>,
 ) {
     loop {
@@ -529,10 +572,14 @@ async fn relay_inference_stream(
             token_opt = token_rx.recv() => {
                 match token_opt {
                     Some(token) => {
+                        let event_type = match &token {
+                            StreamToken::Thinking(_) => "thinking_delta",
+                            StreamToken::Content(_) => "delta",
+                        };
                         let delta_event = json!({
-                            "type": "delta",
+                            "type": event_type,
                             "message_id": assistant_message_id,
-                            "token": token,
+                            "token": token.as_str(),
                         });
                         if sender.send_data(format!("data: {delta_event}\n\n")).await.is_err() {
                             break;
@@ -562,7 +609,7 @@ async fn relay_inference_stream(
 async fn relay_collected_text(
     sender: &mut BodySender,
     assistant_message_id: &str,
-    token_rx: &mut mpsc::UnboundedReceiver<String>,
+    token_rx: &mut mpsc::UnboundedReceiver<StreamToken>,
     event_rx: &mut mpsc::UnboundedReceiver<Value>,
 ) {
     let mut full_content = String::new();
@@ -574,7 +621,7 @@ async fn relay_collected_text(
             }
             token_opt = token_rx.recv() => {
                 match token_opt {
-                    Some(token) => full_content.push_str(&token),
+                    Some(token) => full_content.push_str(token.as_str()),
                     None => {
                         while let Ok(brain_event) = event_rx.try_recv() {
                             let _ = sender.send_data(format!("data: {brain_event}\n\n")).await;
@@ -627,18 +674,12 @@ pub async fn stream_chat(req: &mut Request, res: &mut Response, depot: &mut Depo
         return;
     }
 
-    let state = depot
-        .obtain::<std::sync::Arc<crate::api::state::AppState>>()
-        .unwrap()
-        .clone();
+    let state = depot.obtain::<std::sync::Arc<crate::api::state::AppState>>().unwrap().clone();
 
     let (sender, receiver) = ResBody::channel();
-    res.headers_mut().insert(
-        CONTENT_TYPE,
-        HeaderValue::from_static("text/event-stream; charset=utf-8"),
-    );
     res.headers_mut()
-        .insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+        .insert(CONTENT_TYPE, HeaderValue::from_static("text/event-stream; charset=utf-8"));
+    res.headers_mut().insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
     res.body = receiver;
 
     tokio::spawn(execute_chat_streaming(state, body, sender));
@@ -681,6 +722,20 @@ pub async fn delete_chat_session(req: &mut Request, res: &mut Response, _depot: 
     }
 }
 
+/// Opens a native folder-picker dialog and returns the selected path.
+///
+/// Uses `rfd::FileDialog` which delegates to the OS native dialog (Win32, macOS NSOpenPanel,
+/// or GTK/Zenity on Linux). Because the native dialog blocks the calling thread, it runs on
+/// a blocking Tokio task via `spawn_blocking`.
+#[handler]
+pub async fn select_directory(_req: &mut Request, res: &mut Response, _depot: &mut Depot) {
+    let path = task::spawn_blocking(|| rfd::FileDialog::new().pick_folder())
+        .await
+        .unwrap_or(None);
+
+    res.render(Json(json!({ "path": path.map(|p| p.to_string_lossy().to_string()) })));
+}
+
 /// Orchestrates a single chat-streaming request from end to end.
 ///
 /// **Purpose:** This is the main entry point for the `/chat/stream` SSE pipeline. It
@@ -715,14 +770,16 @@ async fn execute_chat_streaming(
     let ChatStreamRequest {
         agent_id,
         session_id: requested_session_id,
-        mut messages,
+        messages: raw_messages,
         stream,
+        model_config_id,
+        thinking_type,
+        reasoning_effort,
+        workspace_path,
     } = body;
+    let mut messages: Vec<LLMMessage> = raw_messages.into_iter().map(Into::into).collect();
 
-    let ChatAgentInfo {
-        agent,
-        agent_snapshot,
-    } = match resolve_chat_agent(&state.agent_manager, &agent_id) {
+    let ChatAgentInfo { agent, agent_snapshot } = match resolve_chat_agent(&state.agent_manager, &agent_id) {
         Ok(info) => info,
         Err(event) => {
             let _ = sender.send_data(format!("data: {event}\n\n")).await;
@@ -732,8 +789,7 @@ async fn execute_chat_streaming(
 
     messages = sanitize_messages(messages);
     if messages.is_empty() {
-        let event =
-            json!({ "type": "error", "error": "messages must not be empty after sanitization" });
+        let event = json!({ "type": "error", "error": "messages must not be empty after sanitization" });
         let _ = sender.send_data(format!("data: {event}\n\n")).await;
         return;
     }
@@ -744,6 +800,18 @@ async fn execute_chat_streaming(
         .cloned();
 
     let trace_id = Uuid::new_v4().to_string();
+    let effective_workspace_path = match resolve_effective_workspace_path(
+        &agent,
+        requested_session_id.as_deref(),
+        workspace_path.as_deref(),
+    ) {
+        Ok(path) => path,
+        Err(err) => {
+            let event = json!({ "type": "error", "error": err.to_string() });
+            let _ = sender.send_data(format!("data: {event}\n\n")).await;
+            return;
+        }
+    };
 
     let CommandDispatchOutcome {
         session_id,
@@ -767,8 +835,7 @@ async fn execute_chat_streaming(
         }
     };
 
-    let assistant_message_id =
-        requires_assistant_message.then(|| format!("msg_{}", Uuid::new_v4().simple()));
+    let assistant_message_id = requires_assistant_message.then(|| format!("msg_{}", Uuid::new_v4().simple()));
 
     if !send_sse(
         &mut sender,
@@ -780,9 +847,7 @@ async fn execute_chat_streaming(
     }
 
     if !should_run_inference {
-        if let (Some(ref output_messages), Some(ref msg_id)) =
-            (&immediate_output_messages, &assistant_message_id)
-        {
+        if let (Some(ref output_messages), Some(ref msg_id)) = (&immediate_output_messages, &assistant_message_id) {
             if !emit_immediate_output(
                 &mut sender,
                 &session_id,
@@ -793,6 +858,7 @@ async fn execute_chat_streaming(
                 &agent_snapshot,
                 &trace_id,
                 latest_user_message.as_ref(),
+                effective_workspace_path.clone(),
             )
             .await
             {
@@ -812,52 +878,50 @@ async fn execute_chat_streaming(
     let assistant_message_id =
         assistant_message_id.expect("assistant_message_id must exist when inference is required");
 
-    let (token_tx, mut token_rx) = mpsc::unbounded_channel::<String>();
+    let (token_tx, mut token_rx) = mpsc::unbounded_channel::<StreamToken>();
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<Value>();
     let observer: Arc<dyn BrainObserver> = Arc::new(SseBrainObserver {
         event_tx,
         message_id: assistant_message_id.clone(),
     });
 
+    let chat_workspace_path = effective_workspace_path.clone();
     let inference_handle = tokio::spawn({
         let state = state.clone();
         let agent_id = agent_id.clone();
+        let model_config_id = model_config_id.clone();
         async move {
             state
                 .agent_manager
-                .infer_agent_response_streaming(&agent_id, messages, token_tx, Some(observer))
+                .infer_agent_response_streaming_with_model(
+                    &agent_id,
+                    messages,
+                    token_tx,
+                    Some(observer),
+                    model_config_id.as_deref(),
+                    thinking_type,
+                    reasoning_effort,
+                    chat_workspace_path.clone(),
+                )
                 .await
         }
     });
 
     if stream.unwrap_or(true) {
-        relay_inference_stream(
-            &mut sender,
-            &assistant_message_id,
-            &mut token_rx,
-            &mut event_rx,
-        )
-        .await;
+        relay_inference_stream(&mut sender, &assistant_message_id, &mut token_rx, &mut event_rx).await;
     } else {
-        relay_collected_text(
-            &mut sender,
-            &assistant_message_id,
-            &mut token_rx,
-            &mut event_rx,
-        )
-        .await;
+        relay_collected_text(&mut sender, &assistant_message_id, &mut token_rx, &mut event_rx).await;
     }
 
-    let output_messages = match inference_handle.await {
-        Ok(Ok(msgs)) => msgs,
+    let (output_messages, stop_reason) = match inference_handle.await {
+        Ok(Ok(result)) => result,
         Ok(Err(err)) => {
             let event = json!({ "type": "error", "error": err.to_string() });
             let _ = sender.send_data(format!("data: {event}\n\n")).await;
             return;
         }
         Err(err) => {
-            let event =
-                json!({ "type": "error", "error": format!("failed to join chat task: {err}") });
+            let event = json!({ "type": "error", "error": format!("failed to join chat task: {err}") });
             let _ = sender.send_data(format!("data: {event}\n\n")).await;
             return;
         }
@@ -871,10 +935,29 @@ async fn execute_chat_streaming(
         &assistant_message_id,
         latest_user_message.as_ref(),
         &output_messages,
+        effective_workspace_path.clone(),
+        match &stop_reason {
+            BrainStopReason::AwaitUserInput(request) => Some(request.clone()),
+            _ => None,
+        },
     ) {
         let event = json!({ "type": "error", "error": err.to_string() });
         let _ = sender.send_data(format!("data: {event}\n\n")).await;
         return;
+    }
+
+    if let BrainStopReason::AwaitUserInput(request) = stop_reason {
+        let event = json!({
+            "type": "ask_user",
+            "session_id": session_id,
+            "message_id": assistant_message_id,
+            "question": request.question,
+            "details": request.details,
+            "placeholder": request.placeholder,
+        });
+        if !send_sse(&mut sender, &event).await {
+            return;
+        }
     }
 
     let _ = send_sse(
@@ -908,13 +991,8 @@ fn sanitize_messages(messages: Vec<LLMMessage>) -> Vec<LLMMessage> {
     messages
         .into_iter()
         .filter(|message| {
-            let has_content = message
-                .content_text_owned()
-                .is_some_and(|text| !text.trim().is_empty());
-            let has_reasoning = message
-                .reasoning_content
-                .as_deref()
-                .is_some_and(|text| !text.trim().is_empty());
+            let has_content = message.content_text_owned().is_some_and(|text| !text.trim().is_empty());
+            let has_reasoning = message.reasoning_content.as_deref().is_some_and(|text| !text.trim().is_empty());
             has_content || has_reasoning || !message.tool_calls.is_empty()
         })
         .collect()
@@ -925,10 +1003,7 @@ fn sanitize_messages(messages: Vec<LLMMessage>) -> Vec<LLMMessage> {
 /// **Purpose:** Used by command dispatch when a passthrough command rewrites the user message
 /// in-place rather than appending.
 fn replace_last_user_message(messages: &mut Vec<LLMMessage>, replacement: LLMMessage) {
-    if let Some(index) = messages
-        .iter()
-        .rposition(|message| matches!(message.role, MessageRole::User))
-    {
+    if let Some(index) = messages.iter().rposition(|message| matches!(message.role, MessageRole::User)) {
         messages[index] = replacement;
     } else {
         messages.push(replacement);
@@ -953,6 +1028,8 @@ fn persist_chat_records(
     assistant_message_id: &str,
     latest_user_message: Option<&LLMMessage>,
     output_messages: &[LLMMessage],
+    workspace_path: Option<String>,
+    pending_ask_user: Option<AskUserRequest>,
 ) -> Result<()> {
     let now = Utc::now().to_rfc3339();
     if let Some(user_message) = latest_user_message {
@@ -964,12 +1041,15 @@ fn persist_chat_records(
             agent_avatar_url: agent_snapshot.avatar_url.clone(),
             role: "user".to_string(),
             content: user_message.content_text_owned().unwrap_or_default(),
+            reasoning_content: None,
             timestamp: now.clone(),
             stream_index: None,
             trace_id: trace_id.to_string(),
             message_id: format!("msg_{}", Uuid::new_v4().simple()),
             tool_calls: Vec::new(),
             tool_call_id: None,
+            workspace_path: workspace_path.clone(),
+            pending_ask_user: None,
         };
         append_history_record(&user_record)?;
     }
@@ -989,18 +1069,19 @@ fn persist_chat_records(
             agent_avatar_url: agent_snapshot.avatar_url.clone(),
             role: role.to_string(),
             content: message.content_text_owned().unwrap_or_default(),
+            reasoning_content: message.reasoning_content.clone(),
             timestamp: now.clone(),
             stream_index: None,
             trace_id: trace_id.to_string(),
-            message_id: if matches!(message.role, MessageRole::Assistant)
-                && message.tool_calls.is_empty()
-            {
+            message_id: if matches!(message.role, MessageRole::Assistant) && message.tool_calls.is_empty() {
                 assistant_message_id.to_string()
             } else {
                 format!("msg_{}", Uuid::new_v4().simple())
             },
             tool_calls: message.tool_calls.clone(),
             tool_call_id: message.tool_call_id.clone(),
+            workspace_path: workspace_path.clone(),
+            pending_ask_user: pending_ask_user.clone(),
         };
         append_history_record(&record)?;
     }
@@ -1066,9 +1147,9 @@ fn load_chat_sessions(filter_agent_id: Option<&str>) -> Result<Vec<ChatSessionSu
             agent_id: first_record.as_ref().map(|r| r.agent_id.clone()),
             agent_name: first_record.as_ref().map(|r| r.agent_name.clone()),
             agent_type: first_record.as_ref().map(|r| r.agent_type.clone()),
-            agent_avatar_url: first_record
-                .as_ref()
-                .and_then(|r| r.agent_avatar_url.clone()),
+            agent_avatar_url: first_record.as_ref().and_then(|r| r.agent_avatar_url.clone()),
+            workspace_path: read_last_record(&path).ok().flatten().and_then(|r| r.workspace_path),
+            pending_ask_user: read_last_record(&path).ok().flatten().and_then(|r| r.pending_ask_user),
         });
     }
 
@@ -1092,11 +1173,7 @@ fn load_chat_session_messages(session_id: &str) -> Result<Vec<ChatHistoryRecord>
         }
         match serde_json::from_str::<ChatHistoryRecord>(&line) {
             Ok(record) => entries.push(record),
-            Err(err) => {
-                return Err(Error::StringError(format!(
-                    "failed to parse chat record: {err}"
-                )))
-            }
+            Err(err) => return Err(Error::StringError(format!("failed to parse chat record: {err}"))),
         }
     }
     Ok(entries)
@@ -1111,10 +1188,48 @@ fn read_first_record(path: &Path) -> Result<Option<ChatHistoryRecord>> {
         return Ok(None);
     }
 
-    let record: ChatHistoryRecord = serde_json::from_str(line.trim()).map_err(|err| {
-        Error::StringError(format!("failed to parse first chat history record: {err}"))
-    })?;
+    let record: ChatHistoryRecord = serde_json::from_str(line.trim())
+        .map_err(|err| Error::StringError(format!("failed to parse first chat history record: {err}")))?;
     Ok(Some(record))
+}
+
+fn read_last_record(path: &Path) -> Result<Option<ChatHistoryRecord>> {
+    let records = load_chat_session_messages(
+        path.file_stem()
+            .and_then(|value| value.to_str())
+            .ok_or_else(|| Error::ValidationError("invalid session file name".to_string()))?,
+    )?;
+    Ok(records.into_iter().last())
+}
+
+fn resolve_effective_workspace_path(
+    agent: &AgentConfig,
+    session_id: Option<&str>,
+    requested_workspace_path: Option<&str>,
+) -> Result<Option<String>> {
+    if !matches!(agent.agent_type, AgentType::Workspace(_)) {
+        return Ok(None);
+    }
+
+    if let Some(path) = normalized_workspace_path(requested_workspace_path) {
+        return Ok(Some(path));
+    }
+
+    if let Some(existing_session_id) = session_id.map(str::trim).filter(|value| !value.is_empty()) {
+        let records = load_chat_session_messages(existing_session_id)?;
+        if let Some(path) = records.iter().rev().find_map(|record| record.workspace_path.clone()) {
+            return Ok(Some(path));
+        }
+    }
+
+    if let Ok(cwd) = std::env::current_dir() {
+        return Ok(Some(cwd.to_string_lossy().to_string()));
+    }
+
+    Err(Error::ValidationError(
+        "workspace agent requires a workspace_path for new sessions and could not determine current directory"
+            .to_string(),
+    ))
 }
 
 fn chat_history_dir() -> Result<PathBuf> {
@@ -1126,9 +1241,7 @@ fn chat_history_dir() -> Result<PathBuf> {
 
 fn chat_session_file_path(session_id: &str) -> Result<PathBuf> {
     if session_id.trim().is_empty() {
-        return Err(Error::ValidationError(
-            "session_id must not be empty".to_string(),
-        ));
+        return Err(Error::ValidationError("session_id must not be empty".to_string()));
     }
     Ok(chat_history_dir()?.join(format!("{session_id}.jsonl")))
 }

@@ -146,11 +146,7 @@ pub(crate) fn aggregate_history_rows(
 
 pub(crate) fn run_mysql_query<T, F>(mysql_config: &Arc<MySqlConfig>, query_fn: F) -> Result<T>
 where
-    F: for<'a> FnOnce(
-        &'a MySqlPool,
-    ) -> Pin<
-        Box<dyn Future<Output = std::result::Result<T, sqlx::Error>> + Send + 'a>,
-    >,
+    F: for<'a> FnOnce(&'a MySqlPool) -> Pin<Box<dyn Future<Output = std::result::Result<T, sqlx::Error>> + Send + 'a>>,
 {
     let pool = mysql_config.pool.clone().ok_or_else(|| {
         zihuan_core::error::Error::ValidationError(
@@ -159,12 +155,7 @@ where
     })?;
 
     let query_future = async {
-        match tokio::time::timeout(
-            StdDuration::from_secs(MYSQL_QUERY_TIMEOUT_SECS),
-            query_fn(&pool),
-        )
-        .await
-        {
+        match tokio::time::timeout(StdDuration::from_secs(MYSQL_QUERY_TIMEOUT_SECS), query_fn(&pool)).await {
             Ok(result) => result,
             Err(_) => Err(sqlx::Error::Io(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
@@ -198,17 +189,10 @@ pub(crate) fn format_history_messages(mut records: Vec<MessageHistoryRecord>) ->
     let mut previous_send_time = None;
 
     for record in records {
-        let body = format!(
-            "{}({})说: \"{}\"",
-            record.sender_name, record.sender_id, record.content
-        );
+        let body = format!("{}({})说: \"{}\"", record.sender_name, record.sender_id, record.content);
 
         let rendered = match previous_send_time {
-            None => format!(
-                "[{}] {}",
-                record.send_time.format(HISTORY_TIME_FORMAT),
-                body
-            ),
+            None => format!("[{}] {}", record.send_time.format(HISTORY_TIME_FORMAT), body),
             Some(previous_send_time) => {
                 let gap = record.send_time - previous_send_time;
                 if gap >= Duration::minutes(GAP_THRESHOLD_MINUTES) {

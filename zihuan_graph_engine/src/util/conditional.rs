@@ -65,10 +65,7 @@ impl Node for ConditionalNode {
             };
 
             outputs.insert("result".to_string(), result);
-            outputs.insert(
-                "branch_taken".to_string(),
-                DataValue::String(branch.to_string()),
-            );
+            outputs.insert("branch_taken".to_string(), DataValue::String(branch.to_string()));
         }
 
         let outputs = crate::NodeOutputFlow::from(outputs);

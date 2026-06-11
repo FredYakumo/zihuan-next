@@ -13,8 +13,8 @@ use zihuan_graph_engine::message_mysql_get_user_history::MessageMySQLGetUserHist
 use zihuan_graph_engine::Node;
 
 use super::common::{
-    extract_string_list_output, optional_string_argument, sanitize_positive_limit,
-    StaticFunctionToolSpec, ToolNotificationTarget,
+    extract_string_list_output, optional_string_argument, sanitize_positive_limit, StaticFunctionToolSpec,
+    ToolNotificationTarget,
 };
 
 const DEFAULT_HISTORY_TOOL_LIMIT: i64 = 10;
@@ -26,14 +26,8 @@ pub(crate) struct GetRecentGroupMessagesBrainTool {
 }
 
 impl GetRecentGroupMessagesBrainTool {
-    pub(crate) fn new(
-        mysql_ref: Option<Arc<MySqlConfig>>,
-        notification_target: ToolNotificationTarget,
-    ) -> Self {
-        Self {
-            mysql_ref,
-            notification_target,
-        }
+    pub(crate) fn new(mysql_ref: Option<Arc<MySqlConfig>>, notification_target: ToolNotificationTarget) -> Self {
+        Self { mysql_ref, notification_target }
     }
 }
 
@@ -84,9 +78,10 @@ impl BrainTool for GetRecentGroupMessagesBrainTool {
                 }
                 self.notification_target.target_id().to_string()
             };
-            let mysql_ref = self.mysql_ref.as_ref().ok_or_else(|| {
-                Error::ValidationError("mysql_ref is required for message lookup".to_string())
-            })?;
+            let mysql_ref = self
+                .mysql_ref
+                .as_ref()
+                .ok_or_else(|| Error::ValidationError("mysql_ref is required for message lookup".to_string()))?;
             let limit = sanitize_positive_limit(
                 arguments.get("limit").and_then(Value::as_i64),
                 DEFAULT_HISTORY_TOOL_LIMIT,
@@ -95,10 +90,7 @@ impl BrainTool for GetRecentGroupMessagesBrainTool {
             let mut node = MessageMySQLGetGroupHistoryNode::new("__tool__", "__tool__");
             let outputs = node.execute(
                 HashMap::from([
-                    (
-                        "mysql_ref".to_string(),
-                        DataValue::MySqlRef(mysql_ref.clone()),
-                    ),
+                    ("mysql_ref".to_string(), DataValue::MySqlRef(mysql_ref.clone())),
                     ("group_id".to_string(), DataValue::String(group_id)),
                     ("limit".to_string(), DataValue::Integer(limit as i64)),
                 ])
@@ -124,10 +116,7 @@ pub(crate) struct GetRecentUserMessagesBrainTool {
 }
 
 impl GetRecentUserMessagesBrainTool {
-    pub(crate) fn new(
-        mysql_ref: Option<Arc<MySqlConfig>>,
-        notification_target: ToolNotificationTarget,
-    ) -> Self {
+    pub(crate) fn new(mysql_ref: Option<Arc<MySqlConfig>>, notification_target: ToolNotificationTarget) -> Self {
         Self {
             mysql_ref,
             _notification_target: notification_target,
@@ -139,7 +128,8 @@ impl BrainTool for GetRecentUserMessagesBrainTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         Arc::new(StaticFunctionToolSpec {
             name: "get_recent_user_messages",
-            description: "获取某个用户最近的消息，可选限定在指定群内。仅在当前用户message意图不明确，分不清头绪的时候使用。",
+            description:
+                "获取某个用户最近的消息，可选限定在指定群内。仅在当前用户message意图不明确，分不清头绪的时候使用。",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -154,9 +144,10 @@ impl BrainTool for GetRecentUserMessagesBrainTool {
 
     fn execute(&self, _call_content: &str, arguments: &Value) -> String {
         let result = (|| -> Result<Value> {
-            let mysql_ref = self.mysql_ref.as_ref().ok_or_else(|| {
-                Error::ValidationError("mysql_ref is required for message lookup".to_string())
-            })?;
+            let mysql_ref = self
+                .mysql_ref
+                .as_ref()
+                .ok_or_else(|| Error::ValidationError("mysql_ref is required for message lookup".to_string()))?;
             let sender_id = optional_string_argument(arguments, "sender_id")
                 .ok_or_else(|| Error::ValidationError("sender_id is required".to_string()))?;
             let group_id = optional_string_argument(arguments, "group_id");
@@ -167,10 +158,7 @@ impl BrainTool for GetRecentUserMessagesBrainTool {
             );
             let mut node = MessageMySQLGetUserHistoryNode::new("__tool__", "__tool__");
             let mut payload = HashMap::from([
-                (
-                    "mysql_ref".to_string(),
-                    DataValue::MySqlRef(mysql_ref.clone()),
-                ),
+                ("mysql_ref".to_string(), DataValue::MySqlRef(mysql_ref.clone())),
                 ("sender_id".to_string(), DataValue::String(sender_id)),
                 ("limit".to_string(), DataValue::Integer(limit as i64)),
             ]);

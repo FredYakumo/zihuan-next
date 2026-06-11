@@ -35,10 +35,7 @@ impl Node for AgentTaskProgressNode {
 
     node_output![port! { name = "ok", ty = Boolean, desc = "是否成功写入进度" },];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let task_id = inputs

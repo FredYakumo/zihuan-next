@@ -1,6 +1,5 @@
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use std::collections::HashMap;
 
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use zihuan_core::error::{Error, Result};
@@ -40,9 +39,7 @@ impl Node for BinaryToImageMessagePartNode {
         port! { name = "media_type", ty = String, desc = "媒体类型，可选 image 或 video，默认 image", optional },
     ];
 
-    node_output![
-        port! { name = "content_part", ty = MessagePart, desc = "封装后的多模态 MessagePart" },
-    ];
+    node_output![port! { name = "content_part", ty = MessagePart, desc = "封装后的多模态 MessagePart" },];
 
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
@@ -59,11 +56,7 @@ impl Node for BinaryToImageMessagePartNode {
 
         let media_type = match inputs.get("media_type") {
             Some(DataValue::String(s)) => s.trim().to_ascii_lowercase(),
-            Some(_) => {
-                return Err(Error::ValidationError(
-                    "media_type must be a string".to_string(),
-                ))
-            }
+            Some(_) => return Err(Error::ValidationError("media_type must be a string".to_string())),
             None => "image".to_string(),
         };
 

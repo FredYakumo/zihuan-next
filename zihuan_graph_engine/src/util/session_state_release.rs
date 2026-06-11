@@ -1,7 +1,6 @@
 use crate::data_value::{SessionStateRef, SESSION_CLAIM_CONTEXT};
 use crate::{node_input, node_output, DataType, DataValue, Node, Port};
 use log::info;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::task::block_in_place;
 use zihuan_core::error::Result;
@@ -38,9 +37,7 @@ impl Node for SessionStateReleaseNode {
         port! { name = "sender_id", ty = String, desc = "会话发送者 ID" },
     ];
 
-    node_output![
-        port! { name = "released", ty = Boolean, desc = "是否成功释放当前 sender_id 的占用" },
-    ];
+    node_output![port! { name = "released", ty = Boolean, desc = "是否成功释放当前 sender_id 的占用" },];
 
     fn execute(&mut self, inputs: crate::NodeInputFlow) -> Result<crate::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
@@ -51,18 +48,14 @@ impl Node for SessionStateReleaseNode {
                 DataValue::SessionStateRef(session_ref) => Some(session_ref.clone()),
                 _ => None,
             })
-            .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("session_ref is required".to_string())
-            })?;
+            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("session_ref is required".to_string()))?;
         let sender_id = inputs
             .get("sender_id")
             .and_then(|value| match value {
                 DataValue::String(sender_id) => Some(sender_id.clone()),
                 _ => None,
             })
-            .ok_or_else(|| {
-                zihuan_core::error::Error::InvalidNodeInput("sender_id is required".to_string())
-            })?;
+            .ok_or_else(|| zihuan_core::error::Error::InvalidNodeInput("sender_id is required".to_string()))?;
 
         let claim_token = SESSION_CLAIM_CONTEXT
             .try_with(|context| {
@@ -74,19 +67,12 @@ impl Node for SessionStateReleaseNode {
             .flatten();
         info!(
             "[SessionStateReleaseNode:{}] Releasing sender_id={} on session_ref={} with claim_token={:?}",
-            self.id,
-            sender_id,
-            session_ref.node_id,
-            claim_token
+            self.id, sender_id, session_ref.node_id, claim_token
         );
 
         let session_ref_for_release = session_ref.clone();
         let sender_id_for_release = sender_id.clone();
-        let release = async move {
-            session_ref_for_release
-                .release(&sender_id_for_release, claim_token)
-                .await
-        };
+        let release = async move { session_ref_for_release.release(&sender_id_for_release, claim_token).await };
         let released = if let Ok(handle) = tokio::runtime::Handle::try_current() {
             block_in_place(|| handle.block_on(release))
         } else {
@@ -94,10 +80,7 @@ impl Node for SessionStateReleaseNode {
         };
         info!(
             "[SessionStateReleaseNode:{}] Release result for sender_id={} on session_ref={}: released={}",
-            self.id,
-            sender_id,
-            session_ref.node_id,
-            released
+            self.id, sender_id, session_ref.node_id, released
         );
 
         crate::return_with_node_output![self;

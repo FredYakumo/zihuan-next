@@ -30,26 +30,20 @@ impl S3Ref {
         }
 
         // 生成带鉴权的预签名 URL，过期时间为 1 小时
-        self.generate_presigned_url(key, Duration::from_secs(3600))
-            .await
+        self.generate_presigned_url(key, Duration::from_secs(3600)).await
     }
 
     fn build_public_url(&self, key: &str) -> Result<String> {
         let base = if let Some(ref public_base_url) = self.public_base_url {
             public_base_url.trim_end_matches('/').to_string()
         } else if self.path_style {
-            format!(
-                "{}/{}",
-                self.endpoint.trim_end_matches('/'),
-                self.bucket.trim_matches('/')
-            )
+            format!("{}/{}", self.endpoint.trim_end_matches('/'), self.bucket.trim_matches('/'))
         } else {
-            let endpoint = Url::parse(&self.endpoint).map_err(|e| {
-                Error::ValidationError(format!("invalid object storage endpoint: {e}"))
-            })?;
-            let host = endpoint.host_str().ok_or_else(|| {
-                Error::ValidationError("object storage endpoint host is missing".to_string())
-            })?;
+            let endpoint = Url::parse(&self.endpoint)
+                .map_err(|e| Error::ValidationError(format!("invalid object storage endpoint: {e}")))?;
+            let host = endpoint
+                .host_str()
+                .ok_or_else(|| Error::ValidationError("object storage endpoint host is missing".to_string()))?;
             let scheme = endpoint.scheme();
             format!("{scheme}://{}.{}", self.bucket, host)
         };
@@ -68,9 +62,7 @@ impl S3Ref {
                 PresigningConfig::builder()
                     .expires_in(expires_in)
                     .build()
-                    .map_err(|e| {
-                        Error::ValidationError(format!("presign config build failed: {e}"))
-                    })?,
+                    .map_err(|e| Error::ValidationError(format!("presign config build failed: {e}")))?,
             )
             .await
             .map_err(|e| Error::ValidationError(format!("presign URL generation failed: {e}")))?;
@@ -103,9 +95,11 @@ impl S3Ref {
             .await
             .map_err(|e| Error::ValidationError(format!("object storage GET failed: {}", e)))?;
 
-        let body = response.body.collect().await.map_err(|e| {
-            Error::ValidationError(format!("object storage body read failed: {}", e))
-        })?;
+        let body = response
+            .body
+            .collect()
+            .await
+            .map_err(|e| Error::ValidationError(format!("object storage body read failed: {}", e)))?;
 
         Ok(body.into_bytes().to_vec())
     }
@@ -156,13 +150,7 @@ impl S3Ref {
                 {
                     return Ok(());
                 }
-                if client
-                    .head_bucket()
-                    .bucket(&self.bucket)
-                    .send()
-                    .await
-                    .is_ok()
-                {
+                if client.head_bucket().bucket(&self.bucket).send().await.is_ok() {
                     return Ok(());
                 }
                 Err(Error::ValidationError(format!(
@@ -174,22 +162,14 @@ impl S3Ref {
     }
 
     async fn s3_client(&self) -> Result<S3Client> {
-        let credentials = Credentials::new(
-            self.access_key.clone(),
-            self.secret_key.clone(),
-            None,
-            None,
-            "zihuan-next",
-        );
+        let credentials = Credentials::new(self.access_key.clone(), self.secret_key.clone(), None, None, "zihuan-next");
         let shared_config = aws_config::defaults(BehaviorVersion::latest())
             .region(Region::new(self.region.clone()))
             .credentials_provider(credentials)
             .endpoint_url(self.endpoint.clone())
             .load()
             .await;
-        let config = S3ConfigBuilder::from(&shared_config)
-            .force_path_style(self.path_style)
-            .build();
+        let config = S3ConfigBuilder::from(&shared_config).force_path_style(self.path_style).build();
         Ok(S3Client::from_conf(config))
     }
 

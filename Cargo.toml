@@ -33,6 +33,7 @@ http = "1.0"
 
 redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
 reqwest = { version = "0.12.25", features = ["blocking", "json"] }
+rfd = "0.15"
 thiserror = "2.0.17"
 clap = { version = "4.5", features = ["derive", "env"] }
 sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "mysql", "sqlite", "any", "chrono"] }
@@ -50,4 +51,5 @@ model_inference = { path = "model_inference" }
 ims_bot_adapter = { path = "ims_bot_adapter" }
 storage_handler = { path = "storage_handler" }
 zihuan_service = { path = "zihuan_service" }
+sysinfo = "0.33"
 

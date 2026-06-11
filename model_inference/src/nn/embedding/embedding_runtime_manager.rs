@@ -80,14 +80,8 @@ impl EmbeddingBase for LoggedEmbeddingModel {
         let started = Instant::now();
         let vectors = self.inner.batch_inference(texts)?;
         let dim = vectors.first().map(Vec::len).unwrap_or(0);
-        let total_chars = texts
-            .iter()
-            .map(|text| text_char_count(text))
-            .sum::<usize>();
-        let preview = texts
-            .first()
-            .map(|text| preview_text(text))
-            .unwrap_or_default();
+        let total_chars = texts.iter().map(|text| text_char_count(text)).sum::<usize>();
+        let preview = texts.first().map(|text| preview_text(text)).unwrap_or_default();
         info!(
             "[embedding_runtime] instance_id={} model={} input_count={} input_chars={} preview=\"{}\" batch_inference_ms={} shape=[{}, {}]",
             self.instance_id,
@@ -119,38 +113,26 @@ impl RuntimeEmbeddingModelManager {
         INSTANCE.get_or_init(RuntimeEmbeddingModelManager::new)
     }
 
-    pub async fn get_or_create_embedding_model(
-        &self,
-        config_id: &str,
-    ) -> Result<Arc<dyn EmbeddingBase>> {
+    pub async fn get_or_create_embedding_model(&self, config_id: &str) -> Result<Arc<dyn EmbeddingBase>> {
         self.get_or_create(config_id).await
     }
 
-    fn build_runtime_instance(
-        &self,
-        config_id: &str,
-    ) -> Result<(EmbeddingRuntimeInstance, Arc<dyn EmbeddingBase>)> {
+    fn build_runtime_instance(&self, config_id: &str) -> Result<(EmbeddingRuntimeInstance, Arc<dyn EmbeddingBase>)> {
         let llm_refs = load_llm_refs()?;
         let llm_ref = llm_refs
             .iter()
             .find(|item| item.id == config_id)
-            .ok_or_else(|| {
-                Error::ValidationError(format!("model_ref '{}' not found", config_id))
-            })?;
+            .ok_or_else(|| Error::ValidationError(format!("model_ref '{}' not found", config_id)))?;
 
         if !llm_ref.enabled {
-            return Err(Error::ValidationError(format!(
-                "model_ref '{}' is disabled",
-                llm_ref.name
-            )));
+            return Err(Error::ValidationError(format!("model_ref '{}' is disabled", llm_ref.name)));
         }
 
         let model_name = local_model_name(llm_ref)?;
         let inner_model: Arc<dyn EmbeddingBase> = Arc::new(QueuedEmbeddingModel::new(model_name)?);
         let started_at = Utc::now();
         let instance_id = next_instance_id();
-        let model: Arc<dyn EmbeddingBase> =
-            Arc::new(LoggedEmbeddingModel::new(instance_id.clone(), inner_model));
+        let model: Arc<dyn EmbeddingBase> = Arc::new(LoggedEmbeddingModel::new(instance_id.clone(), inner_model));
         let summary = RuntimeConnectionInstanceSummary {
             instance_id,
             config_id: llm_ref.id.clone(),
@@ -208,10 +190,7 @@ impl RuntimeEmbeddingModelManager {
         let instance_id = instance_id.to_string();
         let mut instances = self.instances.write().await;
         for bucket in instances.values_mut() {
-            if let Some(index) = bucket
-                .iter()
-                .position(|item| item.summary.instance_id == instance_id)
-            {
+            if let Some(index) = bucket.iter().position(|item| item.summary.instance_id == instance_id) {
                 bucket.remove(index);
                 instances.retain(|_, bucket| !bucket.is_empty());
                 return Ok(true);
@@ -224,10 +203,7 @@ impl RuntimeEmbeddingModelManager {
     async fn close_instances_for_config(&self, config_id: &str) -> Result<usize> {
         let config_id = config_id.to_string();
         let mut instances = self.instances.write().await;
-        Ok(instances
-            .remove(&config_id)
-            .map(|items| items.len())
-            .unwrap_or(0))
+        Ok(instances.remove(&config_id).map(|items| items.len()).unwrap_or(0))
     }
 
     async fn cleanup_stale_instances(&self) -> Result<usize> {
@@ -240,15 +216,12 @@ impl RuntimeEmbeddingModelManager {
             let enabled = llm_refs
                 .iter()
                 .find(|item| item.id == *config_id)
-                .map(|item| {
-                    item.enabled && matches!(item.model, ModelRefSpec::TextEmbeddingLocal { .. })
-                })
+                .map(|item| item.enabled && matches!(item.model, ModelRefSpec::TextEmbeddingLocal { .. }))
                 .unwrap_or(false);
 
             let mut retained = Vec::new();
             for item in bucket.drain(..) {
-                let stale = (now - item.summary.last_used_at).num_seconds()
-                    >= EMBEDDING_INSTANCE_IDLE_TIMEOUT_SECS;
+                let stale = (now - item.summary.last_used_at).num_seconds() >= EMBEDDING_INSTANCE_IDLE_TIMEOUT_SECS;
                 if enabled && !stale {
                     retained.push(item);
                 } else {
@@ -284,13 +257,9 @@ pub fn list_runtime_embedding_instances() -> Result<Vec<RuntimeConnectionInstanc
 }
 
 pub fn close_runtime_embedding_instance(instance_id: &str) -> Result<bool> {
-    zihuan_core::runtime::block_async(
-        RuntimeEmbeddingModelManager::shared().close_instance(instance_id),
-    )
+    zihuan_core::runtime::block_async(RuntimeEmbeddingModelManager::shared().close_instance(instance_id))
 }
 
 pub fn close_runtime_embedding_instances_for_config(config_id: &str) -> Result<usize> {
-    zihuan_core::runtime::block_async(
-        RuntimeEmbeddingModelManager::shared().close_instances_for_config(config_id),
-    )
+    zihuan_core::runtime::block_async(RuntimeEmbeddingModelManager::shared().close_instances_for_config(config_id))
 }

@@ -17,18 +17,10 @@ pub fn resolve_llm_service_config(
 ) -> Result<LlmServiceConfig> {
     let ref_id = llm_ref_id
         .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| {
-            Error::ValidationError(format!("agent '{}' is missing llm_ref_id", agent_name))
-        })?;
-    let llm_ref = llm_refs
-        .iter()
-        .find(|item| item.id == ref_id)
-        .ok_or_else(|| {
-            Error::ValidationError(format!(
-                "agent '{}' references missing llm_ref '{}'",
-                agent_name, ref_id
-            ))
-        })?;
+        .ok_or_else(|| Error::ValidationError(format!("agent '{}' is missing llm_ref_id", agent_name)))?;
+    let llm_ref = llm_refs.iter().find(|item| item.id == ref_id).ok_or_else(|| {
+        Error::ValidationError(format!("agent '{}' references missing llm_ref '{}'", agent_name, ref_id))
+    })?;
     if !llm_ref.enabled {
         return Err(Error::ValidationError(format!(
             "agent '{}' references disabled llm_ref '{}'",
@@ -69,15 +61,12 @@ pub fn resolve_local_embedding_model_name(
         return Ok(None);
     };
 
-    let llm_ref = llm_refs
-        .iter()
-        .find(|item| item.id == ref_id)
-        .ok_or_else(|| {
-            Error::ValidationError(format!(
-                "agent '{}' references missing embedding_model_ref '{}'",
-                agent_name, ref_id
-            ))
-        })?;
+    let llm_ref = llm_refs.iter().find(|item| item.id == ref_id).ok_or_else(|| {
+        Error::ValidationError(format!(
+            "agent '{}' references missing embedding_model_ref '{}'",
+            agent_name, ref_id
+        ))
+    })?;
     if !llm_ref.enabled {
         return Err(Error::ValidationError(format!(
             "agent '{}' references disabled embedding model_ref '{}'",

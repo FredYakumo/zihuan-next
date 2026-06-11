@@ -1,9 +1,10 @@
+use crate::system_config::{ReasoningEffort, ThinkingType};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use tokio::sync::mpsc;
 use zihuan_core::llm::tooling::{ToolCalls, ToolCallsFuncSpec};
 use zihuan_core::llm::{
-    str_to_role, InferenceParam, LLMMessage, LLMMessageConvertStyle, MessagePart, TokenUsage,
+    str_to_role, InferenceParam, LLMMessage, LLMMessageConvertStyle, MessagePart, StreamToken, TokenUsage,
 };
 
 #[derive(Default)]
@@ -36,8 +37,7 @@ fn parse_tool_calls(tool_calls_value: &Value) -> Vec<ToolCalls> {
                         .get("arguments")
                         .and_then(|args| {
                             if args.is_string() {
-                                args.as_str()
-                                    .and_then(|s| serde_json::from_str::<Value>(s).ok())
+                                args.as_str().and_then(|s| serde_json::from_str::<Value>(s).ok())
                             } else {
                                 Some(args.clone())
                             }
@@ -76,34 +76,20 @@ fn parse_token_usage(value: Option<&Value>) -> Option<TokenUsage> {
                 .and_then(|v| v.as_u64())
                 .map(|v| v as usize)
         })
-        .or_else(|| {
-            value
-                .get("cache_hit_tokens")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as usize)
-        });
+        .or_else(|| value.get("cache_hit_tokens").and_then(|v| v.as_u64()).map(|v| v as usize));
 
     let prompt_cache_miss_tokens = value
         .get("prompt_cache_miss_tokens")
         .and_then(|v| v.as_u64())
         .map(|v| v as usize)
-        .or_else(|| {
-            value
-                .get("cache_miss_tokens")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as usize)
-        });
+        .or_else(|| value.get("cache_miss_tokens").and_then(|v| v.as_u64()).map(|v| v as usize));
 
     let prompt_tokens = value
         .get("prompt_tokens")
         .and_then(|v| v.as_u64())
         .or_else(|| value.get("input_tokens").and_then(|v| v.as_u64()))
         .map(|v| v as usize)
-        .or_else(|| {
-            cached_prompt_tokens
-                .zip(prompt_cache_miss_tokens)
-                .map(|(hit, miss)| hit + miss)
-        });
+        .or_else(|| cached_prompt_tokens.zip(prompt_cache_miss_tokens).map(|(hit, miss)| hit + miss));
 
     Some(TokenUsage {
         prompt_tokens,
@@ -114,10 +100,7 @@ fn parse_token_usage(value: Option<&Value>) -> Option<TokenUsage> {
             .and_then(|v| v.as_u64())
             .or_else(|| value.get("output_tokens").and_then(|v| v.as_u64()))
             .map(|v| v as usize),
-        total_tokens: value
-            .get("total_tokens")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as usize),
+        total_tokens: value.get("total_tokens").and_then(|v| v.as_u64()).map(|v| v as usize),
     })
 }
 
@@ -126,6 +109,8 @@ pub fn build_chat_completions_request_body(
     param: &InferenceParam<'_>,
     stream: bool,
     include_reasoning_content: bool,
+    thinking_type: Option<&ThinkingType>,
+    reasoning_effort: Option<&ReasoningEffort>,
 ) -> Value {
     let mut request_body = serde_json::json!({
         "model": model_name,
@@ -136,6 +121,14 @@ pub fn build_chat_completions_request_body(
         ),
         "stream": stream,
     });
+
+    if let Some(effort) = reasoning_effort {
+        request_body["reasoning_effort"] = serde_json::json!(effort);
+    }
+
+    if let Some(thinking) = thinking_type {
+        request_body["thinking"] = serde_json::json!({ "type": thinking });
+    }
 
     if stream {
         request_body["stream_options"] = serde_json::json!({ "include_usage": true });
@@ -165,18 +158,9 @@ pub fn parse_chat_completions_response(api_resp: &Value) -> Option<LLMMessage> {
             .and_then(|v| v.as_str())
             .map(|s| text_parts(s.to_string()))
             .unwrap_or_default(),
-        reasoning_content: msg
-            .get("reasoning_content")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
-        tool_calls: msg
-            .get("tool_calls")
-            .map(parse_tool_calls)
-            .unwrap_or_default(),
-        tool_call_id: msg
-            .get("tool_call_id")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+        reasoning_content: msg.get("reasoning_content").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        tool_calls: msg.get("tool_calls").map(parse_tool_calls).unwrap_or_default(),
+        tool_call_id: msg.get("tool_call_id").and_then(|v| v.as_str()).map(|s| s.to_string()),
         usage: parse_token_usage(api_resp.get("usage")),
     })
 }
@@ -223,10 +207,7 @@ pub fn parse_chat_completions_sse_response(response_text: &str) -> Option<LLMMes
             if let Some(piece) = delta.get("content").and_then(|value| value.as_str()) {
                 content.push_str(piece);
             }
-            if let Some(piece) = delta
-                .get("reasoning_content")
-                .and_then(|value| value.as_str())
-            {
+            if let Some(piece) = delta.get("reasoning_content").and_then(|value| value.as_str()) {
                 reasoning_content.push_str(piece);
             }
             if let Some(tool_calls) = delta.get("tool_calls").and_then(|value| value.as_array()) {
@@ -234,16 +215,14 @@ pub fn parse_chat_completions_sse_response(response_text: &str) -> Option<LLMMes
                     let index = tool_call
                         .get("index")
                         .and_then(|value| value.as_u64())
-                        .unwrap_or(streamed_tool_calls.len() as u64)
-                        as usize;
+                        .unwrap_or(streamed_tool_calls.len() as u64) as usize;
                     let entry = streamed_tool_calls.entry(index).or_default();
                     if let Some(id) = tool_call.get("id").and_then(|value| value.as_str()) {
                         if !id.is_empty() {
                             entry.id = Some(id.to_string());
                         }
                     }
-                    if let Some(type_name) = tool_call.get("type").and_then(|value| value.as_str())
-                    {
+                    if let Some(type_name) = tool_call.get("type").and_then(|value| value.as_str()) {
                         if !type_name.is_empty() {
                             entry.type_name = Some(type_name.to_string());
                         }
@@ -254,9 +233,7 @@ pub fn parse_chat_completions_sse_response(response_text: &str) -> Option<LLMMes
                                 entry.function_name = Some(name.to_string());
                             }
                         }
-                        if let Some(arguments) =
-                            function.get("arguments").and_then(|value| value.as_str())
-                        {
+                        if let Some(arguments) = function.get("arguments").and_then(|value| value.as_str()) {
                             entry.function_arguments.push_str(arguments);
                         }
                     }
@@ -269,10 +246,7 @@ pub fn parse_chat_completions_sse_response(response_text: &str) -> Option<LLMMes
             if let Some(text) = message.get("content").and_then(|value| value.as_str()) {
                 content.push_str(text);
             }
-            if let Some(text) = message
-                .get("reasoning_content")
-                .and_then(|value| value.as_str())
-            {
+            if let Some(text) = message.get("reasoning_content").and_then(|value| value.as_str()) {
                 reasoning_content.push_str(text);
             }
             if let Some(tool_calls_value) = message.get("tool_calls") {
@@ -297,9 +271,7 @@ pub fn parse_chat_completions_sse_response(response_text: &str) -> Option<LLMMes
                         .unwrap_or_else(|_| Value::String(call.function_arguments.clone()))
                 };
                 ToolCalls {
-                    id: call
-                        .id
-                        .unwrap_or_else(|| format!("stream_tool_call_{index}")),
+                    id: call.id.unwrap_or_else(|| format!("stream_tool_call_{index}")),
                     type_name: call.type_name.unwrap_or_else(|| "function".to_string()),
                     function: ToolCallsFuncSpec {
                         name: call.function_name.unwrap_or_default(),
@@ -330,7 +302,7 @@ pub fn parse_chat_completions_sse_response(response_text: &str) -> Option<LLMMes
 
 pub async fn parse_chat_completions_sse_stream_response(
     response: reqwest::Response,
-    token_tx: mpsc::UnboundedSender<String>,
+    token_tx: mpsc::UnboundedSender<StreamToken>,
 ) -> LLMMessage {
     use futures_util::StreamExt;
 
@@ -371,10 +343,7 @@ pub async fn parse_chat_completions_sse_stream_response(
                 usage = Some(parsed_usage);
             }
 
-            let choice = chunk_data
-                .get("choices")
-                .and_then(|v| v.as_array())
-                .and_then(|arr| arr.first());
+            let choice = chunk_data.get("choices").and_then(|v| v.as_array()).and_then(|arr| arr.first());
             let Some(choice) = choice else {
                 continue;
             };
@@ -386,19 +355,19 @@ pub async fn parse_chat_completions_sse_stream_response(
                 if let Some(piece) = delta.get("content").and_then(|v| v.as_str()) {
                     if !piece.is_empty() {
                         content.push_str(piece);
-                        let _ = token_tx.send(piece.to_string());
+                        let _ = token_tx.send(StreamToken::content(piece));
                     }
                 }
                 if let Some(piece) = delta.get("reasoning_content").and_then(|v| v.as_str()) {
                     reasoning_content.push_str(piece);
+                    let _ = token_tx.send(StreamToken::thinking(piece));
                 }
                 if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
                     for tool_call in tool_calls {
                         let index = tool_call
                             .get("index")
                             .and_then(|v| v.as_u64())
-                            .unwrap_or(streamed_tool_calls.len() as u64)
-                            as usize;
+                            .unwrap_or(streamed_tool_calls.len() as u64) as usize;
                         let entry = streamed_tool_calls.entry(index).or_default();
                         if let Some(id) = tool_call.get("id").and_then(|v| v.as_str()) {
                             if !id.is_empty() {
@@ -416,9 +385,7 @@ pub async fn parse_chat_completions_sse_stream_response(
                                     entry.function_name = Some(name.to_string());
                                 }
                             }
-                            if let Some(arguments) =
-                                function.get("arguments").and_then(|v| v.as_str())
-                            {
+                            if let Some(arguments) = function.get("arguments").and_then(|v| v.as_str()) {
                                 entry.function_arguments.push_str(arguments);
                             }
                         }
@@ -430,10 +397,11 @@ pub async fn parse_chat_completions_sse_stream_response(
                 }
                 if let Some(text) = message.get("content").and_then(|v| v.as_str()) {
                     content.push_str(text);
-                    let _ = token_tx.send(text.to_string());
+                    let _ = token_tx.send(StreamToken::content(text));
                 }
                 if let Some(text) = message.get("reasoning_content").and_then(|v| v.as_str()) {
                     reasoning_content.push_str(text);
+                    let _ = token_tx.send(StreamToken::thinking(text));
                 }
                 if let Some(tool_calls_value) = message.get("tool_calls") {
                     let parsed = parse_tool_calls(tool_calls_value);
@@ -460,9 +428,7 @@ pub async fn parse_chat_completions_sse_stream_response(
                         .unwrap_or_else(|_| Value::String(call.function_arguments.clone()))
                 };
                 ToolCalls {
-                    id: call
-                        .id
-                        .unwrap_or_else(|| format!("stream_tool_call_{index}")),
+                    id: call.id.unwrap_or_else(|| format!("stream_tool_call_{index}")),
                     type_name: call.type_name.unwrap_or_else(|| "function".to_string()),
                     function: ToolCallsFuncSpec {
                         name: call.function_name.unwrap_or_default(),
@@ -473,11 +439,7 @@ pub async fn parse_chat_completions_sse_stream_response(
             .collect::<Vec<_>>()
     };
 
-    if content.is_empty()
-        && reasoning_content.is_empty()
-        && tool_calls.is_empty()
-        && usage.is_none()
-    {
+    if content.is_empty() && reasoning_content.is_empty() && tool_calls.is_empty() && usage.is_none() {
         return LLMMessage::assistant_text("");
     }
 

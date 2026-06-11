@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use general_wheel_cpp::cosine_similarity;
 use zihuan_core::error::{Error, Result};
 use zihuan_graph_engine::{node_input, node_output, DataType, DataValue, Node, Port};
@@ -36,20 +34,14 @@ impl Node for VectorCosineSimilarityNode {
         port! { name = "right", ty = Vector, desc = "右侧向量" },
     ];
 
-    node_output![
-        port! { name = "similarity", ty = Float, desc = "余弦相似度，范围通常为 [-1, 1]" },
-    ];
+    node_output![port! { name = "similarity", ty = Float, desc = "余弦相似度，范围通常为 [-1, 1]" },];
 
-    fn execute(
-        &mut self,
-        inputs: zihuan_graph_engine::NodeInputFlow,
-    ) -> Result<zihuan_graph_engine::NodeOutputFlow> {
+    fn execute(&mut self, inputs: zihuan_graph_engine::NodeInputFlow) -> Result<zihuan_graph_engine::NodeOutputFlow> {
         self.validate_inputs(&inputs)?;
 
         let left = parse_float_vector(inputs.get("left"))?;
         let right = parse_float_vector(inputs.get("right"))?;
-        let similarity = cosine_similarity(&left, &right)
-            .map_err(|error| Error::StringError(error.to_string()))?;
+        let similarity = cosine_similarity(&left, &right).map_err(|error| Error::StringError(error.to_string()))?;
 
         zihuan_graph_engine::return_with_node_output![self;
             "similarity" => DataValue::Float(similarity as f64),
@@ -60,8 +52,6 @@ impl Node for VectorCosineSimilarityNode {
 fn parse_float_vector(value: Option<&DataValue>) -> Result<Vec<f32>> {
     match value {
         Some(DataValue::Vector(values)) => Ok(values.clone()),
-        _ => Err(Error::ValidationError(
-            "vector input must be Vector".to_string(),
-        )),
+        _ => Err(Error::ValidationError("vector input must be Vector".to_string())),
     }
 }

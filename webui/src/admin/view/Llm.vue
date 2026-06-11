@@ -35,7 +35,7 @@
             </div>
             <template v-if="form.model_type === 'chat_llm'">
               <div class="field-full field-check">
-                <input id="llm-multimodal-enabled" v-model="form.llm.supports_multimodal_input" type="checkbox" />
+                <input id="llm-multimodal-enabled" v-model="form.llm.supports_multimodal_input" :disabled="isCandleMode" type="checkbox" />
                 <label for="llm-multimodal-enabled">多模态模型（允许传入图片）</label>
               </div>
               <div class="field-full field-check">
@@ -47,9 +47,28 @@
                 <label for="llm-reasoning-content-enabled">推理时回灌 reasoning_content</label>
               </div>
               <div class="field">
+                <label>思考模式</label>
+                <select v-model="form.llm.thinking_type">
+                  <option :value="null">未配置</option>
+                  <option value="enabled">启用</option>
+                  <option value="disabled">关闭</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>思考强度</label>
+                <select v-model="form.llm.reasoning_effort">
+                  <option :value="null">未配置</option>
+                  <option value="low">低</option>
+                  <option value="medium">中</option>
+                  <option value="high">高</option>
+                  <option value="max">最高</option>
+                </select>
+              </div>
+              <div class="field">
                 <label>后端格式</label>
                 <select v-model="form.llm.api_style">
-                  <option value="candle">Candle推理引擎(待实现)</option>
+                  <option value="candle_gguf">Candle GGUF 本地推理</option>
+                  <option value="candle_hf">Candle HF 本地推理</option>
                   <option value="open_ai_chat_completions">OpenAI Chat Completions API</option>
                   <option value="open_ai_chat_completions_tencent_multimodal_compat">OpenAI Chat Completions API（腾讯多模态兼容）</option>
                   <option value="open_ai_responses">OpenAI Responses API</option>
@@ -57,9 +76,26 @@
                   <option value="open_ai_responses_image_url_object_compat">OpenAI Responses API（image_url对象兼容）</option>
                 </select>
               </div>
-              <div class="field"><label>Model Name</label><input v-model="form.llm.model_name" /></div>
-              <div class="field"><label>API Endpoint</label><input v-model="form.llm.api_endpoint" /></div>
-              <div class="field"><label>API Key</label><input v-model="form.llm.api_key" type="password" /></div>
+              <div v-if="isCandleMode" class="field-full">
+                <label>本地 LLM 目录</label>
+                <select v-model="form.llm.model_name">
+                  <option value="">请选择</option>
+                  <option
+                    v-for="item in filteredLocalLlmModels"
+                    :key="item.model_name"
+                    :value="item.model_name"
+                    :disabled="!item.available"
+                  >
+                    {{ localLlmOptionLabel(item) }}
+                  </option>
+                </select>
+                <small class="muted">{{ selectedLocalLlmHint }}</small>
+              </div>
+              <template v-else>
+                <div class="field"><label>Model Name</label><input v-model="form.llm.model_name" /></div>
+                <div class="field"><label>API Endpoint</label><input v-model="form.llm.api_endpoint" /></div>
+                <div class="field"><label>API Key</label><input v-model="form.llm.api_key" type="password" /></div>
+              </template>
               <div class="field"><label>Timeout Secs</label><input v-model.number="form.llm.timeout_secs" type="number" min="1" /></div>
               <div class="field"><label>Retry Count</label><input v-model.number="form.llm.retry_count" type="number" min="0" /></div>
             </template>
@@ -134,6 +170,7 @@
                     <input
                       :id="`llm-multimodal-enabled-${item.config_id}`"
                       v-model="form.llm.supports_multimodal_input"
+                      :disabled="isCandleMode"
                       type="checkbox"
                     />
                     <span>{{ form.llm.supports_multimodal_input ? "已启用" : "未启用" }}</span>
@@ -162,9 +199,28 @@
                   </label>
                 </div>
                 <div class="key-value connection-card-edit-row">
+                  <strong>思考模式</strong>
+                  <select v-model="form.llm.thinking_type" class="connection-card-inline-input">
+                    <option :value="null">未配置</option>
+                    <option value="enabled">启用</option>
+                    <option value="disabled">关闭</option>
+                  </select>
+                </div>
+                <div class="key-value connection-card-edit-row">
+                  <strong>思考强度</strong>
+                  <select v-model="form.llm.reasoning_effort" class="connection-card-inline-input">
+                    <option :value="null">未配置</option>
+                    <option value="low">低</option>
+                    <option value="medium">中</option>
+                    <option value="high">高</option>
+                    <option value="max">最高</option>
+                  </select>
+                </div>
+                <div class="key-value connection-card-edit-row">
                   <strong>后端格式</strong>
                   <select v-model="form.llm.api_style" class="connection-card-inline-input">
-                    <option value="candle">Candle（待实现）</option>
+                    <option value="candle_gguf">Candle（GGUF 本地）</option>
+                    <option value="candle_hf">Candle（HF 本地）</option>
                     <option value="open_ai_chat_completions">OpenAI Chat Completions</option>
                     <option value="open_ai_chat_completions_tencent_multimodal_compat">OpenAI Chat Completions（腾讯多模态兼容）</option>
                     <option value="open_ai_responses">OpenAI Responses</option>
@@ -172,18 +228,34 @@
                     <option value="open_ai_responses_image_url_object_compat">OpenAI Responses（image_url对象兼容）</option>
                   </select>
                 </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Model</strong>
-                  <input v-model="form.llm.model_name" class="connection-card-inline-input" />
+                <div v-if="isCandleMode" class="key-value connection-card-edit-row">
+                  <strong>本地模型</strong>
+                  <select v-model="form.llm.model_name" class="connection-card-inline-input">
+                    <option value="">请选择</option>
+                    <option
+                      v-for="localModel in filteredLocalLlmModels"
+                      :key="localModel.model_name"
+                      :value="localModel.model_name"
+                      :disabled="!localModel.available"
+                    >
+                      {{ localLlmOptionLabel(localModel) }}
+                    </option>
+                  </select>
                 </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>Endpoint</strong>
-                  <input v-model="form.llm.api_endpoint" class="connection-card-inline-input" />
-                </div>
-                <div class="key-value connection-card-edit-row">
-                  <strong>API Key</strong>
-                  <input v-model="form.llm.api_key" class="connection-card-inline-input" type="password" />
-                </div>
+                <template v-else>
+                  <div class="key-value connection-card-edit-row">
+                    <strong>Model</strong>
+                    <input v-model="form.llm.model_name" class="connection-card-inline-input" />
+                  </div>
+                  <div class="key-value connection-card-edit-row">
+                    <strong>Endpoint</strong>
+                    <input v-model="form.llm.api_endpoint" class="connection-card-inline-input" />
+                  </div>
+                  <div class="key-value connection-card-edit-row">
+                    <strong>API Key</strong>
+                    <input v-model="form.llm.api_key" class="connection-card-inline-input" type="password" />
+                  </div>
+                </template>
                 <div class="key-value connection-card-edit-row">
                   <strong>Timeout</strong>
                   <input v-model.number="form.llm.timeout_secs" class="connection-card-inline-input" type="number" min="1" />
@@ -226,10 +298,12 @@
               <template v-if="item.model.type === 'chat_llm'">
                 <div class="key-value"><strong>Model</strong><span>{{ item.model.llm.model_name }}</span></div>
                 <div class="key-value"><strong>后端格式</strong><span>{{ item.model.llm.api_style }}</span></div>
-                <div class="key-value"><strong>Endpoint</strong><span class="mono">{{ item.model.llm.api_endpoint }}</span></div>
+                <div v-if="item.model.llm.api_style !== 'candle_gguf' && item.model.llm.api_style !== 'candle_hf'" class="key-value"><strong>Endpoint</strong><span class="mono">{{ item.model.llm.api_endpoint }}</span></div>
                 <div class="key-value"><strong>Stream</strong><span>{{ item.model.llm.stream ? "是" : "否" }}</span></div>
                 <div class="key-value"><strong>多模态</strong><span>{{ item.model.llm.supports_multimodal_input ? "是" : "否" }}</span></div>
                 <div class="key-value"><strong>回灌 Reasoning</strong><span>{{ item.model.llm.include_reasoning_content ? "是" : "否" }}</span></div>
+                <div class="key-value"><strong>思考模式</strong><span>{{ item.model.llm.thinking_type ?? "未配置" }}</span></div>
+                <div class="key-value"><strong>思考强度</strong><span>{{ item.model.llm.reasoning_effort ?? "未配置" }}</span></div>
                 <div class="key-value"><strong>Timeout</strong><span>{{ item.model.llm.timeout_secs }}s</span></div>
                 <div class="key-value"><strong>Retry</strong><span>{{ item.model.llm.retry_count }} 次</span></div>
               </template>
@@ -249,9 +323,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 
-import { fileIO, system, type LlmConfig } from "../../api/client";
+import { fileIO, system, type LlmConfig, type LocalLlmModelInfo } from "../../api/client";
 import { buildModelRefPayload, compactId, defaultLlmForm, formatTime, llmFormFromConfig, type LlmFormState } from "../model";
 
 const items = ref<LlmConfig[]>([]);
@@ -259,6 +333,37 @@ const form = reactive<LlmFormState>(defaultLlmForm());
 const showCreatePicker = ref(false);
 const showCreateForm = ref(false);
 const localEmbeddingModels = ref<string[]>([]);
+const localLlmModels = ref<LocalLlmModelInfo[]>([]);
+
+const isCandleMode = computed(
+  () =>
+    form.model_type === "chat_llm" &&
+    (form.llm.api_style === "candle_gguf" || form.llm.api_style === "candle_hf"),
+);
+const selectedLocalLlm = computed(() =>
+  localLlmModels.value.find((item) => item.model_name === form.llm.model_name) ?? null,
+);
+const filteredLocalLlmModels = computed(() => {
+  if (!isCandleMode.value) {
+    return localLlmModels.value;
+  }
+  const expectedLayout = form.llm.api_style === "candle_gguf" ? "gguf" : "hf";
+  return localLlmModels.value.filter((item) => item.layout === expectedLayout);
+});
+const selectedLocalLlmHint = computed(() => {
+  if (!isCandleMode.value) {
+    return "Candle 模式会从 models/llm 自动扫描可选目录。";
+  }
+  if (!selectedLocalLlm.value) {
+    return "请选择一个本地模型目录。";
+  }
+  if (!selectedLocalLlm.value.available) {
+    return selectedLocalLlm.value.reason ?? "该模型目录当前不可用。";
+  }
+  return `类型：${selectedLocalLlm.value.kind}；格式：${selectedLocalLlm.value.layout}；${
+    selectedLocalLlm.value.supports_multimodal_input ? "支持图片多模态" : "文本模型"
+  }`;
+});
 
 function resetCreateForm() {
   Object.assign(form, defaultLlmForm());
@@ -281,12 +386,14 @@ function closeCreatePicker() {
 }
 
 async function load() {
-  const [models, localModels] = await Promise.all([
+  const [models, localModels, localLlmModelList] = await Promise.all([
     system.llm.list(),
     fileIO.listTextEmbeddingModels(),
+    fileIO.listLocalLlmModels(),
   ]);
   items.value = models;
   localEmbeddingModels.value = localModels.models;
+  localLlmModels.value = localLlmModelList.models;
 }
 
 function editItem(item: LlmConfig) {
@@ -301,7 +408,16 @@ async function submitForm() {
     return;
   }
   if (form.model_type === "chat_llm") {
-    if (!form.llm.model_name.trim() || !form.llm.api_endpoint.trim()) {
+    if (isCandleMode.value) {
+      if (!form.llm.model_name.trim()) {
+        alert("请选择本地 Candle 模型目录");
+        return;
+      }
+      if (!selectedLocalLlm.value?.available) {
+        alert(selectedLocalLlm.value?.reason ?? "所选本地模型当前不可用");
+        return;
+      }
+    } else if (!form.llm.model_name.trim() || !form.llm.api_endpoint.trim()) {
       alert("请至少填写名称、模型名和 API Endpoint");
       return;
     }
@@ -341,4 +457,36 @@ onMounted(() => {
     alert(`模型配置加载失败: ${(error as Error).message}`);
   });
 });
+
+watch(
+  () => [form.model_type, form.llm.api_style, form.llm.model_name],
+  () => {
+    if (!isCandleMode.value) {
+      return;
+    }
+    form.llm.api_endpoint = "";
+    form.llm.api_key = "";
+    form.llm.supports_multimodal_input = Boolean(selectedLocalLlm.value?.supports_multimodal_input);
+  },
+  { immediate: true },
+);
+
+function localLlmOptionLabel(item: LocalLlmModelInfo): string {
+  const tags = [item.kind, item.layout];
+  const suffix = item.available ? "" : ` - 不可用: ${item.reason ?? "未知原因"}`;
+  return `${item.model_name} [${tags.join("/")}]${suffix}`;
+}
+
+watch(
+  () => form.llm.api_style,
+  (apiStyle) => {
+    if (!isCandleMode.value) {
+      return;
+    }
+    const expectedLayout = apiStyle === "candle_gguf" ? "gguf" : "hf";
+    if (selectedLocalLlm.value?.layout !== expectedLayout) {
+      form.llm.model_name = "";
+    }
+  },
+);
 </script>
