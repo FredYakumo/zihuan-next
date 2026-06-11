@@ -1,4 +1,5 @@
 pub mod utils {
+    pub mod bm25;
     pub mod string_utils;
 }
 pub mod agent_config;

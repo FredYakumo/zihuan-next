@@ -104,6 +104,62 @@ textarea {
   margin-bottom: 28px;
 }
 
+.admin-sidebar-toggle {
+  display: none;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--toolbar-bg) 60%, transparent 40%);
+  cursor: pointer;
+  place-items: center;
+  margin-left: auto;
+}
+
+.admin-hamburger,
+.admin-hamburger::before,
+.admin-hamburger::after {
+  display: block;
+  width: 20px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.admin-hamburger {
+  position: relative;
+}
+
+.admin-hamburger::before,
+.admin-hamburger::after {
+  content: "";
+  position: absolute;
+  left: 0;
+}
+
+.admin-hamburger::before {
+  top: -6px;
+}
+
+.admin-hamburger::after {
+  top: 6px;
+}
+
+.admin-sidebar-overlay {
+  display: none;
+}
+
+.admin-mobile-topbar {
+  display: none;
+}
+
+.admin-mobile-brand {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 .admin-brand-mark {
   width: 76px;
   height: 76px;
@@ -720,26 +776,78 @@ code {
   }
 
   .admin-sidebar {
-    position: static;
-    min-height: auto;
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 100;
+    width: min(280px, 80vw);
+    min-height: 100vh;
     padding: 20px 16px;
-    border-right: none;
+    border-right: 1px solid var(--admin-border);
+    border-bottom: none;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--toolbar-bg) 82%, transparent 18%), color-mix(in srgb, var(--bg) 88%, transparent 12%));
+    backdrop-filter: blur(18px);
+    transform: translateX(-100%);
+    transition: transform 220ms ease;
+  }
+
+  .admin-shell.sidebar-open .admin-sidebar {
+    transform: translateX(0);
+  }
+
+  .admin-sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 99;
+    background: color-mix(in srgb, var(--bg) 55%, transparent 45%);
+    backdrop-filter: blur(4px);
+  }
+
+  .admin-mobile-topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: -18px -16px 16px;
+    padding: 14px 16px;
     border-bottom: 1px solid var(--admin-border);
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--toolbar-bg) 82%, transparent 18%), color-mix(in srgb, var(--bg) 88%, transparent 12%));
+    backdrop-filter: blur(18px);
   }
 
   .admin-brand {
-    grid-template-columns: auto minmax(0, 1fr);
+    display: flex;
     align-items: center;
-    column-gap: 14px;
-    row-gap: 0;
+    gap: 14px;
+    margin-bottom: 20px;
   }
 
   .admin-brand h1 {
-    font-size: 24px;
+    font-size: 20px;
+  }
+
+  .admin-brand p {
+    font-size: 12px;
+  }
+
+  .admin-brand-mark {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+  }
+
+  .admin-brand-mark-image {
+    border-radius: 10px;
+  }
+
+  .admin-sidebar-toggle {
+    display: grid;
   }
 
   .admin-nav {
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    display: grid;
+    gap: 6px;
   }
 
   .admin-main {
